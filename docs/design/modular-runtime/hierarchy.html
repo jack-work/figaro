@@ -1,217 +1,193 @@
 <!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content='width=device-width,initial-scale=1'><title>hierarchy and federation (optional modules)</title>
 <style>
-:root{--bg:#fbfaf7;--ink:#1d1b17;--mute:#6b665c;--line:#d8d2c4;--box:#fff;--hl:#f6d77a;--bad:#c0392b;--ok:#7b8794;--acc:#2f5d8a}
+:root{--bg:#f5f6f8;--panel:#fff;--ink:#14161b;--mute:#667080;--rule:#d6dae1;--node:#fff;--dep:#0b7a84;--anc:#bf650f;--bad:#d2372b;--sel:#14161b}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:1180px;margin:0 auto;padding:20px 24px 60px}
-h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 8px}h3{font-size:14px;margin:0}
-p{margin:6px 0}a{color:var(--acc)}code,.mono{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace}
-nav.top{display:flex;flex-wrap:wrap;gap:6px 14px;margin:4px 0 14px;font-size:13px}
-nav.top a.on{font-weight:700;color:var(--ink);text-decoration:none}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{padding:18px 22px 60px;max-width:1500px;margin:0 auto}
+h1{font-size:21px;margin:0 0 2px;letter-spacing:-.01em}h2{font-size:16px;margin:30px 0 8px}h3{font-size:14px;margin:0 0 4px}
+p{margin:6px 0}a{color:var(--dep)}code,.mono{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace}
 .meta{color:var(--mute);font-size:12.5px}
-.bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}
-.bar b{font-size:12px;color:var(--mute);margin-right:4px}
-.bar button{font:12px ui-monospace,monospace;border:1px solid var(--line);background:#fff;border-radius:3px;padding:2px 7px;cursor:pointer}
-.bar button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
-.bar label{font-size:12.5px;margin-right:8px;cursor:pointer}
-#stage{position:relative}
-#wires{position:absolute;inset:0;pointer-events:none;overflow:visible}
-.band{display:grid;grid-template-columns:150px 1fr;gap:10px;margin:0 0 26px;align-items:start}
-.band>.lbl{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;padding-top:8px}
-.band>.lbl a{color:inherit}
-.row{display:flex;flex-wrap:wrap;gap:16px}
-.box{position:relative;z-index:1;background:var(--box);border:1.5px solid var(--ink);border-radius:4px;min-width:210px;flex:1 1 230px;max-width:520px}
-.box.opt{border-style:dashed}.box.new{border-color:var(--acc);border-style:dotted}
-.box.dim{opacity:.35}.box.hl{box-shadow:0 0 0 4px var(--hl)}
-.box>summary{list-style:none;cursor:pointer;padding:7px 10px}
-.box>summary::-webkit-details-marker{display:none}
-.box>summary h3{margin-right:8px}.box>summary .n{float:right;color:var(--mute);font:12px ui-monospace,monospace}
-.box .tags{display:block;margin-top:3px}
-.tag{display:inline-block;font:11px ui-monospace,monospace;padding:0 5px;margin:1px 3px 1px 0;border:1px solid var(--line);border-radius:3px;color:var(--mute)}
-.tag.i{border-color:#b9a36a;color:#7a6522}.tag.bad{border-color:var(--bad);color:var(--bad)}
-.box .body{padding:4px 10px 10px;border-top:1px solid var(--line);font-size:13px}
-table{border-collapse:collapse;width:100%;font-size:12.5px;margin:6px 0}
-th,td{text-align:left;padding:3px 6px;border-bottom:1px solid var(--line);vertical-align:top}
-th{color:var(--mute);font-weight:600}
+nav{display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0 10px;font-size:13px}nav a.on{color:var(--ink);font-weight:700;text-decoration:none}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:10px 0;font-size:12.5px}
+.tools .grp{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.tools b{color:var(--mute);font-weight:600;margin-right:2px}
+.chip{font:11.5px ui-monospace,monospace;border:1px solid var(--rule);background:#fff;border-radius:999px;padding:1px 8px;cursor:pointer;color:var(--ink)}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:3px 10px;font:12.5px inherit;cursor:pointer}.seg button.on{background:var(--ink);color:#fff}
+input[type=search]{font:13px inherit;padding:3px 8px;border:1px solid var(--rule);border-radius:6px;width:180px}
+.work{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+@media (max-width:1100px){.work{grid-template-columns:1fr}.insp{position:static!important;max-height:none!important}}
+.viewport{position:relative;overflow:auto;background:#fff;border:1px solid var(--rule);border-radius:8px;max-height:78vh;cursor:grab}
+.viewport.drag{cursor:grabbing}
+.canvas{position:relative;transform-origin:0 0}
+.canvas svg{position:absolute;left:0;top:0;overflow:visible}
+.e{fill:none;stroke:#9aa3b0;stroke-width:1.3;stroke-opacity:.55;transition:stroke-opacity .15s,stroke-width .15s}
+.e.bad{stroke:var(--bad);stroke-dasharray:5 4;stroke-opacity:.45}
+.e.hit{stroke:transparent;stroke-width:12;stroke-opacity:1;pointer-events:stroke;cursor:pointer}
+.focus .e{stroke-opacity:.07}
+.focus .e.bad{stroke-opacity:.12}
+.e.on{stroke-opacity:.95!important;stroke-width:2.6}
+.e.on.dep{stroke:var(--dep);marker-end:url(#m-dep)}.e.on.anc{stroke:var(--anc);marker-end:url(#m-anc)}.e.on.bad{stroke:var(--bad);marker-end:url(#m-bad)}
+.e.on.far{stroke-width:1.4;stroke-opacity:.55!important}
+.e.flow{stroke-dasharray:7 5;animation:flow 1.1s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-24}}
+@media (prefers-reduced-motion:reduce){.e.flow{animation:none}}
+.e.hidden,.hit.hidden{display:none}
+.n{position:absolute;background:var(--node);border:1.5px solid var(--ink);border-radius:7px;padding:5px 9px;cursor:pointer;user-select:none;transition:opacity .15s,background .15s}
+.n .t{font-weight:650;font-size:13px;white-space:nowrap;display:block}
+.n .s{font:11px ui-monospace,monospace;color:var(--mute);white-space:nowrap;display:block}
+.n.opt{border-style:dashed}.n.new{border-style:dotted;border-color:var(--dep)}.n.ext{border-color:#9aa3b0;background:#f0f2f5}
+.n.tagged{box-shadow:0 0 0 4px #f4d35e}
+.focus .n{opacity:.28}
+.focus .n.sel,.focus .n.dep,.focus .n.anc{opacity:1}
+.n.sel{background:var(--sel);color:#fff;border-color:var(--sel)}.n.sel .s{color:#c9ced6}
+.n.dep{border-color:var(--dep);background:#e6f3f4}.n.anc{border-color:var(--anc);background:#fbefe2}
+.n.dep.anc{background:linear-gradient(90deg,#e6f3f4 50%,#fbefe2 50%)}
+.cnt{position:absolute;transform:translate(-50%,-50%);font:11px ui-monospace,monospace;background:#fff;border:1px solid currentColor;border-radius:999px;padding:0 5px;pointer-events:none;display:none}
+.cnt.on{display:block}
+.insp{position:sticky;top:10px;background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:12px 14px;max-height:86vh;overflow:auto;font-size:13px}
+.insp h3{font-size:15px}
+.insp code{word-break:break-all}.insp table{table-layout:fixed}.insp td.r,.insp th.r{width:56px}
+.insp .lists{display:grid;gap:10px;margin-top:8px}
+.insp ul{margin:2px 0;padding-left:16px}.insp li{margin:1px 0}
+.insp .k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+.insp .k.dep{color:var(--dep)}.insp .k.anc{color:var(--anc)}.insp .k.bad{color:var(--bad)}
+.badge{display:inline-block;font:10.5px ui-monospace,monospace;padding:0 5px;border-radius:999px;border:1px solid var(--rule);color:var(--mute);margin-left:4px}
+.badge.bad{border-color:var(--bad);color:var(--bad)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--mute);margin:6px 0}
+.legend i{display:inline-block;width:24px;vertical-align:middle;margin-right:5px;border-top:2.5px solid}
+.legend i.dep{border-color:var(--dep)}.legend i.anc{border-color:var(--anc)}.legend i.bad{border-top-style:dashed;border-color:var(--bad)}
+table{border-collapse:collapse;font-size:12.5px;margin:6px 0;width:100%}
+th,td{text-align:left;padding:3px 6px;border-bottom:1px solid var(--rule);vertical-align:top}th{color:var(--mute);font-weight:600}
 td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
 .fate-delete{color:var(--bad);text-decoration:line-through}.fate-split{color:#8a5a00}
-.card{display:none;border:1px solid var(--line);background:#fff;border-radius:4px;padding:8px 12px;margin:8px 0}
-.card.on{display:block}
-.legend{font-size:12px;color:var(--mute)}
-.legend i{display:inline-block;width:22px;height:0;border-top:2px solid var(--ok);vertical-align:middle;margin:0 4px 0 10px}
-.legend i.bad{border-top:2px solid var(--bad)}
-
-.tog{display:inline-block;width:16px;cursor:pointer;color:var(--mute)}
-details[open]>summary .tog{transform:rotate(90deg)}
-.box.ext{border-color:#9a948a}.box.sel{background:#1d1b17;color:#fff}.box.sel .n,.box.sel .tog{color:#ddd}
-.box.dep{background:#e8f0f8;border-color:#2f5d8a}.box.anc{background:#fbeee0;border-color:#b0651b}
-.box.sel .tag{color:#ddd;border-color:#666}
-#panel{min-height:40px;margin:6px 0 14px}
-.cols{display:grid;grid-template-columns:1fr 1.5fr 1.5fr;gap:14px}
-.col{border-left:4px solid var(--line);padding:2px 10px;font-size:13px}.col ul{margin:4px 0;padding-left:18px}
-.col.self{border-color:var(--ink)}.col.dep{border-color:#2f5d8a}.col.anc{border-color:#b0651b}
-.legend i.dep{border-top:2px solid #2f5d8a}.legend i.anc{border-top:2px solid #b0651b}.legend i.bad{border-top:2px dashed var(--bad)}
-svg text.cnt{font:11px ui-monospace,monospace;paint-order:stroke;stroke:#fbfaf7;stroke-width:4px}
-.band{margin-bottom:46px}.row{gap:22px 26px}
+table.dsm{width:auto;border:1px solid var(--rule);background:#fff}
+.dsm th,.dsm td{border:1px solid #e7eaee;padding:2px 5px;text-align:center;font:11.5px ui-monospace,monospace}
+.dsm th.row{text-align:right;white-space:nowrap;font-family:inherit}
+.dsm th.col{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;font-family:inherit;height:auto}
+.dsm td.self{background:#eef0f3}.dsm td.ok{background:#e6f3f4;cursor:pointer}.dsm td.bad{background:#fbe1de;color:var(--bad);font-weight:700;cursor:pointer}
+details.det{background:#fff;border:1px solid var(--rule);border-radius:8px;margin:8px 0;padding:6px 12px}
+details.det>summary{cursor:pointer;font-weight:650}
+.card{display:none}
 </style></head><body><main>
-<h1>hierarchy and federation (optional modules)</h1><p class=meta>figaro v0.58.4 (6d16a804). Lines are non-test lines (wc -l), generated by gen/gen.py.</p>
-<nav class="top"><a href="index.html">overview</a><a href="runtime.html">runtime + WAL</a><a href="hierarchy.html" class=on>hierarchy + federation</a><a href="bindings.html">bindings</a><a href="agent.html">agent, bash, sandbox</a><a href="host.html">host</a><a href="clients.html">clients</a><a href="README.md">plan</a><a href="steps.md">steps</a><a href="decisions.md">decisions</a><a href="issues.md">issues</a><a href="mapping.md">mapping</a></nav>
+<h1>hierarchy and federation (optional modules)</h1><p class=meta>figaro v0.58.4 (6d16a804). Non-test lines (wc -l). Generated by gen/gen.py; layered layout with 3 wire crossings.</p>
+<nav><a href="index.html">overview</a><a href="runtime.html">runtime + WAL</a><a href="hierarchy.html" class=on>hierarchy + federation</a><a href="bindings.html">bindings</a><a href="agent.html">agent, bash, sandbox</a><a href="host.html">host</a><a href="clients.html">clients</a><a href="README.md">plan</a><a href="steps.md">steps</a><a href="decisions.md">decisions</a><a href="issues.md">issues</a><a href="mapping.md">mapping</a></nav>
 <p>Fork, lineage and the drawn tree, spread today over five places with six clocks, become one optional module whose state is one reducible form (S7a-S7d). Federation sits beside it.</p>
-<div class=bar><b>view</b><label><input type=checkbox id=slice> show only the selection</label><label><input type=checkbox id=allw> all wires</label></div><p class=legend>Solid box: required module. Dashed: optional. Dotted: new code. Click a title to select; the arrow on the title opens the files.<i class=dep></i>depends on<i class=anc></i>used by<i class=bad></i>wrong way</p><div id=panel></div>
-<div class=bar><b>step</b><button data-pick="S3">S3</button><button data-pick="S4">S4</button><button data-pick="S6">S6</button><button data-pick="S7a">S7a</button><button data-pick="S7b">S7b</button><button data-pick="S7c">S7c</button><button data-pick="S7d">S7d</button><button data-pick="X2">X2</button></div><div class=bar><b>issue</b><button data-pick="#72">#72</button><button data-pick="#71">#71</button></div>
-<div class=card id="card-S3"><h3>S3 split the store by layer <span class=meta>(proposed; from design A (second half), carve 2; differs from review 2 (D1); lines -300 to -500 (forwarders))</span></h3><p>Merge XwalStore into XwalBackend, then cut the result along the stack: runtime (logs, forms, residency), hierarchy (births, fork, promote, demote, arrange, normalize, ttl, reaped; internal/topo folds in), bindings (study, libretto, roles), host ops (meta, quarantine, memory, moves). Log[T] and Entry move to runtime so provider and decide import the runtime, never store (carve 2&#x27;s rule as boundary rule 6). store stops importing turns, tokens and config.</p><p><b>Breaks:</b> import paths only.</p><p class=meta>needs S2; gate: boundary rule added; full suite; IR read benches (ReadPage, TailBudgeted).</p></div><div class=card id="card-S4"><h3>S4 one runtime layer <span class=meta>(proposed; from design B, review 3 and 6, audit 9 and 12; lines -700 to -900)</span></h3><p>segment, disk and log move under figwal/internal; log folds into disk (-400); one Log[T] (treeLog&#x27;s cache into xwalLog, -500). Kind strings become opaque to figwal; moves leave xwal for federation. The public surface is primitives (aria, form), group commit, and two declared seams: Own and Prefix. angelus and cli stop importing figwal/xwal.</p><p><b>Breaks:</b> import paths. Boundary rule 2 is replaced by Go&#x27;s internal/ rule.</p><p class=meta>needs S3; gate: IR and form hot-path benches against the S3 release; crashtest.</p></div><div class=card id="card-S6"><h3>S6 owned primitives <span class=meta>(proposed; from design E; lines at risk: must pay with deletions (D11))</span></h3><p>runtime.Own(owner, spec); a private id namespace the router refuses; Open of an owned id by anyone but the owner refused; the owner is the GC root. Provider logs, librettos and caches move onto it, deleting their special cases (translation dir handling, libretto ids, gc carve-outs). Runs in parallel with S5.</p><p><b>Breaks:</b> show and other tools that read provider logs read through the owner or a published version (open question D16).</p><p class=meta>needs S4; gate: authz tests: an owned id is Hidden from every caller; full suite.</p></div><div class=card id="card-S7a"><h3>S7a hierarchy: Prefix and Materialize <span class=meta>(proposed; from design D1-D2, audit 6; lines -150 to -400)</span></h3><p>disk.Log&#x27;s Parent and forkBase are replaced by an injected Prefix (Read, StateAt, Last). Materialize(below) replaces absorb-on-delete. Nested fork directories and hasSubdirs go: the per-append ReadDir (about 4 of 5 us per append) leaves the hot path.</p><p><b>Breaks:</b> ON DISK: fork directories flattened (layout bump, converter). Fork reads through parents are hot: bench them.</p><p class=meta>needs S5; gate: IR ReadPage, TailBudgeted, ForkWith benches; crashtest; El Inspector (layout).</p></div><div class=card id="card-S7b"><h3>S7b hierarchy: fork state as one form <span class=meta>(proposed; from design D3, review 4 (second half), review 6; lines large negative (five places, six clocks))</span></h3><p>Fork state becomes the hierarchy&#x27;s own reducible form: child -&gt; {parent, base per primitive} plus drawn edges. It replaces the .fork and .node markers, the index&#x27;s lineage half, @topology, and the six clocks; the topo tree algorithm (moved in S3) runs over the form. adopt (#72) and role succession become sets on that form.</p><p><b>Breaks:</b> ON DISK: markers retired (converter). Client epoch TopologyRev changes meaning: the pager follows the form version.</p><p class=meta>needs S7a; gate: El Inspector; promote/demote/succeed e2e in tmux; topology benches (topo-perf rows).</p></div><div class=card id="card-S7c"><h3>S7c hierarchy: ForkPoints <span class=meta>(proposed; from design D4; lines small negative)</span></h3><p>Bindings implement ForkPoints(id, at) -&gt; {primitive: index}, replacing the x-join&#x27;s main-LT stamping on every channel. The WAL keeps only group commit.</p><p><b>Breaks:</b> nothing visible; forks of old stores read the stamps once through the converter.</p><p class=meta>needs S7b; gate: fork at every turn of a recorded tape; byte-identical provider requests after fork.</p></div><div class=card id="card-S7d"><h3>S7d module manifest and registry <span class=meta>(proposed; from design D5-D6, carve 7 (first half); lines negative if per-verb tables in angelus fold into registrations)</span></h3><p>The store manifest names the modules that wrote it; a store written with hierarchy cannot open without it. Each module registers its RPC verbs, default grants and CLI command set; the API advertises modules. Build sets follow (a figarod without hierarchy or federation), one nix output per set.</p><p><b>Breaks:</b> packaging: new nix outputs. A client older than this release sees no advertisement and keeps today&#x27;s verbs.</p><p class=meta>needs S7c; gate: El Inspector (grants per module); a no-hierarchy build passes the runtime and bindings suites.</p></div><div class=card id="card-X2"><h3>X2 sandbox identity and leased grants <span class=meta>(design needed; from captains-log 11-09 (leases, lineage grants), #39, #57, #56; lines design first)</span></h3><p>A door per box that stamps a sandbox principal; leased boxes bound to a figaro&#x27;s grant set; a child never gets more than its parent; a privileged reserved block in the bound form that the parent edits.</p><p><b>Breaks:</b> to be designed.</p><p class=meta>needs X1, S7d; gate: El Inspector; multi-model audit like E1 step 3.</p></div><div class=card id="card-#72"><h3>#72 adopt: reparent a turn-0/1 fork</h3><p><b>folds into</b> S7b: Drawn edges live in the hierarchy form, so adopt is one set on it. Building it today adds a seventh place that knows topology.</p></div><div class=card id="card-#71"><h3>#71 system.retirement at a context threshold, then ttl</h3><p><b>independent; touches</b> S7b, D13: Refusing new messages is inbox policy (bindings). The ttl-after-retirement rides whatever owns the reaper: ttl.go today, the root declarations after D13.</p></div>
-<div id=stage><svg id=wires></svg>
-<div class=band><div class=lbl>layers above</div><div class=row>
-<details class="box ext" id="b-clients" data-tags="" data-ext=1><summary><span class=tog title="open">&#9656;</span><h3 style="display:inline">clients (figaro)</h3><span class=n>8 imports in</span></summary><div class=body><p>The CLI, the pager and the composer, sdk. Talks to a local or remote figarod; loads one command set per advertised module.</p></div></details>
-<details class="box ext" id="b-host" data-tags="" data-ext=1><summary><span class=tog title="open">&#9656;</span><h3 style="display:inline">host (figarod)</h3><span class=n>23 imports in, 2 imports out</span></summary><div class=body><p>Composition and the module registry; RPC; authz; outfits; credentials; config; UI stream; session primitives.</p></div></details>
-</div></div>
-<div class=band><div class=lbl>hierarchy (optional)</div><div class=row>
-<details class="box opt" id="b-hierarchy-0" data-tags="S7a S7c"><summary><span class=tog title="open">&#9656;</span><h3 style="display:inline">fork engine</h3><span class=n>627 lines</span><span class=tags>
-<span class=tag>S7a</span>
-<span class=tag>S7c</span>
-</span></summary><div class=body>
-<p>ForkAt, absorb on delete, stumps. Becomes Prefix + Materialize (S7a).</p>
-<table><tr><th>file</th><th class=r>lines</th></tr><tr><td><code>figwal/xwal/fork.go</code></td><td class=r>347</td></tr><tr><td><code>figwal/xwal/detach.go</code></td><td class=r>141</td></tr><tr><td><code>figwal/xwal/stumps.go</code></td><td class=r>139</td></tr></table>
-</div></details>
-<details class="box opt" id="b-hierarchy-1" data-tags="S3 S7b #72"><summary><span class=tog title="open">&#9656;</span><h3 style="display:inline">lineage index and topology</h3><span class=n>1,415 lines</span><span class=tags>
-<span class=tag>S3</span>
-<span class=tag>S7b</span>
-<span class='tag i'>#72</span>
-</span></summary><div class=body>
-<p>Five places, six clocks (review 2.4). Becomes one reducible form (S7b).</p>
-<table><tr><th>file</th><th class=r>lines</th></tr><tr><td><code>internal/store/topology_form.go</code></td><td class=r>411</td></tr><tr><td><code>figwal/xwal/topology.go</code></td><td class=r>399</td></tr><tr><td><code>figwal/xwal/index.go</code></td><td class=r>312</td></tr><tr><td><code>internal/topo/topo.go</code></td><td class=r>211</td></tr><tr><td><code>internal/store/lineage.go</code></td><td class=r>82</td></tr></table>
-</div></details>
-<details class="box opt" id="b-hierarchy-2" data-tags="S3 S6 S7b #71"><summary><span class=tog title="open">&#9656;</span><h3 style="display:inline">births, ttl, reaped</h3><span class=n>634 lines</span><span class=tags>
-<span class=tag>S3</span>
-<span class=tag>S6</span>
-<span class=tag>S7b</span>
-<span class='tag i'>#71</span>
-</span></summary><div class=body>
-<p>Open question: the reaper in hierarchy or runtime GC (D13).</p>
-<table><tr><th>file</th><th class=r>lines</th></tr><tr><td><code>internal/store/ttl.go</code></td><td class=r>504</td></tr><tr><td><code>internal/store/reaped.go</code></td><td class=r>106</td></tr><tr><td><code>internal/store/birth.go</code></td><td class=r>24</td></tr></table>
-</div></details>
-</div></div>
-<div class=band><div class=lbl>federation (optional)</div><div class=row>
-<details class="box opt" id="b-federation-0" data-tags="S3 S4"><summary><span class=tog title="open">&#9656;</span><h3 style="display:inline">moves</h3><span class=n>1,319 lines</span><span class=tags>
-<span class=tag>S3</span>
-<span class=tag>S4</span>
-</span></summary><div class=body>
-<p>Leaves the WAL in S4 when kinds become opaque.</p>
-<table><tr><th>file</th><th class=r>lines</th></tr><tr><td><code>figwal/xwal/move.go</code></td><td class=r>777</td></tr><tr><td><code>internal/store/moves.go</code></td><td class=r>408</td></tr><tr><td><code>internal/store/move.go</code></td><td class=r>134</td></tr></table>
-</div></details>
-<details class="box opt" id="b-federation-1" data-tags="S7d"><summary><span class=tog title="open">&#9656;</span><h3 style="display:inline">peers and troupe</h3><span class=n>3,245 lines</span><span class=tags>
-<span class=tag>S7d</span>
-<span class='tag bad'>2 wrong-way imports</span>
-</span></summary><div class=body>
-<table><tr><th>file</th><th class=r>lines</th></tr><tr><td><code>internal/troupe/ledger.go</code></td><td class=r>486</td></tr><tr><td><code>internal/troupe/keeper.go</code></td><td class=r>313</td></tr><tr><td><code>internal/peer/ledger.go</code></td><td class=r>285</td></tr><tr><td><code>internal/troupe/keys.go</code></td><td class=r>249</td></tr><tr><td><code>internal/troupe/apikey.go</code></td><td class=r>243</td></tr><tr><td><code>internal/peer/static.go</code></td><td class=r>227</td></tr><tr><td><code>internal/peer/link.go</code></td><td class=r>209</td></tr><tr><td><code>internal/troupe/dir.go</code></td><td class=r>208</td></tr><tr><td><code>internal/peer/door.go</code></td><td class=r>192</td></tr><tr><td><code>internal/peer/gossip.go</code></td><td class=r>191</td></tr><tr><td><code>internal/troupe/policy.go</code></td><td class=r>168</td></tr><tr><td><code>internal/peer/directory.go</code></td><td class=r>138</td></tr><tr><td><code>internal/peer/peertest/pki.go</code></td><td class=r>108</td></tr><tr><td><code>internal/peer/versions.go</code></td><td class=r>82</td></tr><tr><td class=meta>3 more files</td><td class=r>146</td></tr></table>
-<p><b>Imports to cut:</b></p><table><tr><th>file</th><th>imports</th></tr>
-<tr><td><code>internal/peer/door.go</code></td><td><code>internal/authz</code> (host)</td></tr>
-<tr><td><code>internal/troupe/apikey.go</code></td><td><code>internal/apikey</code> (host)</td></tr>
-</table>
-</div></details>
-</div></div>
-<div class=band><div class=lbl>layers below</div><div class=row>
-<details class="box ext" id="b-runtime" data-tags="" data-ext=1><summary><span class=tog title="open">&#9656;</span><h3 style="display:inline">runtime + WAL</h3><span class=n>2 imports in, 9 imports out</span></summary><div class=body><p>Actors with inboxes; two primitive kinds (aria = append log, form = reducible state); ids; group commit; published immutable versions; checkpointed reducible channels; owned primitives; GC roots.</p></div></details>
-<details class="box ext" id="b-base" data-tags="" data-ext=1><summary><span class=tog title="open">&#9656;</span><h3 style="display:inline">api + leaf libs</h3><span class=n>1 imports in, 14 imports out</span></summary><div class=body><p>Wire types every layer shares (api/*), telemetry, small pure libraries. Imports nothing above it.</p></div></details>
-</div></div>
-</div>
-<script type='application/json' id=edges>[{"from": "hierarchy-0", "to": "runtime", "kind": "today", "count": 4, "bad": false, "label": "hierarchy-0 -> runtime: 4 imports"}, {"from": "federation-0", "to": "runtime", "kind": "today", "count": 4, "bad": false, "label": "federation-0 -> runtime: 4 imports"}, {"from": "federation-1", "to": "base", "kind": "today", "count": 11, "bad": false, "label": "federation-1 -> base: 11 imports"}, {"from": "federation-1", "to": "host", "kind": "today", "count": 2, "bad": true, "label": "federation-1 -> host: 2 imports (wrong way)"}, {"from": "hierarchy-1", "to": "runtime", "kind": "today", "count": 1, "bad": false, "label": "hierarchy-1 -> runtime: 1 imports"}, {"from": "hierarchy-1", "to": "base", "kind": "today", "count": 1, "bad": false, "label": "hierarchy-1 -> base: 1 imports"}, {"from": "hierarchy-2", "to": "base", "kind": "today", "count": 2, "bad": false, "label": "hierarchy-2 -> base: 2 imports"}, {"from": "host", "to": "federation-1", "kind": "today", "count": 22, "bad": false, "label": "host -> federation-1: 22 imports"}, {"from": "host", "to": "hierarchy-1", "kind": "today", "count": 1, "bad": false, "label": "host -> hierarchy-1: 1 imports"}, {"from": "clients", "to": "federation-1", "kind": "today", "count": 8, "bad": true, "label": "clients -> federation-1: 8 imports (wrong way)"}, {"from": "base", "to": "federation-1", "kind": "today", "count": 1, "bad": true, "label": "base -> federation-1: 1 imports (wrong way)"}, {"from": "runtime", "to": "hierarchy-1", "kind": "today", "count": 2, "bad": true, "label": "runtime -> hierarchy-1: 2 imports (wrong way)"}]</script><script>
+<div class=tools><div class=grp><b>find</b><input id=find type=search placeholder="box name, Enter"></div><div class=grp><b>zoom</b><span class=seg><button data-zoom="0.8">&minus;</button><button data-zoom="fit">fit</button><button data-zoom="1.25">+</button></span></div></div>
+<div class=tools><div class=grp><b>step</b><button class=chip data-tag="S3">S3</button><button class=chip data-tag="S4">S4</button><button class=chip data-tag="S6">S6</button><button class=chip data-tag="S7a">S7a</button><button class=chip data-tag="S7b">S7b</button><button class=chip data-tag="S7c">S7c</button><button class=chip data-tag="S7d">S7d</button></div><div class=grp><b>issue</b><button class=chip data-tag="#72">#72</button><button class=chip data-tag="#71">#71</button></div></div>
+<div class=legend><span><i class=dep></i>depends on</span><span><i class=anc></i>used by</span><span><i class=bad></i>wrong way</span><span>dashed box: optional module; dotted: new code; grey: outside this page</span></div>
+<div class=work><div class=viewport><div class=sizer>
+<div class=canvas style="width:682px;height:454px">
+<svg width="682" height="454" viewBox="0 0 682 454"><defs><marker id="m-dep" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b7a84"/></marker><marker id="m-anc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#bf650f"/></marker><marker id="m-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#d2372b"/></marker><marker id="m-base" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#9aa3b0"/></marker></defs><g id=edges><path id="e0" class="e bad" d="M412.9,384 C412.9,347.0 383.3,347.0 383.3,310" marker-end="url(#m-bad)"><title>api + leaf libs imports peers and troupe: 1 (wrong way)</title></path><path id="e1" class="e bad" d="M285.0,70 C285.0,118.5 448.0,118.5 448.0,167.0 C448.0,215.5 372.3,215.5 372.3,264" marker-end="url(#m-bad)"><title>clients (figaro) imports peers and troupe: 8 (wrong way)</title></path><path id="e2" class="e" d="M137.7,310 C137.7,347.0 165.5,347.0 165.5,384" marker-end="url(#m-base)"><title>moves imports runtime + WAL: 4</title></path><path id="e3" class="e" d="M427.3,310 C427.3,347.0 450.5,347.0 450.5,384" marker-end="url(#m-base)"><title>peers and troupe imports api + leaf libs: 11</title></path><path id="e4" class="e bad" d="M438.3,264 C438.3,215.5 464.0,215.5 464.0,167.0 C464.0,118.5 540.0,118.5 540.0,70" marker-end="url(#m-bad)"><title>peers and troupe imports host (figarod): 2 (wrong way)</title></path><path id="e5" class="e" d="M99.0,190 C99.0,238.5 232.7,238.5 232.7,287.0 C232.7,335.5 201.9,335.5 201.9,384" marker-end="url(#m-base)"><title>fork engine imports runtime + WAL: 4</title></path><path id="e6" class="e" d="M366.5,190 C366.5,238.5 501.3,238.5 501.3,287.0 C501.3,335.5 488.1,335.5 488.1,384" marker-end="url(#m-base)"><title>lineage index and topology imports api + leaf libs: 1</title></path><path id="e7" class="e" d="M263.5,190 C263.5,238.5 232.7,238.5 232.7,287.0 C232.7,335.5 238.3,335.5 238.3,384" marker-end="url(#m-base)"><title>lineage index and topology imports runtime + WAL: 1</title></path><path id="e8" class="e" d="M571.0,190 C571.0,238.5 501.3,238.5 501.3,287.0 C501.3,335.5 525.7,335.5 525.7,384" marker-end="url(#m-base)"><title>births, ttl, reaped imports api + leaf libs: 2</title></path><path id="e9" class="e" d="M493.0,70 C493.0,118.5 448.0,118.5 448.0,167.0 C448.0,215.5 405.3,215.5 405.3,264" marker-end="url(#m-base)"><title>host (figarod) imports peers and troupe: 22</title></path><path id="e10" class="e" d="M446.0,70 C446.0,107.0 315.0,107.0 315.0,144" marker-end="url(#m-base)"><title>host (figarod) imports lineage index and topology: 1</title></path><path id="e11" class="e bad" d="M274.7,384 C274.7,335.5 248.7,335.5 248.7,287.0 C248.7,238.5 315.0,238.5 315.0,190" marker-end="url(#m-bad)"><title>runtime + WAL imports lineage index and topology: 2 (wrong way)</title></path></g><g><path id="h0" class="e hit" d="M412.9,384 C412.9,347.0 383.3,347.0 383.3,310"><title>api + leaf libs imports peers and troupe: 1 (wrong way)</title></path><path id="h1" class="e hit" d="M285.0,70 C285.0,118.5 448.0,118.5 448.0,167.0 C448.0,215.5 372.3,215.5 372.3,264"><title>clients (figaro) imports peers and troupe: 8 (wrong way)</title></path><path id="h2" class="e hit" d="M137.7,310 C137.7,347.0 165.5,347.0 165.5,384"><title>moves imports runtime + WAL: 4</title></path><path id="h3" class="e hit" d="M427.3,310 C427.3,347.0 450.5,347.0 450.5,384"><title>peers and troupe imports api + leaf libs: 11</title></path><path id="h4" class="e hit" d="M438.3,264 C438.3,215.5 464.0,215.5 464.0,167.0 C464.0,118.5 540.0,118.5 540.0,70"><title>peers and troupe imports host (figarod): 2 (wrong way)</title></path><path id="h5" class="e hit" d="M99.0,190 C99.0,238.5 232.7,238.5 232.7,287.0 C232.7,335.5 201.9,335.5 201.9,384"><title>fork engine imports runtime + WAL: 4</title></path><path id="h6" class="e hit" d="M366.5,190 C366.5,238.5 501.3,238.5 501.3,287.0 C501.3,335.5 488.1,335.5 488.1,384"><title>lineage index and topology imports api + leaf libs: 1</title></path><path id="h7" class="e hit" d="M263.5,190 C263.5,238.5 232.7,238.5 232.7,287.0 C232.7,335.5 238.3,335.5 238.3,384"><title>lineage index and topology imports runtime + WAL: 1</title></path><path id="h8" class="e hit" d="M571.0,190 C571.0,238.5 501.3,238.5 501.3,287.0 C501.3,335.5 525.7,335.5 525.7,384"><title>births, ttl, reaped imports api + leaf libs: 2</title></path><path id="h9" class="e hit" d="M493.0,70 C493.0,118.5 448.0,118.5 448.0,167.0 C448.0,215.5 405.3,215.5 405.3,264"><title>host (figarod) imports peers and troupe: 22</title></path><path id="h10" class="e hit" d="M446.0,70 C446.0,107.0 315.0,107.0 315.0,144"><title>host (figarod) imports lineage index and topology: 1</title></path><path id="h11" class="e hit" d="M274.7,384 C274.7,335.5 248.7,335.5 248.7,287.0 C248.7,238.5 315.0,238.5 315.0,190"><title>runtime + WAL imports lineage index and topology: 2 (wrong way)</title></path></g></svg>
+<div class="n ext" data-id="clients" style="left:209px;top:24px;width:152px;height:46px"><span class=t>clients (figaro)</span><span class=s>8 imports in</span></div><div class="n ext" data-id="host" style="left:389px;top:24px;width:208px;height:46px"><span class=t>host (figarod)</span><span class=s>23 imports in, 2 imports out</span></div><div class="n ext" data-id="runtime" style="left:119px;top:384px;width:202px;height:46px"><span class=t>runtime + WAL</span><span class=s>2 imports in, 9 imports out</span></div><div class="n ext" data-id="base" style="left:365px;top:384px;width:208px;height:46px"><span class=t>api + leaf libs</span><span class=s>1 imports in, 14 imports out</span></div><div class="n opt" data-id="hierarchy-0" style="left:24px;top:144px;width:150px;height:46px"><span class=t>fork engine</span><span class=s>627 lines</span></div><div class="n opt" data-id="hierarchy-1" style="left:202px;top:144px;width:226px;height:46px"><span class=t>lineage index and topology</span><span class=s>1,415 lines</span></div><div class="n opt" data-id="hierarchy-2" style="left:484px;top:144px;width:174px;height:46px"><span class=t>births, ttl, reaped</span><span class=s>634 lines</span></div><div class="n opt" data-id="federation-0" style="left:63px;top:264px;width:150px;height:46px"><span class=t>moves</span><span class=s>1,319 lines</span></div><div class="n opt" data-id="federation-1" style="left:329px;top:264px;width:152px;height:46px"><span class=t>peers and troupe</span><span class=s>3,245 lines</span></div>
+<span class=cnt id="c0" style="left:398.1px;top:347.0px">1</span><span class=cnt id="c1" style="left:448.0px;top:167.0px">8</span><span class=cnt id="c2" style="left:151.6px;top:347.0px">4</span><span class=cnt id="c3" style="left:438.9px;top:347.0px">11</span><span class=cnt id="c4" style="left:464.0px;top:167.0px">2</span><span class=cnt id="c5" style="left:232.7px;top:287.0px">4</span><span class=cnt id="c6" style="left:501.3px;top:287.0px">1</span><span class=cnt id="c7" style="left:232.7px;top:287.0px">1</span><span class=cnt id="c8" style="left:501.3px;top:287.0px">2</span><span class=cnt id="c9" style="left:448.0px;top:167.0px">22</span><span class=cnt id="c10" style="left:380.5px;top:107.0px">1</span><span class=cnt id="c11" style="left:248.7px;top:287.0px">2</span>
+</div></div></div>
+<aside class=insp id=insp></aside></div>
+<div id=insp-help hidden><div class=k>how to read this</div><h3>Pick a box</h3><p>Hover a box to preview its direct imports. Click it to trace: everything it depends on, directly or through others, turns teal; everything that depends on it turns amber; the rest fades. Direct wires are thick, with an arrowhead and their import count; indirect ones are thin.</p><p>Click a wire to list the imports behind it, file by file. Red dashed wires point the wrong way for the target stack.</p><p>Drag to pan, the zoom buttons to scale, / to find a box, Esc to clear. The matrix under the graph shows every pair at once; click a cell.</p></div>
+<div class=card id="card-S3"><div class=k>step</div><h3>S3 split the store by layer</h3><p class=meta>proposed; from design A (second half), carve 2; differs from review 2 (D1); lines -300 to -500 (forwarders)</p><p>Merge XwalStore into XwalBackend, then cut the result along the stack: runtime (logs, forms, residency), hierarchy (births, fork, promote, demote, arrange, normalize, ttl, reaped; internal/topo folds in), bindings (study, libretto, roles), host ops (meta, quarantine, memory, moves). Log[T] and Entry move to runtime so provider and decide import the runtime, never store (carve 2&#x27;s rule as boundary rule 6). store stops importing turns, tokens and config.</p><p><b>Breaks:</b> import paths only.</p><p class=meta>needs S2; gate: boundary rule added; full suite; IR read benches (ReadPage, TailBudgeted).</p><p class=meta>Highlighted boxes are the ones this step touches.</p></div><div class=card id="card-S4"><div class=k>step</div><h3>S4 one runtime layer</h3><p class=meta>proposed; from design B, review 3 and 6, audit 9 and 12; lines -700 to -900</p><p>segment, disk and log move under figwal/internal; log folds into disk (-400); one Log[T] (treeLog&#x27;s cache into xwalLog, -500). Kind strings become opaque to figwal; moves leave xwal for federation. The public surface is primitives (aria, form), group commit, and two declared seams: Own and Prefix. angelus and cli stop importing figwal/xwal.</p><p><b>Breaks:</b> import paths. Boundary rule 2 is replaced by Go&#x27;s internal/ rule.</p><p class=meta>needs S3; gate: IR and form hot-path benches against the S3 release; crashtest.</p><p class=meta>Highlighted boxes are the ones this step touches.</p></div><div class=card id="card-S6"><div class=k>step</div><h3>S6 owned primitives</h3><p class=meta>proposed; from design E; lines at risk: must pay with deletions (D11)</p><p>runtime.Own(owner, spec); a private id namespace the router refuses; Open of an owned id by anyone but the owner refused; the owner is the GC root. Provider logs, librettos and caches move onto it, deleting their special cases (translation dir handling, libretto ids, gc carve-outs). Runs in parallel with S5.</p><p><b>Breaks:</b> show and other tools that read provider logs read through the owner or a published version (open question D16).</p><p class=meta>needs S4; gate: authz tests: an owned id is Hidden from every caller; full suite.</p><p class=meta>Highlighted boxes are the ones this step touches.</p></div><div class=card id="card-S7a"><div class=k>step</div><h3>S7a hierarchy: Prefix and Materialize</h3><p class=meta>proposed; from design D1-D2, audit 6; lines -150 to -400</p><p>disk.Log&#x27;s Parent and forkBase are replaced by an injected Prefix (Read, StateAt, Last). Materialize(below) replaces absorb-on-delete. Nested fork directories and hasSubdirs go: the per-append ReadDir (about 4 of 5 us per append) leaves the hot path.</p><p><b>Breaks:</b> ON DISK: fork directories flattened (layout bump, converter). Fork reads through parents are hot: bench them.</p><p class=meta>needs S5; gate: IR ReadPage, TailBudgeted, ForkWith benches; crashtest; El Inspector (layout).</p><p class=meta>Highlighted boxes are the ones this step touches.</p></div><div class=card id="card-S7b"><div class=k>step</div><h3>S7b hierarchy: fork state as one form</h3><p class=meta>proposed; from design D3, review 4 (second half), review 6; lines large negative (five places, six clocks)</p><p>Fork state becomes the hierarchy&#x27;s own reducible form: child -&gt; {parent, base per primitive} plus drawn edges. It replaces the .fork and .node markers, the index&#x27;s lineage half, @topology, and the six clocks; the topo tree algorithm (moved in S3) runs over the form. adopt (#72) and role succession become sets on that form.</p><p><b>Breaks:</b> ON DISK: markers retired (converter). Client epoch TopologyRev changes meaning: the pager follows the form version.</p><p class=meta>needs S7a; gate: El Inspector; promote/demote/succeed e2e in tmux; topology benches (topo-perf rows).</p><p class=meta>Highlighted boxes are the ones this step touches.</p></div><div class=card id="card-S7c"><div class=k>step</div><h3>S7c hierarchy: ForkPoints</h3><p class=meta>proposed; from design D4; lines small negative</p><p>Bindings implement ForkPoints(id, at) -&gt; {primitive: index}, replacing the x-join&#x27;s main-LT stamping on every channel. The WAL keeps only group commit.</p><p><b>Breaks:</b> nothing visible; forks of old stores read the stamps once through the converter.</p><p class=meta>needs S7b; gate: fork at every turn of a recorded tape; byte-identical provider requests after fork.</p><p class=meta>Highlighted boxes are the ones this step touches.</p></div><div class=card id="card-S7d"><div class=k>step</div><h3>S7d module manifest and registry</h3><p class=meta>proposed; from design D5-D6, carve 7 (first half); lines negative if per-verb tables in angelus fold into registrations</p><p>The store manifest names the modules that wrote it; a store written with hierarchy cannot open without it. Each module registers its RPC verbs, default grants and CLI command set; the API advertises modules. Build sets follow (a figarod without hierarchy or federation), one nix output per set.</p><p><b>Breaks:</b> packaging: new nix outputs. A client older than this release sees no advertisement and keeps today&#x27;s verbs.</p><p class=meta>needs S7c; gate: El Inspector (grants per module); a no-hierarchy build passes the runtime and bindings suites.</p><p class=meta>Highlighted boxes are the ones this step touches.</p></div><div class=card id="card-#72"><div class=k>issue</div><h3>#72 adopt: reparent a turn-0/1 fork</h3><p><b>folds into</b> S7b: Drawn edges live in the hierarchy form, so adopt is one set on it. Building it today adds a seventh place that knows topology.</p></div><div class=card id="card-#71"><div class=k>issue</div><h3>#71 system.retirement at a context threshold, then ttl</h3><p><b>independent; touches</b> S7b, D13: Refusing new messages is inbox policy (bindings). The ttl-after-retirement rides whatever owns the reaper: ttl.go today, the root declarations after D13.</p></div>
+
+<h2>Matrix</h2><p class=meta>Row imports column. Rows and columns follow the graph's layers, top to bottom, so a cell right of the diagonal points down; red cells point the wrong way.</p><table class=dsm><tr><th></th><th class=col>clients (figaro)</th><th class=col>host (figarod)</th><th class=col>fork engine</th><th class=col>lineage index and topology</th><th class=col>births, ttl, reaped</th><th class=col>moves</th><th class=col>peers and troupe</th><th class=col>runtime + WAL</th><th class=col>api + leaf libs</th></tr><tr><th class=row>clients (figaro)</th><td class=self></td><td></td><td></td><td></td><td></td><td></td><td class=bad data-e="1" title="clients (figaro) imports peers and troupe: 8 (wrong way)">8</td><td></td><td></td></tr><tr><th class=row>host (figarod)</th><td></td><td class=self></td><td></td><td class=ok data-e="10" title="host (figarod) imports lineage index and topology: 1">1</td><td></td><td></td><td class=ok data-e="9" title="host (figarod) imports peers and troupe: 22">22</td><td></td><td></td></tr><tr><th class=row>fork engine</th><td></td><td></td><td class=self></td><td></td><td></td><td></td><td></td><td class=ok data-e="5" title="fork engine imports runtime + WAL: 4">4</td><td></td></tr><tr><th class=row>lineage index and topology</th><td></td><td></td><td></td><td class=self></td><td></td><td></td><td></td><td class=ok data-e="7" title="lineage index and topology imports runtime + WAL: 1">1</td><td class=ok data-e="6" title="lineage index and topology imports api + leaf libs: 1">1</td></tr><tr><th class=row>births, ttl, reaped</th><td></td><td></td><td></td><td></td><td class=self></td><td></td><td></td><td></td><td class=ok data-e="8" title="births, ttl, reaped imports api + leaf libs: 2">2</td></tr><tr><th class=row>moves</th><td></td><td></td><td></td><td></td><td></td><td class=self></td><td></td><td class=ok data-e="2" title="moves imports runtime + WAL: 4">4</td><td></td></tr><tr><th class=row>peers and troupe</th><td></td><td class=bad data-e="4" title="peers and troupe imports host (figarod): 2 (wrong way)">2</td><td></td><td></td><td></td><td></td><td class=self></td><td></td><td class=ok data-e="3" title="peers and troupe imports api + leaf libs: 11">11</td></tr><tr><th class=row>runtime + WAL</th><td></td><td></td><td></td><td class=bad data-e="11" title="runtime + WAL imports lineage index and topology: 2 (wrong way)">2</td><td></td><td></td><td></td><td class=self></td><td></td></tr><tr><th class=row>api + leaf libs</th><td></td><td></td><td></td><td></td><td></td><td></td><td class=bad data-e="0" title="api + leaf libs imports peers and troupe: 1 (wrong way)">1</td><td></td><td class=self></td></tr></table>
+<h2>Boxes</h2>
+<details class=det id="detail-clients"><summary>clients (figaro) <span class=meta>8 imports in</span></summary><div class=body><p>The CLI, the pager and the composer, sdk. Talks to a local or remote figarod; loads one command set per advertised module.</p><p><a href="clients.html">open its page</a></p></div></details><details class=det id="detail-host"><summary>host (figarod) <span class=meta>23 imports in, 2 imports out</span></summary><div class=body><p>Composition and the module registry; RPC; authz; outfits; credentials; config; UI stream; session primitives.</p><p><a href="host.html">open its page</a></p></div></details><details class=det id="detail-runtime"><summary>runtime + WAL <span class=meta>2 imports in, 9 imports out</span></summary><div class=body><p>Actors with inboxes; two primitive kinds (aria = append log, form = reducible state); ids; group commit; published immutable versions; checkpointed reducible channels; owned primitives; GC roots.</p><p><a href="runtime.html">open its page</a></p></div></details><details class=det id="detail-base"><summary>api + leaf libs <span class=meta>1 imports in, 14 imports out</span></summary><div class=body><p>Wire types every layer shares (api/*), telemetry, small pure libraries. Imports nothing above it.</p><p><a href="runtime.html">open its page</a></p></div></details><details class=det id="detail-hierarchy-0"><summary>fork engine <span class=meta>627 lines</span><span class=badge>S7a</span><span class=badge>S7c</span></summary><div class=body><p class=meta>hierarchy (optional)</p><p>ForkAt, absorb on delete, stumps. Becomes Prefix + Materialize (S7a).</p><table><tr><th>file</th><th class=r>lines</th></tr><tr><td><code>figwal/xwal/fork.go</code></td><td class=r>347</td></tr><tr><td><code>figwal/xwal/detach.go</code></td><td class=r>141</td></tr><tr><td><code>figwal/xwal/stumps.go</code></td><td class=r>139</td></tr></table></div></details><details class=det id="detail-hierarchy-1"><summary>lineage index and topology <span class=meta>1,415 lines</span><span class=badge>S3</span><span class=badge>S7b</span><span class=badge>#72</span></summary><div class=body><p class=meta>hierarchy (optional)</p><p>Five places, six clocks (review 2.4). Becomes one reducible form (S7b).</p><table><tr><th>file</th><th class=r>lines</th></tr><tr><td><code>internal/store/topology_form.go</code></td><td class=r>411</td></tr><tr><td><code>figwal/xwal/topology.go</code></td><td class=r>399</td></tr><tr><td><code>figwal/xwal/index.go</code></td><td class=r>312</td></tr><tr><td><code>internal/topo/topo.go</code></td><td class=r>211</td></tr><tr><td><code>internal/store/lineage.go</code></td><td class=r>82</td></tr></table></div></details><details class=det id="detail-hierarchy-2"><summary>births, ttl, reaped <span class=meta>634 lines</span><span class=badge>S3</span><span class=badge>S6</span><span class=badge>S7b</span><span class=badge>#71</span></summary><div class=body><p class=meta>hierarchy (optional)</p><p>Open question: the reaper in hierarchy or runtime GC (D13).</p><table><tr><th>file</th><th class=r>lines</th></tr><tr><td><code>internal/store/ttl.go</code></td><td class=r>504</td></tr><tr><td><code>internal/store/reaped.go</code></td><td class=r>106</td></tr><tr><td><code>internal/store/birth.go</code></td><td class=r>24</td></tr></table></div></details><details class=det id="detail-federation-0"><summary>moves <span class=meta>1,319 lines</span><span class=badge>S3</span><span class=badge>S4</span></summary><div class=body><p class=meta>federation (optional)</p><p>Leaves the WAL in S4 when kinds become opaque.</p><table><tr><th>file</th><th class=r>lines</th></tr><tr><td><code>figwal/xwal/move.go</code></td><td class=r>777</td></tr><tr><td><code>internal/store/moves.go</code></td><td class=r>408</td></tr><tr><td><code>internal/store/move.go</code></td><td class=r>134</td></tr></table></div></details><details class=det id="detail-federation-1"><summary>peers and troupe <span class=meta>3,245 lines</span><span class=badge>S7d</span></summary><div class=body><p class=meta>federation (optional)</p><table><tr><th>file</th><th class=r>lines</th></tr><tr><td><code>internal/troupe/ledger.go</code></td><td class=r>486</td></tr><tr><td><code>internal/troupe/keeper.go</code></td><td class=r>313</td></tr><tr><td><code>internal/peer/ledger.go</code></td><td class=r>285</td></tr><tr><td><code>internal/troupe/keys.go</code></td><td class=r>249</td></tr><tr><td><code>internal/troupe/apikey.go</code></td><td class=r>243</td></tr><tr><td><code>internal/peer/static.go</code></td><td class=r>227</td></tr><tr><td><code>internal/peer/link.go</code></td><td class=r>209</td></tr><tr><td><code>internal/troupe/dir.go</code></td><td class=r>208</td></tr><tr><td><code>internal/peer/door.go</code></td><td class=r>192</td></tr><tr><td><code>internal/peer/gossip.go</code></td><td class=r>191</td></tr><tr><td><code>internal/troupe/policy.go</code></td><td class=r>168</td></tr><tr><td><code>internal/peer/directory.go</code></td><td class=r>138</td></tr><tr><td><code>internal/peer/peertest/pki.go</code></td><td class=r>108</td></tr><tr><td><code>internal/peer/versions.go</code></td><td class=r>82</td></tr><tr><td class=meta>3 more files</td><td class=r>146</td></tr></table><p><b>Imports to cut:</b></p><table><tr><th>file</th><th>imports</th></tr><tr><td><code>internal/peer/door.go</code></td><td><code>internal/authz</code> (host)</td></tr><tr><td><code>internal/troupe/apikey.go</code></td><td><code>internal/apikey</code> (host)</td></tr></table></div></details>
+<script type='application/json' id=graph>{"kinds": ["today"], "w": 682, "h": 454, "nodes": {"clients": {"label": "clients (figaro)", "sub": "8 imports in", "ext": true, "tags": []}, "host": {"label": "host (figarod)", "sub": "23 imports in, 2 imports out", "ext": true, "tags": []}, "runtime": {"label": "runtime + WAL", "sub": "2 imports in, 9 imports out", "ext": true, "tags": []}, "base": {"label": "api + leaf libs", "sub": "1 imports in, 14 imports out", "ext": true, "tags": []}, "hierarchy-0": {"label": "fork engine", "sub": "627 lines", "ext": false, "tags": ["S7a", "S7c"]}, "hierarchy-1": {"label": "lineage index and topology", "sub": "1,415 lines", "ext": false, "tags": ["S3", "S7b", "#72"]}, "hierarchy-2": {"label": "births, ttl, reaped", "sub": "634 lines", "ext": false, "tags": ["S3", "S6", "S7b", "#71"]}, "federation-0": {"label": "moves", "sub": "1,319 lines", "ext": false, "tags": ["S3", "S4"]}, "federation-1": {"label": "peers and troupe", "sub": "3,245 lines", "ext": false, "tags": ["S7d"]}}, "edges": [{"from": "base", "to": "federation-1", "kind": "today", "count": 1, "bad": true, "sites": [["internal/config/peers.go", "internal/troupe"]]}, {"from": "clients", "to": "federation-1", "kind": "today", "count": 8, "bad": true, "sites": [["internal/cli/troupe_issue.go", "internal/troupe"], ["internal/cli/troupe_join.go", "internal/troupe"], ["internal/cli/troupe_keys.go", "internal/troupe"], ["internal/cli/troupe_leaf.go", "internal/troupe"], ["internal/cli/troupe_leave.go", "internal/troupe"], ["internal/cli/troupe_policy.go", "internal/troupe"], ["internal/cli/troupe_renewer.go", "internal/troupe"], ["internal/cli/troupe_verbs.go", "internal/troupe"]]}, {"from": "federation-0", "to": "runtime", "kind": "today", "count": 4, "bad": false, "sites": [["figwal/xwal/move.go", "figwal/disk"], ["internal/store/move.go", "figwal/xwal"], ["internal/store/moves.go", "figwal/disk"], ["internal/store/moves.go", "figwal/xwal"]]}, {"from": "federation-1", "to": "base", "kind": "today", "count": 11, "bad": false, "sites": [["internal/peer/directory.go", "api/rpc"], ["internal/peer/door.go", "api/rpc"], ["internal/peer/gossip.go", "api/rpc"], ["internal/peer/link.go", "api/rpc"], ["internal/peer/peertest/issuer.go", "internal/config"], ["internal/peer/peertest/pki.go", "internal/config"], ["internal/peer/static.go", "internal/config"], ["internal/troupe/apikey.go", "api/rpc"], ["internal/troupe/ledger.go", "api/rpc"], ["internal/troupe/policy.go", "api/rpc"], ["internal/troupe/renewer.go", "api/rpc"]]}, {"from": "federation-1", "to": "host", "kind": "today", "count": 2, "bad": true, "sites": [["internal/peer/door.go", "internal/authz"], ["internal/troupe/apikey.go", "internal/apikey"]]}, {"from": "hierarchy-0", "to": "runtime", "kind": "today", "count": 4, "bad": false, "sites": [["figwal/xwal/detach.go", "figwal/disk"], ["figwal/xwal/detach.go", "figwal/log"], ["figwal/xwal/detach.go", "figwal/segment"], ["figwal/xwal/fork.go", "figwal/disk"]]}, {"from": "hierarchy-1", "to": "base", "kind": "today", "count": 1, "bad": false, "sites": [["internal/store/topology_form.go", "api/form"]]}, {"from": "hierarchy-1", "to": "runtime", "kind": "today", "count": 1, "bad": false, "sites": [["internal/store/lineage.go", "figwal/tree"]]}, {"from": "hierarchy-2", "to": "base", "kind": "today", "count": 2, "bad": false, "sites": [["internal/store/ttl.go", "api/form"], ["internal/store/ttl.go", "api/message"]]}, {"from": "host", "to": "federation-1", "kind": "today", "count": 22, "bad": false, "sites": [["internal/angelus/angelus.go", "internal/peer"], ["internal/angelus/angelus.go", "internal/troupe"], ["internal/angelus/door.go", "internal/peer"], ["internal/angelus/federation.go", "internal/peer"], ["internal/angelus/move.go", "internal/peer"], ["internal/angelus/move_in.go", "internal/peer"], ["internal/angelus/resolve_id.go", "internal/peer"], ["internal/angelus/sandbox_grant.go", "internal/peer"], ["internal/angelus/troupe_apikey.go", "internal/peer"], ["internal/angelus/troupe_apikey.go", "internal/troupe"], ["internal/angelus/troupe_entries.go", "internal/peer"], ["internal/angelus/troupe_entries.go", "internal/troupe"], ["internal/angelus/troupe_members.go", "internal/peer"], ["internal/angelus/troupe_members.go", "internal/troupe"], ["internal/angelus/troupe_policy.go", "internal/peer"], ["internal/angelus/troupe_policy.go", "internal/troupe"], ["internal/angelus/troupe_sign.go", "internal/peer"], ["internal/angelus/troupe_sign.go", "internal/troupe"], ["internal/authz/troupe_policy.go", "internal/troupe"], ["internal/daemon/ledger_form.go", "internal/troupe"], ["internal/daemon/node_door.go", "internal/peer"], ["internal/daemon/node_door.go", "internal/troupe"]]}, {"from": "host", "to": "hierarchy-1", "kind": "today", "count": 1, "bad": false, "sites": [["internal/angelus/topology_clean.go", "internal/topo"]]}, {"from": "runtime", "to": "hierarchy-1", "kind": "today", "count": 2, "bad": true, "sites": [["internal/store/xwal_backend.go", "internal/topo"], ["internal/store/xwal_store.go", "internal/topo"]]}]}</script><script>
 (function(){
-var stage=document.getElementById('stage'),svg=document.getElementById('wires'),panel=document.getElementById('panel');
-var E=JSON.parse(document.getElementById('edges').textContent);
-var NS='http://www.w3.org/2000/svg';
-var graph=document.querySelector('input[name=graph]:checked');graph=graph?graph.value:'today';
-var sel=null,slice=false,all=false;
-function boxes(){return Array.prototype.slice.call(document.querySelectorAll('.box[id^="b-"]'))}
-function key(el){return el.id.slice(2)}
-function ext(k){var b=document.getElementById('b-'+k);return b&&b.dataset.ext==='1'}
-function name(k){var b=document.getElementById('b-'+k);return b?b.querySelector('h3').textContent:k}
-function live(){return E.filter(function(e){return e.kind===graph})}
-function closure(start,dir){
- var es=live(),seen={},q=[start],out={};
+var D=JSON.parse(document.getElementById('graph').textContent);
+var work=document.querySelector('.work'),vp=document.querySelector('.viewport'),cv=document.querySelector('.canvas'),insp=document.getElementById('insp');
+var kind=D.kinds[0],sel=null,selE=null,hover=null,tag=null,zoom=1;
+var nodeEl={},pathEl={},hitEl={},cntEl={};
+document.querySelectorAll('.n').forEach(function(n){nodeEl[n.dataset.id]=n});
+D.edges.forEach(function(e,i){e.i=i;pathEl[i]=document.getElementById('e'+i);hitEl[i]=document.getElementById('h'+i);cntEl[i]=document.getElementById('c'+i)});
+var gEdges=document.getElementById('edges');
+function live(){return D.edges.filter(function(e){return e.kind===kind})}
+function isExt(id){return D.nodes[id]&&D.nodes[id].ext}
+function closure(start,dir){var es=live(),out={},q=[start];
  while(q.length){var n=q.shift();es.forEach(function(e){var a=dir>0?e.from:e.to,b=dir>0?e.to:e.from;
-  if(a===n&&!seen[b]&&b!==start){seen[b]=1;out[b]=1;if(!ext(b))q.push(b)}})}
- return out;
-}
-function rect(el){var r=el.getBoundingClientRect(),s=stage.getBoundingClientRect();return{l:r.left-s.left,t:r.top-s.top,w:r.width,h:r.height}}
-function mk(tag,attrs){var e=document.createElementNS(NS,tag);for(var k in attrs)e.setAttribute(k,attrs[k]);return e}
-function defs(){var d=mk('defs',{});[['dep','#2f5d8a'],['anc','#b0651b'],['bad','#c0392b'],['all','#8a8f98']].forEach(function(c){
- var m=mk('marker',{id:'ah-'+c[0],viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto-start-reverse'});
- m.appendChild(mk('path',{d:'M0 0L10 5L0 10z',fill:c[1]}));d.appendChild(m)});svg.appendChild(d)}
-function draw(){
- while(svg.firstChild)svg.removeChild(svg.firstChild);
- svg.setAttribute('width',stage.scrollWidth);svg.setAttribute('height',stage.scrollHeight);defs();
- var dep=sel?closure(sel,1):{},anc=sel?closure(sel,-1):{};
- var show=live().filter(function(e){
-  if(!sel)return all;
-  var inDep=(e.from===sel||dep[e.from]&&!ext(e.from))&&dep[e.to],inAnc=(e.to===sel||anc[e.to]&&!ext(e.to))&&anc[e.from];
-  return inDep||inAnc;
- }).map(function(e){var g=!sel?'all':((e.from===sel||dep[e.from])&&dep[e.to]?'dep':'anc');return{e:e,g:g}})
- .filter(function(x){var a=document.getElementById('b-'+x.e.from),b=document.getElementById('b-'+x.e.to);return a&&b&&a.offsetParent&&b.offsetParent});
- var ports={};
- show.forEach(function(x){
-  var a=rect(document.getElementById('b-'+x.e.from)),b=rect(document.getElementById('b-'+x.e.to));
-  var down=b.t>=a.t+a.h-2,up=b.t+b.h<=a.t+2;
-  x.sa=down?'b':up?'t':(b.l>a.l?'r':'l');x.sb=down?'t':up?'b':(b.l>a.l?'l':'r');
-  x.a=a;x.b=b;
-  (ports[x.e.from+x.sa]=ports[x.e.from+x.sa]||[]).push([x,'a',b.l+b.w/2]);
-  (ports[x.e.to+x.sb]=ports[x.e.to+x.sb]||[]).push([x,'b',a.l+a.w/2]);
+  if(a===n&&b!==start&&!out[b]){out[b]=1;if(!isExt(b))q.push(b)}})}return out}
+function name(id){return D.nodes[id]?D.nodes[id].label:id}
+function link(id){return '<a href="#" data-go="'+id+'">'+name(id)+'</a>'}
+function li(id,e,extra){return '<li>'+link(id)+(e?'<span class="badge'+(e.bad?' bad':'')+'">'+(kind==='today'?e.count+' import'+(e.count===1?'':'s'):'direct')+(e.bad?', wrong way':'')+'</span>':'')+(extra||'')+'</li>'}
+function render(){
+ var es=live(),focus=!!(sel||selE||hover),dep={},anc={},on={};
+ var root=sel||hover;
+ if(root){dep=closure(root,1);anc=closure(root,-1)}
+ D.edges.forEach(function(e){var vis=e.kind===kind;pathEl[e.i].classList.toggle('hidden',!vis);hitEl[e.i].classList.toggle('hidden',!vis)});
+ es.forEach(function(e){
+  var c=null;
+  if(selE!==null){if(e.i===selE)c='dep'}
+  else if(root){
+   if((e.from===root||dep[e.from]&&!isExt(e.from))&&dep[e.to])c='dep';
+   else if((e.to===root||anc[e.to]&&!isExt(e.to))&&anc[e.from])c='anc';
+  }
+  on[e.i]=c;
  });
- Object.keys(ports).forEach(function(k){var l=ports[k];l.sort(function(p,q){return p[2]-q[2]});
-  l.forEach(function(p,i){var x=p[0],end=p[1],r=x[end],side=end==='a'?x.sa:x.sb,f=(i+1)/(l.length+1);
-   x[end+'p']=side==='b'?[r.l+r.w*f,r.t+r.h]:side==='t'?[r.l+r.w*f,r.t]:side==='r'?[r.l+r.w,r.t+r.h*f]:[r.l,r.t+r.h*f];x[end+'s']=side})});
- show.forEach(function(x){
-  var p=x.ap,q=x.bp,dx=0,dy=0,k=Math.max(40,Math.abs(q[1]-p[1])/2);
-  var c1=x.as==='b'?[p[0],p[1]+k]:x.as==='t'?[p[0],p[1]-k]:x.as==='r'?[p[0]+60,p[1]]:[p[0]-60,p[1]];
-  var c2=x.bs==='t'?[q[0],q[1]-k]:x.bs==='b'?[q[0],q[1]+k]:x.bs==='l'?[q[0]-60,q[1]]:[q[0]+60,q[1]];
-  var direct=x.e.from===sel||x.e.to===sel,col=x.e.bad?'bad':x.g,stroke={dep:'#2f5d8a',anc:'#b0651b',bad:'#c0392b',all:'#8a8f98'}[col];
-  var path=mk('path',{d:'M'+p+' C'+c1+' '+c2+' '+q,fill:'none',stroke:stroke,'stroke-width':!sel?1.2:direct?2.4:1.1,'stroke-opacity':!sel?.5:direct?.95:.35,'marker-end':'url(#ah-'+col+')'});
-  if(x.e.bad)path.setAttribute('stroke-dasharray','6 4');
-  var t=mk('title',{});t.textContent=x.e.label;path.appendChild(t);svg.appendChild(path);
-  if(sel&&direct&&x.e.count>1){var mx=(p[0]+q[0])/2*.5+(c1[0]+c2[0])/2*.5,my=(p[1]+q[1])/2*.5+(c1[1]+c2[1])/2*.5;
-   var tx=mk('text',{x:mx,y:my+4,'text-anchor':'middle','class':'cnt',fill:stroke});tx.textContent=x.e.count;svg.appendChild(tx)}
- });
+ cv.classList.toggle('focus',focus);
+ Object.keys(nodeEl).forEach(function(id){var n=nodeEl[id];
+  var se=selE!==null?D.edges[selE]:null;
+  n.classList.toggle('sel',id===root||(se&&(id===se.from||id===se.to)));
+  n.classList.toggle('dep',!!dep[id]);n.classList.toggle('anc',!!anc[id]);
+  n.classList.toggle('tagged',!!tag&&(D.nodes[id].tags||[]).indexOf(tag)>=0)});
+ var raise=[];
+ D.edges.forEach(function(e){var p=pathEl[e.i],c=on[e.i],direct=c&&(e.from===root||e.to===root||selE===e.i);
+  p.classList.toggle('on',!!c);p.classList.toggle('dep',c==='dep');p.classList.toggle('anc',c==='anc');
+  p.classList.toggle('far',!!c&&!direct);
+  if(cntEl[e.i]){cntEl[e.i].classList.toggle('on',!!direct&&kind==='today');cntEl[e.i].style.color=e.bad?'var(--bad)':c==='anc'?'var(--anc)':'var(--dep)'}
+  if(c)raise.push(p)});
+ raise.forEach(function(p){gEdges.appendChild(p)});
+ if(!hover)panel(dep,anc);
 }
-function list(title,set,cls){
- var ks=Object.keys(set);if(!ks.length)return '<div class="col '+cls+'"><b>'+title+'</b><p class=meta>none</p></div>';
- var es=live(),h='<div class="col '+cls+'"><b>'+title+' ('+ks.length+')</b><ul>';
- ks.sort(function(a,b){return name(a).localeCompare(name(b))}).forEach(function(k){
-  var d=es.filter(function(e){return (e.from===sel&&e.to===k)||(e.to===sel&&e.from===k)})[0];
-  h+='<li><a href="#" data-sel="'+k+'">'+name(k)+'</a>'+(d?' <span class=meta>direct'+(graph==='today'?', '+d.count+' imports':'')+'</span>':'')+(d&&d.bad?' <span class="tag bad">wrong way</span>':'')+'</li>'});
- return h+'</ul></div>';
+function panel(dep,anc){
+ var h='';
+ if(selE!==null){var e=D.edges[selE];
+  h='<div class=k>import</div><h3>'+link(e.from)+' &rarr; '+link(e.to)+'</h3><p class=meta>'+(kind==='today'?e.count+' imports':'target dependency')+(e.bad?' &middot; <b style="color:var(--bad)">wrong way</b>':'')+'</p>';
+  if(e.sites&&e.sites.length){h+='<table><tr><th>file</th><th>imports</th></tr>';e.sites.forEach(function(s){h+='<tr><td><code>'+s[0]+'</code></td><td><code>'+s[1]+'</code></td></tr>'});h+='</table>'}
+ }else if(sel){var n=D.nodes[sel],es=live();
+  h='<div class=k>selected</div><h3>'+n.label+'</h3><p class=meta>'+n.sub+'</p>';
+  var dd=es.filter(function(e){return e.from===sel}),uu=es.filter(function(e){return e.to===sel});
+  h+='<div class=lists><div><div class="k dep">depends on: '+dd.length+' direct, '+Object.keys(dep).length+' in all</div><ul>';
+  dd.sort(function(a,b){return b.count-a.count}).forEach(function(e){h+=li(e.to,e)});
+  Object.keys(dep).filter(function(k){return !dd.some(function(e){return e.to===k})}).forEach(function(k){h+='<li class=meta>'+link(k)+' (through others)</li>'});
+  h+='</ul></div><div><div class="k anc">used by: '+uu.length+' direct, '+Object.keys(anc).length+' in all</div><ul>';
+  uu.sort(function(a,b){return b.count-a.count}).forEach(function(e){h+=li(e.from,e)});
+  Object.keys(anc).filter(function(k){return !uu.some(function(e){return e.from===k})}).forEach(function(k){h+='<li class=meta>'+link(k)+' (through others)</li>'});
+  h+='</ul></div></div>';
+  var det=document.getElementById('detail-'+sel);if(det)h+='<hr>'+det.querySelector('.body').innerHTML;
+ }else if(tag){var c=document.getElementById('card-'+tag);h=c?c.innerHTML:'';
+ }else h=document.getElementById('insp-help').innerHTML;
+ insp.innerHTML=h;
+ insp.querySelectorAll('a[data-go]').forEach(function(a){a.addEventListener('click',function(ev){ev.preventDefault();choose(a.dataset.go)})});
 }
-function apply(){
- var dep=sel?closure(sel,1):{},anc=sel?closure(sel,-1):{};
- boxes().forEach(function(b){var k=key(b),hit=!sel||k===sel||dep[k]||anc[k];
-  b.classList.toggle('sel',k===sel);b.classList.toggle('dep',!!dep[k]);b.classList.toggle('anc',!!anc[k]);
-  b.classList.toggle('dim',!!sel&&!hit);b.style.display=slice&&sel&&!hit?'none':''});
- document.querySelectorAll('.band').forEach(function(bd){var vis=Array.prototype.some.call(bd.querySelectorAll('.box'),function(b){return b.style.display!=='none'});bd.style.display=vis?'':'none'});
- panel.innerHTML=sel?'<div class=cols><div class="col self"><b>selected</b><p>'+name(sel)+'</p><p class=meta>Esc or click it again to clear</p></div>'+list('depends on, transitively',dep,'dep')+list('used by, transitively',anc,'anc')+'</div>':'<p class=meta>Click a box title to select it: what it depends on turns blue, what depends on it turns orange, and only those wires are drawn. Dashed red wires are imports that point the wrong way.</p>';
- panel.querySelectorAll('a[data-sel]').forEach(function(a){a.addEventListener('click',function(ev){ev.preventDefault();pick(a.dataset.sel)})});
- draw();
-}
-function pick(k){sel=sel===k?null:k;clearTag();try{history.replaceState(null,'',sel?'#sel='+sel:location.pathname+location.search)}catch(e){}apply()}
-function clearTag(){document.querySelectorAll('.bar button[data-pick]').forEach(function(o){o.classList.remove('on')});document.querySelectorAll('.card').forEach(function(o){o.classList.remove('on')});document.querySelectorAll('.box').forEach(function(b){b.classList.remove('hl')})}
-boxes().forEach(function(b){b.querySelector('summary').addEventListener('click',function(ev){
- if(ev.target.closest('.tog'))return;ev.preventDefault();pick(key(b))})});
-document.querySelectorAll('input[name=graph]').forEach(function(i){i.addEventListener('change',function(){graph=i.value;apply()})});
-var sl=document.getElementById('slice');if(sl)sl.addEventListener('change',function(){slice=sl.checked;apply()});
-var al=document.getElementById('allw');if(al)al.addEventListener('change',function(){all=al.checked;draw()});
-document.addEventListener('keydown',function(ev){if(ev.key==='Escape'&&sel){sel=null;apply()}});
-var picked=null;
-document.querySelectorAll('.bar button[data-pick]').forEach(function(btn){
- btn.addEventListener('click',function(){
-  var k=btn.dataset.pick;picked=picked===k?null:k;sel=null;apply();
-  document.querySelectorAll('.bar button[data-pick]').forEach(function(o){o.classList.toggle('on',o.dataset.pick===picked)});
-  document.querySelectorAll('.card').forEach(function(o){o.classList.toggle('on',o.id==='card-'+picked)});
-  boxes().forEach(function(bx){var hit=picked&&(bx.dataset.tags||'').split(' ').indexOf(picked)>=0;
-   bx.classList.toggle('hl',!!hit);bx.classList.toggle('dim',!!picked&&!hit)});
- });
-});
-document.querySelectorAll('details').forEach(function(d){d.addEventListener('toggle',draw)});
-var h=/^#sel=(.+)$/.exec(location.hash);if(h&&document.getElementById('b-'+h[1]))sel=h[1];
-addEventListener('resize',draw);addEventListener('load',apply);apply();
+function choose(id){selE=null;tag=null;chips();sel=sel===id?null:id;hover=null;
+ try{history.replaceState(null,'',sel?'#sel='+sel:location.pathname+location.search)}catch(e){}
+ render();if(sel)reveal(nodeEl[sel])}
+function reveal(el){var r=el.getBoundingClientRect(),v=vp.getBoundingClientRect();
+ if(r.left<v.left||r.right>v.right||r.top<v.top||r.bottom>v.bottom){vp.scrollLeft+=r.left-v.left-v.width/2+r.width/2;vp.scrollTop+=r.top-v.top-v.height/2+r.height/2}}
+Object.keys(nodeEl).forEach(function(id){var n=nodeEl[id];
+ n.addEventListener('click',function(ev){ev.stopPropagation();if(moved)return;choose(id)});
+ n.addEventListener('mouseenter',function(){if(!sel&&selE===null){hover=id;render()}});
+ n.addEventListener('mouseleave',function(){if(hover){hover=null;render()}})});
+D.edges.forEach(function(e){hitEl[e.i].addEventListener('click',function(ev){ev.stopPropagation();sel=null;tag=null;chips();selE=selE===e.i?null:e.i;render()})});
+vp.addEventListener('click',function(){if(moved)return;sel=null;selE=null;render()});
+document.querySelectorAll('[data-kind]').forEach(function(b){b.addEventListener('click',function(){kind=b.dataset.kind;
+ document.querySelectorAll('[data-kind]').forEach(function(o){o.classList.toggle('on',o===b)});selE=null;render()})});
+function chips(){document.querySelectorAll('.chip[data-tag]').forEach(function(c){c.classList.toggle('on',c.dataset.tag===tag)})}
+document.querySelectorAll('.chip[data-tag]').forEach(function(c){c.addEventListener('click',function(){tag=tag===c.dataset.tag?null:c.dataset.tag;sel=null;selE=null;chips();render()})});
+document.querySelectorAll('.dsm td[data-e]').forEach(function(td){td.addEventListener('click',function(){sel=null;tag=null;chips();selE=+td.dataset.e;render();vp.scrollIntoView({block:'nearest'})})});
+var q=document.getElementById('find');
+if(q)q.addEventListener('keydown',function(ev){if(ev.key==='Enter'){var v=q.value.toLowerCase();var hit=Object.keys(D.nodes).filter(function(id){return name(id).toLowerCase().indexOf(v)>=0})[0];if(hit){sel=null;choose(hit)}}});
+document.addEventListener('keydown',function(ev){if(ev.key==='Escape'){sel=null;selE=null;tag=null;chips();render()}
+ if(ev.key==='/'&&document.activeElement!==q&&q){ev.preventDefault();q.focus()}});
+function setZoom(z){zoom=Math.max(.3,Math.min(2,z));cv.style.transform='scale('+zoom+')';cv.parentNode.style.width=(D.w*zoom)+'px';cv.parentNode.style.height=(D.h*zoom)+'px'}
+document.querySelectorAll('[data-zoom]').forEach(function(b){b.addEventListener('click',function(){var z=b.dataset.zoom;
+ setZoom(z==='fit'?Math.min(1,(vp.clientWidth-4)/D.w):zoom*(+z))})});
+var moved=false,dragging=null;
+vp.addEventListener('mousedown',function(ev){if(ev.button!==0)return;dragging={x:ev.clientX,y:ev.clientY,l:vp.scrollLeft,t:vp.scrollTop};moved=false});
+addEventListener('mousemove',function(ev){if(!dragging)return;var dx=ev.clientX-dragging.x,dy=ev.clientY-dragging.y;
+ if(Math.abs(dx)+Math.abs(dy)>4){moved=true;vp.classList.add('drag')}vp.scrollLeft=dragging.l-dx;vp.scrollTop=dragging.t-dy});
+addEventListener('mouseup',function(){dragging=null;vp.classList.remove('drag');setTimeout(function(){moved=false},0)});
+var h=/^#sel=(.+)$/.exec(location.hash);if(h&&nodeEl[h[1]])sel=h[1];
+setZoom(Math.max(.8,Math.min(1,(vp.clientWidth-4)/D.w)));render();if(sel)reveal(nodeEl[sel]);
 })();
 </script>
 </main></body></html>
