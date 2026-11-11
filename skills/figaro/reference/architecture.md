@@ -386,27 +386,36 @@ forged call to an unlisted tool is refused. Owner-held does not bind an
 unboxed figaro whose tools include bash or process: those tools reach the
 local door as the owner (issue #57).
 
-**Figaro grants.** `system.grants` narrows what one figaro may do. It is a
+**Figaro scopes.** `system.scopes` narrows what one figaro may do. It is a
 protected key: the owner writes it, or an ancestor figaro through its box
-door, and a figaro writes only grants its own effective set covers. Its value
-is a list of grants in the policy syntax. A figaro's effective set is the
-policy's `[figaros]` ceiling, intersected with `system.grants` of each aria on
+door, and a figaro gives only what its own effective set covers. Its value
+is a list of `verb:selector` entries in the policy syntax. A figaro's effective set is the
+policy's `[figaros]` ceiling, intersected with `system.scopes` of each aria on
 its lineage, top first. An aria that sets none narrows nothing for figaro's
 verbs and holds none of anyone else's: `egress:`, `cred:` and any verb figaro
 does not know reach a figaro only when every aria on its lineage writes them,
-and the ceiling, when set, allows them. A figaro with no grants anywhere holds
+and the ceiling, when set, allows them. A figaro with no scopes anywhere holds
 no such verb. In a set, `aria:self` and `lineage:self`
 mean the aria the set is written on. A call that names a figaro this node holds is
 allowed only when both its principal and the figaro's effective set allow
 it; a call naming no figaro, or one held elsewhere, is decided by its
-principal. `figaro grants <id>` shows each level, the ceiling and the
-effective set, and so does `figaro.grants`.
+principal. `figaro scopes <id>` shows each level, the ceiling and the
+effective set, and so does `figaro.scopes`.
 
-A provider must read the effective set from `figaro.grants`, not the raw key:
+`system.grants` is the key's old name. 0.64 reads it when `system.scopes` is
+absent, logging one warning per aria per daemon run; an aria carrying both
+holds nothing; no caller may write `system.grants`, though removing it is
+allowed to those who may write `system.scopes`. `figaro set system.scopes`
+drops `system.grants` in the same write, an import renames it, and a figaro
+leaving its ancestors writes the new key. `figaro grants` and `figaro.grants`
+are the old names of the command and method; each level carries its set under
+both `scopes` and `grants`.
+
+A provider must read the effective set from `figaro.scopes`, not the raw key:
 the key holds only that aria's own narrowing. A `*` verb means figaro's verbs
 only, never `egress:` or `cred:`, whoever writes it; so that no reader takes it
-for more, `figaro.grants` spells every `*` verb out as figaro's verbs, one
-grant each. A value that does not parse is
+for more, `figaro.scopes` spells every `*` verb out as figaro's verbs, one
+entry each. A value that does not parse is
 refused on write, and one stored before holds nothing. A figaro that moves to
 another node writes its effective set into its own key first, so leaving its
 ancestors behind does not widen it.
@@ -430,9 +439,9 @@ figaro and its effective set. Each refusal at the guard logs one
 `authz: figaro refused` line at info in the daemon's log, with the figaro,
 method, verb and resource; allowed calls log nothing. `[[fence]]` tables are
 gone: a policy that still carries one is refused at load. A fence that denied
-every figaro is the `[figaros]` ceiling without those grants; one that let
+every figaro is the `[figaros]` ceiling without those permissions; one that let
 only some figaros in is the ceiling without them plus those figaros' own
-`system.grants`.
+`system.scopes`.
 
 **The credo is fixed at birth.** `system.credo` is the system block, so a
 change rewrites the head of every request and drops the prompt cache. It is

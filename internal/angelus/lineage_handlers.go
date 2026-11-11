@@ -129,31 +129,32 @@ func (h *handlers) lineage(ctx context.Context, params json.RawMessage) (interfa
 	return out, nil
 }
 
-func (h *handlers) grants(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	var req rpc.GrantsRequest
+func (h *handlers) scopes(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.ScopesRequest
 	if err := json.Unmarshal(params, &req); err != nil {
-		return nil, fmt.Errorf("%s: parse params: %w", rpc.MethodGrants, err)
+		return nil, fmt.Errorf("%s: parse params: %w", rpc.MethodScopes, err)
 	}
 	if err := rpc.ValidateAriaID(req.FigaroID); err != nil {
 		return nil, err
 	}
 	p := h.angelus.Policies
 	if p == nil {
-		return nil, fmt.Errorf("%s: this daemon enforces no policy, so no figaro is narrowed", rpc.MethodGrants)
+		return nil, fmt.Errorf("%s: this daemon enforces no policy, so no figaro is narrowed", rpc.MethodScopes)
 	}
 	g, ok := p.ExplainGrants(req.FigaroID)
 	if !ok {
-		return nil, authz.NotFound(rpc.MethodGrants, req.FigaroID)
+		return nil, authz.NotFound(rpc.MethodScopes, req.FigaroID)
 	}
-	out := rpc.GrantsResponse{FigaroID: req.FigaroID, Effective: authz.ExportGrants(g.Effective), CeilingSet: g.CeilingSet}
+	out := rpc.ScopesResponse{FigaroID: req.FigaroID, Effective: authz.ExportGrants(g.Effective), CeilingSet: g.CeilingSet}
 	if g.CeilingSet {
 		out.Ceiling = authz.ExportGrants(g.Ceiling)
 	}
 	for _, id := range g.Chain {
 		own, set := g.Own[id]
-		level := rpc.GrantsLevel{FigaroID: id, Set: set, Unreadable: slices.Contains(g.Unread, id)}
+		level := rpc.ScopesLevel{FigaroID: id, Set: set, Unreadable: slices.Contains(g.Unread, id)}
 		if set {
-			level.Grants = authz.ExportGrants(own)
+			level.Scopes = authz.ExportGrants(own)
+			level.Grants = level.Scopes
 		}
 		out.Chain = append(out.Chain, level)
 	}

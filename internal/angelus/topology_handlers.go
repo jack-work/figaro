@@ -551,6 +551,12 @@ func importedKeys(p form.Patch) map[string]json.RawMessage {
 			keys[e.Key] = e.New
 		}
 	}
+	if raw, ok := keys[form.RetiredGrantsKey]; ok {
+		if _, both := keys[form.ScopesKey]; !both {
+			keys[form.ScopesKey] = raw
+			delete(keys, form.RetiredGrantsKey)
+		}
+	}
 	return keys
 }
 

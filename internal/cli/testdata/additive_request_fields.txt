@@ -45,7 +45,7 @@ GCApplyRequest.Run
 GCPlanRequest.Selector
 GCRequest.DryRun
 GCUndoRequest.Run
-GrantsRequest.FigaroID
+ScopesRequest.FigaroID
 HelloRequest.Capabilities
 HelloRequest.Node
 HelloRequest.Version

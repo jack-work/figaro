@@ -41,7 +41,11 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 		topValue, ifVersion = merged, version
 	}
 
-	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{top: topValue}, nil)
+	var drop []string
+	if top == form.ScopesKey {
+		drop = []string{form.RetiredGrantsKey}
+	}
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{top: topValue}, drop)
 	resp := mustCallSet(loaded, ariaID, patch, ifVersion)
 	fmt.Fprintf(stderrw, "%s %s = %s (figaro %s)%s\n",
 		resp.verb("set"), keyArg, value, ariaName(resp.figaroID), resp.at())

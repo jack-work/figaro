@@ -73,6 +73,12 @@ capabilities.
   peers it left out, and `ls` says so in one line. An older daemon still
   tries and the CLI prints its warnings as before; an older CLI ignores
   the count.
+- **`figaro.scopes`** (0.64) is the new name of `figaro.grants`, which
+  still answers the same; each chain level carries its set under both
+  `scopes` and `grants`. `figaro scopes` calls `figaro.grants` so it works
+  against an older daemon, and reads either field. A 0.64 daemon refuses
+  writes of `system.grants`; an older CLI's `figaro set system.grants` is
+  refused naming `system.scopes`.
 - **Folding rules.** The CLI folds form deltas with `api/form`. A change to
   how a patch folds (as in 0.52.1 and 0.52.2) bumps `FormDeltaSchema`, so
   an older mirror stops and refetches instead of folding wrongly.

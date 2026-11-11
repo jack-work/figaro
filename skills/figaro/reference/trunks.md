@@ -336,7 +336,7 @@ It holds OVERRIDES, never a full tree, so a lost topology form degrades to
   its patch re-parents the figaro's history when the new parent holds its
   fork point, so nothing is copied. Any other caller (a box, admin@auth on
   the web door) and any move that would copy only draws: a history move
-  changes the grant chain and who may write `system.grants`.
+  changes the scope chain and who may write `system.scopes`.
 - **Durability, versioning and the single writer are the form's**, not
   bespoke: reduce purely, append, fsync, publish. `Rev()` is the form
   version, which is what a listing's snapshot check reads.

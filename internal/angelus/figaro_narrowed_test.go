@@ -44,7 +44,7 @@ principals = ["user:owner"]
 		t.Fatal(err)
 	}
 	grants, _ := json.Marshal([]string{"*:aria:" + r.y, "*:aria:self"})
-	if _, err := a.Backend.ApplyForm(r.z, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.GrantsKey: grants}, nil)); err != nil {
+	if _, err := a.Backend.ApplyForm(r.z, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.ScopesKey: grants}, nil)); err != nil {
 		t.Fatal(err)
 	}
 	r.hs = NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())})

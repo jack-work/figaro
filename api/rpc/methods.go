@@ -44,8 +44,10 @@ const (
 	// MethodLineage returns the tree shape and the turn at which two paths
 	// differ, no conversation.
 	MethodLineage = "figaro.lineage"
-	// MethodGrants returns what a figaro may do: its own grants, each
-	// ancestor's, the policy ceiling and the effective set.
+	// MethodScopes returns what a figaro may do: its own scopes, each
+	// ancestor's, the policy ceiling and the effective set. MethodGrants is
+	// its old name.
+	MethodScopes = "figaro.scopes"
 	MethodGrants = "figaro.grants"
 )
 

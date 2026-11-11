@@ -20,7 +20,7 @@ func TestAnImportCarriesOnlyKeysItsCallerMaySet(t *testing.T) {
 		"owner-held wire dir": {"system.environment.figaro_wire_dir": t.TempDir()},
 		"owner-held decide":   {"system.decide.base_url": "http://127.0.0.1:1/"},
 		"protected sandbox":   {"system.sandbox": "judge"},
-		"protected grants":    {form.GrantsKey: []string{"cred:x"}},
+		"protected grants":    {form.ScopesKey: []string{"cred:x"}},
 	} {
 		for _, where := range []string{"form", "outfit"} {
 			req := rpc.ImportRequest{Outfit: "mock", Messages: []message.Message{}}

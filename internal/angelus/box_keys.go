@@ -146,23 +146,30 @@ func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line linea
 	return nil
 }
 
-func checkGrantsParse(before, after form.Snapshot) error {
-	was, _ := before.Get(form.GrantsKey)
-	now, ok := after.Get(form.GrantsKey)
-	if !ok || bytes.Equal(was, now) {
-		return nil
+func changedScopes(before, after form.Snapshot) (json.RawMessage, bool, error) {
+	was, _, _, _ := form.OwnScopes(before)
+	now, _, ok, err := form.OwnScopes(after)
+	if err != nil || !ok || bytes.Equal(was, now) {
+		return nil, false, err
+	}
+	return now, true, nil
+}
+
+func checkScopesParse(before, after form.Snapshot) error {
+	now, changed, err := changedScopes(before, after)
+	if err != nil || !changed {
+		return err
 	}
 	if _, err := authz.DecodeFigaroGrants(now); err != nil {
-		return fmt.Errorf("%s: %w", form.GrantsKey, err)
+		return fmt.Errorf("%s: %w", form.ScopesKey, err)
 	}
 	return nil
 }
 
-func (h *handlers) refuseGrantsBeyondWriter(ctx context.Context, c callerKeys, line lineage, before, after form.Snapshot) error {
-	was, _ := before.Get(form.GrantsKey)
-	now, ok := after.Get(form.GrantsKey)
-	if !ok || bytes.Equal(was, now) {
-		return nil
+func (h *handlers) refuseScopesBeyondWriter(ctx context.Context, c callerKeys, line lineage, before, after form.Snapshot) error {
+	now, changed, err := changedScopes(before, after)
+	if err != nil || !changed {
+		return err
 	}
 	want, err := authz.DecodeFigaroGrants(now)
 	if err != nil {
@@ -171,14 +178,14 @@ func (h *handlers) refuseGrantsBeyondWriter(ctx context.Context, c callerKeys, l
 	f := authz.FigaroOf(ctx)
 	if p := h.angelus.Policies; p != nil && c.boxed && f != "" && h.sandboxOf(f) == c.box {
 		if err := p.HoldsGrants(f, want, line.of); err != nil {
-			return fmt.Errorf("%s: %w", form.GrantsKey, err)
+			return fmt.Errorf("%s: %w", form.ScopesKey, err)
 		}
 		return nil
 	}
 	if len(want) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%s: the writer does not hold %q, and a figaro grants only what it holds", form.GrantsKey, want[0])
+	return fmt.Errorf("%s: the writer does not hold %q, and a figaro gives only what it holds", form.ScopesKey, want[0])
 }
 
 func (h *handlers) ancestorsOf(line lineage) []string {
@@ -303,10 +310,13 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 		return err
 	}
 	after := before.Apply(*patch)
-	if err := form.CheckGrants(after); err != nil {
+	if err := form.RefuseRetiredGrantsWrite(before, after); err != nil {
 		return err
 	}
-	if err := checkGrantsParse(before, after); err != nil {
+	if err := form.CheckScopes(after); err != nil {
+		return err
+	}
+	if err := checkScopesParse(before, after); err != nil {
 		return err
 	}
 	c := h.callerKeysOf(ctx)
@@ -324,7 +334,7 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 			return err
 		}
 	}
-	return h.refuseGrantsBeyondWriter(ctx, c, line, before, after)
+	return h.refuseScopesBeyondWriter(ctx, c, line, before, after)
 }
 
 func (h *handlers) formAccess(ctx context.Context, id string, params json.RawMessage) *rpc.FormAccess {
@@ -355,7 +365,7 @@ func (h *handlers) callerOwns(ctx context.Context) bool {
 func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, params json.RawMessage) error {
 	_, boxed := callerBox(ctx)
 	owner := !boxed && h.callerOwns(ctx)
-	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retirement")) && !bytes.Contains(params, []byte("grants")) && !bytes.ContainsRune(params, '\\') {
+	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retirement")) && !bytes.Contains(params, []byte("grants")) && !bytes.Contains(params, []byte("scopes")) && !bytes.ContainsRune(params, '\\') {
 		return nil
 	}
 	var patch *form.Patch
@@ -446,9 +456,13 @@ func (h *handlers) carryNarrowing(id string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := h.angelus.Backend.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.GrantsKey: raw}, nil)); err != nil {
-		return fmt.Errorf("writing the grants its ancestors narrowed it to: %w", err)
+	snap, err := h.angelus.Backend.FormState(id)
+	if err != nil {
+		return err
 	}
-	slog.Info("grants: a figaro leaving its ancestors carries their narrowing", "id", id, "grants", eff.String())
+	if _, err := h.angelus.Backend.ApplyForm(id, form.Build(snap, map[string]json.RawMessage{form.ScopesKey: raw}, []string{form.RetiredGrantsKey})); err != nil {
+		return fmt.Errorf("writing the scopes its ancestors narrowed it to: %w", err)
+	}
+	slog.Info("scopes: a figaro leaving its ancestors carries their narrowing", "id", id, "scopes", eff.String())
 	return nil
 }

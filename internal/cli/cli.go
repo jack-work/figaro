@@ -1800,11 +1800,12 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:    "grants",
+		Name:    "scopes",
+		Aliases: []string{"grants"},
 		Group:   "Session",
 		Short:   "Show what an aria may do",
-		Usage:   "grants [<id> | --id <id>] [-j]",
-		Long:    "Prints the aria's effective grants (what figaro enforces on calls that\nname it, and what a sandbox provider should read), the policy's [figaros]\nceiling, and the system.grants each aria on its lineage sets, top first.\nEffective is the ceiling, intersected with each set down to this aria.\nAn aria that sets none narrows nothing for figaro's verbs and holds no\nother verb (egress, cred).\n\n  -j/--json   emit the answer as JSON",
+		Usage:   "scopes [<id> | --id <id>] [-j]",
+		Long:    "Prints the aria's effective scopes (what figaro enforces on calls that\nname it, and what a sandbox provider should read), the policy's [figaros]\nceiling, and the system.scopes each aria on its lineage sets, top first.\ngrants is the command's old name.\nEffective is the ceiling, intersected with each set down to this aria.\nAn aria that sets none narrows nothing for figaro's verbs and holds no\nother verb (egress, cred).\n\n  -j/--json   emit the answer as JSON",
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
@@ -1812,7 +1813,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit the answer as JSON"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
-			runGrants(ctx.Extra.(*config.Loaded), ctx.Flag("id"), ctx.Args, ctx.BoolFlag("json"))
+			runScopes(ctx.Extra.(*config.Loaded), ctx.Flag("id"), ctx.Args, ctx.BoolFlag("json"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
