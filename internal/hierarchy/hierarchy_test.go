@@ -21,6 +21,8 @@ type fakeEngine struct {
 	writes   int
 	removed  []string
 	pins     map[string]string
+
+	component map[string][]string
 }
 
 func chain() *fakeEngine {
@@ -87,6 +89,13 @@ func (f *fakeEngine) StorageOrphans(id string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func (f *fakeEngine) Component(id string) ([]string, error) {
+	if f.component != nil {
+		return f.component[id], nil
+	}
+	return []string{id}, nil
 }
 
 func (f *fakeEngine) Placement(id string) (string, int64) {
@@ -310,5 +319,26 @@ func TestAReapRunsItsCommitOnTheDerivedSet(t *testing.T) {
 		func(hierarchy.Plan) error { t.Fatal("a reap of a stale set ran its commit"); return nil })
 	if !errors.Is(err, hierarchy.ErrPlanMismatch) {
 		t.Fatalf("reap of a stale set = %v, want ErrPlanMismatch", err)
+	}
+}
+
+// n3: a departure takes the component the store holds for its root, not the
+// list its caller names; a list that disagrees is refused.
+func TestADepartureTakesTheComponentTheStoreHolds(t *testing.T) {
+	f := chain()
+	f.component = map[string][]string{"X": {"X", "C", "D"}}
+	h := hierarchy.New(f, hierarchytest.Open{})
+	commit := func(hierarchy.Plan) error { return nil }
+	_, err := h.Under(context.Background(), hierarchy.System, hierarchy.Plan{Op: hierarchy.Depart, Node: "X", Delete: []string{"X", "C"}}, commit)
+	if !errors.Is(err, hierarchy.ErrPlanMismatch) {
+		t.Fatalf("a departure naming less than its component = %v, want ErrPlanMismatch", err)
+	}
+	p, err := h.Under(context.Background(), hierarchy.System, hierarchy.Plan{Op: hierarchy.Depart, Node: "X"}, commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(p.Delete)
+	if len(p.Delete) != 3 || p.Delete[0] != "C" || p.Delete[1] != "D" || p.Delete[2] != "X" {
+		t.Fatalf("departure took %v, want C D X", p.Delete)
 	}
 }

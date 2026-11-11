@@ -104,6 +104,14 @@ func (e *hierarchyEngine) Placement(id string) (string, int64) {
 	return zone, e.b.deadlineOf(id)
 }
 
+func (e *hierarchyEngine) Component(id string) ([]string, error) {
+	c, err := e.b.Component(id)
+	if err != nil {
+		return nil, err
+	}
+	return c.TrunkIDs(), nil
+}
+
 func (e *hierarchyEngine) WriteDrawn(set map[string]string, remove []string) error {
 	w, ok := e.s().tree.(edgeWriter)
 	if !ok {

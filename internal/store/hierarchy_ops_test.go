@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/hierarchy/hierarchytest"
 )
@@ -30,6 +31,10 @@ func (b *XwalBackend) Move(id, under string) error {
 }
 
 type treeEngine struct{ x *TopologyTree }
+
+func (e treeEngine) Component(string) ([]string, error) {
+	return nil, errors.New("tree engine: no move components")
+}
 
 func (e treeEngine) Version() hierarchy.Version { return hierarchy.Version{Drawn: e.x.Rev()} }
 

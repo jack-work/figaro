@@ -179,6 +179,7 @@ type Engine interface {
 	Overrides() map[string]string
 	DeleteSet(id string) []string
 	StorageOrphans(id string) []string
+	Component(id string) ([]string, error)
 	Placement(id string) (zone string, deadlineMS int64)
 	WriteDrawn(set map[string]string, remove []string) error
 	MoveStorage(id, under string) error
@@ -532,7 +533,7 @@ func (h *Hierarchy) derive(p Plan) (Plan, error) {
 	case Reap:
 		out.Delete, _, err = h.deriveDelete(p.Node, true)
 	case Depart:
-		out.Delete, out.Moves, err = h.deriveDepart(p.Delete)
+		out.Delete, out.Moves, err = h.deriveDepart(p.Node)
 	default:
 		return out, fmt.Errorf("hierarchy: unknown op %d", p.Op)
 	}
@@ -802,16 +803,21 @@ func (h *Hierarchy) deriveDelete(id string, recursive bool) ([]string, []Move, e
 	return taken, moves, nil
 }
 
-func (h *Hierarchy) deriveDepart(ids []string) ([]string, []Move, error) {
-	if len(ids) == 0 {
-		return nil, nil, errors.New("depart: no nodes named")
+func (h *Hierarchy) deriveDepart(root string) ([]string, []Move, error) {
+	if _, ok := h.eng.Node(root); !ok {
+		return nil, nil, fmt.Errorf("depart: no node %q", root)
 	}
-	gone := make(map[string]bool, len(ids))
-	for _, id := range ids {
-		if _, ok := h.eng.Node(id); !ok {
-			return nil, nil, fmt.Errorf("depart: no node %q", id)
+	component, err := h.eng.Component(root)
+	if err != nil {
+		return nil, nil, fmt.Errorf("depart %s: %w", root, err)
+	}
+	var ids []string
+	gone := make(map[string]bool, len(component))
+	for _, id := range component {
+		if _, ok := h.eng.Node(id); ok {
+			ids = append(ids, id)
+			gone[id] = true
 		}
-		gone[id] = true
 	}
 	var moves []Move
 	for child, up := range h.eng.Overrides() {
@@ -821,7 +827,7 @@ func (h *Hierarchy) deriveDepart(ids []string) ([]string, []Move, error) {
 		moves = append(moves, Move{Node: child, From: up, To: h.home(child, gone), Tree: Drawn, Rehome: true})
 	}
 	sort.Slice(moves, func(i, j int) bool { return moves[i].Node < moves[j].Node })
-	return slices.Clone(ids), moves, nil
+	return ids, moves, nil
 }
 
 func (h *Hierarchy) forgetDeparted(p Plan) error {
