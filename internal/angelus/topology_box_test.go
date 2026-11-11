@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,6 +12,8 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro/wire"
 )
 
@@ -171,5 +174,9 @@ func TestABoxMoveIsDrawnOnlyAndLeavesGrantsAlone(t *testing.T) {
 	}
 	if after, _ := d.a.Policies.Effective(a); fmt.Sprint(after) != fmt.Sprint(before) {
 		t.Fatalf("A's effective grants moved from %v to %v", before, after)
+	}
+	chain, _ := angelus.StoreFacts(d.backend).(authz.FigaroFacts).Ancestry(a)
+	if slices.Contains(chain, f) {
+		t.Fatalf("F became an ancestor of A, so it may write A's system.grants: %v", chain)
 	}
 }

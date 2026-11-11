@@ -332,6 +332,11 @@ It holds OVERRIDES, never a full tree, so a lost topology form degrades to
 - **A promote is ONE patch naming two edges**, so the pair lands together or
   not at all. The `trunks.json` it replaces rewrote the whole document per
   edit and could half-land.
+- **Only the owner's patch moves history.** The owner is the peercred self;
+  its patch re-parents the figaro's history when the new parent holds its
+  fork point, so nothing is copied. Any other caller (a box, admin@auth on
+  the web door) and any move that would copy only draws: a history move
+  changes the grant chain and who may write `system.grants`.
 - **Durability, versioning and the single writer are the form's**, not
   bespoke: reduce purely, append, fsync, publish. `Rev()` is the form
   version, which is what a listing's snapshot check reads.
