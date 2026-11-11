@@ -208,6 +208,20 @@ func (c *Angelus) Demote(ctx context.Context, figaroID, prefer string) (*rpc.Dem
 	return &resp, err
 }
 
+func (c *Angelus) Parked(ctx context.Context, parent string) (*rpc.ParkedResponse, error) {
+	var resp rpc.ParkedResponse
+	err := c.call(ctx, rpc.MethodParked, rpc.ParkedRequest{FigaroID: parent}, &resp)
+	return &resp, err
+}
+
+func (c *Angelus) Accept(ctx context.Context, parent, id string) error {
+	return c.call(ctx, rpc.MethodAccept, rpc.ConsentRequest{FigaroID: parent, ID: id}, &rpc.ConsentResponse{})
+}
+
+func (c *Angelus) Refuse(ctx context.Context, parent, id string) error {
+	return c.call(ctx, rpc.MethodRefuse, rpc.ConsentRequest{FigaroID: parent, ID: id}, &rpc.ConsentResponse{})
+}
+
 func (c *Angelus) Import(ctx context.Context, req rpc.ImportRequest) (*rpc.ImportResponse, error) {
 	var resp rpc.ImportResponse
 	err := c.call(ctx, rpc.MethodImport, req, &resp)

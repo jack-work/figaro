@@ -13,10 +13,11 @@ const (
 	VerbAdmin  Verb = "admin"
 	VerbUse    Verb = "use"
 	VerbJoin   Verb = "join"
+	VerbAdopt  Verb = "adopt"
 )
 
 func Verbs() []Verb {
-	return []Verb{VerbRead, VerbListen, VerbSend, VerbFork, VerbSet, VerbCreate, VerbKill, VerbAdmin, VerbUse, VerbJoin}
+	return []Verb{VerbRead, VerbListen, VerbSend, VerbFork, VerbSet, VerbCreate, VerbKill, VerbAdmin, VerbUse, VerbJoin, VerbAdopt}
 }
 
 const VerbNone Verb = ""
@@ -62,6 +63,10 @@ var methodVerbs = map[string]Verb{
 	MethodCast:    VerbSet,
 	MethodPromote: VerbSet,
 	MethodDemote:  VerbSet,
+
+	MethodParked: VerbRead,
+	MethodAccept: VerbAdopt,
+	MethodRefuse: VerbAdopt,
 
 	MethodCreate:     VerbCreate,
 	MethodFormCreate: VerbCreate,

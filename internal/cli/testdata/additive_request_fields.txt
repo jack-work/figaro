@@ -12,6 +12,8 @@ ConfigureRequest.Body
 ConfigureRequest.DefaultOutfit
 ConfigureRequest.Outfit
 ConfigureRequest.Refresh
+ConsentRequest.FigaroID
+ConsentRequest.ID
 CreateRequest.Cwd
 CreateRequest.Outfits
 CreateRequest.Patch
@@ -105,6 +107,7 @@ NodeResolveRequest.Refs
 NormalizeRequest.Segments
 OutfitsRequest.Fold
 OutfitsRequest.Spec
+ParkedRequest.FigaroID
 PprofArmRequest.Arm
 PromoteRequest.FigaroID
 PromoteRequest.Levels

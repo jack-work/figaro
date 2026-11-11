@@ -209,3 +209,64 @@ func TestADeleteNeverSplitsAReapedGroup(t *testing.T) {
 		}
 	}
 }
+
+const killOnlyPolicy = `
+[roles.owner]
+grants = ["*:*"]
+
+[roles.mover]
+grants = ["kill:*", "adopt:aria:home", "adopt:aria:hers"]
+
+[[bind]]
+role = "owner"
+principals = ["user:1000"]
+
+[[bind]]
+role = "mover"
+principals = ["user:mallory"]
+`
+
+// Rule 3: consent is asked of a receiving aria whose owner differs from the
+// moved node's, and that the caller holds no adopt on. A move home, to the
+// top, onto her own aria or under a parent she may adopt into asks nothing.
+func TestConsentIsAskedOnlyOfAForeignReceivingParent(t *testing.T) {
+	g := topologyGuard(t, killOnlyPolicy)
+	by := guardCaller(jkauthz.KindUser, "mallory", DoorLocal)
+	move := func(to string, edit func(*hierarchy.Move)) hierarchy.Move {
+		m := hierarchy.Move{Node: "a", From: "s", To: to, Tree: hierarchy.Drawn, NodeOwner: "user:mallory", ToOwner: guardOwner.String(), ToAria: true}
+		if edit != nil {
+			edit(&m)
+		}
+		return m
+	}
+	check := func(ms ...hierarchy.Move) (hierarchy.Verdict, error) {
+		return g.Check(context.Background(), by, hierarchy.Plan{Op: hierarchy.Arrange, Moves: ms})
+	}
+	free := map[string]hierarchy.Move{
+		"home":          move("up", func(m *hierarchy.Move) { m.Home = true }),
+		"top":           move("", func(m *hierarchy.Move) { m.ToAria = false; m.ToOwner = "" }),
+		"one owner":     move("theirs", func(m *hierarchy.Move) { m.ToOwner = "user:mallory" }),
+		"adopt granted": move("home", nil),
+	}
+	for name, m := range free {
+		if v, err := check(m); err != nil || v.Park != "" {
+			t.Errorf("%s: verdict %+v, err %v; want applied", name, v, err)
+		}
+	}
+	v, err := check(move("q", nil))
+	if err != nil || v.Park != "q" {
+		t.Fatalf("a move under the owner's q = %+v, %v; want parked on q", v, err)
+	}
+	if _, err := check(move("q", nil), move("r", func(m *hierarchy.Move) { m.Node = "b" })); !errors.Is(err, hierarchy.ErrManyParents) {
+		t.Fatalf("two foreign receiving parents = %v, want ErrManyParents", err)
+	}
+	owner := guardCaller(guardOwner.Kind, guardOwner.ID, DoorLocal)
+	accepted := hierarchy.Plan{Op: hierarchy.Arrange, Moves: []hierarchy.Move{move("q", nil)}, Consent: &hierarchy.Consent{Parent: "q", By: owner}}
+	if v, err := g.Check(context.Background(), by, accepted); err != nil || v.Park != "" {
+		t.Fatalf("the owner's consent on q = %+v, %v; want applied", v, err)
+	}
+	accepted.Consent.By = by
+	if _, err := g.Check(context.Background(), by, accepted); err == nil {
+		t.Fatal("mallory's own consent on q counted, though she holds no adopt on it")
+	}
+}

@@ -2,11 +2,14 @@ package hierarchy
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
 	"sort"
 	"sync"
+	"time"
 )
 
 type Tree int
@@ -91,6 +94,8 @@ type Move struct {
 	ToOwner        string
 	Rehome         bool
 	WithinLineage  bool
+	ToAria         bool
+	Home           bool
 }
 
 type Version struct {
@@ -112,6 +117,7 @@ type Plan struct {
 	Storage   bool
 	Recursive bool
 	IfVersion Version
+	Consent   *Consent
 
 	Moves  []Move
 	Delete []string
@@ -124,9 +130,37 @@ type Verdict struct {
 	Accepts []string
 }
 
+type Consent struct {
+	Parent string
+	By     Principal
+}
+
 type Guard interface {
 	Check(ctx context.Context, by Principal, p Plan) (Verdict, error)
+	MayConsent(ctx context.Context, by Principal, parent string) error
 }
+
+type Proposal struct {
+	ID      string
+	Parent  string
+	By      Principal
+	Plan    Plan
+	Accepts []string
+	Expires time.Time
+}
+
+const (
+	ProposalTTL        = 24 * time.Hour
+	ProposalsPerParent = 16
+)
+
+type ParkedError struct{ Proposal Proposal }
+
+func (e *ParkedError) Error() string {
+	return fmt.Sprintf("%s %s as proposal %s", ErrParked, e.Proposal.Parent, e.Proposal.ID)
+}
+
+func (e *ParkedError) Is(target error) bool { return target == ErrParked }
 
 type Node struct {
 	ID         string
@@ -164,15 +198,27 @@ var (
 	ErrParked         = errors.New("hierarchy: the plan waits on its receiving parent")
 	ErrNotUnder       = errors.New("hierarchy: this op writes edges and commits only through Apply")
 	ErrNotApply       = errors.New("hierarchy: this op's commit belongs to its caller: use Under")
+	ErrNoProposal     = errors.New("hierarchy: no such proposal waits on that parent")
+	ErrQueueFull      = errors.New("hierarchy: too many proposals already wait on that parent")
+	ErrManyParents    = errors.New("hierarchy: the plan needs consent from more than one receiving parent")
 )
 
 type Hierarchy struct {
-	mu    sync.Mutex
-	eng   Engine
-	guard Guard
+	mu     sync.Mutex
+	eng    Engine
+	guard  Guard
+	now    func() time.Time
+	parked map[string]Proposal
 }
 
-func New(e Engine, g Guard) *Hierarchy { return &Hierarchy{eng: e, guard: g} }
+func New(e Engine, g Guard) *Hierarchy {
+	return &Hierarchy{eng: e, guard: g, now: time.Now, parked: map[string]Proposal{}}
+}
+
+func (h *Hierarchy) WithClock(now func() time.Time) *Hierarchy {
+	h.now = now
+	return h
+}
 
 func (h *Hierarchy) Version() Version {
 	if h == nil || h.eng == nil {
@@ -184,7 +230,12 @@ func (h *Hierarchy) Version() Version {
 func (h *Hierarchy) Check(ctx context.Context, by Principal, p Plan) (Plan, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.checkLocked(ctx, by, p)
+	p.Consent = nil
+	plan, v, err := h.checkLocked(ctx, by, p)
+	if err == nil && v.Park != "" {
+		err = fmt.Errorf("%w %s", ErrParked, v.Park)
+	}
+	return plan, err
 }
 
 func (h *Hierarchy) Apply(ctx context.Context, by Principal, p Plan) (Plan, error) {
@@ -193,11 +244,114 @@ func (h *Hierarchy) Apply(ctx context.Context, by Principal, p Plan) (Plan, erro
 	if p.Op.committedByCaller() {
 		return p, fmt.Errorf("%w: %s", ErrNotApply, p.Op)
 	}
-	plan, err := h.checkLocked(ctx, by, p)
+	p.Consent = nil
+	plan, v, err := h.checkLocked(ctx, by, p)
 	if err != nil {
 		return plan, err
 	}
+	if v.Park != "" {
+		return plan, h.park(by, plan, v)
+	}
 	return h.commit(plan)
+}
+
+func (h *Hierarchy) park(by Principal, plan Plan, v Verdict) error {
+	if plan.Op.Deletes() || plan.Op == Restore {
+		return fmt.Errorf("%w %s: %s never waits", ErrParked, v.Park, plan.Op)
+	}
+	h.expireLocked()
+	waiting := 0
+	for _, p := range h.parked {
+		if p.Parent == v.Park {
+			waiting++
+		}
+	}
+	if waiting >= ProposalsPerParent {
+		return fmt.Errorf("%w: %s holds %d", ErrQueueFull, v.Park, waiting)
+	}
+	var b [6]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return err
+	}
+	prop := Proposal{
+		ID:      hex.EncodeToString(b[:]),
+		Parent:  v.Park,
+		By:      by,
+		Plan:    plan,
+		Accepts: slices.Clone(v.Accepts),
+		Expires: h.now().Add(ProposalTTL),
+	}
+	h.parked[prop.ID] = prop
+	return &ParkedError{Proposal: prop}
+}
+
+func (h *Hierarchy) expireLocked() {
+	now := h.now()
+	for id, p := range h.parked {
+		if !now.Before(p.Expires) {
+			delete(h.parked, id)
+		}
+	}
+}
+
+func (h *Hierarchy) Parked(parent string) []Proposal {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.expireLocked()
+	var out []Proposal
+	for _, p := range h.parked {
+		if p.Parent == parent {
+			out = append(out, p)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Expires.Before(out[j].Expires) })
+	return out
+}
+
+func (h *Hierarchy) proposalLocked(ctx context.Context, by Principal, parent, id string) (Proposal, error) {
+	if h == nil || h.guard == nil {
+		return Proposal{}, ErrNoGuard
+	}
+	h.expireLocked()
+	prop, ok := h.parked[id]
+	if !ok || prop.Parent != parent {
+		return Proposal{}, ErrNoProposal
+	}
+	if err := h.guard.MayConsent(ctx, by, parent); err != nil {
+		return Proposal{}, err
+	}
+	return prop, nil
+}
+
+func (h *Hierarchy) Accept(ctx context.Context, by Principal, parent, id string) (Plan, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	prop, err := h.proposalLocked(ctx, by, parent, id)
+	if err != nil {
+		return Plan{}, err
+	}
+	delete(h.parked, id)
+	asked := prop.Plan
+	asked.Moves, asked.Delete, asked.Version = nil, nil, Version{}
+	asked.Consent = &Consent{Parent: parent, By: by}
+	plan, v, err := h.checkLocked(ctx, prop.By, asked)
+	if err != nil {
+		return plan, err
+	}
+	if v.Park != "" {
+		return plan, fmt.Errorf("%w %s: the topology changed since %s was proposed", ErrParked, v.Park, id)
+	}
+	return h.commit(plan)
+}
+
+func (h *Hierarchy) Refuse(ctx context.Context, by Principal, parent, id string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, err := h.proposalLocked(ctx, by, parent, id); err != nil {
+		return err
+	}
+	delete(h.parked, id)
+	return nil
 }
 
 func (h *Hierarchy) Under(ctx context.Context, by Principal, p Plan, commit func(Plan) error) (Plan, error) {
@@ -206,9 +360,13 @@ func (h *Hierarchy) Under(ctx context.Context, by Principal, p Plan, commit func
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	plan, err := h.checkLocked(ctx, by, p)
+	p.Consent = nil
+	plan, v, err := h.checkLocked(ctx, by, p)
 	if err != nil {
 		return plan, err
+	}
+	if v.Park != "" {
+		return plan, fmt.Errorf("%w %s: %s never waits", ErrParked, v.Park, plan.Op)
 	}
 	if err := commit(plan); err != nil {
 		return plan, err
@@ -219,24 +377,24 @@ func (h *Hierarchy) Under(ctx context.Context, by Principal, p Plan, commit func
 	return plan, nil
 }
 
-func (h *Hierarchy) checkLocked(ctx context.Context, by Principal, p Plan) (Plan, error) {
+func (h *Hierarchy) checkLocked(ctx context.Context, by Principal, p Plan) (Plan, Verdict, error) {
 	if h == nil || h.guard == nil {
-		return p, ErrNoGuard
+		return p, Verdict{}, ErrNoGuard
 	}
 	if h.eng == nil {
-		return p, ErrUnsupported
+		return p, Verdict{}, ErrUnsupported
 	}
 	now := h.eng.Version()
 	if !p.IfVersion.IsZero() && p.IfVersion != now {
-		return p, fmt.Errorf("%w: at %+v, not %+v", ErrStale, now, p.IfVersion)
+		return p, Verdict{}, fmt.Errorf("%w: at %+v, not %+v", ErrStale, now, p.IfVersion)
 	}
 	plan, err := h.derive(p)
 	if err != nil {
-		return plan, err
+		return plan, Verdict{}, err
 	}
 	plan.Version = now
 	if handed := len(p.Moves) > 0 || p.Delete != nil; handed && !sameEffect(p, plan) {
-		return plan, fmt.Errorf("%w: %s %s", ErrPlanMismatch, p.Op, p.Node)
+		return plan, Verdict{}, fmt.Errorf("%w: %s %s", ErrPlanMismatch, p.Op, p.Node)
 	}
 	v, err := h.guard.Check(ctx, by, plan)
 	if errors.Is(err, ErrDrawnOnly) && hasStorage(plan) {
@@ -244,12 +402,9 @@ func (h *Hierarchy) checkLocked(ctx context.Context, by Principal, p Plan) (Plan
 		v, err = h.guard.Check(ctx, by, plan)
 	}
 	if err != nil {
-		return plan, err
+		return plan, Verdict{}, err
 	}
-	if v.Park != "" {
-		return plan, fmt.Errorf("%w %s", ErrParked, v.Park)
-	}
-	return plan, nil
+	return plan, v, nil
 }
 
 func hasStorage(p Plan) bool {
@@ -353,7 +508,7 @@ func (o *overlay) moves(tree map[string]Tree) []Move {
 
 func (h *Hierarchy) derive(p Plan) (Plan, error) {
 	out := Plan{Op: p.Op, Node: p.Node, Levels: p.Levels, To: p.To, Parents: p.Parents, Restore: p.Restore,
-		Revive: p.Revive, Storage: p.Storage, Recursive: p.Recursive, IfVersion: p.IfVersion}
+		Revive: p.Revive, Storage: p.Storage, Recursive: p.Recursive, IfVersion: p.IfVersion, Consent: p.Consent}
 	var err error
 	switch p.Op {
 	case Promote:
@@ -397,7 +552,10 @@ func (h *Hierarchy) annotate(moves []Move) {
 		}
 		if n, ok := h.eng.Node(m.To); ok {
 			m.ToOwner = n.Owner
+			m.ToAria = n.Aria
 		}
+		up, _ := h.eng.Stored(m.Node)
+		m.Home = m.To != "" && m.To == up
 		m.WithinLineage = h.storedBelow(m.To, m.Node)
 	}
 }

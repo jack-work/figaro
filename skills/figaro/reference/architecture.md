@@ -338,6 +338,18 @@ box (a configured box, one since removed from config, the removed `bwrap`), and 
 the store cannot read is a box too. Lent to `troupe:<name>`, it keeps a
 troupe's reach off the node's boxes.
 
+**Moves and consent.** Promote, demote, `@topology` and placement are plans
+the topology guard checks: `kill` on every node whose position changes, and
+`adopt` on every aria that receives a node, unless that aria and the moved
+node have one owner, or the node goes back under its history parent. Without
+`adopt` the move parks on that parent as a proposal (`figaro adopt <parent>`
+lists them). Someone with `adopt` there accepts or refuses it. Accept checks
+the move again as its proposer, with the grants the proposer holds then. A
+move that needs two parents' consent is refused. Proposals live in memory:
+they lapse after a day, a restart drops them, and each parent holds 16.
+`adopt` must stay out of a troupe policy until every member runs a release
+that knows the verb.
+
 **Sandboxes.** `use` on `sandbox:<name>` is checked on the dressed form at
 create, fork, bind, import and `figaro.set`. A figaro minted by a sandbox
 principal is pinned to that sandbox; a set, a fork's patch or a cast's role

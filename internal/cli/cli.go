@@ -1204,6 +1204,36 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "adopt",
+		Group: "Session",
+		Short: "List, accept or refuse moves waiting on an aria",
+		Usage: "adopt <parent> [-j] | adopt accept <parent> <id> | adopt refuse <parent> <id>",
+		Long: `A move that puts an aria under another one needs adopt on the receiving
+parent. Without it, and when the two have different owners, nothing moves:
+the move waits on that parent as a proposal until someone with adopt on it
+accepts or refuses.
+
+  figaro adopt <parent>               list what waits on it
+  figaro adopt accept <parent> <id>   make the move
+  figaro adopt refuse <parent> <id>   drop it for good
+
+Accepting re-checks the move as its proposer, with the grants the proposer
+holds now. If the tree changed meanwhile, the move is planned again, and it
+is refused if it would now need some other parent's consent. Proposals live
+in the daemon's memory: they lapse after a day, and a restart drops them.`,
+		ArgsMin: 1,
+		ArgsMax: 3,
+		Flags: []cmdkit.FlagDef{
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output (list)"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			runAdopt(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "demote",
 		Group: "Session",
 		Short: "Sink an aria to a leaf so deleting it takes nothing else",

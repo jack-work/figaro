@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/hierarchy"
@@ -77,7 +78,63 @@ func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hier
 	if err := g.killFloor(caller, p); err != nil {
 		return hierarchy.Verdict{}, err
 	}
-	return hierarchy.Verdict{}, g.storage(caller, p)
+	if err := g.storage(caller, p); err != nil {
+		return hierarchy.Verdict{}, err
+	}
+	return g.consent(ctx, caller, p)
+}
+
+func (g TopologyGuard) MayConsent(_ context.Context, by hierarchy.Principal, parent string) error {
+	if by.System {
+		return fmt.Errorf("adopt on %s: the daemon consents to nothing", Aria(parent))
+	}
+	c, ok := by.Subject.(TopologyCaller)
+	if !ok {
+		return fmt.Errorf("adopt on %s: no caller to authorize", Aria(parent))
+	}
+	return g.allow(c, rpc.VerbAdopt, parent)
+}
+
+func (g TopologyGuard) consent(ctx context.Context, c TopologyCaller, p hierarchy.Plan) (hierarchy.Verdict, error) {
+	var waits []string
+	var accepts []string
+	for _, m := range p.Moves {
+		if m.Rehome || !m.ToAria || m.Home || m.From == m.To && m.Tree == hierarchy.Drawn {
+			continue
+		}
+		if g.sameOwner(m.NodeOwner, m.ToOwner) {
+			continue
+		}
+		if p.Consent != nil && p.Consent.Parent == m.To {
+			if err := g.MayConsent(ctx, p.Consent.By, m.To); err != nil {
+				return hierarchy.Verdict{}, err
+			}
+			continue
+		}
+		if g.allow(c, rpc.VerbAdopt, m.To) == nil || slices.Contains(waits, m.To) {
+			continue
+		}
+		waits = append(waits, m.To)
+		accepts = append(accepts, g.ownerText(m.ToOwner), m.To)
+	}
+	switch len(waits) {
+	case 0:
+		return hierarchy.Verdict{}, nil
+	case 1:
+		return hierarchy.Verdict{Park: waits[0], Accepts: accepts}, nil
+	}
+	return hierarchy.Verdict{}, fmt.Errorf("%s: %w: %v", p.Op, hierarchy.ErrManyParents, waits)
+}
+
+func (g TopologyGuard) ownerText(minter string) string {
+	if minter == "" {
+		return g.owner().String()
+	}
+	return minter
+}
+
+func (g TopologyGuard) sameOwner(a, b string) bool {
+	return g.ownerText(a) == g.ownerText(b)
 }
 
 func (g TopologyGuard) system(ctx context.Context, p hierarchy.Plan) error {
