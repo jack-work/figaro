@@ -338,6 +338,7 @@ func Run() {
 	} else {
 		defer otelShutdown(context.Background())
 	}
+	applyDaemonPath(loaded.AngelusPath())
 
 	applyStoreSettings(loaded)
 

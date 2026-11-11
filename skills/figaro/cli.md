@@ -423,7 +423,14 @@ runs in its own transient scope, `figaro-angelus-<instance>-<pid>.scope`
 (`figaro-angelus-dev-...` from a dev shell), so it outlives the unit or shell
 that started it; with no user manager, or with `FIGARO_NO_ANGELUS_SCOPE=1`
 (every test run sets it), it stays in the caller's cgroup, detached by setsid
-alone. A daemon a unit runs itself (`figaro --angelus`) is never moved. A CLI
+alone. A daemon a unit runs itself (`figaro --angelus`) is never moved.
+
+The daemon's PATH, which every tool shell gets, does not come from the
+command that happened to start it. `[angelus] path = ["~/go/bin", "/usr/bin"]`
+in config.toml wins; else the daemon on the default runtime dir takes the user
+manager's PATH whole (`systemctl --user show-environment`, read over the
+manager's socket owned by this uid); else it keeps its own, as a dev-shell or
+system-service daemon does. The log says which, once, as `angelus PATH`. A CLI
 pointed at another daemon (`FIGARO_TROUPE`
 or `[cli] troupe`, naming `troupes/<name>.toml` or giving a `unix://` or `wss://`
 URL) never spawns one.
