@@ -157,7 +157,10 @@ func (h *handlers) importCommit(ctx context.Context, params json.RawMessage) (an
 	if err != nil {
 		return nil, err
 	}
-	metas, err := qualifyMinters(req.Metas, a.From, h.angelus.Backend.NodeID())
+	metas, err := qualifyMinters(req.Metas, a.From, h.angelus.Backend.NodeID(), func(id string) bool {
+		_, left := mv.Moves().Tombstone(id)
+		return left
+	})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", rpc.MethodImportCommit, err)
 	}
@@ -284,7 +287,7 @@ func (h *handlers) nodeLearn(ctx context.Context, params json.RawMessage) (any, 
 	return struct{}{}, nil
 }
 
-func qualifyMinters(metas map[string]json.RawMessage, from, self string) (map[string]json.RawMessage, error) {
+func qualifyMinters(metas map[string]json.RawMessage, from, self string, leftFromHere func(id string) bool) (map[string]json.RawMessage, error) {
 	out := make(map[string]json.RawMessage, len(metas))
 	for id, raw := range metas {
 		var fields map[string]json.RawMessage
@@ -297,7 +300,7 @@ func qualifyMinters(metas map[string]json.RawMessage, from, self string) (map[st
 				return nil, fmt.Errorf("meta for %s: minted_by: %w", id, err)
 			}
 		}
-		fields["minted_by"], _ = json.Marshal(qualifyMinter(minted, from, self))
+		fields["minted_by"], _ = json.Marshal(qualifyMinter(minted, from, self, leftFromHere(id)))
 		b, err := json.Marshal(fields)
 		if err != nil {
 			return nil, err
@@ -307,14 +310,14 @@ func qualifyMinters(metas map[string]json.RawMessage, from, self string) (map[st
 	return out, nil
 }
 
-func qualifyMinter(minted, from, self string) string {
+func qualifyMinter(minted, from, self string, returning bool) string {
 	p, err := jkauthz.ParsePrincipal(minted)
 	switch {
 	case minted == "" || err != nil:
 		return jkauthz.Principal{Kind: jkauthz.KindNode, ID: from}.String()
 	case p.Node == "":
 		p.Node = from
-	case p.Node == self:
+	case p.Node == self && returning:
 		p.Node = ""
 	}
 	return p.String()
