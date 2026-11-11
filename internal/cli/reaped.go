@@ -113,11 +113,12 @@ func runReaped(loaded *config.Loaded, args []string, keep, asJSON bool) error {
 				return nil
 			}
 			if verb == "purge" {
-				if _, kerr := acli.Kill(ctx, rpc.KillRequest{FigaroID: g.Root, Recursive: true, Now: true}); kerr != nil {
+				resp, kerr := acli.Kill(ctx, rpc.KillRequest{FigaroID: g.Root, Recursive: true, Now: true})
+				if kerr != nil {
 					err = fmt.Errorf("reaped purge: %w", kerr)
 					return nil
 				}
-				fmt.Fprintf(stderrw, "purged %s and %d under it\n", ariaName(g.Root), len(g.Nodes)-1)
+				fmt.Fprintf(stderrw, "purged %s and %d under it\n", ariaName(g.Root), max(len(resp.Removed)-1, 0))
 				return nil
 			}
 			err = restoreReaped(ctx, acli, g, keep)

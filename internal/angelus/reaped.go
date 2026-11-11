@@ -93,6 +93,15 @@ func (a *Angelus) reapedGroups() []reapedGroup {
 	return groupReaped(rk.Reaped())
 }
 
+func (a *Angelus) reapedGroupOf(root string) ([]string, bool) {
+	for _, g := range a.reapedGroups() {
+		if g.root == root {
+			return g.nodes, true
+		}
+	}
+	return nil, false
+}
+
 func (a *Angelus) mayBePastGrace(g reapedGroup, now time.Time) bool {
 	grace := a.Settings.ReapedGrace()
 	least, boxed := a.Settings.ShortestBoxPurgeGrace()

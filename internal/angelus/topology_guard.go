@@ -95,7 +95,7 @@ func topologyPrincipal(ctx context.Context) (hierarchy.Principal, error) {
 }
 
 func deleteSetChanged(err error) error {
-	if errors.Is(err, hierarchy.ErrPlanMismatch) && !errors.Is(err, store.ErrDeleteSetChanged) {
+	if (errors.Is(err, hierarchy.ErrPlanMismatch) || errors.Is(err, authz.ErrSplitsReapedGroup)) && !errors.Is(err, store.ErrDeleteSetChanged) {
 		return fmt.Errorf("%w: %w", store.ErrDeleteSetChanged, err)
 	}
 	return err

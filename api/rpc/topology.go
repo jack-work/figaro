@@ -198,6 +198,7 @@ type ModelsPickResponse struct {
 }
 
 type KillResponse struct {
-	OK      bool  `json:"ok"`
-	PurgeAt int64 `json:"purge_at,omitempty"`
+	OK      bool     `json:"ok"`
+	PurgeAt int64    `json:"purge_at,omitempty"`
+	Removed []string `json:"removed,omitempty"`
 }

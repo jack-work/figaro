@@ -721,6 +721,7 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 		return nil, err
 	}
 	checked, err := h.angelus.topology().Check(ctx, by, hierarchy.Plan{Op: hierarchy.Kill, Node: req.FigaroID, Recursive: true})
+	err = deleteSetChanged(err)
 	if err != nil {
 		if req.Recursive {
 			return nil, fmt.Errorf("kill -r %s: %w", req.FigaroID, err)
@@ -750,10 +751,14 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	if !req.Recursive && len(expect) > 1 {
 		expect = nil
 	}
-	if err := h.removeAria(ctx, by, hierarchy.Kill, req.FigaroID, req.Recursive, expect); err != nil {
+	if group, reaped := h.angelus.reapedGroupOf(req.FigaroID); reaped && !sameMembers(group, checked.Delete) {
+		return nil, fmt.Errorf("%w: %s was reaped with %v, and a delete of it now takes %v; nothing was purged", store.ErrDeleteSetChanged, req.FigaroID, group, checked.Delete)
+	}
+	removed, err := h.removeAria(ctx, by, hierarchy.Kill, req.FigaroID, req.Recursive, expect)
+	if err != nil {
 		return nil, err
 	}
-	return rpc.KillResponse{OK: true}, nil
+	return rpc.KillResponse{OK: true, Removed: removed}, nil
 }
 
 // RemoveAria is the whole of a deletion: agent, background sessions, bytes, endpoint.
@@ -762,11 +767,13 @@ func (h *handlers) RemoveAria(id string, recursive bool) error {
 	if recursive {
 		op = h.systemDelete(id)
 	}
-	return h.removeAria(context.Background(), hierarchy.System, op, id, recursive, nil)
+	_, err := h.removeAria(context.Background(), hierarchy.System, op, id, recursive, nil)
+	return err
 }
 
 func (h *handlers) RemoveAriaIf(id string, expect []string) error {
-	return h.removeAria(context.Background(), hierarchy.System, h.systemDelete(id), id, true, expect)
+	_, err := h.removeAria(context.Background(), hierarchy.System, h.systemDelete(id), id, true, expect)
+	return err
 }
 
 func (h *handlers) systemDelete(id string) hierarchy.Op {
@@ -776,18 +783,18 @@ func (h *handlers) systemDelete(id string) hierarchy.Op {
 	return hierarchy.Sweep
 }
 
-func (h *handlers) removeAria(ctx context.Context, by hierarchy.Principal, op hierarchy.Op, id string, recursive bool, expect []string) error {
+func (h *handlers) removeAria(ctx context.Context, by hierarchy.Principal, op hierarchy.Op, id string, recursive bool, expect []string) ([]string, error) {
 	var plan hierarchy.Plan
 	if h.angelus.Backend != nil {
 		var err error
 		plan, err = h.angelus.topology().Check(ctx, by, hierarchy.Plan{Op: op, Node: id, Recursive: recursive, Delete: expect})
 		if err != nil {
-			return deleteSetChanged(err)
+			return nil, deleteSetChanged(err)
 		}
 	}
 	if h.angelus.Registry.Get(id) != nil {
 		if err := h.angelus.Registry.Kill(id); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -796,11 +803,13 @@ func (h *handlers) removeAria(ctx context.Context, by hierarchy.Principal, op hi
 		slog.Info("killed aria sessions", "id", id, "sessions", n)
 	}
 
+	var removed []string
 	if h.angelus.Backend != nil {
 		applied, err := h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: op, Node: id, Recursive: recursive, Delete: plan.Delete, Moves: plan.Moves})
 		if err != nil {
-			return deleteSetChanged(err)
+			return nil, deleteSetChanged(err)
 		}
+		removed = orSelf(applied.Delete, id)
 		for _, n := range applied.Delete {
 			h.angelus.held.release(n)
 			if err := h.angelus.Spool.Remove(n); err != nil {
@@ -814,8 +823,8 @@ func (h *handlers) removeAria(ctx context.Context, by hierarchy.Principal, op hi
 		hb.Close()
 	}
 
-	slog.Info("killed figaro", "id", id)
-	return nil
+	slog.Info("killed figaro", "id", id, "op", op.String(), "taken", removed)
+	return removed, nil
 }
 
 func mintedBy(ctx context.Context) store.BirthOption {
