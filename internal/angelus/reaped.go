@@ -141,7 +141,14 @@ func (a *Angelus) purge(keeper ttlKeeper, g reapedGroup) error {
 }
 
 func (a *Angelus) liveIn(ids []string, bound map[string][]int, roles map[string]string) (string, string) {
+	isRole := make(map[string]bool, len(roles))
+	for _, role := range roles {
+		isRole[role] = true
+	}
 	for _, id := range ids {
+		if isRole[id] {
+			return id, "role " + id + " is in the set"
+		}
 		if a.Registry.Get(id) != nil {
 			return id, "an agent is live"
 		}
