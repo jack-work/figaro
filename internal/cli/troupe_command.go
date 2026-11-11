@@ -44,7 +44,7 @@ listing. Not yet settled: moves, cross-node answers, policy v2.
                  trusting it; writes this node's certificate and the
                  [troupe], [door.tls] and peercred config, then restart.
                  --delegate all binds troupe:<name> to an all-granting
-                 role in policy.toml, so the troupe's grants apply here;
+                 role in policy.toml, so the troupe's permissions apply here;
                  --delegate none lends nothing. Asked when not given
   leave <name>   this node signs its own leave, the running daemon tells
                  every member, and its troupe keys and config go. Final

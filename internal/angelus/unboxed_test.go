@@ -11,14 +11,14 @@ import (
 
 const unboxedCeilingPolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [[bind]]
 role = "owner"
 principals = ["user:SELF"]
 
 [roles.box]
-grants = [
+permissions = [
   "create:*",
   "use:sandbox:self",
   "read:sandboxed:self", "listen:sandboxed:self", "send:sandboxed:self", "fork:sandboxed:self", "set:sandboxed:self", "kill:sandboxed:self",
@@ -29,7 +29,7 @@ role = "box"
 principals = ["sandbox:judge@local:box"]
 
 [roles.lent]
-grants = ["read:unboxed", "listen:unboxed", "send:unboxed", "fork:unboxed", "set:unboxed"]
+permissions = ["read:unboxed", "listen:unboxed", "send:unboxed", "fork:unboxed", "set:unboxed"]
 
 [[bind]]
 role = "lent"

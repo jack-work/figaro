@@ -317,14 +317,18 @@ among figaros the caller may read, so resolution cannot list or expand an id
 the caller could not read.
 
 **The policy** is TOML at `[authz] policy` (relative to the config dir):
-roles of grants, bound to principals. A grant is `verb:selector`
+roles of permissions (`[roles.<name>] permissions = [...]`), bound to
+principals by `[[bind]]`. A permission is `verb:selector`
 (`send:role:@herald`, `read:owner:self`, `*:*`); the verb ends at the first
 colon, and either side may be `*`. Selectors are `aria:<id>`, `role:@<name>`,
 `owner:self`, `lineage:<id>`, `sandbox:<name>`, `sandboxed:self`, `unboxed`
-and `troupe:<name>`. A role's grants are kept canonical: duplicates and
-grants another covers are dropped, then sorted by verb and selector. The
+and `troupe:<name>`. A role's permissions are kept canonical: duplicates and
+any another covers are dropped, then sorted by verb and selector. The
 `{ verbs, on }` tables of 0.59 and earlier are refused, and the error spells them as
-grants. With none
+strings. `grants` is the old name for `permissions` (and for the `[figaros]`
+ceiling's key): 0.64 still loads it, logs one warning per load naming the
+new key, and refuses a table that sets both; the next release drops it. The
+troupe policy reads the same names. With none
 configured, the daemon's own principal holds every verb and nobody else holds
 any. `outfit reload` and `angelus.configure` reload it; a file that fails to
 load leaves the previous policy in force. `owner:self` reads `minted_by`,
@@ -409,7 +413,7 @@ ancestors behind does not widen it.
 
 ```toml
 [figaros]
-grants = ["read:*", "send:*", "*:lineage:self", "egress:*"]
+permissions = ["read:*", "send:*", "*:lineage:self", "egress:*"]
 ```
 
 The claim is the CLI's stamp (`FIGARO_ARIA`), so a tool can drop it and be

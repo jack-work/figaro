@@ -51,9 +51,9 @@ func newFateRig(t *testing.T) *fateRig {
 	policy := filepath.Join(t.TempDir(), "policy.toml")
 	if err := os.WriteFile(policy, []byte(`
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 [roles.guest]
-grants = ["*:aria:`+r.guests+`"]
+permissions = ["*:aria:`+r.guests+`"]
 [[bind]]
 role = "owner"
 principals = ["user:owner"]

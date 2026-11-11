@@ -61,7 +61,7 @@ func newStudyOwnerRig(t *testing.T) *studyOwnerRig {
 	policy := filepath.Join(t.TempDir(), "policy.toml")
 	if err := os.WriteFile(policy, []byte(`
 [roles.all]
-grants = ["*:*"]
+permissions = ["*:*"]
 [[bind]]
 role = "all"
 principals = ["user:4242", "user:peer"]

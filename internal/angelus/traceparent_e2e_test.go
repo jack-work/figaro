@@ -17,10 +17,10 @@ import (
 
 const traceparentPolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [roles.prompter]
-grants = ["send:*", "read:*", "listen:*"]
+permissions = ["send:*", "read:*", "listen:*"]
 
 [[bind]]
 role = "owner"

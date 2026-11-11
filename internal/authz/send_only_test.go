@@ -13,13 +13,13 @@ import (
 
 const sendOnlyPolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [roles.sender]
-grants = ["send:aria:aaaa0002"]
+permissions = ["send:aria:aaaa0002"]
 
 [roles.reader]
-grants = ["read:aria:aaaa0002"]
+permissions = ["read:aria:aaaa0002"]
 
 [[bind]]
 role = "owner"
@@ -34,7 +34,7 @@ role = "reader"
 principals = ["sandbox:reader"]
 
 [roles.stranger]
-grants = ["read:aria:bbbb0009", "send:aria:bbbb0009"]
+permissions = ["read:aria:bbbb0009", "send:aria:bbbb0009"]
 
 [[bind]]
 role = "stranger"

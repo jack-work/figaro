@@ -24,13 +24,13 @@ import (
 
 const troupeAdminPolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 [[bind]]
 role = "owner"
 principals = ["user:0"]
 
 [roles.member]
-grants = ["join:troupe:estate", "read:troupe:estate"]
+permissions = ["join:troupe:estate", "read:troupe:estate"]
 [[bind]]
 role = "member"
 principals = ["user:member"]

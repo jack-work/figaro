@@ -21,19 +21,19 @@ import (
 
 const ariasGroupPolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 [[bind]]
 role = "owner"
 principals = ["user:0"]
 
 [roles.guest]
-grants = ["read:owner:self", "listen:owner:self"]
+permissions = ["read:owner:self", "listen:owner:self"]
 [[bind]]
 role = "guest"
 principals = ["user:guest"]
 
 [roles.team]
-grants = ["read:*", "listen:*"]
+permissions = ["read:*", "listen:*"]
 [[bind]]
 role = "team"
 groups = ["team"]

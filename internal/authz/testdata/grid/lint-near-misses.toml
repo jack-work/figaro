@@ -1,5 +1,5 @@
 [roles.r]
-grants = ["read:sandbox:localx", "read:troupe:other", "admin:troupe:other"]
+permissions = ["read:sandbox:localx", "read:troupe:other", "admin:troupe:other"]
 [[bind]]
 role = "r"
 principals = ["user:bob@auth.kelliher.info"]

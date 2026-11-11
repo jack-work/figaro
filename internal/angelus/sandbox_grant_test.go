@@ -20,13 +20,13 @@ import (
 
 const grantPolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [roles.box]
-grants = ["create:*", "fork:*", "use:sandbox:dev-3"]
+permissions = ["create:*", "fork:*", "use:sandbox:dev-3"]
 
 [roles.remote]
-grants = ["create:*", "use:sandbox:elsewhere"]
+permissions = ["create:*", "use:sandbox:elsewhere"]
 
 [[bind]]
 role = "owner"

@@ -1,13 +1,13 @@
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 [roles.covered]
-grants = [
+permissions = [
   "admin:*", "admin:troupe:kelliher",
   "*:aria:a-guest",
   "read:aria:a-guest", "read:lineage:a-box0", "kill:aria:a-guest", "kill:lineage:a-box0",
 ]
 [roles.mixed]
-grants = [
+permissions = [
   "read:owner:self", "read:role:@herald", "read:lineage:a-box0", "read:unboxed", "listen:owner:self", "listen:role:@herald", "listen:lineage:a-box0", "listen:unboxed", "send:owner:self", "send:role:@herald", "send:lineage:a-box0", "send:unboxed", "fork:owner:self", "fork:role:@herald", "fork:lineage:a-box0", "fork:unboxed",
   "set:sandboxed:self", "set:aria:a-admin", "kill:sandboxed:self", "kill:aria:a-admin",
   "use:sandbox:self", "use:sandbox:bwrap", "use:sandbox:local",
@@ -15,7 +15,7 @@ grants = [
   "read:unboxed", "read:unboxed", "read:unboxed", "read:unboxed",
 ]
 [roles.boxed]
-grants = ["create:sandbox:self", "create:sandboxed:self", "use:sandbox:self", "use:sandboxed:self", "read:sandbox:self", "read:sandboxed:self"]
+permissions = ["create:sandbox:self", "create:sandboxed:self", "use:sandbox:self", "use:sandboxed:self", "read:sandbox:self", "read:sandboxed:self"]
 [[bind]]
 role = "owner"
 principals = ["user:1000"]

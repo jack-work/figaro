@@ -18,14 +18,14 @@ import (
 
 const lentKillPolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [[bind]]
 role = "owner"
 principals = ["user:SELF"]
 
 [roles.lent]
-grants = ["read:unboxed", "listen:unboxed", "send:unboxed", "fork:unboxed", "set:unboxed", "kill:unboxed"]
+permissions = ["read:unboxed", "listen:unboxed", "send:unboxed", "fork:unboxed", "set:unboxed", "kill:unboxed"]
 
 [[bind]]
 role = "lent"

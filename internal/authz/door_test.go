@@ -14,14 +14,14 @@ import (
 
 const narrowRoles = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [[bind]]
 role = "owner"
 principals = ["user:1000"]
 
 [roles.reader]
-grants = ["read:aria:aaaa0001"]
+permissions = ["read:aria:aaaa0001"]
 
 [[bind]]
 role = "reader"

@@ -1,13 +1,13 @@
 
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [[bind]]
 role = "owner"
 principals = ["user:1000"]
 
 [roles.lent-to-troupe]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [[bind]]
 role = "lent-to-troupe"

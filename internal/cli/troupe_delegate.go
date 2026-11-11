@@ -30,7 +30,7 @@ func checkDelegate(o joinOpts) error {
 		if o.Interactive {
 			return nil
 		}
-		return errors.New("--delegate all or --delegate none is required: what this node lends the troupe policy. all lets the troupe's grants apply here as if this node's own policy made them; none lets them apply nowhere until you lend rights in policy.toml")
+		return errors.New("--delegate all or --delegate none is required: what this node lends the troupe policy. all lets the troupe's permissions apply here as if this node's own policy made them; none lets them apply nowhere until you lend rights in policy.toml")
 	}
 	return fmt.Errorf("--delegate %q: want all or none", o.Delegate)
 }
@@ -39,7 +39,7 @@ func askDelegate(name string, o joinOpts) (string, error) {
 	if o.Delegate != "" {
 		return o.Delegate, nil
 	}
-	fmt.Fprintf(o.Out, "What does this node lend troupe %s's policy?\n  all   its grants apply here as if this node's own policy made them\n  none  they apply nowhere here until you lend rights to troupe:%s in policy.toml\n(use on sandbox:local and admin on the troupe stay this node's own either way)\nall or none? ", name, name)
+	fmt.Fprintf(o.Out, "What does this node lend troupe %s's policy?\n  all   its permissions apply here as if this node's own policy made them\n  none  they apply nowhere here until you lend rights to troupe:%s in policy.toml\n(use on sandbox:local and admin on the troupe stay this node's own either way)\nall or none? ", name, name)
 	switch a := strings.ToLower(strings.TrimSpace(readLine(o.In))); a {
 	case delegateAll, delegateNone:
 		return a, nil
@@ -96,7 +96,7 @@ func writeDelegation(out io.Writer, loaded *config.Loaded, name, lend, self stri
 	if len(existing) == 0 {
 		add = authz.DefaultPolicy(mustPrincipal(self), loaded.DooredBoxes())
 	}
-	add += fmt.Sprintf("\n[roles.%s]\ngrants = [\"*:*\"]\n\n[[bind]]\nrole = %q\nprincipals = [%q]\n", lentRole, lentRole, troupeP)
+	add += fmt.Sprintf("\n[roles.%s]\npermissions = [\"*:*\"]\n\n[[bind]]\nrole = %q\nprincipals = [%q]\n", lentRole, lentRole, troupeP)
 	if path == "" {
 		path = filepath.Join(loaded.ConfigDir, "policy.toml")
 		if err := setPolicyPath(loaded.ConfigPath, "policy.toml"); err != nil {

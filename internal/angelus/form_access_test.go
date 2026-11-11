@@ -73,13 +73,13 @@ func TestAFormReadCarriesTheCallersAccess(t *testing.T) {
 
 const readerPolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [roles.reader]
-grants = ["read:*", "listen:*"]
+permissions = ["read:*", "listen:*"]
 
 [roles.editor]
-grants = ["read:*", "listen:*", "set:*"]
+permissions = ["read:*", "listen:*", "set:*"]
 
 [[bind]]
 role = "owner"

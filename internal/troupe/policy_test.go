@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	bodyA = "[roles.r]\ngrants = [\"read:*\"]\n"
-	bodyB = "[roles.r]\ngrants = [\"send:*\"]\n"
+	bodyA = "[roles.r]\npermissions = [\"read:*\"]\n"
+	bodyB = "[roles.r]\npermissions = [\"send:*\"]\n"
 )
 
 func (s *estate) policy(by string, version uint64, body string, at time.Duration) Entry {

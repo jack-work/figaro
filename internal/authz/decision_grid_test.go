@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -237,36 +238,150 @@ func gridClaimRows(t *testing.T, dir string) []string {
 	return rows
 }
 
+func gridGolden(t *testing.T) []string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", "grid", "golden.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")[1:]
+}
+
+func gridDiff(want, got []string) []string {
+	if len(want) != len(got) {
+		return []string{fmt.Sprintf("grid has %d rows, golden %d", len(got), len(want))}
+	}
+	var diffs []string
+	for i := range want {
+		if want[i] != got[i] {
+			diffs = append(diffs, fmt.Sprintf("row %d\n want %s\n  got %s", i+2, want[i], got[i]))
+		}
+	}
+	return diffs
+}
+
+func checkGrid(t *testing.T, dir string) {
+	t.Helper()
+	diffs := gridDiff(gridGolden(t), gridRows(t, dir))
+	for i, d := range diffs {
+		if i == 20 {
+			break
+		}
+		t.Error(d)
+	}
+	if len(diffs) > 0 {
+		t.Fatalf("%d rows differ", len(diffs))
+	}
+}
+
 func TestEveryDecisionMatchesTheGridRecordedBeforeGrantsWereStrings(t *testing.T) {
 	dir := filepath.Join("testdata", "grid")
-	got := gridRows(t, dir)
-	golden := filepath.Join(dir, "golden.txt")
 	if os.Getenv("FIGARO_GRID_WRITE") == "1" {
 		head := "# verbs: " + fmt.Sprint(rpc.Verbs()) + "; A allow, D deny, H hidden\n"
-		if err := os.WriteFile(golden, []byte(head+strings.Join(got, "\n")+"\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "golden.txt"), []byte(head+strings.Join(gridRows(t, dir), "\n")+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		return
 	}
-	data, err := os.ReadFile(golden)
+	checkGrid(t, dir)
+}
+
+var oldPermissionsName = regexp.MustCompile(`(?m)^permissions = `)
+
+// respelled copies the grid fixtures (and the spain policy beside them) to
+// a temporary directory, passing each file's text through spell.
+func respelled(t *testing.T, spell func(i int, name, text string) string) string {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, "grid")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	names, err := filepath.Glob(filepath.Join("testdata", "grid", "*.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")[1:]
-	if len(want) != len(got) {
-		t.Fatalf("grid has %d rows, golden %d", len(got), len(want))
-	}
-	diffs := 0
-	for i := range want {
-		if want[i] != got[i] {
-			diffs++
-			if diffs <= 20 {
-				t.Errorf("row %d\n want %s\n  got %s", i+2, want[i], got[i])
-			}
+	names = append(names, filepath.Join("testdata", "spain-policy.toml"))
+	for i, src := range names {
+		data, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dst := filepath.Join(dir, filepath.Base(src))
+		if filepath.Base(src) == "spain-policy.toml" {
+			dst = filepath.Join(root, "spain-policy.toml")
+		}
+		if err := os.WriteFile(dst, []byte(spell(i, filepath.Base(src), string(data))), 0o644); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if diffs > 0 {
-		t.Fatalf("%d of %d rows differ", diffs, len(want))
+	return dir
+}
+
+func toOldName(text string) string { return oldPermissionsName.ReplaceAllString(text, "grants = ") }
+
+func TestTheGridIsTheSameUnderTheOldNameAndUnderBothNames(t *testing.T) {
+	for name, spell := range map[string]func(int, string, string) string{
+		"permissions": func(_ int, _, text string) string { return text },
+		"grants":      func(_ int, _, text string) string { return toOldName(text) },
+		"both, file by file": func(i int, _, text string) string {
+			if i%2 == 0 {
+				return toOldName(text)
+			}
+			return text
+		},
+		"both, role by role": func(_ int, _, text string) string {
+			n := 0
+			return oldPermissionsName.ReplaceAllStringFunc(text, func(m string) string {
+				n++
+				if n%2 == 0 {
+					return "grants = "
+				}
+				return m
+			})
+		},
+		"both, file by file, the other way": func(i int, _, text string) string {
+			if i%2 == 1 {
+				return toOldName(text)
+			}
+			return text
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := respelled(t, spell)
+			if name != "permissions" {
+				changed := 0
+				for _, f := range append(gridLints, "selectors.toml", "spain-ceiling.toml", "gluck-delegated.toml") {
+					data, err := os.ReadFile(filepath.Join(dir, f))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if strings.Contains(string(data), "\ngrants = ") {
+						changed++
+					}
+				}
+				if changed == 0 {
+					t.Fatal("no fixture took the old name; the spelling tests nothing")
+				}
+			}
+			checkGrid(t, dir)
+		})
+	}
+}
+
+func TestTheGridNoticesOnePermissionDroppedUnderTheOldName(t *testing.T) {
+	dir := respelled(t, func(_ int, name, text string) string {
+		if name != "spain-policy.toml" {
+			return text
+		}
+		out := strings.Replace(toOldName(text), `"kill:sandboxed:self"`, `"read:sandboxed:self"`, 1)
+		if out == toOldName(text) {
+			t.Fatal("the canary found nothing to change")
+		}
+		return out
+	})
+	if diffs := gridDiff(gridGolden(t), gridRows(t, dir)); len(diffs) == 0 {
+		t.Fatal("the grid did not notice a dropped permission")
 	}
 }
 
@@ -275,10 +390,10 @@ func TestEveryDecisionMatchesTheGridRecordedBeforeGrantsWereStrings(t *testing.T
 // decision of every shipped policy as it was.
 func TestACeilingOfEverythingChangesNoDecision(t *testing.T) {
 	dir := filepath.Join("testdata", "grid")
-	ceiling := "[figaros]\ngrants = [\"*:*\"]\n"
+	ceiling := "[figaros]\npermissions = [\"*:*\"]\n"
 	placements := map[string]func(string) string{
 		"appended":           func(p string) string { return p + "\n" + ceiling },
-		"first, commented":   func(p string) string { return "# ceiling\n[figaros] # all\ngrants = [\n  \"*:*\",\n]\n\n" + p },
+		"first, commented":   func(p string) string { return "# ceiling\n[figaros] # all\npermissions = [\n  \"*:*\",\n]\n\n" + p },
 		"before every table": func(p string) string { return strings.Replace(p, "\n[", "\n"+ceiling+"\n[", 1) },
 	}
 	for _, c := range gridCombos {
@@ -332,8 +447,8 @@ func comboRows(t *testing.T, dir string, c gridCombo, policy string) []string {
 
 func TestACeilingTheCutCannotSetApartRefusesThePolicy(t *testing.T) {
 	for name, src := range map[string]string{
-		"inline":        "figaros = { grants = [\"*:*\"] }\n" + sandboxPolicy,
-		"quoted header": sandboxPolicy + "\n[\"figaros\"]\ngrants = [\"*:*\"]\n",
+		"inline":        "figaros = { permissions = [\"*:*\"] }\n" + sandboxPolicy,
+		"quoted header": sandboxPolicy + "\n[\"figaros\"]\npermissions = [\"*:*\"]\n",
 	} {
 		p := NewPolicies(me, facts())
 		if err := p.load([]byte(src)); err == nil || !strings.Contains(err.Error(), "table of its own") {

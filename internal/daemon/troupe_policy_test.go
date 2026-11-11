@@ -24,7 +24,7 @@ var ana = jkauthz.Principal{Kind: jkauthz.KindUser, ID: "ana@auth.kelliher.info"
 func lendingEverything() string {
 	return fmt.Sprintf(`
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [[bind]]
 role = "owner"
@@ -34,7 +34,7 @@ principals = ["user:%d", "troupe:estate"]
 
 const anaHoldsEverything = `
 [roles.all]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [[bind]]
 role = "all"
@@ -93,7 +93,7 @@ func TestATroupePolicySetOnOneNodeIsInForceOnEveryMember(t *testing.T) {
 		require.True(t, n.a.Policies.Allow(jkauthz.Subject{Principal: ana}, rpc.VerbSend, authz.Aria("aaaa0001")).Allowed)
 	}
 
-	_, err = callAs(t, na, owner(na), rpc.MethodTroupePolicySet, rpc.TroupePolicySetRequest{Troupe: "estate", Body: "[roles.r]\ngrants = [\"read:*\"]\n\n[[bind]]\nrole = \"r\"\nprincipals = [\"user:bob@auth.kelliher.info\"]\n"})
+	_, err = callAs(t, na, owner(na), rpc.MethodTroupePolicySet, rpc.TroupePolicySetRequest{Troupe: "estate", Body: "[roles.r]\npermissions = [\"read:*\"]\n\n[[bind]]\nrole = \"r\"\nprincipals = [\"user:bob@auth.kelliher.info\"]\n"})
 	require.NoError(t, err)
 	require.Equal(t, uint64(3), ma.PolicyVersion())
 	require.Equal(t, uint64(3), mb.PolicyVersion())
@@ -192,7 +192,7 @@ func TestAnAllGrantingTroupePolicyCannotTakeTheLocalOnlyRights(t *testing.T) {
 func TestAnAdoptedPolicyBindingAKindWildcardGrantsNothing(t *testing.T) {
 	na, nb, ma, mb, root := pairWith(t, lendingEverything())
 	appliedA, appliedB := policyApplied(t, ma, 1), policyApplied(t, mb, 1)
-	rootStartsPolicy(t, na, root, "[roles.all]\ngrants = [\"*:*\"]\n\n[[bind]]\nrole = \"all\"\nprincipals = [\"user:*\"]\n", na.id())
+	rootStartsPolicy(t, na, root, "[roles.all]\npermissions = [\"*:*\"]\n\n[[bind]]\nrole = \"all\"\nprincipals = [\"user:*\"]\n", na.id())
 	require.Equal(t, uint64(1), ma.PolicyVersion())
 	_, err := mb.Merge(ma.Entries()...)
 	require.NoError(t, err)
@@ -235,9 +235,9 @@ func waitApplied(t *testing.T, applied <-chan struct{}, n *ledgerNode) {
 func TestSettingTheTroupePolicyRefuses(t *testing.T) {
 	na, nb, _, _, _ := pairWith(t, lendingEverything())
 	for name, body := range map[string]string{
-		"sandbox:local":               "[roles.s]\ngrants = [\"use:sandbox:local\"]\n",
-		"admin on the troupe":         "[roles.a]\ngrants = [\"admin:troupe:estate\"]\n",
-		"a body that is not a policy": "[roles.x]\ngrants = [\"fly:*\"]\n",
+		"sandbox:local":               "[roles.s]\npermissions = [\"use:sandbox:local\"]\n",
+		"admin on the troupe":         "[roles.a]\npermissions = [\"admin:troupe:estate\"]\n",
+		"a body that is not a policy": "[roles.x]\npermissions = [\"fly:*\"]\n",
 	} {
 		_, err := callAs(t, na, owner(na), rpc.MethodTroupePolicySet, rpc.TroupePolicySetRequest{Troupe: "estate", Body: body})
 		require.Error(t, err, name)

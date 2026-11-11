@@ -25,21 +25,21 @@ import (
 
 const followAgePolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [[bind]]
 role = "owner"
 principals = ["user:UID", "user:admin@auth.kelliher.info"]
 
 [roles.guest]
-grants = ["read:owner:self"]
+permissions = ["read:owner:self"]
 
 [[bind]]
 role = "guest"
 principals = ["user:ana@auth.kelliher.info"]
 
 [roles.watcher]
-grants = ["listen:aria:ARIA", "read:aria:ARIA"]
+permissions = ["listen:aria:ARIA", "read:aria:ARIA"]
 
 [[bind]]
 role = "watcher"
