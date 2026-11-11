@@ -140,9 +140,9 @@ context = 500000
 }
 
 func catalogFromFileForTest(loaded *config.Loaded) (*catalog.Reader, error) {
-	data, err := readProviderFile(loaded)
+	path, data, err := readProviderFile(loaded)
 	if err != nil {
 		return nil, err
 	}
-	return catalogFrom(data)
+	return catalogFrom(path, data)
 }

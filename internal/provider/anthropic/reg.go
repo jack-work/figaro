@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -42,45 +43,53 @@ func buildFromContext(ctx provider.BuildContext) (provider.Provider, error) {
 		return nil, err
 	}
 	a.Templates = ctx.Templates
-	data, err := readProviderFile(ctx.Loaded)
+	path, data, err := readProviderFile(ctx.Loaded)
 	if err != nil {
 		return nil, err
 	}
-	if a.Catalog, err = catalogFrom(data); err != nil {
+	if a.Catalog, err = catalogFrom(path, data); err != nil {
 		return nil, err
 	}
-	if a.SendFigaroID, err = sendsFigaroID(data); err != nil {
+	if a.SendFigaroID, err = sendsFigaroID(path, data); err != nil {
 		return nil, err
 	}
 	return a, nil
 }
 
-func readProviderFile(loaded *config.Loaded) ([]byte, error) {
+func readProviderFile(loaded *config.Loaded) (string, []byte, error) {
 	if loaded == nil {
-		return nil, nil
+		return "", nil, nil
 	}
 	path := loaded.ProviderAuthPath(providerName)
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
-		return nil, err
+		return path, nil, err
 	}
-	return data, nil
+	return path, data, nil
 }
 
-func sendsFigaroID(data []byte) (bool, error) {
+func notTOML(path string, err error) error {
+	var perr toml.ParseError
+	if errors.As(err, &perr) && perr.Position.Line > 0 {
+		return fmt.Errorf("anthropic: %s: line %d is not valid for this file", path, perr.Position.Line)
+	}
+	return fmt.Errorf("anthropic: %s is not valid for this file", path)
+}
+
+func sendsFigaroID(path string, data []byte) (bool, error) {
 	var f struct {
 		SendFigaroID bool `toml:"send_figaro_id"`
 	}
 	if _, err := toml.Decode(string(data), &f); err != nil {
-		return false, fmt.Errorf("anthropic: %w", err)
+		return false, notTOML(path, err)
 	}
 	return f.SendFigaroID, nil
 }
 
-func catalogFrom(data []byte) (*catalog.Reader, error) {
+func catalogFrom(path string, data []byte) (*catalog.Reader, error) {
 	file, err := catalog.Decode(data)
 	if err != nil {
-		return nil, fmt.Errorf("anthropic: %w", err)
+		return nil, notTOML(path, err)
 	}
 	r, err := catalog.New(catalogmaps.Builtin(providerName).With(file.Catalog), file.Models)
 	if err != nil {
