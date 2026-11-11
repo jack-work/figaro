@@ -36,9 +36,9 @@ func TestTheNativeProviderSendsFigaroIdOnlyWhenItsFileAsks(t *testing.T) {
 				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
 				require.NoError(t, os.WriteFile(path, []byte(tc.file), 0o600))
 			}
-			data, err := readProviderFile(loaded)
+			path, data, err := readProviderFile(loaded)
 			require.NoError(t, err)
-			sends, err := sendsFigaroID(data)
+			sends, err := sendsFigaroID(path, data)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, sends)
 
@@ -72,6 +72,26 @@ func TestTheNativeProviderSendsFigaroIdOnlyWhenItsFileAsks(t *testing.T) {
 				require.Equal(t, []string{aria}, got)
 			} else {
 				require.Empty(t, got)
+			}
+		})
+	}
+}
+
+// El Inspector XIV nit (b): a bad provider file is named by path and line,
+// never by the decoder's message, which can quote the line's value.
+func TestABadProviderFileNeverQuotesItsValues(t *testing.T) {
+	const secret = "sk-ant-PRIVATE-TOKEN-VALUE"
+	for name, doc := range map[string]string{
+		"syntax":     "api_key = \"" + secret + "\"\nsend_figaro_id = " + secret + "\n",
+		"wrong type": "api_key = \"x\"\nsend_figaro_id = \"" + secret + "\"\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := sendsFigaroID("/p/anthropic.toml", []byte(doc))
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), secret)
+			require.Contains(t, err.Error(), "/p/anthropic.toml")
+			if _, err = catalogFrom("/p/anthropic.toml", []byte(doc)); err != nil {
+				require.NotContains(t, err.Error(), secret)
 			}
 		})
 	}
