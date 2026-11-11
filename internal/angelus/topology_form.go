@@ -69,7 +69,7 @@ func (h *handlers) arrange(ctx context.Context, shown *store.Form, params json.R
 			if parent, err = h.canonicalID(ctx, ref); err != nil {
 				return rpc.SetResponse{}, err
 			}
-			if h.allowed(ctx, rpc.VerbSet, authz.Aria(parent)) != nil {
+			if h.allowed(ctx, rpc.VerbRead, authz.Aria(parent)) != nil {
 				return rpc.SetResponse{}, fmt.Errorf("aria %s not found", ref)
 			}
 		}
@@ -84,6 +84,9 @@ func (h *handlers) arrange(ctx context.Context, shown *store.Form, params json.R
 		return rpc.SetResponse{}, err
 	}
 	_, err = h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Arrange, Parents: parents, Restore: restore, Storage: true})
+	if prop, ok := parkedProposal(err); ok {
+		return rpc.SetResponse{}, fmt.Errorf("%s: nothing moved yet: the move waits on %s as proposal %s until its holder runs `figaro adopt accept %s %s`", rpc.TopologyFormID, prop.Parent, prop.ID, prop.Parent, prop.ID)
+	}
 	if errors.Is(err, hierarchy.ErrUnsupported) {
 		return rpc.SetResponse{}, fmt.Errorf("%s: this daemon keeps no presentation hierarchy", rpc.TopologyFormID)
 	}

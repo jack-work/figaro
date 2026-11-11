@@ -168,6 +168,7 @@ permissions = [
   "use:sandbox:self",
   "read:sandboxed:self", "listen:sandboxed:self", "send:sandboxed:self",
   "fork:sandboxed:self", "set:sandboxed:self", "kill:sandboxed:self",
+  "adopt:sandboxed:self",
 ]
 
 [[bind]]
