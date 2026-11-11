@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jack-work/jkauthz"
+
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/figwal/xwal"
 	"github.com/jack-work/figaro/internal/authz"
@@ -155,8 +157,12 @@ func (h *handlers) importCommit(ctx context.Context, params json.RawMessage) (an
 	if err != nil {
 		return nil, err
 	}
+	metas, err := qualifyMinters(req.Metas, a.From, h.angelus.Backend.NodeID())
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", rpc.MethodImportCommit, err)
+	}
 	start := time.Now()
-	if err := mv.CommitImport(g, req.Digest, req.Metas); err != nil {
+	if err := mv.CommitImport(g, req.Digest, metas); err != nil {
 		return nil, fmt.Errorf("%s: %w", rpc.MethodImportCommit, err)
 	}
 	h.grafts.drop(req.Token)
@@ -276,4 +282,40 @@ func (h *handlers) nodeLearn(ctx context.Context, params json.RawMessage) (any, 
 		}
 	}
 	return struct{}{}, nil
+}
+
+func qualifyMinters(metas map[string]json.RawMessage, from, self string) (map[string]json.RawMessage, error) {
+	out := make(map[string]json.RawMessage, len(metas))
+	for id, raw := range metas {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return nil, fmt.Errorf("meta for %s: %w", id, err)
+		}
+		var minted string
+		if v, ok := fields["minted_by"]; ok {
+			if err := json.Unmarshal(v, &minted); err != nil {
+				return nil, fmt.Errorf("meta for %s: minted_by: %w", id, err)
+			}
+		}
+		fields["minted_by"], _ = json.Marshal(qualifyMinter(minted, from, self))
+		b, err := json.Marshal(fields)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = b
+	}
+	return out, nil
+}
+
+func qualifyMinter(minted, from, self string) string {
+	p, err := jkauthz.ParsePrincipal(minted)
+	switch {
+	case minted == "" || err != nil:
+		return jkauthz.Principal{Kind: jkauthz.KindNode, ID: from}.String()
+	case p.Node == "":
+		p.Node = from
+	case p.Node == self:
+		p.Node = ""
+	}
+	return p.String()
 }
