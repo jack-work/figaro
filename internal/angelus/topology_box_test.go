@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -118,5 +119,57 @@ func TestABoxArrangesOnlyItsOwnArias(t *testing.T) {
 	}
 	if up := presentedUnder(t, d.grantRig, kid); up != made.FigaroID {
 		t.Errorf("after the box's clear %s is presented under %q, want its history parent %s", kid, up, made.FigaroID)
+	}
+}
+
+// El Inspector S1: a storage move re-parents the grant chain and the
+// protected-key ancestors. The owner's move re-parents A; the box's move of
+// the same A under its own figaro F is drawn only, so A keeps its history
+// parent and its narrowed effective grants, and F does not become its
+// ancestor.
+func TestABoxMoveIsDrawnOnlyAndLeavesGrantsAlone(t *testing.T) {
+	d := boxDoorRig(t, "true")
+	if err := wire.Install(d.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+		t.Fatal(err)
+	}
+	mint := func() string {
+		t.Helper()
+		resp, err := d.create(asOwner(), "judged")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.FigaroID
+	}
+	o, a, f := mint(), mint(), mint()
+	narrowed, _ := json.Marshal([]string{"read:sandboxed:self"})
+	if _, err := d.backend.ApplyForm(o, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.GrantsKey: narrowed}, nil)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := setTopology(t, d.grantRig, asOwner(), map[string]string{a: o}); err != nil {
+		t.Fatalf("the owner moving A under O: %v", err)
+	}
+	if n, _ := d.backend.Node(a); n.Parent != o {
+		t.Fatalf("after the owner's move A's history parent is %q, want O %s", n.Parent, o)
+	}
+	before, held := d.a.Policies.Effective(a)
+	if !held {
+		t.Fatal("A has no effective grants to compare")
+	}
+	if wide, _ := d.a.Policies.Effective(f); fmt.Sprint(wide) == fmt.Sprint(before) {
+		t.Fatalf("setup: F's effective grants %v are no wider than A's", wide)
+	}
+
+	if err := boxArrange(t, d.dial(t), map[string]string{a: f}); err != nil {
+		t.Fatalf("the box arranging A under F: %v", err)
+	}
+	if n, _ := d.backend.Node(a); n.Parent != o {
+		t.Fatalf("the box's move re-parented A's history under %q, want it still under O %s", n.Parent, o)
+	}
+	if up := presentedUnder(t, d.grantRig, a); up != f {
+		t.Fatalf("the box's move presents A under %q, want F %s", up, f)
+	}
+	if after, _ := d.a.Policies.Effective(a); fmt.Sprint(after) != fmt.Sprint(before) {
+		t.Fatalf("A's effective grants moved from %v to %v", before, after)
 	}
 }

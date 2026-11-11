@@ -87,13 +87,21 @@ func (h *handlers) arrange(ctx context.Context, shown *store.Form, params json.R
 	if len(parents) == 0 && len(restore) == 0 && len(moves) == 0 {
 		return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, nil
 	}
+	draw := func(m [2]string) {
+		parents[m[0]] = m[1]
+		restore = slices.DeleteFunc(restore, func(id string) bool { return id == m[0] })
+	}
+	owner := h.callerIsOwner(ctx)
 	for _, m := range moves {
+		if !owner {
+			draw(m)
+			continue
+		}
 		err := h.angelus.Backend.Move(m[0], m[1])
 		switch {
 		case err == nil:
 		case errors.Is(err, store.ErrMoveCopies), errors.Is(err, store.ErrMoveCycle):
-			parents[m[0]] = m[1]
-			restore = slices.DeleteFunc(restore, func(id string) bool { return id == m[0] })
+			draw(m)
 		default:
 			return rpc.SetResponse{}, err
 		}
