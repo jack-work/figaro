@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/hierarchy"
+	"github.com/jack-work/figaro/internal/hierarchy/hierarchytest"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -42,7 +44,7 @@ func TestPromoteMovesTheDrawnRow(t *testing.T) {
 	b, _ := backend(t, true)
 	_, a, mid, leaf := chain(t, b)
 
-	if _, err := b.Store().Promote(leaf, 1); err != nil {
+	if _, err := hierarchytest.Of(b).Promote(leaf, 1); err != nil {
 		t.Fatal(err)
 	}
 	if got := drawnUnder(t, b, leaf); got != a {
@@ -66,7 +68,7 @@ func TestPromoteMovesTheVector(t *testing.T) {
 	if len(before.Vector) != 3 {
 		t.Fatalf("leaf vector = %v, want depth 3", before.Vector)
 	}
-	if _, err := b.Store().Promote(leaf, 1); err != nil {
+	if _, err := hierarchytest.Of(b).Promote(leaf, 1); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := b.Node(leaf)
@@ -84,7 +86,7 @@ func TestPromoteStopsAtTheOutfit(t *testing.T) {
 	b, _ := backend(t, true)
 	_, a, _, _ := chain(t, b)
 
-	if _, err := b.Store().Promote(a, 1); !errors.Is(err, store.ErrAtStump) {
+	if _, err := hierarchytest.Of(b).Promote(a, 1); !errors.Is(err, hierarchy.ErrAtTop) {
 		t.Fatalf("promote of a top-level aria = %v, want ErrAtStump", err)
 	}
 	if got := drawnUnder(t, b, a); got == "" {
@@ -96,7 +98,7 @@ func TestPromoteClimbsWhatItCan(t *testing.T) {
 	b, _ := backend(t, true)
 	outfit, _, _, leaf := chain(t, b)
 
-	climbed, err := b.Store().Promote(leaf, 10)
+	climbed, err := hierarchytest.Of(b).Promote(leaf, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +116,7 @@ func TestRefusedDeleteWritesNothing(t *testing.T) {
 	_, _, mid, leaf := chain(t, b)
 
 	before, _ := b.Node(leaf)
-	if err := b.Remove(mid, false); !errors.Is(err, store.ErrHasBranches) {
+	if err := hierarchytest.Of(b).Remove(mid, false); !errors.Is(err, store.ErrHasBranches) {
 		t.Fatalf("delete of a branched aria = %v, want ErrHasBranches", err)
 	}
 	after, ok := b.Node(leaf)
@@ -131,7 +133,7 @@ func TestRecursiveDeleteTakesTheSubtree(t *testing.T) {
 	b, _ := backend(t, true)
 	_, _, mid, leaf := chain(t, b)
 
-	if err := b.Remove(mid, true); err != nil {
+	if err := hierarchytest.Of(b).Remove(mid, true); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{mid, leaf} {
@@ -149,10 +151,10 @@ func TestDeleteKeepsASurvivorWhereItWasDrawn(t *testing.T) {
 	b, _ := backend(t, true)
 	_, a, mid, leaf := chain(t, b)
 
-	if _, err := b.Store().Promote(leaf, 1); err != nil { // leaf now sits under a
+	if _, err := hierarchytest.Of(b).Promote(leaf, 1); err != nil { // leaf now sits under a
 		t.Fatal(err)
 	}
-	if err := b.Remove(mid, true); err != nil {
+	if err := hierarchytest.Of(b).Remove(mid, true); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := b.Node(leaf); !ok {
@@ -168,10 +170,10 @@ func TestDeleteLeavesNoAriaBelowTheRoot(t *testing.T) {
 	b, _ := backend(t, true)
 	outfit, a, _, leaf := chain(t, b)
 
-	if _, err := b.Store().Promote(leaf, 2); err != nil { // leaf to the top
+	if _, err := hierarchytest.Of(b).Promote(leaf, 2); err != nil { // leaf to the top
 		t.Fatal(err)
 	}
-	if err := b.Remove(a, true); err != nil { // takes a and mid
+	if err := hierarchytest.Of(b).Remove(a, true); err != nil { // takes a and mid
 		t.Fatal(err)
 	}
 	if _, ok := b.Node(leaf); !ok {

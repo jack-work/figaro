@@ -10,14 +10,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/jkauthz"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/hierarchy/hierarchytest"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/jkauthz"
 )
 
 // An aria's fate (mid-move, moved, or living on another node) is as private
@@ -128,7 +130,7 @@ func (r *fateRig) depart(id string) string {
 
 func (r *fateRig) dropLocalCopy(id string) {
 	r.t.Helper()
-	if err := r.h.angelus.Backend.Remove(id, true); err != nil {
+	if err := hierarchytest.Of(r.h.angelus.Backend).Remove(id, true); err != nil {
 		r.t.Fatal(err)
 	}
 }

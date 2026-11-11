@@ -24,6 +24,7 @@ import (
 	"github.com/jack-work/figaro/figwal/segment"
 	"github.com/jack-work/figaro/figwal/xwal"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/topo"
 )
 
@@ -572,60 +573,12 @@ func (s *XwalStore) forkAtLocked(id string, atMainLT uint64) (string, error) {
 	return alt, nil
 }
 
-// Promote edits the presentation hierarchy only, O(1) in history length.
-// ErrAtStump: nothing above to promote into.
-func (s *XwalStore) Promote(id string, levels int) (int, error) {
-	// No s.mu here: the tree resolves lineage through Node, which refreshes
-	// the topology snapshot under s.mu. The tree carries its own lock.
-	if s.tree == nil {
-		return 0, ErrNoTrunkCapability
-	}
-	for climbed := 0; climbed < levels; climbed++ {
-		if !s.promotableInto(id) {
-			if climbed > 0 {
-				return climbed, nil
-			}
-			return 0, ErrAtStump
-		}
-		if err := s.tree.Promote(id); err != nil {
-			if errors.Is(err, topo.ErrNoPromote) {
-				return climbed, ErrNoTrunkCapability
-			}
-			if climbed > 0 {
-				return climbed, nil // ran out of levels to climb; not an error
-			}
-			return 0, ErrAtStump
-		}
-	}
-	return levels, nil
-}
-
-func (s *XwalStore) Demote(id, prefer string) (string, error) {
-	if s.tree == nil {
-		return "", ErrNoTrunkCapability
-	}
-	if _, ok := s.Node(id); !ok {
-		return "", fmt.Errorf("demote: no aria %q", id)
-	}
-	under := s.demoteTarget(id, prefer)
-	if under == "" {
-		return "", nil
-	}
-	if err := s.tree.Demote(id, under); err != nil {
-		if errors.Is(err, topo.ErrNoPromote) {
-			return "", ErrNoTrunkCapability
-		}
-		return "", err
-	}
-	return under, nil
-}
-
 var (
 	ErrMoveCopies = xwal.ErrMoveCopies
 	ErrMoveCycle  = xwal.ErrMoveCycle
 )
 
-func (s *XwalStore) Move(id, under string) error {
+func (s *XwalStore) move(id, under string) error {
 	node, ok := s.trunks.HeadNode(id)
 	if !ok {
 		return fmt.Errorf("move: no aria or form %q", id)
@@ -637,88 +590,13 @@ func (s *XwalStore) Move(id, under string) error {
 		}
 	}
 	if err := s.trunks.Reparent(node, parent); err != nil {
+		if errors.Is(err, ErrMoveCopies) || errors.Is(err, ErrMoveCycle) {
+			return fmt.Errorf("move %s under %s: %w: %w", id, under, hierarchy.ErrStorageRefused, err)
+		}
 		return fmt.Errorf("move %s under %s: %w", id, under, err)
 	}
 	_, err := s.CleanTopology(false)
 	return err
-}
-
-func (s *XwalStore) Arrange(parents map[string]string, restore []string, mayUndo func(id string) error) error {
-	if s.tree == nil {
-		return ErrNoTrunkCapability
-	}
-	isAria := func(id string) bool {
-		node, ok := s.Node(id)
-		return ok && node.Kind == string(kindConversation)
-	}
-	for _, id := range restore {
-		if !isAria(id) {
-			return fmt.Errorf("arrange: no aria %q", id)
-		}
-	}
-	placed := make(map[string]string, len(parents))
-	for id, parent := range parents {
-		if !isAria(id) {
-			return fmt.Errorf("arrange: no aria %q", id)
-		}
-		if parent == "" {
-			parent = s.stumpOf(id)
-		} else if parent == id || !isAria(parent) {
-			return fmt.Errorf("arrange: %q cannot be drawn under %q: not another aria", id, parent)
-		}
-		placed[id] = parent
-	}
-	err := s.tree.Arrange(placed, restore, mayUndo)
-	if errors.Is(err, topo.ErrNoPromote) {
-		return ErrNoTrunkCapability
-	}
-	return err
-}
-
-func (s *XwalStore) stumpOf(id string) string {
-	seen := map[string]bool{}
-	for !seen[id] {
-		seen[id] = true
-		node, ok := s.Node(id)
-		if !ok || node.Kind != string(kindConversation) {
-			return id
-		}
-		id = node.Parent
-	}
-	return ""
-}
-
-func (s *XwalStore) demoteTarget(id, prefer string) string {
-	var kids []NodeView
-	for _, k := range s.tree.Children(id) {
-		node, ok := s.Node(k)
-		if !ok || node.Kind != string(kindConversation) {
-			continue
-		}
-		if k == prefer {
-			return k
-		}
-		kids = append(kids, node)
-	}
-	if len(kids) == 0 {
-		return ""
-	}
-	sort.Slice(kids, func(i, j int) bool {
-		if kids[i].BranchedLT != kids[j].BranchedLT {
-			return kids[i].BranchedLT < kids[j].BranchedLT
-		}
-		return kids[i].ID < kids[j].ID
-	})
-	return kids[0].ID
-}
-
-func (s *XwalStore) promotableInto(id string) bool {
-	parent, ok := s.tree.Parent(id)
-	if !ok || parent == "" {
-		return false
-	}
-	node, ok := s.Node(parent)
-	return ok && node.Kind == string(kindConversation)
 }
 
 func (s *XwalStore) OwnerOf(id string, atMainLT uint64) (xwal.Owner, error) {
@@ -1047,11 +925,7 @@ func (s *XwalStore) Node(id string) (NodeView, bool) {
 	return node, ok
 }
 
-func (s *XwalStore) RemoveLeaf(id string, recursive bool, bury func([]string)) error {
-	return s.RemoveLeafIf(id, recursive, nil, bury)
-}
-
-func (s *XwalStore) RemoveLeafIf(id string, recursive bool, expect []string, bury func([]string)) error {
+func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins map[string]string, bury func([]string)) error {
 	s.deleting.Lock()
 	defer s.deleting.Unlock()
 	// Refuse before touching anything: the boundary repair rewrites surviving arias.
@@ -1069,9 +943,6 @@ func (s *XwalStore) RemoveLeafIf(id string, recursive bool, expect []string, bur
 	// the delete set absorbs that prefix. Only then unlink, so a crash between
 	// the two leaves survivors reading through directories still present.
 	homes := map[string]string{}
-	// Anything drawn under something this delete takes is re-drawn somewhere
-	// that survives; falling back to the topology would put it under the
-	// genesis root with no outfit.
 	doomed := make(map[string]bool, len(taken))
 	for _, t := range taken {
 		doomed[t] = true
@@ -1080,11 +951,18 @@ func (s *XwalStore) RemoveLeafIf(id string, recursive bool, expect []string, bur
 		if doomed[child] || !doomed[up] {
 			continue
 		}
-		homes[child] = s.survivingHome(child, taken)
+		home, ok := pins[child]
+		if !ok {
+			return fmt.Errorf("%w: %q strands %s, which the plan does not re-home", ErrDeleteSetChanged, id, child)
+		}
+		homes[child] = home
 	}
 	for _, orphan := range s.deleteOrphans(id) {
-		// Where it is drawn today, remembered before the detach empties its .from.
-		homes[orphan] = s.survivingHome(orphan, taken)
+		home, ok := pins[orphan]
+		if !ok {
+			return fmt.Errorf("%w: %q strands %s, which the plan does not re-home", ErrDeleteSetChanged, id, orphan)
+		}
+		homes[orphan] = home
 		// Boundary speaks in aria ids; Detach addresses the node directory.
 		node, ok := s.trunks.HeadNode(orphan)
 		if !ok {
@@ -1105,6 +983,8 @@ func (s *XwalStore) RemoveLeafIf(id string, recursive bool, expect []string, bur
 		slog.Warn("forget presentation edges", "aria", id, "err", err)
 	}
 	keep := false
+	set := map[string]string{}
+	var unpin []string
 	for orphan, home := range homes {
 		if home == "" {
 			continue
@@ -1112,8 +992,15 @@ func (s *XwalStore) RemoveLeafIf(id string, recursive bool, expect []string, bur
 		if home == stump {
 			keep = true
 		}
-		if err := s.tree.Reparent(orphan, home); err != nil {
-			slog.Warn("rehome detached aria", "aria", orphan, "under", home, "err", err)
+		if up, _ := s.TopologyAdjacency().From(orphan); up == home {
+			unpin = append(unpin, orphan)
+			continue
+		}
+		set[orphan] = home
+	}
+	if w, ok := s.tree.(edgeWriter); ok && (len(set) > 0 || len(unpin) > 0) {
+		if err := w.Write(set, unpin); err != nil {
+			slog.Warn("rehome detached aria", "pins", set, "err", err)
 		}
 	}
 	// The stump goes only if nothing is left drawn beneath it.
@@ -1135,29 +1022,6 @@ func (s *XwalStore) collectStumpAfterDelete(stump string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.collectStump(stump)
-}
-
-// survivingHome is the nearest place above id that outlives this delete, else
-// the stump it was born under.
-func (s *XwalStore) survivingHome(id string, taken []string) string {
-	doomed := make(map[string]bool, len(taken))
-	for _, t := range taken {
-		doomed[t] = true
-	}
-	seen := map[string]bool{id: true}
-	for up, ok := s.tree.Parent(id); ok && up != ""; up, ok = s.tree.Parent(up) {
-		if seen[up] {
-			break
-		}
-		seen[up] = true
-		if !doomed[up] {
-			return up
-		}
-	}
-	if node, ok := s.Node(id); ok && node.Stump != "" && !doomed[node.Stump] {
-		return node.Stump
-	}
-	return ""
 }
 
 // CollectStump refuses one still hosting arias; the caller is expected to

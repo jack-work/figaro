@@ -9,11 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/jkrpc"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/jkrpc"
 )
 
 var (
@@ -103,8 +106,7 @@ func (a *Angelus) expire(keeper ttlKeeper, id string, now time.Time) error {
 			"node", e.ID, "until", time.UnixMilli(reaps))
 		return nil
 	}
-	roles, ready := a.roleTargets()
-	if !ready {
+	if _, ready := a.roleTargets(); !ready {
 		slog.Debug("lifetime spent, waiting for the role index", "node", e.ID)
 		return errNotYet
 	}
@@ -112,13 +114,16 @@ func (a *Angelus) expire(keeper ttlKeeper, id string, now time.Time) error {
 	if len(taken) == 0 {
 		taken = []string{e.ID}
 	}
-	if node := a.otherSandboxIn(taken, e.ID); node != "" {
-		a.held.keep(e.ID, node, "a node it would take runs in another sandbox", "lifetime spent, kept: a node it would take runs in another sandbox", "ttl", e.TTL)
-		return nil
-	}
-	if node, why := a.heldIn(taken, e.ID, a.Registry.BoundPIDsByFigaro(), roles, def, now); why != "" {
-		a.held.keep(e.ID, node, why, "lifetime spent, kept: "+why, "ttl", e.TTL)
-		return nil
+	if _, err := a.topology().Check(sweepingAt(context.Background(), now), hierarchy.System, hierarchy.Plan{Op: hierarchy.Sweep, Node: e.ID, Delete: taken}); err != nil {
+		var held *authz.HeldError
+		if errors.As(err, &held) {
+			a.held.keep(e.ID, held.Node, held.Why, "lifetime spent, kept: "+held.Why, "ttl", e.TTL)
+			return nil
+		}
+		if errors.Is(err, hierarchy.ErrPlanMismatch) {
+			return errNotYet
+		}
+		return err
 	}
 	a.held.release(e.ID)
 	if err := a.take(keeper, e, taken); err != nil {
@@ -143,8 +148,7 @@ func (a *Angelus) expireEmpty(keeper ttlKeeper, e store.TTLEntry, now time.Time)
 		a.held.release(e.ID)
 		return nil
 	}
-	roles, ready := a.roleTargets()
-	if !ready {
+	if _, ready := a.roleTargets(); !ready {
 		return errNotYet
 	}
 	taken := keeper.DeleteSet(e.ID)
@@ -155,9 +159,16 @@ func (a *Angelus) expireEmpty(keeper ttlKeeper, e store.TTLEntry, now time.Time)
 		}
 	}
 	taken = []string{e.ID}
-	if node, why := a.liveIn(taken, a.Registry.BoundPIDsByFigaro(), roles); why != "" {
-		a.held.keep(e.ID, node, why, "empty, kept: "+why)
-		return nil
+	if _, err := a.topology().Check(sweepingAt(context.Background(), now), hierarchy.System, hierarchy.Plan{Op: hierarchy.Sweep, Node: e.ID, Delete: taken}); err != nil {
+		var held *authz.HeldError
+		if errors.As(err, &held) {
+			a.held.keep(e.ID, held.Node, held.Why, "empty, kept: "+held.Why)
+			return nil
+		}
+		if errors.Is(err, hierarchy.ErrPlanMismatch) {
+			return errNotYet
+		}
+		return err
 	}
 	a.held.release(e.ID)
 	if err := a.take(keeper, e, taken); err != nil {

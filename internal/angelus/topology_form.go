@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -44,7 +44,6 @@ func (h *handlers) arrange(ctx context.Context, shown *store.Form, params json.R
 	}
 	parents := map[string]string{}
 	var restore, set, removed []string
-	var moves [][2]string
 	for _, ent := range req.Patch.Entries() {
 		id, err := h.canonicalID(ctx, ent.Key)
 		if err != nil {
@@ -75,44 +74,17 @@ func (h *handlers) arrange(ctx context.Context, shown *store.Form, params json.R
 			}
 		}
 		set = append(set, ent.Key)
-		if parent == "" {
-			parents[id] = parent
-			continue
-		}
-		moves = append(moves, [2]string{id, parent})
-		if _, drawn := cur.Get(id); drawn {
-			restore = append(restore, id)
-		}
-	}
-	if len(parents) == 0 && len(restore) == 0 && len(moves) == 0 {
-		return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, nil
-	}
-	draw := func(m [2]string) {
-		parents[m[0]] = m[1]
-		restore = slices.DeleteFunc(restore, func(id string) bool { return id == m[0] })
-	}
-	owner := h.callerIsOwner(ctx)
-	for _, m := range moves {
-		if !owner {
-			draw(m)
-			continue
-		}
-		err := h.angelus.Backend.Move(m[0], m[1])
-		switch {
-		case err == nil:
-		case errors.Is(err, store.ErrMoveCopies), errors.Is(err, store.ErrMoveCycle):
-			draw(m)
-		default:
-			return rpc.SetResponse{}, err
-		}
+		parents[id] = parent
 	}
 	if len(parents) == 0 && len(restore) == 0 {
-		return rpc.SetResponse{OK: true, Set: set, Outcome: rpc.OutcomeApplied}, nil
+		return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, nil
 	}
-	err := h.angelus.Backend.Arrange(parents, restore, func(id string) error {
-		return h.allowed(ctx, rpc.VerbSet, authz.Aria(id))
-	})
-	if errors.Is(err, store.ErrNoTrunkCapability) {
+	by, err := topologyPrincipal(ctx)
+	if err != nil {
+		return rpc.SetResponse{}, err
+	}
+	_, err = h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Arrange, Parents: parents, Restore: restore, Storage: true})
+	if errors.Is(err, hierarchy.ErrUnsupported) {
 		return rpc.SetResponse{}, fmt.Errorf("%s: this daemon keeps no presentation hierarchy", rpc.TopologyFormID)
 	}
 	if err != nil {

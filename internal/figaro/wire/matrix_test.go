@@ -3,14 +3,17 @@ package wire_test
 import (
 	"encoding/json"
 	"errors"
-	"github.com/jack-work/figaro/api/form"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/jack-work/figaro/api/form"
+
 	"github.com/jack-work/figaro/api/message"
 
 	"github.com/jack-work/figaro/internal/figaro/wire"
+	"github.com/jack-work/figaro/internal/hierarchy"
+	"github.com/jack-work/figaro/internal/hierarchy/hierarchytest"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/topo"
 )
@@ -81,7 +84,7 @@ func TestPromoteOnlyWithTheCapability(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = b.Store().Promote(alt, 1)
+		_, err = hierarchytest.Of(b).Promote(alt, 1)
 		if trunks && err != nil {
 			t.Fatalf("promote with the capability: %v", err)
 		}
@@ -110,11 +113,14 @@ func TestTrunklessIsAlwaysNormalized(t *testing.T) {
 	if !b.Store().Tree().Normalized() {
 		t.Fatal("a trunkless figaro must be normalized by construction")
 	}
-	if err := b.Store().Tree().Promote("anything"); !errors.Is(err, topo.ErrNoPromote) {
-		t.Errorf("trunkless promote = %v, want ErrNoPromote", err)
+	l, _ := b.CreateOutfit("d", patch("system.model", "m"))
+	conv, _ := b.CreateConversation(l)
+	_, kid, err := b.Fork(conv)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := b.Store().Tree().Reparent("a", "b"); err != nil {
-		t.Errorf("trunkless reparent must be a no-op, got %v", err)
+	if _, err := hierarchytest.Of(b).Promote(kid, 1); !errors.Is(err, hierarchy.ErrUnsupported) {
+		t.Errorf("trunkless promote = %v, want ErrUnsupported", err)
 	}
 	if b.Store().Tree().Edges() != nil {
 		t.Error("the trunkless tree must carry no presentation edges")
@@ -134,7 +140,7 @@ func TestPromotionBreaksNormalization(t *testing.T) {
 	if !tree.Normalized() {
 		t.Fatal("a fresh forest must be normalized")
 	}
-	if _, err := b.Store().Promote(alt, 1); err != nil {
+	if _, err := hierarchytest.Of(b).Promote(alt, 1); err != nil {
 		t.Fatal(err)
 	}
 	if tree.Normalized() {
@@ -152,14 +158,14 @@ func TestDeleteRepairsTheBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Store().Promote(alt, 1); err != nil {
+	if _, err := hierarchytest.Of(b).Promote(alt, 1); err != nil {
 		t.Fatal(err)
 	}
 	before, err := b.FormState(alt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := b.Remove(conv, true); err != nil {
+	if err := hierarchytest.Of(b).Remove(conv, true); err != nil {
 		t.Fatalf("delete after boundary repair: %v", err)
 	}
 	after, err := b.FormState(alt)
@@ -182,7 +188,7 @@ func TestNormalizeMakesDeletesFree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Store().Promote(alt, 1); err != nil {
+	if _, err := hierarchytest.Of(b).Promote(alt, 1); err != nil {
 		t.Fatal(err)
 	}
 	if b.Store().Tree().Normalized() {
@@ -196,7 +202,7 @@ func TestNormalizeMakesDeletesFree(t *testing.T) {
 		t.Fatal("normalize absorbed nothing, but an aria was promoted")
 	}
 	before, _ := b.FormState(alt)
-	if err := b.Remove(conv, true); err != nil {
+	if err := hierarchytest.Of(b).Remove(conv, true); err != nil {
 		t.Fatalf("delete after normalize: %v", err)
 	}
 	after, err := b.FormState(alt)
@@ -232,7 +238,7 @@ func TestNormalizeIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Store().Promote(alt, 1); err != nil {
+	if _, err := hierarchytest.Of(b).Promote(alt, 1); err != nil {
 		t.Fatal(err)
 	}
 	first, err := b.Normalize(false)

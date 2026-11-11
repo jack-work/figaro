@@ -611,23 +611,6 @@ func (b *XwalBackend) inheritStudies(ariaID string) {
 	}
 }
 
-// Promote is cosmetic: no content moves, cached rows stay valid.
-func (b *XwalBackend) Promote(ariaID string, levels int) (int, error) {
-	return b.store.Promote(ariaID, levels)
-}
-
-func (b *XwalBackend) Move(id, under string) error {
-	return b.store.Move(id, under)
-}
-
-func (b *XwalBackend) Arrange(parents map[string]string, restore []string, mayUndo func(id string) error) error {
-	return b.store.Arrange(parents, restore, mayUndo)
-}
-
-func (b *XwalBackend) Demote(ariaID, prefer string) (string, error) {
-	return b.store.Demote(ariaID, prefer)
-}
-
 func (b *XwalBackend) OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo, error) {
 	o, err := b.store.OwnerOf(ariaID, atMainLT)
 	if err != nil {
@@ -1119,14 +1102,6 @@ func (b *XwalBackend) metaCache(ariaID string) *metaCache {
 // refusal and before its repair, so a refused delete leaves nothing sealed
 // and an interrupted one leaves forms that say they are dead.
 func (b *XwalBackend) DeleteSet(ariaID string) []string { return b.store.DeleteSet(ariaID) }
-
-func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
-	return b.store.RemoveLeaf(ariaID, recursive, b.bury)
-}
-
-func (b *XwalBackend) RemoveIf(ariaID string, expect []string) error {
-	return b.store.RemoveLeafIf(ariaID, true, expect, b.bury)
-}
 
 // bury tombstones each doomed form, then forgets the aria's caches, for every
 // id in the set: a recursive delete must not leave children's forms resident,

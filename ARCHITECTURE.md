@@ -49,6 +49,7 @@ internal/config/           TOML config loader
 internal/decide/           figaro.decide: window, focus, @refs, budget; System One and OpenAI wires, through a provider
 internal/figaro/           actor: agent loop, inbox, translator orchestration; wire/ trunk capability
 internal/formdelta/        per-record form state a transcript reader needs
+internal/hierarchy/        every topology edit as a plan, applied under an injected Guard (authz.TopologyGuard)
 internal/livelog/          aria/ page server + field deltas; render/ terminal differential renderer
 internal/logring/          bounded in-memory slog tail
 internal/mark/             timing sink for transcript benchmarks

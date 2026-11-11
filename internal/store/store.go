@@ -8,10 +8,8 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/hierarchy"
 )
-
-// ErrAtStump: a Promote could not climb because the trunk is rooted directly at an outfit.
-var ErrAtStump = errors.New("trunk is rooted at an outfit; cannot promote further")
 
 var ErrNoTrunkCapability = errors.New("this figaro has no trunk capability")
 
@@ -19,7 +17,7 @@ var ErrNoTrunkCapability = errors.New("this figaro has no trunk capability")
 var ErrWouldOrphan = errors.New("delete would orphan a surviving aria")
 
 // ErrHasBranches is checked before anything is written: the boundary repair a delete performs cannot be taken back.
-var ErrHasBranches = errors.New("aria has live branches")
+var ErrHasBranches = hierarchy.ErrHasBranches
 
 var ErrDeleteSetChanged = errors.New("the nodes a delete takes changed since it was decided")
 
@@ -206,16 +204,6 @@ type Backend interface {
 	// get fresh ids.
 	ForkAt(ariaID string, atMainLT uint64) (cont, alt string, err error)
 
-	// Promote climbs up to `levels` stump-bounded levels and returns how many
-	// it climbed; ErrAtStump when rooted at an outfit.
-	Promote(ariaID string, levels int) (climbed int, err error)
-
-	Demote(ariaID, prefer string) (under string, err error)
-
-	Arrange(parents map[string]string, restore []string, mayUndo func(id string) error) error
-
-	Move(id, under string) error
-
 	Normalize(dryRun bool) (NormalizeReport, error)
 
 	OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo, error)
@@ -243,9 +231,7 @@ type Backend interface {
 	// than one writer, and a whole-record write from either drops the other's.
 	UpdateMeta(ariaID string, mutate func(*AriaMeta)) error
 
-	// Remove deletes a trunk's subtree; close the agent first. Without
-	// recursive, a trunk with live branches is refused.
-	Remove(ariaID string, recursive bool) error
+	HierarchyEngine() hierarchy.Engine
 
 	Close() error
 }
