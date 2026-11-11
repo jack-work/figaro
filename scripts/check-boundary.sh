@@ -101,6 +101,55 @@ go list -deps -f '{{.ImportPath}}' "$MOD/internal/daemon" | while IFS= read -r d
 	fi
 done >>"$found"
 
+# Rule 6 (direct): internal/hierarchy is a leaf: it imports nothing from the
+# module and no api/rpc, so the guard it calls is the only authority it knows.
+NRULES=$((NRULES + 1))
+grep "^$MOD/internal/hierarchy " "$direct" | while IFS= read -r line; do
+	importer=${line%% *}
+	for dep in ${line#"$importer"}; do
+		if under "$dep" "$MOD"; then
+			echo "$importer $dep hierarchy-imports"
+		fi
+	done
+done >>"$found"
+
+# Rule 7 (direct): the open guard is test support; no shipped package imports it,
+# and nothing under internal/figaro builds or calls a hierarchy.
+NRULES=$((NRULES + 1))
+while IFS= read -r line; do
+	importer=${line%% *}
+	for dep in ${line#"$importer"}; do
+		if [ "$dep" = "$MOD/internal/hierarchy/hierarchytest" ]; then
+			echo "$importer $dep hierarchytest-shipped"
+		fi
+		if under "$importer" "$MOD/internal/figaro" && under "$dep" "$MOD/internal/hierarchy"; then
+			echo "$importer $dep figaro-builds-guard"
+		fi
+	done
+done <"$direct" >>"$found"
+
+# Rule 8 (calls): edges are written only through hierarchy.Apply. The store's
+# engine is taken once, by the angelus host when it builds its hierarchy, and
+# nothing else outside internal/hierarchy and internal/store calls an engine
+# writer.
+NRULES=$((NRULES + 1))
+{
+	grep -rln --include='*.go' --exclude='*_test.go' -e '\.WriteDrawn(' -e '\.MoveStorage(' . |
+		sed 's|^\./||' | while IFS= read -r file; do
+		case "$file" in
+		internal/hierarchy/* | internal/store/*) ;;
+		*) echo "$MOD/${file%/*} $file edge-writer" ;;
+		esac
+	done
+	grep -rln --include='*.go' --exclude='*_test.go' -e '\.HierarchyEngine()' . |
+		sed 's|^\./||' | while IFS= read -r file; do
+		case "$file" in
+		internal/hierarchy/* | internal/store/* | internal/angelus/topology_guard.go) ;;
+		*) echo "$MOD/${file%/*} $file edge-engine" ;;
+		esac
+	done
+} >>"$found"
+
 sort -u -o "$found" "$found"
 cut -d' ' -f1,2 "$found" | sort -u >"$tmp/pairs"
 
