@@ -45,11 +45,9 @@ func (e *hierarchyEngine) Node(id string) (hierarchy.Node, bool) {
 	if !ok {
 		return hierarchy.Node{}, false
 	}
-	out := hierarchy.Node{ID: n.ID, Aria: n.Kind == KindConversation, Stump: n.Stump, BranchedLT: n.BranchedLT}
-	if out.Aria {
-		if meta, _ := e.b.Meta(id); meta != nil {
-			out.Owner = meta.MintedBy
-		}
+	out := hierarchy.Node{ID: n.ID, Aria: n.Kind == KindConversation, Form: n.Kind == KindForm, Stump: n.Stump, BranchedLT: n.BranchedLT}
+	if meta, _ := e.b.Meta(id); meta != nil {
+		out.Owner = meta.MintedBy
 	}
 	return out, true
 }
