@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -53,6 +54,7 @@ type XwalBackend struct {
 	ttl      map[string]TTLEntry
 	access   map[string]int64
 	reaped   map[string]ReapedEntry
+	buried   map[string]bool
 	onReaped []func()
 	encoders translatorEncoders
 
@@ -629,14 +631,50 @@ func (b *XwalBackend) Node(id string) (NodeView, bool) {
 	return n, ok
 }
 
-func (b *XwalBackend) Nodes() []NodeView { return b.labelAll(b.store.Nodes()) }
+func (b *XwalBackend) Nodes() []NodeView { return b.labelAll(b.unburied(b.store.Nodes())) }
 func (b *XwalBackend) NodeID() string    { return b.store.NodeID() }
 func (b *XwalBackend) MatchID(prefix string, limit int) []string {
 	return b.store.MatchID(prefix, limit)
 }
-func (b *XwalBackend) Conversations() []NodeView { return b.labelAll(b.store.Conversations()) }
-func (b *XwalBackend) Forms() []NodeView         { return b.store.Forms() }
-func (b *XwalBackend) ConversationIDs() []string { return b.store.ConversationIDs() }
+func (b *XwalBackend) Conversations() []NodeView {
+	return b.labelAll(b.unburied(b.store.Conversations()))
+}
+func (b *XwalBackend) Forms() []NodeView { return b.store.Forms() }
+func (b *XwalBackend) ConversationIDs() []string {
+	ids := b.store.ConversationIDs()
+	b.ttlMu.Lock()
+	defer b.ttlMu.Unlock()
+	b.seedLifetimesLocked()
+	if len(b.buried) == 0 {
+		return ids
+	}
+	return slices.DeleteFunc(ids, func(id string) bool { return b.buried[id] })
+}
+
+func (b *XwalBackend) unburied(nodes []NodeView) []NodeView {
+	b.ttlMu.Lock()
+	defer b.ttlMu.Unlock()
+	b.seedLifetimesLocked()
+	if len(b.buried) == 0 {
+		return nodes
+	}
+	return slices.DeleteFunc(nodes, func(n NodeView) bool { return b.buried[n.ID] })
+}
+
+func (b *XwalBackend) Buried(id string) bool {
+	b.ttlMu.Lock()
+	defer b.ttlMu.Unlock()
+	b.seedLifetimesLocked()
+	return b.buried[id]
+}
+
+func (b *XwalBackend) unlinked(ids []string) {
+	for _, id := range ids {
+		if err := os.Remove(b.metaPath(id)); err != nil && !os.IsNotExist(err) {
+			slog.Warn("tombstone: meta marker not removed", "aria", id, "err", err)
+		}
+	}
+}
 
 type outfitLabel struct{ name, version string }
 
@@ -1132,8 +1170,15 @@ func (b *XwalBackend) buryAs(reason string, doomed []string) {
 		b.ttlMu.Lock()
 		delete(b.access, id)
 		delete(b.ttl, id)
+		b.seedLifetimesLocked()
+		if b.buried == nil {
+			b.buried = map[string]bool{}
+		}
+		b.buried[id] = true
 		b.ttlMu.Unlock()
-		_ = os.Remove(b.metaPath(id))
+		if err := writeJSON(b.metaPath(id), &AriaMeta{TombstonedAtMS: time.Now().UnixMilli(), MetaVersion: CurrentMetaVersion}); err != nil {
+			slog.Warn("tombstone: meta marker not written", "aria", id, "err", err)
+		}
 	}
 	b.ReapedForget(doomed...)
 	b.rolesForgotten(doomed)

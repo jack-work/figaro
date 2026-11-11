@@ -337,6 +337,12 @@ func (b *XwalBackend) ttlNoted(id string, meta *AriaMeta) {
 		b.ttlMu.Unlock()
 		return
 	}
+	if meta != nil && meta.TombstonedAtMS > 0 {
+		if b.buried == nil {
+			b.buried = map[string]bool{}
+		}
+		b.buried[id] = true
+	}
 	if e, ok := ttlEntryOf(id, meta); ok {
 		e.LastAccessMS = max(e.LastAccessMS, b.access[id])
 		b.ttl[id] = e
@@ -415,7 +421,7 @@ func (b *XwalBackend) seedLifetimesLocked() {
 	if b.ttl != nil {
 		return
 	}
-	b.ttl, b.reaped = scanLifetimes(b.root)
+	b.ttl, b.reaped, b.buried = scanLifetimes(b.root)
 	for id, e := range b.ttl {
 		e.LastAccessMS = max(e.LastAccessMS, b.access[id])
 		b.ttl[id] = e
@@ -454,20 +460,21 @@ func (b *XwalBackend) TTLForget(ids ...string) {
 // ScanTTL reads the sidecars alone: no store opened, no lock taken, nothing
 // woken, so it may run against a live daemon's store.
 func ScanTTL(root string) map[string]TTLEntry {
-	found, _ := scanLifetimes(root)
+	found, _, _ := scanLifetimes(root)
 	return found
 }
 
-func scanLifetimes(root string) (map[string]TTLEntry, map[string]ReapedEntry) {
+func scanLifetimes(root string) (map[string]TTLEntry, map[string]ReapedEntry, map[string]bool) {
 	found := map[string]TTLEntry{}
 	reaped := map[string]ReapedEntry{}
+	buried := map[string]bool{}
 	dir := filepath.Join(root, "_meta")
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			slog.Warn("ttl scan", "dir", dir, "err", err)
 		}
-		return found, reaped
+		return found, reaped, buried
 	}
 	for _, e := range ents {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
@@ -478,6 +485,10 @@ func scanLifetimes(root string) (map[string]TTLEntry, map[string]ReapedEntry) {
 			continue
 		}
 		id := strings.TrimSuffix(e.Name(), ".json")
+		if meta.TombstonedAtMS > 0 {
+			buried[id] = true
+			continue
+		}
 		if entry, ok := ttlEntryOf(id, meta); ok {
 			found[id] = entry
 		}
@@ -485,7 +496,7 @@ func scanLifetimes(root string) (map[string]TTLEntry, map[string]ReapedEntry) {
 			reaped[id] = entry
 		}
 	}
-	return found, reaped
+	return found, reaped, buried
 }
 
 func (b *XwalBackend) LastAccess(id string) int64 {

@@ -58,7 +58,8 @@ type AriaMeta struct {
 	// MetaVersion below CurrentMetaVersion is upgraded by healIdentity on the next read.
 	MetaVersion int `json:"meta_version,omitempty"`
 
-	MintedBy string `json:"minted_by,omitempty"`
+	MintedBy       string `json:"minted_by,omitempty"`
+	TombstonedAtMS int64  `json:"tombstoned_at_ms,omitempty"`
 }
 
 type Lifetime struct {
