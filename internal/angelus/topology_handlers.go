@@ -744,7 +744,7 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 			if err != nil {
 				return nil, err
 			}
-			return rpc.KillResponse{OK: true, PurgeAt: until.UnixMilli()}, nil
+			return rpc.KillResponse{OK: true, PurgeAt: until.UnixMilli(), Roles: h.angelus.rolesIn(checked.Delete)}, nil
 		}
 	}
 	expect := checked.Delete
@@ -754,11 +754,12 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	if group, reaped := h.angelus.reapedGroupOf(req.FigaroID); reaped && !sameMembers(group, checked.Delete) {
 		return nil, fmt.Errorf("%w: %s was reaped with %v, and a delete of it now takes %v; nothing was purged", store.ErrDeleteSetChanged, req.FigaroID, group, checked.Delete)
 	}
+	roles := h.angelus.rolesIn(checked.Delete)
 	removed, err := h.removeAria(ctx, by, hierarchy.Kill, req.FigaroID, req.Recursive, expect)
 	if err != nil {
 		return nil, err
 	}
-	return rpc.KillResponse{OK: true, Removed: removed}, nil
+	return rpc.KillResponse{OK: true, Removed: removed, Roles: roles}, nil
 }
 
 // RemoveAria is the whole of a deletion: agent, background sessions, bytes, endpoint.

@@ -201,4 +201,5 @@ type KillResponse struct {
 	OK      bool     `json:"ok"`
 	PurgeAt int64    `json:"purge_at,omitempty"`
 	Removed []string `json:"removed,omitempty"`
+	Roles   []string `json:"roles,omitempty"`
 }

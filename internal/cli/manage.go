@@ -865,6 +865,9 @@ func runKillRequest(loaded *config.Loaded, req rpc.KillRequest) {
 			die("kill: %s", err)
 		}
 		name := ariaName(req.FigaroID)
+		for _, role := range resp.Roles {
+			fmt.Fprintf(stderrw, "took role %s\n", role)
+		}
 		if resp.PurgeAt == 0 {
 			fmt.Fprintf(stderrw, "killed %s\n", name)
 			return nil
