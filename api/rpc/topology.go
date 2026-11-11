@@ -100,10 +100,11 @@ type PromoteRequest struct {
 
 // AtStump: already at the top, or no trunk capability (Unsupported).
 type PromoteResponse struct {
-	FigaroID    string `json:"figaro_id"`
-	Climbed     int    `json:"climbed"`
-	AtStump     bool   `json:"at_stump,omitempty"`
-	Unsupported bool   `json:"unsupported,omitempty"`
+	FigaroID    string    `json:"figaro_id"`
+	Climbed     int       `json:"climbed"`
+	AtStump     bool      `json:"at_stump,omitempty"`
+	Unsupported bool      `json:"unsupported,omitempty"`
+	Parked      *Proposal `json:"parked,omitempty"`
 }
 
 type DemoteRequest struct {
@@ -112,10 +113,50 @@ type DemoteRequest struct {
 }
 
 type DemoteResponse struct {
-	FigaroID    string `json:"figaro_id"`
-	Under       string `json:"under,omitempty"`
-	Preferred   bool   `json:"preferred,omitempty"`
-	Unsupported bool   `json:"unsupported,omitempty"`
+	FigaroID    string    `json:"figaro_id"`
+	Under       string    `json:"under,omitempty"`
+	Preferred   bool      `json:"preferred,omitempty"`
+	Unsupported bool      `json:"unsupported,omitempty"`
+	Parked      *Proposal `json:"parked,omitempty"`
+}
+
+// Proposal is a move held on its receiving parent until that parent's
+// holder accepts or refuses it. Proposals live in the daemon's memory: a
+// restart drops them, as expiry does.
+type Proposal struct {
+	ID        string         `json:"id"`
+	Parent    string         `json:"parent"`
+	Op        string         `json:"op"`
+	Node      string         `json:"node,omitempty"`
+	By        string         `json:"by"`
+	Moves     []ProposedMove `json:"moves"`
+	Accepts   []string       `json:"accepts,omitempty"`
+	ExpiresMS int64          `json:"expires_ms"`
+}
+
+type ProposedMove struct {
+	Node string `json:"node"`
+	From string `json:"from,omitempty"`
+	To   string `json:"to,omitempty"`
+	Tree string `json:"tree"`
+}
+
+type ParkedRequest struct {
+	FigaroID string `json:"figaro_id"`
+}
+
+type ParkedResponse struct {
+	Proposals []Proposal `json:"proposals"`
+}
+
+// ConsentRequest accepts or refuses one proposal waiting on FigaroID.
+type ConsentRequest struct {
+	FigaroID string `json:"figaro_id"`
+	ID       string `json:"id"`
+}
+
+type ConsentResponse struct {
+	OK bool `json:"ok"`
 }
 
 // ImportRequest restores an exported aria as a new conversation: nothing is

@@ -677,6 +677,9 @@ func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interfa
 		return nil, err
 	}
 	p, err := h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Promote, Node: req.FigaroID, Levels: req.Levels})
+	if prop, ok := parkedProposal(err); ok {
+		return rpc.PromoteResponse{FigaroID: req.FigaroID, Parked: prop}, nil
+	}
 	if errors.Is(err, hierarchy.ErrUnsupported) {
 		return rpc.PromoteResponse{FigaroID: req.FigaroID, Unsupported: true}, nil
 	}
@@ -700,6 +703,9 @@ func (h *handlers) demote(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 	p, err := h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Demote, Node: req.FigaroID, To: req.Prefer})
+	if prop, ok := parkedProposal(err); ok {
+		return rpc.DemoteResponse{FigaroID: req.FigaroID, Under: p.To, Parked: prop}, nil
+	}
 	if errors.Is(err, hierarchy.ErrUnsupported) {
 		return rpc.DemoteResponse{FigaroID: req.FigaroID, Unsupported: true}, nil
 	}

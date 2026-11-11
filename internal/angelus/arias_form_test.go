@@ -453,10 +453,10 @@ func lendGuest(t *testing.T, r grantRig, grants ...string) {
 	}
 }
 
-// Drawing an aria under P changes how P's subtree is drawn, which is a write
-// to P: read on P is not enough, or a guest lent read could hang an aria of
-// its own, with a mantra of its choosing, among the owner's children.
-func TestArrangingUnderAnAriaNeedsSetOnIt(t *testing.T) {
+// Drawing an aria under P changes how P's subtree is drawn. Rule 3: a guest
+// whose aria and P have different owners needs adopt on P; without it the
+// move waits on P for its holder, and nothing is drawn meanwhile.
+func TestArrangingUnderAnotherOwnersAriaNeedsAdoptOnIt(t *testing.T) {
 	r := newRigWith(t, doorPolicy)
 	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)
@@ -472,21 +472,21 @@ func TestArrangingUnderAnAriaNeedsSetOnIt(t *testing.T) {
 	}
 	p, g := owners.FigaroID, theirs.FigaroID
 
-	lendGuest(t, r, lend([]string{"read"}, p))
+	lendGuest(t, r, lend([]string{"read", "set"}, p), lend([]string{"kill"}, g))
 	err = setTopology(t, r, guest, map[string]string{g: p})
-	if err == nil {
-		t.Fatal("a guest lent only read drew its aria under the owner's")
-	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("the refusal tells a readable aria apart from a missing one: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "waits on "+p) {
+		t.Fatalf("a guest without adopt on the owner's aria = %v, want the move parked on it", err)
 	}
 	if up := presentedUnder(t, r, g); up == p {
-		t.Error("a refused write moved the guest's aria under the owner's")
+		t.Error("a parked move drew the guest's aria under the owner's")
 	}
 
-	lendGuest(t, r, lend([]string{"read", "set"}, p), lend([]string{"kill"}, g))
+	lendGuest(t, r, lend([]string{"read", "adopt"}, p), lend([]string{"kill"}, g))
 	if err := setTopology(t, r, guest, map[string]string{g: p}); err != nil {
-		t.Fatalf("a guest lent set on the owner's aria cannot draw under it: %v", err)
+		t.Fatalf("a guest lent adopt on the owner's aria cannot draw under it: %v", err)
+	}
+	if up := presentedUnder(t, r, g); up != p {
+		t.Errorf("after the move the guest's aria is drawn under %q, want %s", up, p)
 	}
 }
 

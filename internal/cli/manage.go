@@ -1083,6 +1083,10 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 				"  no hierarchy to promote within. Aria nesting follows fork history alone.\n" +
 				"  Set `trunks = true` in config.toml and restart the daemon to enable it.")
 		}
+		if resp.Parked != nil {
+			printParked("promote", resp.Parked)
+			return nil
+		}
 		if resp.AtStump {
 			die("promote: nothing above %s but an outfit, and only conversations nest;\n"+
 				"  edit the outfit instead, or promote something under this one", target)
@@ -1118,6 +1122,10 @@ func runDemote(loaded *config.Loaded, idFlag string, args []string, under string
 		}
 		if asJSON {
 			return json.NewEncoder(stdout).Encode(resp)
+		}
+		if resp.Parked != nil {
+			printParked("demote", resp.Parked)
+			return nil
 		}
 		switch {
 		case resp.Under == "":

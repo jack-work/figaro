@@ -207,7 +207,7 @@ func TestExportedSetsSpellEveryStarVerbOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := ExportGrants(gs)
-	want := "read:*, listen:aria:x, send:aria:x, fork:aria:x, set:aria:x, create:aria:x, kill:aria:x, admin:aria:x, use:aria:x, join:aria:x, egress:*"
+	want := "read:*, listen:aria:x, send:aria:x, fork:aria:x, set:aria:x, create:aria:x, kill:aria:x, admin:aria:x, use:aria:x, join:aria:x, adopt:aria:x, egress:*"
 	if strings.Join(got, ", ") != want {
 		t.Fatalf("got  %s\nwant %s", strings.Join(got, ", "), want)
 	}
