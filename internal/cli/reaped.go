@@ -113,12 +113,7 @@ func runReaped(loaded *config.Loaded, args []string, keep, asJSON bool) error {
 				return nil
 			}
 			if verb == "purge" {
-				resp, kerr := acli.Kill(ctx, rpc.KillRequest{FigaroID: g.Root, Recursive: true, Now: true})
-				if kerr != nil {
-					err = fmt.Errorf("reaped purge: %w", kerr)
-					return nil
-				}
-				fmt.Fprintf(stderrw, "purged %s and %d under it\n", ariaName(g.Root), max(len(resp.Removed)-1, 0))
+				err = purgeReaped(ctx, acli, g)
 				return nil
 			}
 			err = restoreReaped(ctx, acli, g, keep)
@@ -128,6 +123,15 @@ func runReaped(loaded *config.Loaded, args []string, keep, asJSON bool) error {
 		return nil
 	})
 	return err
+}
+
+func purgeReaped(ctx context.Context, acli *sdk.Angelus, g reapedGroup) error {
+	resp, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: g.Root, Recursive: true, Now: true})
+	if err != nil {
+		return fmt.Errorf("reaped purge: %w", err)
+	}
+	fmt.Fprintf(stderrw, "purged %s and %d under it\n", ariaName(g.Root), max(len(resp.Removed)-1, 0))
+	return nil
 }
 
 func restoreReaped(ctx context.Context, acli *sdk.Angelus, g reapedGroup, keep bool) error {

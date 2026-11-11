@@ -1,12 +1,20 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/sdk"
+	"github.com/jack-work/jkrpc"
 )
 
 func TestParseReapedFormGroupsByRoot(t *testing.T) {
@@ -51,5 +59,38 @@ func TestLsWithholdsReapedRowsAndCountsThem(t *testing.T) {
 	}
 	if n := withheldReaped(figs, kept); n != 1 {
 		t.Fatalf("withheldReaped = %d, want 1", n)
+	}
+}
+
+// D1: the purge line counts what the daemon removed, not the group as listed.
+// The listing said P and C; the daemon took only P.
+func TestReapedPurgeCountsWhatTheDaemonRemoved(t *testing.T) {
+	dir, err := os.MkdirTemp(os.Getenv("TMPDIR"), "r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "angelus.sock")
+	p, c := "0123456789abcdef0123456789abcdef", "fedcba9876543210fedcba9876543210"
+	fakeRPCServer(t, sock, map[string]jkrpc.HandlerFunc{
+		rpc.MethodKill: func(context.Context, json.RawMessage) (any, error) {
+			return rpc.KillResponse{OK: true, Removed: []string{p}}, nil
+		},
+	})
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(sock))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { acli.Close() })
+	prev := stderrw
+	var errs bytes.Buffer
+	stderrw = &errs
+	t.Cleanup(func() { stderrw = prev })
+
+	if err := purgeReaped(context.Background(), acli, reapedGroup{Root: p, Nodes: []string{p, c}}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errs.String(), "and 0 under it") {
+		t.Fatalf("stderr = %q, want the count from Removed: and 0 under it", errs.String())
 	}
 }
