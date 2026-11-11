@@ -217,6 +217,9 @@ func (p *Provider) responsesBackend() *responses.Provider {
 }
 
 func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+	if p.spec.SendFigaroID {
+		ctx = provider.WithFigaroID(ctx, in.AriaID)
+	}
 	model := snapshotString(in.Snapshot, "system.model")
 	if model == "" {
 		p.mu.RLock()
@@ -402,6 +405,7 @@ func (p *Provider) messagesTransport(client *http.Client) anthropic.TransportFn 
 					req.Header.Add(k, v)
 				}
 			}
+			provider.StampFigaroID(ctx, req.Header)
 			return client.Do(req)
 		})
 	}

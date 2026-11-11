@@ -214,6 +214,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 			httpReq.Header.Set("x-session-id", req.SessionID)
 		}
 		p.authorize(httpReq, token)
+		provider.StampFigaroID(ctx, httpReq.Header)
 		return p.HTTPClient.Do(httpReq)
 	})
 	if err != nil {

@@ -172,6 +172,7 @@ messages_path = "/v1/messages"              # when base_url does not end in /v1
 text_only     = true                        # every model: send images as a text stand-in
 max_request_bytes = 8323072                 # the gateway's body cap, less headroom
 headers       = { "X-Team" = "figaro" }     # every request, every transport
+send_figaro_id = true                       # Figaro-Id: <aria id> on every model request
 
 [transport_headers.responses]               # one transport only
 "X-Experiment" = "1"
@@ -187,6 +188,14 @@ transport = "responses"
 
 The provider fails to build, rather than guess, on an unknown transport, a rule
 with no transport, a bad glob, or a spec with no way to route at all.
+
+`send_figaro_id` (default false) names the sending figaro to the host: a
+`Figaro-Id` header carrying the full aria id, on every model request of every
+transport (messages, chat, responses, and the responses socket's handshake),
+replacing any `Figaro-Id` from `headers`. Catalog fetches and decision calls
+do not carry it. It is the header HTTP sandbox providers receive, so a gateway
+can attribute calls, tokens and cache state per figaro. `anthropic` reads the
+same key from `providers/anthropic.toml`. Leave it off for a public host.
 
 ## Presets
 

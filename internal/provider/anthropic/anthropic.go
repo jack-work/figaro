@@ -57,6 +57,8 @@ type Anthropic struct {
 
 	MaxRequestBytes int
 
+	SendFigaroID bool
+
 	Templates *template.Template
 
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
@@ -986,6 +988,9 @@ func countCacheMarkers(req nativeRequest) int {
 
 func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) (err error) {
 	ctx = wirelog.WithAria(ctx, in.AriaID)
+	if a.SendFigaroID {
+		ctx = provider.WithFigaroID(ctx, in.AriaID)
+	}
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
@@ -1038,6 +1043,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 			body.Attach(httpReq)
 			httpReq.Header.Set("Content-Type", "application/json")
 			a.setAuthHeaders(httpReq, token, betaMessages, messageBetas(model)...)
+			provider.StampFigaroID(ctx, httpReq.Header)
 			return httpReq, nil
 		})
 		if err != nil {

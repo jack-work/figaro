@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/jack-work/figaro/internal/catalog"
 	"github.com/jack-work/figaro/internal/catalogmaps"
 	"github.com/jack-work/figaro/internal/config"
@@ -40,23 +42,45 @@ func buildFromContext(ctx provider.BuildContext) (provider.Provider, error) {
 		return nil, err
 	}
 	a.Templates = ctx.Templates
-	if a.Catalog, err = catalogFromFile(ctx.Loaded); err != nil {
+	data, err := readProviderFile(ctx.Loaded)
+	if err != nil {
+		return nil, err
+	}
+	if a.Catalog, err = catalogFrom(data); err != nil {
+		return nil, err
+	}
+	if a.SendFigaroID, err = sendsFigaroID(data); err != nil {
 		return nil, err
 	}
 	return a, nil
 }
 
-func catalogFromFile(loaded *config.Loaded) (*catalog.Reader, error) {
-	var file catalog.File
-	if loaded != nil {
-		path := loaded.ProviderAuthPath(providerName)
-		data, err := os.ReadFile(path)
-		if err != nil && !os.IsNotExist(err) {
-			return nil, err
-		}
-		if file, err = catalog.Decode(data); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
+func readProviderFile(loaded *config.Loaded) ([]byte, error) {
+	if loaded == nil {
+		return nil, nil
+	}
+	path := loaded.ProviderAuthPath(providerName)
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	return data, nil
+}
+
+func sendsFigaroID(data []byte) (bool, error) {
+	var f struct {
+		SendFigaroID bool `toml:"send_figaro_id"`
+	}
+	if _, err := toml.Decode(string(data), &f); err != nil {
+		return false, fmt.Errorf("anthropic: %w", err)
+	}
+	return f.SendFigaroID, nil
+}
+
+func catalogFrom(data []byte) (*catalog.Reader, error) {
+	file, err := catalog.Decode(data)
+	if err != nil {
+		return nil, fmt.Errorf("anthropic: %w", err)
 	}
 	r, err := catalog.New(catalogmaps.Builtin(providerName).With(file.Catalog), file.Models)
 	if err != nil {
