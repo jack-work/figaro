@@ -150,6 +150,18 @@ NRULES=$((NRULES + 1))
 	done
 } >>"$found"
 
+# Rule 9 (calls, inside internal/store): the tree's writers are called only by
+# the engine. Allowed and named: xwal_store.go keeps Normalize (admin) and
+# CleanTopology, whose drops never change a surviving node's drawn parent.
+NRULES=$((NRULES + 1))
+grep -ln -E 'edgeWriter\)|tree\.Forget\(|tree\.Prune\(|trunks\.Reparent\(|trunks\.Detach\(' internal/store/*.go |
+	grep -v '_test\.go$' | while IFS= read -r file; do
+	case "$file" in
+	internal/store/hierarchy_engine.go | internal/store/topology_form.go) ;;
+	*) echo "$MOD/internal/store $file store-edge-writer" ;;
+	esac
+done >>"$found"
+
 sort -u -o "$found" "$found"
 cut -d' ' -f1,2 "$found" | sort -u >"$tmp/pairs"
 

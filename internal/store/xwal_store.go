@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -24,7 +23,6 @@ import (
 	"github.com/jack-work/figaro/figwal/segment"
 	"github.com/jack-work/figaro/figwal/xwal"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/topo"
 )
 
@@ -578,27 +576,6 @@ var (
 	ErrMoveCycle  = xwal.ErrMoveCycle
 )
 
-func (s *XwalStore) move(id, under string) error {
-	node, ok := s.trunks.HeadNode(id)
-	if !ok {
-		return fmt.Errorf("move: no aria or form %q", id)
-	}
-	parent := ""
-	if under != "" {
-		if parent, ok = s.trunks.HeadNode(under); !ok {
-			return fmt.Errorf("move: no aria or form %q", under)
-		}
-	}
-	if err := s.trunks.Reparent(node, parent); err != nil {
-		if errors.Is(err, ErrMoveCopies) || errors.Is(err, ErrMoveCycle) {
-			return fmt.Errorf("move %s under %s: %w: %w", id, under, hierarchy.ErrStorageRefused, err)
-		}
-		return fmt.Errorf("move %s under %s: %w", id, under, err)
-	}
-	_, err := s.CleanTopology(false)
-	return err
-}
-
 func (s *XwalStore) OwnerOf(id string, atMainLT uint64) (xwal.Owner, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -923,91 +900,6 @@ func (s *XwalStore) Nodes() []NodeView {
 func (s *XwalStore) Node(id string) (NodeView, bool) {
 	node, ok := s.topologySnapshot().byID[id]
 	return node, ok
-}
-
-func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins map[string]string, bury func([]string)) error {
-	s.deleting.Lock()
-	defer s.deleting.Unlock()
-	// Refuse before touching anything: the boundary repair rewrites surviving arias.
-	taken := s.tree.DeleteSet(id)
-	if !recursive && len(taken) > 1 {
-		return fmt.Errorf("%w: %q has %d; -r takes them too", ErrHasBranches, id, len(taken)-1)
-	}
-	if expect != nil && !sameIDs(orSelf(taken, id), expect) {
-		return fmt.Errorf("%w: %q takes %v, decided on %v", ErrDeleteSetChanged, id, taken, expect)
-	}
-	if bury != nil {
-		bury(taken)
-	}
-	// Repair the boundary first: every survivor reading its history through
-	// the delete set absorbs that prefix. Only then unlink, so a crash between
-	// the two leaves survivors reading through directories still present.
-	homes := map[string]string{}
-	doomed := make(map[string]bool, len(taken))
-	for _, t := range taken {
-		doomed[t] = true
-	}
-	for child, up := range s.tree.Edges() {
-		if doomed[child] || !doomed[up] {
-			continue
-		}
-		home, ok := pins[child]
-		if !ok {
-			return fmt.Errorf("%w: %q strands %s, which the plan does not re-home", ErrDeleteSetChanged, id, child)
-		}
-		homes[child] = home
-	}
-	for _, orphan := range s.deleteOrphans(id) {
-		home, ok := pins[orphan]
-		if !ok {
-			return fmt.Errorf("%w: %q strands %s, which the plan does not re-home", ErrDeleteSetChanged, id, orphan)
-		}
-		homes[orphan] = home
-		// Boundary speaks in aria ids; Detach addresses the node directory.
-		node, ok := s.trunks.HeadNode(orphan)
-		if !ok {
-			return fmt.Errorf("%w: no node for %s", ErrWouldOrphan, orphan)
-		}
-		if err := s.trunks.Detach(node); err != nil {
-			return fmt.Errorf("%w: detaching %s: %v", ErrWouldOrphan, orphan, err)
-		}
-	}
-	// The hosting stump is read before the removal.
-	stump := s.topologySnapshot().byID[id].Stump
-	if err := s.removeLocked(id, recursive); err != nil {
-		return err
-	}
-	// Presentation is repaired with s.mu released: an edge resolves through
-	// the topology snapshot, which takes that lock itself.
-	if err := s.tree.Forget(taken...); err != nil {
-		slog.Warn("forget presentation edges", "aria", id, "err", err)
-	}
-	keep := false
-	set := map[string]string{}
-	var unpin []string
-	for orphan, home := range homes {
-		if home == "" {
-			continue
-		}
-		if home == stump {
-			keep = true
-		}
-		if up, _ := s.TopologyAdjacency().From(orphan); up == home {
-			unpin = append(unpin, orphan)
-			continue
-		}
-		set[orphan] = home
-	}
-	if w, ok := s.tree.(edgeWriter); ok && (len(set) > 0 || len(unpin) > 0) {
-		if err := w.Write(set, unpin); err != nil {
-			slog.Warn("rehome detached aria", "pins", set, "err", err)
-		}
-	}
-	// The stump goes only if nothing is left drawn beneath it.
-	if !keep {
-		s.collectStumpAfterDelete(stump)
-	}
-	return nil
 }
 
 // removeLocked is the unlink; stump collection is deferred because it depends

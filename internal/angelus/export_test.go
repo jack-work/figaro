@@ -29,6 +29,8 @@ func SetMaxDoorFrameForTest(t interface{ Cleanup(func()) }, n int) {
 
 func (a *Angelus) ExpireTTLForBench() { a.expireTTL() }
 
+func (hs *Handlers) AfterKillCheckForTest(fn func()) { hs.h.afterKillCheck = fn }
+
 func (a *Angelus) WaitReclaimsForBench() {
 	r := a.reclaims()
 	r.drain(context.Background())

@@ -40,6 +40,8 @@ type TopologyGuard struct {
 	Owner     func() jkauthz.Principal
 	Placement func(id string) (zone string, deadlineMS int64)
 	Holds     func(ctx context.Context, root string, taken []string) (node, why string)
+	Reaped    func(ctx context.Context, root string) (nodes []string, due bool)
+	Empty     func(id string) bool
 }
 
 func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hierarchy.Plan) (hierarchy.Verdict, error) {
@@ -50,7 +52,7 @@ func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hier
 		return hierarchy.Verdict{}, g.system(ctx, p)
 	}
 	switch p.Op {
-	case hierarchy.Sweep, hierarchy.Purge, hierarchy.Discard:
+	case hierarchy.Sweep, hierarchy.Purge, hierarchy.Discard, hierarchy.Depart:
 		return hierarchy.Verdict{}, fmt.Errorf("%s: %w", p.Op, ErrSystemOnly)
 	}
 	caller, ok := by.Subject.(TopologyCaller)
@@ -58,7 +60,7 @@ func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hier
 		return hierarchy.Verdict{}, fmt.Errorf("%s: no caller to authorize", p.Op)
 	}
 	switch p.Op {
-	case hierarchy.Kill:
+	case hierarchy.Kill, hierarchy.Reap:
 		return hierarchy.Verdict{}, g.each(caller, rpc.VerbKill, p.Delete)
 	case hierarchy.Restore:
 		return hierarchy.Verdict{}, g.each(caller, rpc.VerbKill, p.Revive)
@@ -75,26 +77,65 @@ func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hier
 
 func (g TopologyGuard) system(ctx context.Context, p hierarchy.Plan) error {
 	switch p.Op {
-	case hierarchy.Sweep:
-		root := p.Node
-		zone := g.zone(root)
-		for _, id := range p.Delete {
-			if id != root && g.zone(id) != zone {
-				return &HeldError{Node: id, Why: "a node it would take runs in another sandbox"}
-			}
+	case hierarchy.Sweep, hierarchy.Reap:
+		if err := g.sweepable(ctx, p); err != nil {
+			return err
 		}
-		if g.Holds != nil {
-			if node, why := g.Holds(ctx, root, p.Delete); why != "" {
-				return &HeldError{Node: node, Why: why}
-			}
+	case hierarchy.Purge:
+		if err := g.purgeable(ctx, p); err != nil {
+			return err
 		}
-	case hierarchy.Purge, hierarchy.Discard:
+	case hierarchy.Discard:
+		if len(p.Delete) != 1 || p.Delete[0] != p.Node || len(p.Moves) > 0 {
+			return fmt.Errorf("discard takes one leaf, not %v", p.Delete)
+		}
+		if g.Empty == nil || !g.Empty(p.Node) {
+			return fmt.Errorf("discard: %s holds messages of its own", p.Node)
+		}
+	case hierarchy.Depart:
 	default:
 		return fmt.Errorf("the daemon may only re-home and sweep, not %s", p.Op)
 	}
 	for _, m := range p.Moves {
 		if !m.Rehome || m.Tree != hierarchy.Drawn {
 			return fmt.Errorf("the daemon may only re-home in the drawn tree: %s to %s", m.Node, m.To)
+		}
+	}
+	return nil
+}
+
+func (g TopologyGuard) sweepable(ctx context.Context, p hierarchy.Plan) error {
+	root := p.Node
+	zone := g.zone(root)
+	for _, id := range p.Delete {
+		if id != root && g.zone(id) != zone {
+			return &HeldError{Node: id, Why: "a node it would take runs in another sandbox"}
+		}
+	}
+	if g.Holds == nil {
+		return &HeldError{Node: root, Why: "no hold rule is wired"}
+	}
+	if node, why := g.Holds(ctx, root, p.Delete); why != "" {
+		return &HeldError{Node: node, Why: why}
+	}
+	return nil
+}
+
+func (g TopologyGuard) purgeable(ctx context.Context, p hierarchy.Plan) error {
+	if g.Reaped == nil {
+		return fmt.Errorf("purge %s: no reaped rule is wired", p.Node)
+	}
+	nodes, due := g.Reaped(ctx, p.Node)
+	if !due {
+		return fmt.Errorf("purge %s: not a reaped root past its grace", p.Node)
+	}
+	reaped := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		reaped[n] = true
+	}
+	for _, id := range p.Delete {
+		if !reaped[id] {
+			return fmt.Errorf("purge %s: %s was not reaped with it", p.Node, id)
 		}
 	}
 	return nil

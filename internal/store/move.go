@@ -124,9 +124,6 @@ func (b *XwalBackend) RemoveMoved(c xwal.Component, token string) error {
 	if err != nil {
 		return err
 	}
-	if err := b.store.tree.Forget(ids...); err != nil {
-		return err
-	}
 	b.store.collectStumpAfterDelete(stump)
 	return nil
 }

@@ -52,7 +52,7 @@ func (h *handlers) mayRestore(ctx context.Context, group reapedGroup) error {
 	if err != nil {
 		return err
 	}
-	_, err = h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Restore, Revive: group.nodes})
+	_, err = h.angelus.topology().Check(ctx, by, hierarchy.Plan{Op: hierarchy.Restore, Revive: group.nodes})
 	return err
 }
 

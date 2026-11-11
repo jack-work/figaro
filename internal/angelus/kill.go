@@ -1,12 +1,14 @@
 package angelus
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -15,8 +17,15 @@ type killReaper interface {
 	DeleteSet(id string) []string
 }
 
-func (h *handlers) reapKilled(id string, recursive bool, until time.Time) (time.Time, bool, error) {
-	return h.reapGroup(id, recursive, until, nil, "")
+func (h *handlers) reapKilled(ctx context.Context, by hierarchy.Principal, id string, recursive bool, until time.Time, authorized []string) (time.Time, bool, error) {
+	var at time.Time
+	var reaped bool
+	_, err := h.angelus.topology().Under(ctx, by, hierarchy.Plan{Op: hierarchy.Reap, Node: id, Delete: authorized}, func(p hierarchy.Plan) error {
+		var err error
+		at, reaped, err = h.reapGroup(id, recursive, until, p.Delete, "")
+		return err
+	})
+	return at, reaped, deleteSetChanged(err)
 }
 
 func (h *handlers) reapGroup(id string, recursive bool, until time.Time, expect []string, by string) (time.Time, bool, error) {

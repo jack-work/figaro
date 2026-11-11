@@ -8,8 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/jkauthz"
+
+	"github.com/jack-work/figaro/internal/hierarchy"
 )
 
 var guardOwner = jkauthz.Principal{Kind: jkauthz.KindUser, ID: "1000"}
@@ -122,5 +123,63 @@ func TestASweepAcrossSandboxesIsHeld(t *testing.T) {
 	var held *HeldError
 	if !errors.As(err, &held) || held.Node != "box-1" {
 		t.Fatalf("a sweep taking a node in another sandbox = %v, want held on box-1", err)
+	}
+}
+
+// El Inspector XIV, C2: the daemon purges only a reaped root past its grace,
+// and only the nodes reaped with it.
+func TestAPurgeTakesOnlyAReapedGroupPastItsGrace(t *testing.T) {
+	g := topologyGuard(t, setOnlyPolicy)
+	g.Reaped = func(_ context.Context, root string) ([]string, bool) {
+		switch root {
+		case "due":
+			return []string{"due", "kid"}, true
+		case "young":
+			return []string{"young"}, false
+		}
+		return nil, false
+	}
+	purge := func(root string, del ...string) error {
+		_, err := g.Check(context.Background(), hierarchy.System, hierarchy.Plan{Op: hierarchy.Purge, Node: root, Delete: del})
+		return err
+	}
+	if err := purge("live", "live"); err == nil {
+		t.Fatal("the daemon purged a live, unreaped node")
+	}
+	if err := purge("young", "young"); err == nil {
+		t.Fatal("the daemon purged a reaped node inside its grace")
+	}
+	if err := purge("due", "due", "kid", "stranger"); err == nil {
+		t.Fatal("the daemon purged a node drawn under a reaped root after the reap")
+	}
+	if err := purge("due", "due", "kid"); err != nil {
+		t.Fatalf("purge of a reaped group past its grace: %v", err)
+	}
+}
+
+func TestADiscardTakesOneLeafWithNoMessagesOfItsOwn(t *testing.T) {
+	g := topologyGuard(t, setOnlyPolicy)
+	g.Empty = func(id string) bool { return id == "fresh" }
+	discard := func(p hierarchy.Plan) error {
+		p.Op = hierarchy.Discard
+		_, err := g.Check(context.Background(), hierarchy.System, p)
+		return err
+	}
+	if err := discard(hierarchy.Plan{Node: "fresh", Delete: []string{"fresh"}}); err != nil {
+		t.Fatalf("discard of a fresh leaf: %v", err)
+	}
+	if err := discard(hierarchy.Plan{Node: "spoken", Delete: []string{"spoken"}}); err == nil {
+		t.Fatal("the daemon discarded an aria with messages of its own")
+	}
+	if err := discard(hierarchy.Plan{Node: "fresh", Delete: []string{"fresh", "kid"}}); err == nil {
+		t.Fatal("the daemon discarded a node with a child")
+	}
+}
+
+func TestOnlyTheSystemDeparts(t *testing.T) {
+	g := topologyGuard(t, setOnlyPolicy)
+	owner := guardCaller(guardOwner.Kind, guardOwner.ID, DoorLocal)
+	if _, err := g.Check(context.Background(), owner, hierarchy.Plan{Op: hierarchy.Depart, Node: "a", Delete: []string{"a"}}); !errors.Is(err, ErrSystemOnly) {
+		t.Fatalf("the owner departing = %v, want ErrSystemOnly", err)
 	}
 }

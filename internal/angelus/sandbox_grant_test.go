@@ -47,6 +47,7 @@ type grantRig struct {
 	cwd     string
 	policy  string
 	a       *angelus.Angelus
+	hs      *angelus.Handlers
 }
 
 const defaultPolicy = "<the default policy>"
@@ -131,7 +132,8 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 	hs := angelus.NewHandlers(cfg)
 	t.Cleanup(func() {
 		for _, id := range backend.ConversationIDs() {
-			_ = hs.RemoveAria(id, true)
+			raw, _ := json.Marshal(rpc.KillRequest{FigaroID: id, Recursive: true, Now: true})
+			_, _ = hs.Map[rpc.MethodKill](asOwner(), raw)
 		}
 	})
 	h := map[string]func(context.Context, json.RawMessage) (any, error){}
@@ -141,7 +143,7 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 	a.Handlers = hs.Map
 	a.RemoveAria = hs.RemoveAria
 	a.RemoveAriaIf = hs.RemoveAriaIf
-	return grantRig{h: h, backend: backend, cwd: t.TempDir(), policy: policy, a: a}
+	return grantRig{h: h, backend: backend, cwd: t.TempDir(), policy: policy, a: a, hs: hs}
 }
 
 func as(kind, id string) context.Context {

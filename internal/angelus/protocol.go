@@ -343,8 +343,10 @@ type handlers struct {
 	// restoring is a single-flight, not a lock table: an entry exists only
 	// while a wake is running.
 	restoreMu sync.Mutex
-	restoring map[string]*restoreCall
-	releasing map[string]bool
+
+	afterKillCheck func()
+	restoring      map[string]*restoreCall
+	releasing      map[string]bool
 
 	moving    moving
 	settling  atomic.Bool

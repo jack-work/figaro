@@ -14,12 +14,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jack-work/jkrpc"
+
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/figwal/xwal"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/jkrpc"
 )
 
 type mover interface {
@@ -418,8 +420,11 @@ func (h *handlers) letGo(mv mover, dep store.Departure) error {
 	for _, id := range ids {
 		h.killSessions(id)
 	}
-	if h.holdsAny(ids) {
-		if err := mv.RemoveMoved(dep.Component, dep.Token); err != nil {
+	if held := h.heldOf(ids); len(held) > 0 {
+		_, err := h.angelus.topology().Under(context.Background(), hierarchy.System,
+			hierarchy.Plan{Op: hierarchy.Depart, Node: held[0], Delete: held},
+			func(hierarchy.Plan) error { return mv.RemoveMoved(dep.Component, dep.Token) })
+		if err != nil {
 			return fmt.Errorf("the old home still holds the moved arias: %w", err)
 		}
 	}
@@ -436,13 +441,16 @@ func (h *handlers) letGo(mv mover, dep store.Departure) error {
 	return nil
 }
 
-func (h *handlers) holdsAny(ids []string) bool {
+func (h *handlers) holdsAny(ids []string) bool { return len(h.heldOf(ids)) > 0 }
+
+func (h *handlers) heldOf(ids []string) []string {
+	var out []string
 	for _, id := range ids {
 		if _, ok := h.angelus.Backend.Node(id); ok {
-			return true
+			out = append(out, id)
 		}
 	}
-	return false
+	return out
 }
 
 func (h *handlers) announce(ids []string, node string) {

@@ -263,3 +263,50 @@ func TestAKillTakesExactlyTheDecidedSet(t *testing.T) {
 		t.Fatalf("removed %v, want X C D", f.removed)
 	}
 }
+
+// C3: a node drawn under a departing one is re-homed under G5, and every
+// override naming a departed node goes.
+func TestADepartureRehomesWhatWasDrawnUnderIt(t *testing.T) {
+	f := chain()
+	f.stored["Y"] = "P"
+	f.stored["boxy"] = "stump"
+	f.zone["boxy"] = "judge"
+	f.over["Y"] = "C"
+	f.over["C"] = "boxy"
+	h := hierarchy.New(f, hierarchytest.Open{})
+	committed := false
+	p, err := h.Under(context.Background(), hierarchy.System, hierarchy.Plan{Op: hierarchy.Depart, Node: "C", Delete: []string{"C"}},
+		func(hierarchy.Plan) error { committed = true; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !committed || len(p.Moves) != 1 || p.Moves[0].Node != "Y" || p.Moves[0].To != "P" {
+		t.Fatalf("committed %v, moves %+v: want Y re-homed under P", committed, p.Moves)
+	}
+	if _, ok := f.over["C"]; ok {
+		t.Fatal("the departed node's own override was kept")
+	}
+	if _, ok := f.over["Y"]; ok {
+		t.Fatal("Y should fall back to its history parent P, with no override")
+	}
+}
+
+func TestApplyAndUnderKeepTheirOps(t *testing.T) {
+	h := hierarchy.New(chain(), hierarchytest.Open{})
+	if _, err := h.Apply(context.Background(), anyone, hierarchy.Plan{Op: hierarchy.Reap, Node: "X"}); !errors.Is(err, hierarchy.ErrNotApply) {
+		t.Fatalf("Apply(Reap) = %v, want ErrNotApply", err)
+	}
+	if _, err := h.Under(context.Background(), anyone, hierarchy.Plan{Op: hierarchy.Kill, Node: "X"}, func(hierarchy.Plan) error { return nil }); !errors.Is(err, hierarchy.ErrNotUnder) {
+		t.Fatalf("Under(Kill) = %v, want ErrNotUnder", err)
+	}
+}
+
+func TestAReapRunsItsCommitOnTheDerivedSet(t *testing.T) {
+	f := chain()
+	h := hierarchy.New(f, hierarchytest.Open{})
+	_, err := h.Under(context.Background(), anyone, hierarchy.Plan{Op: hierarchy.Reap, Node: "X", Delete: []string{"X", "C"}},
+		func(hierarchy.Plan) error { t.Fatal("a reap of a stale set ran its commit"); return nil })
+	if !errors.Is(err, hierarchy.ErrPlanMismatch) {
+		t.Fatalf("reap of a stale set = %v, want ErrPlanMismatch", err)
+	}
+}

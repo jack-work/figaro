@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/store"
@@ -23,7 +24,42 @@ func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
 			}
 			return a.heldIn(taken, root, a.Registry.BoundPIDsByFigaro(), roles, a.keepalive(), sweepTime(ctx))
 		},
+		Reaped: func(ctx context.Context, root string) ([]string, bool) {
+			for _, g := range a.reapedGroups() {
+				if g.root == root {
+					return g.nodes, a.pastGrace(g, sweepTime(ctx))
+				}
+			}
+			return nil, false
+		},
+		Empty: a.ownsNoMessages,
 	}
+}
+
+func (a *Angelus) ownsNoMessages(id string) bool {
+	n, ok := a.Backend.Node(id)
+	if !ok {
+		return false
+	}
+	log, err := a.Backend.OpenFigIR(id)
+	if err != nil {
+		return false
+	}
+	for _, en := range log.Read() {
+		if en.LT > n.BranchedLT && !message.IsCeremonial(en.Payload) {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *Angelus) isReapedRoot(id string) bool {
+	for _, g := range a.reapedGroups() {
+		if g.root == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *Angelus) placement(id string) (string, int64) {

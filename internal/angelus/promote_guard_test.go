@@ -2,6 +2,7 @@ package angelus_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro/wire"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 const guardPolicy = `
@@ -209,5 +211,49 @@ func TestKillRecursiveNeedsKillOnEveryNodeItTakes(t *testing.T) {
 		if _, ok := r.backend.Node(id); !ok {
 			t.Fatalf("a refused kill -r took %s", id)
 		}
+	}
+}
+
+// El Inspector XIV, C1: a kill with grace reaps exactly the set it
+// authorized. An aria drawn under X after the check is not reaped, and the
+// kill says the set changed.
+func TestAKillWithGraceReapsOnlyWhatItAuthorized(t *testing.T) {
+	r, _, x, c := guardChain(t)
+	y, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.hs.AfterKillCheckForTest(func() {
+		if err := setTopology(t, r, asOwner(), map[string]string{y.FigaroID: x}); err != nil {
+			t.Error(err)
+		}
+	})
+	_, err = r.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: x, Recursive: true})
+	r.hs.AfterKillCheckForTest(nil)
+	if !errors.Is(err, store.ErrDeleteSetChanged) {
+		t.Fatalf("kill -r with grace after the set grew = %v, want ErrDeleteSetChanged", err)
+	}
+	for _, id := range []string{x, c, y.FigaroID} {
+		if m, _ := r.backend.Meta(id); m != nil && m.ReapedAtMS > 0 {
+			t.Fatalf("%s was reaped by a kill whose authorized set did not hold it", id)
+		}
+	}
+}
+
+// C2: the sweep's delete re-reads its holds when it commits. A live agent
+// holds an unreaped aria against the daemon's delete.
+func TestTheDaemonsDeleteRereadsItsHolds(t *testing.T) {
+	r := newRigWith(t, guardPolicy)
+	live, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.a.SweepLifetimesNow()
+	err = r.hs.RemoveAriaIf(live.FigaroID, []string{live.FigaroID})
+	if err == nil || !strings.Contains(err.Error(), "an agent is live") {
+		t.Fatalf("the daemon's delete of a live aria = %v, want held by the live agent", err)
+	}
+	if _, ok := r.backend.Node(live.FigaroID); !ok {
+		t.Fatal("the daemon deleted an aria a live agent held")
 	}
 }

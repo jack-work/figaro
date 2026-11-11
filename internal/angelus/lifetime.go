@@ -203,7 +203,10 @@ func (a *Angelus) take(keeper ttlKeeper, e store.TTLEntry, taken []string) error
 		return err
 	}
 	if g := a.purgeGraceIn(a.sandboxOf(e.ID), a.Settings.ReapedGrace()); g > 0 {
-		return a.softDelete(e, taken, g)
+		_, err := a.topology().Under(sweepingAt(context.Background(), time.Now()), hierarchy.System,
+			hierarchy.Plan{Op: hierarchy.Reap, Node: e.ID, Delete: taken},
+			func(p hierarchy.Plan) error { return a.softDelete(e, p.Delete, g) })
+		return a.notYetIfMoved(err)
 	}
 	if err := a.removeDecided(e.ID, taken); err != nil {
 		return err
@@ -385,9 +388,17 @@ func (a *Angelus) removeDecided(id string, taken []string) error {
 	if a.RemoveAriaIf == nil {
 		return a.RemoveAria(id, true)
 	}
-	err := a.RemoveAriaIf(id, taken)
-	if errors.Is(err, store.ErrDeleteSetChanged) {
-		slog.Info("delete not taken: the nodes it would take changed since the decision", "node", id)
+	return a.notYetIfMoved(a.RemoveAriaIf(id, taken))
+}
+
+func (a *Angelus) notYetIfMoved(err error) error {
+	var held *authz.HeldError
+	switch {
+	case errors.Is(err, store.ErrDeleteSetChanged), errors.Is(err, hierarchy.ErrPlanMismatch):
+		slog.Info("delete not taken: the nodes it would take changed since the decision", "err", err)
+		return errNotYet
+	case errors.As(err, &held):
+		slog.Info("delete not taken: a hold appeared since the decision", "node", held.Node, "why", held.Why)
 		return errNotYet
 	}
 	return err

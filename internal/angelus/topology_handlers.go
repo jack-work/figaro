@@ -720,11 +720,15 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		return nil, err
 	}
-	if _, err := h.angelus.topology().Check(ctx, by, hierarchy.Plan{Op: hierarchy.Kill, Node: req.FigaroID, Recursive: true}); err != nil {
+	checked, err := h.angelus.topology().Check(ctx, by, hierarchy.Plan{Op: hierarchy.Kill, Node: req.FigaroID, Recursive: true})
+	if err != nil {
 		if req.Recursive {
 			return nil, fmt.Errorf("kill -r %s: %w", req.FigaroID, err)
 		}
 		return nil, fmt.Errorf("kill %s: %w", req.FigaroID, err)
+	}
+	if h.afterKillCheck != nil {
+		h.afterKillCheck()
 	}
 	grace := time.Duration(req.GraceMS) * time.Millisecond
 	if box, ok := h.config.BoxPurgeGrace(h.angelus.sandboxOf(req.FigaroID)); ok {
@@ -735,14 +739,18 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 		grace = h.config.KillGrace()
 	}
 	if !req.Now && grace > 0 {
-		if until, ok, err := h.reapKilled(req.FigaroID, req.Recursive, time.Now().Add(grace)); ok || err != nil {
+		if until, ok, err := h.reapKilled(ctx, by, req.FigaroID, req.Recursive, time.Now().Add(grace), checked.Delete); ok || err != nil {
 			if err != nil {
 				return nil, err
 			}
 			return rpc.KillResponse{OK: true, PurgeAt: until.UnixMilli()}, nil
 		}
 	}
-	if err := h.removeAria(ctx, by, hierarchy.Kill, req.FigaroID, req.Recursive, nil); err != nil {
+	expect := checked.Delete
+	if !req.Recursive && len(expect) > 1 {
+		expect = nil
+	}
+	if err := h.removeAria(ctx, by, hierarchy.Kill, req.FigaroID, req.Recursive, expect); err != nil {
 		return nil, err
 	}
 	return rpc.KillResponse{OK: true}, nil
@@ -752,13 +760,20 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 func (h *handlers) RemoveAria(id string, recursive bool) error {
 	op := hierarchy.Discard
 	if recursive {
-		op = hierarchy.Purge
+		op = h.systemDelete(id)
 	}
 	return h.removeAria(context.Background(), hierarchy.System, op, id, recursive, nil)
 }
 
 func (h *handlers) RemoveAriaIf(id string, expect []string) error {
-	return h.removeAria(context.Background(), hierarchy.System, hierarchy.Purge, id, true, expect)
+	return h.removeAria(context.Background(), hierarchy.System, h.systemDelete(id), id, true, expect)
+}
+
+func (h *handlers) systemDelete(id string) hierarchy.Op {
+	if h.angelus.isReapedRoot(id) {
+		return hierarchy.Purge
+	}
+	return hierarchy.Sweep
 }
 
 func (h *handlers) removeAria(ctx context.Context, by hierarchy.Principal, op hierarchy.Op, id string, recursive bool, expect []string) error {

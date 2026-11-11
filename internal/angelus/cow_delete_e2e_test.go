@@ -46,7 +46,7 @@ func TestDeletingAnAriaMidTurnStopsTheTurnFirst(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the turn never reached the provider")
 	}
-	if err := r.a.RemoveAria(born.FigaroID, true); err != nil {
+	if _, err := r.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: born.FigaroID, Recursive: true, Now: true}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -72,20 +72,28 @@ func TestADecidedDeleteRefusesWhenTheNodesItTakesChanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decided := []string{parent.FigaroID}
-	child, _, err := r.backend.ForkWith(parent.FigaroID, 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"child"`)}, nil))
-	if err != nil {
-		t.Fatal(err)
+	var child string
+	r.hs.AfterKillCheckForTest(func() {
+		var err error
+		child, _, err = r.backend.ForkWith(parent.FigaroID, 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"child"`)}, nil))
+		if err != nil {
+			t.Error(err)
+		}
+	})
+	kill := func() error {
+		_, err := r.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: parent.FigaroID, Recursive: true, Now: true})
+		return err
 	}
-	if err := r.a.RemoveAriaIf(parent.FigaroID, decided); !errors.Is(err, store.ErrDeleteSetChanged) {
+	if err := kill(); !errors.Is(err, store.ErrDeleteSetChanged) {
 		t.Fatalf("a delete decided before a fork: %v, want ErrDeleteSetChanged", err)
 	}
+	r.hs.AfterKillCheckForTest(nil)
 	for _, id := range []string{parent.FigaroID, child} {
 		if _, ok := r.a.Backend.Node(id); !ok {
 			t.Fatalf("%s went with a refused delete", id)
 		}
 	}
-	if err := r.a.RemoveAriaIf(parent.FigaroID, r.backend.DeleteSet(parent.FigaroID)); err != nil {
+	if err := kill(); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{parent.FigaroID, child} {

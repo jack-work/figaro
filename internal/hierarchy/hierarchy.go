@@ -38,6 +38,8 @@ const (
 	Sweep
 	Purge
 	Discard
+	Reap
+	Depart
 )
 
 func (o Op) String() string {
@@ -60,11 +62,19 @@ func (o Op) String() string {
 		return "purge"
 	case Discard:
 		return "discard"
+	case Reap:
+		return "reap"
+	case Depart:
+		return "depart"
 	}
 	return "op?"
 }
 
-func (o Op) Deletes() bool { return o == Kill || o == Sweep || o == Purge || o == Discard }
+func (o Op) Deletes() bool {
+	return o == Kill || o == Sweep || o == Purge || o == Discard || o == Reap || o == Depart
+}
+
+func (o Op) committedByCaller() bool { return o == Reap || o == Restore || o == Depart }
 
 type Principal struct {
 	Name    string
@@ -151,6 +161,8 @@ var (
 	ErrHasBranches    = errors.New("aria has live branches")
 	ErrUnsupported    = errors.New("hierarchy: this store keeps no presentation hierarchy")
 	ErrParked         = errors.New("hierarchy: the plan waits on its receiving parent")
+	ErrNotUnder       = errors.New("hierarchy: this op writes edges and commits only through Apply")
+	ErrNotApply       = errors.New("hierarchy: this op's commit belongs to its caller: use Under")
 )
 
 type Hierarchy struct {
@@ -177,11 +189,33 @@ func (h *Hierarchy) Check(ctx context.Context, by Principal, p Plan) (Plan, erro
 func (h *Hierarchy) Apply(ctx context.Context, by Principal, p Plan) (Plan, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if p.Op.committedByCaller() {
+		return p, fmt.Errorf("%w: %s", ErrNotApply, p.Op)
+	}
 	plan, err := h.checkLocked(ctx, by, p)
 	if err != nil {
 		return plan, err
 	}
 	return h.commit(plan)
+}
+
+func (h *Hierarchy) Under(ctx context.Context, by Principal, p Plan, commit func(Plan) error) (Plan, error) {
+	if !p.Op.committedByCaller() {
+		return p, fmt.Errorf("%w: %s", ErrNotUnder, p.Op)
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	plan, err := h.checkLocked(ctx, by, p)
+	if err != nil {
+		return plan, err
+	}
+	if err := commit(plan); err != nil {
+		return plan, err
+	}
+	if plan.Op == Depart {
+		return plan, h.forgetDeparted(plan)
+	}
+	return plan, nil
 }
 
 func (h *Hierarchy) checkLocked(ctx context.Context, by Principal, p Plan) (Plan, error) {
@@ -340,6 +374,10 @@ func (h *Hierarchy) derive(p Plan) (Plan, error) {
 		if err == nil && p.Op == Discard && len(out.Delete) != 1 {
 			err = fmt.Errorf("%w: %q has %d", ErrHasBranches, p.Node, len(out.Delete)-1)
 		}
+	case Reap:
+		out.Delete, _, err = h.deriveDelete(p.Node, true)
+	case Depart:
+		out.Delete, out.Moves, err = h.deriveDepart(p.Delete)
 	default:
 		return out, fmt.Errorf("hierarchy: unknown op %d", p.Op)
 	}
@@ -604,6 +642,57 @@ func (h *Hierarchy) deriveDelete(id string, recursive bool) ([]string, []Move, e
 	}
 	sort.Slice(moves, func(i, j int) bool { return moves[i].Node < moves[j].Node })
 	return taken, moves, nil
+}
+
+func (h *Hierarchy) deriveDepart(ids []string) ([]string, []Move, error) {
+	if len(ids) == 0 {
+		return nil, nil, errors.New("depart: no nodes named")
+	}
+	gone := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if _, ok := h.eng.Node(id); !ok {
+			return nil, nil, fmt.Errorf("depart: no node %q", id)
+		}
+		gone[id] = true
+	}
+	var moves []Move
+	for child, up := range h.eng.Overrides() {
+		if gone[child] || !gone[up] {
+			continue
+		}
+		moves = append(moves, Move{Node: child, From: up, To: h.home(child, gone), Tree: Drawn, Rehome: true})
+	}
+	sort.Slice(moves, func(i, j int) bool { return moves[i].Node < moves[j].Node })
+	return slices.Clone(ids), moves, nil
+}
+
+func (h *Hierarchy) forgetDeparted(p Plan) error {
+	gone := make(map[string]bool, len(p.Delete))
+	for _, id := range p.Delete {
+		gone[id] = true
+	}
+	set := map[string]string{}
+	var remove []string
+	for _, m := range p.Moves {
+		if up, _ := h.eng.Stored(m.Node); m.To == "" || m.To == up {
+			remove = append(remove, m.Node)
+			continue
+		}
+		set[m.Node] = m.To
+	}
+	for child, up := range h.eng.Overrides() {
+		if _, pinned := set[child]; pinned {
+			continue
+		}
+		if gone[child] || gone[up] {
+			remove = append(remove, child)
+		}
+	}
+	if len(set) == 0 && len(remove) == 0 {
+		return nil
+	}
+	sort.Strings(remove)
+	return h.eng.WriteDrawn(set, slices.Compact(remove))
 }
 
 func (h *Hierarchy) home(id string, doomed map[string]bool) string {
