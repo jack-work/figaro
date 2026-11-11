@@ -124,17 +124,18 @@ func verbPast(v string) string {
 
 // runCast: with -O the role is minted by the figaro's actor loop; with no aria
 // available the figaro is minted first, unattended.
-func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJSON, stay bool) {
+func runCast(loaded *config.Loaded, args []string, outfits, set, del, under string, asJSON, stay bool) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	minting := strings.TrimSpace(outfits) != "" || strings.TrimSpace(set) != "" || strings.TrimSpace(del) != ""
+	under = strings.TrimSpace(under)
+	minting := under != "" || strings.TrimSpace(outfits) != "" || strings.TrimSpace(set) != "" || strings.TrimSpace(del) != ""
 
 	// Attending a form with no aria named: mint one and cast it; the dressing
 	// dresses the aria.
-	if len(args) == 0 {
+	if len(args) == 0 && under == "" {
 		if attended := attendedForm(ctx, acli); attended != "" {
 			d := mustDress(outfits, set, del)
 			runCastFromAttendedForm(loaded, attended, d, asJSON, stay)
@@ -156,6 +157,9 @@ func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJ
 			die("cast: %s", derr)
 		}
 		role = d
+	}
+	if under != "" {
+		formID, role = mintRoleUnder(ctx, acli, under, outfits, set, del), dressing{}
 	}
 	if formID == "" && role.IsEmpty() {
 		die("cast: name a role or mint one: fig cast [<aria>] <@form> | fig cast [<aria>] -O <names> [-S k=v]")
@@ -204,4 +208,17 @@ func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJ
 		fmt.Fprintf(stderrw, "the role follows: `fig send --id %s -- …` reaches %s until it is repointed\n", ariaName(resp.RoleID), ariaName(ariaID))
 		return nil
 	})
+}
+
+func mintRoleUnder(ctx context.Context, acli *sdk.Angelus, under, outfits, set, del string) string {
+	del = strings.TrimPrefix(del+",target-aria", ",")
+	d, err := parseDress(outfits, set, del)
+	if err != nil {
+		die("cast: %s", err)
+	}
+	resp, err := acli.FormCreate(ctx, under, d.names, d.patch)
+	if err != nil {
+		die("cast --under %s: %s", under, err)
+	}
+	return resp.FormID
 }

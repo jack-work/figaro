@@ -955,6 +955,9 @@ exists; attending an ARIA they mint the ROLE, for the same reason.
   figaro cast                 (attending @form) mint a figaro and cast it
   figaro cast -O sonn5        (attending @form) dress the minted figaro
   figaro cast -O reviewer     (attending an aria) mint the role, cast into it
+  figaro cast <aria> --under @boss -S name=lieutenant
+                              mint a role forked from @boss, without its
+                              target-aria, and cast <aria> into it
 
 The form is always the LAST positional. Bound forms are refused: roles
 are unbound forms only.`,
@@ -965,9 +968,10 @@ are unbound forms only.`,
 			{Long: "delete", Short: "D", Repeats: true, Description: "Key paths the minted role's birth patch removes; repeats"},
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
 			{Long: "stay", IsBool: true, Description: "Do not attend the role this call mints"},
+			{Long: "under", Description: "Mint the role as a fork of this role, the one it reports to (occupies the form slot)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
-			runCast(ctx.Extra.(*config.Loaded), ctx.Args, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), ctx.BoolFlag("json"), ctx.BoolFlag("stay"))
+			runCast(ctx.Extra.(*config.Loaded), ctx.Args, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), ctx.Flag("under"), ctx.BoolFlag("json"), ctx.BoolFlag("stay"))
 			return nil
 		},
 		CompleteArgs: completeFormVerb,
