@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -197,6 +198,48 @@ func TestTheSweepHoldsARoleFormInItsDeleteSet(t *testing.T) {
 		}
 		if row := heldRow(t, r, holder.FigaroID); row.HeldBy != role || !strings.Contains(row.HeldWhy, "role "+role+" is in the set") {
 			t.Fatalf("the listing does not show the holder held by its role: by=%q why=%q", row.HeldBy, row.HeldWhy)
+		}
+	}
+}
+
+// El Inspector XIV nit (a): a kill -r that takes a role form says so, now or
+// after its grace.
+func TestAKillThatTakesARoleNamesIt(t *testing.T) {
+	for _, now := range []bool{true, false} {
+		r := newRigWith(t, guardPolicy)
+		if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+			t.Fatal(err)
+		}
+		holder, err := r.create(asOwner(), "mock")
+		if err != nil {
+			t.Fatal(err)
+		}
+		successor, err := r.create(asOwner(), "mock")
+		if err != nil {
+			t.Fatal(err)
+		}
+		target, _ := json.Marshal(successor.FigaroID)
+		patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": target}, nil)
+		v, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: &patch})
+		if err != nil {
+			t.Fatal(err)
+		}
+		role := v.(rpc.FormCreateResponse).FormID
+		if err := setTopology(t, r, asOwner(), map[string]string{role: holder.FigaroID}); err != nil {
+			t.Fatal(err)
+		}
+		r.a.SweepLifetimesNow()
+
+		out, err := r.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: holder.FigaroID, Recursive: true, Now: now, GraceMS: 3600_000})
+		if err != nil {
+			t.Fatalf("now=%t: kill -r of the holder: %v", now, err)
+		}
+		resp := out.(rpc.KillResponse)
+		if len(resp.Roles) != 1 || resp.Roles[0] != role {
+			t.Errorf("now=%t: the kill names roles %v, want [%s]", now, resp.Roles, role)
+		}
+		if now && !slices.Contains(resp.Removed, role) {
+			t.Errorf("the kill --now removed %v, without the role %s", resp.Removed, role)
 		}
 	}
 }
