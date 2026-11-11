@@ -14,7 +14,7 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
-func threeTurnAria(t *testing.T, a *angelus.Angelus, acli *sdk.Angelus, ctx context.Context) string {
+func threeTurnAria(t testing.TB, a *angelus.Angelus, acli *sdk.Angelus, ctx context.Context) string {
 	t.Helper()
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)

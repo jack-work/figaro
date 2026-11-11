@@ -289,7 +289,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			case owner.Outfit != "":
 				note = fmt.Sprintf("%s is in outfit %s: spawned a fresh conversation under it", where, owner.Outfit)
 			case owner.Trunk != "" && owner.Trunk != req.FigaroID:
-				note = fmt.Sprintf("%s lives in trunk %s: branching there", where, owner.Trunk)
+				note = fmt.Sprintf("%s lives in trunk %s: branching there, placed under %s", where, owner.Trunk, req.FigaroID)
 			}
 		}
 	}
@@ -305,6 +305,11 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID), mintedBy(ctx))
 		if ferr != nil {
 			return ferr
+		}
+		if interior && forkOwner.Trunk != "" && forkOwner.Trunk != req.FigaroID {
+			if merr := h.angelus.Backend.Move(alt, req.FigaroID); merr != nil {
+				slog.Warn("fork: stays under the owner of its cut", "alt", alt, "under", forkOwner.Trunk, "err", merr)
+			}
 		}
 		if gerr := h.grantSandboxOn(ctx, alt); gerr != nil {
 			h.discardBirth(alt)

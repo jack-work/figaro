@@ -220,7 +220,7 @@ func TestWakeIsAttributedToItsMethod(t *testing.T) {
 // waitIdle holds until the aria is idle or dormant: turn.done reaches the
 // client before the agent finishes closing the turn, and Hibernate refuses an
 // aria that is not idle.
-func waitIdle(t *testing.T, a *angelus.Angelus, id string) {
+func waitIdle(t testing.TB, a *angelus.Angelus, id string) {
 	t.Helper()
 	require.Eventually(t, func() bool {
 		f := a.Registry.Get(id)
