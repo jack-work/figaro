@@ -131,6 +131,7 @@ type Guard interface {
 type Node struct {
 	ID         string
 	Aria       bool
+	Form       bool
 	Stump      string
 	BranchedLT uint64
 	Owner      string
@@ -424,6 +425,22 @@ func (h *Hierarchy) isAria(id string) bool {
 	return ok && n.Aria
 }
 
+func (h *Hierarchy) drawable(id string) bool {
+	n, ok := h.eng.Node(id)
+	return ok && (n.Aria || n.Form)
+}
+
+func (h *Hierarchy) topOf(id string) (string, error) {
+	if h.isAria(id) {
+		return h.stumpOf(id), nil
+	}
+	up, _ := h.eng.Stored(id)
+	if h.drawable(up) {
+		return "", fmt.Errorf("arrange: %q is stored under %q, so it cannot be drawn at the top; draw it under another node", id, up)
+	}
+	return up, nil
+}
+
 func (h *Hierarchy) derivePromote(id string, levels int) ([]Move, int, error) {
 	if _, ok := h.eng.Node(id); !ok {
 		return nil, 0, fmt.Errorf("promote: no aria %q", id)
@@ -513,8 +530,8 @@ func (h *Hierarchy) stumpOf(id string) string {
 
 func (h *Hierarchy) deriveArrange(parents map[string]string, restore []string, storage bool) ([]Move, error) {
 	for _, id := range restore {
-		if !h.isAria(id) {
-			return nil, fmt.Errorf("arrange: no aria %q", id)
+		if !h.drawable(id) {
+			return nil, fmt.Errorf("arrange: no aria or form %q", id)
 		}
 	}
 	ids := make([]string, 0, len(parents))
@@ -531,15 +548,18 @@ func (h *Hierarchy) deriveArrange(parents map[string]string, restore []string, s
 		delete(over, id)
 	}
 	for _, id := range ids {
-		if !h.isAria(id) {
-			return nil, fmt.Errorf("arrange: no aria %q", id)
+		if !h.drawable(id) {
+			return nil, fmt.Errorf("arrange: no aria or form %q", id)
 		}
 		parent := parents[id]
 		explicit := parent != ""
 		if !explicit {
-			parent = h.stumpOf(id)
-		} else if parent == id || !h.isAria(parent) {
-			return nil, fmt.Errorf("arrange: %q cannot be drawn under %q: not another aria", id, parent)
+			var err error
+			if parent, err = h.topOf(id); err != nil {
+				return nil, err
+			}
+		} else if parent == id || !h.drawable(parent) {
+			return nil, fmt.Errorf("arrange: %q cannot be drawn under %q: not another aria or form", id, parent)
 		}
 		o.set(id, parent)
 		over[id] = parent
