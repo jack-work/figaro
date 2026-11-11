@@ -1,7 +1,6 @@
 package topo
 
 import (
-	"errors"
 	"sort"
 	"testing"
 )
@@ -59,11 +58,5 @@ func TestBoundaryCatchesTheOrphan(t *testing.T) {
 	b := Boundary(f, []string{"A", "C", "D"})
 	if len(b) != 1 || b[0] != "B" {
 		t.Fatalf("Boundary = %v, want [B]: B inherits A's prefix", b)
-	}
-}
-
-func TestTrunklessPromoteIsNotSilent(t *testing.T) {
-	if err := FromTopology(parentMap()).Promote("B"); !errors.Is(err, ErrNoPromote) {
-		t.Fatalf("Promote error = %v, want ErrNoPromote", err)
 	}
 }

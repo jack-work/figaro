@@ -2,7 +2,6 @@ package store
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -250,49 +249,6 @@ func (t *TopologyTree) Overridden() []string {
 	return out
 }
 
-// Promote raises id one level as one patch: two keys in one record is what
-// makes it atomic.
-func (t *TopologyTree) Promote(id string) error {
-	parent, ok := t.Parent(id)
-	if !ok || parent == "" {
-		return fmt.Errorf("trunk: %q is already a root", id)
-	}
-	grand, _ := t.Parent(parent)
-	if grand == id {
-		return fmt.Errorf("trunk: %q and %q already swapped", id, parent)
-	}
-	idUp, _ := t.topo.From(id)
-	parentUp, _ := t.topo.From(parent)
-
-	patch := newEdgeIntent()
-	edge(patch, id, grand, idUp)
-	edge(patch, parent, id, parentUp)
-	return t.apply(patch)
-}
-
-func (t *TopologyTree) Demote(id, under string) error {
-	parent, ok := t.Parent(id)
-	if !ok || parent == "" {
-		return fmt.Errorf("trunk: %q is a root", id)
-	}
-	if p, _ := t.Parent(under); p != id {
-		return fmt.Errorf("trunk: %q is not drawn under %q", under, id)
-	}
-	patch := newEdgeIntent()
-	for _, kid := range t.Children(id) {
-		if kid == under {
-			continue
-		}
-		up, _ := t.topo.From(kid)
-		edge(patch, kid, under, up)
-	}
-	underUp, _ := t.topo.From(under)
-	idUp, _ := t.topo.From(id)
-	edge(patch, under, parent, underUp)
-	edge(patch, id, under, idUp)
-	return t.apply(patch)
-}
-
 // edgeIntent is collected and diffed once against the form it applies to: a
 // structural patch is a difference and cannot be assembled field by field.
 type edgeIntent struct {
@@ -304,80 +260,17 @@ func newEdgeIntent() *edgeIntent {
 	return &edgeIntent{set: map[string]json.RawMessage{}}
 }
 
-// edge removes the override when it agrees with the topology, so an aria
-// promoted back to where its history puts it leaves no trace; otherwise
-// Normalized() stays false forever and every later delete repairs an empty boundary.
-func edge(p *edgeIntent, id, parent, topoParent string) {
-	if parent == topoParent {
-		p.remove = append(p.remove, id)
-		return
-	}
-	raw, _ := json.Marshal(parent)
-	p.set[id] = raw
-}
-
-func (t *TopologyTree) Reparent(id, parent string) error {
-	up, _ := t.topo.From(id)
+func (t *TopologyTree) Write(set map[string]string, remove []string) error {
 	patch := newEdgeIntent()
-	edge(patch, id, parent, up)
+	for id, parent := range set {
+		raw, err := json.Marshal(parent)
+		if err != nil {
+			return err
+		}
+		patch.set[id] = raw
+	}
+	patch.remove = append(patch.remove, remove...)
 	return t.apply(patch)
-}
-
-func (t *TopologyTree) Arrange(parents map[string]string, restore []string, mayUndo func(id string) error) error {
-	over := t.Edges()
-	patch := newEdgeIntent()
-	for _, id := range restore {
-		delete(over, id)
-		patch.remove = append(patch.remove, id)
-	}
-	ids := make([]string, 0, len(parents))
-	for id := range parents {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		up, _ := t.topo.From(id)
-		over[id] = parents[id]
-		edge(patch, id, parents[id], up)
-	}
-	parentOf := t.parentVia(over)
-	for _, id := range ids {
-		if under, ok := drawnBelow(parentOf, id); ok {
-			return fmt.Errorf("trunk: %q cannot be drawn under %q, which is drawn under it", id, under)
-		}
-	}
-	stale := make([]string, 0, len(over))
-	for id := range over {
-		if _, set := parents[id]; !set {
-			stale = append(stale, id)
-		}
-	}
-	sort.Strings(stale)
-	for _, id := range stale {
-		if _, ok := drawnBelow(parentOf, id); ok {
-			if mayUndo != nil && mayUndo(id) != nil {
-				return ErrUndoesOthers
-			}
-			delete(over, id)
-			patch.remove = append(patch.remove, id)
-		}
-	}
-	return t.apply(patch)
-}
-
-var ErrUndoesOthers = errors.New("trunk: the edit would undo an arrangement it may not change")
-
-func drawnBelow(parentOf func(string) (string, bool), id string) (string, bool) {
-	first, _ := parentOf(id)
-	seen := map[string]bool{}
-	for at := first; at != "" && !seen[at]; {
-		if at == id {
-			return first, true
-		}
-		seen[at] = true
-		at, _ = parentOf(at)
-	}
-	return "", false
 }
 
 // Forget drops every edge naming one of these arias, in either direction: an

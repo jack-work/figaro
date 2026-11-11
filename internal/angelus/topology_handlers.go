@@ -17,6 +17,7 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/gc"
+	"github.com/jack-work/figaro/internal/hierarchy"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/sandbox"
 	"github.com/jack-work/figaro/internal/store"
@@ -307,7 +308,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			return ferr
 		}
 		if interior && forkOwner.Trunk != "" && forkOwner.Trunk != req.FigaroID {
-			if merr := h.angelus.Backend.Move(alt, req.FigaroID); merr != nil {
+			if merr := h.place(ctx, alt, req.FigaroID); merr != nil {
 				slog.Warn("fork: stays under the owner of its cut", "alt", alt, "under", forkOwner.Trunk, "err", merr)
 			}
 		}
@@ -651,23 +652,36 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	}, nil
 }
 
+func (h *handlers) place(ctx context.Context, id, under string) error {
+	by, err := topologyPrincipal(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Place, Node: id, To: under})
+	return err
+}
+
 func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.PromoteRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	climbed, err := h.angelus.Backend.Promote(req.FigaroID, req.Levels)
-	if errors.Is(err, store.ErrNoTrunkCapability) {
+	by, err := topologyPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Promote, Node: req.FigaroID, Levels: req.Levels})
+	if errors.Is(err, hierarchy.ErrUnsupported) {
 		return rpc.PromoteResponse{FigaroID: req.FigaroID, Unsupported: true}, nil
 	}
-	if errors.Is(err, store.ErrAtStump) {
+	if errors.Is(err, hierarchy.ErrAtTop) {
 		return rpc.PromoteResponse{FigaroID: req.FigaroID, Climbed: 0, AtStump: true}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("promote %q: %w", req.FigaroID, err)
 	}
-	slog.Info("promoted figaro", "trunk", req.FigaroID, "levels", req.Levels, "climbed", climbed)
-	return rpc.PromoteResponse{FigaroID: req.FigaroID, Climbed: climbed}, nil
+	slog.Info("promoted figaro", "trunk", req.FigaroID, "levels", req.Levels, "climbed", p.Levels)
+	return rpc.PromoteResponse{FigaroID: req.FigaroID, Climbed: p.Levels}, nil
 }
 
 func (h *handlers) demote(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -675,13 +689,18 @@ func (h *handlers) demote(ctx context.Context, params json.RawMessage) (interfac
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	under, err := h.angelus.Backend.Demote(req.FigaroID, req.Prefer)
-	if errors.Is(err, store.ErrNoTrunkCapability) {
+	by, err := topologyPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Demote, Node: req.FigaroID, To: req.Prefer})
+	if errors.Is(err, hierarchy.ErrUnsupported) {
 		return rpc.DemoteResponse{FigaroID: req.FigaroID, Unsupported: true}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("demote %q: %w", req.FigaroID, err)
 	}
+	under := p.To
 	slog.Info("demoted figaro", "trunk", req.FigaroID, "under", under)
 	return rpc.DemoteResponse{FigaroID: req.FigaroID, Under: under, Preferred: under != "" && under == req.Prefer}, nil
 }
@@ -691,12 +710,15 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if req.Recursive {
-		for _, d := range h.takenWith(req.FigaroID) {
-			if err := h.allowed(ctx, rpc.VerbKill, authz.Aria(d)); err != nil {
-				return nil, fmt.Errorf("kill -r %s: %w", req.FigaroID, err)
-			}
+	by, err := topologyPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := h.angelus.topology().Check(ctx, by, hierarchy.Plan{Op: hierarchy.Kill, Node: req.FigaroID, Recursive: true}); err != nil {
+		if req.Recursive {
+			return nil, fmt.Errorf("kill -r %s: %w", req.FigaroID, err)
 		}
+		return nil, fmt.Errorf("kill %s: %w", req.FigaroID, err)
 	}
 	grace := time.Duration(req.GraceMS) * time.Millisecond
 	if box, ok := h.config.BoxPurgeGrace(h.angelus.sandboxOf(req.FigaroID)); ok {
@@ -714,7 +736,7 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 			return rpc.KillResponse{OK: true, PurgeAt: until.UnixMilli()}, nil
 		}
 	}
-	if err := h.RemoveAria(req.FigaroID, req.Recursive); err != nil {
+	if err := h.removeAria(ctx, by, hierarchy.Kill, req.FigaroID, req.Recursive, nil); err != nil {
 		return nil, err
 	}
 	return rpc.KillResponse{OK: true}, nil
@@ -722,23 +744,24 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 
 // RemoveAria is the whole of a deletion: agent, background sessions, bytes, endpoint.
 func (h *handlers) RemoveAria(id string, recursive bool) error {
-	return h.removeAria(id, recursive, nil)
+	op := hierarchy.Discard
+	if recursive {
+		op = hierarchy.Purge
+	}
+	return h.removeAria(context.Background(), hierarchy.System, op, id, recursive, nil)
 }
 
 func (h *handlers) RemoveAriaIf(id string, expect []string) error {
-	return h.removeAria(id, true, expect)
+	return h.removeAria(context.Background(), hierarchy.System, hierarchy.Purge, id, true, expect)
 }
 
-func (h *handlers) removeAria(id string, recursive bool, expect []string) error {
-	type decidedRemover interface {
-		RemoveIf(ariaID string, expect []string) error
-	}
-	dr, decided := h.angelus.Backend.(decidedRemover)
-	if expect != nil && decided {
-		if keeper, ok := h.angelus.Backend.(interface{ DeleteSet(string) []string }); ok {
-			if now := keeper.DeleteSet(id); !sameMembers(orSelf(now, id), expect) {
-				return fmt.Errorf("%w: %q", store.ErrDeleteSetChanged, id)
-			}
+func (h *handlers) removeAria(ctx context.Context, by hierarchy.Principal, op hierarchy.Op, id string, recursive bool, expect []string) error {
+	var plan hierarchy.Plan
+	if h.angelus.Backend != nil {
+		var err error
+		plan, err = h.angelus.topology().Check(ctx, by, hierarchy.Plan{Op: op, Node: id, Recursive: recursive, Delete: expect})
+		if err != nil {
+			return deleteSetChanged(err)
 		}
 	}
 	if h.angelus.Registry.Get(id) != nil {
@@ -753,18 +776,11 @@ func (h *handlers) removeAria(id string, recursive bool, expect []string) error 
 	}
 
 	if h.angelus.Backend != nil {
-		removed := []string{id}
-		if recursive {
-			removed = append(removed, h.subtree(id)...)
+		applied, err := h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: op, Node: id, Recursive: recursive, Delete: plan.Delete, Moves: plan.Moves})
+		if err != nil {
+			return deleteSetChanged(err)
 		}
-		remove := func() error { return h.angelus.Backend.Remove(id, recursive) }
-		if expect != nil && decided {
-			remove = func() error { return dr.RemoveIf(id, expect) }
-		}
-		if err := remove(); err != nil {
-			return err
-		}
-		for _, n := range append(removed, expect...) {
+		for _, n := range applied.Delete {
 			h.angelus.held.release(n)
 			if err := h.angelus.Spool.Remove(n); err != nil {
 				slog.Warn("spool remove", "id", n, "err", err)

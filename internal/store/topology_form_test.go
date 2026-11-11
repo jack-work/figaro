@@ -9,6 +9,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/hierarchy/hierarchytest"
 	"github.com/jack-work/figaro/internal/topo"
 )
 
@@ -143,10 +144,7 @@ func TestTopologyForm_ReparentToTopologyClearsTheOverride(t *testing.T) {
 	if err := x.Promote("B"); err != nil {
 		t.Fatal(err)
 	}
-	if err := x.Reparent("B", "A"); err != nil {
-		t.Fatal(err)
-	}
-	if err := x.Reparent("A", ""); err != nil {
+	if err := hierarchytest.Of(x).Arrange(map[string]string{"B": "A"}, []string{"A"}); err != nil {
 		t.Fatal(err)
 	}
 	if !x.Normalized() {
@@ -313,7 +311,7 @@ func TestTopologyForm_ForgetWritesNothingWhenNothingMatches(t *testing.T) {
 // delete set shrinks to A alone.
 func TestTopologyForm_DemoteLeavesALeaf(t *testing.T) {
 	x, f := openTopo(t)
-	if err := x.Demote("A", "B"); err != nil {
+	if _, err := x.Demote("A", "B"); err != nil {
 		t.Fatal(err)
 	}
 	for id, want := range map[string]string{"B": "null", "C": "B", "A": "B", "D": "C"} {
@@ -329,9 +327,16 @@ func TestTopologyForm_DemoteLeavesALeaf(t *testing.T) {
 	}
 }
 
-func TestTopologyForm_DemoteRefusesAStranger(t *testing.T) {
+func TestTopologyForm_DemoteIgnoresAStrangerPreference(t *testing.T) {
 	x, _ := openTopo(t)
-	if err := x.Demote("A", "D"); err == nil {
-		t.Fatal("D is a grandchild of A; demoting under it must be refused")
+	under, err := x.Demote("A", "D")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if under != "B" {
+		t.Fatalf("D is a grandchild of A; demote went under %q, want its first child B", under)
+	}
+	if p, _ := x.Parent("D"); p != "C" {
+		t.Fatalf("Parent(D) = %q, want C", p)
 	}
 }

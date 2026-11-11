@@ -11,6 +11,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -47,7 +48,12 @@ func (h *handlers) mayRestore(ctx context.Context, group reapedGroup) error {
 			return err
 		}
 	}
-	return nil
+	by, err := topologyPrincipal(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Restore, Revive: group.nodes})
+	return err
 }
 
 func (h *handlers) restoreGroup(ctx context.Context, group reapedGroup, keep bool) (rpc.ReapedRestoreResponse, error) {

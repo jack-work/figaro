@@ -2,21 +2,15 @@
 package topo
 
 import (
-	"errors"
 	"maps"
 	"sort"
 )
-
-// ErrNoPromote: the running configuration has no presentation hierarchy.
-var ErrNoPromote = errors.New("topo: promote needs the trunk capability")
 
 type Tree interface {
 	Parent(id string) (string, bool)
 	Children(id string) []string
 	// DeleteSet is id plus its descendants.
 	DeleteSet(id string) []string
-	Promote(id string) error
-	Demote(id, under string) error
 	// Normalized reports whether this tree agrees with the topology.
 	Normalized() bool
 	// Overridden is empty exactly when Normalized.
@@ -27,9 +21,6 @@ type Tree interface {
 	Rev() uint64
 	// Forget drops every edge naming any of these arias, in either direction.
 	Forget(ids ...string) error
-	// Reparent pins an aria under a parent.
-	Reparent(id, parent string) error
-	Arrange(parents map[string]string, restore []string, mayUndo func(id string) error) error
 	Prune(judge func(edges map[string]string) []Stale, dryRun bool) ([]Stale, uint64, error)
 }
 
@@ -47,17 +38,11 @@ type topoTree struct{ t Topology }
 
 func (x topoTree) Parent(id string) (string, bool) { return x.t.From(id) }
 func (x topoTree) Children(id string) []string     { return x.t.ChildrenOf(id) }
-func (x topoTree) Promote(string) error            { return ErrNoPromote }
-func (x topoTree) Demote(string, string) error     { return ErrNoPromote }
 func (x topoTree) Normalized() bool                { return true }
 func (x topoTree) Overridden() []string            { return nil }
 func (x topoTree) Edges() map[string]string        { return nil }
 func (x topoTree) Rev() uint64                     { return 0 }
 func (x topoTree) Forget(...string) error          { return nil }
-func (x topoTree) Reparent(string, string) error   { return nil }
-func (x topoTree) Arrange(map[string]string, []string, func(string) error) error {
-	return ErrNoPromote
-}
 func (x topoTree) Prune(func(map[string]string) []Stale, bool) ([]Stale, uint64, error) {
 	return nil, 0, nil
 }

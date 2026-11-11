@@ -2,14 +2,16 @@ package formdelta
 
 import (
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
+
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/hierarchy/hierarchytest"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -207,7 +209,7 @@ func TestDeletedSourceRendersAsDeleted(t *testing.T) {
 		t.Fatal(err)
 	}
 	appendRecord(t, log, message.RoleInput)
-	if err := be.Remove(src, false); err != nil {
+	if err := hierarchytest.Of(be).Remove(src, false); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)

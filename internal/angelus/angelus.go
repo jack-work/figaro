@@ -20,6 +20,7 @@ import (
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/mark"
 	"github.com/jack-work/figaro/internal/modelcat"
@@ -51,6 +52,9 @@ type Angelus struct {
 	// nil disables the TTL sweep's deletions.
 	RemoveAria   func(id string, recursive bool) error
 	RemoveAriaIf func(id string, expect []string) error
+
+	Topology     *hierarchy.Hierarchy
+	topologyOnce sync.Once
 
 	reclaimOnce sync.Once
 	reclaim     *reclaimer

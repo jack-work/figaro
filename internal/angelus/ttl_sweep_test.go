@@ -8,6 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/hierarchy"
 
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/store"
@@ -243,4 +244,27 @@ func TestExpireTTLTakesAParentWithIdleChildren(t *testing.T) {
 	if len(*removed) != 1 {
 		t.Fatalf("removed %v; nothing under the parent is in use", *removed)
 	}
+}
+
+func (f *ttlFakeBackend) HierarchyEngine() hierarchy.Engine { return ttlFakeEngine{f} }
+
+type ttlFakeEngine struct{ f *ttlFakeBackend }
+
+func (e ttlFakeEngine) Version() hierarchy.Version { return hierarchy.Version{} }
+func (e ttlFakeEngine) Node(id string) (hierarchy.Node, bool) {
+	return hierarchy.Node{ID: id, Aria: true}, true
+}
+func (e ttlFakeEngine) Drawn(string) (string, bool)      { return "", true }
+func (e ttlFakeEngine) Stored(string) (string, bool)     { return "", true }
+func (e ttlFakeEngine) DrawnChildren(string) []string    { return nil }
+func (e ttlFakeEngine) Overrides() map[string]string     { return nil }
+func (e ttlFakeEngine) DeleteSet(id string) []string     { return e.f.DeleteSet(id) }
+func (e ttlFakeEngine) StorageOrphans(string) []string   { return nil }
+func (e ttlFakeEngine) Placement(string) (string, int64) { return "local", 0 }
+func (e ttlFakeEngine) MoveStorage(string, string) error { return hierarchy.ErrUnsupported }
+func (e ttlFakeEngine) WriteDrawn(map[string]string, []string) error {
+	return hierarchy.ErrUnsupported
+}
+func (e ttlFakeEngine) Remove(string, bool, []string, map[string]string) error {
+	return hierarchy.ErrUnsupported
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/hierarchy/hierarchytest"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/topo"
 )
@@ -23,7 +24,7 @@ func promotedPair(t *testing.T) (b *store.XwalBackend, stump, conv, alt string) 
 	if _, alt, err = b.Fork(conv); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Store().Promote(alt, 1); err != nil {
+	if _, err := hierarchytest.Of(b).Promote(alt, 1); err != nil {
 		t.Fatal(err)
 	}
 	return b, stump, conv, alt
@@ -55,7 +56,7 @@ func TestNormalizeDropsTheOverrideHistoryNowAgreesWith(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := b.Store().Tree().Reparent(conv, "null"); err != nil {
+	if err := b.HierarchyEngine().WriteDrawn(map[string]string{conv: "null"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	r, err := b.Normalize(false)
@@ -103,7 +104,7 @@ func TestAnAriaDrawnAwayFromATTLdBirthFormSurvivesItsExpiryAfterAClean(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := b.Store().Tree().Reparent(x, "null"); err != nil {
+	if err := b.HierarchyEngine().WriteDrawn(map[string]string{x: "null"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.ApplyFormPrivileged(f, patch("system.ttl", "1ms")); err != nil {
@@ -124,7 +125,7 @@ func TestAnAriaDrawnAwayFromATTLdBirthFormSurvivesItsExpiryAfterAClean(t *testin
 	if slices.Contains(taken, x) {
 		t.Fatalf("the form's expiry would take %s, drawn at the top: %v", x, taken)
 	}
-	if err := b.RemoveIf(f, taken); err != nil {
+	if err := hierarchytest.Of(b).RemoveIf(f, taken); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.FormState(x); err != nil {
@@ -178,7 +179,7 @@ func TestTopologyDirtyFollowsTheDiskAndTheOverrides(t *testing.T) {
 	if _, err := s.CleanTopology(false); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Arrange(map[string]string{conv: ""}, []string{alt}, nil); err != nil {
+	if err := hierarchytest.Of(b).Arrange(map[string]string{conv: ""}, []string{alt}); err != nil {
 		t.Fatal(err)
 	}
 	if !s.TopologyDirty() {
@@ -189,10 +190,10 @@ func TestTopologyDirtyFollowsTheDiskAndTheOverrides(t *testing.T) {
 // The clean writes nothing when what it judged has moved on: an arrangement
 // that lands mid-pass is kept whole.
 func TestPruneRefusesWhenAnArrangementLandsMidPass(t *testing.T) {
-	b, stump, conv, alt := promotedPair(t)
+	b, _, conv, alt := promotedPair(t)
 	tree := b.Store().Tree()
 	_, _, err := tree.Prune(func(edges map[string]string) []topo.Stale {
-		if err := tree.Reparent(conv, stump); err != nil {
+		if err := b.HierarchyEngine().WriteDrawn(nil, []string{conv}); err != nil {
 			t.Fatal(err)
 		}
 		return []topo.Stale{{ID: alt, Reason: topo.StaleHistoryAgrees}}

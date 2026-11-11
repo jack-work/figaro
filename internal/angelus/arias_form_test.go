@@ -484,16 +484,16 @@ func TestArrangingUnderAnAriaNeedsSetOnIt(t *testing.T) {
 		t.Error("a refused write moved the guest's aria under the owner's")
 	}
 
-	lendGuest(t, r, lend([]string{"read", "set"}, p))
+	lendGuest(t, r, lend([]string{"read", "set"}, p), lend([]string{"kill"}, g))
 	if err := setTopology(t, r, guest, map[string]string{g: p}); err != nil {
 		t.Fatalf("a guest lent set on the owner's aria cannot draw under it: %v", err)
 	}
 }
 
 // Restoring an aria can put another aria's override on a cycle, and dropping
-// that override is a write to the other aria: a caller who may not set it is
-// refused the whole edit.
-func TestAnArrangeDoesNotUndoAnOverrideTheCallerCannotSet(t *testing.T) {
+// that override moves the other aria: a caller without kill on it is refused
+// the whole edit (the kill floor).
+func TestAnArrangeDoesNotUndoAnOverrideTheCallerCannotKill(t *testing.T) {
 	r := newRigWith(t, doorPolicy)
 	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)
@@ -516,20 +516,20 @@ func TestAnArrangeDoesNotUndoAnOverrideTheCallerCannotSet(t *testing.T) {
 	}
 
 	guest := as("user", "guest")
-	lendGuest(t, r, lend([]string{"read", "set"}, x), lend([]string{"read"}, z))
+	lendGuest(t, r, lend([]string{"read", "set", "kill"}, x), lend([]string{"read", "set"}, y), lend([]string{"read"}, z))
 	err = setTopology(t, r, guest, nil, x)
 	if err == nil {
-		t.Error("a guest with set on x only undid the owner's override on y")
-	} else if !strings.Contains(err.Error(), "may not change") {
+		t.Error("a guest with kill on x only undid the owner's override on y")
+	} else if !strings.Contains(err.Error(), "kill on aria:"+y) {
 		t.Errorf("the restore was refused, but not for the override on y: %v", err)
 	}
 	if presentedUnder(t, r, y) != x || presentedUnder(t, r, x) != z {
 		t.Errorf("a refused restore changed the drawing: %s under %q, %s under %q", y, presentedUnder(t, r, y), x, presentedUnder(t, r, x))
 	}
 
-	lendGuest(t, r, lend([]string{"read", "set"}, x, y), lend([]string{"read"}, z))
+	lendGuest(t, r, lend([]string{"read", "set", "kill"}, x, y), lend([]string{"read"}, z))
 	if err := setTopology(t, r, guest, nil, x); err != nil {
-		t.Fatalf("a guest with set on both cannot restore x: %v", err)
+		t.Fatalf("a guest with set and kill on both cannot restore x: %v", err)
 	}
 	if presentedUnder(t, r, x) != y || presentedUnder(t, r, y) == x {
 		t.Errorf("after the restore %s under %q, %s under %q", x, presentedUnder(t, r, x), y, presentedUnder(t, r, y))

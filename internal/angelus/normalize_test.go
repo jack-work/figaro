@@ -16,7 +16,7 @@ func TestNormalizeHandlerReportsDetachedAndDropped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := b.Store().Tree().Reparent(conv, "null"); err != nil {
+	if err := b.HierarchyEngine().WriteDrawn(map[string]string{conv: "null"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, dryRun := range []bool{true, false} {
