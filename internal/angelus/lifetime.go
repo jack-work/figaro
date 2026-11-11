@@ -280,10 +280,18 @@ func (a *Angelus) scanForRoleIn(taken []string, root string) error {
 		slog.Error("role scan failed: refusing the delete", "node", root, "err", err)
 		return errRoleScanFailed
 	}
+	isRole := make(map[string]bool, len(scanned))
+	for _, role := range scanned {
+		isRole[role] = true
+	}
 	for _, id := range taken {
 		if role, ok := scanned[id]; ok {
 			slog.Error("role index missed a role: refusing the delete",
 				"node", root, "target", id, "role", role)
+			return errRoleIndexMissed
+		}
+		if isRole[id] {
+			slog.Error("role index missed a role: refusing the delete", "node", root, "role", id)
 			return errRoleIndexMissed
 		}
 	}

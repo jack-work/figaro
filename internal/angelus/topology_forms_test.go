@@ -2,9 +2,12 @@ package angelus_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro/wire"
 )
@@ -124,5 +127,76 @@ func TestABoxDrawsOnlyItsOwnForms(t *testing.T) {
 	}
 	if up := presentedUnder(t, d.grantRig, owners); up != was {
 		t.Fatalf("a refused box draw moved the owner's form under %q", up)
+	}
+}
+
+func heldRow(t *testing.T, r grantRig, id string) rpc.FigaroInfoResponse {
+	t.Helper()
+	out, err := r.call(asOwner(), rpc.MethodList, rpc.ListRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range out.(rpc.ListResponse).Figaros {
+		if row.ID == id {
+			return row
+		}
+	}
+	t.Fatalf("%s is not listed", id)
+	return rpc.FigaroInfoResponse{}
+}
+
+// El Inspector XIV H1: a role drawn under its old holder survives the
+// holder's lifetime. The role points at the successor, so only the role
+// form itself in the delete set can hold the sweep.
+func TestTheSweepHoldsARoleFormInItsDeleteSet(t *testing.T) {
+	for _, isRole := range []bool{true, false} {
+		r := newRigWith(t, guardPolicy)
+		if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+			t.Fatal(err)
+		}
+		holder, err := r.create(asOwner(), "mock")
+		if err != nil {
+			t.Fatal(err)
+		}
+		successor, err := r.create(asOwner(), "mock")
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys := map[string]json.RawMessage{"name": json.RawMessage(`"the role"`)}
+		if isRole {
+			keys["target-aria"], _ = json.Marshal(successor.FigaroID)
+		}
+		patch := form.Build(form.Snapshot{}, keys, nil)
+		v, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: &patch})
+		if err != nil {
+			t.Fatal(err)
+		}
+		role := v.(rpc.FormCreateResponse).FormID
+		if err := setTopology(t, r, asOwner(), map[string]string{role: holder.FigaroID}); err != nil {
+			t.Fatalf("drawing the role under its old holder: %v", err)
+		}
+		if n, _ := r.backend.Node(role); n.Parent != holder.FigaroID {
+			t.Fatalf("the role is stored under %q, want the holder %s, so its delete set would miss it", n.Parent, holder.FigaroID)
+		}
+
+		age(t, r.a, holder.FigaroID, 72*time.Hour, 48*time.Hour, map[string]string{"system.keepalive": "0"})
+		idle(t, r.a, role)
+		r.a.SweepLifetimesNow()
+		r.a.SweepLifetimesNow()
+		if !isRole {
+			if !reaped(t, r.a, holder.FigaroID) {
+				t.Fatal("canary: the sweep kept a holder with only a plain form under it, so the hold below proves nothing")
+			}
+			continue
+		}
+		if !alive(t, r.a, holder.FigaroID) {
+			t.Fatal("the sweep took the old holder and the role form drawn under it")
+		}
+		if _, ok := r.backend.Node(role); !ok {
+			t.Fatal("the sweep took the role form")
+		}
+		if row := heldRow(t, r, holder.FigaroID); row.HeldBy != role || !strings.Contains(row.HeldWhy, "role "+role+" is in the set") {
+			t.Fatalf("the listing does not show the holder held by its role: by=%q why=%q", row.HeldBy, row.HeldWhy)
+		}
 	}
 }
