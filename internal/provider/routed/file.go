@@ -30,6 +30,7 @@ type File struct {
 	Models           map[string]catalog.Override  `toml:"models,omitempty"`
 	Headers          map[string]string            `toml:"headers,omitempty"`
 	TransportHeaders map[string]map[string]string `toml:"transport_headers,omitempty"`
+	SendFigaroID     bool                         `toml:"send_figaro_id,omitempty"`
 	Routing          struct {
 		Catalog string `toml:"catalog,omitempty"`
 		Default string `toml:"default,omitempty"`
@@ -71,6 +72,9 @@ func (f File) Apply(spec Spec) (Spec, error) {
 	}
 	if f.TextOnly {
 		spec.TextOnly = true
+	}
+	if f.SendFigaroID {
+		spec.SendFigaroID = true
 	}
 	spec.Mapping = spec.Mapping.With(f.Catalog)
 	if len(f.Models) > 0 {

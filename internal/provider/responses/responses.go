@@ -245,6 +245,7 @@ func (p *Provider) sendWithToken(
 	base := p.baseURL(token)
 	ids := IDs{Task: taskID, Session: sessionID, Interaction: interactionID, Machine: machineID}
 	headers := p.headers(token, ids)
+	provider.StampFigaroID(ctx, headers)
 	body := responseBody{
 		Input:             input,
 		Instructions:      responseInstructions(in.Snapshot),

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/models"
+	"github.com/jack-work/figaro/internal/catalog"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -121,7 +122,7 @@ context = 2000000
 [models."claude-opus-5"]
 context = 500000
 `), 0o600))
-	r, err := catalogFromFile(loaded)
+	r, err := catalogFromFileForTest(loaded)
 	require.NoError(t, err)
 	a := &Anthropic{Catalog: r}
 	e, _ := a.SeedModel("claude-opus-6")
@@ -132,8 +133,16 @@ context = 500000
 	e, _ = a.SeedModel("claude-opus-4-6")
 	require.Equal(t, 1_000_000, e.Window(""), "the built-in facts stay")
 
-	r, err = catalogFromFile(&config.Loaded{ConfigDir: t.TempDir()})
+	r, err = catalogFromFileForTest(&config.Loaded{ConfigDir: t.TempDir()})
 	require.NoError(t, err, "no file is the built-in mapping")
 	_, ok := (&Anthropic{Catalog: r}).SeedModel("claude-opus-5")
 	require.True(t, ok)
+}
+
+func catalogFromFileForTest(loaded *config.Loaded) (*catalog.Reader, error) {
+	data, err := readProviderFile(loaded)
+	if err != nil {
+		return nil, err
+	}
+	return catalogFrom(data)
 }
