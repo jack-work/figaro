@@ -45,6 +45,7 @@ type Config struct {
 	Quote   QuoteConfig   `toml:"quote"`
 	Authz   AuthzConfig   `toml:"authz"`
 	Sandbox SandboxConfig `toml:"sandbox"`
+	Angelus AngelusConfig `toml:"angelus"`
 
 	ServiceTokens map[string]ServiceToken `toml:"service_tokens"`
 
@@ -917,6 +918,9 @@ func load(configDir string) (*Loaded, error) {
 		return nil, err
 	}
 	if err := cfg.validateSandbox(); err != nil {
+		return nil, fmt.Errorf("%s: %w", configPath, err)
+	}
+	if err := cfg.validateAngelus(); err != nil {
 		return nil, fmt.Errorf("%s: %w", configPath, err)
 	}
 
