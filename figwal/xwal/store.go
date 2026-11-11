@@ -226,6 +226,11 @@ func (s *Store) Detach(node string) error {
 	return s.Trunks.Detach(node)
 }
 
+func (s *Store) Reparent(node, under string) error {
+	s.syncDirty()
+	return s.Trunks.Reparent(node, under)
+}
+
 // HeadNode is the node key carrying a trunk's live head, for callers that
 // must address the directory rather than the trunk.
 func (s *Store) HeadNode(trunk string) (string, bool) {

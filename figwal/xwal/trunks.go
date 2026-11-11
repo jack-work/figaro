@@ -208,9 +208,13 @@ func (t *Trunks) node(key string) *NodeInfo { n, _ := t.idx.Node(key); return n 
 func (t *Trunks) head(trunk string) string  { k, _ := t.idx.Head(trunk); return k }
 
 func (t *Trunks) rebuild() error {
+	return t.reshape(func() error { return t.idx.RebuildFrom(filepath.Join(t.root, t.main)) })
+}
+
+func (t *Trunks) reshape(change func() error) error {
 	oldVersion := t.Version()
 	t.retireRootHotPreservingValidation()
-	if err := t.idx.RebuildFrom(filepath.Join(t.root, t.main)); err != nil {
+	if err := change(); err != nil {
 		return err
 	}
 	newVersion := t.Version()

@@ -620,6 +620,29 @@ func (s *XwalStore) Demote(id, prefer string) (string, error) {
 	return under, nil
 }
 
+var (
+	ErrMoveCopies = xwal.ErrMoveCopies
+	ErrMoveCycle  = xwal.ErrMoveCycle
+)
+
+func (s *XwalStore) Move(id, under string) error {
+	node, ok := s.trunks.HeadNode(id)
+	if !ok {
+		return fmt.Errorf("move: no aria or form %q", id)
+	}
+	parent := ""
+	if under != "" {
+		if parent, ok = s.trunks.HeadNode(under); !ok {
+			return fmt.Errorf("move: no aria or form %q", under)
+		}
+	}
+	if err := s.trunks.Reparent(node, parent); err != nil {
+		return fmt.Errorf("move %s under %s: %w", id, under, err)
+	}
+	_, err := s.CleanTopology(false)
+	return err
+}
+
 func (s *XwalStore) Arrange(parents map[string]string, restore []string, mayUndo func(id string) error) error {
 	if s.tree == nil {
 		return ErrNoTrunkCapability

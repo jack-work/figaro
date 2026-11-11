@@ -214,6 +214,8 @@ type Backend interface {
 
 	Arrange(parents map[string]string, restore []string, mayUndo func(id string) error) error
 
+	Move(id, under string) error
+
 	Normalize(dryRun bool) (NormalizeReport, error)
 
 	OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo, error)

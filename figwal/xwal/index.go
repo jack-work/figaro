@@ -97,6 +97,17 @@ func (x *Index) SpawnFlat(parent, child, trunk, kind string) {
 	}
 }
 
+func (x *Index) Reparent(node, under string) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if n := x.nodes[node]; n != nil {
+		moved := *n
+		moved.From = under
+		x.nodes[node] = &moved
+	}
+	x.version.Add(1)
+}
+
 func (x *Index) Drop(keys []string) {
 	x.mu.Lock()
 	defer x.mu.Unlock()

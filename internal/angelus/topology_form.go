@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -43,6 +44,7 @@ func (h *handlers) arrange(ctx context.Context, shown *store.Form, params json.R
 	}
 	parents := map[string]string{}
 	var restore, set, removed []string
+	var moves [][2]string
 	for _, ent := range req.Patch.Entries() {
 		id, err := h.canonicalID(ctx, ent.Key)
 		if err != nil {
@@ -61,7 +63,7 @@ func (h *handlers) arrange(ctx context.Context, shown *store.Form, params json.R
 		}
 		var ref string
 		if err := json.Unmarshal(ent.New, &ref); err != nil {
-			return rpc.SetResponse{}, fmt.Errorf("%s: %s takes the aria to draw it under, or \"\" for the top, not %s", rpc.TopologyFormID, ent.Key, ent.New)
+			return rpc.SetResponse{}, fmt.Errorf("%s: %s takes the aria or form to move it under, or \"\" to draw it at the top, not %s", rpc.TopologyFormID, ent.Key, ent.New)
 		}
 		parent := ""
 		if ref != "" {
@@ -72,11 +74,32 @@ func (h *handlers) arrange(ctx context.Context, shown *store.Form, params json.R
 				return rpc.SetResponse{}, fmt.Errorf("aria %s not found", ref)
 			}
 		}
-		parents[id] = parent
 		set = append(set, ent.Key)
+		if parent == "" {
+			parents[id] = parent
+			continue
+		}
+		moves = append(moves, [2]string{id, parent})
+		if _, drawn := cur.Get(id); drawn {
+			restore = append(restore, id)
+		}
+	}
+	if len(parents) == 0 && len(restore) == 0 && len(moves) == 0 {
+		return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, nil
+	}
+	for _, m := range moves {
+		err := h.angelus.Backend.Move(m[0], m[1])
+		switch {
+		case err == nil:
+		case errors.Is(err, store.ErrMoveCopies), errors.Is(err, store.ErrMoveCycle):
+			parents[m[0]] = m[1]
+			restore = slices.DeleteFunc(restore, func(id string) bool { return id == m[0] })
+		default:
+			return rpc.SetResponse{}, err
+		}
 	}
 	if len(parents) == 0 && len(restore) == 0 {
-		return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, nil
+		return rpc.SetResponse{OK: true, Set: set, Outcome: rpc.OutcomeApplied}, nil
 	}
 	err := h.angelus.Backend.Arrange(parents, restore, func(id string) error {
 		return h.allowed(ctx, rpc.VerbSet, authz.Aria(id))
