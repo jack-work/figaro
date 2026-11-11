@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -251,6 +252,9 @@ func (f *ttlFakeBackend) HierarchyEngine() hierarchy.Engine { return ttlFakeEngi
 type ttlFakeEngine struct{ f *ttlFakeBackend }
 
 func (e ttlFakeEngine) Version() hierarchy.Version { return hierarchy.Version{} }
+func (e ttlFakeEngine) Component(string) ([]string, error) {
+	return nil, errors.New("ttl fake: no move components")
+}
 func (e ttlFakeEngine) Node(id string) (hierarchy.Node, bool) {
 	return hierarchy.Node{ID: id, Aria: true}, true
 }
