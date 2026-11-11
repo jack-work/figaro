@@ -162,6 +162,16 @@ func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins 
 	if expect != nil && !sameIDs(orSelf(taken, id), expect) {
 		return fmt.Errorf("%w: %q takes %v, decided on %v", ErrDeleteSetChanged, id, taken, expect)
 	}
+	taken = orSelf(taken, id)
+	stumps := map[string]bool{}
+	s.mu.Lock()
+	for _, t := range taken {
+		if _, ok := s.trunks.Kind(t); !ok {
+			s.mu.Unlock()
+			return fmt.Errorf("%w: %q would take %s, which the store does not hold", ErrDeleteSetChanged, id, t)
+		}
+	}
+	s.mu.Unlock()
 	if bury != nil {
 		bury(taken)
 	}
@@ -198,9 +208,18 @@ func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins 
 			return fmt.Errorf("%w: detaching %s: %v", ErrWouldOrphan, orphan, err)
 		}
 	}
-	// The hosting stump is read before the removal.
-	stump := s.topologySnapshot().byID[id].Stump
+	// The hosting stumps are read before the removal.
+	snap := s.topologySnapshot()
+	stump := snap.byID[id].Stump
+	for _, t := range taken {
+		if st := snap.byID[t].Stump; st != "" && st != stump {
+			stumps[st] = true
+		}
+	}
 	if err := s.removeLocked(id, recursive); err != nil {
+		return err
+	}
+	if err := s.removeEach(taken); err != nil {
 		return err
 	}
 	// Presentation is repaired with s.mu released: an edge resolves through
@@ -232,6 +251,32 @@ func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins 
 	// The stump goes only if nothing is left drawn beneath it.
 	if !keep {
 		s.collectStumpAfterDelete(stump)
+	}
+	for st := range stumps {
+		s.collectStumpAfterDelete(st)
+	}
+	return nil
+}
+
+func (s *XwalStore) removeEach(taken []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range taken {
+		if _, ok := s.trunks.Kind(t); !ok {
+			continue
+		}
+		if err := s.trunks.Remove(t, true); err != nil {
+			return fmt.Errorf("remove %s: %w", t, err)
+		}
+	}
+	var left []string
+	for _, t := range taken {
+		if _, ok := s.trunks.Kind(t); ok {
+			left = append(left, t)
+		}
+	}
+	if len(left) > 0 {
+		return fmt.Errorf("%w: %v outlived their delete", ErrWouldOrphan, left)
 	}
 	return nil
 }

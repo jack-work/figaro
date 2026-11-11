@@ -286,7 +286,7 @@ func TestAriasFollowsThePresentedTopology(t *testing.T) {
 		moved(t, e, before)
 		matchesPresentation(t, r, all...)
 	})
-	t.Run("rehomed when what it was drawn under is deleted", func(t *testing.T) {
+	t.Run("rehomed when its history parent is deleted", func(t *testing.T) {
 		f := ariasFork(t, r, a)
 		g := ariasFork(t, r, f)
 		if _, err := r.call(asOwner(), rpc.MethodPromote, rpc.PromoteRequest{FigaroID: g, Levels: 1}); err != nil {
@@ -295,17 +295,17 @@ func TestAriasFollowsThePresentedTopology(t *testing.T) {
 		if up := presentedUnder(t, r, f); up != g {
 			t.Fatalf("after the promote %s is presented under %q, want %s", f, up, g)
 		}
-		if _, err := r.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: g, Now: true, Recursive: true}); err != nil {
+		if _, err := r.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: f, Now: true, Recursive: true}); err != nil {
 			t.Fatal(err)
 		}
 		paths := ariasPaths(t, r)
-		if _, still := paths[g]; still {
-			t.Fatalf("%s is still listed after kill --now", g)
+		if _, still := paths[f]; still {
+			t.Fatalf("%s is still listed after kill --now", f)
 		}
-		if _, kept := paths[f]; !kept {
-			t.Fatalf("%s went with %s; nothing was rehomed", f, g)
+		if _, kept := paths[g]; !kept {
+			t.Fatalf("%s went with its history parent %s; nothing was rehomed", g, f)
 		}
-		matchesPresentation(t, r, append(all, f)...)
+		matchesPresentation(t, r, append(all, g)...)
 	})
 	t.Run("promote to the top", func(t *testing.T) {
 		before := presentedUnder(t, r, b)

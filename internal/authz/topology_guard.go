@@ -35,6 +35,8 @@ func (e *HeldError) Error() string { return fmt.Sprintf("%s holds the sweep: %s"
 
 var ErrSystemOnly = errors.New("only the daemon may run this plan")
 
+var ErrSplitsReapedGroup = errors.New("a delete would split a reaped group")
+
 type TopologyGuard struct {
 	Policies  func() *Policies
 	Owner     func() jkauthz.Principal
@@ -46,6 +48,9 @@ type TopologyGuard struct {
 
 func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hierarchy.Plan) (hierarchy.Verdict, error) {
 	if err := g.rehomes(p); err != nil {
+		return hierarchy.Verdict{}, err
+	}
+	if err := g.wholeGroups(ctx, p); err != nil {
 		return hierarchy.Verdict{}, err
 	}
 	if by.System {
@@ -136,6 +141,30 @@ func (g TopologyGuard) purgeable(ctx context.Context, p hierarchy.Plan) error {
 	for _, id := range p.Delete {
 		if !reaped[id] {
 			return fmt.Errorf("purge %s: %s was not reaped with it", p.Node, id)
+		}
+	}
+	return nil
+}
+
+func (g TopologyGuard) wholeGroups(ctx context.Context, p hierarchy.Plan) error {
+	switch p.Op {
+	case hierarchy.Kill, hierarchy.Sweep, hierarchy.Purge, hierarchy.Discard:
+	default:
+		return nil
+	}
+	if g.Reaped == nil {
+		return nil
+	}
+	taken := make(map[string]bool, len(p.Delete))
+	for _, id := range p.Delete {
+		taken[id] = true
+	}
+	for _, id := range p.Delete {
+		nodes, _ := g.Reaped(ctx, id)
+		for _, n := range nodes {
+			if !taken[n] {
+				return fmt.Errorf("%w: %s was reaped with %s, and this %s would leave it behind", ErrSplitsReapedGroup, n, id, p.Op)
+			}
 		}
 	}
 	return nil

@@ -183,3 +183,29 @@ func TestOnlyTheSystemDeparts(t *testing.T) {
 		t.Fatalf("the owner departing = %v, want ErrSystemOnly", err)
 	}
 }
+
+// D1 (1): no delete takes a reaped root without the rest of its group, the
+// daemon's purge included.
+func TestADeleteNeverSplitsAReapedGroup(t *testing.T) {
+	g := topologyGuard(t, setOnlyPolicy)
+	g.Reaped = func(_ context.Context, root string) ([]string, bool) {
+		if root == "p" {
+			return []string{"p", "c"}, true
+		}
+		return nil, false
+	}
+	owner := guardCaller(guardOwner.Kind, guardOwner.ID, DoorLocal)
+	for _, by := range []hierarchy.Principal{owner, hierarchy.System} {
+		op := hierarchy.Kill
+		if by.System {
+			op = hierarchy.Purge
+		}
+		_, err := g.Check(context.Background(), by, hierarchy.Plan{Op: op, Node: "p", Delete: []string{"p"}})
+		if !errors.Is(err, ErrSplitsReapedGroup) {
+			t.Errorf("%s of p without c = %v, want ErrSplitsReapedGroup", op, err)
+		}
+		if _, err := g.Check(context.Background(), by, hierarchy.Plan{Op: op, Node: "p", Delete: []string{"p", "c"}}); err != nil {
+			t.Errorf("%s of the whole group: %v", op, err)
+		}
+	}
+}
