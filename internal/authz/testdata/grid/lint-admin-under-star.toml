@@ -1,5 +1,5 @@
 [roles.r]
-grants = ["*:*", "admin:troupe:kelliher"]
+permissions = ["*:*", "admin:troupe:kelliher"]
 [[bind]]
 role = "r"
 principals = ["user:bob@auth.kelliher.info"]

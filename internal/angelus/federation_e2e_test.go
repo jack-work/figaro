@@ -56,21 +56,21 @@ type fedNode struct {
 
 const fedPolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [[bind]]
 role = "owner"
 principals = [%q, "user:probe@issuer.test.figaro"%s]
 
 [roles.reader]
-grants = ["read:*"]
+permissions = ["read:*"]
 
 [[bind]]
 role = "reader"
 principals = ["user:reader@issuer.test.figaro"]
 
 [roles.self]
-grants = ["*:owner:self"]
+permissions = ["*:owner:self"]
 
 [[bind]]
 role = "self"

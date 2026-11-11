@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"regexp"
 	"slices"
@@ -325,48 +326,71 @@ func refuseFences(policy []byte) error {
 		return err
 	}
 	if _, ok := doc["fence"]; ok {
-		return fmt.Errorf("[[fence]] is gone: a figaro's own system.grants narrows it, and [figaros] grants narrows every top-level one (figaro grants <id> shows the result)")
+		return fmt.Errorf("[[fence]] is gone: a figaro's own system.grants narrows it, and [figaros] permissions narrows every top-level one (figaro grants <id> shows the result)")
 	}
 	return nil
 }
 
-func splitCeiling(policy []byte) ([]byte, *jkauthz.Grants, error) {
+type ceilingTable struct {
+	set     *jkauthz.Grants
+	retired []string
+}
+
+func splitCeiling(policy []byte) ([]byte, ceilingTable, error) {
 	var doc map[string]any
 	md, err := toml.Decode(string(policy), &doc)
 	if err != nil {
-		return nil, nil, err
+		return nil, ceilingTable{}, err
 	}
 	if !md.IsDefined("figaros") {
-		return policy, nil, nil
+		return policy, ceilingTable{}, nil
 	}
 	var typed struct {
 		Figaros struct {
-			Grants []string `toml:"grants"`
+			Permissions []string `toml:"permissions"`
+			Grants      []string `toml:"grants"`
 		} `toml:"figaros"`
 	}
 	md, err = toml.Decode(string(policy), &typed)
 	if err != nil {
-		return nil, nil, err
+		return nil, ceilingTable{}, err
 	}
 	for _, k := range md.Undecoded() {
 		if len(k) > 0 && k[0] == "figaros" {
-			return nil, nil, fmt.Errorf("unknown key %s: [figaros] holds only grants", k)
+			return nil, ceilingTable{}, fmt.Errorf("unknown key %s: [figaros] holds only permissions", k)
 		}
 	}
-	if typed.Figaros.Grants == nil {
-		return nil, nil, fmt.Errorf("[figaros] needs grants: the most any figaro may do here; [] is nothing")
+	var out ceilingTable
+	texts := typed.Figaros.Permissions
+	switch newName, oldName := md.IsDefined("figaros", "permissions"), md.IsDefined("figaros", "grants"); {
+	case newName && oldName:
+		return nil, ceilingTable{}, fmt.Errorf("[figaros] sets both permissions and grants: grants is the old name for permissions; keep one")
+	case oldName:
+		texts = typed.Figaros.Grants
+		out.retired = []string{"[figaros] grants"}
 	}
-	ceiling, err := ParseFigaroGrants(typed.Figaros.Grants)
+	if texts == nil {
+		return nil, ceilingTable{}, fmt.Errorf("[figaros] needs permissions: the most any figaro may do here; [] is nothing")
+	}
+	ceiling, err := ParseFigaroGrants(texts)
 	if err != nil {
-		return nil, nil, fmt.Errorf("[figaros]: %w", err)
+		return nil, ceilingTable{}, fmt.Errorf("[figaros]: %w", err)
 	}
-	grants := cutTable(policy, ceilingHeader)
-	var rest map[string]any
+	out.set = &ceiling
+	rest := cutTable(policy, ceilingHeader)
+	var left map[string]any
 	delete(doc, "figaros")
-	if _, err := toml.Decode(string(grants), &rest); err != nil || !reflect.DeepEqual(doc, rest) {
-		return nil, nil, fmt.Errorf("the [figaros] table could not be set apart from the grants: write it as a [figaros] table of its own")
+	if _, err := toml.Decode(string(rest), &left); err != nil || !reflect.DeepEqual(doc, left) {
+		return nil, ceilingTable{}, fmt.Errorf("the [figaros] table could not be set apart from the roles: write it as a [figaros] table of its own")
 	}
-	return grants, &ceiling, nil
+	return rest, out, nil
+}
+
+func warnRetiredNames(what, where string, names []string) {
+	for _, name := range names {
+		renamed := strings.Replace(name, " grants", " permissions", 1)
+		slog.Warn(what+" says "+name+", the old name; write "+renamed, "in", where)
+	}
 }
 
 var (

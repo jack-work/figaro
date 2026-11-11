@@ -23,9 +23,9 @@ func TestAPromptFollowsOnlyWhereTheCallerMayListen(t *testing.T) {
 	a.Policies = authz.NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "0"}, StoreFacts(b))
 	if err := a.Policies.Reload(writeTestPolicy(t, `
 [roles.sender]
-grants = ["send:*"]
+permissions = ["send:*"]
 [roles.listener]
-grants = ["send:*", "listen:*"]
+permissions = ["send:*", "listen:*"]
 [[bind]]
 role = "sender"
 principals = ["user:sender"]

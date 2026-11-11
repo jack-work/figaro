@@ -33,7 +33,7 @@ func newNarrowRig(t *testing.T) *narrowRig {
 	policy := filepath.Join(t.TempDir(), "policy.toml")
 	if err := os.WriteFile(policy, []byte(`
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 [[bind]]
 role = "owner"
 principals = ["user:owner"]

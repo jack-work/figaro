@@ -48,7 +48,7 @@ func BenchmarkAriasTick(b *testing.B) {
 			}
 		}
 		policy := filepath.Join(b.TempDir(), "policy.toml")
-		if err := os.WriteFile(policy, []byte("[roles.owner]\ngrants = [\"*:*\"]\n[[bind]]\nrole = \"owner\"\nprincipals = [\"user:0\"]\n"), 0o600); err != nil {
+		if err := os.WriteFile(policy, []byte("[roles.owner]\npermissions = [\"*:*\"]\n[[bind]]\nrole = \"owner\"\nprincipals = [\"user:0\"]\n"), 0o600); err != nil {
 			b.Fatal(err)
 		}
 		a := &Angelus{Registry: NewRegistry(), Backend: backend}

@@ -82,7 +82,8 @@ func checkTroupeRules(doc TroupeDocument, troupe string) error {
 	}
 	var declared struct {
 		Roles map[string]struct {
-			Grants []string `toml:"grants"`
+			Permissions []string `toml:"permissions"`
+			Grants      []string `toml:"grants"`
 		} `toml:"roles"`
 		Bind []struct {
 			Principals []string `toml:"principals"`
@@ -106,16 +107,16 @@ func checkTroupeRules(doc TroupeDocument, troupe string) error {
 		}
 	}
 	for role, r := range declared.Roles {
-		for _, text := range r.Grants {
+		for _, text := range append(r.Permissions, r.Grants...) {
 			g, err := jkauthz.ParseGrant(text)
 			if err != nil {
 				return err
 			}
 			switch {
 			case g.Object == selSandbox+"local":
-				return fmt.Errorf("troupe policy: role %s grants %s, which only each node's own policy decides", role, g)
+				return fmt.Errorf("troupe policy: role %s permits %s, which only each node's own policy decides", role, g)
 			case g.Object == selTroupe+troupe && (g.Verb == jkauthz.Any || g.Verb == string(rpc.VerbAdmin)):
-				return fmt.Errorf("troupe policy: role %s grants %s, which only each signer node's own policy decides (join may be granted)", role, g)
+				return fmt.Errorf("troupe policy: role %s permits %s, which only each signer node's own policy decides (join may be permitted)", role, g)
 			}
 		}
 	}

@@ -1,2 +1,2 @@
 [roles.r]
-grants = ["fly:*"]
+permissions = ["fly:*"]

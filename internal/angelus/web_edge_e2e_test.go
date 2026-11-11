@@ -23,10 +23,10 @@ import (
 
 const edgePolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [roles.guest]
-grants = [
+permissions = [
   "read:owner:self", "listen:owner:self", "send:owner:self",
   "create:*",
 ]

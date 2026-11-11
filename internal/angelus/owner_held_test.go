@@ -76,10 +76,10 @@ func TestTheOwnerSetsOwnerHeldKeys(t *testing.T) {
 
 const lentPolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [roles.lent]
-grants = ["create:*", "read:*", "listen:*", "send:*", "fork:*", "set:*", "use:sandbox:local"]
+permissions = ["create:*", "read:*", "listen:*", "send:*", "fork:*", "set:*", "use:sandbox:local"]
 
 [[bind]]
 role = "owner"

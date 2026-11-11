@@ -12,14 +12,14 @@ import (
 
 const boxLeavePolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [[bind]]
 role = "owner"
 principals = ["user:SELF"]
 
 [roles.box]
-grants = [
+permissions = [
   "create:*",
   "use:sandbox:self",
   "read:sandboxed:self", "listen:sandboxed:self", "send:sandboxed:self", "fork:sandboxed:self", "set:sandboxed:self", "kill:sandboxed:self",

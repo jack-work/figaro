@@ -69,9 +69,9 @@ func (r *nameRig) serve(guestReads ...string) {
 	policy := filepath.Join(r.t.TempDir(), "policy.toml")
 	body := `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 [roles.guest]
-grants = [` + strings.Join(on, ", ") + `]
+permissions = [` + strings.Join(on, ", ") + `]
 [[bind]]
 role = "owner"
 principals = ["user:owner"]

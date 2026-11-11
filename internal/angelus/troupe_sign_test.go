@@ -27,19 +27,19 @@ import (
 
 const troupeJoinPolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 [[bind]]
 role = "owner"
 principals = ["user:0"]
 
 [roles.member]
-grants = ["join:troupe:estate"]
+permissions = ["join:troupe:estate"]
 [[bind]]
 role = "member"
 principals = ["user:member"]
 
 [roles.reader]
-grants = ["read:*"]
+permissions = ["read:*"]
 [[bind]]
 role = "reader"
 principals = ["user:reader"]

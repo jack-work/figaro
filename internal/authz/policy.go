@@ -141,7 +141,7 @@ func Schema(facts Facts) jkauthz.Schema[Resource] {
 func DefaultPolicy(self jkauthz.Principal, boxes []string) string {
 	text := fmt.Sprintf(`
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [[bind]]
 role = "owner"
@@ -156,7 +156,7 @@ principals = [%q]
 	}
 	return text + fmt.Sprintf(`
 [roles.box]
-grants = [
+permissions = [
   "create:*",
   "use:sandbox:self",
   "read:sandboxed:self", "listen:sandboxed:self", "send:sandboxed:self",
@@ -170,15 +170,16 @@ principals = [%s]
 }
 
 type Policies struct {
-	mu     sync.Mutex
-	store  *jkauthz.Store[Resource]
-	self   jkauthz.Principal
-	path   string
-	scopes []string
-	troupe atomic.Pointer[troupeLayer]
-	schema jkauthz.Schema[Resource]
-	boxes  []string
-	parsed parsedGrants
+	mu      sync.Mutex
+	store   *jkauthz.Store[Resource]
+	self    jkauthz.Principal
+	path    string
+	scopes  []string
+	troupe  atomic.Pointer[troupeLayer]
+	schema  jkauthz.Schema[Resource]
+	boxes   []string
+	parsed  parsedGrants
+	retired []string
 
 	figaroCeiling atomic.Pointer[jkauthz.Grants]
 	claimRequired atomic.Pointer[[]string]
@@ -222,6 +223,7 @@ func (p *Policies) Reload(path string) error {
 	if err := p.load(data); err != nil {
 		return fmt.Errorf("policy %s: %w", path, err)
 	}
+	warnRetiredNames("policy", path, p.retired)
 	for _, name := range WildcardsAcrossIssuers(data) {
 		slog.Warn("authz: policy binds "+name+", which matches that kind from every issuer, troupe issuer and api key", "policy", path)
 	}
@@ -235,14 +237,17 @@ func (p *Policies) load(data []byte) error {
 	if err := refuseFences(data); err != nil {
 		return err
 	}
-	grants, ceiling, err := splitCeiling(data)
+	rest, ceiling, err := splitCeiling(data)
 	if err != nil {
 		return err
 	}
-	if err := p.store.LoadBytes(grants); err != nil {
+	pol, err := jkauthz.Compile(rest, p.schema)
+	if err != nil {
 		return err
 	}
-	p.figaroCeiling.Store(ceiling)
+	p.store.Set(pol)
+	p.figaroCeiling.Store(ceiling.set)
+	p.retired = append(pol.RetiredNames(), ceiling.retired...)
 	return nil
 }
 
@@ -423,6 +428,7 @@ func (p *Policies) SetTroupe(name string, body []byte) error {
 		p.troupe.Store(layer)
 		return err
 	}
+	warnRetiredNames("troupe policy", name, pol.RetiredNames())
 	layer.policy = pol
 	p.troupe.Store(layer)
 	return nil

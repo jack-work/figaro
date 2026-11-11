@@ -57,7 +57,7 @@ func TestAFigaroCallIsTheCallersGrantsIntersectedWithTheFigaros(t *testing.T) {
 }
 
 func TestTheCeilingBoundsEveryTopLevelFigaro(t *testing.T) {
-	p := narrowed(t, sandboxPolicy+"\n[figaros]\ngrants = [\"read:*\", \"*:lineage:self\", \"egress:*\"]\n", map[string]string{"top": `["*:*", "egress:api:443", "cred:github"]`})
+	p := narrowed(t, sandboxPolicy+"\n[figaros]\npermissions = [\"read:*\", \"*:lineage:self\", \"egress:*\"]\n", map[string]string{"top": `["*:*", "egress:api:443", "cred:github"]`})
 	top, _ := p.Effective("top")
 	if got := top.String(); got != "*:lineage:top, read:*, egress:api:443" {
 		t.Fatalf("top: %s", got)
@@ -80,9 +80,9 @@ func TestTheCeilingBoundsEveryTopLevelFigaro(t *testing.T) {
 func TestTheCeilingTableIsChecked(t *testing.T) {
 	for name, table := range map[string]string{
 		"no grants":    "[figaros]\n",
-		"unknown key":  "[figaros]\ngrants = [\"read:*\"]\nverbs = [\"read\"]\n",
-		"bad grant":    "[figaros]\ngrants = [\"read\"]\n",
-		"bad selector": "[figaros]\ngrants = [\"read:aria:*\"]\n",
+		"unknown key":  "[figaros]\npermissions = [\"read:*\"]\nverbs = [\"read\"]\n",
+		"bad grant":    "[figaros]\npermissions = [\"read\"]\n",
+		"bad selector": "[figaros]\npermissions = [\"read:aria:*\"]\n",
 		"not a table":  "figaros = 1\n",
 	} {
 		p := NewPolicies(me, facts())
@@ -91,7 +91,7 @@ func TestTheCeilingTableIsChecked(t *testing.T) {
 		}
 	}
 	p := NewPolicies(me, facts())
-	if err := p.load([]byte(sandboxPolicy + "\n[figaros]\ngrants = []\n")); err != nil {
+	if err := p.load([]byte(sandboxPolicy + "\n[figaros]\npermissions = []\n")); err != nil {
 		t.Fatalf("an empty ceiling: %v", err)
 	}
 	if err := p.load([]byte(sandboxPolicy)); err != nil {

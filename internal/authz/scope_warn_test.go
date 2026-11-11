@@ -15,7 +15,7 @@ import (
 
 const mixedPolicy = `
 [roles.owner]
-grants = ["*:*"]
+permissions = ["*:*"]
 
 [[bind]]
 role = "owner"
@@ -90,7 +90,7 @@ func TestReloadWarnsOnUnscopedNamesAndStillLoads(t *testing.T) {
 
 const wildcardPolicy = `
 [roles.r]
-grants = ["read:*"]
+permissions = ["read:*"]
 
 [[bind]]
 role = "r"
