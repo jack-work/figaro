@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -128,5 +129,23 @@ func TestAPurgeThatWouldSplitItsGroupIsRefused(t *testing.T) {
 		if _, ok := d.backend.Node(id); !ok {
 			t.Fatalf("%s was taken by a refused purge", id)
 		}
+	}
+}
+
+// D1 (7): a node whose form carries a tombstone is never woken or prompted.
+func TestABuriedNodeIsNeverPrompted(t *testing.T) {
+	d, _, c := drawnBoxChild(t)
+	if err := d.a.Registry.Hibernate(c); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.backend.SetMeta(c, &store.AriaMeta{TombstonedAtMS: 1}); err != nil {
+		t.Fatal(err)
+	}
+	err := boxOnAria(t, d.dial(t), rpc.MethodQua, c, rpc.QuaRequest{Text: "hi"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "tombstone") {
+		t.Fatalf("prompting a buried node = %v, want refused", err)
+	}
+	if d.a.Registry.Get(c) != nil {
+		t.Fatal("a buried node was woken")
 	}
 }

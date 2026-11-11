@@ -124,6 +124,7 @@ func (b *XwalBackend) RemoveMoved(c xwal.Component, token string) error {
 	if err != nil {
 		return err
 	}
+	b.unlinked(ids)
 	b.store.collectStumpAfterDelete(stump)
 	return nil
 }

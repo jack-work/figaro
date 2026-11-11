@@ -30,6 +30,9 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID, wokeBy string) (figa
 	if f := h.angelus.Registry.Get(ariaID); f != nil {
 		return f, nil
 	}
+	if b, ok := h.angelus.Backend.(interface{ Buried(string) bool }); ok && b.Buried(ariaID) {
+		return nil, fmt.Errorf("%s was deleted: its form carries a tombstone", ariaID)
+	}
 	done, err := h.angelus.guard.enter(ariaID)
 	if err != nil {
 		return nil, err

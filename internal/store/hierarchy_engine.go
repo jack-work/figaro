@@ -117,7 +117,7 @@ func (e *hierarchyEngine) MoveStorage(id, under string) error {
 }
 
 func (e *hierarchyEngine) Remove(id string, recursive bool, expect []string, pins map[string]string) error {
-	return e.s().removeLeaf(id, recursive, expect, pins, e.b.bury)
+	return e.s().removeLeaf(id, recursive, expect, pins, e.b.bury, e.b.unlinked)
 }
 
 func (b *XwalBackend) deadlineOf(id string) int64 {
@@ -151,7 +151,7 @@ func (s *XwalStore) move(id, under string) error {
 	return err
 }
 
-func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins map[string]string, bury func([]string)) error {
+func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins map[string]string, bury, unlinked func([]string)) error {
 	s.deleting.Lock()
 	defer s.deleting.Unlock()
 	// Refuse before touching anything: the boundary repair rewrites surviving arias.
@@ -221,6 +221,9 @@ func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins 
 	}
 	if err := s.removeEach(taken); err != nil {
 		return err
+	}
+	if unlinked != nil {
+		unlinked(taken)
 	}
 	// Presentation is repaired with s.mu released: an edge resolves through
 	// the topology snapshot, which takes that lock itself.
