@@ -12,4 +12,5 @@ Not drafted yet. Brought after the layers above it are settled.
 - Rulings: none yet.
 - Open questions: none yet.
 - Hidden variables surfaced: none yet.
+- Crossing work: chat-aria (design/chat-aria 664cae6d) step 2 adds kind `log`. Advised 2026-11-11: its own package from day one, wired concrete from *XwalBackend, no new Backend methods or capability interface (S2 deletes both), with a boundary row (imports no figaro, provider, decide, authz, angelus, topo).
 - Rollbacks: none.

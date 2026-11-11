@@ -47,6 +47,12 @@ Used per pinch, not in CI:
 - **Call graph (x/tools VTA)** on the package being split, to list which symbols each outer layer calls. That list is the seam: it says what goes in the injected interface. First use: which `store` symbols the providers reach (layer 2), which `XwalBackend` methods each layer calls (plan step S3).
 - **Mechanical moves.** `git mv` plus an import rewrite (`gofmt -r` for renamed identifiers, goimports for paths), scripted per pinch so the motion commit can be re-run on a newer base instead of rebased by hand.
 
+## Work crossing layers
+
+Features that land across several layers get no ranking row. Each affected layer file records what it must not break, and new boundary rows join the ratchet.
+
+- chat-aria (design/chat-aria 664cae6d, 2026-11-11): layers 2, 3 and 6. New rows: the log package's imports; `sdk` imports no `internal/*` (holds today).
+
 ## Worked example
 
 Layer 3, the hierarchy and authorization split, is decided (keel design/hierarchy-guard ab6d4ae1, duck/2026-11-10-hierarchy-guard.md) and built by the promote-guard lane. Its boundary rule (the hierarchy package imports no authz, in scripts/check-boundary.sh) is the first ratchet row. It is the shape every later pinch copies: the inner layer exposes a plan and a hook; the outer layer implements the hook; the inner layer never imports the outer one; a canary proves the hook cannot be skipped.
