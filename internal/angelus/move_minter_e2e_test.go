@@ -24,3 +24,28 @@ func TestAMovedAriasMinterNamesItsOriginNode(t *testing.T) {
 		t.Fatalf("minted_by on the new home = %q (was %q on the old), want %q", m.MintedBy, was, want)
 	}
 }
+
+// n1: coming home, the minter sheds the home node's name, because the home
+// node holds the departure record.
+func TestAMinterComingHomeIsLocalAgain(t *testing.T) {
+	a, b := newFedPair(t)
+	parent := a.mint()
+	before, _ := a.a.Backend.Meta(parent)
+	if _, err := a.as("probe").Move(callCtx(t), parent, b.id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.as("probe").Move(callCtx(t), parent, a.id); err != nil {
+		t.Fatal(err)
+	}
+	m, err := a.a.Backend.Meta(parent)
+	if err != nil || m == nil {
+		t.Fatalf("no meta for %s back home: %v", parent, err)
+	}
+	want := "node:" + a.id
+	if before != nil && before.MintedBy != "" {
+		want = before.MintedBy
+	}
+	if m.MintedBy != want {
+		t.Fatalf("minted_by back home = %q, want %q", m.MintedBy, want)
+	}
+}
