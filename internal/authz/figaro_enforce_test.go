@@ -275,7 +275,7 @@ func TestTheStampReachesTheHandlerContext(t *testing.T) {
 func TestAPolicyWithFencesIsRefusedNamingTheReplacement(t *testing.T) {
 	p := NewPolicies(me, facts())
 	err := p.load([]byte(sandboxPolicy + "\n[[fence]]\ngrants = [\"kill:*\"]\ndeny = [\"figaro:*\"]\n"))
-	if err == nil || !strings.Contains(err.Error(), "system.grants") || !strings.Contains(err.Error(), "[figaros]") {
+	if err == nil || !strings.Contains(err.Error(), "system.scopes") || !strings.Contains(err.Error(), "[figaros]") {
 		t.Fatalf("%v", err)
 	}
 }

@@ -50,7 +50,7 @@ func claimed(t *testing.T, figaro string, raw json.RawMessage) json.RawMessage {
 
 func grantsPatch(t *testing.T, v any) form.Patch {
 	t.Helper()
-	return *heldPatch(t, map[string]any{form.GrantsKey: v})
+	return *heldPatch(t, map[string]any{form.ScopesKey: v})
 }
 
 func (r lineageRig) setAs(t *testing.T, c *jkrpc.Client, figaro, target string, p form.Patch) error {
@@ -66,7 +66,7 @@ func (r lineageRig) forkAs(t *testing.T, c *jkrpc.Client, figaro, target string,
 
 func grantsOn(t *testing.T, r lineageRig, id string) string {
 	t.Helper()
-	v, _ := keyOn(t, r.grantRig, id, form.GrantsKey)
+	v, _ := keyOn(t, r.grantRig, id, form.ScopesKey)
 	return string(v)
 }
 
@@ -150,7 +150,7 @@ func TestGrantsMustBeAnArrayOfStrings(t *testing.T) {
 	r := newLineageRig(t, "")
 	for _, bad := range []any{"read", []int{1}, map[string]any{"a": 1}, nil, []string{" a"}, []string{"a "}, []string{"a", ""}, []string{"a"}, []string{"read:aria:*"}, []string{"fly:"}, []string{"read:moon:1"}} {
 		_, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: grantsPatch(t, bad)}))
-		if err == nil || !strings.Contains(err.Error(), form.GrantsKey) {
+		if err == nil || !strings.Contains(err.Error(), form.ScopesKey) {
 			t.Errorf("grants %v: %v", bad, err)
 		}
 	}
@@ -250,10 +250,10 @@ func TestTheFormAccessDenyListsProtectedKeysForAllButHeirs(t *testing.T) {
 		}
 		return false
 	}
-	if a := access(r.child); a == nil || !denies(a, form.GrantsKey) {
+	if a := access(r.child); a == nil || !denies(a, form.ScopesKey) {
 		t.Fatalf("the child may write its own grants: %+v", a)
 	}
-	if a := access(r.parent); a == nil || denies(a, form.GrantsKey) || denies(a, "system.sandbox") {
+	if a := access(r.parent); a == nil || denies(a, form.ScopesKey) || denies(a, "system.sandbox") {
 		t.Fatalf("the parent may not write its child's protected keys: %+v", a)
 	}
 }

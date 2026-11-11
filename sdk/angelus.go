@@ -495,6 +495,14 @@ func (c *Angelus) QuarantineRelease(ctx context.Context, req rpc.QuarantineRelea
 	return &resp, err
 }
 
+func (c *Angelus) Scopes(ctx context.Context, id string) (*rpc.ScopesResponse, error) {
+	var out rpc.ScopesResponse
+	if err := c.cli.Call(ctx, rpc.MethodScopes, rpc.ScopesRequest{FigaroID: id}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Angelus) Grants(ctx context.Context, id string) (*rpc.GrantsResponse, error) {
 	var out rpc.GrantsResponse
 	if err := c.cli.Call(ctx, rpc.MethodGrants, rpc.GrantsRequest{FigaroID: id}, &out); err != nil {

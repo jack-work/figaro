@@ -57,7 +57,7 @@ func BenchmarkListFiltered(b *testing.B) {
 		}
 	}
 	granted, _, err := backend.ForkWith(outfit, 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{
-		form.GrantsKey: json.RawMessage(`["read:owner:self", "send:*", "egress:*"]`),
+		form.ScopesKey: json.RawMessage(`["read:owner:self", "send:*", "egress:*"]`),
 	}, nil), store.MintedBy("user:0"))
 	if err != nil {
 		b.Fatal(err)

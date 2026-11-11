@@ -6,9 +6,13 @@ import (
 	"strings"
 )
 
-const GrantsKey = "system.grants"
+const (
+	ScopesKey = "system.scopes"
 
-var protectedKeys = []string{GrantsKey, "system.sandbox"}
+	RetiredGrantsKey = "system.grants"
+)
+
+var protectedKeys = []string{ScopesKey, RetiredGrantsKey, "system.sandbox"}
 
 func ProtectedKeys() []string { return append([]string(nil), protectedKeys...) }
 
@@ -21,19 +25,42 @@ func Protected(path string) (string, bool) {
 	return "", false
 }
 
-func CheckGrants(s Snapshot) error {
-	raw, ok := s.Get(GrantsKey)
-	if !ok {
-		return nil
+func OwnScopes(s Snapshot) (raw json.RawMessage, key string, ok bool, err error) {
+	scopes, hasScopes := s.Get(ScopesKey)
+	grants, hasGrants := s.Get(RetiredGrantsKey)
+	switch {
+	case hasScopes && hasGrants:
+		return nil, "", false, fmt.Errorf("%s and %s are both set: %s is the old name for %s; unset it", ScopesKey, RetiredGrantsKey, RetiredGrantsKey, ScopesKey)
+	case hasGrants:
+		return grants, RetiredGrantsKey, true, nil
+	case hasScopes:
+		return scopes, ScopesKey, true, nil
 	}
-	var grants []string
-	if err := json.Unmarshal(raw, &grants); err != nil || grants == nil {
-		return fmt.Errorf("%s must be a JSON array of strings, got %s", GrantsKey, raw)
+	return nil, "", false, nil
+}
+
+func CheckScopes(s Snapshot) error {
+	raw, key, ok, err := OwnScopes(s)
+	if err != nil || !ok {
+		return err
 	}
-	for _, g := range grants {
+	var scopes []string
+	if err := json.Unmarshal(raw, &scopes); err != nil || scopes == nil {
+		return fmt.Errorf("%s must be a JSON array of strings, got %s", key, raw)
+	}
+	for _, g := range scopes {
 		if g == "" || strings.TrimSpace(g) != g {
-			return fmt.Errorf("%s: grant %q is empty or has surrounding whitespace", GrantsKey, g)
+			return fmt.Errorf("%s: %q is empty or has surrounding whitespace", key, g)
 		}
 	}
 	return nil
+}
+
+func RefuseRetiredGrantsWrite(before, after Snapshot) error {
+	was, _ := before.Get(RetiredGrantsKey)
+	now, ok := after.Get(RetiredGrantsKey)
+	if !ok || string(was) == string(now) {
+		return nil
+	}
+	return fmt.Errorf("%s is now %s: set that instead (figaro set %s drops %s in the same write)", RetiredGrantsKey, ScopesKey, ScopesKey, RetiredGrantsKey)
 }

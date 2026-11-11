@@ -326,7 +326,7 @@ func refuseFences(policy []byte) error {
 		return err
 	}
 	if _, ok := doc["fence"]; ok {
-		return fmt.Errorf("[[fence]] is gone: a figaro's own system.grants narrows it, and [figaros] permissions narrows every top-level one (figaro grants <id> shows the result)")
+		return fmt.Errorf("[[fence]] is gone: a figaro's own system.scopes narrows it, and [figaros] permissions narrows every top-level one (figaro scopes <id> shows the result)")
 	}
 	return nil
 }
@@ -464,20 +464,20 @@ func (v FigaroView) refuses(s jkauthz.Subject, verb rpc.Verb, r Resource) string
 		}
 	}
 	if len(v.eff) == 0 {
-		return fmt.Sprintf("%s%s may not %s on %s: it holds no grants", figaroPrefix, v.figaro, verb, r)
+		return fmt.Sprintf("%s%s may not %s on %s: it holds no scopes", figaroPrefix, v.figaro, verb, r)
 	}
-	return fmt.Sprintf("%s%s may not %s on %s: its grants (%s) do not reach it", figaroPrefix, v.figaro, verb, r, v.eff)
+	return fmt.Sprintf("%s%s may not %s on %s: its scopes (%s) do not reach it", figaroPrefix, v.figaro, verb, r, v.eff)
 }
 
 func (p *Policies) HoldsGrants(figaro string, want jkauthz.Grants, target string) error {
 	held, ok := p.Effective(figaro)
 	if !ok {
-		return fmt.Errorf("figaro %s is not held here, so it holds no grants to give", figaro)
+		return fmt.Errorf("figaro %s is not held here, so it holds no scopes to give", figaro)
 	}
 	_, m, _ := p.figaroFacts()
 	for _, g := range resolveSelf(want, target) {
 		if !m.covered(held, g) {
-			return fmt.Errorf("the writer does not hold %q, and a figaro grants only what it holds", g)
+			return fmt.Errorf("the writer does not hold %q, and a figaro gives only what it holds", g)
 		}
 	}
 	return nil

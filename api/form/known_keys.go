@@ -57,7 +57,7 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "system.cwd", Short: "Working directory the tools resolve relative paths against (`figaro cd`)", Mode: KeyUserSettable},
 		{Key: "system.retirement", Short: `Owner-held {context_threshold, ttl}: at the end of a turn whose last request carried at least context_threshold input tokens (a count, or "60%" of the context window), the aria retires itself (system.retired = "context"); ttl counts from then`, Mode: KeyUserSettable},
 		{Key: "system.sandbox", Short: "Protected; the sandbox the aria's tools run in (a box name, or unset for local). A figaro cannot set its own: only the owner or an ancestor figaro of the aria ([authz] protected_keys)", Mode: KeyUserSettable},
-		{Key: "system.grants", Short: "Protected; the aria's grants as a JSON array of verb:object strings, narrowing its parent's and enforced on calls that name it. Providers read the effective set from figaro.grants, not this key. Same writers as system.sandbox; a figaro writes only grants it holds", Mode: KeyUserSettable},
+		{Key: "system.scopes", Short: "Protected; the aria's scopes as a JSON array of verb:object strings, narrowing its parent's and enforced on calls that name it. Providers read the effective set from figaro.scopes, not this key. Same writers as system.sandbox; a figaro gives only what it holds. system.grants is its old name: still read, no longer written", Mode: KeyUserSettable},
 		{Key: "system.keep", Short: "Owner-held; true and `figaro gc` never chooses this aria, nor anything whose delete would take it", Mode: KeyUserSettable},
 
 		{Key: "system.forked_from", Short: "The trunk this branch was forked from (stamped at birth)", Mode: KeySystemManaged},

@@ -57,7 +57,7 @@ func TestAnAncestorInABoxManagesOnlyDescendantsStillInIt(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return h.refuseProtected(ctx, c, lineage{of: child}, form.GrantsKey, snap)
+		return h.refuseProtected(ctx, c, lineage{of: child}, form.ScopesKey, snap)
 	}
 	if err := check(); err != nil {
 		t.Fatalf("control: the parent manages a child in its box: %v", err)
@@ -82,7 +82,7 @@ func TestAFigaroLeavingItsAncestorsCarriesTheirNarrowing(t *testing.T) {
 	h := &handlers{angelus: a}
 	grant := func(id string, gs ...string) {
 		raw, _ := json.Marshal(gs)
-		if _, err := backend.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.GrantsKey: raw}, nil)); err != nil {
+		if _, err := backend.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.ScopesKey: raw}, nil)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -125,7 +125,7 @@ func keyOf(t *testing.T, b *store.XwalBackend, id string) (string, bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, ok := snap.Get(form.GrantsKey)
+	raw, ok := snap.Get(form.ScopesKey)
 	return string(raw), ok
 }
 

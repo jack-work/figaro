@@ -145,7 +145,7 @@ func TestABoxMoveIsDrawnOnlyAndLeavesGrantsAlone(t *testing.T) {
 	}
 	o, a, f := mint(), mint(), mint()
 	narrowed, _ := json.Marshal([]string{"read:sandboxed:self"})
-	if _, err := d.backend.ApplyForm(o, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.GrantsKey: narrowed}, nil)); err != nil {
+	if _, err := d.backend.ApplyForm(o, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.ScopesKey: narrowed}, nil)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -177,6 +177,6 @@ func TestABoxMoveIsDrawnOnlyAndLeavesGrantsAlone(t *testing.T) {
 	}
 	chain, _ := angelus.StoreFacts(d.backend).(authz.FigaroFacts).Ancestry(a)
 	if slices.Contains(chain, f) {
-		t.Fatalf("F became an ancestor of A, so it may write A's system.grants: %v", chain)
+		t.Fatalf("F became an ancestor of A, so it may write A's system.scopes: %v", chain)
 	}
 }

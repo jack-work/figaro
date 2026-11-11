@@ -9,7 +9,7 @@
 // Spec.Env, scope on the box wire, and the Figaro-Id header (FigaroHeader)
 // on every request to a provider reached over HTTP; wrap the provider's
 // client transport in FigaroTransport. figaro signs nothing and attaches
-// no grants. FIGARO_ARIA in Env is a label a process can change, never an
+// no scopes. FIGARO_ARIA in Env is a label a process can change, never an
 // identity: key nothing on it.
 //
 // The provider trusts the id. Only the daemon calls a provider, and
@@ -19,10 +19,10 @@
 // The provider decides whether to serve a figaro, and with what. It may
 // key boxes by figaro id, reusing the one it made for that id or creating
 // one on first sight. It may read the figaro's effective permission set
-// from figaro.grants (not the raw system.grants key, which holds only that
-// figaro's own narrowing), build a box that can do exactly what the set
-// allows, and poll or study the form to resize the
-// box when the set changes. Whatever it does, Isolation declares honestly
+// from figaro.scopes (figaro.grants is its old name), not the raw
+// system.scopes key, which holds only that figaro's own narrowing; build a
+// box that can do exactly what the set allows, and poll or study the form
+// to resize the box when the set changes. Whatever it does, Isolation declares honestly
 // what it enforces, and nothing more.
 //
 // If a figaro's provider is unavailable, the call fails. There is no

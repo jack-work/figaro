@@ -11,7 +11,7 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
-func runGrants(loaded *config.Loaded, idFlag string, args []string, jsonOut bool) {
+func runScopes(loaded *config.Loaded, idFlag string, args []string, jsonOut bool) {
 	var nameArg string
 	if len(args) > 0 {
 		nameArg = args[0]
@@ -41,7 +41,10 @@ func runGrants(loaded *config.Loaded, idFlag string, args []string, jsonOut bool
 			case l.Unreadable:
 				own = "unreadable: holds nothing"
 			case l.Set:
-				own = grantList(l.Grants)
+				own = grantList(l.Scopes)
+				if l.Scopes == nil {
+					own = grantList(l.Grants)
+				}
 			}
 			rows = append(rows, [2]string{ariaName(l.FigaroID), own})
 		}
