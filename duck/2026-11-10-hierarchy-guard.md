@@ -138,3 +138,46 @@ The Engineer agrees. The rename breaks every policy file, every troupe
 policy, and every board that carries `system.grants`, plus jkauthz's parser
 names. Cheapest timing is before troupe policy v2 is signed. After that it
 costs another re-sign window. Gluck rules.
+
+## El Inspector XIV's conditions (step 1 is read against these)
+
+- **G1 Owner.** A node's owner is `meta.MintedBy`, and empty means the
+  daemon owner. The system sets it, it is not a form key, and nothing
+  rewrites it except `move` to another node (the lane states whether a moved
+  node keeps a foreign minter). Test: a box-minted parent refuses a storage
+  move under it by the child's owner.
+- **G2 Fail closed.** A nil Guard refuses every plan. Check and write happen
+  in one critical section against the topology version. A Plan carries
+  `IfVersion`, and `Apply` derives the Moves from the op itself rather than
+  trusting the caller's list. Test: a hand-built Plan that leaves out the
+  climbed parent is refused or recomputed.
+- **G3 Every edge writer goes through Apply.** Promote, demote, re-home,
+  arrange and reparent, and also fork placement, ReapedRestore, GCUndo,
+  import, `move` to another node, succeed and `cast --under`. Fork placement
+  rule: a node minted in this same call may be placed in storage under the
+  figaro it was forked from (it is already in that chain, so nothing widens).
+  Restore and undo: kill floor on every node they put back, or owner only.
+  The boundary check is mechanical: nothing outside the hierarchy package
+  writes an edge (go/analysis or grep), as well as no authz import.
+- **G4 The sweep's principal.** Sweep plans run as the system principal,
+  acting on the owner's `system.ttl`, and delete exactly the decided set
+  (`RemoveAriaIf`). The cross-sandbox refusal and the role, live and
+  keepalive holds become guard rules, not handler code. For `kill -r`, the
+  authorized set is the set passed to `RemoveAriaIf`.
+- **G5 Where orphans go.** To the nearest surviving storage ancestor, else
+  the outfit root. Never under a node in another sandbox, and never under a
+  node with a nearer deadline.
+- **G6 Parked plans (step 2).** A parked plan is state: caller, plan,
+  topology version, expiry. Accepting re-runs the guard as the original
+  caller with current grants (revoked since means refused), plus `adopt` for
+  the acceptor. A stale version re-plans or fails and never applies the old
+  Moves. Refusal is final, and an expired plan is dropped without notice. The
+  queue is bounded per receiving parent.
+
+## Alternative for Gluck: deletion follows storage only
+
+If deletion (`kill -r`, the TTL sweep) followed the storage tree, the drawn
+tree would be presentation only. Drawn moves would then need only `set` on
+both ends, with no kill floor, and the sweep could never take what someone
+merely drew under a form (the 10-20 loss). The cost: `kill -r` no longer
+takes what `ls` shows. Not chosen yet; Gluck rules.
