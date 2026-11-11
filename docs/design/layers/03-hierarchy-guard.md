@@ -19,4 +19,5 @@ Already decided by you on 2026-11-10 (Telegram with King XII, routed to the Figa
   - Promote and demote were gated as `set` on the moved aria only; the other node in the swap was never checked. It held only because the owner has `*:*` locally.
   - The drawn tree is not cosmetic: the TTL sweep and `kill -r` follow it, so a presentation move changes what gets deleted.
 - Crossing work: chat-aria logs mint top-level; where a log sits in the drawn tree decides what kill -r and the TTL sweep delete (its H4). Advised 2026-11-11: placement and `--under` go through the guard's move plan once it lands.
+- Interface draft 1 (promote-guard, 3ed113c2, 2026-11-11): package internal/hierarchy, Plan/Move/Verdict, Guard.Check, Apply under one lock, Engine implemented by store, nil guard refuses. Asked back: drop api/rpc import (verbs are the guard's); state topo's fate (S3 folds it in); enforce the edge-writer rule by unexporting writers behind Engine rather than a call rule the import ratchet cannot see; no Guard construction in internal/figaro. chat-aria log placement goes through Op Place.
 - Rollbacks: none.
