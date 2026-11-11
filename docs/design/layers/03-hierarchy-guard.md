@@ -10,7 +10,7 @@ Already decided by you on 2026-11-10 (Telegram with King XII, routed to the Figa
 
 ## Ledger
 
-- Status: designed; build waits on the re-sign and W20.
+- Status: step 1 landed in v0.65.0 (2026-11-11): internal/hierarchy is a leaf under boundary rule 9; only hierarchy and store write edges. Step 2 (parking, two-phase accept) open.
 - Rulings:
   - 2026-11-10, Gluck: separate the hierarchy from authorization; constraints are hooks, and authz is injected through them. Wants receiving-parent acceptance (two-phase). "If we could structure it that way today as part of this change or in fast follows, that would be great."
   - 2026-11-10, El Inspector XIV: severity LOW today. Blocks any future grant that gives `set` without `kill` until the fix lands. Fix: authorize every node whose drawn position changes.
