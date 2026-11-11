@@ -149,3 +149,28 @@ func TestABuriedNodeIsNeverPrompted(t *testing.T) {
 		t.Fatal("a buried node was woken")
 	}
 }
+
+// D1 (4), the other direction: a node drawn under P after P was reaped is not
+// in P's group, so a purge of P that would take it is refused and nothing goes.
+func TestAPurgeThatWouldTakeMoreThanItsGroupIsRefused(t *testing.T) {
+	d, p, c := drawnBoxChild(t)
+	if _, err := d.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: p, Recursive: true, GraceMS: 3_600_000}); err != nil {
+		t.Fatal(err)
+	}
+	late, err := d.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := setTopology(t, d.grantRig, asOwner(), map[string]string{late.FigaroID: p}); err != nil {
+		t.Fatalf("drawing a node under reaped P: %v", err)
+	}
+	_, err = d.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: p, Recursive: true, Now: true})
+	if !errors.Is(err, store.ErrDeleteSetChanged) || !strings.Contains(err.Error(), "nothing was purged") {
+		t.Fatalf("purging P with a late child = %v, want ErrDeleteSetChanged naming nothing purged", err)
+	}
+	for _, id := range []string{p, c, late.FigaroID} {
+		if _, ok := d.backend.Node(id); !ok {
+			t.Fatalf("%s was taken by a refused purge", id)
+		}
+	}
+}
