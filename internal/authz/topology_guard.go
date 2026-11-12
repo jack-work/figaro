@@ -81,7 +81,7 @@ func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hier
 	if err := g.storage(caller, p); err != nil {
 		return hierarchy.Verdict{}, err
 	}
-	return g.consent(ctx, caller, p)
+	return g.consent(ctx, by, caller, p)
 }
 
 func (g TopologyGuard) MayConsent(_ context.Context, by hierarchy.Principal, parent string) error {
@@ -95,14 +95,14 @@ func (g TopologyGuard) MayConsent(_ context.Context, by hierarchy.Principal, par
 	return g.allow(c, rpc.VerbAdopt, parent)
 }
 
-func (g TopologyGuard) consent(ctx context.Context, c TopologyCaller, p hierarchy.Plan) (hierarchy.Verdict, error) {
+func (g TopologyGuard) consent(ctx context.Context, by hierarchy.Principal, c TopologyCaller, p hierarchy.Plan) (hierarchy.Verdict, error) {
 	var waits []string
 	var accepts []string
 	for _, m := range p.Moves {
 		if m.Rehome || !m.ToAria || m.Home || m.From == m.To && m.Tree == hierarchy.Drawn {
 			continue
 		}
-		if g.sameOwner(m.NodeOwner, m.ToOwner) {
+		if g.ownsParent(by, c, m.ToOwner) {
 			continue
 		}
 		if p.Consent != nil && p.Consent.Parent == m.To {
@@ -133,8 +133,11 @@ func (g TopologyGuard) ownerText(minter string) string {
 	return minter
 }
 
-func (g TopologyGuard) sameOwner(a, b string) bool {
-	return g.ownerText(a) == g.ownerText(b)
+func (g TopologyGuard) ownsParent(by hierarchy.Principal, c TopologyCaller, minter string) bool {
+	if g.ownerish(minter) {
+		return g.isOwner(c)
+	}
+	return c.Door != DoorBox && by.Name == minter
 }
 
 func (g TopologyGuard) system(ctx context.Context, p hierarchy.Plan) error {

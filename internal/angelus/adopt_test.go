@@ -126,22 +126,34 @@ func TestAdoptOnTheReceivingParentMovesAtOnce(t *testing.T) {
 	}
 }
 
-// Both sides one owner: no consent is asked, though the caller holds no
-// adopt. The kill floor still applies.
-func TestAMoveBetweenOneOwnersAriasNeedsNoConsent(t *testing.T) {
+// El Inspector XIV, P1: one minter on both sides is not the parent's
+// consent. Mallory holds kill on the owner's A and only read on the owner's
+// Q; drawing A under Q waits on Q. The owner's own move asks nothing.
+func TestOneMinterOnBothSidesIsNotTheParentsConsent(t *testing.T) {
 	r, q, _ := adoptRig(t)
 	a, err := r.create(asOwner(), "mock")
 	if err != nil {
 		t.Fatal(err)
 	}
 	grantTo(t, r, "user:mallory", "read:*", "set:aria:"+a.FigaroID, "kill:aria:"+a.FigaroID)
-	if err := setTopology(t, r, mallory(), map[string]string{a.FigaroID: q}); err != nil {
-		t.Fatalf("drawing the owner's A under the owner's Q: %v", err)
+	err = setTopology(t, r, mallory(), map[string]string{a.FigaroID: q})
+	if err == nil || !strings.Contains(err.Error(), "waits on "+q) {
+		t.Fatalf("mallory drawing the owner's A under the owner's Q = %v, want it parked on Q", err)
 	}
-	if up := presentedUnder(t, r, a.FigaroID); up != q {
-		t.Fatalf("A is drawn under %q, want Q %s", up, q)
+	if up := presentedUnder(t, r, a.FigaroID); up == q {
+		t.Fatal("a parked move was applied")
 	}
-	if len(parkedOn(t, r, q)) != 0 {
-		t.Fatal("a same-owner move was parked")
+	b, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := setTopology(t, r, asOwner(), map[string]string{b.FigaroID: q}); err != nil {
+		t.Fatalf("the owner drawing his B under his Q: %v", err)
+	}
+	if up := presentedUnder(t, r, b.FigaroID); up != q {
+		t.Fatalf("B is drawn under %q, want Q %s", up, q)
+	}
+	if n := len(parkedOn(t, r, q)); n != 1 {
+		t.Fatalf("%d proposals wait on Q, want mallory's one", n)
 	}
 }
