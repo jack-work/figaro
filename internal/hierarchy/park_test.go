@@ -211,18 +211,73 @@ func TestAnExpiredProposalIsDroppedSilently(t *testing.T) {
 	}
 }
 
+func parkAs(h *hierarchy.Hierarchy, by hierarchy.Principal, parent string) error {
+	_, err := h.Apply(context.Background(), by, hierarchy.Plan{Op: hierarchy.Arrange, Parents: map[string]string{"C": parent}})
+	if errors.Is(err, hierarchy.ErrQueueFull) || !errors.Is(err, hierarchy.ErrParked) {
+		return err
+	}
+	return nil
+}
+
+func proposerNo(n int) hierarchy.Principal {
+	return hierarchy.Principal{Name: fmt.Sprintf("user:proposer-%d", n)}
+}
+
 func TestTheQueueOnOneParentIsBounded(t *testing.T) {
 	f := chain()
 	h := hierarchy.New(f, newParkGuard("D"))
-	for range hierarchy.ProposalsPerParent {
-		parkCD(t, h)
+	for n := range hierarchy.ProposalsPerParent {
+		if err := parkAs(h, proposerNo(n), "D"); err != nil {
+			t.Fatalf("proposal %d on D: %v", n, err)
+		}
 	}
-	_, err := h.Apply(context.Background(), proposer, hierarchy.Plan{Op: hierarchy.Arrange, Parents: map[string]string{"C": "D"}})
-	if !errors.Is(err, hierarchy.ErrQueueFull) {
+	if err := parkAs(h, proposerNo(hierarchy.ProposalsPerParent), "D"); !errors.Is(err, hierarchy.ErrQueueFull) {
 		t.Fatalf("proposal %d on D = %v, want ErrQueueFull", hierarchy.ProposalsPerParent+1, err)
 	}
 	if n := len(h.Parked("D")); n != hierarchy.ProposalsPerParent {
 		t.Fatalf("%d wait on D, want %d", n, hierarchy.ProposalsPerParent)
+	}
+}
+
+// El Inspector XIV, P4: one proposer cannot fill a parent's queue alone.
+func TestOneProposerHoldsAFewPlacesOnAParent(t *testing.T) {
+	f := chain()
+	h := hierarchy.New(f, newParkGuard("D"))
+	for n := range hierarchy.ProposalsPerProposerOnParent {
+		if err := parkAs(h, proposer, "D"); err != nil {
+			t.Fatalf("proposal %d on D: %v", n, err)
+		}
+	}
+	if err := parkAs(h, proposer, "D"); !errors.Is(err, hierarchy.ErrQueueFull) {
+		t.Fatalf("proposal %d by one proposer on D = %v, want ErrQueueFull", hierarchy.ProposalsPerProposerOnParent+1, err)
+	}
+	if err := parkAs(h, stranger, "D"); err != nil {
+		t.Fatalf("another proposer on D: %v", err)
+	}
+}
+
+// El Inspector XIV, P4: nor every parent on the node.
+func TestOneProposerHoldsABoundedNumberOverall(t *testing.T) {
+	f := chain()
+	parents := hierarchy.ProposalsPerProposer/hierarchy.ProposalsPerProposerOnParent + 1
+	var guarded []string
+	for n := range parents {
+		q := fmt.Sprintf("Q%d", n)
+		f.stored[q] = "stump"
+		guarded = append(guarded, q)
+	}
+	h := hierarchy.New(f, newParkGuard(guarded...))
+	for n := range hierarchy.ProposalsPerProposer {
+		if err := parkAs(h, proposer, guarded[n/hierarchy.ProposalsPerProposerOnParent]); err != nil {
+			t.Fatalf("proposal %d: %v", n, err)
+		}
+	}
+	last := guarded[parents-1]
+	if err := parkAs(h, proposer, last); !errors.Is(err, hierarchy.ErrQueueFull) {
+		t.Fatalf("proposal %d by one proposer = %v, want ErrQueueFull", hierarchy.ProposalsPerProposer+1, err)
+	}
+	if err := parkAs(h, stranger, last); err != nil {
+		t.Fatalf("another proposer on %s: %v", last, err)
 	}
 }
 

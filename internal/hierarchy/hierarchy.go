@@ -150,8 +150,10 @@ type Proposal struct {
 }
 
 const (
-	ProposalTTL        = 24 * time.Hour
-	ProposalsPerParent = 16
+	ProposalTTL                  = 24 * time.Hour
+	ProposalsPerParent           = 16
+	ProposalsPerProposerOnParent = 4
+	ProposalsPerProposer         = 64
 )
 
 type ParkedError struct{ Proposal Proposal }
@@ -200,7 +202,7 @@ var (
 	ErrNotUnder       = errors.New("hierarchy: this op writes edges and commits only through Apply")
 	ErrNotApply       = errors.New("hierarchy: this op's commit belongs to its caller: use Under")
 	ErrNoProposal     = errors.New("hierarchy: no such proposal waits on that parent")
-	ErrQueueFull      = errors.New("hierarchy: too many proposals already wait on that parent")
+	ErrQueueFull      = errors.New("hierarchy: too many proposals already wait")
 	ErrManyParents    = errors.New("hierarchy: the plan needs consent from more than one receiving parent")
 )
 
@@ -261,14 +263,26 @@ func (h *Hierarchy) park(by Principal, plan Plan, v Verdict) error {
 		return fmt.Errorf("%w %s: %s never waits", ErrParked, v.Park, plan.Op)
 	}
 	h.expireLocked()
-	waiting := 0
+	waiting, mine, mineHere := 0, 0, 0
 	for _, p := range h.parked {
-		if p.Parent == v.Park {
+		here := p.Parent == v.Park
+		if here {
 			waiting++
 		}
+		if p.By.Name == by.Name {
+			mine++
+			if here {
+				mineHere++
+			}
+		}
 	}
-	if waiting >= ProposalsPerParent {
+	switch {
+	case waiting >= ProposalsPerParent:
 		return fmt.Errorf("%w: %s holds %d", ErrQueueFull, v.Park, waiting)
+	case mineHere >= ProposalsPerProposerOnParent:
+		return fmt.Errorf("%w: %s already has %d waiting on %s", ErrQueueFull, by.Name, mineHere, v.Park)
+	case mine >= ProposalsPerProposer:
+		return fmt.Errorf("%w: %s already has %d waiting", ErrQueueFull, by.Name, mine)
 	}
 	var b [6]byte
 	if _, err := rand.Read(b[:]); err != nil {
