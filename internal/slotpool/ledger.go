@@ -64,6 +64,7 @@ type ledgerFile struct {
 	Floors   map[string]uint64 `json:"floors"`
 	Pages    []Page            `json:"pages"`
 	LastPage map[string]uint64 `json:"last_page"`
+	Dropped  map[string]uint64 `json:"dropped"`
 }
 
 func (f ledgerFile) clone() ledgerFile {
@@ -73,6 +74,7 @@ func (f ledgerFile) clone() ledgerFile {
 		Floors:   maps.Clone(f.Floors),
 		Pages:    slices.Clone(f.Pages),
 		LastPage: maps.Clone(f.LastPage),
+		Dropped:  maps.Clone(f.Dropped),
 	}
 	for i, l := range f.Leases {
 		l.Minted = slices.Clone(l.Minted)
@@ -83,6 +85,9 @@ func (f ledgerFile) clone() ledgerFile {
 	}
 	if out.LastPage == nil {
 		out.LastPage = map[string]uint64{}
+	}
+	if out.Dropped == nil {
+		out.Dropped = map[string]uint64{}
 	}
 	return out
 }

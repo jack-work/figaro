@@ -285,7 +285,7 @@ func TestAPageHasNoFieldThatCarriesText(t *testing.T) {
 		t.Fatalf("pages: %s", raw)
 	}
 	for k := range fields[0] {
-		if !strings.Contains(" id at pool key generation kind figaro ", " "+k+" ") {
+		if !strings.Contains(" id at pool key generation kind figaro dropped ", " "+k+" ") {
 			t.Errorf("a page carries %q, which the note does not list", k)
 		}
 	}
@@ -388,10 +388,26 @@ func TestAPoolHoldsABoundedNumberOfUnseenPages(t *testing.T) {
 	if _, err := l.Page("other", "a", 1, PurgeFailed, ""); err != nil {
 		t.Fatalf("one pool's backlog stopped another's page: %v", err)
 	}
+	if _, err := l.Page("groups", "a", 1, LeaseClosed, ""); !errors.Is(err, ErrPagesFull) {
+		t.Fatalf("a second page over the bound: %v", err)
+	}
+	l = openLedger(t, path)
+	if got := l.Dropped("groups"); got != 2 {
+		t.Fatalf("the pool refused two pages and, after a restart, counts %d: a refusal only in a log is one nobody is paged about", got)
+	}
 	if _, err := l.Pages(context.Background(), "groups", []uint64{7}, 0); err != nil {
 		t.Fatal(err)
 	}
 	if id, err := l.Page("groups", "a", 1, PurgeFailed, ""); err != nil || id != pagesHeld+1 {
 		t.Fatalf("after one was seen: id %d, %v", id, err)
+	}
+	got, _ := l.Pages(context.Background(), "groups", nil, 0)
+	if last := got[len(got)-1]; last.Dropped != 2 || l.Dropped("groups") != 0 {
+		t.Fatalf("the first page recorded after the refusals says %d were dropped, and the pool still counts %d", last.Dropped, l.Dropped("groups"))
+	}
+	if id, err := l.Page("other", "a", 1, PurgeFailed, ""); err != nil || id != 2 {
+		t.Fatalf("another pool's next page: id %d, %v", id, err)
+	} else if other, _ := l.Pages(context.Background(), "other", nil, 0); other[1].Dropped != 0 {
+		t.Fatalf("a pool that dropped nothing says it dropped %d", other[1].Dropped)
 	}
 }

@@ -41,6 +41,7 @@ type Page struct {
 	Generation uint64   `json:"generation"`
 	Kind       PageKind `json:"kind"`
 	Figaro     string   `json:"figaro,omitempty"`
+	Dropped    uint64   `json:"dropped,omitempty"`
 }
 
 func (l *Ledger) Page(pool, key string, generation uint64, kind PageKind, figaro string) (uint64, error) {
@@ -57,6 +58,7 @@ func (l *Ledger) Page(pool, key string, generation uint64, kind PageKind, figaro
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	var id uint64
+	full := false
 	err := l.commit(func(f *ledgerFile) error {
 		held := 0
 		for _, p := range f.Pages {
@@ -65,18 +67,30 @@ func (l *Ledger) Page(pool, key string, generation uint64, kind PageKind, figaro
 			}
 		}
 		if held >= pagesHeld {
-			return ErrPagesFull
+			f.Dropped[pool]++
+			full = true
+			return nil
 		}
 		id = f.LastPage[pool] + 1
 		f.LastPage[pool] = id
-		f.Pages = append(f.Pages, Page{ID: id, At: l.now().Unix(), Pool: pool, Key: key, Generation: generation, Kind: kind, Figaro: figaro})
+		f.Pages = append(f.Pages, Page{ID: id, At: l.now().Unix(), Pool: pool, Key: key, Generation: generation, Kind: kind, Figaro: figaro, Dropped: f.Dropped[pool]})
+		delete(f.Dropped, pool)
 		return nil
 	})
 	if err != nil {
 		return 0, err
 	}
+	if full {
+		return 0, ErrPagesFull
+	}
 	l.wake(pool)
 	return id, nil
+}
+
+func (l *Ledger) Dropped(pool string) uint64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.file.Dropped[pool]
 }
 
 func (l *Ledger) wake(pool string) {
