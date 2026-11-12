@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/slotpool"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkauthz"
@@ -208,12 +209,35 @@ func (h *handlers) recoverSlotPools(ctx context.Context) {
 	}
 	owner := authz.WithSubject(inProcess(context.WithoutCancel(ctx)), jkauthz.Subject{Principal: h.angelus.owner()})
 	orphans := h.orphansOfLeases()
+	purged := 0
 	for _, id := range orphans {
-		if err := h.purgeNow(owner, id); err != nil {
-			slog.Error("slot pool: a node in a leased box that no lease holds could not be purged", "node", id, "err", err)
+		if _, ok := h.angelus.Backend.Node(id); !ok {
+			continue
+		}
+		if err := h.purgeTakingOnly(owner, id, orphans); err != nil {
+			slog.Error("slot pool: a node in a leased box that no lease holds is left in place", "node", id, "err", err)
+			continue
+		}
+		purged++
+	}
+	if purged > 0 {
+		slog.Warn("slot pool: purged nodes in leased boxes that no lease holds", "nodes", purged)
+	}
+}
+
+func (h *handlers) purgeTakingOnly(ctx context.Context, id string, allowed []string) error {
+	by, err := h.angelus.topologyPrincipal(ctx)
+	if err != nil {
+		return err
+	}
+	plan, err := h.angelus.topology().Check(ctx, by, hierarchy.Plan{Op: hierarchy.Kill, Node: id, Recursive: true})
+	if err != nil {
+		return err
+	}
+	for _, taken := range plan.Delete {
+		if !slices.Contains(allowed, taken) {
+			return fmt.Errorf("its delete would take %s, which is not in a leased box that no lease holds", taken)
 		}
 	}
-	if len(orphans) > 0 {
-		slog.Warn("slot pool: purged nodes in leased boxes that no lease holds", "nodes", len(orphans))
-	}
+	return h.purgeNow(ctx, id)
 }

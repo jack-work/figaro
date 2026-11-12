@@ -1,9 +1,11 @@
 package angelus_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -357,5 +359,55 @@ func TestAStartReleasesUnfinishedLeasesAndPurgesWhatNoLeaseHolds(t *testing.T) {
 	}
 	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:12"}`); err != nil || next.Box != "slot1-g2" {
 		t.Errorf("after the start the freed slot leases %+v (%v), want slot1 at generation 2", next, err)
+	}
+}
+
+// The orphan purge at a start runs as the daemon's owner, whom the guard
+// refuses nothing, so the purge keeps itself to leased boxes that no lease
+// holds (El Inspector XV, O1). An orphan drawn above a node of no leased box
+// is left where it is and logged; the node under it keeps. An orphan whose
+// delete takes only orphans still goes.
+func TestAStartLeavesAnOrphanWhoseDeleteWouldTakeWhatIsNoOrphan(t *testing.T) {
+	r := leasingRig(t)
+	orphan := r.formIn(t, "slot5-g3")
+	out, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: heldPatch(t, map[string]any{"note": "the owner's"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unboxed := out.(rpc.FormCreateResponse).FormID
+	if err := r.hs.Place(asOwner(), unboxed, orphan); err != nil {
+		t.Fatal(err)
+	}
+	above, below := r.formIn(t, "slot5-g3"), r.formIn(t, "slot5-g4")
+	if err := r.hs.Place(asOwner(), below, above); err != nil {
+		t.Fatal(err)
+	}
+
+	var logged bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+	r.hs.RecoverSlotPools(context.Background())
+	slog.SetDefault(old)
+
+	if !ariaExists(r.a, unboxed) {
+		t.Error("the start deleted a node of no leased box, drawn under an orphan")
+	}
+	if !ariaExists(r.a, orphan) {
+		t.Error("the start purged an orphan whose delete was refused")
+	}
+	left := ""
+	for _, line := range strings.Split(logged.String(), "\n") {
+		if strings.Contains(line, "level=ERROR") && strings.Contains(line, "node="+orphan) {
+			left = line
+		}
+	}
+	if !strings.Contains(left, unboxed) {
+		t.Errorf("the orphan left in place is not logged with the node its delete would take: %q", logged.String())
+	}
+	for name, id := range map[string]string{"an orphan drawn above an orphan": above, "the orphan under it": below} {
+		if ariaExists(r.a, id) {
+			t.Errorf("%s outlived the start", name)
+		}
 	}
 }
