@@ -151,10 +151,10 @@ func TestOnlyTheOwnerClearsAFailedSuccessionOrMovesItsPage(t *testing.T) {
 			t.Errorf("%s by the guest's prompt patch: %v", what, err)
 		}
 	}
-	if v, ok := keyOn(t, r, id, store.SystemSuccessionFailedKey); !ok || !strings.Contains(v, "all spent") {
+	if v, ok := keyOn(t, r, id, store.SystemSuccessionFailedKey); !ok || !strings.Contains(string(v), "all spent") {
 		t.Errorf("%s = %q after the guest's attempts", store.SystemSuccessionFailedKey, v)
 	}
-	if v, _ := keyOn(t, r, id, store.SystemRetirementKey); !strings.Contains(v, "@pool") {
+	if v, _ := keyOn(t, r, id, store.SystemRetirementKey); !strings.Contains(string(v), "@pool") {
 		t.Errorf("%s = %s after the guest's attempts", store.SystemRetirementKey, v)
 	}
 	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, id, rpc.SetRequest{Patch: unset})); err != nil {
