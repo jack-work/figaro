@@ -588,3 +588,34 @@ func TestSuccessionMinterMayPurgePredecessor(t *testing.T) {
 	require.Equal(t, pooled, r.holder(role))
 	require.Equal(t, []string{pooled}, r.arias())
 }
+
+// A prompt queued before the threshold was crossed runs first. Its turn ending
+// is not the handoff: minting then would give the successor a predecessor that
+// has not written anything down yet.
+func TestSuccessionWaitsForTheHandoffTurnItself(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	calls := func() int {
+		r.p.mu.Lock()
+		defer r.p.mu.Unlock()
+		return r.p.calls[old]
+	}
+	release := func() { r.p.set(func() { close(r.p.release); r.p.release = make(chan struct{}) }) }
+	r.p.set(func() { r.p.holdFrom[old] = 1; r.p.usage[old] = 100_000 })
+	require.NoError(t, promptOn(r.ctx, r.a, old, "the work that crosses"))
+	r.eventually(func() bool { return calls() == 1 }, "the crossing turn never started")
+	require.NoError(t, promptOn(r.ctx, r.a, old, "queued before the threshold"))
+	release()
+	r.eventually(func() bool { return calls() == 2 }, "the queued prompt never ran")
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "handoff" }, "the succession never began")
+	require.Equal(t, 1, strings.Count(r.heard(old), "write your handoff now"))
+	release()
+	r.eventually(func() bool { return calls() == 3 }, "the handoff turn never started")
+	time.Sleep(100 * time.Millisecond)
+	r.hs.WaitSuccessionsForTest()
+	require.Equal(t, "handoff", r.hs.SuccessionPhase(old), "the queued prompt's turn was taken for the handoff turn")
+	require.Len(t, r.arias(), 1, "a successor was minted before the handoff turn ended")
+	r.p.set(func() { r.p.holdFrom[old] = 0 })
+	release()
+	r.eventually(func() bool { return r.retired(old) }, "the predecessor never retired")
+}
