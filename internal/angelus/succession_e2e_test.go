@@ -314,7 +314,7 @@ func TestSuccessionMovesEveryRoleThenRetires(t *testing.T) {
 	r.eventually(func() bool { return r.retired(old) }, "the predecessor never retired")
 	require.Equal(t, "context", retiredKey(t, r.a, old))
 	require.Equal(t, "SUCCEEDED: tend the vines", r.key(old, "mantra"))
-	require.Empty(t, r.hs.SuccessionPhase(old))
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "" }, "a finished succession was never forgotten")
 	require.Empty(t, r.failed(old))
 	require.Equal(t, next, r.holder(warden))
 	require.False(t, r.retired(next))
@@ -484,7 +484,7 @@ func (r *successionRig) requireUnretiredAndPaged(old, king, why string, roles ..
 	r.eventually(func() bool { return r.failed(old) != "" }, "the failure was never recorded")
 	require.Contains(r.t, r.failed(old), why)
 	require.False(r.t, r.retired(old), "a failed succession retired the aria")
-	require.Empty(r.t, r.hs.SuccessionPhase(old))
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "" }, "a failed succession was never forgotten")
 	for _, role := range roles {
 		require.Equal(r.t, old, r.holder(role), "a failed succession left a seat away from the predecessor")
 	}
