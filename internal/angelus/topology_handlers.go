@@ -431,7 +431,7 @@ func (h *handlers) outfitAncestor(id string) string {
 		if node.Kind == string(outfitKind) {
 			return node.ID
 		}
-		id = node.Parent
+		id = node.ForkPoint
 	}
 	return ""
 }

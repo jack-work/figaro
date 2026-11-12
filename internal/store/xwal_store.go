@@ -993,12 +993,8 @@ func (s *XwalStore) Normalize(dryRun bool) (NormalizeReport, error) {
 	}
 	detach := s.tree.Overridden()
 	if dryRun {
-		assume := make(map[string]string, len(detach))
-		for _, id := range detach {
-			assume[id] = rootID
-		}
 		r.Detached = detach
-		dropped, _, err := s.tree.Prune(s.redundantGiven(assume), true)
+		dropped, _, err := s.tree.Prune(s.redundant, true)
 		r.Dropped = dropped
 		return r, err
 	}
@@ -1029,7 +1025,7 @@ func (s *XwalStore) CleanTopology(dryRun bool) ([]topo.Stale, error) {
 		return nil, nil
 	}
 	trunks := s.trunks.Version()
-	stale, present, err := s.tree.Prune(s.redundantGiven(nil), dryRun)
+	stale, present, err := s.tree.Prune(s.redundant, dryRun)
 	if err != nil || dryRun {
 		return stale, err
 	}
@@ -1037,20 +1033,13 @@ func (s *XwalStore) CleanTopology(dryRun bool) ([]topo.Stale, error) {
 	return stale, nil
 }
 
-func (s *XwalStore) redundantGiven(assume map[string]string) func(map[string]string) []topo.Stale {
-	return func(edges map[string]string) []topo.Stale {
-		snap := s.topologySnapshot()
-		parent := make(map[string]string, len(snap.nodes))
-		for _, n := range snap.nodes {
-			parent[n.ID] = n.Parent
-		}
-		for id, up := range assume {
-			if _, ok := parent[id]; ok {
-				parent[id] = up
-			}
-		}
-		return topo.Redundant(parent, edges)
+func (s *XwalStore) redundant(edges map[string]string) []topo.Stale {
+	snap := s.topologySnapshot()
+	parent := make(map[string]string, len(snap.nodes))
+	for _, n := range snap.nodes {
+		parent[n.ID] = n.Parent
 	}
+	return topo.Redundant(parent, edges)
 }
 
 func (s *XwalStore) DeleteSet(id string) []string { return s.tree.DeleteSet(id) }
