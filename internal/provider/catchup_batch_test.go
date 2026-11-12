@@ -525,6 +525,10 @@ func TestAStalledBatchSyncDoesNotHoldBackAReaderOfAnotherFigaro(t *testing.T) {
 	f := openBatchFixture(t, t.TempDir(), 0)
 	f.newAria(t, 40)
 	other := f.otherFigaro(t, 5)
+	want := f.backend.OpenNode(other).Len()
+	if want < 5 {
+		t.Fatalf("the other figaro reads %d records before the catch-up, want its 5", want)
+	}
 	cfg := f.config(t, batchedChannel)
 
 	stall := stallFirstBatchSync(t, f.backend)
@@ -543,8 +547,8 @@ func TestAStalledBatchSyncDoesNotHoldBackAReaderOfAnotherFigaro(t *testing.T) {
 	go func() { read <- f.backend.OpenNode(other).Len() }()
 	select {
 	case n := <-read:
-		if n != 5 {
-			t.Errorf("the other figaro read %d records, want 5", n)
+		if n != want {
+			t.Errorf("the other figaro read %d records during the batch, %d before it", n, want)
 		}
 	case <-time.After(batchWaitLimit):
 		t.Error("a reader of another figaro waited on a batch whose sync was stalled")
