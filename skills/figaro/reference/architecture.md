@@ -346,7 +346,9 @@ the topology guard checks: `kill` on every node whose position changes, and
 it (never through a box door), or the node goes back under its history
 parent. Without `adopt` the move parks on that parent as a proposal.
 `figaro adopt <parent>` lists them to its adopt holders, and to a proposer
-its own, showing only ids the caller may read. Someone with `adopt` there
+its own, showing only ids the caller may read: a side of a move the caller
+cannot read prints as `…`, and only the parent's owner and adopt holders are
+told how many moves they cannot read. Someone with `adopt` there
 accepts or refuses it. Accept admits the proposer again (a revoked key, an
 expired token or a peer that left refuses it) and checks the move as the
 proposer, with the grants it holds then. A move that needs two parents'

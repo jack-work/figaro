@@ -60,7 +60,7 @@ func runAdopt(loaded *config.Loaded, args []string, asJSON bool) {
 		for _, p := range resp.Proposals {
 			var moves []string
 			for _, m := range p.Moves {
-				moves = append(moves, fmt.Sprintf("%s %s>%s", m.Node, orDash(m.From), orDash(m.To)))
+				moves = append(moves, fmt.Sprintf("%s %s>%s", m.Node, sideOf(m.From, m.FromWithheld), sideOf(m.To, m.ToWithheld)))
 			}
 			if p.Withheld > 0 {
 				moves = append(moves, fmt.Sprintf("%d more you cannot read", p.Withheld))
@@ -70,6 +70,13 @@ func runAdopt(loaded *config.Loaded, args []string, asJSON bool) {
 		}
 		return nil
 	})
+}
+
+func sideOf(id string, withheld bool) string {
+	if withheld {
+		return "…"
+	}
+	return orDash(id)
 }
 
 func orDash(s string) string {

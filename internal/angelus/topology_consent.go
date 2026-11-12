@@ -17,7 +17,7 @@ func (h *handlers) parkedProposal(ctx context.Context, err error) (*rpc.Proposal
 	if !errors.As(err, &parked) {
 		return nil, false
 	}
-	p := h.shownProposal(parked.Proposal, h.readsIDs(ctx))
+	p := h.shownProposal(parked.Proposal, h.readsIDs(ctx), h.consentsOn(ctx, parked.Proposal.Parent))
 	return &p, true
 }
 
@@ -36,7 +36,19 @@ func (h *handlers) readsIDs(ctx context.Context) func(id string) bool {
 	}
 }
 
-func (h *handlers) shownProposal(p hierarchy.Proposal, readable func(string) bool) rpc.Proposal {
+func (h *handlers) consentsOn(ctx context.Context, parent string) bool {
+	if h.allowed(ctx, rpc.VerbAdopt, authz.Aria(parent)) == nil {
+		return true
+	}
+	by, err := h.angelus.topologyPrincipal(ctx)
+	if err != nil || by.Name == "" {
+		return false
+	}
+	meta, _ := h.angelus.Backend.Meta(parent)
+	return meta != nil && meta.MintedBy == by.Name
+}
+
+func (h *handlers) shownProposal(p hierarchy.Proposal, readable func(string) bool, counts bool) rpc.Proposal {
 	out := rpc.Proposal{
 		ID:        p.ID,
 		Parent:    p.Parent,
@@ -50,11 +62,24 @@ func (h *handlers) shownProposal(p hierarchy.Proposal, readable func(string) boo
 		out.Node = p.Plan.Node
 	}
 	for _, m := range p.Plan.Moves {
-		if !readable(m.Node) || !readable(m.From) || !readable(m.To) {
-			out.Withheld++
+		if !readable(m.Node) {
+			if counts {
+				out.Withheld++
+			}
 			continue
 		}
-		out.Moves = append(out.Moves, rpc.ProposedMove{Node: m.Node, From: m.From, To: m.To, Tree: m.Tree.String()})
+		shown := rpc.ProposedMove{Node: m.Node, Tree: m.Tree.String()}
+		if readable(m.From) {
+			shown.From = m.From
+		} else {
+			shown.FromWithheld = true
+		}
+		if readable(m.To) {
+			shown.To = m.To
+		} else {
+			shown.ToWithheld = true
+		}
+		out.Moves = append(out.Moves, shown)
 	}
 	return out
 }
@@ -69,13 +94,14 @@ func (h *handlers) parked(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 	adopter := h.allowed(ctx, rpc.VerbAdopt, authz.Aria(req.FigaroID)) == nil
+	counts := h.consentsOn(ctx, req.FigaroID)
 	readable := h.readsIDs(ctx)
 	resp := rpc.ParkedResponse{Proposals: []rpc.Proposal{}}
 	for _, p := range h.angelus.topology().Parked(req.FigaroID) {
 		if !adopter && p.By.Name != by.Name {
 			continue
 		}
-		resp.Proposals = append(resp.Proposals, h.shownProposal(p, readable))
+		resp.Proposals = append(resp.Proposals, h.shownProposal(p, readable, counts))
 	}
 	return resp, nil
 }

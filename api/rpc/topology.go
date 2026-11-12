@@ -136,10 +136,12 @@ type Proposal struct {
 }
 
 type ProposedMove struct {
-	Node string `json:"node"`
-	From string `json:"from,omitempty"`
-	To   string `json:"to,omitempty"`
-	Tree string `json:"tree"`
+	Node         string `json:"node"`
+	From         string `json:"from,omitempty"`
+	To           string `json:"to,omitempty"`
+	Tree         string `json:"tree"`
+	FromWithheld bool   `json:"from_withheld,omitempty"`
+	ToWithheld   bool   `json:"to_withheld,omitempty"`
 }
 
 type ParkedRequest struct {

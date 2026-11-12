@@ -318,3 +318,44 @@ func TestARevokedKeysProposalIsRefusedAtAccept(t *testing.T) {
 		t.Fatal("the refused proposal still waits")
 	}
 }
+
+// El Inspector XV, from spain's W29 row: box0's own move was hidden from it
+// and counted as one it could not read, because its from-side is the outfit
+// anchor its top-level aria is drawn under. A proposer sees its own move
+// with the sides it cannot read elided, and nobody who neither owns the
+// parent nor holds adopt on it is told how many moves it cannot read.
+func TestAProposerSeesItsOwnMoveAndNoCountOfWhatItCannotRead(t *testing.T) {
+	r, q, x := adoptRig(t)
+	grantTo(t, r, "user:mallory", "read:aria:"+q, "read:aria:"+x, "set:aria:"+x, "kill:aria:"+x)
+	if err := setTopology(t, r, mallory(), map[string]string{x: q}); err == nil {
+		t.Fatal("mallory's move did not park")
+	}
+	out, err := r.call(mallory(), rpc.MethodParked, rpc.ParkedRequest{FigaroID: q})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine := out.(rpc.ParkedResponse).Proposals
+	if len(mine) != 1 || len(mine[0].Moves) != 1 || mine[0].Withheld != 0 {
+		t.Fatalf("mallory lists %+v, want her own move and no withheld count", mine)
+	}
+	m := mine[0].Moves[0]
+	if m.Node != x || m.From != "" || !m.FromWithheld || m.To != q || m.ToWithheld {
+		t.Fatalf("her move is shown as %+v, want X to Q with the anchor elided", m)
+	}
+
+	grantTo(t, r, "user:mallory", "read:aria:"+q, "set:aria:"+x, "kill:aria:"+x)
+	out, err = r.call(mallory(), rpc.MethodParked, rpc.ParkedRequest{FigaroID: q})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mine := out.(rpc.ParkedResponse).Proposals; len(mine) != 1 || len(mine[0].Moves) != 0 || mine[0].Withheld != 0 {
+		t.Fatalf("mallory, who cannot read X now, lists %+v, want her proposal with no moves and no count", mine)
+	}
+	all, err := r.call(asOwner(), rpc.MethodParked, rpc.ParkedRequest{FigaroID: q})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := all.(rpc.ParkedResponse).Proposals; len(p) != 1 || len(p[0].Moves) != 1 || p[0].Moves[0].FromWithheld {
+		t.Fatalf("the owner lists %+v, want the move whole", p)
+	}
+}
