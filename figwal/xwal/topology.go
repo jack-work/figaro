@@ -309,6 +309,9 @@ func (t *Trunks) beginTrackedRead() (func(), error) {
 // so it takes no root topology mutation and does not wait for other arias to
 // close their heads.
 func (t *Trunks) beginFlatCreate() (func(), error) {
+	if t.sealed.Load() {
+		return nil, ErrClosed
+	}
 	t.mu.Lock()
 	if err := t.syncHot(); err != nil {
 		t.mu.Unlock()
@@ -326,6 +329,9 @@ func (t *Trunks) beginFlatCreate() (func(), error) {
 }
 
 func (t *Trunks) beginTopologyMutation() (func(), error) {
+	if t.sealed.Load() {
+		return nil, ErrClosed
+	}
 	for {
 		t.mu.Lock()
 		end, _, err := beginRootTopologyMutationFor(t.registryRoot, t)

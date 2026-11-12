@@ -21,13 +21,18 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	fwtree "github.com/jack-work/figaro/figwal/tree"
+	"github.com/jack-work/figaro/figwal/xwal"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/topo"
 )
 
 var _ Backend = (*XwalBackend)(nil)
 
+var ErrClosed = xwal.ErrClosed
+
 type XwalBackend struct {
+	closed atomic.Bool
+
 	rolesMu       sync.Mutex
 	roles         roleIndex
 	roleScanFault map[string]error
@@ -210,6 +215,9 @@ func (b *XwalBackend) BatchSyncForTest(wrap func(sync func() error) error) {
 
 // handleLocked opens the shared handle once. Caller holds b.mu.
 func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
+	if b.closed.Load() {
+		return nil, ErrClosed
+	}
 	b.touchLocked(id)
 	if h := b.open[id]; h != nil {
 		return h, nil
@@ -359,6 +367,9 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 		return nil, fmt.Errorf(
 			"form %s: a libretto must be read through Libretto(%q), not as a node", ariaID, source)
 	}
+	if b.closed.Load() {
+		return nil, ErrClosed
+	}
 	b.mu.Lock()
 	b.seenLocked(ariaID)
 	if f := b.forms[ariaID]; f != nil {
@@ -392,6 +403,10 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.closed.Load() {
+		opened.Close()
+		return nil, ErrClosed
+	}
 	if existing := b.forms[ariaID]; existing != nil {
 		opened.Close() // lost the race; the winner owns the channel
 		return existing, nil
@@ -1120,6 +1135,9 @@ func (b *XwalBackend) writeMetaLocked(ariaID string, c *metaCache, meta *AriaMet
 }
 
 func (b *XwalBackend) writeMetaRawLocked(ariaID string, c *metaCache, meta *AriaMeta) error {
+	if b.closed.Load() {
+		return ErrClosed
+	}
 	if meta != nil {
 		meta.MetaVersion = CurrentMetaVersion
 	}
@@ -1232,14 +1250,15 @@ func (b *XwalBackend) CollectStump(stumpID string) error {
 }
 
 func (b *XwalBackend) Close() error {
-	for _, f := range b.takeForms() {
+	for _, f := range b.fence() {
 		f.CloseAndSettle()
 	}
 	return b.store.trunks.Close()
 }
 
-func (b *XwalBackend) takeForms() []*Form {
+func (b *XwalBackend) fence() []*Form {
 	b.closeLibrettos()
+	b.closed.Store(true)
 	b.mu.Lock()
 	forms := make([]*Form, 0, len(b.forms)+1)
 	for _, f := range b.forms {

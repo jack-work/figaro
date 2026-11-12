@@ -550,6 +550,7 @@ func (s *Store) Close() error {
 		close(s.stop)
 		<-s.done
 		s.syncDirty()
+		s.Trunks.seal()
 		s.closeErr = s.Trunks.Close()
 		if s.closeErr == nil {
 			s.closeErr = clearUnclean(s.Trunks.root)
