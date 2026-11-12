@@ -182,6 +182,19 @@ func resolveSelf(gs jkauthz.Grants, id string) jkauthz.Grants {
 	return out
 }
 
+func unresolveSelf(gs jkauthz.Grants, id string) jkauthz.Grants {
+	out := slices.Clone(gs)
+	for i, g := range out {
+		switch g.Object {
+		case selAria + id:
+			out[i].Object = selAria + selSelf
+		case selLineage + id:
+			out[i].Object = selLineage + selSelf
+		}
+	}
+	return out
+}
+
 func onlyFigaroVerbs(gs jkauthz.Grants) jkauthz.Grants {
 	if !slices.ContainsFunc(gs, func(g jkauthz.Grant) bool { return !figaroVerb(g.Verb) }) {
 		return gs
@@ -253,6 +266,17 @@ func (p *Policies) EffectiveAlone(figaro string) (jkauthz.Grants, bool) {
 		return nil, false
 	}
 	return p.effectiveDown([]string{figaro}), true
+}
+
+func (p *Policies) SuccessorScopes(figaro string) (scopes jkauthz.Grants, narrowed, held bool) {
+	eff, held := p.Effective(figaro)
+	if !held {
+		return nil, false, false
+	}
+	if alone, _ := p.EffectiveAlone(figaro); p.Covers(eff, alone) {
+		return nil, false, true
+	}
+	return unresolveSelf(eff, figaro), true, true
 }
 
 func (p *Policies) effectiveDown(chain []string) jkauthz.Grants {

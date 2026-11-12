@@ -61,3 +61,37 @@ func (a *Angelus) SeedRolesNow() {
 }
 
 func (hs *Handlers) OnGCReap(hook func(stage, id string)) { hs.h.gcReapHook = hook }
+
+func (hs *Handlers) RefuseSuccessionCastsForTest(fn func(role string) error) {
+	hs.h.successionCastHook = fn
+}
+
+func (hs *Handlers) SweepSuccessionsAt(now time.Time) {
+	hs.h.succ.now = func() time.Time { return now }
+	hs.h.sweepSuccessions()
+	hs.h.succ.now = time.Now
+}
+
+func (hs *Handlers) SuccessionPhase(old string) string {
+	if r := hs.h.succ.of(old); r != nil {
+		return r.Phase
+	}
+	return ""
+}
+
+func (hs *Handlers) SuccessorOf(old string) string {
+	if r := hs.h.succ.of(old); r != nil {
+		return r.Successor
+	}
+	return ""
+}
+
+func (hs *Handlers) HoldSuccessionsForTest() (letGo func()) {
+	hs.h.succ.run.Lock()
+	return hs.h.succ.run.Unlock
+}
+
+func (hs *Handlers) WaitSuccessionsForTest() {
+	hs.h.succ.run.Lock()
+	defer hs.h.succ.run.Unlock()
+}

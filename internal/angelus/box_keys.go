@@ -54,6 +54,7 @@ var boxHeldKeys = []struct{ key, why string }{
 	{methods.FormKey, "a method names keys the daemon writes for the aria, past every check on a caller"},
 	{store.StudiesKey, "it names forms the aria reads; study checks read on each"},
 	{"target-aria", "it makes a form a role the daemon resolves and keeps alive; cast checks its target"},
+	{successionPolicyKey, "it names the outfit the daemon dresses a successor in, as the owner"},
 	{store.SystemReapedKey, "it names the root the purge groups this aria under; kill writes it"},
 	{store.SystemReapedUntilKey, "it schedules a purge; kill writes it"},
 	{store.SystemReapedByKey, "it names the run gc --undo restores; gc writes it"},

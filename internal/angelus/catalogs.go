@@ -13,7 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-var catalogIDs = []string{models.FormID, rpc.ReapedFormID, rpc.TroupeFormID}
+var catalogIDs = []string{models.FormID, rpc.ReapedFormID, rpc.TroupeFormID, rpc.SuccessionsFormID}
 
 func isCatalogID(id string) bool {
 	for _, d := range catalogIDs {
@@ -34,11 +34,16 @@ func (h *handlers) catalog(id string) *store.Form {
 		return h.reapedForm
 	case rpc.TroupeFormID:
 		return h.troupeForm
+	case rpc.SuccessionsFormID:
+		return h.successionsForm()
 	}
 	return nil
 }
 
 func (h *handlers) readCatalog(id, method string, params json.RawMessage) (any, bool, error) {
+	if id == rpc.SuccessionsFormID && h.succ != nil {
+		h.succ.load()
+	}
 	f := h.catalog(id)
 	if f == nil {
 		return nil, true, fmt.Errorf("%s: this daemon does not keep it", id)
