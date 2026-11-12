@@ -250,6 +250,10 @@ func (a *Angelus) handleConn(ctx context.Context, door authz.Door, conn io.ReadW
 		l.end(errors.New(l.reason))
 		f.srv.Stop()
 	case <-ctx.Done():
+		if reason, shut := doorShutReason(ctx); shut {
+			_ = f.srv.Notify(rpc.MethodDoorLapsed, rpc.DoorLapsed{Reason: reason})
+			out.drain(lapseNoticeGrace)
+		}
 		f.srv.Stop()
 	}
 }

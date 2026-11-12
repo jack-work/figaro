@@ -92,9 +92,15 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 		}
 		resp.DefaultOutfit = req.DefaultOutfit
 	}
+	h.reloadMu.Lock()
+	defer h.reloadMu.Unlock()
 	fresh, err := config.Load(loaded.ConfigDir)
 	if err != nil {
 		slog.Error("config reload refused; the running config stays", "err", err)
+		return nil, fmt.Errorf("configure: %w", err)
+	}
+	if err := h.angelus.ReloadBoxDoors(fresh); err != nil {
+		slog.Error("config reload refused at a box door; the running config stays", "err", err)
 		return nil, fmt.Errorf("configure: %w", err)
 	}
 	routed.RegisterDeclared(fresh)

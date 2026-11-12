@@ -339,6 +339,7 @@ type handlers struct {
 
 	// configMu guards config and outfitter together against reload.
 	configMu sync.Mutex
+	reloadMu sync.Mutex
 
 	// restoring is a single-flight, not a lock table: an entry exists only
 	// while a wake is running.

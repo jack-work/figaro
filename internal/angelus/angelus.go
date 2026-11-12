@@ -102,6 +102,9 @@ type Angelus struct {
 	cancel context.CancelFunc
 	pprof  pprofState
 
+	boxDoorsMu sync.Mutex
+	boxDoors   *boxDoors
+
 	outboxOnce sync.Once
 	outboxes   *outboxBudget
 	pprofDir   string
