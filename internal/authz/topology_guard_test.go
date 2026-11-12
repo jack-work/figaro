@@ -2,14 +2,17 @@ package authz
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jack-work/jkauthz"
 
+	"github.com/jack-work/figaro/internal/apikey"
 	"github.com/jack-work/figaro/internal/hierarchy"
 )
 
@@ -279,5 +282,71 @@ func TestConsentIsAskedOnlyOfAForeignReceivingParent(t *testing.T) {
 	accepted.Consent.By = by
 	if _, err := g.Check(context.Background(), by, accepted); err == nil {
 		t.Fatal("mallory's own consent on q counted, though she holds no adopt on it")
+	}
+}
+
+const keyMoverPolicy = `
+[roles.owner]
+grants = ["*:*"]
+
+[roles.mover]
+grants = ["kill:*"]
+
+[[bind]]
+role = "owner"
+principals = ["user:1000"]
+
+[[bind]]
+role = "mover"
+principals = ["service:ci@troupe:estate"]
+`
+
+// El Inspector XIV, P2: a caller on an api key is bounded by the earlier of
+// the key's expiry and the door's age limit, a park carries that bound, and
+// admitting it again fails once the key is revoked.
+func TestATopologyCallerCarriesItsAdmission(t *testing.T) {
+	keys, err := NewAPIKeys("estate", "node-a", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, k, err := apikey.New(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := APIKeyGrant{ID: k.ID, Principal: "service:ci@troupe:estate", Hash: k.Hash[:], NotAfter: time.Now().Add(2 * time.Hour), Nodes: []string{"node-a"}}
+	if err := keys.SetTroupe([]APIKeyGrant{grant}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := keys.Admit(context.Background(), wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	door := time.Now().Add(time.Hour)
+	by, err := TopologyPrincipal(WithAdmittedUntil(ctx, door))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := by.Subject.(TopologyCaller); !c.Until.Equal(door) || c.Readmit == nil {
+		t.Fatalf("the caller is admitted until %s (readmit %v), want the door's %s, the earlier", c.Until, c.Readmit != nil, door)
+	}
+	g := topologyGuard(t, keyMoverPolicy)
+	move := hierarchy.Move{Node: "a", From: "s", To: "q", Tree: hierarchy.Drawn, ToOwner: guardOwner.String(), ToReceiver: true}
+	v, err := g.Check(context.Background(), by, hierarchy.Plan{Op: hierarchy.Arrange, Moves: []hierarchy.Move{move}})
+	if err != nil || v.Park != "q" || !v.Until.Equal(door) {
+		t.Fatalf("the key's move under the owner's q = %+v, %v; want parked until %s", v, err, door)
+	}
+	owner := guardCaller(guardOwner.Kind, guardOwner.ID, DoorLocal)
+	if _, err := g.Readmit(context.Background(), by); err != nil {
+		t.Fatalf("admitting the live key again: %v", err)
+	}
+	grant.Void = "revoked"
+	if err := keys.SetTroupe([]APIKeyGrant{grant}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Readmit(context.Background(), by); !errors.Is(err, ErrKeyRevoked) {
+		t.Fatalf("admitting a revoked key again = %v, want ErrKeyRevoked", err)
+	}
+	if _, err := g.Readmit(context.Background(), owner); err != nil {
+		t.Fatalf("a caller with nothing to admit again: %v", err)
 	}
 }

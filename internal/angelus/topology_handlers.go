@@ -659,7 +659,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 }
 
 func (h *handlers) place(ctx context.Context, id, under string) error {
-	by, err := topologyPrincipal(ctx)
+	by, err := h.angelus.topologyPrincipal(ctx)
 	if err != nil {
 		return err
 	}
@@ -672,7 +672,7 @@ func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interfa
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	by, err := topologyPrincipal(ctx)
+	by, err := h.angelus.topologyPrincipal(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -698,7 +698,7 @@ func (h *handlers) demote(ctx context.Context, params json.RawMessage) (interfac
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	by, err := topologyPrincipal(ctx)
+	by, err := h.angelus.topologyPrincipal(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -722,7 +722,7 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	by, err := topologyPrincipal(ctx)
+	by, err := h.angelus.topologyPrincipal(ctx)
 	if err != nil {
 		return nil, err
 	}

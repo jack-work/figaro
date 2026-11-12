@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/hierarchy"
@@ -15,6 +16,8 @@ type TopologyCaller struct {
 	Subject jkauthz.Subject
 	Figaro  string
 	Door    Door
+	Until   time.Time
+	Readmit func(context.Context) (jkauthz.Subject, error)
 }
 
 func TopologyPrincipal(ctx context.Context) (hierarchy.Principal, error) {
@@ -22,10 +25,38 @@ func TopologyPrincipal(ctx context.Context) (hierarchy.Principal, error) {
 	if err != nil {
 		return hierarchy.Principal{}, err
 	}
-	return hierarchy.Principal{
-		Name:    PrincipalText(PrincipalOf(ctx)),
-		Subject: TopologyCaller{Subject: sub, Figaro: FigaroOf(ctx), Door: DoorOf(ctx)},
-	}, nil
+	c := TopologyCaller{Subject: sub, Figaro: FigaroOf(ctx), Door: DoorOf(ctx)}
+	c.Until, c.Readmit = admission(ctx)
+	return hierarchy.Principal{Name: PrincipalText(PrincipalOf(ctx)), Subject: c}, nil
+}
+
+type admittedUntilKey struct{}
+
+func WithAdmittedUntil(ctx context.Context, t time.Time) context.Context {
+	if held, ok := ctx.Value(admittedUntilKey{}).(time.Time); ok && held.Before(t) {
+		return ctx
+	}
+	return context.WithValue(ctx, admittedUntilKey{}, t)
+}
+
+func admission(ctx context.Context) (time.Time, func(context.Context) (jkauthz.Subject, error)) {
+	until, _ := ctx.Value(admittedUntilKey{}).(time.Time)
+	c, _ := ctx.Value(callerKey{}).(caller)
+	switch {
+	case c.session != nil:
+		return earliest(until, c.session.Expiry()), c.session.Subject
+	case c.key != nil:
+		k := c.key
+		return earliest(until, k.expiry()), func(context.Context) (jkauthz.Subject, error) { return k.Subject() }
+	}
+	return until, nil
+}
+
+func earliest(a, b time.Time) time.Time {
+	if a.IsZero() || !b.IsZero() && b.Before(a) {
+		return b
+	}
+	return a
 }
 
 type HeldError struct {
@@ -95,6 +126,29 @@ func (g TopologyGuard) MayConsent(_ context.Context, by hierarchy.Principal, par
 	return g.allow(c, rpc.VerbAdopt, parent)
 }
 
+func (g TopologyGuard) Readmit(ctx context.Context, by hierarchy.Principal) (hierarchy.Principal, error) {
+	if by.System {
+		return by, nil
+	}
+	c, ok := by.Subject.(TopologyCaller)
+	if !ok {
+		return by, fmt.Errorf("%s: no caller to admit", by.Name)
+	}
+	if c.Readmit == nil {
+		return by, nil
+	}
+	sub, err := c.Readmit(ctx)
+	if err != nil {
+		return by, err
+	}
+	if sub.Principal != c.Subject.Principal {
+		return by, fmt.Errorf("%w: proposed as %s, now %s", ErrUnadmitted, c.Subject.Principal, sub.Principal)
+	}
+	c.Subject = sub
+	by.Subject = c
+	return by, nil
+}
+
 func (g TopologyGuard) consent(ctx context.Context, by hierarchy.Principal, c TopologyCaller, p hierarchy.Plan) (hierarchy.Verdict, error) {
 	var waits []string
 	var accepts []string
@@ -121,7 +175,11 @@ func (g TopologyGuard) consent(ctx context.Context, by hierarchy.Principal, c To
 	case 0:
 		return hierarchy.Verdict{}, nil
 	case 1:
-		return hierarchy.Verdict{Park: waits[0], Accepts: accepts}, nil
+		v := hierarchy.Verdict{Park: waits[0], Accepts: accepts}
+		if !g.isOwner(c) {
+			v.Until = c.Until
+		}
+		return v, nil
 	}
 	return hierarchy.Verdict{}, fmt.Errorf("%s: %w: %v", p.Op, hierarchy.ErrManyParents, waits)
 }

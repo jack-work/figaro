@@ -2,13 +2,19 @@ package angelus_test
 
 import (
 	"context"
+	"crypto/rand"
+	"errors"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/apikey"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro/wire"
+	"github.com/jack-work/figaro/internal/hierarchy"
 )
 
 func adoptRig(t *testing.T) (r grantRig, q, x string) {
@@ -256,5 +262,59 @@ func TestParkedProposalsShowOnlyToTheirHoldersAndProposers(t *testing.T) {
 	}
 	if all := list(asOwner()); len(all) != 2 || len(all[0].Moves) != 1 || all[0].Withheld != 0 {
 		t.Fatalf("the owner lists %+v, want both in full", all)
+	}
+}
+
+// El Inspector XIV, P2: a troupe key parks a move, lasting no longer than
+// the door would have kept its connection; the key is revoked, and the
+// owner's accept is refused with nothing moved.
+func TestARevokedKeysProposalIsRefusedAtAccept(t *testing.T) {
+	r, q, _ := adoptRig(t)
+	a, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const ci = "service:ci@troupe:estate"
+	grantTo(t, r, ci, "read:*", "set:aria:"+a.FigaroID, "kill:aria:"+a.FigaroID)
+	keys, err := authz.NewAPIKeys("estate", "node-a", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, k, err := apikey.New(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := authz.APIKeyGrant{ID: k.ID, Principal: ci, Hash: k.Hash[:], NotAfter: time.Now().Add(24 * time.Hour), Nodes: []string{"node-a"}}
+	if err := keys.SetTroupe([]authz.APIKeyGrant{grant}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := keys.Admit(context.Background(), wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	door := time.Now().Add(time.Hour)
+	ctx = authz.WithAdmittedUntil(ctx, door)
+
+	if err := setTopology(t, r, ctx, map[string]string{a.FigaroID: q}); err == nil || !strings.Contains(err.Error(), "waits on "+q) {
+		t.Fatalf("the key drawing A under Q = %v, want it parked on Q", err)
+	}
+	props := parkedOn(t, r, q)
+	if len(props) != 1 || props[0].By != ci || props[0].ExpiresMS != door.UnixMilli() {
+		t.Fatalf("parked on Q: %+v, want the key's move, lapsing with its door at %d", props, door.UnixMilli())
+	}
+
+	grant.Void = "revoked"
+	if err := keys.SetTroupe([]authz.APIKeyGrant{grant}); err != nil {
+		t.Fatal(err)
+	}
+	err = consent(r, asOwner(), rpc.MethodAccept, q, props[0].ID)
+	if !errors.Is(err, hierarchy.ErrProposerGone) && (err == nil || !strings.Contains(err.Error(), "no longer admitted")) {
+		t.Fatalf("accepting a revoked key's move = %v, want refused: the proposer is no longer admitted", err)
+	}
+	if up := presentedUnder(t, r, a.FigaroID); up == q {
+		t.Fatal("a revoked key's move was applied")
+	}
+	if len(parkedOn(t, r, q)) != 0 {
+		t.Fatal("the refused proposal still waits")
 	}
 }

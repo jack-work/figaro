@@ -9,7 +9,9 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/hierarchy"
+	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/jkauthz"
 )
 
 func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
@@ -90,8 +92,34 @@ func (a *Angelus) topology() *hierarchy.Hierarchy {
 	return a.Topology
 }
 
-func topologyPrincipal(ctx context.Context) (hierarchy.Principal, error) {
-	return authz.TopologyPrincipal(ctx)
+func (a *Angelus) topologyPrincipal(ctx context.Context) (hierarchy.Principal, error) {
+	by, err := authz.TopologyPrincipal(ctx)
+	if err != nil {
+		return by, err
+	}
+	if node, via := peer.Via(ctx); via && a.Peers != nil {
+		by = throughNode(by, a.Peers, node)
+	}
+	return by, nil
+}
+
+func throughNode(by hierarchy.Principal, members peer.Membership, node string) hierarchy.Principal {
+	c, ok := by.Subject.(authz.TopologyCaller)
+	if !ok {
+		return by
+	}
+	again, held := c.Readmit, c.Subject
+	c.Readmit = func(ctx context.Context) (jkauthz.Subject, error) {
+		if _, ok := members.Member(node); !ok {
+			return jkauthz.Subject{}, fmt.Errorf("it came through node %s, which is no longer a member", node)
+		}
+		if again == nil {
+			return held, nil
+		}
+		return again(ctx)
+	}
+	by.Subject = c
+	return by
 }
 
 func deleteSetChanged(err error) error {
