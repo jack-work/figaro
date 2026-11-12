@@ -21,8 +21,11 @@
 
 ## Ledger
 
-- Status: page drafted 2026-11-10, waiting on Gluck.
-- Rulings: none yet.
-- Open questions: A, B, C above.
+- Status: ruled 2026-11-11; the pinch runs on lane/layer1, cut from impresario 86233533 (v0.65.4).
+- Rulings (Gluck, 2026-11-11, relayed by the Engineer):
+  - A. `figaro box serve` stays in the figaro binary. `internal/cli/box.go` importing `internal/sandbox/box` is the one allowed edge, written into the rule itself and not into the allowlist.
+  - B. RunAs for tool calls (#38) is left out of this pinch.
+  - C. Go.
+- Open questions: none.
 - Hidden variables surfaced: none yet. Already done before this lane: the bwrap provider was deleted (c8c030c3).
 - Rollbacks: none.
