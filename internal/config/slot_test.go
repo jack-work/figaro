@@ -16,7 +16,7 @@ outfit = "broker-group"
 provider = "rou2"
 rou2_lease_class = "chat-group"
 say_url = "https://broker.example/groups/say"
-page = "@owner"
+page_route = "admin"
 slots = ["slot0", "slot1"]
 `
 
@@ -118,7 +118,8 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 		"the config's default outfit": {"default_outfit = \"house\"\n" + swap(`"broker-group"`, `"house"`), "daemon's own figaros"},
 		"no provider":                 {swap("provider = \"rou2\"\n", ""), "provider"},
 		"no lease class":              {swap("rou2_lease_class = \"chat-group\"\n", ""), "rou2_lease_class"},
-		"no page":                     {swap("page = \"@owner\"\n", ""), "page"},
+		"no page route":               {swap("page_route = \"admin\"\n", ""), "page_route"},
+		"a figaro to page":            {swap("page_route = \"admin\"\n", "page = \"@owner\"\n"), "slot.pools.chat-groups.page: not a key figaro knows"},
 		"no say url":                  {swap("say_url = \"https://broker.example/groups/say\"\n", ""), "say_url"},
 		"a say url with no scheme":    {swap("https://broker.example/groups/say", "broker.example/groups/say"), "say_url"},
 		"a say url with a password":   {swap("https://broker.example", "https://u:p@broker.example"), "say_url"},
