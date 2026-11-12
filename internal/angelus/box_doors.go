@@ -162,6 +162,8 @@ func (d *boxDoors) apply(a *Angelus, loaded *config.Loaded) error {
 	return nil
 }
 
+var listenBoxDoor = ListenUnix
+
 type boxListener struct {
 	spec boxDoorSpec
 	ln   net.Listener
@@ -170,7 +172,7 @@ type boxListener struct {
 func listenBoxDoors(specs []boxDoorSpec) ([]boxListener, error) {
 	var out []boxListener
 	for _, s := range specs {
-		ln, err := ListenUnix(s.path, 0o660)
+		ln, err := listenBoxDoor(s.path, 0o660)
 		if err != nil {
 			closeListeners(out)
 			return nil, fmt.Errorf("sandbox.boxes.%s.%s: %w", s.box, s.field, err)
