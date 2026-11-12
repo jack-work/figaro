@@ -108,31 +108,36 @@ type Angelus struct {
 	outboxOnce sync.Once
 	outboxes   *outboxBudget
 	pprofDir   string
+
+	SuccessionsPath string
+	successionSweep func()
 }
 
 type Config struct {
-	RuntimeDir string
-	PprofDir   string
-	SpoolDir   string
-	Backend    store.Backend
-	Settings   *config.Loaded // nil = defaults
-	Models     *modelcat.Catalog
+	RuntimeDir      string
+	PprofDir        string
+	SpoolDir        string
+	SuccessionsPath string
+	Backend         store.Backend
+	Settings        *config.Loaded // nil = defaults
+	Models          *modelcat.Catalog
 }
 
 // New creates an Angelus; set Handlers before Run.
 func New(cfg Config) *Angelus {
 	a := &Angelus{
-		Registry:   NewRegistry(),
-		Backend:    cfg.Backend,
-		SocketPath: filepath.Join(cfg.RuntimeDir, "angelus.sock"),
-		RuntimeDir: cfg.RuntimeDir,
-		Spool:      figaro.NewSpool(cfg.SpoolDir),
-		pprofDir:   cfg.PprofDir,
-		StartedAt:  time.Now(),
-		Sessions:   local.NewHost(local.DefaultTTL),
-		Settings:   cfg.Settings,
-		Models:     cfg.Models,
-		Hubs:       newHubs(),
+		Registry:        NewRegistry(),
+		Backend:         cfg.Backend,
+		SocketPath:      filepath.Join(cfg.RuntimeDir, "angelus.sock"),
+		RuntimeDir:      cfg.RuntimeDir,
+		SuccessionsPath: cfg.SuccessionsPath,
+		Spool:           figaro.NewSpool(cfg.SpoolDir),
+		pprofDir:        cfg.PprofDir,
+		StartedAt:       time.Now(),
+		Sessions:        local.NewHost(local.DefaultTTL),
+		Settings:        cfg.Settings,
+		Models:          cfg.Models,
+		Hubs:            newHubs(),
 	}
 	a.uiProj = uiir.New(nil).Naming(a.senderName)
 	a.UICache = aria.NewComposedCache(uiBudget(cfg.Settings), a.composeTurns, a.uiLineage)
@@ -229,6 +234,9 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 			sweep(ctx, "hibernate", a.hibernateIdleArias)
 			sweep(ctx, "cap_live", a.capLiveArias)
 			sweep(ctx, "expire_ttl", a.expireTTL)
+			if a.successionSweep != nil {
+				sweep(ctx, "successions", a.successionSweep)
+			}
 			sweep(ctx, "evict_idle", a.evictIdleArias)
 			sweep(ctx, "trim_resident", a.trimResident)
 			sweep(ctx, "release_memory", a.releaseIdleMemory)

@@ -367,11 +367,12 @@ func Run() {
 	applyCacheSettings(loaded, backend)
 
 	a := angelus.New(angelus.Config{
-		RuntimeDir: runtimeDir,
-		PprofDir:   boot.StateDir(),
-		SpoolDir:   filepath.Join(boot.StateDir(), "spool"),
-		Backend:    backend,
-		Settings:   loaded,
+		RuntimeDir:      runtimeDir,
+		PprofDir:        boot.StateDir(),
+		SpoolDir:        filepath.Join(boot.StateDir(), "spool"),
+		SuccessionsPath: angelus.SuccessionsPath(boot.StateDir()),
+		Backend:         backend,
+		Settings:        loaded,
 	})
 	a.Build = boot.BuildRevision()
 	a.Release = boot.BuildRelease()

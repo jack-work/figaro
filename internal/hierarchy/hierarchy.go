@@ -233,6 +233,24 @@ func (h *Hierarchy) Version() Version {
 	return h.eng.Version()
 }
 
+func (h *Hierarchy) Drawn(id string) (string, bool) {
+	if h == nil || h.eng == nil {
+		return "", false
+	}
+	return h.eng.Drawn(id)
+}
+
+func (h *Hierarchy) DrawnByHand(id string) (string, bool) {
+	if h == nil || h.eng == nil {
+		return "", false
+	}
+	over := h.eng.Overrides()[id]
+	if stored, _ := h.eng.Stored(id); over == "" || over == stored {
+		return "", false
+	}
+	return over, true
+}
+
 func (h *Hierarchy) Check(ctx context.Context, by Principal, p Plan) (Plan, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

@@ -93,6 +93,8 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	}
 	h.noticeUpgrade()
 	h.startNav()
+	h.succ = newSuccessions(h.angelus.SuccessionsPath)
+	h.angelus.successionSweep = h.sweepSuccessions
 	h.startReapedForm()
 	h.startTroupeForm()
 	h.publishCatalogs()
@@ -323,11 +325,13 @@ type handlers struct {
 	cappedMu sync.Mutex
 	capped   map[string]time.Time
 
-	reapedForm *store.Form
-	troupeForm *store.Form
-	nav        *primitive.Sessions[navstack.History]
-	navForms   navForms
-	reapedMu   sync.Mutex
+	reapedForm         *store.Form
+	troupeForm         *store.Form
+	nav                *primitive.Sessions[navstack.History]
+	navForms           navForms
+	reapedMu           sync.Mutex
+	succ               *successions
+	successionCastHook func(role string) error
 
 	gcOnce      sync.Once
 	gcCollector *gc.Collector
