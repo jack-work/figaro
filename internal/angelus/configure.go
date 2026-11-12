@@ -115,7 +115,7 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 	h.configMu.Unlock()
 	ofit.Warm(fresh.Config.DefaultOutfit)
 	if err := h.reloadPolicy(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("configure: the new config and its box doors are in force, but the policy did not reload: %w", err)
 	}
 	return resp, nil
 }
