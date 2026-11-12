@@ -412,3 +412,17 @@ func TestABoxDoorOnTheCLIOrWebDoorIsRefusedByName(t *testing.T) {
 		})
 	}
 }
+
+func TestARefreshWhosePolicyFailsSaysTheDoorsAlreadyChanged(t *testing.T) {
+	r := newReloadRig(t)
+	door := r.path("chat", "door", "door.sock")
+	r.extra = fmt.Sprintf("[authz]\npolicy = %q\n", filepath.Join(r.dir, "missing-policy.toml"))
+	r.write(rigBox{name: "chat", door: door})
+	err := r.refresh()
+	if err == nil || !strings.Contains(err.Error(), "the new config and its box doors are in force") {
+		t.Fatalf("a policy failure after the doors applied did not say so: %v", err)
+	}
+	if _, serr := os.Stat(door); serr != nil {
+		t.Fatalf("canary: the doors were not in force when the policy failed: %v", serr)
+	}
+}
