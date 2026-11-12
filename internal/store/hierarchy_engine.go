@@ -163,7 +163,7 @@ func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins 
 	// Refuse before touching anything: the boundary repair rewrites surviving arias.
 	taken := s.tree.DeleteSet(id)
 	if !recursive && len(taken) > 1 {
-		return fmt.Errorf("%w: %q has %d; -r takes them too", ErrHasBranches, id, len(taken)-1)
+		return hierarchy.HasChildren(id, len(taken)-1)
 	}
 	if expect != nil && !sameIDs(orSelf(taken, id), expect) {
 		return fmt.Errorf("%w: %q takes %v, decided on %v", ErrDeleteSetChanged, id, taken, expect)

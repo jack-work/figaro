@@ -212,6 +212,10 @@ var (
 	ErrLiftRecursive  = errors.New("hierarchy: a kill that lifts its children takes nothing under it")
 )
 
+func HasChildren(id string, n int) error {
+	return fmt.Errorf("%w: %q has %d under it; kill -r takes them too, kill --keep-children lifts them to its parent", ErrHasBranches, id, n)
+}
+
 type Hierarchy struct {
 	mu     sync.Mutex
 	eng    Engine
@@ -845,7 +849,7 @@ func (h *Hierarchy) deriveDelete(id string, recursive bool) ([]string, []Move, e
 		taken = []string{id}
 	}
 	if !recursive && len(taken) > 1 {
-		return nil, nil, fmt.Errorf("%w: %q has %d; -r takes them too", ErrHasBranches, id, len(taken)-1)
+		return nil, nil, HasChildren(id, len(taken)-1)
 	}
 	doomed := make(map[string]bool, len(taken))
 	for _, t := range taken {

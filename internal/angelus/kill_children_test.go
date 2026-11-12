@@ -51,6 +51,35 @@ func narrow(t *testing.T, r grantRig, id string, scopes ...string) {
 	}
 }
 
+func TestAKillOfAFigaroWithChildrenNamesBothWaysOut(t *testing.T) {
+	for _, now := range []bool{false, true} {
+		r, _, x, c := guardChain(t)
+		_, err := killAs(r, rpc.KillRequest{FigaroID: x, Now: now})
+		if err == nil || !strings.Contains(err.Error(), "kill -r") || !strings.Contains(err.Error(), "--keep-children") {
+			t.Fatalf("now=%v: kill of X with C under it = %v, want a refusal naming -r and --keep-children", now, err)
+		}
+		if absent(r, x) || absent(r, c) || reapedIn(t, r, x) || reapedIn(t, r, c) {
+			t.Fatalf("now=%v: a refused kill took something", now)
+		}
+	}
+}
+
+func TestKillRTakesEverythingDrawnUnderIt(t *testing.T) {
+	r, p, x, c := guardChain(t)
+	g := ariasFork(t, r, c)
+	if _, err := killAs(r, rpc.KillRequest{FigaroID: x, Recursive: true, Now: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{x, c, g} {
+		if !absent(r, id) {
+			t.Fatalf("kill -r X left %s", id)
+		}
+	}
+	if absent(r, p) {
+		t.Fatal("kill -r X took its parent")
+	}
+}
+
 func TestKeepChildrenLiftsTheChildrenToTheParent(t *testing.T) {
 	for _, now := range []bool{false, true} {
 		r, p, x, c := guardChain(t)
