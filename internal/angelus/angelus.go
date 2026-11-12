@@ -99,8 +99,10 @@ type Angelus struct {
 	// lastLibrettoSweep is what the boot reconciliation found, for `doctor mem`.
 	lastLibrettoSweep atomic.Pointer[store.LibrettoAudit]
 
-	cancel context.CancelFunc
-	pprof  pprofState
+	cancel   context.CancelFunc
+	pprof    pprofState
+	inflight inflight
+	joinFor  time.Duration
 
 	boxDoorsMu sync.Mutex
 	boxDoors   *boxDoors
@@ -195,13 +197,13 @@ func (a *Angelus) Run(ctx context.Context) error {
 
 	_ = a.StartPprof(ctx)
 
-	go a.pidMonitor(ctx)
-	go a.keepReachable(ctx, pidPath)
-	go a.reclaims().run(ctx)
-	go a.retention(ctx)
-	go a.topologyClean(ctx)
-	go a.warmListing(ctx)
-	go a.watchMemPressure(ctx)
+	a.Go("pid monitor", func() { a.pidMonitor(ctx) })
+	a.Go("reachability", func() { a.keepReachable(ctx, pidPath) })
+	a.Go("reclaimer", func() { a.reclaims().run(ctx) })
+	a.Go("retention", func() { a.retention(ctx) })
+	a.Go("topology clean", func() { a.topologyClean(ctx) })
+	a.Go("list warm-up", func() { a.warmListing(ctx) })
+	a.Go("memory pressure", func() { a.watchMemPressure(ctx) })
 	a.seedRoles(ctx)
 	a.migrateLibrettoRefs()
 
@@ -241,7 +243,7 @@ func (a *Angelus) migrateLibrettoRefs() {
 	if !ok || !rec.RefsNeedMigration() {
 		return
 	}
-	go func() {
+	a.Go("libretto refs migration", func() {
 		audit, err := rec.ReconcileLibrettos()
 		if err != nil {
 			slog.Warn("libretto refs migration failed", "err", err)
@@ -252,7 +254,7 @@ func (a *Angelus) migrateLibrettoRefs() {
 			"bound_forms", audit.BoundForms, "librettos", audit.Librettos,
 			"corrected", audit.Corrected, "minted", audit.Minted,
 			"orphaned", audit.Orphaned, "missing", audit.Missing)
-	}()
+	})
 }
 
 type librettoReconciler interface {
@@ -564,6 +566,7 @@ func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 		return
 	}
 	a.Registry.SetDraining()
+	a.inflight.seal()
 
 	figaros := a.Registry.All()
 	slog.Info("angelus graceful shutdown beginning", "figaros", len(figaros))
@@ -597,11 +600,40 @@ func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 	slog.Info("angelus graceful shutdown complete")
 
 	a.Stop()
+	a.closeBackend()
+}
 
-	if a.Backend != nil {
+type abandoner interface {
+	Abandon() error
+}
+
+func (a *Angelus) closeBackend() {
+	start := time.Now()
+	bound := a.joinFor
+	if bound <= 0 {
+		bound = shutdownJoinBound
+	}
+	waitedOn, stillOut := a.inflight.join(bound)
+	if len(waitedOn) > 0 {
+		slog.Info("angelus shutdown join", "waited_ms", time.Since(start).Milliseconds(), "on", waitedOn, "still_out", stillOut)
+	}
+	if a.Backend == nil {
+		return
+	}
+	if len(stillOut) == 0 {
 		if err := a.Backend.Close(); err != nil {
 			slog.Error("angelus backend close", "err", err)
 		}
+		return
+	}
+	slog.Error("angelus shutdown join timed out; the store is fenced and keeps its unclean mark",
+		"bound", bound.String(), "still_out", stillOut)
+	b, ok := a.Backend.(abandoner)
+	if !ok {
+		return
+	}
+	if err := b.Abandon(); err != nil {
+		slog.Error("angelus backend abandon", "err", err)
 	}
 }
 

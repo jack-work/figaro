@@ -27,6 +27,7 @@ type Trunks struct {
 	rootEpoch atomic.Uint64
 
 	hotMu   sync.Mutex
+	sealed  atomic.Bool
 	hot     *trunkStore
 	retired map[*trunkStore]struct{}
 	fences  map[string]chan struct{}
@@ -49,6 +50,8 @@ type Trunks struct {
 // ErrUnknownTrunk reports an operation addressed to a trunk id with no
 // live head (never existed, removed, or relabeled away by Promote).
 var ErrUnknownTrunk = errors.New("xwal: unknown trunk")
+
+var ErrClosed = errors.New("xwal: store is closed")
 
 // ErrUnknownStump reports a stump name that is not a depth-1 stump node.
 var ErrUnknownStump = errors.New("xwal: unknown stump")

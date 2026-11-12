@@ -545,13 +545,18 @@ func (s *Store) DurableThrough(trunk, channel string) (uint64, error) {
 	return x.DurableThrough(channel), nil
 }
 
-func (s *Store) Close() error {
+func (s *Store) Close() error { return s.close(true) }
+
+func (s *Store) Abandon() error { return s.close(false) }
+
+func (s *Store) close(clean bool) error {
 	s.closeOnce.Do(func() {
 		close(s.stop)
 		<-s.done
 		s.syncDirty()
+		s.Trunks.seal()
 		s.closeErr = s.Trunks.Close()
-		if s.closeErr == nil {
+		if s.closeErr == nil && clean {
 			s.closeErr = clearUnclean(s.Trunks.root)
 		}
 		if err := unlockRoot(s.lockFile); err != nil && s.closeErr == nil {

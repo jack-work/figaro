@@ -264,7 +264,7 @@ func troupeKeys(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded, 
 	if err := k.Ensure(); err != nil {
 		slog.Error("troupe certificate: local callers are served, the node door refuses peers", "err", err)
 	}
-	go k.Run(ctx)
+	a.Go("troupe certificate renewal", func() { k.Run(ctx) })
 	a.Troupe = k
 	return troupeCredentials(a), nil
 }
@@ -325,7 +325,7 @@ func gossip(ctx context.Context, a *angelus.Angelus, m *peer.Ledger, door string
 	m.OnAdmit(g.Greet(ctx))
 	a.PeerVersions.OnDrift(g.Drift(ctx))
 	a.TroupeSpread = g.Spread
-	go g.Run(ctx)
+	a.Go("troupe gossip", func() { g.Run(ctx) })
 	return g
 }
 

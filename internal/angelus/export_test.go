@@ -61,3 +61,9 @@ func (a *Angelus) SeedRolesNow() {
 }
 
 func (hs *Handlers) OnGCReap(hook func(stage, id string)) { hs.h.gcReapHook = hook }
+
+func (a *Angelus) SetJoinBoundForTest(d time.Duration) { a.joinFor = d }
+
+func (a *Angelus) StoppingForTest() bool { return a.inflight.sealed.Load() }
+
+var ErrStoppingForTest = errStopping

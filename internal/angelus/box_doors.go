@@ -8,6 +8,7 @@ import (
 	"net"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
@@ -33,9 +34,19 @@ type boxDoors struct {
 	open map[string]*openBoxDoor
 }
 
-type DoorShut struct{ Reason string }
+type DoorShut struct {
+	Reason string
+	grace  time.Duration
+}
 
 func (e *DoorShut) Error() string { return e.Reason }
+
+func (e *DoorShut) noticeGrace() time.Duration {
+	if e.grace > 0 {
+		return e.grace
+	}
+	return lapseNoticeGrace
+}
 
 func wantedBoxDoors(loaded *config.Loaded) (map[string]boxDoorSpec, map[string]error) {
 	want := map[string]boxDoorSpec{}
@@ -60,7 +71,9 @@ func (a *Angelus) OpenBoxDoors(ctx context.Context, loaded *config.Loaded) error
 	a.boxDoorsMu.Lock()
 	defer a.boxDoorsMu.Unlock()
 	if a.boxDoors == nil {
-		a.boxDoors = &boxDoors{ctx: ctx, open: map[string]*openBoxDoor{}}
+		doors, shut := context.WithCancelCause(context.WithoutCancel(ctx))
+		context.AfterFunc(ctx, func() { shut(&DoorShut{Reason: stoppingReason, grace: stopNoticeGrace}) })
+		a.boxDoors = &boxDoors{ctx: doors, open: map[string]*openBoxDoor{}}
 	}
 	return a.boxDoors.apply(a, loaded)
 }
@@ -212,12 +225,12 @@ func (d *boxDoors) shut(o *openBoxDoor, reason string) {
 	slog.Info("box door closed", "box", o.spec.box, "door", o.spec.door.String(), "path", o.spec.path, "reason", reason)
 }
 
-func doorShutReason(ctx context.Context) (string, bool) {
+func doorShut(ctx context.Context) *DoorShut {
 	var s *DoorShut
 	if errors.As(context.Cause(ctx), &s) {
-		return s.Reason, true
+		return s
 	}
-	return "", false
+	return nil
 }
 
 func sortedSpecs(m map[string]boxDoorSpec) []boxDoorSpec {
