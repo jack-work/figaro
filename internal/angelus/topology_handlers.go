@@ -277,6 +277,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	// interior is read off the coordinate, not the LT: forking at turn 1 has
 	// LT 0, which is also the head-fork sentinel.
 	interior := req.AtTurn > 0 || req.AtLT > 0
+	if interior {
+		dress = form.Merge(engineOf(inherited), dress)
+	}
 	where := fmt.Sprintf("turn %d", req.AtTurn)
 	if req.AtLT > 0 {
 		where = fmt.Sprintf("LT %d", req.AtLT)

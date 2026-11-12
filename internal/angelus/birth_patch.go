@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/outfit"
@@ -129,6 +130,16 @@ func forkDress(dress form.Patch, parent string) form.Patch {
 	return form.Merge(dress, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		form.ForkedFromKey: json.RawMessage(`"` + parent + `"`),
 	}, nil))
+}
+
+func engineOf(parent form.Snapshot) form.Patch {
+	keys := map[string]json.RawMessage{}
+	for _, key := range []string{models.ProviderKey, models.ModelKey} {
+		if raw, ok := parent.Get(key); ok {
+			keys[key] = raw
+		}
+	}
+	return form.Build(form.Snapshot{}, keys, nil)
 }
 
 func mergePatches(a, b form.Patch) form.Patch {
