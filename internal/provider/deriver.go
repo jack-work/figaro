@@ -89,9 +89,12 @@ type rowsBehind struct {
 	rows    store.Log[[]json.RawMessage]
 	page    []store.Entry[[]json.RawMessage]
 	before  uint64
+	reach   int
 	started bool
 	spent   bool
 }
+
+const rowsBehindReach = 32
 
 func (r *rowsBehind) carriesBytes(figaroLT uint64) bool {
 	for {
@@ -116,7 +119,8 @@ func (r *rowsBehind) carriesBytes(figaroLT uint64) bool {
 			r.page, r.before = []store.Entry[[]json.RawMessage]{tail}, tail.LT
 			continue
 		}
-		page, _ := r.rows.ReadPage(0, r.before, 32)
+		r.reach = min(max(2*r.reach, 1), rowsBehindReach)
+		page, _ := r.rows.ReadPage(0, r.before, r.reach)
 		if len(page) == 0 {
 			r.spent = true
 			return false
