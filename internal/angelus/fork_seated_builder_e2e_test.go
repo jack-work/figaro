@@ -238,6 +238,23 @@ func (s successionLine) builder(t *testing.T, keepQuestion bool) string {
 	return forked.Alternative
 }
 
+// A listing carries the fork point only where it differs from the parent, so
+// status can name where a seated builder's history was cut.
+func TestAListingNamesASeatedBuildersForkPoint(t *testing.T) {
+	s := successionOf(t)
+	id := s.builder(t, true)
+	list, err := s.acli.List(s.ctx)
+	require.NoError(t, err)
+	rows := map[string]rpc.FigaroInfoResponse{}
+	for _, f := range list.Figaros {
+		rows[f.ID] = f
+	}
+	require.Equal(t, s.lead, rows[id].Parent)
+	require.Equal(t, s.first, rows[id].ForkPoint)
+	require.NotEmpty(t, rows[s.lead].Parent)
+	require.Empty(t, rows[s.lead].ForkPoint, "the lead answers to the figaro it was cut from: one edge, not two")
+}
+
 var builderCuts = []struct {
 	name         string
 	keepQuestion bool

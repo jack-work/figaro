@@ -60,8 +60,8 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 		// The tree records a fork point as an LT; the user's coordinate is
 		// a turn.
 		var forkTurn uint64
-		if len(f.Vector) > 1 && f.Parent != "" && f.BranchedLT > 1 {
-			if msgs, merr := ariaMessages(ctx, acli, f.Parent); merr == nil {
+		if from := cutFrom(f); len(f.Vector) > 1 && from != "" && f.BranchedLT > 1 {
+			if msgs, merr := ariaMessages(ctx, acli, from); merr == nil {
 				if t, ok := turns.At(msgs, f.BranchedLT); ok {
 					forkTurn = t
 				}
@@ -71,6 +71,13 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 		printStatusPanel(stdout, f, more, forkTurn, snap)
 		return nil
 	})
+}
+
+func cutFrom(f *rpc.FigaroInfoResponse) string {
+	if f.ForkPoint != "" {
+		return f.ForkPoint
+	}
+	return f.Parent
 }
 
 func statusRow(ctx context.Context, acli *sdk.Angelus, idFlag, nameArg string) (*rpc.ListResponse, *rpc.FigaroInfoResponse, error) {
@@ -389,11 +396,11 @@ func printStatusPanel(out io.Writer, f *rpc.FigaroInfoResponse, more bool, forkT
 		if f.CreatedAt != 0 {
 			row("created", time.UnixMilli(f.CreatedAt).Format("2006-01-02 15:04:05"))
 		}
-		if len(f.Vector) > 1 && f.Parent != "" && f.BranchedLT > 1 {
+		if from := cutFrom(f); len(f.Vector) > 1 && from != "" && f.BranchedLT > 1 {
 			if forkTurn > 0 {
-				rowf("forked-from", "%s:%d", f.Parent, forkTurn)
+				rowf("forked-from", "%s:%d", from, forkTurn)
 			} else {
-				rowf("forked-from", "%s", f.Parent)
+				rowf("forked-from", "%s", from)
 			}
 		}
 	}

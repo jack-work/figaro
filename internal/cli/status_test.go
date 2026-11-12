@@ -68,3 +68,38 @@ func TestPrintStatusPanelOmitsOutfitParentAsForkOrigin(t *testing.T) {
 		t.Fatalf("top-level outfit parent must not be shown as a fork:\n%s", body)
 	}
 }
+
+func statusPanelOf(t *testing.T, f *rpc.FigaroInfoResponse, forkTurn uint64) string {
+	t.Helper()
+	out, err := os.CreateTemp(t.TempDir(), "status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	printStatusPanel(out, f, true, forkTurn, form.Snapshot{})
+	if err := out.Close(); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(out.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
+// A placed fork answers to one figaro and was cut from another: forked-from
+// names the cut. A daemon older than the field sends none, and the parent
+// stands in as it did before.
+func TestStatusForkedFromNamesTheForkPointNotThePlacement(t *testing.T) {
+	placed := statusPanelOf(t, &rpc.FigaroInfoResponse{
+		ID: "b0b0b0b0", Parent: "1ead1ead", ForkPoint: "f125f125", BranchedLT: 7, Vector: []int{0, 0, 1},
+	}, 1)
+	if !strings.Contains(placed, "f125f125:1") || strings.Contains(placed, "1ead1ead:1") {
+		t.Fatalf("forked-from must name the fork point f125f125:1:\n%s", placed)
+	}
+	unplaced := statusPanelOf(t, &rpc.FigaroInfoResponse{
+		ID: "b0b0b0b0", Parent: "1ead1ead", BranchedLT: 7, Vector: []int{0, 0, 1},
+	}, 3)
+	if !strings.Contains(unplaced, "1ead1ead:3") {
+		t.Fatalf("with no fork point the parent is the cut:\n%s", unplaced)
+	}
+}

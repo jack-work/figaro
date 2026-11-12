@@ -286,8 +286,10 @@ to the root, a form or an outfit version decides what those take.
 Implementation: `runPromote` (`internal/cli/manage.go`), the `figaro.promote`
 RPC, `PromoteResponse{FigaroID, Climbed, AtStump}`, the boundary check in
 `XwalStore.Promote`, and the override state in the topology form. The listing
-carries both edges: `parent` (history, what `status` prints as forked-from)
-and `present` (where the row is drawn, what the vector follows).
+carries three edges: `parent` (the figaro this one answers to), `fork_point`
+(the figaro its history was cut from, what `status` prints as forked-from;
+absent when it is the parent) and `present` (where the row is drawn, what the
+vector follows).
 
 ## demote
 

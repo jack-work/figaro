@@ -291,6 +291,9 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, vers map[string
 	entry.Vector = n.Vector
 	entry.Trunk = n.Trunk
 	entry.Parent = n.Parent
+	if n.ForkPoint != n.Parent {
+		entry.ForkPoint = n.ForkPoint
+	}
 	entry.Present = n.Present
 	entry.BranchedLT = n.BranchedLT
 	entry.Kind = n.Kind

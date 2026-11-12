@@ -45,10 +45,11 @@ type FigaroInfoResponse struct {
 	HeldSince     int64  `json:"held_since,omitempty"`
 
 	// Fork-tree position. Vector is the child-index path; Trunk flows down
-	// the continuation line; Parent is the aria branched from.
+	// the continuation line.
 	Vector     []int  `json:"vector,omitempty"`
 	Trunk      string `json:"trunk,omitempty"`
 	Parent     string `json:"parent,omitempty"`
+	ForkPoint  string `json:"fork_point,omitempty"`
 	BranchedLT uint64 `json:"branched_lt,omitempty"`
 	// Present is where the row is drawn: Parent unless a promote moved it.
 	// Vector follows Present.
