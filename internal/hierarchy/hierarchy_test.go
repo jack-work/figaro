@@ -368,3 +368,22 @@ func TestWithinLineageIsReadOffForkPointsNotPlacements(t *testing.T) {
 		t.Fatalf("moves %+v: C was forked from X, D's fork point, wherever C was placed since", seen)
 	}
 }
+
+// P5: nobody answers to a node that answers to them.
+func TestAPlacementCycleIsRefused(t *testing.T) {
+	f := chain()
+	h := hierarchy.New(f, hierarchytest.Open{})
+	place := func(id, under string) error {
+		_, err := h.Apply(context.Background(), anyone, hierarchy.Plan{Op: hierarchy.Arrange, Parents: map[string]string{id: under}, Placement: true})
+		return err
+	}
+	if err := place("C", "D"); err != nil {
+		t.Fatal(err)
+	}
+	if err := place("D", "C"); err == nil {
+		t.Fatal("D was placed under C, which answers to D")
+	}
+	if up, _ := f.Placed("D"); up != "X" {
+		t.Fatalf("the refused placement moved D under %q", up)
+	}
+}
