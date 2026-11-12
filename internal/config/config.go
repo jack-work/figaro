@@ -45,6 +45,7 @@ type Config struct {
 	Quote   QuoteConfig   `toml:"quote"`
 	Authz   AuthzConfig   `toml:"authz"`
 	Sandbox SandboxConfig `toml:"sandbox"`
+	Slot    SlotConfig    `toml:"slot"`
 	Angelus AngelusConfig `toml:"angelus"`
 
 	ServiceTokens map[string]ServiceToken `toml:"service_tokens"`
@@ -923,8 +924,18 @@ func load(configDir string) (*Loaded, error) {
 	if err := cfg.validateAngelus(); err != nil {
 		return nil, fmt.Errorf("%s: %w", configPath, err)
 	}
+	if err := refuseUnknownSlotKeys(md); err != nil {
+		return nil, fmt.Errorf("%s: %w", configPath, err)
+	}
+	if err := cfg.validateSlot(); err != nil {
+		return nil, fmt.Errorf("%s: %w", configPath, err)
+	}
+	l := &Loaded{Config: cfg, ConfigDir: configDir, ConfigPath: configPath}
+	if err := cfg.refuseWhatAPoolDaemonCannotHold(md, l.ListProviders()); err != nil {
+		return nil, fmt.Errorf("%s: %w", configPath, err)
+	}
 
-	return &Loaded{Config: cfg, ConfigDir: configDir, ConfigPath: configPath}, nil
+	return l, nil
 }
 
 func defaultConfig() Config {
