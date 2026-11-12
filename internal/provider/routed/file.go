@@ -1,6 +1,7 @@
 package routed
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -55,9 +56,17 @@ func LoadFile(loaded *config.Loaded, name string) (File, error) {
 		return f, err
 	}
 	if _, err := toml.Decode(string(data), &f); err != nil {
-		return f, fmt.Errorf("%s: %w", path, err)
+		return File{}, notTOML(path, err)
 	}
 	return f, nil
+}
+
+func notTOML(path string, err error) error {
+	var perr toml.ParseError
+	if errors.As(err, &perr) && perr.Position.Line > 0 {
+		return fmt.Errorf("%s: line %d is not valid for this file", path, perr.Position.Line)
+	}
+	return fmt.Errorf("%s is not valid for this file", path)
 }
 
 func (f File) Apply(spec Spec) (Spec, error) {
