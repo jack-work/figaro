@@ -29,6 +29,8 @@ func refuseWhatAPoolPolicyCannotBind(policy []byte, issuerScopes []string) error
 				why = "a box holds what its lease computes and nothing a file says"
 			case strings.HasPrefix(scope, troupeScope):
 				why = "it is a troupe's principal or an api key's"
+			case scope != "" && !slices.Contains(issuerScopes, scope):
+				why = "no issuer its config names (" + orNone(issuerScopes) + ") can vouch for it"
 			default:
 				continue
 			}
