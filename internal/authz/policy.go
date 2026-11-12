@@ -69,6 +69,12 @@ const (
 	selSelf    = "self"
 )
 
+const formIDHexLen = 32
+
+func isFormIDHex(s string) bool {
+	return (len(s) == rpc.OldIDLen || len(s) == formIDHexLen) && rpc.IsHexID(s)
+}
+
 func (selectors) Validate(sel string) error {
 	if sel == selOwner || sel == selBoxed || sel == selUnboxed {
 		return nil
@@ -78,13 +84,16 @@ func (selectors) Validate(sel string) error {
 			if rest == "" {
 				return fmt.Errorf("%s names nothing", prefix)
 			}
+			if prefix == selRole && !isFormIDHex(rest) {
+				return fmt.Errorf("%s names no form: a role selector takes the role form's id, @ and %d or %d hex as figaro form ls shows it, not a role name", sel, rpc.OldIDLen, formIDHexLen)
+			}
 			if strings.Contains(rest, jkauthz.Any) {
 				return fmt.Errorf("%s matches no %s: a selector takes no wildcard, and %s alone is every resource", sel, strings.TrimSuffix(prefix, ":"), jkauthz.Any)
 			}
 			return nil
 		}
 	}
-	return fmt.Errorf("want aria:<id>, role:@<name>, owner:self, lineage:<id>, sandbox:<name>, sandbox:self, sandboxed:self, unboxed, troupe:<name> or outfit:<name>")
+	return fmt.Errorf("want aria:<id>, role:@<form id>, owner:self, lineage:<id>, sandbox:<name>, sandbox:self, sandboxed:self, unboxed, troupe:<name> or outfit:<name>")
 }
 
 func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {

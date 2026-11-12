@@ -8,7 +8,7 @@ permissions = [
 ]
 [roles.mixed]
 permissions = [
-  "read:owner:self", "read:role:@herald", "read:lineage:a-box0", "read:unboxed", "listen:owner:self", "listen:role:@herald", "listen:lineage:a-box0", "listen:unboxed", "send:owner:self", "send:role:@herald", "send:lineage:a-box0", "send:unboxed", "fork:owner:self", "fork:role:@herald", "fork:lineage:a-box0", "fork:unboxed",
+  "read:owner:self", "read:role:@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5c", "read:lineage:a-box0", "read:unboxed", "listen:owner:self", "listen:role:@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5c", "listen:lineage:a-box0", "listen:unboxed", "send:owner:self", "send:role:@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5c", "send:lineage:a-box0", "send:unboxed", "fork:owner:self", "fork:role:@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5c", "fork:lineage:a-box0", "fork:unboxed",
   "set:sandboxed:self", "set:aria:a-admin", "kill:sandboxed:self", "kill:aria:a-admin",
   "use:sandbox:self", "use:sandbox:bwrap", "use:sandbox:local",
   "join:troupe:kelliher", "join:troupe:other", "admin:troupe:kelliher", "admin:troupe:other",

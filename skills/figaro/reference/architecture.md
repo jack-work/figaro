@@ -321,8 +321,8 @@ the caller could not read.
 **The policy** is TOML at `[authz] policy` (relative to the config dir):
 roles of permissions (`[roles.<name>] permissions = [...]`), bound to
 principals by `[[bind]]`. A permission is `verb:selector`
-(`send:role:@herald`, `read:owner:self`, `*:*`); the verb ends at the first
-colon, and either side may be `*`. Selectors are `aria:<id>`, `role:@<name>`,
+(`send:role:@53c6b72b`, `read:owner:self`, `*:*`); the verb ends at the first
+colon, and either side may be `*`. Selectors are `aria:<id>`, `role:@<form id>`,
 `owner:self`, `lineage:<id>`, `sandbox:<name>`, `sandboxed:self`, `unboxed`,
 `troupe:<name>` and `outfit:<name>`. A role's permissions are kept canonical: duplicates and
 any another covers are dropped, then sorted by verb and selector. The
