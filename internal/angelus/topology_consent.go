@@ -64,7 +64,7 @@ func (h *handlers) parked(ctx context.Context, params json.RawMessage) (interfac
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	by, err := topologyPrincipal(ctx)
+	by, err := h.angelus.topologyPrincipal(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (h *handlers) accept(ctx context.Context, params json.RawMessage) (interfac
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	by, err := topologyPrincipal(ctx)
+	by, err := h.angelus.topologyPrincipal(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func (h *handlers) refuse(ctx context.Context, params json.RawMessage) (interfac
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	by, err := topologyPrincipal(ctx)
+	by, err := h.angelus.topologyPrincipal(ctx)
 	if err != nil {
 		return nil, err
 	}

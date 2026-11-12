@@ -137,6 +137,10 @@ func (g guardFunc) Check(_ context.Context, by hierarchy.Principal, p hierarchy.
 
 func (g guardFunc) MayConsent(context.Context, hierarchy.Principal, string) error { return nil }
 
+func (guardFunc) Readmit(_ context.Context, by hierarchy.Principal) (hierarchy.Principal, error) {
+	return by, nil
+}
+
 var anyone = hierarchy.Principal{Name: "user:test"}
 
 func TestANilGuardRefusesEveryPlan(t *testing.T) {

@@ -1217,10 +1217,12 @@ accepts or refuses.
   figaro adopt accept <parent> <id>   make the move
   figaro adopt refuse <parent> <id>   drop it for good
 
-Accepting re-checks the move as its proposer, with the grants the proposer
-holds now. If the tree changed meanwhile, the move is planned again, and it
-is refused if it would now need some other parent's consent. Proposals live
-in the daemon's memory: they lapse after a day, and a restart drops them.`,
+Accepting admits the proposer again and re-checks the move as the proposer,
+with the grants it holds now: a revoked key or an expired token refuses it.
+If the tree changed meanwhile, the move is planned again, and it is refused
+if it would now need some other parent's consent. Proposals live in the
+daemon's memory: they lapse after a day, or when the proposer's connection
+or token would have, and a restart drops them.`,
 		ArgsMin: 1,
 		ArgsMax: 3,
 		Flags: []cmdkit.FlagDef{

@@ -128,6 +128,7 @@ type Plan struct {
 type Verdict struct {
 	Park    string
 	Accepts []string
+	Until   time.Time
 }
 
 type Consent struct {
@@ -138,6 +139,7 @@ type Consent struct {
 type Guard interface {
 	Check(ctx context.Context, by Principal, p Plan) (Verdict, error)
 	MayConsent(ctx context.Context, by Principal, parent string) error
+	Readmit(ctx context.Context, by Principal) (Principal, error)
 }
 
 type Proposal struct {
@@ -204,6 +206,7 @@ var (
 	ErrNoProposal     = errors.New("hierarchy: no such proposal waits on that parent")
 	ErrQueueFull      = errors.New("hierarchy: too many proposals already wait")
 	ErrManyParents    = errors.New("hierarchy: the plan needs consent from more than one receiving parent")
+	ErrProposerGone   = errors.New("hierarchy: the proposer is no longer admitted")
 )
 
 type Hierarchy struct {
@@ -284,6 +287,13 @@ func (h *Hierarchy) park(by Principal, plan Plan, v Verdict) error {
 	case mine >= ProposalsPerProposer:
 		return fmt.Errorf("%w: %s already has %d waiting", ErrQueueFull, by.Name, mine)
 	}
+	expires := h.now().Add(ProposalTTL)
+	if !v.Until.IsZero() && v.Until.Before(expires) {
+		if !v.Until.After(h.now()) {
+			return fmt.Errorf("%w: its admission lapsed at %s", ErrProposerGone, v.Until.Format(time.RFC3339))
+		}
+		expires = v.Until
+	}
 	var b [6]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return err
@@ -294,7 +304,7 @@ func (h *Hierarchy) park(by Principal, plan Plan, v Verdict) error {
 		By:      by,
 		Plan:    plan,
 		Accepts: slices.Clone(v.Accepts),
-		Expires: h.now().Add(ProposalTTL),
+		Expires: expires,
 	}
 	h.parked[prop.ID] = prop
 	return &ParkedError{Proposal: prop}
@@ -346,10 +356,14 @@ func (h *Hierarchy) Accept(ctx context.Context, by Principal, parent, id string)
 		return Plan{}, err
 	}
 	delete(h.parked, id)
+	proposer, err := h.guard.Readmit(ctx, prop.By)
+	if err != nil {
+		return Plan{}, fmt.Errorf("%w: %w", ErrProposerGone, err)
+	}
 	asked := prop.Plan
 	asked.Moves, asked.Delete, asked.Version = nil, nil, Version{}
 	asked.Consent = &Consent{Parent: parent, By: by}
-	plan, v, err := h.checkLocked(ctx, prop.By, asked)
+	plan, v, err := h.checkLocked(ctx, proposer, asked)
 	if err != nil {
 		return plan, err
 	}

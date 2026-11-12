@@ -14,12 +14,14 @@ type parkGuard struct {
 	guarded   map[string]bool
 	consents  map[string]bool
 	refused   map[string]bool
+	gone      map[string]bool
+	until     time.Time
 	sawCaller []string
 	sawMoves  [][]hierarchy.Move
 }
 
 func newParkGuard(guarded ...string) *parkGuard {
-	g := &parkGuard{guarded: map[string]bool{}, consents: map[string]bool{"user:holder": true}, refused: map[string]bool{}}
+	g := &parkGuard{guarded: map[string]bool{}, consents: map[string]bool{"user:holder": true}, refused: map[string]bool{}, gone: map[string]bool{}}
 	for _, p := range guarded {
 		g.guarded[p] = true
 	}
@@ -46,9 +48,16 @@ func (g *parkGuard) Check(_ context.Context, by hierarchy.Principal, p hierarchy
 		return hierarchy.Verdict{}, hierarchy.ErrManyParents
 	}
 	if len(waits) == 1 {
-		return hierarchy.Verdict{Park: waits[0], Accepts: []string{"user:holder"}}, nil
+		return hierarchy.Verdict{Park: waits[0], Accepts: []string{"user:holder"}, Until: g.until}, nil
 	}
 	return hierarchy.Verdict{}, nil
+}
+
+func (g *parkGuard) Readmit(_ context.Context, by hierarchy.Principal) (hierarchy.Principal, error) {
+	if g.gone[by.Name] {
+		return by, errors.New("its key was revoked")
+	}
+	return by, nil
 }
 
 func (g *parkGuard) MayConsent(_ context.Context, by hierarchy.Principal, _ string) error {
@@ -223,6 +232,46 @@ func proposerNo(n int) hierarchy.Principal {
 	return hierarchy.Principal{Name: fmt.Sprintf("user:proposer-%d", n)}
 }
 
+// El Inspector XIV, P2: accept admits the proposer again. One whose key
+// was revoked since the park is refused, and the proposal is gone.
+func TestAProposerNoLongerAdmittedIsRefusedAtAccept(t *testing.T) {
+	f := chain()
+	g := newParkGuard("D")
+	h := hierarchy.New(f, g)
+	prop := parkCD(t, h)
+	g.gone[proposer.Name] = true
+	if _, err := h.Accept(context.Background(), holder, "D", prop.ID); !errors.Is(err, hierarchy.ErrProposerGone) {
+		t.Fatalf("accept for a proposer no longer admitted = %v, want ErrProposerGone", err)
+	}
+	if f.writes != 0 {
+		t.Fatal("a proposer no longer admitted had its move applied")
+	}
+	if got := h.Parked("D"); len(got) != 0 {
+		t.Fatalf("the refused proposal still waits: %+v", got)
+	}
+}
+
+// El Inspector XIV, P2: a proposal lives no longer than its proposer's
+// admission: the connection's age limit or its token's expiry.
+func TestAProposalLapsesWithItsProposersAdmission(t *testing.T) {
+	f := chain()
+	now := time.Unix(1_000_000, 0)
+	g := newParkGuard("D")
+	g.until = now.Add(time.Hour)
+	h := hierarchy.New(f, g).WithClock(func() time.Time { return now })
+	prop := parkCD(t, h)
+	if !prop.Expires.Equal(g.until) {
+		t.Fatalf("the proposal expires %s, want with its proposer's admission at %s", prop.Expires, g.until)
+	}
+	now = g.until
+	if _, err := h.Accept(context.Background(), holder, "D", prop.ID); !errors.Is(err, hierarchy.ErrNoProposal) {
+		t.Fatalf("accept once the admission lapsed = %v, want ErrNoProposal", err)
+	}
+	if _, err := h.Apply(context.Background(), proposer, hierarchy.Plan{Op: hierarchy.Arrange, Parents: map[string]string{"C": "D"}}); !errors.Is(err, hierarchy.ErrProposerGone) {
+		t.Fatalf("parking with a lapsed admission = %v, want ErrProposerGone", err)
+	}
+}
+
 func TestTheQueueOnOneParentIsBounded(t *testing.T) {
 	f := chain()
 	h := hierarchy.New(f, newParkGuard("D"))
@@ -309,3 +358,7 @@ func (g guardVerdict) Check(context.Context, hierarchy.Principal, hierarchy.Plan
 }
 
 func (guardVerdict) MayConsent(context.Context, hierarchy.Principal, string) error { return nil }
+
+func (guardVerdict) Readmit(_ context.Context, by hierarchy.Principal) (hierarchy.Principal, error) {
+	return by, nil
+}

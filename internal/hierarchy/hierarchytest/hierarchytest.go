@@ -14,6 +14,10 @@ func (Open) Check(context.Context, hierarchy.Principal, hierarchy.Plan) (hierarc
 
 func (Open) MayConsent(context.Context, hierarchy.Principal, string) error { return nil }
 
+func (Open) Readmit(_ context.Context, by hierarchy.Principal) (hierarchy.Principal, error) {
+	return by, nil
+}
+
 type Engined interface {
 	HierarchyEngine() hierarchy.Engine
 }

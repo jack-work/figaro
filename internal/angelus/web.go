@@ -112,6 +112,7 @@ func (a *Angelus) webDoor(ctx context.Context, w Web) http.Handler {
 		c.SetReadLimit(webReadLimit)
 		if after, reason := w.lapseFor(cctx); after > 0 {
 			var end context.CancelCauseFunc
+			cctx = authz.WithAdmittedUntil(cctx, time.Now().Add(after))
 			cctx, end = context.WithCancelCause(cctx)
 			defer end(nil)
 			cctx = withLapse(cctx, lapse{after: after, reason: reason, end: end})

@@ -79,7 +79,7 @@ func (h *handlers) arrange(ctx context.Context, shown *store.Form, params json.R
 	if len(parents) == 0 && len(restore) == 0 {
 		return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, nil
 	}
-	by, err := topologyPrincipal(ctx)
+	by, err := h.angelus.topologyPrincipal(ctx)
 	if err != nil {
 		return rpc.SetResponse{}, err
 	}

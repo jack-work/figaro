@@ -48,7 +48,7 @@ func (h *handlers) mayRestore(ctx context.Context, group reapedGroup) error {
 			return err
 		}
 	}
-	by, err := topologyPrincipal(ctx)
+	by, err := h.angelus.topologyPrincipal(ctx)
 	if err != nil {
 		return err
 	}
