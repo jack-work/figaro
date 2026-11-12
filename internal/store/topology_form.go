@@ -77,9 +77,8 @@ func (l *stumpFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) e
 // TopologyTree: every mutator is one patch, so a promote's two edges land
 // together or not at all.
 type TopologyTree struct {
-	form *Form
-	topo topo.Topology
-	// forks is the history adjacency: a delete repairs what reads through it.
+	form  *Form
+	topo  topo.Topology
 	forks topo.Topology
 }
 
@@ -230,15 +229,11 @@ func (t *TopologyTree) Normalized() bool {
 
 // freeOfAncestry reports that nothing above id could be taken away from it.
 func (t *TopologyTree) freeOfAncestry(id string) bool {
-	forks := t.forks
-	if forks == nil {
-		forks = t.topo
-	}
-	up, ok := forks.From(id)
+	up, ok := t.forks.From(id)
 	if !ok || up == "" {
 		return true
 	}
-	over, ok := forks.From(up)
+	over, ok := t.forks.From(up)
 	return ok && over == ""
 }
 

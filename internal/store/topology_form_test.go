@@ -60,7 +60,7 @@ func openTopoIn(t *testing.T, dir string, f fake) (*TopologyTree, *XwalBackend) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	x.topo = f
+	x.topo, x.forks = f, f
 	t.Cleanup(func() { x.Close(); be.Close() })
 	return x, be
 }
