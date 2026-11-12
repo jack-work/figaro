@@ -22,6 +22,7 @@ import (
 	"github.com/jack-work/figaro/internal/modelcat"
 	"github.com/jack-work/figaro/internal/provider/routed"
 	"github.com/jack-work/figaro/internal/relay"
+	"github.com/jack-work/figaro/internal/slotpool"
 
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
@@ -416,6 +417,13 @@ func Run() {
 			os.Exit(1)
 		}
 		a.Policies.SetLeases(a.Slots)
+		a.Slots.Caller = func(provider string) (slotpool.Caller, error) {
+			up, err := relay.Resolve(loaded, provider)
+			if err != nil {
+				return nil, err
+			}
+			return slotpool.Rou2{Base: up.Base(), Bearer: up.Credential()}, nil
+		}
 	}
 	figOtel.SetMemProbe(func() figOtel.MemSample {
 		st := a.MemStatus()

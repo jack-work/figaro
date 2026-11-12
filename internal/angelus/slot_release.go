@@ -102,9 +102,14 @@ func (h *handlers) releaseLease(ctx context.Context, pool, key string, generatio
 	}
 	box := config.LeasedBoxName(row.Slot, row.Generation)
 	loaded, _ := h.settings()
+	ctx = context.WithoutCancel(ctx)
+	var unclosed error
+	if row.Rou2Lease != "" {
+		unclosed = h.closeCaller(ctx, loaded, pool, row.Rou2Lease)
+	}
 	loaded.ReleaseBox(box)
 
-	ctx = authz.WithSubject(inProcess(context.WithoutCancel(ctx)), authz.ProvisionerServing(box))
+	ctx = authz.WithSubject(inProcess(ctx), authz.ProvisionerServing(box))
 	purged := h.everythingOfLease(box, row.Minted)
 	for _, id := range purged {
 		if err := h.purgeNow(ctx, id); err != nil {
@@ -117,11 +122,22 @@ func (h *handlers) releaseLease(ctx context.Context, pool, key string, generatio
 	if err := h.awaitUnlinked(ctx, purged); err != nil {
 		return refused(err)
 	}
+	if unclosed != nil {
+		return refused(unclosed)
+	}
 	if err := slots.Ledger.Released(pool, key, generation); err != nil {
 		return refused(err)
 	}
 	slog.Info("slot pool: released", "pool", pool, "slot", row.Slot, "generation", generation, "purged", len(purged))
 	return nil
+}
+
+func (h *handlers) closeCaller(ctx context.Context, loaded *config.Loaded, pool, rou2Lease string) error {
+	caller, _, err := h.leaseCaller(loaded, pool)
+	if err != nil {
+		return err
+	}
+	return caller.Close(ctx, rou2Lease)
 }
 
 func leaseIsOver(l slotpool.Lease) bool { return l.State == slotpool.Released }

@@ -75,6 +75,7 @@ func leasingRig(t *testing.T) grantRig {
 	}
 	r.a.Slots = slots
 	r.a.Policies.SetLeases(slots)
+	installRou2(r)
 	return r
 }
 

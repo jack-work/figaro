@@ -1,0 +1,202 @@
+package angelus_test
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"sync"
+	"testing"
+
+	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/slotpool"
+)
+
+// rou2 as the lease handlers see it: the leases this daemon opened and
+// closed, in order, and a way to make either call fail.
+type rigRou2 struct {
+	mu        sync.Mutex
+	provider  []string
+	opened    []string
+	classes   map[string]string
+	closed    []string
+	failOpen  error
+	failClose error
+	onOpen    func(id string)
+}
+
+func (f *rigRou2) Open(_ context.Context, id, class string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.onOpen != nil {
+		f.onOpen(id)
+	}
+	if f.failOpen != nil {
+		return f.failOpen
+	}
+	f.opened = append(f.opened, id)
+	f.classes[id] = class
+	return nil
+}
+
+func (f *rigRou2) Close(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failClose != nil {
+		return f.failClose
+	}
+	f.closed = append(f.closed, id)
+	return nil
+}
+
+var rigRou2s sync.Map
+
+func installRou2(r grantRig) *rigRou2 {
+	f := &rigRou2{classes: map[string]string{}}
+	r.a.Slots.Caller = func(provider string) (slotpool.Caller, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.provider = append(f.provider, provider)
+		return f, nil
+	}
+	rigRou2s.Store(r.a, f)
+	return f
+}
+
+func rou2Of(r grantRig) *rigRou2 {
+	f, _ := rigRou2s.Load(r.a)
+	return f.(*rigRou2)
+}
+
+func boxNodes(a *angelus.Angelus, box string) int {
+	n := 0
+	for _, node := range a.Backend.Nodes() {
+		if snap, err := a.Backend.FormState(node.ID); err == nil {
+			if s := snap.Lookup("system.sandbox"); s != nil && *s == box {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// Step 5 of a lease and step 3 of a release (B4). The lease's caller at
+// rou2 is `<pool>/<box>`, opened under the pool's class through the pool's
+// provider after the ledger names it and before the box exists or anything
+// is minted; the release closes it, once.
+func TestALeaseOpensItsRou2LeaseBeforeItMintsAndItsReleaseClosesIt(t *testing.T) {
+	r := leasingRig(t)
+	rou2 := rou2Of(r)
+	rou2.onOpen = func(id string) {
+		row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1)
+		if row.Rou2Lease != id || row.State != slotpool.Minting {
+			t.Errorf("rou2 was asked for %s while the ledger row is %s naming %q", id, row.State, row.Rou2Lease)
+		}
+		if slices.Contains(r.a.Settings.LeasedBoxes(), "slot0-g1") || boxNodes(r.a, "slot0-g1") != 0 {
+			t.Error("rou2 was asked after the box was leased or a node minted in it")
+		}
+	}
+	lease, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(rou2.opened, []string{"groups/slot0-g1"}) || rou2.classes["groups/slot0-g1"] != "group" || !slices.Equal(rou2.provider, []string{"mock"}) {
+		t.Errorf("the lease opened %v under %v through %v, want groups/slot0-g1 under the pool's class through its provider", rou2.opened, rou2.classes, rou2.provider)
+	}
+	if _, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err != nil || len(rou2.opened) != 1 {
+		t.Errorf("the lease answered again opened another: %v (%v)", rou2.opened, err)
+	}
+	if len(rou2.closed) != 0 {
+		t.Errorf("a live lease's rou2 lease was closed: %v", rou2.closed)
+	}
+	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(rou2.closed, []string{"groups/slot0-g1"}) {
+		t.Errorf("the release closed %v, want groups/slot0-g1", rou2.closed)
+	}
+	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err != nil || len(rou2.closed) != 1 {
+		t.Errorf("a release answered again closed again: %v (%v)", rou2.closed, err)
+	}
+	if ariaExists(r.a, lease.Aria) {
+		t.Error("the released lease's figaro is still there")
+	}
+}
+
+// A lease rou2 does not open is no lease: nothing is minted, no box is
+// leased, and the row is released, after a close of the id the ledger
+// named, since the daemon cannot know the open did not land.
+func TestALeaseRou2DoesNotOpenMintsNothingAndIsReleased(t *testing.T) {
+	r := leasingRig(t)
+	rou2 := rou2Of(r)
+	rou2.failOpen = errors.New("rou2 is away")
+	if _, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err == nil {
+		t.Fatal("a lease rou2 did not open was answered")
+	}
+	if n := boxNodes(r.a, "slot0-g1"); n != 0 {
+		t.Errorf("%d nodes were minted for a lease rou2 did not open", n)
+	}
+	if slices.Contains(r.a.Settings.LeasedBoxes(), "slot0-g1") {
+		t.Error("the box of a lease rou2 did not open is in the table")
+	}
+	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); row.State != slotpool.Released {
+		t.Errorf("the row is %s, want released", row.State)
+	}
+	if !slices.Equal(rou2.closed, []string{"groups/slot0-g1"}) {
+		t.Errorf("the failed lease closed %v, want the id its row named", rou2.closed)
+	}
+	rou2.failOpen = nil
+	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err != nil || next.Box != "slot0-g2" {
+		t.Errorf("after the failure the key leases %+v (%v), want slot0 at generation 2", next, err)
+	}
+}
+
+// A release whose rou2 lease does not close still purges, and is not done:
+// the row stays releasing and the slot is not offered, because the caller
+// can still spend. The same release asked again finishes it.
+func TestAReleaseRou2DoesNotCloseStillPurgesAndKeepsTheSlot(t *testing.T) {
+	r := leasingRig(t)
+	rou2 := rou2Of(r)
+	lease, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rou2.failClose = errors.New("rou2 is away")
+	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err == nil {
+		t.Fatal("a release whose rou2 lease did not close answered released")
+	}
+	if ariaExists(r.a, lease.Aria) || ariaExists(r.a, lease.Role) {
+		t.Error("the lease's figaro or role outlived a release that could not close its rou2 lease")
+	}
+	if slices.Contains(r.a.Settings.LeasedBoxes(), lease.Box) {
+		t.Error("the box is still in the table")
+	}
+	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); row.State != slotpool.Releasing || row.Rou2Lease != "groups/slot0-g1" {
+		t.Errorf("the row is %s naming %q, want releasing and still naming its rou2 lease", row.State, row.Rou2Lease)
+	}
+	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:11"}`); err != nil || next.Box != "slot1-g1" {
+		t.Errorf("with slot0 unclosed the next lease is %+v (%v), want slot1", next, err)
+	}
+	rou2.failClose = nil
+	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err != nil {
+		t.Fatal(err)
+	}
+	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); row.State != slotpool.Released || !slices.Equal(rou2.closed, []string{"groups/slot0-g1"}) {
+		t.Errorf("after the second release the row is %s and rou2 closed %v", row.State, rou2.closed)
+	}
+}
+
+// A daemon that reaches no rou2 leases nothing, and a lease that never
+// named a rou2 lease is released without one.
+func TestWithNoRou2NothingIsLeased(t *testing.T) {
+	r := leasingRig(t)
+	r.a.Slots.Caller = nil
+	if _, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err == nil {
+		t.Fatal("a daemon with no rou2 answered a lease")
+	}
+	if n := boxNodes(r.a, "slot0-g1"); n != 0 {
+		t.Errorf("%d nodes were minted with no rou2", n)
+	}
+	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); row.State != slotpool.Released || row.Rou2Lease != "" {
+		t.Errorf("the row is %s naming %q, want released and naming none", row.State, row.Rou2Lease)
+	}
+}

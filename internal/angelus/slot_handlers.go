@@ -164,7 +164,34 @@ func (h *handlers) slotLease(ctx context.Context, params json.RawMessage) (any, 
 	return h.leaseAnswer(live), nil
 }
 
+func (h *handlers) leaseCaller(loaded *config.Loaded, pool string) (slotpool.Caller, string, error) {
+	p, ok := loaded.Pool(pool)
+	if !ok {
+		return nil, "", fmt.Errorf("no pool %q", pool)
+	}
+	if h.angelus.Slots.Caller == nil {
+		return nil, "", fmt.Errorf("pool %s: this daemon reaches no rou2 to open or close a lease's caller", pool)
+	}
+	caller, err := h.angelus.Slots.Caller(p.Provider)
+	if err != nil {
+		return nil, "", fmt.Errorf("pool %s: its provider %s reaches no rou2: %w", pool, p.Provider, err)
+	}
+	return caller, p.Rou2LeaseClass, nil
+}
+
 func (h *handlers) bringLeaseLive(ctx context.Context, loaded *config.Loaded, pool, slot, key string, generation uint64) (slotpool.Lease, error) {
+	slots := h.angelus.Slots
+	caller, class, err := h.leaseCaller(loaded, pool)
+	if err != nil {
+		return slotpool.Lease{}, err
+	}
+	rou2Lease := slotpool.CallerID(pool, config.LeasedBoxName(slot, generation))
+	if err := slots.Ledger.Opens(pool, key, generation, rou2Lease); err != nil {
+		return slotpool.Lease{}, err
+	}
+	if err := caller.Open(ctx, rou2Lease, class); err != nil {
+		return slotpool.Lease{}, err
+	}
 	if _, err := loaded.LeaseBox(pool, slot, generation); err != nil {
 		return slotpool.Lease{}, err
 	}
@@ -175,7 +202,6 @@ func (h *handlers) bringLeaseLive(ctx context.Context, loaded *config.Loaded, po
 	if _, err := rand.Read(secret[:]); err != nil {
 		return slotpool.Lease{}, fmt.Errorf("say bearer: %w", err)
 	}
-	slots := h.angelus.Slots
 	if err := slots.Ledger.GoLive(pool, key, generation, hex.EncodeToString(secret[:])); err != nil {
 		return slotpool.Lease{}, err
 	}

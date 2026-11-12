@@ -211,7 +211,7 @@ func (l *Ledger) change(pool, key string, generation uint64, from []State, apply
 	return after, err
 }
 
-func (l *Ledger) Opened(pool, key string, generation uint64, rou2Lease string) error {
+func (l *Ledger) Opens(pool, key string, generation uint64, rou2Lease string) error {
 	_, err := l.change(pool, key, generation, []State{Minting}, func(r *Lease) { r.Rou2Lease = rou2Lease })
 	return err
 }

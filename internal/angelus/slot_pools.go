@@ -13,6 +13,7 @@ import (
 type SlotPools struct {
 	Ledger      *slotpool.Ledger
 	Generations *slotpool.Generations
+	Caller      func(provider string) (slotpool.Caller, error)
 
 	leasing sync.Mutex
 

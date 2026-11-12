@@ -33,7 +33,7 @@ func TestTheLedgerIsPrivateAndIsTheSameAfterARestart(t *testing.T) {
 		t.Fatal("a ledger that was never written says it was found")
 	}
 	must(t, l.Begin("groups", "slot0", "msg:-100", 1, broker))
-	must(t, l.Opened("groups", "msg:-100", 1, "groups/slot0-g1"))
+	must(t, l.Opens("groups", "msg:-100", 1, "groups/slot0-g1"))
 	must(t, l.Minted("groups", "msg:-100", 1, "aaaa", "@bbbb"))
 	for _, p := range []string{filepath.Dir(path), path} {
 		if st, _ := os.Stat(p); st.Mode().Perm()&0o077 != 0 {
@@ -64,7 +64,7 @@ func TestALeaseMovesOnlyForwardAndItsBearerLeavesTheDiskAtRelease(t *testing.T) 
 	if err := l.GoLive("groups", "k", 1, "another"); !errors.Is(err, ErrWrongState) {
 		t.Fatalf("a live lease was given a second bearer: %v", err)
 	}
-	if err := l.Opened("groups", "k", 1, "x"); !errors.Is(err, ErrWrongState) {
+	if err := l.Opens("groups", "k", 1, "x"); !errors.Is(err, ErrWrongState) {
 		t.Fatalf("a live lease was given another rou2 lease: %v", err)
 	}
 	row, err := l.Release("groups", "k", 1)
