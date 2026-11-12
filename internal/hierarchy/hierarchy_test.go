@@ -12,15 +12,16 @@ import (
 )
 
 type fakeEngine struct {
-	stored   map[string]string
-	over     map[string]string
-	owner    map[string]string
-	zone     map[string]string
-	deadline map[string]int64
-	refuse   bool
-	writes   int
-	removed  []string
-	pins     map[string]string
+	stored    map[string]string
+	over      map[string]string
+	owner     map[string]string
+	zone      map[string]string
+	deadline  map[string]int64
+	refuse    bool
+	writes    int
+	removed   []string
+	pins      map[string]string
+	removeErr error
 
 	component map[string][]string
 }
@@ -124,6 +125,9 @@ func (f *fakeEngine) MoveStorage(id, under string) error {
 }
 
 func (f *fakeEngine) Remove(id string, _ bool, expect []string, pins map[string]string) error {
+	if f.removeErr != nil {
+		return f.removeErr
+	}
 	f.removed = expect
 	f.pins = pins
 	return nil
