@@ -44,6 +44,7 @@ type promptSegment struct {
 	principal string
 	text      string
 	notice    bool
+	handoff   bool
 }
 
 type event struct {
@@ -95,6 +96,7 @@ type Config struct {
 	DefaultForm func() form.Snapshot
 
 	TellFailure func(FailureNotice)
+	TurnEnded   func(TurnEnd)
 }
 
 type ModelCatalog interface {
@@ -111,6 +113,7 @@ type Agent struct {
 	decider     methods.Asker
 	defaultForm func() form.Snapshot
 	tellFailure func(FailureNotice)
+	turnEnded   func(TurnEnd)
 	tools       *tool.Registry
 	proj        Projector
 	// figLog is read directly and written through journal only; see journal.go.
@@ -225,6 +228,7 @@ func NewAgent(cfg Config) *Agent {
 		decider:     cfg.Decider,
 		defaultForm: cfg.DefaultForm,
 		tellFailure: cfg.TellFailure,
+		turnEnded:   cfg.TurnEnded,
 		createdAt:   createdAt,
 		lastActive:  lastActive,
 		agentSince:  now,
@@ -1100,6 +1104,7 @@ func (a *Agent) endTurnDiscarding(reason string) {
 func (a *Agent) finishTurn(reason string) {
 	a.turnReason = reason
 	a.recordFailure(reason)
+	handoff := a.turnAskedForHandoff()
 	a.tellSenders(reason)
 	// asm holds the whole streamed reply; an idle aria must not keep it.
 	if a.turn != nil {
@@ -1129,6 +1134,7 @@ func (a *Agent) finishTurn(reason string) {
 	a.stampSealDeltas()
 	a.ariaSrv.Seal(lts)
 	a.retireIfFull()
+	a.reportTurnEnd(reason, handoff)
 	idle := a.inbox.IsIdle()
 	a.mu.Lock()
 	a.lastActive = time.Now()
@@ -1151,7 +1157,7 @@ func (a *Agent) retireIfFull() {
 		slog.Warn("system.retirement ignored", "aria", a.id, "err", err)
 		return
 	}
-	if !r.Set() || store.RetiredIn(snap) {
+	if !r.Set() || r.Succeeds() || store.RetiredIn(snap) {
 		return
 	}
 	a.mu.RLock()
