@@ -82,6 +82,17 @@ func (a *Agent) handoverWarning() (string, bool) {
 	return HandoverWarning(used, r.Threshold(limit)), true
 }
 
+func (a *Agent) markHandoverWarned() {
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemSuccessionWarnedKey: json.RawMessage("true")}, nil)
+	if a.backend != nil {
+		if _, err := a.backend.ApplyFormPrivileged(a.id, patch); err != nil {
+			slog.Error("record the handover warning: it will be repeated", "aria", a.id, "err", err)
+			return
+		}
+	}
+	a.form.Apply(patch)
+}
+
 func (a *Agent) SubmitSuccessionPrompt(from, text string, handoff bool) error {
 	evt := event{
 		typ:      eventUserPrompt,

@@ -237,6 +237,7 @@ func TestSuccessionWarnsOnceAtEightyPercent(t *testing.T) {
 	turnOn(t, r.a, old, "and another")
 	require.Equal(t, 1, strings.Count(r.heard(old), "Start handing over"), "one warning, once")
 	require.Contains(t, r.heard(old), "75000")
+	require.Equal(t, "true", r.key(old, "system.succession_warned"))
 	require.False(t, r.retired(old))
 	require.Empty(t, r.hs.SuccessionPhase(old))
 }
@@ -271,6 +272,9 @@ func TestSuccessionMovesEveryRoleThenRetires(t *testing.T) {
 	require.Contains(t, asked, warden+" (warden): handoff at /notes/warden.md")
 	require.Contains(t, asked, scribe+" (scribe): handoff at /notes/scribe.md", "the role's own handoff-key was not followed")
 	require.Equal(t, 1, strings.Count(asked, "write your handoff now"))
+	require.NotContains(t, asked, "Start handing over", "the final prompt restates the warning; it must not also carry it")
+	require.Equal(t, "true", r.key(old, "system.succession_warned"))
+	require.Equal(t, "tend the vines", r.key(old, "mantra"), "the warning's bookkeeping must not cost the prompt its other form writes")
 
 	next := r.hs.SuccessorOf(old)
 	require.NotEmpty(t, next)
@@ -457,8 +461,8 @@ func TestSuccessionHandoffTimeoutPages(t *testing.T) {
 	king := r.aria(nil)
 	old := r.aria(succeeding(map[string]any{"page": king, "timeout": "10m"}))
 	role := r.role(old, map[string]any{"name": "warden"})
-	r.p.set(func() { r.p.holdFrom[old] = 2 })
-	r.cross(old)
+	r.p.set(func() { r.p.holdFrom[old] = 2; r.p.usage[old] = 100_000 })
+	require.NoError(t, promptOn(r.ctx, r.a, old, "the work that crosses"))
 	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "handoff" }, "the succession never began")
 	r.hs.SweepSuccessionsAt(time.Now().Add(9 * time.Minute))
 	require.Equal(t, "handoff", r.hs.SuccessionPhase(old), "timed out before its deadline")

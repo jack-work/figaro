@@ -218,7 +218,7 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 	}
 	warning, warn := a.handoverWarning()
 	if warn {
-		seed[store.SystemSuccessionWarnedKey] = json.RawMessage("true")
+		a.markHandoverWarned()
 	}
 	combined := form.Build(form.Snapshot{}, seed, nil)
 	if !combined.IsIdentity() {
