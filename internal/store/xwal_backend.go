@@ -204,6 +204,10 @@ func (b *XwalBackend) CleanTopology(dryRun bool) ([]topo.Stale, error) {
 
 func (b *XwalBackend) Store() *XwalStore { return b.store }
 
+func (b *XwalBackend) BatchSyncForTest(wrap func(sync func() error) error) {
+	b.store.trunks.BatchSyncForTest(wrap)
+}
+
 // handleLocked opens the shared handle once. Caller holds b.mu.
 func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	b.touchLocked(id)
