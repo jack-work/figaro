@@ -27,6 +27,32 @@ func TestAuthorityDump(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer backend.Close()
+	nodes := len(backend.Nodes())
+	f, err := os.OpenFile(out, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.New()
+	w := bufio.NewWriter(f)
+	descents := 0
+	for _, s := range authorityLines(t, backend) {
+		w.WriteString(s)
+		sum.Write([]byte(s))
+		if strings.HasPrefix(s, "under ") {
+			descents++
+		}
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("P6 dump: nodes=%d descents=%d sha256=%x", nodes, descents, sum.Sum(nil))
+}
+
+func authorityLines(t *testing.T, backend *store.XwalBackend) []string {
+	t.Helper()
 	facts := StoreFacts(backend)
 	a := &Angelus{Backend: backend}
 	a.Policies = authz.NewPolicies(jkauthzOwner(), facts)
@@ -38,38 +64,20 @@ func TestAuthorityDump(t *testing.T) {
 
 	nodes := backend.Nodes()
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
-	f, err := os.OpenFile(out, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.New()
-	w := bufio.NewWriter(f)
-	line := func(format string, args ...any) {
-		s := fmt.Sprintf(format, args...)
-		w.WriteString(s)
-		sum.Write([]byte(s))
-	}
+	var lines []string
 	for _, n := range nodes {
 		chain, held := chains.Ancestry(n.ID)
 		eff, holds := a.Policies.Effective(n.ID)
 		writers := h.ancestorsOf(lineage{of: n.ID})
-		line("node %s kind=%s held=%v chain=%s holds=%v effective=%q writers=%s\n",
-			n.ID, n.Kind, held, strings.Join(chain, ","), holds, eff.String(), strings.Join(writers, ","))
+		lines = append(lines, fmt.Sprintf("node %s kind=%s held=%v chain=%s holds=%v effective=%q writers=%s\n",
+			n.ID, n.Kind, held, strings.Join(chain, ","), holds, eff.String(), strings.Join(writers, ",")))
 	}
-	descents := 0
 	for _, x := range nodes {
 		for _, y := range nodes {
 			if x.ID != y.ID && facts.DescendsFrom(x.ID, y.ID) {
-				line("under %s %s\n", x.ID, y.ID)
-				descents++
+				lines = append(lines, fmt.Sprintf("under %s %s\n", x.ID, y.ID))
 			}
 		}
 	}
-	if err := w.Flush(); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("P6 dump: nodes=%d descents=%d sha256=%x", len(nodes), descents, sum.Sum(nil))
+	return lines
 }
