@@ -227,7 +227,7 @@ func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation 
 		return refused(err)
 	}
 	for _, node := range []string{out.Figaro, out.Role} {
-		if _, err := h.angelus.topology().Apply(ctx, placer, hierarchy.Plan{Op: hierarchy.Place, Node: node, To: under}); err != nil && !errors.Is(err, hierarchy.ErrUnsupported) {
+		if _, err := h.angelus.topology().Apply(ctx, placer, hierarchy.Plan{Op: hierarchy.Place, Node: node, To: under}); err != nil {
 			return refused(err)
 		}
 	}

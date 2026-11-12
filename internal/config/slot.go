@@ -151,6 +151,9 @@ func (c Config) refuseWhatAPoolDaemonCannotHold(md toml.MetaData, providerFiles 
 			return fmt.Errorf("[%s] beside [slot.pools]: a daemon that leases slots holds no troupe, peer, node door, static box, service token or api key", strings.Join(table, "."))
 		}
 	}
+	if c.Trunks != nil && !*c.Trunks {
+		return fmt.Errorf("trunks = false beside [slot.pools]: a lease's figaro and role are placed under their pool's node, and a store without trunks has no tree to place them in")
+	}
 	if md.IsDefined("authz", "peercred") {
 		return fmt.Errorf("[authz.peercred] beside [slot.pools]: a daemon that leases slots maps no uid to a principal; its own uid is the owner and no other comes in by its socket")
 	}

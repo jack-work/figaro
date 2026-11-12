@@ -248,19 +248,15 @@ func TestTheProvisionerPlacesOnlyWhatItsMintJustBoreAndOnlyUnderItsPool(t *testi
 	stays("the mint is over", older, groups)
 }
 
-// A daemon configured without trunks has no drawn tree to place into. The
-// guard has still been asked by then, and the lease is minted where the
-// store put it.
-func TestWithNoDrawnTreeALeaseIsStillMinted(t *testing.T) {
+// A lease that cannot be placed under its pool's node is not minted: left
+// where the store put it, the figaro would hang under its outfit and take
+// whatever a grant on that lineage gives. A pool daemon's config refuses
+// trunks = false; this is the mint's own refusal.
+func TestWithNoDrawnTreeNothingIsMinted(t *testing.T) {
 	r, box := mintRigWithNoDrawnTree(t)
 	figaro, role, err := r.hs.MintLeased(asBroker(), "groups", "chat:10", 1)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatalf("with no tree to place into the mint bore %s and %s", figaro, role)
 	}
-	if got := r.sandboxOf(t, figaro); got != box {
-		t.Errorf("the figaro is in sandbox %q, want %q", got, box)
-	}
-	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); !slices.Equal(row.Minted, []string{figaro, role}) {
-		t.Errorf("the ledger row names %v, want the figaro then the role", row.Minted)
-	}
+	_ = box
 }
