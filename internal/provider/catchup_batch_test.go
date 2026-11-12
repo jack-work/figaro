@@ -29,7 +29,7 @@ func perRowCatchUp(t *testing.T, cfg CatchUpConfig, limit int) {
 	}
 	entries, _ := store.TailAfter(cfg.Log, watermark)
 	d := NewDeriver(cfg.Form, cfg.Studies)
-	d.SeedAt(cfg.Log, SeedLT(cfg.Translator))
+	d.SeedAt(cfg.Log, cfg.Translator)
 	written := 0
 	for _, entry := range entries {
 		if limit > 0 && written == limit {
@@ -485,28 +485,19 @@ const perRowResumedChannel = "copilot-responses"
 
 // A catch-up stopped part way and resumed after a reopen, under forms that
 // change between rows. The batched path resumes to the rows the per-row path
-// resumes to, for every prefix. Whether those are the rows of an
-// uninterrupted run is the deriver seed's promise, not the batch's: where the
-// prefix ends on the assistant's row that follows a user record whose row is
-// empty, the seed adopts that record's form version though its window was
-// never written, and the change it carried is lost. Those prefixes are
-// skipped for that comparison until the seed is fixed.
+// resumes to, for every prefix, and both are the rows of an uninterrupted
+// run. Prefixes 11 and 25 end on the assistant's row that follows a user
+// record whose row is empty: a seed that adopted that record's form and study
+// versions, though its window was never written, lost the change it carried.
 func TestCatchUpResumedUnderChangingFormsWritesThePerRowRows(t *testing.T) {
-	cases := []struct {
-		prefix          int
-		seedLosesWindow bool
-	}{
-		{prefix: 1}, {prefix: 6}, {prefix: 10}, {prefix: 24}, {prefix: 100}, {prefix: 239},
-		{prefix: 11, seedLosesWindow: true}, {prefix: 25, seedLosesWindow: true},
-	}
-	for _, tc := range cases {
-		t.Run(fmt.Sprintf("%d rows", tc.prefix), func(t *testing.T) {
+	for _, prefix := range []int{1, 6, 10, 11, 24, 25, 100, 239} {
+		t.Run(fmt.Sprintf("%d rows", prefix), func(t *testing.T) {
 			f := openBatchFixture(t, t.TempDir(), 4096)
 			f.newAriaWithChangingForms(t, 240)
 			uninterrupted := f.perRowReference(t)
 
-			perRowCatchUp(t, f.formConfig(t, perRowResumedChannel, nil), tc.prefix)
-			perRowCatchUp(t, f.formConfig(t, batchedChannel, nil), tc.prefix)
+			perRowCatchUp(t, f.formConfig(t, perRowResumedChannel, nil), prefix)
+			perRowCatchUp(t, f.formConfig(t, batchedChannel, nil), prefix)
 			f.reopen(t, 4096)
 			perRowCatchUp(t, f.formConfig(t, perRowResumedChannel, nil), 0)
 			cfg := f.formConfig(t, batchedChannel, nil)
@@ -514,17 +505,14 @@ func TestCatchUpResumedUnderChangingFormsWritesThePerRowRows(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if stats.RepairedAt != 0 || stats.Visited != len(uninterrupted)-tc.prefix {
+			if stats.RepairedAt != 0 || stats.Visited != len(uninterrupted)-prefix {
 				t.Fatalf("resume visited %d records and repaired at %d, want %d and no repair: the rows were not resumed",
-					stats.Visited, stats.RepairedAt, len(uninterrupted)-tc.prefix)
+					stats.Visited, stats.RepairedAt, len(uninterrupted)-prefix)
 			}
 			resumed := rowDump(cfg.Translator)
 			sameRows(t, "resumed in batches against resumed row by row", resumed,
 				rowDump(f.formConfig(t, perRowResumedChannel, nil).Translator))
 
-			if tc.seedLosesWindow {
-				t.Skip("owned by lane startup-exit-waits: SeedAt adopts the form version of a user record whose row is empty")
-			}
 			sameRows(t, "resumed against uninterrupted", resumed, uninterrupted)
 		})
 	}

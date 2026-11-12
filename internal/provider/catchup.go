@@ -125,7 +125,7 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 	}
 
 	d := NewDeriver(cfg.Form, cfg.Studies)
-	d.SeedAt(cfg.Log, SeedLT(cfg.Translator))
+	d.SeedAt(cfg.Log, cfg.Translator)
 	cfg.phase("seeded")
 
 	var (

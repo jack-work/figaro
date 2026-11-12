@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"encoding/json"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/store"
@@ -26,14 +28,18 @@ type formStater interface {
 	StateAt(version uint64) (form.Snapshot, bool)
 }
 
-func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
+func (d *Deriver) SeedAt(log store.Log[message.Message], rows store.Log[[]json.RawMessage]) {
 	d.lastForm = 0
 	d.lastStudy = map[string]uint64{}
 	d.snap = form.Snapshot{}
+	if rows == nil {
+		return
+	}
+	watermark := SeedLT(rows)
 	if watermark == 0 {
 		return
 	}
-	if at, ok := lastCarrierAtOrBefore(log, watermark); ok {
+	if at, ok := lastCommittedAtOrBefore(log, rows, watermark); ok {
 		d.lastForm = at.FormChannelVersion
 		for fid, v := range at.StudyVersions {
 			d.lastStudy[fid] = v
@@ -65,17 +71,58 @@ func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
 
 func (d *Deriver) At() uint64 { return d.lastForm }
 
-func lastCarrierAtOrBefore(log store.Log[message.Message], lt uint64) (store.Entry[message.Message], bool) {
+func lastCommittedAtOrBefore(log store.Log[message.Message], rows store.Log[[]json.RawMessage], lt uint64) (store.Entry[message.Message], bool) {
+	behind := rowsBehind{rows: rows}
 	for ; lt > 0; lt-- {
 		at, ok := log.Lookup(lt)
 		if !ok {
 			return store.Entry[message.Message]{}, false
 		}
-		if at.Payload.Role == message.RoleGenesis || carriesBlocks(at.Payload) {
+		if at.Payload.Role == message.RoleGenesis || carriesBlocks(at.Payload) && behind.carriesBytes(lt) {
 			return at, true
 		}
 	}
 	return store.Entry[message.Message]{}, false
+}
+
+type rowsBehind struct {
+	rows    store.Log[[]json.RawMessage]
+	page    []store.Entry[[]json.RawMessage]
+	before  uint64
+	started bool
+	spent   bool
+}
+
+func (r *rowsBehind) carriesBytes(figaroLT uint64) bool {
+	for {
+		for len(r.page) > 0 {
+			newest := r.page[len(r.page)-1]
+			if newest.FigaroLT > figaroLT {
+				r.page = r.page[:len(r.page)-1]
+				continue
+			}
+			return newest.FigaroLT == figaroLT && len(newest.Payload) > 0
+		}
+		if r.spent {
+			return false
+		}
+		if !r.started {
+			r.started = true
+			tail, ok := r.rows.PeekTail()
+			if !ok {
+				r.spent = true
+				return false
+			}
+			r.page, r.before = []store.Entry[[]json.RawMessage]{tail}, tail.LT
+			continue
+		}
+		page, _ := r.rows.ReadPage(0, r.before, 32)
+		if len(page) == 0 {
+			r.spent = true
+			return false
+		}
+		r.page, r.before = page, page[0].LT
+	}
 }
 
 // Next returns the message with its patches and study blocks, and the bound form
