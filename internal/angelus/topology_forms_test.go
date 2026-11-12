@@ -58,7 +58,7 @@ func TestTheOwnerDrawsARoleUnderAnotherRole(t *testing.T) {
 	}
 
 	roleC := ownerMintsForm(t, r, "role c")
-	grantTo(t, r, "user:mallory", "read:*", "set:*", "kill:*")
+	grantTo(t, r, "user:mallory", "read:*", "set:*", "kill:*", "adopt:*")
 	if err := setTopology(t, r, mallory(), map[string]string{roleC: roleB}); err != nil {
 		t.Fatalf("a drawn-only move of @roleC under @roleB: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestDrawingAFormNeedsKillOnIt(t *testing.T) {
 		t.Fatalf("a refused draw moved @roleA under %q", up)
 	}
 
-	grantTo(t, r, "user:mallory", "read:*", "set:*", "kill:aria:"+roleA)
+	grantTo(t, r, "user:mallory", "read:*", "set:*", "kill:aria:"+roleA, "adopt:aria:"+roleB)
 	if err := setTopology(t, r, mallory(), map[string]string{roleA: roleB}); err != nil {
 		t.Fatalf("drawing @roleA with kill on it: %v", err)
 	}

@@ -233,7 +233,7 @@ func TestConsentIsAskedOnlyOfAForeignReceivingParent(t *testing.T) {
 	g := topologyGuard(t, killOnlyPolicy)
 	by := guardCaller(jkauthz.KindUser, "mallory", DoorLocal)
 	move := func(to string, edit func(*hierarchy.Move)) hierarchy.Move {
-		m := hierarchy.Move{Node: "a", From: "s", To: to, Tree: hierarchy.Drawn, NodeOwner: "user:mallory", ToOwner: guardOwner.String(), ToAria: true}
+		m := hierarchy.Move{Node: "a", From: "s", To: to, Tree: hierarchy.Drawn, NodeOwner: "user:mallory", ToOwner: guardOwner.String(), ToReceiver: true}
 		if edit != nil {
 			edit(&m)
 		}
@@ -244,7 +244,7 @@ func TestConsentIsAskedOnlyOfAForeignReceivingParent(t *testing.T) {
 	}
 	free := map[string]hierarchy.Move{
 		"home":          move("up", func(m *hierarchy.Move) { m.Home = true }),
-		"top":           move("", func(m *hierarchy.Move) { m.ToAria = false; m.ToOwner = "" }),
+		"top":           move("", func(m *hierarchy.Move) { m.ToReceiver = false; m.ToOwner = "" }),
 		"one owner":     move("theirs", func(m *hierarchy.Move) { m.ToOwner = "user:mallory" }),
 		"adopt granted": move("home", nil),
 	}

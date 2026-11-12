@@ -157,3 +157,29 @@ func TestOneMinterOnBothSidesIsNotTheParentsConsent(t *testing.T) {
 		t.Fatalf("%d proposals wait on Q, want mallory's one", n)
 	}
 }
+
+// El Inspector XIV, P3: a form receives a node as an aria does, so drawing
+// mallory's X under the owner's role form waits on the form.
+func TestAFormThatReceivesANodeIsAskedForConsent(t *testing.T) {
+	r, _, x := adoptRig(t)
+	role := ownerMintsForm(t, r, "a role")
+	grantTo(t, r, "user:mallory", "read:*", "set:aria:"+x, "kill:aria:"+x)
+
+	err := setTopology(t, r, mallory(), map[string]string{x: role})
+	if err == nil || !strings.Contains(err.Error(), "waits on "+role) {
+		t.Fatalf("mallory drawing X under the owner's form = %v, want it parked on the form", err)
+	}
+	if up := presentedUnder(t, r, x); up == role {
+		t.Fatal("a parked move was applied")
+	}
+	props := parkedOn(t, r, role)
+	if len(props) != 1 {
+		t.Fatalf("parked on the form: %+v, want mallory's move", props)
+	}
+	if err := consent(r, asOwner(), rpc.MethodAccept, role, props[0].ID); err != nil {
+		t.Fatalf("the owner accepting on his form: %v", err)
+	}
+	if up := presentedUnder(t, r, x); up != role {
+		t.Fatalf("after accept X is drawn under %q, want the form %s", up, role)
+	}
+}

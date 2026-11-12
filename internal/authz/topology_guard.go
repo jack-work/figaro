@@ -99,7 +99,7 @@ func (g TopologyGuard) consent(ctx context.Context, by hierarchy.Principal, c To
 	var waits []string
 	var accepts []string
 	for _, m := range p.Moves {
-		if m.Rehome || !m.ToAria || m.Home || m.From == m.To && m.Tree == hierarchy.Drawn {
+		if m.Rehome || !m.ToReceiver || m.Home || m.From == m.To && m.Tree == hierarchy.Drawn {
 			continue
 		}
 		if g.ownsParent(by, c, m.ToOwner) {
