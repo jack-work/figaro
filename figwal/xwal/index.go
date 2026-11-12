@@ -97,15 +97,21 @@ func (x *Index) SpawnFlat(parent, child, trunk, kind string) {
 	}
 }
 
-func (x *Index) Reparent(node, under string) {
+func (x *Index) setMarker(node string, m nodeMarker) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if n := x.nodes[node]; n != nil {
 		moved := *n
-		moved.From = under
+		moved.From, moved.Placed, moved.PlacedTop = m.from, m.placed, m.placedTop
 		x.nodes[node] = &moved
 	}
 	x.version.Add(1)
+}
+
+func (x *Index) PlacementOf(node string) string {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	return x.nodes[node].Placement()
 }
 
 func (x *Index) Drop(keys []string) {
@@ -245,7 +251,7 @@ func (x *Index) addLocked(dir, key string, isRoot bool) error {
 	if isRoot {
 		n.kind = "null"
 	}
-	x.nodes[key] = &NodeInfo{Trunk: n.trunk, IsRoot: isRoot, From: n.from, Kind: n.kind}
+	x.nodes[key] = &NodeInfo{Trunk: n.trunk, IsRoot: isRoot, From: n.from, Kind: n.kind, Placed: n.placed, PlacedTop: n.placedTop}
 	x.bumpSeqsLocked(key, n.trunk)
 	if n.trunk == "" {
 		return nil
@@ -285,15 +291,20 @@ const (
 )
 
 type nodeMarker struct {
-	from  string
-	kind  string
-	trunk string
+	from      string
+	kind      string
+	trunk     string
+	placed    string
+	placedTop bool
 }
 
 func writeNodeMarker(dir string, n nodeMarker) error {
 	// writeSyncedFile already fsyncs the directory after its rename; a
 	// second SyncDir here made every fork commit pay two.
 	body := fmt.Appendf(nil, "from=%s\nkind=%s\ntrunk=%s\n", n.from, n.kind, n.trunk)
+	if n.placed != "" || n.placedTop {
+		body = fmt.Appendf(body, "placed=%s\n", n.placed)
+	}
 	return writeSyncedFile(filepath.Join(dir, nodeMarkerName), body)
 }
 
@@ -317,6 +328,8 @@ func readNodeMarker(dir string) (n nodeMarker, ok bool) {
 			n.kind = v
 		case "trunk":
 			n.trunk = v
+		case "placed":
+			n.placed, n.placedTop = v, v == ""
 		}
 	}
 	return n, true

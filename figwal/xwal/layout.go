@@ -36,7 +36,7 @@ func ReadLayout(root string) (Layout, error) {
 		if !ok {
 			continue
 		}
-		l.Nodes[keyName(e.Name())] = NodeInfo{Trunk: marker.trunk, From: marker.from, Kind: marker.kind}
+		l.Nodes[keyName(e.Name())] = NodeInfo{Trunk: marker.trunk, From: marker.from, Kind: marker.kind, Placed: marker.placed, PlacedTop: marker.placedTop}
 	}
 	return l, nil
 }

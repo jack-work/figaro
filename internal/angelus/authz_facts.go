@@ -50,12 +50,13 @@ func (f storeFacts) DescendsFrom(aria, root string) bool {
 	for id := aria; id != "" && !seen[id]; {
 		seen[id] = true
 		n, ok := f.backend.Node(id)
-		if !ok {
+		if !ok || n.Unplaced {
 			return false
 		}
-		if id = presented(n); id == root {
+		if n.Parent == root {
 			return true
 		}
+		id = n.Parent
 	}
 	return false
 }
@@ -84,13 +85,16 @@ func (f storeFacts) SandboxOf(aria string) (string, bool) {
 
 func (f storeFacts) Ancestry(aria string) ([]string, bool) {
 	n, ok := f.backend.Node(aria)
-	if !ok {
+	if !ok || n.Unplaced {
 		return nil, false
 	}
 	out := []string{aria}
 	for n.Parent != "" && !slices.Contains(out, n.Parent) {
 		if n, ok = f.backend.Node(n.Parent); !ok || n.Kind != "conversation" {
 			break
+		}
+		if n.Unplaced {
+			return nil, false
 		}
 		out = append(out, n.ID)
 	}

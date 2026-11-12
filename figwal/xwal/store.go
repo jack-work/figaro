@@ -226,9 +226,19 @@ func (s *Store) Detach(node string) error {
 	return s.Trunks.Detach(node)
 }
 
-func (s *Store) Reparent(node, under string) error {
+func (s *Store) Place(node, under string) error {
 	s.syncDirty()
-	return s.Trunks.Reparent(node, under)
+	return s.Trunks.Place(node, under)
+}
+
+func (s *Store) Refork(node, from string) error {
+	s.syncDirty()
+	return s.Trunks.Refork(node, from)
+}
+
+func (s *Store) Unplace(node string) error {
+	s.syncDirty()
+	return s.Trunks.Unplace(node)
 }
 
 // HeadNode is the node key carrying a trunk's live head, for callers that

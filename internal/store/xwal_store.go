@@ -181,8 +181,25 @@ type XwalStore struct {
 	deleting sync.Mutex
 }
 
-// xwalTopology is the .from adjacency, the only lineage figwal considers authoritative.
+// xwalTopology is the placement adjacency: who a node answers to, and where
+// it is drawn unless @topology says otherwise.
 type xwalTopology struct{ s *XwalStore }
+
+// unplacedPrefix opens no id, so a lost placement resolves to no node.
+const unplacedPrefix = "?"
+
+// forkTopology is the .from adjacency: whose history a node reads through.
+type forkTopology struct{ xwalTopology }
+
+func (t forkTopology) From(id string) (string, bool) {
+	n, ok := t.s.Node(id)
+	if !ok {
+		return "", false
+	}
+	return n.ForkPoint, true
+}
+
+func (s *XwalStore) ForkAdjacency() topo.Topology { return forkTopology{xwalTopology{s}} }
 
 func (t xwalTopology) From(id string) (string, bool) {
 	n, ok := t.s.Node(id)
@@ -664,9 +681,16 @@ func withKey(p message.Patch, key, value string) message.Patch {
 }
 
 type NodeView struct {
-	ID     string
-	Parent string
-	Kind   string
+	ID string
+	// Parent is the placement: the node this one answers to. ForkPoint is the
+	// node its history was cut from, which no move rewrites. They differ only
+	// for a node that was placed.
+	Parent    string
+	ForkPoint string
+	// Unplaced marks a placement whose node is gone: Parent names nothing,
+	// and the node answers to nobody until its owner places it again.
+	Unplaced bool
+	Kind     string
 	// Stump is where the node's data came from, by the topology walk; a
 	// promote moves where a row appears, never this.
 	Stump      string
@@ -683,15 +707,26 @@ type NodeView struct {
 // view: a top-level conversation's parent is its outfit stump, or the root
 // when outfitless.
 func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
-	parent := t.Parent
-	if parent == "" {
-		if t.Stump != "" {
-			parent = t.Stump // top-level conversation: nests under its outfit
-		} else {
-			parent = rootID // outfitless top-level conversation
+	top := func(parent, stump string) string {
+		switch {
+		case parent != "":
+			return parent
+		case stump != "":
+			return stump // top-level conversation: nests under its outfit
 		}
+		return rootID // outfitless top-level conversation
 	}
 	p := at[t.ID]
+	fork := top(t.Parent, t.Stump)
+	parent := fork
+	switch {
+	case t.PlacedLost != "":
+		parent = unplacedPrefix + t.PlacedLost
+	case t.Placed != "" || t.PlacedStump != "":
+		parent = top(t.Placed, t.PlacedStump)
+	case t.Parent != "":
+		parent = top("", p.stump)
+	}
 	// The trunk's own kind from its figwal marker; empty (never written) means
 	// conversation.
 	kind := t.Kind
@@ -699,7 +734,7 @@ func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
 		kind = string(kindConversation)
 	}
 	return NodeView{
-		ID: t.ID, Parent: parent, Kind: kind, Trunk: t.ID,
+		ID: t.ID, Parent: parent, ForkPoint: fork, Unplaced: t.PlacedLost != "", Kind: kind, Trunk: t.ID,
 		Stump: p.stump, Vector: p.vec, BranchedLT: t.BranchedLT,
 	}
 }
@@ -764,14 +799,16 @@ func (s *XwalStore) presentLocked(nodes []NodeView) uint64 {
 		edges, rev = s.tree.Edges(), s.tree.Rev()
 	}
 	parent := make(map[string]string, len(nodes))
+	placed := false
 	for _, n := range nodes {
 		parent[n.ID] = n.Parent
+		placed = placed || n.Parent != n.ForkPoint
 	}
 	pres := topo.Present(parent, edges)
 	for i := range nodes {
 		nodes[i].Present = pres[nodes[i].ID]
 	}
-	if len(edges) == 0 {
+	if len(edges) == 0 && !placed {
 		return rev
 	}
 	vecs := presentVectors(nodes, pres)
@@ -1018,14 +1055,39 @@ func (s *XwalStore) redundantGiven(assume map[string]string) func(map[string]str
 
 func (s *XwalStore) DeleteSet(id string) []string { return s.tree.DeleteSet(id) }
 
+func (s *XwalStore) anyPlaced() bool {
+	for _, n := range s.topologySnapshot().nodes {
+		if n.Parent != n.ForkPoint {
+			return true
+		}
+	}
+	return false
+}
+
+// placedUnder is the nodes outside the set that answer to a node inside it.
+func (s *XwalStore) placedUnder(set []string) []string {
+	in := make(map[string]bool, len(set))
+	for _, id := range set {
+		in[id] = true
+	}
+	var out []string
+	for _, n := range s.topologySnapshot().nodes {
+		if !in[n.ID] && in[n.Parent] && !n.Unplaced {
+			out = append(out, n.ID)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // deleteOrphans is the survivors a delete of id would strand. Empty whenever
 // the presentation hierarchy is normalized, which is always without the
 // trunk capability.
 func (s *XwalStore) deleteOrphans(id string) []string {
-	if s.tree.Normalized() {
+	if s.tree.Normalized() && !s.anyPlaced() {
 		return nil
 	}
-	return topo.Boundary(s.TopologyAdjacency(), s.tree.DeleteSet(id))
+	return topo.Boundary(s.ForkAdjacency(), s.tree.DeleteSet(id))
 }
 
 // LastTS never wakes an agent: it opens a store handle, not a figaro. Zero

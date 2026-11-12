@@ -50,13 +50,15 @@ type XwalBackend struct {
 	// ttl holds only nodes carrying system.ttl; nil until the first read seeds
 	// it from the sidecars. Its own lock: the sweep reads it on a ticker and
 	// must not queue behind a cold node open holding b.mu.
-	ttlMu    sync.Mutex
-	ttl      map[string]TTLEntry
-	access   map[string]int64
-	reaped   map[string]ReapedEntry
-	buried   map[string]bool
-	onReaped []func()
-	encoders translatorEncoders
+	ttlMu sync.Mutex
+	// losingPlacement is set once at wiring, before the daemon serves.
+	losingPlacement func(ids []string) error
+	ttl             map[string]TTLEntry
+	access          map[string]int64
+	reaped          map[string]ReapedEntry
+	buried          map[string]bool
+	onReaped        []func()
+	encoders        translatorEncoders
 
 	// labels is never invalidated for a stump: its id is the hash of content
 	// containing the label, and a stump cannot be patched.

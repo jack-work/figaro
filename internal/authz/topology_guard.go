@@ -35,8 +35,6 @@ func (e *HeldError) Error() string { return fmt.Sprintf("%s holds the sweep: %s"
 
 var ErrSystemOnly = errors.New("only the daemon may run this plan")
 
-var ErrOwnersMove = errors.New("a lineage grant follows where a figaro is drawn: only the owner may move one, among figaros he minted")
-
 var ErrSplitsReapedGroup = errors.New("a delete would split a reaped group")
 
 type TopologyGuard struct {
@@ -79,7 +77,7 @@ func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hier
 	if err := g.killFloor(caller, p); err != nil {
 		return hierarchy.Verdict{}, err
 	}
-	return hierarchy.Verdict{}, g.ownersMoves(caller, p)
+	return hierarchy.Verdict{}, g.placement(caller, p)
 }
 
 func (g TopologyGuard) system(ctx context.Context, p hierarchy.Plan) error {
@@ -104,8 +102,8 @@ func (g TopologyGuard) system(ctx context.Context, p hierarchy.Plan) error {
 		return fmt.Errorf("the daemon may only re-home and sweep, not %s", p.Op)
 	}
 	for _, m := range p.Moves {
-		if !m.Rehome {
-			return fmt.Errorf("the daemon may only re-home: %s to %s", m.Node, m.To)
+		if !m.Rehome || m.Tree != hierarchy.Drawn {
+			return fmt.Errorf("the daemon may only re-home in the drawn tree: %s to %s", m.Node, m.To)
 		}
 	}
 	return nil
@@ -177,8 +175,8 @@ func (g TopologyGuard) rehomes(p hierarchy.Plan) error {
 		if !m.Rehome {
 			continue
 		}
-		if !p.Op.Deletes() {
-			return fmt.Errorf("a re-home rides only a delete: %s", m.Node)
+		if !p.Op.Deletes() || m.Tree != hierarchy.Drawn {
+			return fmt.Errorf("a re-home rides only a delete, in the drawn tree: %s", m.Node)
 		}
 		if m.To == "" || g.Placement == nil {
 			continue
@@ -192,7 +190,7 @@ func (g TopologyGuard) rehomes(p hierarchy.Plan) error {
 
 func (g TopologyGuard) killFloor(c TopologyCaller, p hierarchy.Plan) error {
 	for _, m := range p.Moves {
-		if m.Rehome || m.From == m.To {
+		if m.Rehome || m.From == m.To && m.Tree == hierarchy.Drawn {
 			continue
 		}
 		if err := g.allow(c, rpc.VerbKill, m.Node); err != nil {
@@ -202,33 +200,21 @@ func (g TopologyGuard) killFloor(c TopologyCaller, p hierarchy.Plan) error {
 	return nil
 }
 
-func (g TopologyGuard) ownersMoves(c TopologyCaller, p hierarchy.Plan) error {
+func (g TopologyGuard) placement(c TopologyCaller, p hierarchy.Plan) error {
 	for _, m := range p.Moves {
-		if m.Rehome || m.From == m.To {
+		if m.Tree != hierarchy.Placement {
 			continue
 		}
 		if !g.isOwner(c) || !g.ownerish(m.NodeOwner) || !g.ownerish(m.ToOwner) {
-			return fmt.Errorf("%w: %s under %s", ErrOwnersMove, m.Node, m.To)
+			return fmt.Errorf("%w: %s under %s", hierarchy.ErrDrawnOnly, m.Node, m.To)
 		}
 	}
 	return nil
 }
 
-func (g TopologyGuard) isOwner(c TopologyCaller) bool {
-	return c.Door != DoorBox && IsOwner(g.owner(), c.Subject)
-}
-
-func (g TopologyGuard) ownerish(minter string) bool {
-	if minter == "" {
-		return true
-	}
-	o := g.owner()
-	return !o.IsZero() && minter == o.String()
-}
-
 func (g TopologyGuard) freshPlacement(by hierarchy.Principal, p hierarchy.Plan) bool {
 	for _, m := range p.Moves {
-		if !m.WithinLineage || m.NodeOwner != by.Name {
+		if m.Tree != hierarchy.Placement || !m.WithinLineage || m.NodeOwner != by.Name {
 			return false
 		}
 	}
@@ -249,6 +235,18 @@ func (g TopologyGuard) owner() jkauthz.Principal {
 		return jkauthz.Principal{}
 	}
 	return g.Owner()
+}
+
+func (g TopologyGuard) isOwner(c TopologyCaller) bool {
+	return c.Door != DoorBox && IsOwner(g.owner(), c.Subject)
+}
+
+func (g TopologyGuard) ownerish(minter string) bool {
+	if minter == "" {
+		return true
+	}
+	o := g.owner()
+	return !o.IsZero() && minter == o.String()
 }
 
 func (g TopologyGuard) zone(id string) string {

@@ -442,8 +442,19 @@ func hostCwdOf(ctx context.Context, requested string) string {
 	return requested
 }
 
-func (h *handlers) carryNarrowing(id string) error {
-	p := h.angelus.Policies
+func (h *handlers) carryNarrowing(id string) error { return h.angelus.carryNarrowing(id) }
+
+func (a *Angelus) carryNarrowingForEach(ids []string) error {
+	for _, id := range ids {
+		if err := a.carryNarrowing(id); err != nil {
+			return fmt.Errorf("%s: %w", id, err)
+		}
+	}
+	return nil
+}
+
+func (a *Angelus) carryNarrowing(id string) error {
+	p := a.Policies
 	if p == nil {
 		return nil
 	}
@@ -456,11 +467,11 @@ func (h *handlers) carryNarrowing(id string) error {
 	if err != nil {
 		return err
 	}
-	snap, err := h.angelus.Backend.FormState(id)
+	snap, err := a.Backend.FormState(id)
 	if err != nil {
 		return err
 	}
-	if _, err := h.angelus.Backend.ApplyForm(id, form.Build(snap, map[string]json.RawMessage{form.ScopesKey: raw}, []string{form.RetiredGrantsKey})); err != nil {
+	if _, err := a.Backend.ApplyForm(id, form.Build(snap, map[string]json.RawMessage{form.ScopesKey: raw}, []string{form.RetiredGrantsKey})); err != nil {
 		return fmt.Errorf("writing the scopes its ancestors narrowed it to: %w", err)
 	}
 	slog.Info("scopes: a figaro leaving its ancestors carries their narrowing", "id", id, "scopes", eff.String())

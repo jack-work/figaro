@@ -67,14 +67,14 @@ func (t *Trunks) Detach(node string) error {
 			return err
 		}
 	}
-	kind, trunk := "conversation", ""
+	kind, trunk, placement := "conversation", "", ""
 	if n := t.node(node); n != nil {
 		if n.Kind != "" {
 			kind = n.Kind
 		}
-		trunk = n.Trunk
+		trunk, placement = n.Trunk, n.Placement()
 	}
-	if err := writeNodeMarker(t.irDir(node), nodeMarker{kind: kind, trunk: trunk}); err != nil {
+	if err := writeNodeMarker(t.irDir(node), nodeMarker{kind: kind, trunk: trunk}.placedUnder(placement)); err != nil {
 		return err
 	}
 	return t.rebuild()

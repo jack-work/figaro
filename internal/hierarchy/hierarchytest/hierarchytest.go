@@ -39,11 +39,9 @@ func (t Tree) Arrange(parents map[string]string, restore []string) error {
 	return err
 }
 
-// Seat rewrites a node's storage parent, as 0.63.0 through 0.65.4 did when a
-// fork was cut inside an ancestor's turns. Nothing does it any more; stores
-// written by those releases still hold the shape.
-func Seat(b Engined, id, under string) error {
-	return b.HierarchyEngine().(interface{ MoveStorage(id, under string) error }).MoveStorage(id, under)
+func (t Tree) Move(id, under string) error {
+	_, err := t.apply(hierarchy.Plan{Op: hierarchy.Arrange, Parents: map[string]string{id: under}, Placement: true})
+	return err
 }
 
 func (t Tree) Remove(id string, recursive bool) error {

@@ -85,6 +85,9 @@ func (a *Angelus) topology() *hierarchy.Hierarchy {
 			a.Topology = hierarchy.New(nil, nil)
 			return
 		}
+		if b, ok := a.Backend.(interface{ OnPlacementLoss(func([]string) error) }); ok {
+			b.OnPlacementLoss(a.carryNarrowingForEach)
+		}
 		a.Topology = hierarchy.New(a.Backend.HierarchyEngine(), a.DefaultTopologyGuard())
 	})
 	return a.Topology

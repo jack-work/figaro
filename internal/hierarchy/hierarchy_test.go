@@ -15,8 +15,10 @@ type fakeEngine struct {
 	stored   map[string]string
 	over     map[string]string
 	owner    map[string]string
+	placed   map[string]string
 	zone     map[string]string
 	deadline map[string]int64
+	refuse   bool
 	writes   int
 	removed  []string
 	pins     map[string]string
@@ -26,6 +28,7 @@ func chain() *fakeEngine {
 	return &fakeEngine{
 		stored:   map[string]string{"stump": "", "P": "stump", "X": "P", "C": "X", "D": "X"},
 		over:     map[string]string{},
+		placed:   map[string]string{},
 		owner:    map[string]string{},
 		zone:     map[string]string{},
 		deadline: map[string]int64{},
@@ -47,10 +50,17 @@ func (f *fakeEngine) Drawn(id string) (string, bool) {
 	if p, ok := f.over[id]; ok {
 		return p, true
 	}
-	return f.Stored(id)
+	return f.Placed(id)
 }
 
-func (f *fakeEngine) Stored(id string) (string, bool) { p, ok := f.stored[id]; return p, ok }
+func (f *fakeEngine) Placed(id string) (string, bool) {
+	if p, ok := f.placed[id]; ok {
+		return p, true
+	}
+	return f.ForkPoint(id)
+}
+
+func (f *fakeEngine) ForkPoint(id string) (string, bool) { p, ok := f.stored[id]; return p, ok }
 
 func (f *fakeEngine) DrawnChildren(id string) []string {
 	var out []string
@@ -73,7 +83,7 @@ func (f *fakeEngine) DeleteSet(id string) []string {
 	return out
 }
 
-func (f *fakeEngine) StorageOrphans(id string) []string {
+func (f *fakeEngine) ForkOrphans(id string) []string {
 	doomed := map[string]bool{}
 	for _, d := range f.DeleteSet(id) {
 		doomed[d] = true
@@ -102,6 +112,14 @@ func (f *fakeEngine) WriteDrawn(set map[string]string, remove []string) error {
 	for _, id := range remove {
 		delete(f.over, id)
 	}
+	return nil
+}
+
+func (f *fakeEngine) MovePlacement(id, under string) error {
+	if f.refuse {
+		return hierarchy.ErrPlacementRefused
+	}
+	f.placed[id] = under
 	return nil
 }
 
@@ -153,7 +171,7 @@ func TestAHandBuiltPlanThatHidesTheClimbedParentIsRefused(t *testing.T) {
 	f := chain()
 	h := hierarchy.New(f, hierarchytest.Open{})
 	p := hierarchy.Plan{Op: hierarchy.Promote, Node: "X", Levels: 1,
-		Moves: []hierarchy.Move{{Node: "X", From: "P", To: "stump"}}}
+		Moves: []hierarchy.Move{{Node: "X", From: "P", To: "stump", Tree: hierarchy.Drawn}}}
 	if _, err := h.Apply(context.Background(), anyone, p); !errors.Is(err, hierarchy.ErrPlanMismatch) {
 		t.Fatalf("apply of a plan missing P = %v, want ErrPlanMismatch", err)
 	}
@@ -175,22 +193,40 @@ func TestAStalePlanIsRefused(t *testing.T) {
 	}
 }
 
-// The fork point is a fact of the store. Arranging a node, or placing a
-// fresh fork under the figaro it was asked of, says only where it is drawn.
-func TestArrangeAndPlaceLeaveTheForkPointAlone(t *testing.T) {
-	for name, plan := range map[string]hierarchy.Plan{
-		"arrange": {Op: hierarchy.Arrange, Parents: map[string]string{"C": "P"}},
-		"place":   {Op: hierarchy.Place, Node: "C", To: "P"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			f := chain()
-			if _, err := hierarchy.New(f, hierarchytest.Open{}).Apply(context.Background(), anyone, plan); err != nil {
-				t.Fatal(err)
+func TestDrawnOnlyRewritesPlacementMovesAndChecksAgain(t *testing.T) {
+	f := chain()
+	calls := 0
+	h := hierarchy.New(f, guardFunc(func(_ hierarchy.Principal, p hierarchy.Plan) error {
+		calls++
+		for _, m := range p.Moves {
+			if m.Tree == hierarchy.Placement {
+				return hierarchy.ErrDrawnOnly
 			}
-			if f.stored["C"] != "X" || f.over["C"] != "P" {
-				t.Fatalf("stored %q, drawn %q: want the fork point still X, drawn under P", f.stored["C"], f.over["C"])
-			}
-		})
+		}
+		return nil
+	}))
+	p, err := h.Apply(context.Background(), anyone, hierarchy.Plan{Op: hierarchy.Arrange, Parents: map[string]string{"C": "P"}, Placement: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || p.Moves[0].Tree != hierarchy.Drawn {
+		t.Fatalf("calls %d, moves %+v: want a second check of the drawn plan", calls, p.Moves)
+	}
+	if _, placed := f.placed["C"]; placed || f.over["C"] != "P" {
+		t.Fatalf("placed %v, drawn %q: want C left where it answers and drawn under P", f.placed, f.over["C"])
+	}
+}
+
+func TestAPlacementTheStoreRefusesIsDrawn(t *testing.T) {
+	f := chain()
+	f.refuse = true
+	h := hierarchy.New(f, hierarchytest.Open{})
+	p, err := h.Apply(context.Background(), anyone, hierarchy.Plan{Op: hierarchy.Arrange, Parents: map[string]string{"C": "P"}, Placement: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Moves[0].Tree != hierarchy.Drawn || f.over["C"] != "P" {
+		t.Fatalf("moves %+v, override %q: want the refused placement drawn", p.Moves, f.over["C"])
 	}
 }
 
@@ -281,5 +317,54 @@ func TestAReapRunsItsCommitOnTheDerivedSet(t *testing.T) {
 		func(hierarchy.Plan) error { t.Fatal("a reap of a stale set ran its commit"); return nil })
 	if !errors.Is(err, hierarchy.ErrPlanMismatch) {
 		t.Fatalf("reap of a stale set = %v, want ErrPlanMismatch", err)
+	}
+}
+
+func TestAPlacementMovesWhoANodeAnswersToAndNeverItsForkPoint(t *testing.T) {
+	f := chain()
+	h := hierarchy.New(f, hierarchytest.Open{})
+	p, err := h.Apply(context.Background(), anyone, hierarchy.Plan{Op: hierarchy.Arrange, Parents: map[string]string{"C": "P"}, Placement: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Moves) != 1 || p.Moves[0].Tree != hierarchy.Placement {
+		t.Fatalf("moves %+v, want one placement", p.Moves)
+	}
+	if up, _ := f.Placed("C"); up != "P" {
+		t.Fatalf("C answers to %q, want P", up)
+	}
+	if up, _ := f.ForkPoint("C"); up != "X" {
+		t.Fatalf("C's fork point is %q, want X: an arrange rewrote it", up)
+	}
+	if _, drawn := f.over["C"]; drawn {
+		t.Fatalf("a placement left an override behind: %v", f.over)
+	}
+
+	f = chain()
+	h = hierarchy.New(f, hierarchytest.Open{})
+	if _, err := h.Apply(context.Background(), anyone, hierarchy.Plan{Op: hierarchy.Place, Node: "D", To: "C"}); err != nil {
+		t.Fatal(err)
+	}
+	if up, _ := f.Placed("D"); up != "C" {
+		t.Fatalf("D answers to %q, want C", up)
+	}
+	if up, _ := f.ForkPoint("D"); up != "X" {
+		t.Fatalf("D's fork point is %q, want X: a place rewrote it", up)
+	}
+}
+
+func TestWithinLineageIsReadOffForkPointsNotPlacements(t *testing.T) {
+	f := chain()
+	f.placed["C"] = "P"
+	var seen []hierarchy.Move
+	h := hierarchy.New(f, guardFunc(func(_ hierarchy.Principal, p hierarchy.Plan) error {
+		seen = p.Moves
+		return nil
+	}))
+	if _, err := h.Check(context.Background(), anyone, hierarchy.Plan{Op: hierarchy.Place, Node: "D", To: "C"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 1 || !seen[0].WithinLineage {
+		t.Fatalf("moves %+v: C was forked from X, D's fork point, wherever C was placed since", seen)
 	}
 }

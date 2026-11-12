@@ -74,6 +74,12 @@ type TrunkInfo struct {
 	Stump      string   // stump name, if the trunk is rooted directly at a stump
 	Kind       string   // the founding node's kind, from its marker ("conversation", "form", …)
 	BranchedLT uint64
+	// Placed and PlacedStump name what the trunk sits under, as Parent and
+	// Stump name what it was forked from. PlacedLost is a placement whose
+	// node is gone.
+	Placed      string
+	PlacedStump string
+	PlacedLost  string
 	// BranchedTurn is BranchedLT in the caller's turn coordinate, recorded by
 	// whoever knew it (SetBranchedTurn); xwal never computes one. Known is
 	// false when nobody recorded it; Exact means the parent had a record at
@@ -102,6 +108,7 @@ func (t *Trunks) List() []TrunkInfo {
 			ti.Kind = n.Kind
 		}
 		ti.Parent, ti.Stump, ti.BranchedLT = t.lineage(id)
+		ti.Placed, ti.PlacedStump, ti.PlacedLost = t.placement(id)
 		if x, err := t.openHotTopology(key); err == nil {
 			ti.Tip = mainTail(x)
 			x.Close()
@@ -130,6 +137,22 @@ func (t *Trunks) lineage(trunk string) (parent, stump string, bl uint64) {
 	return p.Trunk, stumpName(n.From, p), t.forkBaseOf(head)
 }
 
+func (t *Trunks) placement(trunk string) (parent, stump, lost string) {
+	n := t.node(t.head(trunk))
+	if n == nil || n.IsRoot {
+		return "", "", ""
+	}
+	at := n.Placement()
+	if at == "" {
+		return "", "", ""
+	}
+	p := t.node(at)
+	if p == nil {
+		return "", "", at
+	}
+	return p.Trunk, stumpName(at, p), ""
+}
+
 // InfoLight is ListLight for one trunk plus the recorded base turn, without
 // visiting every other trunk.
 func (t *Trunks) InfoLight(id string) (TrunkInfo, bool) {
@@ -147,6 +170,7 @@ func (t *Trunks) InfoLight(id string) (TrunkInfo, bool) {
 		ti.Kind = n.Kind
 	}
 	ti.Parent, ti.Stump, ti.BranchedLT = t.lineage(id)
+	ti.Placed, ti.PlacedStump, ti.PlacedLost = t.placement(id)
 	if ti.BranchedLT > 0 {
 		ti.BranchedTurn, ti.BranchedTurnKnown, ti.BranchedTurnExact = t.forkTurnOf(key, ti.BranchedLT)
 	}
@@ -169,6 +193,7 @@ func (t *Trunks) ListLight() []TrunkInfo {
 			ti.Kind = n.Kind
 		}
 		ti.Parent, ti.Stump, ti.BranchedLT = t.lineage(id)
+		ti.Placed, ti.PlacedStump, ti.PlacedLost = t.placement(id)
 		out = append(out, ti)
 	}
 	return out

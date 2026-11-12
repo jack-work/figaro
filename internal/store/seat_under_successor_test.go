@@ -115,11 +115,11 @@ func seatedBuilder(t *testing.T, keep int) seatFixture {
 	if n, _ := b.Node(f.builder); n.Parent != f.root {
 		t.Fatalf("setup: the builder is stored under %s, want the first holder %s", n.Parent, f.root)
 	}
-	if err := b.Store().move(f.builder, f.h1); err != nil {
+	if err := b.Store().seatAsOldReleasesDid(f.builder, f.h1); err != nil {
 		t.Fatalf("seat the builder under the successor: %v", err)
 	}
-	if n, _ := b.Node(f.builder); n.Parent != f.h1 {
-		t.Fatalf("setup: the builder sits under %s, want %s", n.Parent, f.h1)
+	if n, _ := b.Node(f.builder); n.Parent != f.h1 || n.ForkPoint != f.h1 {
+		t.Fatalf("setup: the builder is placed under %s and forked from %s, want %s for both", n.Parent, n.ForkPoint, f.h1)
 	}
 	return f
 }

@@ -284,13 +284,12 @@ func (h *handlers) movedFacts(ids []string) map[string]store.MovedFacts {
 		seen := map[string]bool{id: true}
 		for cur := id; ; {
 			n, ok := h.angelus.Backend.Node(cur)
-			up := presented(n)
-			if !ok || up == "" || seen[up] {
+			if !ok || n.Parent == "" || seen[n.Parent] {
 				break
 			}
-			f.Ancestors = append(f.Ancestors, up)
-			seen[up] = true
-			cur = up
+			f.Ancestors = append(f.Ancestors, n.Parent)
+			seen[n.Parent] = true
+			cur = n.Parent
 		}
 		out[id] = f
 	}

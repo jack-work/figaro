@@ -1,0 +1,143 @@
+package xwal
+
+import (
+	"errors"
+	"path/filepath"
+	"slices"
+	"testing"
+)
+
+// A successor's turn-1 fork lands under the first holder; moving it under the
+// successor copies nothing and changes nothing it reads.
+func TestPlacingMovesTheAuthorityParentAndLeavesTheForkPoint(t *testing.T) {
+	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
+	appendAll := func(id string, ps ...string) {
+		for _, p := range ps {
+			if _, _, err := f.Append(id, 0, []byte(`"`+p+`"`), nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	appendAll(trunk, "a", "b")
+	h0, err := f.ForkAt(trunk, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendAll(h0, "h0a", "h0b")
+	h1, err := f.ForkAt(h0, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendAll(h1, "h1")
+	lieutenant, err := f.ForkAt(h1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := func(id string) string { k, _ := f.idx.Head(id); return k }
+	forkPoint := f.idx.ParentOf(key(lieutenant))
+	if forkPoint == key(h1) {
+		t.Fatal("setup: the turn-1 fork was already cut in the successor")
+	}
+	before := mainPayloads(t, f, lieutenant)
+
+	walks := f.idx.rebuilds.Load()
+	if err := f.Place(key(lieutenant), key(h1)); err != nil {
+		t.Fatalf("place: %v", err)
+	}
+	if f.idx.rebuilds.Load() != walks {
+		t.Fatal("a placement walked every marker in the store")
+	}
+	check := func(when string) {
+		t.Helper()
+		if got := f.idx.PlacementOf(key(lieutenant)); got != key(h1) {
+			t.Fatalf("%s: placement = %q, want %q", when, got, key(h1))
+		}
+		if got := f.idx.ParentOf(key(lieutenant)); got != forkPoint {
+			t.Fatalf("%s: fork point = %q, want %q: a placement rewrote it", when, got, forkPoint)
+		}
+	}
+	check("after the placement")
+	if err := f.Refresh(); err != nil {
+		t.Fatal(err)
+	}
+	check("after a rescan")
+	if after := mainPayloads(t, f, lieutenant); !slices.Equal(before, after) {
+		t.Fatalf("history changed: %v -> %v", before, after)
+	}
+	for _, ti := range f.List() {
+		if ti.ID == lieutenant && (ti.Placed != h1 || ti.Parent == h1) {
+			t.Fatalf("listing: placed %q, forked from %q; want placed %q and a fork point that is not it", ti.Placed, ti.Parent, h1)
+		}
+	}
+
+	deep, err := f.ForkAt(h0, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Place(key(deep), key(h1)); !errors.Is(err, ErrMoveCopies) {
+		t.Fatalf("a placement under a node that lacks the fork point: err = %v, want ErrMoveCopies", err)
+	}
+	if err := f.Place(key(h1), key(lieutenant)); !errors.Is(err, ErrMoveCycle) {
+		t.Fatalf("placing a node under one placed beneath it: err = %v, want ErrMoveCycle", err)
+	}
+
+	if err := f.Place(key(lieutenant), forkPoint); err != nil {
+		t.Fatalf("placing back under the fork point: %v", err)
+	}
+	if n, _ := f.idx.Node(key(lieutenant)); n.Placed != "" || n.PlacedTop {
+		t.Fatalf("a node placed where it was forked keeps a record: %+v", n)
+	}
+}
+
+func TestDetachKeepsThePlacementAndUnplaceDropsIt(t *testing.T) {
+	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
+	if _, _, err := f.Append(trunk, 0, []byte(`"a"`), nil); err != nil {
+		t.Fatal(err)
+	}
+	child, err := f.ForkAt(trunk, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := func(id string) string { k, _ := f.idx.Head(id); return k }
+	if err := f.Detach(key(child)); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.idx.ParentOf(key(child)); got != "" {
+		t.Fatalf("fork point after a detach = %q, want none", got)
+	}
+	if got := f.idx.PlacementOf(key(child)); got != key(trunk) {
+		t.Fatalf("placement after a detach = %q, want %q: owning its history must not move a node", got, key(trunk))
+	}
+	if err := f.Unplace(key(child)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Refresh(); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.idx.PlacementOf(key(child)); got != "" {
+		t.Fatalf("placement after unplace = %q, want none", got)
+	}
+}
+
+func TestAPlacementWhoseNodeIsGoneIsReportedLost(t *testing.T) {
+	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
+	if _, _, err := f.Append(trunk, 0, []byte(`"a"`), nil); err != nil {
+		t.Fatal(err)
+	}
+	child, err := f.ForkAt(trunk, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, _ := f.idx.Head(child)
+	n, _ := f.idx.Node(k)
+	if err := writeNodeMarker(f.irDir(k), n.marker().placedUnder("gone")); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Refresh(); err != nil {
+		t.Fatal(err)
+	}
+	ti, ok := f.InfoLight(child)
+	if !ok || ti.PlacedLost != "gone" || ti.Placed != "" {
+		t.Fatalf("info = %+v, want the placement reported lost, never read as the fork point", ti)
+	}
+}

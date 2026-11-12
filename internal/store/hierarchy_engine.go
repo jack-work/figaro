@@ -3,6 +3,7 @@ package store
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -53,13 +54,17 @@ func (e *hierarchyEngine) Node(id string) (hierarchy.Node, bool) {
 
 func (e *hierarchyEngine) Drawn(id string) (string, bool) {
 	if e.s().tree == nil {
-		return e.Stored(id)
+		return e.Placed(id)
 	}
 	return e.s().tree.Parent(id)
 }
 
-func (e *hierarchyEngine) Stored(id string) (string, bool) {
+func (e *hierarchyEngine) Placed(id string) (string, bool) {
 	return e.s().TopologyAdjacency().From(id)
+}
+
+func (e *hierarchyEngine) ForkPoint(id string) (string, bool) {
+	return e.s().ForkAdjacency().From(id)
 }
 
 func (e *hierarchyEngine) DrawnChildren(id string) []string {
@@ -84,7 +89,7 @@ func (e *hierarchyEngine) DeleteSet(id string) []string {
 	return e.s().tree.DeleteSet(id)
 }
 
-func (e *hierarchyEngine) StorageOrphans(id string) []string {
+func (e *hierarchyEngine) ForkOrphans(id string) []string {
 	if e.s().tree == nil {
 		return nil
 	}
@@ -109,13 +114,17 @@ func (e *hierarchyEngine) WriteDrawn(set map[string]string, remove []string) err
 	return w.Write(set, remove)
 }
 
-func (e *hierarchyEngine) MoveStorage(id, under string) error {
-	return e.s().move(id, under)
+func (e *hierarchyEngine) MovePlacement(id, under string) error {
+	return e.s().place(id, under)
 }
 
 func (e *hierarchyEngine) Remove(id string, recursive bool, expect []string, pins map[string]string) error {
-	return e.s().removeLeaf(id, recursive, expect, pins, e.b.bury, e.b.unlinked)
+	return e.s().removeLeaf(id, recursive, expect, pins, e.b.bury, e.b.unlinked, e.b.losingPlacement)
 }
+
+// OnPlacementLoss names the nodes about to lose the node they answer to,
+// before anything is unlinked; an error refuses the delete.
+func (b *XwalBackend) OnPlacementLoss(fn func(ids []string) error) { b.losingPlacement = fn }
 
 func (b *XwalBackend) deadlineOf(id string) int64 {
 	b.ttlMu.Lock()
@@ -127,25 +136,39 @@ func (b *XwalBackend) deadlineOf(id string) int64 {
 	return 0
 }
 
-func (s *XwalStore) move(id, under string) error {
+func (s *XwalStore) place(id, under string) error {
 	node, ok := s.trunks.HeadNode(id)
 	if !ok {
-		return fmt.Errorf("move: no aria or form %q", id)
+		return fmt.Errorf("place: no aria or form %q", id)
 	}
-	parent := ""
-	if under != "" {
-		if parent, ok = s.trunks.HeadNode(under); !ok {
-			return fmt.Errorf("move: no aria or form %q", under)
+	parent, ok := s.trunks.HeadNode(under)
+	if !ok {
+		return fmt.Errorf("place: no aria or form %q", under)
+	}
+	if err := s.trunks.Place(node, parent); err != nil {
+		if errors.Is(err, ErrMoveCopies) || errors.Is(err, ErrMoveCycle) {
+			return fmt.Errorf("place %s under %s: %w: %w", id, under, hierarchy.ErrPlacementRefused, err)
 		}
-	}
-	if err := s.trunks.Reparent(node, parent); err != nil {
-		return fmt.Errorf("move %s under %s: %w", id, under, err)
+		return fmt.Errorf("place %s under %s: %w", id, under, err)
 	}
 	_, err := s.CleanTopology(false)
 	return err
 }
 
-func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins map[string]string, bury, unlinked func([]string)) error {
+func (s *XwalStore) unplace(ids []string) error {
+	for _, id := range ids {
+		node, ok := s.trunks.HeadNode(id)
+		if !ok {
+			continue
+		}
+		if err := s.trunks.Unplace(node); err != nil {
+			return fmt.Errorf("unplace %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
+func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins map[string]string, bury, unlinked func([]string), losingPlacement func([]string) error) error {
 	s.deleting.Lock()
 	defer s.deleting.Unlock()
 	// Refuse before touching anything: the boundary repair rewrites surviving arias.
@@ -166,6 +189,12 @@ func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins 
 		}
 	}
 	s.mu.Unlock()
+	unplaced := s.placedUnder(taken)
+	if len(unplaced) > 0 && losingPlacement != nil {
+		if err := losingPlacement(unplaced); err != nil {
+			return fmt.Errorf("%q takes the node %v answer to: %w", id, unplaced, err)
+		}
+	}
 	if bury != nil {
 		bury(taken)
 	}
@@ -218,6 +247,9 @@ func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins 
 	}
 	if unlinked != nil {
 		unlinked(taken)
+	}
+	if err := s.unplace(unplaced); err != nil {
+		return err
 	}
 	// Presentation is repaired with s.mu released: an edge resolves through
 	// the topology snapshot, which takes that lock itself.

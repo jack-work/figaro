@@ -83,7 +83,7 @@ func (h *handlers) arrange(ctx context.Context, shown *store.Form, params json.R
 	if err != nil {
 		return rpc.SetResponse{}, err
 	}
-	_, err = h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Arrange, Parents: parents, Restore: restore})
+	_, err = h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Arrange, Parents: parents, Restore: restore, Placement: true})
 	if errors.Is(err, hierarchy.ErrUnsupported) {
 		return rpc.SetResponse{}, fmt.Errorf("%s: this daemon keeps no presentation hierarchy", rpc.TopologyFormID)
 	}

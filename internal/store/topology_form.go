@@ -79,6 +79,8 @@ func (l *stumpFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) e
 type TopologyTree struct {
 	form *Form
 	topo topo.Topology
+	// forks is the history adjacency: a delete repairs what reads through it.
+	forks topo.Topology
 }
 
 func OpenTopologyTree(s *XwalStore, dir string) (*TopologyTree, error) {
@@ -89,7 +91,7 @@ func OpenTopologyTree(s *XwalStore, dir string) (*TopologyTree, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := &TopologyTree{form: f, topo: s.TopologyAdjacency()}
+	t := &TopologyTree{form: f, topo: s.TopologyAdjacency(), forks: s.ForkAdjacency()}
 	if err := t.migrate(filepath.Join(dir, "trunks.json")); err != nil {
 		return nil, err
 	}
@@ -228,11 +230,15 @@ func (t *TopologyTree) Normalized() bool {
 
 // freeOfAncestry reports that nothing above id could be taken away from it.
 func (t *TopologyTree) freeOfAncestry(id string) bool {
-	up, ok := t.topo.From(id)
+	forks := t.forks
+	if forks == nil {
+		forks = t.topo
+	}
+	up, ok := forks.From(id)
 	if !ok || up == "" {
 		return true
 	}
-	over, ok := t.topo.From(up)
+	over, ok := forks.From(up)
 	return ok && over == ""
 }
 

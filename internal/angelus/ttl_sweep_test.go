@@ -254,14 +254,15 @@ func (e ttlFakeEngine) Version() hierarchy.Version { return hierarchy.Version{} 
 func (e ttlFakeEngine) Node(id string) (hierarchy.Node, bool) {
 	return hierarchy.Node{ID: id, Aria: true}, true
 }
-func (e ttlFakeEngine) Drawn(string) (string, bool)      { return "", true }
-func (e ttlFakeEngine) Stored(string) (string, bool)     { return "", true }
-func (e ttlFakeEngine) DrawnChildren(string) []string    { return nil }
-func (e ttlFakeEngine) Overrides() map[string]string     { return nil }
-func (e ttlFakeEngine) DeleteSet(id string) []string     { return e.f.DeleteSet(id) }
-func (e ttlFakeEngine) StorageOrphans(string) []string   { return nil }
-func (e ttlFakeEngine) Placement(string) (string, int64) { return "local", 0 }
-func (e ttlFakeEngine) MoveStorage(string, string) error { return hierarchy.ErrUnsupported }
+func (e ttlFakeEngine) Drawn(string) (string, bool)        { return "", true }
+func (e ttlFakeEngine) Placed(string) (string, bool)       { return "", true }
+func (e ttlFakeEngine) ForkPoint(string) (string, bool)    { return "", true }
+func (e ttlFakeEngine) DrawnChildren(string) []string      { return nil }
+func (e ttlFakeEngine) Overrides() map[string]string       { return nil }
+func (e ttlFakeEngine) DeleteSet(id string) []string       { return e.f.DeleteSet(id) }
+func (e ttlFakeEngine) ForkOrphans(string) []string        { return nil }
+func (e ttlFakeEngine) Placement(string) (string, int64)   { return "local", 0 }
+func (e ttlFakeEngine) MovePlacement(string, string) error { return hierarchy.ErrUnsupported }
 func (e ttlFakeEngine) WriteDrawn(map[string]string, []string) error {
 	return hierarchy.ErrUnsupported
 }
