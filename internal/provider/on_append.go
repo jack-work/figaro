@@ -51,17 +51,15 @@ func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message],
 	d, ok := o.at[ariaID]
 	if !ok {
 		d = NewDeriver(o.bound(ariaID), o.studies(ariaID))
-		var watermark uint64
+		var rows store.Log[[]json.RawMessage]
 		if o.translator != nil {
-			trans, err := o.translator(ariaID)
-			if err != nil {
+			var err error
+			if rows, err = o.translator(ariaID); err != nil {
 				o.mu.Unlock()
 				return nil, "", fmt.Errorf("seed %s cursor: %w", o.name, err)
 			}
-			watermark = SeedLT(trans)
 		}
-		// The watermark names an earlier entry, so seeding needs the log.
-		d.SeedAt(source, watermark)
+		d.SeedAt(source, rows)
 		o.at[ariaID] = d
 	}
 	msg, snap, translatable := d.Next(e)

@@ -28,10 +28,22 @@ func TestASeedReadsTheFormStateNotItsWholeHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := NewDeriver(compactedForm{state: state}, nil)
-	d.SeedAt(log, e.LT)
+	d.SeedAt(log, rowsThrough(t, e.LT))
 	if d.snap.Lookup("system.model") == nil {
 		t.Fatal("the seed folded patches from version 1 instead of reading the state at the cursor")
 	}
+}
+
+// rowsThrough is a row log that carries bytes for each of the first n records.
+func rowsThrough(t *testing.T, n uint64) store.Log[[]json.RawMessage] {
+	t.Helper()
+	rows := store.NewMemLog[[]json.RawMessage]()
+	for lt := uint64(1); lt <= n; lt++ {
+		if _, err := rows.Append(store.Entry[[]json.RawMessage]{FigaroLT: lt, Payload: []json.RawMessage{json.RawMessage(`{}`)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return rows
 }
 
 type versionedForm struct{ patches []message.Patch }
@@ -96,7 +108,7 @@ func TestASeedAtAnAssistantEntryKeepsItsStreamChange(t *testing.T) {
 	bound := versionedForm{patches: []message.Patch{setKey("mantra", "first"), setKey("mantra", "second")}}
 	log := midTurnLog(t)
 	d := NewDeriver(bound, nil)
-	d.SeedAt(log, 2)
+	d.SeedAt(log, rowsThrough(t, 2))
 	if d.At() != 1 {
 		t.Fatalf("seeded at form version %d, want 1 (the last user message's)", d.At())
 	}
