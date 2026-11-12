@@ -173,17 +173,20 @@ func armMemoryLimit(loaded *config.Loaded) {
 	slog.Info("daemon memory limit armed", "soft_limit_bytes", limit)
 }
 
-func ariaBackend(loaded *config.Loaded) (store.Backend, error) {
+func ariaBackend(loaded *config.Loaded, laps *figOtel.Laps) (store.Backend, error) {
 	root := boot.AriaRoot()
 	b, err := store.NewXwalBackend(root, loaded.SegmentSize())
 	if err != nil {
 		return nil, err
 	}
+	laps.Lap("store_open")
 	// The one place the trunk capability is decided.
 	if err := wire.Install(b.Store(), root, wire.Capabilities{Trunks: loaded.Trunks()}); err != nil {
 		return nil, err
 	}
+	laps.Lap("store_wire")
 	sweepNodes(loaded, b)
+	laps.Lap("node_sweep")
 	return b, nil
 }
 
@@ -308,6 +311,7 @@ func registerOnAppend(backend store.Backend, p providerPkg.Provider) {
 func Run() {
 	mark.Init("angelus")
 	mark.Mark("boot.begin")
+	laps := figOtel.StartLaps("daemon.boot")
 	boot.PromptPassphrase = nil
 	if err := boot.MissingConfigDir(os.Getenv); err != nil {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
@@ -319,6 +323,7 @@ func Run() {
 		os.Exit(1)
 	}
 	runtimeDir := boot.AngelusRuntimeDir()
+	laps.Lap("config")
 
 	// Lock before the backend opens or the socket binds, so a losing daemon
 	// never opens the store or steals the socket.
@@ -328,6 +333,7 @@ func Run() {
 		os.Exit(0)
 	}
 	defer lockF.Close()
+	laps.Lap("lock")
 
 	figOtel.SetConfiguredLevel(loaded.TelemetryLevel())
 	figOtel.SetOTLPEndpoint(loaded.TelemetryOTLPEndpoint())
@@ -338,11 +344,12 @@ func Run() {
 	} else {
 		defer otelShutdown(context.Background())
 	}
+	laps.Lap("otel")
 	applyDaemonPath(loaded.AngelusPath())
 
 	applyStoreSettings(loaded)
 
-	backend, err := ariaBackend(loaded)
+	backend, err := ariaBackend(loaded, laps)
 	if err != nil {
 		slog.Error("angelus aria backend", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: aria backend: %v\n", err)
@@ -393,6 +400,8 @@ func Run() {
 			LiveFigaros: st.LiveArias, NumGC: st.NumGC, GCPauseTotalNs: st.GCPauseTotalNs}
 	})
 
+	laps.Lap("angelus")
+
 	formTmpls := boot.BuildFormTemplates()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -415,12 +424,14 @@ func Run() {
 	})
 	go a.Models.Run(ctx)
 	go warmRoutes(build, catalogProviders(loaded))
+	laps.Lap("providers")
 
 	if err := federate(ctx, a, loaded); err != nil {
 		slog.Error("angelus peers", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
+	laps.Lap("federate")
 	handlers := angelus.NewHandlers(angelus.ServerConfig{
 		Angelus:            a,
 		Config:             loaded,
@@ -433,6 +444,7 @@ func Run() {
 	a.Handlers = handlers.Map
 	a.RemoveAria = handlers.RemoveAria
 	a.RemoveAriaIf = handlers.RemoveAriaIf
+	laps.Lap("handlers")
 
 	if err := serveWebDoor(ctx, a, loaded); err != nil {
 		slog.Error("angelus web door", "err", err)
@@ -450,8 +462,11 @@ func Run() {
 		os.Exit(1)
 	}
 
+	laps.Lap("doors")
 	handlers.LoadNav()
+	laps.Lap("nav")
 	angelus.RestoreBindings(a.Registry, a.BindingsPath(), handlers.RequireAria)
+	laps.Lap("bindings")
 	go angelus.PersistBindings(a.Registry, a.BindingsPath())
 	go handlers.PersistNav(ctx.Done())
 	go handlers.Redeliver(ctx)
@@ -463,6 +478,7 @@ func Run() {
 		slog.Info("angelus signal received, draining figaros")
 		a.Shutdown(5 * time.Second)
 	}()
+	laps.End(ctx)
 
 	err = a.Run(ctx)
 	if ctx.Err() != nil {
