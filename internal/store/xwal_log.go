@@ -496,6 +496,30 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	return e, nil
 }
 
+func (l *xwalLog[T]) AppendBatch(rows []Entry[T]) ([]Entry[T], error) {
+	if l.isMain {
+		return nil, fmt.Errorf("xwalLog append batch: %s takes one record at a time", l.channel)
+	}
+	batch := make([]xwal.ChannelRow, len(rows))
+	for i, e := range rows {
+		payload, err := json.Marshal(e.Payload)
+		if err != nil {
+			return nil, fmt.Errorf("xwalLog append marshal: %w", err)
+		}
+		batch[i] = xwal.ChannelRow{MainLT: e.FigaroLT, Payload: payload, Meta: encodeMeta(e.Fingerprint, e.FigaroHash)}
+	}
+	first, err := l.store.trunks.AppendBatch(l.ariaID, l.channel, batch)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Entry[T], len(rows))
+	for i, e := range rows {
+		e.LT = first + uint64(i)
+		out[i] = e
+	}
+	return out, nil
+}
+
 // Clear goes through Store.Clear, which drops the pending flush buffer
 // atomically with the on-disk wipe; a raw XWAL.Clear would race the flusher
 // into resurrecting wiped records.

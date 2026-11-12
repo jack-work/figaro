@@ -53,6 +53,25 @@ type Log[T any] interface {
 
 var ErrBelowForkBase = xwal.ErrBelowForkBase
 
+type batchLog[T any] interface {
+	AppendBatch(rows []Entry[T]) ([]Entry[T], error)
+}
+
+func AppendBatch[T any](log Log[T], rows []Entry[T]) ([]Entry[T], error) {
+	if b, ok := log.(batchLog[T]); ok {
+		return b.AppendBatch(rows)
+	}
+	out := make([]Entry[T], 0, len(rows))
+	for _, e := range rows {
+		stamped, err := log.Append(e)
+		if err != nil {
+			return out, err
+		}
+		out = append(out, stamped)
+	}
+	return out, nil
+}
+
 // tailBudgetedLog reads the tail without decoding the prefix; optional, the
 // fallback is read-everything-then-compact.
 type tailBudgetedLog[T any] interface {

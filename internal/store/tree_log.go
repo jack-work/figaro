@@ -386,6 +386,21 @@ func (l *treeLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	return stamped, nil
 }
 
+func (l *treeLog[T]) AppendBatch(rows []Entry[T]) ([]Entry[T], error) {
+	stamped, err := AppendBatch(l.inner, rows)
+	if err != nil {
+		return nil, err
+	}
+	if l.seedOnAppend {
+		for _, e := range stamped {
+			if k := l.key(e); k > 0 {
+				l.cache.Put(fwtree.Coord{Node: l.node, From: k - 1, To: k}, []Entry[T]{e}, false)
+			}
+		}
+	}
+	return stamped, nil
+}
+
 func (l *treeLog[T]) Clear() error {
 	l.cache.DropNode(l.node)
 	return l.inner.Clear()
