@@ -461,13 +461,12 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 	if v := snap.Lookup("system.cwd"); v != nil {
 		req.Cwd = *v
 	}
-	raw, _ := json.Marshal(req)
-	out, err := h.create(ctx, raw)
+	minted, err := h.mint(ctx, SuccessorMint{Predecessor: rec.Old, Roles: rec.Roles, Form: snap, Default: req})
 	if err != nil {
 		h.failSuccession(ctx, rec, "mint the successor: "+err.Error())
 		return
 	}
-	rec.Successor = out.(rpc.CreateResponse).FigaroID
+	rec.Successor = minted.ID
 	if err := h.placeBeside(ctx, rec.Successor, rec.Old); err != nil {
 		h.discardSuccessor(ctx, rec.Successor)
 		rec.Successor = ""
@@ -502,6 +501,36 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 		return
 	}
 	slog.Info("successor minted and cast", "aria", rec.Old, "successor", rec.Successor, "roles", rec.Roles)
+}
+
+type SuccessorMint struct {
+	Predecessor string
+	Roles       []string
+	Form        form.Snapshot
+	Default     rpc.CreateRequest
+}
+
+type MintedSuccessor struct {
+	ID string
+}
+
+type SuccessorMinter func(ctx context.Context, m SuccessorMint) (minted MintedSuccessor, mine bool, err error)
+
+func (h *handlers) mint(ctx context.Context, m SuccessorMint) (MintedSuccessor, error) {
+	if minter := h.angelus.SuccessorMinter; minter != nil {
+		if minted, mine, err := minter(ctx, m); mine || err != nil {
+			if err == nil && minted.ID == "" {
+				err = errors.New("the minter claimed the succession and minted nobody")
+			}
+			return minted, err
+		}
+	}
+	raw, _ := json.Marshal(m.Default)
+	out, err := h.create(ctx, raw)
+	if err != nil {
+		return MintedSuccessor{}, err
+	}
+	return MintedSuccessor{ID: out.(rpc.CreateResponse).FigaroID}, nil
 }
 
 func (h *handlers) castSuccessor(ctx context.Context, successor, role string) error {
