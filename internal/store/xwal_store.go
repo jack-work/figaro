@@ -884,7 +884,7 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 	}
 	nodes = append(nodes, NodeView{ID: rootID, Kind: string(kindNull), Trunk: rootID})
 	for _, st := range s.listStumps() {
-		nodes = append(nodes, NodeView{ID: st.Name, Kind: string(kindOutfit), Parent: rootID, Stump: st.Name})
+		nodes = append(nodes, NodeView{ID: st.Name, Kind: string(kindOutfit), Parent: rootID, ForkPoint: rootID, Stump: st.Name})
 	}
 	rev = s.presentLocked(nodes)
 
