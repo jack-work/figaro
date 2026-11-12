@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #
-# release.sh: cut a figaro release: version, tag, release branch, push,
-# GitHub release. It does NOT touch this machine's installed figaro.
+# release.sh: cut a figaro release: version, tag, release branch, push. It does NOT touch this machine's installed figaro.
 #
 #   scripts/release.sh              # cut whatever flake.nix declares, if untagged
 #   scripts/release.sh minor        # bump flake.nix, then cut that
@@ -27,8 +26,9 @@
 #      never thrown away: on any abort it is saved to .git/RELEASE_EDITMSG.
 #   5. Move the `release` branch to the tag: that is what a `nix profile`
 #      entry tracking ?ref=release will pick up.
-#   6. Push branch + release + tag, then create the GitHub release, reading
-#      title and notes straight back out of the tag. One source of truth.
+#   6. Push branch + release + tag, then wait until GitHub carries the tag.
+#      .github/workflows/release.yml makes the GitHub release from it, title
+#      and notes read straight back out of the tag. One source of truth.
 #
 # What it deliberately does NOT do: install, upgrade, or restart anything
 # here. Follow it yourself, from a terminal, with:
@@ -43,7 +43,7 @@ set -euo pipefail
 BUMP=""
 DRY=0
 CHECK=1
-DO_GH=1
+WAIT=1
 SUBJECT=""
 NOTES_FILE=""
 TAG_MESSAGE_FILE=""
@@ -75,8 +75,7 @@ run() {
 #
 # Both urls, fetch and push: a mirror we deliberately cannot write to still
 # names the repository. Reading only the push url made a remote with a
-# disabled push url invisible, the wait was skipped, and `gh release create
-# --verify-tag` outran the mirror it should have waited for.
+# disabled push url invisible and the wait was skipped.
 github_slug() {
 	local r url
 	for r in $(git remote); do
@@ -94,21 +93,8 @@ github_slug() {
 	return 1
 }
 
-# wait_for_mirror blocks until GitHub's copy of $1 points at the same COMMIT we
-# just pushed.
-#
-# It exists for the case where $REMOTE is NOT GitHub: a mirroring remote
-# accepts the push on its own merits and forwards to GitHub afterwards, often
-# in the background. `gh release create --verify-tag` asks GitHub, so without
-# this it can outrun the copy and fail on a tag that is merely late. Pushing
-# straight at GitHub skips the whole thing.
-#
-# Existence is not enough: a pathological retry can leave an older ref under
-# that name, and "the tag is there" would pass while pointing at the wrong
-# commit. release.sh writes ANNOTATED tags, so GitHub's ref points at a tag
-# object and has to be dereferenced before the comparison means anything.
 wait_for_mirror() {
-	local tag=$1 slug want obj got waited=0
+	local tag=$1 slug want refs got waited=0
 
 	# Pushing straight at GitHub: nothing to wait for.
 	git remote get-url --push "$REMOTE" 2>/dev/null | grep -q 'github\.com' && return 0
@@ -121,15 +107,12 @@ wait_for_mirror() {
 
 	say "waiting for the mirror to carry $tag to $slug"
 	while [ "$waited" -lt "$MIRROR_TIMEOUT" ]; do
-		obj=$(gh api "repos/$slug/git/ref/tags/$tag" -q .object.sha 2>/dev/null || true)
-		if [ -n "$obj" ]; then
-			# Annotated tag: deref the tag object to its commit. A
-			# lightweight tag answers 404 here and the ref sha stands.
-			got=$(gh api "repos/$slug/git/tags/$obj" -q .object.sha 2>/dev/null || echo "$obj")
-			if [ "$got" = "$want" ]; then
-				say "mirror carried $tag after ${waited}s"
-				return 0
-			fi
+		refs=$(git ls-remote "https://github.com/$slug" \
+			"refs/tags/$tag" "refs/tags/$tag^{}" 2>/dev/null || true)
+		got=$(printf '%s\n' "$refs" | awk -v r="refs/tags/$tag^{}" '$2 == r { print $1 }')
+		if [ "$got" = "$want" ]; then
+			say "mirror carried $tag after ${waited}s"
+			return 0
 		fi
 		sleep 2
 		waited=$((waited + 2))
@@ -170,7 +153,7 @@ already declares is what gets cut.
                            aborted run tells you to resume with.
   -n, --dry-run            Print every mutation without performing it.
       --no-check           Skip go build/vet/test.
-      --no-github          Tag and push, but create no GitHub release.
+      --no-wait            Push, but do not wait for GitHub to carry the tag.
       --remote <name>      Git remote (default: keel).
       --branch <name>      Branch being released (default: main).
 EOF
@@ -185,7 +168,7 @@ while [ $# -gt 0 ]; do
 		--tag-message)     TAG_MESSAGE_FILE="${2:-}"; shift ;;
 		-n|--dry-run)      DRY=1 ;;
 		--no-check)        CHECK=0 ;;
-		--no-github)       DO_GH=0 ;;
+		--no-wait)         WAIT=0 ;;
 		--remote)          REMOTE="${2:-}"; shift ;;
 		--branch)          BRANCH="${2:-}"; shift ;;
 		-h|--help)         usage ;;
@@ -199,9 +182,6 @@ done
 command -v git >/dev/null || die "git not found"
 root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not a git repository"
 cd "$root"
-
-[ "$DO_GH" = 1 ] && { command -v gh >/dev/null || die "gh not found (or pass --no-github)"; }
-[ "$DO_GH" = 1 ] && { gh auth status >/dev/null 2>&1 || die "gh is not authenticated (gh auth login)"; }
 
 cur_branch=$(git rev-parse --abbrev-ref HEAD)
 [ "$cur_branch" = "$BRANCH" ] || die "on branch '$cur_branch', expected '$BRANCH' (use --branch)"
@@ -339,18 +319,14 @@ if [ "$DRY" = 1 ]; then
 	printf '   \033[2m[dry-run]\033[0m git tag -a --cleanup=strip %s %s\n' "${tag_args[*]}" "$TAG" >&2
 	printf '   \033[2m[dry-run]\033[0m tag message template:\n' >&2
 	sed 's/^/       /' "$tmpl" >&2
-	SUBJECT_OUT="$TAG: (from your editor)"
-	NOTES_OUT="(from your editor)"
 else
 	git tag -a --cleanup=strip "${tag_args[@]}" "$TAG"
 
-	# Split the raw message ourselves: line 1 is the subject, the rest is the
-	# body. git's own %(contents:subject) means "first PARAGRAPH", which would
-	# silently swallow a body written without a blank line after the title.
+	# Line 1 is the subject, the same split release.yml makes. git's own
+	# %(contents:subject) means "first PARAGRAPH", which would silently
+	# swallow a body written without a blank line after the title.
 	msg=$(git for-each-ref "refs/tags/$TAG" --format='%(contents)')
 	SUBJECT_OUT=${msg%%$'\n'*}
-	NOTES_OUT=${msg#"$SUBJECT_OUT"}
-	while [ "${NOTES_OUT#$'\n'}" != "$NOTES_OUT" ]; do NOTES_OUT=${NOTES_OUT#$'\n'}; done
 
 	# Whatever happens next, the words you wrote are not lost.
 	printf '%s\n' "$msg" >"$SAVED"
@@ -362,13 +338,6 @@ else
     Your message was saved. Resume with:
         $0 $BUMP --tag-message $SAVED" ;;
 	esac
-
-	# An empty body is allowed, a patch release may be one honest line.
-	# The release notes then fall back to the commit list.
-	if [ -z "${NOTES_OUT//[[:space:]]/}" ]; then
-		say "no body: release notes will be the commit list since $last_tag"
-		NOTES_OUT=$(git log --no-merges --format='- %s' "$last_tag..$TAG")
-	fi
 fi
 
 # ------------------------------------------------------- release branch + push
@@ -410,24 +379,12 @@ fi
 
 # ----------------------------------------------------------- GitHub release
 
-# When $REMOTE is not GitHub itself, the tag reaches GitHub asynchronously, so
-# `gh release create --verify-tag` has to be told to wait for it.
-if [ "$DO_GH" = 1 ] && [ "$DRY" != 1 ]; then
+if [ "$WAIT" = 1 ] && [ "$DRY" != 1 ]; then
 	wait_for_mirror "$TAG" || exit 1
+elif [ "$WAIT" = 1 ]; then
+	printf '   \033[2m[dry-run]\033[0m wait for GitHub to carry %s (git ls-remote)\n' "$TAG" >&2
 fi
-
-if [ "$DO_GH" = 1 ]; then
-	say "creating GitHub release $TAG"
-	if [ "$DRY" = 1 ]; then
-		printf '   \033[2m[dry-run]\033[0m gh release create %s --verify-tag --title ... --notes ...\n' "$TAG" >&2
-	else
-		gh release create "$TAG" --verify-tag \
-			--title "$SUBJECT_OUT" \
-			--notes  "$NOTES_OUT"
-	fi
-else
-	say "skipping GitHub release (--no-github)"
-fi
+say "the release workflow on GitHub makes the $TAG release from the tag"
 
 # ------------------------------------------------------------------- coda
 
