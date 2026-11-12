@@ -50,8 +50,7 @@ type XwalBackend struct {
 	// ttl holds only nodes carrying system.ttl; nil until the first read seeds
 	// it from the sidecars. Its own lock: the sweep reads it on a ticker and
 	// must not queue behind a cold node open holding b.mu.
-	ttlMu sync.Mutex
-	// losingPlacement is set once at wiring, before the daemon serves.
+	ttlMu           sync.Mutex
 	losingPlacement func(ids []string) error
 	ttl             map[string]TTLEntry
 	access          map[string]int64

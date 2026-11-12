@@ -320,9 +320,6 @@ func readNodeMarker(dir string) (n nodeMarker, ok bool) {
 	return parseNodeMarker(b)
 }
 
-// parseNodeMarker reads a whole marker or nothing. trunk= is written last and
-// placed= first, so no prefix of a marker parses as the same node without its
-// placement: a torn marker is a node that is not there.
 func parseNodeMarker(b []byte) (n nodeMarker, ok bool) {
 	if len(b) == 0 || b[len(b)-1] != '\n' {
 		return nodeMarker{}, false

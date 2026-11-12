@@ -10,14 +10,10 @@ type NodeInfo struct {
 	From string `json:"from,omitempty"`
 	Kind string `json:"kind,omitempty"` // null | loadout | conversation
 
-	// Placed is the node this one was placed under, when that is not From.
-	// PlacedTop says it was placed under nothing. From is never rewritten.
 	Placed    string `json:"placed,omitempty"`
 	PlacedTop bool   `json:"placed_top,omitempty"`
 }
 
-// Placement is the node this one sits under: where it was placed, else where
-// it was forked.
 func (n *NodeInfo) Placement() string {
 	switch {
 	case n == nil, n.PlacedTop:

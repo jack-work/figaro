@@ -95,9 +95,6 @@ type RestoreForksRequest struct {
 	DryRun bool `json:"dry_run,omitempty"`
 }
 
-// RestoredFork is a figaro an older release moved by rewriting its fork
-// point. Was is the figaro it names today and keeps answering to; ForkPoint
-// is the holder of its cut, empty when Kept says why it was left alone.
 type RestoredFork struct {
 	NormalizedAria
 	Was             string `json:"was"`
@@ -113,8 +110,6 @@ type RestoreForksResponse struct {
 	Kept     []RestoredFork `json:"kept"`
 }
 
-// PlacedAria is a figaro whose placement or fork point needs its owner's
-// eye. Names is the store's name for a node that is gone.
 type PlacedAria struct {
 	NormalizedAria
 	ForkPoint       string `json:"fork_point,omitempty"`
@@ -124,9 +119,6 @@ type PlacedAria struct {
 	Names           string `json:"names,omitempty"`
 }
 
-// PlacementsResponse: Placed answer to a figaro other than their fork point,
-// Lost hold nothing because their placement names a node that is gone, and
-// Dangling read as top-level because their fork point names no node.
 type PlacementsResponse struct {
 	Placed   []PlacedAria `json:"placed"`
 	Lost     []PlacedAria `json:"lost"`

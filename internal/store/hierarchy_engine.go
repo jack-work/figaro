@@ -123,8 +123,6 @@ func (e *hierarchyEngine) Remove(id string, recursive bool, expect []string, pin
 	return e.s().removeLeaf(id, recursive, expect, pins, e.b.bury, e.b.unlinked, e.b.losingPlacement)
 }
 
-// OnPlacementLoss names the nodes about to lose the node they answer to,
-// before anything is unlinked; an error refuses the delete.
 func (b *XwalBackend) OnPlacementLoss(fn func(ids []string) error) { b.losingPlacement = fn }
 
 func (b *XwalBackend) deadlineOf(id string) int64 {

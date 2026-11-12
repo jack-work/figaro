@@ -53,9 +53,6 @@ func (t *Trunks) Place(node, under string) error {
 	return t.remark(node, n.marker().placedUnder(under))
 }
 
-// Refork names another node as the one this node's history was cut from,
-// when both hold the same prefix. It is for a store whose fork points an
-// older release rewrote; nothing moves a fork point in the ordinary course.
 func (t *Trunks) Refork(node, from string) error {
 	if node == "" || from == "" || node == from {
 		return fmt.Errorf("xwal: cannot fork %q from %q", node, from)

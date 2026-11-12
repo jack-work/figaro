@@ -181,14 +181,10 @@ type XwalStore struct {
 	deleting sync.Mutex
 }
 
-// xwalTopology is the placement adjacency: who a node answers to, and where
-// it is drawn unless @topology says otherwise.
 type xwalTopology struct{ s *XwalStore }
 
-// unplacedPrefix opens no id, so a lost placement resolves to no node.
 const unplacedPrefix = "?"
 
-// forkTopology is the .from adjacency: whose history a node reads through.
 type forkTopology struct{ xwalTopology }
 
 func (t forkTopology) From(id string) (string, bool) {
@@ -681,16 +677,11 @@ func withKey(p message.Patch, key, value string) message.Patch {
 }
 
 type NodeView struct {
-	ID string
-	// Parent is the placement: the node this one answers to. ForkPoint is the
-	// node its history was cut from, which no move rewrites. They differ only
-	// for a node that was placed.
+	ID        string
 	Parent    string
 	ForkPoint string
-	// Unplaced marks a placement whose node is gone: Parent names nothing,
-	// and the node answers to nobody until its owner places it again.
-	Unplaced bool
-	Kind     string
+	Unplaced  bool
+	Kind      string
 	// Stump is where the node's data came from, by the topology walk; a
 	// promote moves where a row appears, never this.
 	Stump      string
@@ -1022,8 +1013,6 @@ func (s *XwalStore) anyPlaced() bool {
 	return false
 }
 
-// PlacedNodes is every node that answers to a node other than its fork point,
-// a lost placement included: what a downgrade below this release would move.
 func (s *XwalStore) PlacedNodes() []NodeView {
 	var out []NodeView
 	for _, n := range s.topologySnapshot().nodes {
@@ -1034,7 +1023,6 @@ func (s *XwalStore) PlacedNodes() []NodeView {
 	return out
 }
 
-// placedUnder is the nodes outside the set that answer to a node inside it.
 func (s *XwalStore) placedUnder(set []string) []string {
 	in := make(map[string]bool, len(set))
 	for _, id := range set {

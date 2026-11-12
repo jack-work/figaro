@@ -68,15 +68,12 @@ func (t *Trunks) anchorOf(trunk TrunkID) (string, bool) {
 }
 
 type TrunkInfo struct {
-	ID         string
-	Head       []string // head node branch
-	Parent     string   // parent trunk id ("" if rooted at a stump or the root)
-	Stump      string   // stump name, if the trunk is rooted directly at a stump
-	Kind       string   // the founding node's kind, from its marker ("conversation", "form", …)
-	BranchedLT uint64
-	// Placed and PlacedStump name what the trunk sits under, as Parent and
-	// Stump name what it was forked from. PlacedLost is a placement whose
-	// node is gone.
+	ID          string
+	Head        []string // head node branch
+	Parent      string   // parent trunk id ("" if rooted at a stump or the root)
+	Stump       string   // stump name, if the trunk is rooted directly at a stump
+	Kind        string   // the founding node's kind, from its marker ("conversation", "form", …)
+	BranchedLT  uint64
 	Placed      string
 	PlacedStump string
 	PlacedLost  string
