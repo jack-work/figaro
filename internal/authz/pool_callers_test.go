@@ -7,20 +7,43 @@ import (
 	"io/fs"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
 
-// Engineer VII's condition on the grant: the subject that carries a lease
-// is built in the functions named here and nowhere else in the daemon. A
-// new caller fails this until it is listed, which is the moment to ask
-// whether it serves exactly one lease.
+const atPackageLevel = "(package level)"
+
+// Engineer VII's condition on the grant, widened by El Inspector XV (C2):
+// a provisioner subject is built in the functions named here and nowhere
+// else in the daemon. The scan follows the three ways to build one: the
+// constructor, the principal (a subject literal around it needs no
+// constructor), and the scope, by name or spelled out in a string. A new
+// user of any of them fails this until it is listed, which is the moment
+// to ask whether it serves exactly one lease.
 func TestOnlyTheLeaseHandlersBuildAProvisionerSubject(t *testing.T) {
-	allowed := map[string][]string{
-		"internal/angelus/slot_mint.go": {"mintLeased"},
+	allowed := map[string]map[string][]string{
+		"ProvisionerServing": {
+			"internal/angelus/slot_mint.go": {"mintLeased"},
+		},
+		"ProvisionerPrincipal": {
+			"internal/authz/pool.go":        {"IsProvisioner", "ProvisionerServing"},
+			"internal/angelus/slot_mint.go": {"poolNodeOf", "mintPoolNodes"},
+		},
+		"PoolScope": {
+			"internal/authz/pool.go": {atPackageLevel, "ProvisionerPrincipal", "ProvisionerServing", "leaseServed"},
+		},
 	}
 	root := filepath.Join("..", "..")
-	found := map[string][]string{}
+	found := map[string]map[string][]string{}
+	note := func(name, file, where string) {
+		if found[name] == nil {
+			found[name] = map[string][]string{}
+		}
+		if !slices.Contains(found[name][file], where) {
+			found[name][file] = append(found[name][file], where)
+		}
+	}
 	fset := token.NewFileSet()
 	for _, dir := range []string{"api", "cmd", "internal"} {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
@@ -33,20 +56,23 @@ func TestOnlyTheLeaseHandlersBuildAProvisionerSubject(t *testing.T) {
 			}
 			rel, _ := filepath.Rel(root, path)
 			for _, decl := range file.Decls {
-				fn, ok := decl.(*ast.FuncDecl)
-				if !ok || fn.Body == nil {
-					continue
-				}
-				ast.Inspect(fn.Body, func(n ast.Node) bool {
-					name := ""
-					switch x := n.(type) {
-					case *ast.SelectorExpr:
-						name = x.Sel.Name
-					case *ast.Ident:
-						name = x.Name
+				where, body := atPackageLevel, ast.Node(decl)
+				if fn, ok := decl.(*ast.FuncDecl); ok {
+					if fn.Body == nil {
+						continue
 					}
-					if name == "ProvisionerServing" && !slices.Contains(found[rel], fn.Name.Name) {
-						found[rel] = append(found[rel], fn.Name.Name)
+					where, body = fn.Name.Name, fn.Body
+				}
+				ast.Inspect(body, func(n ast.Node) bool {
+					switch x := n.(type) {
+					case *ast.Ident:
+						if _, watched := allowed[x.Name]; watched {
+							note(x.Name, rel, where)
+						}
+					case *ast.BasicLit:
+						if text, err := strconv.Unquote(x.Value); err == nil && x.Kind == token.STRING && strings.Contains(text, PoolScope) {
+							note("PoolScope", rel, where)
+						}
 					}
 					return true
 				})
@@ -57,20 +83,24 @@ func TestOnlyTheLeaseHandlersBuildAProvisionerSubject(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(found) == 0 {
-		t.Fatal("no function names ProvisionerServing: the scan reads nothing")
-	}
-	for file, funcs := range found {
-		for _, fn := range funcs {
-			if !slices.Contains(allowed[file], fn) {
-				t.Errorf("%s: %s builds a provisioner subject and is not a lease handler listed here", file, fn)
+	for name, files := range allowed {
+		if len(found[name]) == 0 {
+			t.Fatalf("nothing names %s: the scan reads nothing", name)
+		}
+		for file, funcs := range files {
+			for _, fn := range funcs {
+				if !slices.Contains(found[name][file], fn) {
+					t.Errorf("%s: %s is listed for %s and no longer uses it", file, fn, name)
+				}
 			}
 		}
 	}
-	for file, funcs := range allowed {
-		for _, fn := range funcs {
-			if !slices.Contains(found[file], fn) {
-				t.Errorf("%s: %s is listed and no longer builds a provisioner subject", file, fn)
+	for name, files := range found {
+		for file, funcs := range files {
+			for _, fn := range funcs {
+				if !slices.Contains(allowed[name][file], fn) {
+					t.Errorf("%s: %s uses %s and is not listed here: only the lease handlers build a provisioner subject", file, fn, name)
+				}
 			}
 		}
 	}
