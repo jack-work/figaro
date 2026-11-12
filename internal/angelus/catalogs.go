@@ -41,6 +41,9 @@ func (h *handlers) catalog(id string) *store.Form {
 }
 
 func (h *handlers) readCatalog(id, method string, params json.RawMessage) (any, bool, error) {
+	if id == rpc.SuccessionsFormID && h.succ != nil {
+		h.succ.load()
+	}
 	f := h.catalog(id)
 	if f == nil {
 		return nil, true, fmt.Errorf("%s: this daemon does not keep it", id)

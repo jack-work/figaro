@@ -1,10 +1,13 @@
 package angelus
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // A restart must find every in-flight succession from the one file, without
@@ -28,4 +31,23 @@ func TestSuccessionsSurviveARestart(t *testing.T) {
 	require.True(t, again.of("bbbb").Purge, "a restart mid-ramp must still purge")
 	require.Nil(t, again.of("dddd"))
 	require.Nil(t, again.succeededBy("aaaa"))
+}
+
+// The startup path publishes every catalog. It must not open successions.json:
+// only a read of @successions, a turn end or the sweep does.
+func TestPublishingCatalogsDoesNotReadSuccessions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "successions.json")
+	require.NoError(t, newSuccessions(path).put(successionRecord{Old: "aaaa", Phase: successionHandoff, DeadlineMS: 7}))
+
+	a := &Angelus{Hubs: newHubs()}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() { cancel(); a.Hubs.closeAll() })
+	h := &handlers{angelus: a, ctx: ctx, succ: newSuccessions(path)}
+	h.publishCatalogs()
+	require.Nil(t, h.succ.of("aaaa"), "publishing the catalogs read successions.json")
+
+	_, ok, err := h.readCatalog(rpc.SuccessionsFormID, rpc.MethodForm, nil)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotNil(t, h.succ.of("aaaa"), "a read of @successions did not load it")
 }
