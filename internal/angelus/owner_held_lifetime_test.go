@@ -108,3 +108,56 @@ func TestABoxStillRetiresItsOwnAria(t *testing.T) {
 		}
 	}
 }
+
+// El Inspector D7: system.succession_failed is what holds a refused succession
+// off (the slot pool's per-day bound is a refusal), and system.retirement.page
+// says who hears of it. Anyone but the owner who could unset the first or
+// repoint the second would walk through the bound, or silence it.
+func TestOnlyTheOwnerClearsAFailedSuccessionOrMovesItsPage(t *testing.T) {
+	r := newRigWith(t, lifetimeLentPolicy)
+	guest := as("user", "guest")
+	resp, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := resp.FigaroID
+	if _, held := form.OwnerHeld(store.SystemSuccessionFailedKey); !held {
+		t.Fatalf("%s is not owner-held", store.SystemSuccessionFailedKey)
+	}
+	seed := heldPatch(t, map[string]any{
+		store.SystemSuccessionFailedKey: "4 successions a day, all spent",
+		store.SystemRetirementKey:       map[string]any{"context_threshold": 1000, "action": "succeed", "page": "@pool"},
+	})
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, id, rpc.SetRequest{Patch: *seed})); err != nil {
+		t.Fatalf("the owner cannot record a failed succession: %v", err)
+	}
+	if _, err := r.h[rpc.MethodSet](guest, withAria(t, id, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"note": "mine"})})); err != nil {
+		t.Fatalf("the guest cannot set an open key, so this test proves nothing: %v", err)
+	}
+
+	unset := form.Build(form.Snapshot{}, nil, []string{store.SystemSuccessionFailedKey})
+	for what, p := range map[string]form.Patch{
+		"unset succession_failed":   unset,
+		"rewrite succession_failed": *heldPatch(t, map[string]any{store.SystemSuccessionFailedKey: ""}),
+		"repoint page":              *heldPatch(t, map[string]any{store.SystemRetirementKey + ".page": "@nobody"}),
+		"drop page":                 form.Build(form.Snapshot{}, nil, []string{store.SystemRetirementKey + ".page"}),
+	} {
+		_, err := r.h[rpc.MethodSet](guest, withAria(t, id, rpc.SetRequest{Patch: p}))
+		if err == nil || !strings.Contains(err.Error(), "owner-held") {
+			t.Errorf("%s by the guest: %v", what, err)
+		}
+		_, err = r.h[rpc.MethodQua](guest, withAria(t, id, rpc.QuaRequest{Text: "hi", Form: &rpc.FormInput{Patch: &p}}))
+		if err == nil || !strings.Contains(err.Error(), "owner-held") {
+			t.Errorf("%s by the guest's prompt patch: %v", what, err)
+		}
+	}
+	if v, ok := keyOn(t, r, id, store.SystemSuccessionFailedKey); !ok || !strings.Contains(v, "all spent") {
+		t.Errorf("%s = %q after the guest's attempts", store.SystemSuccessionFailedKey, v)
+	}
+	if v, _ := keyOn(t, r, id, store.SystemRetirementKey); !strings.Contains(v, "@pool") {
+		t.Errorf("%s = %s after the guest's attempts", store.SystemRetirementKey, v)
+	}
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, id, rpc.SetRequest{Patch: unset})); err != nil {
+		t.Errorf("the owner cannot clear a failed succession: %v", err)
+	}
+}
