@@ -66,9 +66,6 @@ snapshot:
   # `figaro --version`. The -snapshot suffix is the tell.
   version_template: "{{ incpatch .Version }}-snapshot"
 
-changelog:
-  disable: true
-
 release:
   github:
     owner: jack-work
