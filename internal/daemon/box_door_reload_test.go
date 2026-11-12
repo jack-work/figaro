@@ -21,9 +21,10 @@ import (
 )
 
 type reloadRig struct {
-	t   *testing.T
-	dir string
-	a   *angelus.Angelus
+	t     *testing.T
+	dir   string
+	a     *angelus.Angelus
+	extra string
 }
 
 type rigBox struct {
@@ -33,6 +34,7 @@ type rigBox struct {
 func (r *reloadRig) write(boxes ...rigBox) {
 	r.t.Helper()
 	var b strings.Builder
+	b.WriteString(r.extra)
 	for _, x := range boxes {
 		fmt.Fprintf(&b, "[sandbox.boxes.%s]\nexec = %q\ndoor = %q\noutfits = [\"*\"]\nproviders = [\"*\"]\n", x.name, filepath.Join(r.dir, x.name+"-exec.sock"), x.door)
 		if x.host != "" {
@@ -340,5 +342,73 @@ func TestAHostDoorAddedAtRuntimeOpens(t *testing.T) {
 	}
 	if err := reaches(t, door); err != nil {
 		t.Fatalf("dropping the host door took the box door with it: %v", err)
+	}
+}
+
+func TestADoorMovedToAPathThatCannotListenKeepsTheOldDoorAndItsConnections(t *testing.T) {
+	r := newReloadRig(t)
+	door := r.path("chat", "door", "door.sock")
+	r.write(rigBox{name: "chat", door: door})
+	if err := r.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	held, err := dialBox(door)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.c.Close()
+	if err := held.list(); err != nil {
+		t.Fatalf("canary: the old door never served: %v", err)
+	}
+	r.write(rigBox{name: "chat", door: filepath.Join(r.dir, "nowhere", "door.sock")})
+	if err := r.refresh(); err == nil || !strings.Contains(err.Error(), "sandbox.boxes.chat.door") {
+		t.Fatalf("a move to a path that cannot listen was accepted: %v", err)
+	}
+	select {
+	case reason := <-held.lapsed:
+		t.Fatalf("a refused move lapsed the old door's connection: %q", reason)
+	default:
+	}
+	if err := held.list(); err != nil {
+		t.Fatalf("the held connection stopped serving after a refused move: %v", err)
+	}
+	if err := reaches(t, door); err != nil {
+		t.Fatalf("the old door stopped answering after a refused move: %v", err)
+	}
+}
+
+func TestABoxDoorOnTheCLIOrWebDoorIsRefusedByName(t *testing.T) {
+	web := filepath.Join(t.TempDir(), "web.sock")
+	for _, tc := range []struct{ name, path, want string }{
+		{"cli", "", "is the CLI door"},
+		{"web", web, "is the web door"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newReloadRig(t)
+			door := r.path("chat", "door", "door.sock")
+			r.extra = fmt.Sprintf("[door.web]\npath = %q\n", web)
+			r.write(rigBox{name: "chat", door: door})
+			if err := r.refresh(); err != nil {
+				t.Fatal(err)
+			}
+			if err := reaches(t, door); err != nil {
+				t.Fatalf("canary: the first door never served: %v", err)
+			}
+			clash := tc.path
+			if clash == "" {
+				clash = r.a.SocketPath
+			}
+			r.write(rigBox{name: "chat", door: door}, rigBox{name: "intruder", door: clash})
+			err := r.refresh()
+			if err == nil || !strings.Contains(err.Error(), "sandbox.boxes.intruder.door: "+clash+" "+tc.want) {
+				t.Fatalf("a box door on the %s door was not refused by name: %v", tc.name, err)
+			}
+			if err := reaches(t, door); err != nil {
+				t.Fatalf("the old door stopped serving after the refusal: %v", err)
+			}
+			if _, err := os.Stat(clash); !os.IsNotExist(err) {
+				t.Fatalf("the refused box listened on %s: %v", clash, err)
+			}
+		})
 	}
 }
