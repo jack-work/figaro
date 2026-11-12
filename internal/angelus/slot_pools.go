@@ -14,6 +14,8 @@ type SlotPools struct {
 	Ledger      *slotpool.Ledger
 	Generations *slotpool.Generations
 
+	leasing sync.Mutex
+
 	mu      sync.Mutex
 	minting map[string]map[string]bool
 }

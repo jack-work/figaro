@@ -154,12 +154,19 @@ func (f *ledgerFile) row(pool, key string, generation uint64) *Lease {
 	return nil
 }
 
+func CheckKey(key string) error {
+	if !keySyntax.MatchString(key) {
+		return fmt.Errorf("a lease key is 1 to 128 of A-Z a-z 0-9 . _ : - and this one is not (%d bytes)", len(key))
+	}
+	return nil
+}
+
 func (l *Ledger) Begin(pool, slot, key string, generation uint64, holder string) error {
-	switch {
-	case pool == "" || slot == "" || holder == "":
+	if pool == "" || slot == "" || holder == "" {
 		return errors.New("ledger: a lease names its pool, its slot and who holds it")
-	case !keySyntax.MatchString(key):
-		return fmt.Errorf("ledger: a lease key is 1 to 128 of A-Z a-z 0-9 . _ : - and this one is not (%d bytes)", len(key))
+	}
+	if err := CheckKey(key); err != nil {
+		return fmt.Errorf("ledger: %w", err)
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()

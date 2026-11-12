@@ -140,9 +140,14 @@ SetRequest.Assert
 SetRequest.IfVersion
 SetRequest.Outfits
 SetRequest.Patch
+SlotLeaseRequest.Key
+SlotLeaseRequest.Pool
 SlotPagesRequest.Pool
 SlotPagesRequest.Seen
 SlotPagesRequest.Wait
+SlotReleaseRequest.Generation
+SlotReleaseRequest.Key
+SlotReleaseRequest.Pool
 StatusRequest.SkipMem
 StudyRequest.FormID
 TroupeAPIKeyListRequest.Troupe

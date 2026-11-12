@@ -16,22 +16,27 @@ const atPackageLevel = "(package level)"
 
 // Engineer VII's condition on the grant, widened by El Inspector XV (C2):
 // a provisioner subject is built in the functions named here and nowhere
-// else in the daemon. The scan follows the three ways to build one: the
+// else in the daemon. The scan follows the four ways to build one: the
 // constructor, the principal (a subject literal around it needs no
-// constructor), and the scope, by name or spelled out in a string. A new
+// constructor), the principal's ID, and the scope, by name or spelled out
+// in a string. A new
 // user of any of them fails this until it is listed, which is the moment
 // to ask whether it serves exactly one lease.
 func TestOnlyTheLeaseHandlersBuildAProvisionerSubject(t *testing.T) {
 	allowed := map[string]map[string][]string{
 		"ProvisionerServing": {
-			"internal/angelus/slot_mint.go": {"mintLeased"},
+			"internal/angelus/slot_mint.go":    {"mintLeased"},
+			"internal/angelus/slot_release.go": {"releaseLease"},
 		},
 		"ProvisionerPrincipal": {
-			"internal/authz/pool.go":        {"IsProvisioner", "ProvisionerServing"},
+			"internal/authz/pool.go":        {"ProvisionerServing"},
 			"internal/angelus/slot_mint.go": {"poolNodeOf", "mintPoolNodes"},
 		},
+		"provisionerID": {
+			"internal/authz/pool.go": {atPackageLevel, "ProvisionerPrincipal", "IsProvisioner"},
+		},
 		"PoolScope": {
-			"internal/authz/pool.go": {atPackageLevel, "ProvisionerPrincipal", "ProvisionerServing", "leaseServed"},
+			"internal/authz/pool.go": {atPackageLevel, "ProvisionerServing", "leaseServed"},
 		},
 	}
 	root := filepath.Join("..", "..")

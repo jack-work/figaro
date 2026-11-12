@@ -48,7 +48,9 @@ var methodVerbs = map[string]Verb{
 
 	MethodDecide: VerbDecide,
 
-	MethodSlotPages: VerbLease,
+	MethodSlotPages:   VerbLease,
+	MethodSlotLease:   VerbLease,
+	MethodSlotRelease: VerbLease,
 
 	MethodQueued:  VerbRead,
 	MethodRead:    VerbRead,
