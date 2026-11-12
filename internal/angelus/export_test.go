@@ -8,7 +8,7 @@ import (
 
 func (a *Angelus) SweepLifetimesNow() {
 	if s, ok := a.Backend.(roleSeeder); ok {
-		if _, ready := a.roleTargets(); !ready {
+		if _, ready := a.roles(); !ready {
 			s.SeedRoles(context.Background(), 0)
 		}
 	}
@@ -54,7 +54,7 @@ func FormViewForTest(id string) *rpc.FormView { return formViewOf(id) }
 
 func (a *Angelus) SeedRolesNow() {
 	if s, ok := a.Backend.(roleSeeder); ok {
-		if _, ready := a.roleTargets(); !ready {
+		if _, ready := a.roles(); !ready {
 			s.SeedRoles(context.Background(), 0)
 		}
 	}

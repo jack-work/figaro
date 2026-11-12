@@ -20,7 +20,7 @@ func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
 		Owner:     a.owner,
 		Placement: a.placement,
 		Holds: func(ctx context.Context, root string, taken []string) (string, string) {
-			roles, ready := a.roleTargets()
+			roles, ready := a.roles()
 			if !ready {
 				return root, "the role index is not ready"
 			}

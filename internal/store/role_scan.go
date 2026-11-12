@@ -8,7 +8,7 @@ import (
 
 var targetAriaToken = []byte(`"` + targetAriaKey + `"`)
 
-func (b *XwalBackend) ScanRoleTargets() (map[string]string, error) {
+func (b *XwalBackend) ScanRoleForms() (map[string]string, error) {
 	out := map[string]string{}
 	for _, f := range b.Forms() {
 		target, err := b.roleTargetOnDisk(f.ID)
@@ -16,7 +16,7 @@ func (b *XwalBackend) ScanRoleTargets() (map[string]string, error) {
 			return nil, fmt.Errorf("role scan: form %s: %w", f.ID, err)
 		}
 		if target != "" {
-			out[target] = f.ID
+			out[f.ID] = target
 		}
 	}
 	return out, nil

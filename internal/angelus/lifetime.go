@@ -106,7 +106,7 @@ func (a *Angelus) expire(keeper ttlKeeper, id string, now time.Time) error {
 			"node", e.ID, "until", time.UnixMilli(reaps))
 		return nil
 	}
-	if _, ready := a.roleTargets(); !ready {
+	if _, ready := a.roles(); !ready {
 		slog.Debug("lifetime spent, waiting for the role index", "node", e.ID)
 		return errNotYet
 	}
@@ -148,7 +148,7 @@ func (a *Angelus) expireEmpty(keeper ttlKeeper, e store.TTLEntry, now time.Time)
 		a.held.release(e.ID)
 		return nil
 	}
-	if _, ready := a.roleTargets(); !ready {
+	if _, ready := a.roles(); !ready {
 		return errNotYet
 	}
 	taken := keeper.DeleteSet(e.ID)
@@ -243,7 +243,7 @@ func (a *Angelus) sandboxOf(id string) string {
 	return "local"
 }
 
-func (a *Angelus) heldIn(taken []string, self string, bound map[string][]int, roles map[string]string, def time.Duration, now time.Time) (string, string) {
+func (a *Angelus) heldIn(taken []string, self string, bound map[string][]int, roles roleSet, def time.Duration, now time.Time) (string, string) {
 	if node, why := a.liveIn(taken, bound, roles); why != "" {
 		return node, why
 	}
@@ -267,8 +267,32 @@ func (a *Angelus) heldIn(taken []string, self string, bound map[string][]int, ro
 }
 
 type roleIndexer interface {
-	RoleTargets() (map[string]string, bool)
 	RoleForms() (map[string]string, bool)
+}
+
+type roleSet struct {
+	forms   map[string]string
+	holders map[string]string
+}
+
+func newRoleSet(forms map[string]string) roleSet {
+	holders := make(map[string]string, len(forms))
+	for form, target := range forms {
+		if held, ok := holders[target]; !ok || form < held {
+			holders[target] = form
+		}
+	}
+	return roleSet{forms: forms, holders: holders}
+}
+
+func (r roleSet) isRole(id string) bool {
+	_, ok := r.forms[id]
+	return ok
+}
+
+func (r roleSet) pointingAt(id string) (string, bool) {
+	role, ok := r.holders[id]
+	return role, ok
 }
 
 var errRoleIndexMissed = errors.New("a role the index missed points into the delete set")
@@ -276,22 +300,19 @@ var errRoleIndexMissed = errors.New("a role the index missed points into the del
 var errRoleScanFailed = errors.New("the role scan could not read a form: refusing the delete")
 
 func (a *Angelus) scanForRoleIn(taken []string, root string) error {
-	scanned, err := a.scanRoleTargets()
+	forms, err := a.scanRoleForms()
 	if err != nil {
 		slog.Error("role scan failed: refusing the delete", "node", root, "err", err)
 		return errRoleScanFailed
 	}
-	isRole := make(map[string]bool, len(scanned))
-	for _, role := range scanned {
-		isRole[role] = true
-	}
+	scanned := newRoleSet(forms)
 	for _, id := range taken {
-		if role, ok := scanned[id]; ok {
+		if role, ok := scanned.pointingAt(id); ok {
 			slog.Error("role index missed a role: refusing the delete",
 				"node", root, "target", id, "role", role)
 			return errRoleIndexMissed
 		}
-		if isRole[id] {
+		if scanned.isRole(id) {
 			slog.Error("role index missed a role: refusing the delete", "node", root, "role", id)
 			return errRoleIndexMissed
 		}
@@ -300,12 +321,12 @@ func (a *Angelus) scanForRoleIn(taken []string, root string) error {
 }
 
 type roleScanner interface {
-	ScanRoleTargets() (map[string]string, error)
+	ScanRoleForms() (map[string]string, error)
 }
 
-func (a *Angelus) scanRoleTargets() (map[string]string, error) {
+func (a *Angelus) scanRoleForms() (map[string]string, error) {
 	if s, ok := a.Backend.(roleScanner); ok {
-		return s.ScanRoleTargets()
+		return s.ScanRoleForms()
 	}
 	out := map[string]string{}
 	for _, f := range a.Backend.Forms() {
@@ -317,27 +338,19 @@ func (a *Angelus) scanRoleTargets() (map[string]string, error) {
 			return nil, fmt.Errorf("role scan: form %s: %w", f.ID, err)
 		}
 		if v := snap.Lookup("target-aria"); v != nil && *v != "" {
-			out[*v] = f.ID
+			out[f.ID] = *v
 		}
 	}
 	return out, nil
 }
 
-func (a *Angelus) roleTargets() (map[string]string, bool) {
+func (a *Angelus) roles() (roleSet, bool) {
 	idx, ok := a.Backend.(roleIndexer)
 	if !ok {
-		return map[string]string{}, true
+		return newRoleSet(nil), true
 	}
-	return idx.RoleTargets()
-}
-
-func (a *Angelus) roleForms() map[string]string {
-	idx, ok := a.Backend.(roleIndexer)
-	if !ok {
-		return map[string]string{}
-	}
-	forms, _ := idx.RoleForms()
-	return forms
+	forms, ready := idx.RoleForms()
+	return newRoleSet(forms), ready
 }
 
 var touchingMethods = map[string]bool{

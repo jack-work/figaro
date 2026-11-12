@@ -16,7 +16,7 @@ type spendable interface {
 	Meta(string) (*store.AriaMeta, error)
 	SetMeta(string, *store.AriaMeta) error
 	ApplyForm(string, form.Patch) (uint64, error)
-	RoleTargets() (map[string]string, bool)
+	RoleForms() (map[string]string, bool)
 }
 
 func spend(t *testing.T, a *angelus.Angelus, id string) { spendTB(t, a, id) }
@@ -43,7 +43,7 @@ func waitRolesReadyTB(t testing.TB, a *angelus.Angelus) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, ready := a.Backend.(spendable).RoleTargets(); ready {
+		if _, ready := a.Backend.(spendable).RoleForms(); ready {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)

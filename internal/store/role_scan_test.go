@@ -35,7 +35,7 @@ func targetsByFormState(t *testing.T, b *XwalBackend) map[string]string {
 			continue
 		}
 		if v := snap.Lookup(targetAriaKey); v != nil && *v != "" {
-			out[*v] = f.ID
+			out[f.ID] = *v
 		}
 	}
 	return out
@@ -93,14 +93,15 @@ func TestTheRoleScanAgreesWithAFullFoldOnEveryShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cold.Close()
-	got, err := cold.ScanRoleTargets()
+	forms, err := cold.ScanRoleForms()
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := targetsByFormState(t, cold)
-	if !equalTargets(got, want) {
-		t.Fatalf("the scan read %v, a full fold reads %v", got, want)
+	if !equalTargets(forms, want) {
+		t.Fatalf("the scan read %v, a full fold reads %v", forms, want)
 	}
+	got := byTarget(forms)
 	if got["aria-moved"] != moved || got["aria-first"] != "" || got["aria-cleared"] != "" {
 		t.Fatalf("a moved or cleared target read wrong: %v", got)
 	}
@@ -128,11 +129,11 @@ func TestTheRoleScanSeesAMoveTheIndexMissed(t *testing.T) {
 	b.roleNoted(role, "aria-old")
 	b.dropForm(role)
 
-	idx, _ := b.RoleTargets()
+	idx, _ := b.roleTargetsForTest()
 	if idx["aria-new"] == role {
 		t.Fatal("the index is not stale: the case is not covered")
 	}
-	scanned, err := b.ScanRoleTargets()
+	scanned, err := b.scanRoleTargetsForTest()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +198,7 @@ func BenchmarkRoleScanCold1k(b *testing.B) {
 						_, _ = be.FormState(f.ID)
 					}
 				} else {
-					_, _ = be.ScanRoleTargets()
+					_, _ = be.scanRoleTargetsForTest()
 				}
 				b.StopTimer()
 				_ = be.Close()
@@ -249,7 +250,7 @@ func BenchmarkRoleScanColdHistory(b *testing.B) {
 						_, _ = be.FormState(f.ID)
 					}
 				} else {
-					_, _ = be.ScanRoleTargets()
+					_, _ = be.scanRoleTargetsForTest()
 				}
 				b.StopTimer()
 				_ = be.Close()
@@ -269,7 +270,7 @@ func TestTheRoleScanFailsWhenAFormCannotBeRead(t *testing.T) {
 	defer b.Close()
 	role, _, _ := b.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{targetAriaKey: json.RawMessage(`"aria-held"`)}, nil))
 	b.FailRoleScanForTest(role, errors.New("injected read failure"))
-	got, err := b.ScanRoleTargets()
+	got, err := b.scanRoleTargetsForTest()
 	if err == nil {
 		t.Fatalf("an unreadable form was skipped: the scan returned %v and no error", got)
 	}
@@ -309,15 +310,34 @@ func TestTheRoleScanAgreesOnAnEscapedKeyAndADiff(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cold.Close()
-	got, err := cold.ScanRoleTargets()
+	forms, err := cold.ScanRoleForms()
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := targetsByFormState(t, cold)
-	if !equalTargets(got, want) {
-		t.Fatalf("the scan read %v, a full fold reads %v", got, want)
+	if !equalTargets(forms, want) {
+		t.Fatalf("the scan read %v, a full fold reads %v", forms, want)
 	}
+	got := byTarget(forms)
 	if got["aria-escaped"] != escaped || got["aria-diffed"] != diffed {
 		t.Fatalf("an escaped key or a diff was missed: %v", got)
 	}
+}
+
+func byTarget(forms map[string]string) map[string]string {
+	out := make(map[string]string, len(forms))
+	for formID, target := range forms {
+		out[target] = formID
+	}
+	return out
+}
+
+func (b *XwalBackend) roleTargetsForTest() (map[string]string, bool) {
+	forms, ready := b.RoleForms()
+	return byTarget(forms), ready
+}
+
+func (b *XwalBackend) scanRoleTargetsForTest() (map[string]string, error) {
+	forms, err := b.ScanRoleForms()
+	return byTarget(forms), err
 }
