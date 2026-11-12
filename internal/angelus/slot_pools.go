@@ -37,3 +37,16 @@ func OpenSlotPools(dir string, loaded *config.Loaded) (*SlotPools, error) {
 	slog.Info("slot pool: ledger read", "found", ledger.Found(), "leases", len(ledger.Leases()), "boxes", len(loaded.LeasedBoxes()))
 	return &SlotPools{Ledger: ledger, Generations: generations}, nil
 }
+
+func (s *SlotPools) InForce(box string) bool {
+	for _, l := range s.Ledger.Leases() {
+		if config.LeasedBoxName(l.Slot, l.Generation) != box {
+			continue
+		}
+		switch l.State {
+		case slotpool.Minting, slotpool.Live, slotpool.Releasing:
+			return true
+		}
+	}
+	return false
+}

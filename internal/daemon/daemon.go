@@ -415,6 +415,7 @@ func Run() {
 			fmt.Fprintf(os.Stderr, "angelus: %v; a daemon that leases slots does not start without its ledger\n", err)
 			os.Exit(1)
 		}
+		a.Policies.SetLeases(a.Slots)
 	}
 	figOtel.SetMemProbe(func() figOtel.MemSample {
 		st := a.MemStatus()

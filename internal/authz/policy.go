@@ -227,6 +227,7 @@ type Policies struct {
 
 	figaroCeiling atomic.Pointer[jkauthz.Grants]
 	claimRequired atomic.Pointer[[]string]
+	leases        atomic.Pointer[Leases]
 }
 
 type troupeLayer struct {
@@ -418,6 +419,7 @@ type Verdict struct {
 	jkauthz.Decision
 	undelegated string
 	narrowed    string
+	computed    string
 }
 
 func (v Verdict) Narrowed() bool { return v.narrowed != "" }
@@ -426,6 +428,9 @@ func (v Verdict) Reason() string {
 	if v.narrowed != "" {
 		return v.narrowed
 	}
+	if v.computed != "" {
+		return v.computed
+	}
 	if v.undelegated != "" {
 		return fmt.Sprintf("%s; troupe %s grants it, but this node does not delegate it to the troupe", v.Decision.Reason(), v.undelegated)
 	}
@@ -433,6 +438,9 @@ func (v Verdict) Reason() string {
 }
 
 func (p *Policies) Allow(s jkauthz.Subject, verb rpc.Verb, r Resource) Verdict {
+	if IsProvisioner(s.Principal) {
+		return p.allowProvisioner(s, verb, r)
+	}
 	local := p.store.Allow(s, string(verb), r)
 	if local.Allowed {
 		return Verdict{Decision: local}

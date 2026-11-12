@@ -1,5 +1,10 @@
 package rpc
 
+import (
+	"maps"
+	"slices"
+)
+
 type Verb string
 
 const (
@@ -124,6 +129,10 @@ var methodVerbs = map[string]Verb{
 
 	MethodTroupeSign:     VerbJoin,
 	MethodTroupeIdentity: VerbJoin,
+}
+
+func GuardedMethods() []string {
+	return slices.Sorted(maps.Keys(methodVerbs))
 }
 
 func VerbOf(method string) (Verb, bool) {
