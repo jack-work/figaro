@@ -192,6 +192,80 @@ func TestAForkPointWhoseNodeIsGoneIsNotALostPlacement(t *testing.T) {
 	}
 }
 
+// 0.63.0 to 0.65.4 moved a node by rewriting its fork point. Such a node's
+// cut lies below the base of the node it names; the restore names the node
+// that holds the cut again and records the old one as the placement, so the
+// history reads the same and the node answers to whom it did.
+func TestRestoreForkPointsNamesTheHolderOfTheCutAndKeepsThePlacement(t *testing.T) {
+	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
+	appendAll := func(id string, ps ...string) {
+		for _, p := range ps {
+			if _, _, err := f.Append(id, 0, []byte(`"`+p+`"`), nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	appendAll(trunk, "a", "b", "c")
+	lead, err := f.ForkAt(trunk, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendAll(lead, "lead")
+	builder, err := f.ForkAt(lead, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	natural, err := f.ForkAt(lead, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := func(id string) string { k, _ := f.idx.Head(id); return k }
+	origin := f.idx.ParentOf(key(builder))
+	if origin != key(trunk) {
+		t.Fatalf("setup: the builder was cut from %q, want the trunk %q", origin, key(trunk))
+	}
+	n, _ := f.idx.Node(key(builder))
+	seated := n.marker()
+	seated.from = key(lead)
+	if err := writeNodeMarker(f.irDir(key(builder)), seated); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Refresh(); err != nil {
+		t.Fatal(err)
+	}
+	before := mainPayloads(t, f, builder)
+
+	dry, err := f.RestoreForkPoints(true)
+	if err != nil || len(dry) != 1 || dry[0].Node != key(builder) || dry[0].Origin != origin || dry[0].Under != key(lead) {
+		t.Fatalf("dry run = %+v, %v; want the builder alone, from %q, under %q", dry, err, origin, key(lead))
+	}
+	if got := f.idx.ParentOf(key(builder)); got != key(lead) {
+		t.Fatalf("a dry run rewrote the fork point to %q", got)
+	}
+	done, err := f.RestoreForkPoints(false)
+	if err != nil || len(done) != 1 || done[0].Kept != "" {
+		t.Fatalf("restore = %+v, %v", done, err)
+	}
+	if err := f.Refresh(); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.idx.ParentOf(key(builder)); got != origin {
+		t.Fatalf("fork point = %q, want %q", got, origin)
+	}
+	if got := f.idx.PlacementOf(key(builder)); got != key(lead) {
+		t.Fatalf("placement = %q, want the lead %q it was seated under", got, key(lead))
+	}
+	if got := f.idx.ParentOf(key(natural)); got != key(lead) {
+		t.Fatalf("a fork cut in its parent's own rows was moved to %q", got)
+	}
+	if after := mainPayloads(t, f, builder); !slices.Equal(before, after) {
+		t.Fatalf("history changed: %v -> %v", before, after)
+	}
+	if again, err := f.RestoreForkPoints(false); err != nil || len(again) != 0 {
+		t.Fatalf("a second restore found %+v, %v", again, err)
+	}
+}
+
 func TestATornMarkerIsNoNodeAtAll(t *testing.T) {
 	dir := t.TempDir()
 	for _, m := range []nodeMarker{

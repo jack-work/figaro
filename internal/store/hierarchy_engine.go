@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 
+	"github.com/jack-work/figaro/figwal/xwal"
 	"github.com/jack-work/figaro/internal/hierarchy"
 )
 
@@ -153,6 +154,12 @@ func (s *XwalStore) place(id, under string) error {
 	}
 	_, err := s.CleanTopology(false)
 	return err
+}
+
+func (s *XwalStore) RestoreForkPoints(dryRun bool) ([]xwal.RestoredForkPoint, error) {
+	s.deleting.Lock()
+	defer s.deleting.Unlock()
+	return s.trunks.RestoreForkPoints(dryRun)
 }
 
 func (s *XwalStore) unplace(ids []string) error {
