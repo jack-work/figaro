@@ -71,7 +71,7 @@ func TestSetAndKillOnXAloneCannotPromoteXOverItsParent(t *testing.T) {
 		t.Fatalf("a refused promote drew X under %q, want P %s", up, p)
 	}
 
-	grantTo(t, r, "user:mallory", "read:aria:"+x, "set:aria:"+x, "kill:aria:"+x, "kill:aria:"+p)
+	grantTo(t, r, "user:mallory", "read:aria:"+x, "set:aria:"+x, "kill:aria:"+x, "kill:aria:"+p, "adopt:*")
 	if _, err := r.call(mallory(), rpc.MethodPromote, rpc.PromoteRequest{FigaroID: x, Levels: 1}); err != nil {
 		t.Fatalf("promote with kill on X and P: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestSetAndKillOnXAloneCannotDemoteXOntoItsChild(t *testing.T) {
 		t.Fatalf("a refused demote drew C under %q, want X %s", up, x)
 	}
 
-	grantTo(t, r, "user:mallory", "read:aria:"+x, "set:aria:"+x, "kill:aria:"+x, "kill:aria:"+c)
+	grantTo(t, r, "user:mallory", "read:aria:"+x, "set:aria:"+x, "kill:aria:"+x, "kill:aria:"+c, "adopt:*")
 	if _, err := r.call(mallory(), rpc.MethodDemote, rpc.DemoteRequest{FigaroID: x, Prefer: c}); err != nil {
 		t.Fatalf("demote with kill on X and C: %v", err)
 	}

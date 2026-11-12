@@ -1209,7 +1209,7 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 		Short: "List, accept or refuse moves waiting on an aria",
 		Usage: "adopt <parent> [-j] | adopt accept <parent> <id> | adopt refuse <parent> <id>",
 		Long: `A move that puts an aria under another one needs adopt on the receiving
-parent. Without it, and when the two have different owners, nothing moves:
+parent, unless the parent is the caller's own. Without it nothing moves:
 the move waits on that parent as a proposal until someone with adopt on it
 accepts or refuses.
 

@@ -340,8 +340,9 @@ troupe's reach off the node's boxes.
 
 **Moves and consent.** Promote, demote, `@topology` and placement are plans
 the topology guard checks: `kill` on every node whose position changes, and
-`adopt` on every aria that receives a node, unless that aria and the moved
-node have one owner, or the node goes back under its history parent. Without
+`adopt` on every aria that receives a node, unless the caller owns that
+aria (never through a box door), or the node goes back under its history
+parent. Without
 `adopt` the move parks on that parent as a proposal (`figaro adopt <parent>`
 lists them). Someone with `adopt` there accepts or refuses it. Accept checks
 the move again as its proposer, with the grants the proposer holds then. A
