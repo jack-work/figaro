@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,6 +77,45 @@ func TestRetiredReasonReadsOldStampsAsManual(t *testing.T) {
 	} {
 		if got := RetiredReason(raw); got != want {
 			t.Errorf("RetiredReason(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+func TestRetirementActionDefaultsToRetireAndSucceedCarriesItsFields(t *testing.T) {
+	r, err := ParseRetirement(json.RawMessage(`{"context_threshold": 1000}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Action != RetirementRetire || r.Succeeds() {
+		t.Fatalf("action = %q: a table without one must behave as before", r.Action)
+	}
+	if r.SuccessionTimeout() != DefaultSuccessionTimeout || r.QuotedTurns() != DefaultRampTurns {
+		t.Fatalf("defaults: timeout %s, turns %d", r.SuccessionTimeout(), r.QuotedTurns())
+	}
+
+	r, err = ParseRetirement(json.RawMessage(`{"context_threshold": 1000, "action": "succeed", "page": "@king", "timeout": "10m", "ramp": "/etc/ramp.md", "ramp_turns": 7}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Succeeds() || r.Page != "@king" || r.SuccessionTimeout() != 10*time.Minute || r.Ramp != "/etc/ramp.md" || r.QuotedTurns() != 7 {
+		t.Fatalf("parsed %+v", r)
+	}
+	if r.WarnAt(0) != 800 {
+		t.Fatalf("warn at %d, want 80%% of the threshold", r.WarnAt(0))
+	}
+}
+
+func TestMalformedSuccessionFieldsAreRefusedByName(t *testing.T) {
+	for field, v := range map[string]string{
+		"action":     `"abdicate"`,
+		"page":       `""`,
+		"timeout":    `"0"`,
+		"ramp":       `""`,
+		"ramp_turns": `0`,
+	} {
+		_, err := ParseRetirement(json.RawMessage(`{"context_threshold": 1000, "` + field + `": ` + v + `}`))
+		if err == nil || !strings.Contains(err.Error(), SystemRetirementKey+"."+field) {
+			t.Errorf("%s = %s: %v", field, v, err)
 		}
 	}
 }

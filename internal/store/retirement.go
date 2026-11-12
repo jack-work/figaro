@@ -13,8 +13,22 @@ import (
 const SystemRetirementKey = "system.retirement"
 
 const (
+	SystemSuccessionWarnedKey = "system.succession_warned"
+	SystemSuccessionFailedKey = "system.succession_failed"
+)
+
+const (
 	RetiredManual  = "manual"
 	RetiredContext = "context"
+)
+
+const (
+	RetirementRetire  = "retire"
+	RetirementSucceed = "succeed"
+
+	DefaultSuccessionTimeout = 30 * time.Minute
+	DefaultRampTurns         = 5
+	successionWarnAt         = 0.8
 )
 
 func RetiredReason(raw string) string {
@@ -33,9 +47,34 @@ func RetiredIn(snap form.Snapshot) bool {
 }
 
 type Retirement struct {
-	Tokens  int
-	Percent float64
-	TTL     time.Duration
+	Tokens    int
+	Percent   float64
+	TTL       time.Duration
+	Action    string
+	Page      string
+	Timeout   time.Duration
+	Ramp      string
+	RampTurns int
+}
+
+func (r Retirement) Succeeds() bool { return r.Action == RetirementSucceed }
+
+func (r Retirement) WarnAt(window int) int {
+	return int(float64(r.Threshold(window)) * successionWarnAt)
+}
+
+func (r Retirement) SuccessionTimeout() time.Duration {
+	if r.Timeout > 0 {
+		return r.Timeout
+	}
+	return DefaultSuccessionTimeout
+}
+
+func (r Retirement) QuotedTurns() int {
+	if r.RampTurns > 0 {
+		return r.RampTurns
+	}
+	return DefaultRampTurns
 }
 
 func (r Retirement) Set() bool { return r.Tokens > 0 || r.Percent > 0 }
@@ -76,9 +115,39 @@ func ParseRetirement(raw json.RawMessage) (Retirement, error) {
 				return Retirement{}, fmt.Errorf("%s.ttl %s: want a duration (90m, 6h, 2d)", SystemRetirementKey, v)
 			}
 			r.TTL = ttl
+		case "action":
+			switch a := lifetimeString(v); a {
+			case RetirementRetire, RetirementSucceed:
+				r.Action = a
+			default:
+				return Retirement{}, fmt.Errorf("%s.action %s: want retire or succeed", SystemRetirementKey, v)
+			}
+		case "page":
+			if r.Page = strings.TrimSpace(lifetimeString(v)); r.Page == "" {
+				return Retirement{}, fmt.Errorf("%s.page %s: want an aria or @role", SystemRetirementKey, v)
+			}
+		case "timeout":
+			d, err := ParseTTL(lifetimeString(v))
+			if err != nil || d <= 0 {
+				return Retirement{}, fmt.Errorf("%s.timeout %s: want a positive duration (10m, 1h)", SystemRetirementKey, v)
+			}
+			r.Timeout = d
+		case "ramp":
+			if r.Ramp = strings.TrimSpace(lifetimeString(v)); r.Ramp == "" {
+				return Retirement{}, fmt.Errorf("%s.ramp %s: want a file path", SystemRetirementKey, v)
+			}
+		case "ramp_turns":
+			n, err := strconv.Atoi(strings.TrimSpace(lifetimeString(v)))
+			if err != nil || n <= 0 {
+				return Retirement{}, fmt.Errorf("%s.ramp_turns %s: want a count of turns, 1 or more", SystemRetirementKey, v)
+			}
+			r.RampTurns = n
 		default:
-			return Retirement{}, fmt.Errorf("%s.%s: unknown field; want context_threshold or ttl", SystemRetirementKey, k)
+			return Retirement{}, fmt.Errorf("%s.%s: unknown field; want context_threshold, ttl, action, page, timeout, ramp or ramp_turns", SystemRetirementKey, k)
 		}
+	}
+	if r.Action == "" {
+		r.Action = RetirementRetire
 	}
 	if !r.Set() {
 		return Retirement{}, fmt.Errorf("%s.context_threshold: required", SystemRetirementKey)
