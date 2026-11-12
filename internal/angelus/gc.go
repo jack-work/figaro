@@ -193,7 +193,7 @@ func (a *Angelus) keptAlive(id string, def time.Duration, now time.Time) bool {
 
 func (h *handlers) holdOf(set []string, root string, now time.Time) (string, string, error) {
 	a := h.angelus
-	roles, ready := a.roleTargets()
+	roles, ready := a.roles()
 	if !ready {
 		return "", "", errRoleIndexLoading
 	}

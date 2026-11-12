@@ -285,9 +285,9 @@ func TestAKillNamesARoleThatParentsAnotherRole(t *testing.T) {
 		}
 		r.a.SweepLifetimesNow()
 		if shared {
-			byTarget, _ := r.backend.RoleTargets()
-			if byTarget[first] == "" || len(byTarget) != 1 {
-				t.Fatalf("canary: the target-keyed index %v should hold one role for %s; reading roles from it would no longer drop one", byTarget, first)
+			forms, _ := r.backend.RoleForms()
+			if forms[r1] != first || forms[r2] != first {
+				t.Fatalf("the index %v does not hold both roles on %s: the shared case is not covered", forms, first)
 			}
 		}
 

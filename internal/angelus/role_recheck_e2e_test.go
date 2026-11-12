@@ -32,12 +32,14 @@ func (b *blindIndex) hide(target string) {
 	b.hidden[target] = true
 }
 
-func (b *blindIndex) RoleTargets() (map[string]string, bool) {
-	roles, ready := b.XwalBackend.RoleTargets()
+func (b *blindIndex) RoleForms() (map[string]string, bool) {
+	roles, ready := b.XwalBackend.RoleForms()
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for target := range b.hidden {
-		delete(roles, target)
+	for form, target := range roles {
+		if b.hidden[target] {
+			delete(roles, form)
+		}
 	}
 	return roles, ready
 }
@@ -102,8 +104,8 @@ func TestARoleHoldsItsTargetEvenWhenTheIndexMissesIt(t *testing.T) {
 			require.NoError(t, err)
 			role := write(t, a, acli, ctx, target.FigaroID)
 
-			roles, _ := blind.XwalBackend.RoleTargets()
-			require.Equal(t, role, roles[target.FigaroID], "the %s path did not reach the role index", name)
+			roles, _ := blind.XwalBackend.RoleForms()
+			require.Equal(t, target.FigaroID, roles[role], "the %s path did not reach the role index", name)
 
 			spend(t, a, target.FigaroID)
 			a.SweepLifetimesNow()
@@ -158,9 +160,8 @@ func TestAMovedRoleHoldsItsNewTargetWhenTheStoreIndexIsStale(t *testing.T) {
 	require.NoError(t, err)
 
 	blind.XwalBackend.StaleRoleIndexForTest(role.FormID, old.FigaroID)
-	roles, _ := blind.XwalBackend.RoleTargets()
-	require.Equal(t, role.FormID, roles[old.FigaroID], "the store index is not stale: the case is not covered")
-	require.Empty(t, roles[moved.FigaroID], "the store index is not stale: the case is not covered")
+	roles, _ := blind.XwalBackend.RoleForms()
+	require.Equal(t, old.FigaroID, roles[role.FormID], "the store index is not stale: the case is not covered")
 
 	spend(t, a, moved.FigaroID)
 	a.SweepLifetimesNow()

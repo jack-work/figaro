@@ -32,14 +32,6 @@ func (f *ttlFakeBackend) DeleteSet(id string) []string {
 }
 func (f *ttlFakeBackend) Meta(id string) (*store.AriaMeta, error) { return f.metas[id], nil }
 func (f *ttlFakeBackend) LastTS(id string) int64                  { return f.lastTS[id] }
-func (f *ttlFakeBackend) RoleTargets() (map[string]string, bool) {
-	out := map[string]string{}
-	for role, target := range f.roles {
-		out[target] = role
-	}
-	return out, !f.rolesWarming
-}
-
 func (f *ttlFakeBackend) RoleForms() (map[string]string, bool) {
 	out := make(map[string]string, len(f.roles))
 	for role, target := range f.roles {
@@ -275,4 +267,47 @@ func (e ttlFakeEngine) WriteDrawn(map[string]string, []string) error {
 }
 func (e ttlFakeEngine) Remove(string, bool, []string, map[string]string) error {
 	return hierarchy.ErrUnsupported
+}
+
+// El Inspector XV H1: two role forms naming one aria are two roles. The sweep
+// read the role set from a map keyed by target, which kept one of them, so a
+// subtree holding the other was deleted. Each role, alone in a set, holds it.
+func TestEveryRoleOnASharedHolderHoldsItsSubtree(t *testing.T) {
+	for _, inSet := range []string{"@r1", "@r2"} {
+		t.Run(inSet, func(t *testing.T) {
+			a, be, removed := ttlSweepFixture(t, "parent")
+			be.subtree["parent"] = []string{inSet}
+			be.lastTS["parent"] = hoursAgo(72)
+			be.roles["@r1"] = "holder"
+			be.roles["@r2"] = "holder"
+			sweepNow(a)
+			if len(*removed) != 0 {
+				t.Fatalf("removed %v; role %s was in the set", *removed, inSet)
+			}
+			if err := a.scanForRoleIn([]string{"parent", inSet}, "parent"); err == nil {
+				t.Fatalf("the scan backstop let a delete take role %s", inSet)
+			}
+		})
+	}
+}
+
+// Canary: the target-keyed read the sweep and the scan once used counts one
+// role per holder, so it misses @r1 or @r2 and one case above would fail.
+func TestATargetKeyedRoleReadDropsARoleOnASharedHolder(t *testing.T) {
+	forms := map[string]string{"@r1": "holder", "@r2": "holder"}
+	byTarget := map[string]string{}
+	for form, target := range forms {
+		byTarget[target] = form
+	}
+	counted := map[string]bool{}
+	for _, role := range byTarget {
+		counted[role] = true
+	}
+	if counted["@r1"] && counted["@r2"] {
+		t.Fatal("the target-keyed read counts both roles: the test above has no teeth")
+	}
+	roles := newRoleSet(forms)
+	if !roles.isRole("@r1") || !roles.isRole("@r2") {
+		t.Fatalf("the form-keyed read misses a role: %+v", roles)
+	}
 }

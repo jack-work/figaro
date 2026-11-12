@@ -24,13 +24,13 @@ func TestRoleIndexFollowsEveryWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := b.RoleTargets(); got["aria-1"] != role {
+	if got, _ := b.roleTargetsForTest(); got["aria-1"] != role {
 		t.Fatalf("roles %v after create, want aria-1 -> %s", got, role)
 	}
 	if _, err := b.ApplyForm(role, targetPatch("aria-2")); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := b.RoleTargets()
+	got, _ := b.roleTargetsForTest()
 	if got["aria-2"] != role || got["aria-1"] != "" {
 		t.Fatalf("roles %v after recast, want only aria-2", got)
 	}
@@ -38,8 +38,8 @@ func TestRoleIndexFollowsEveryWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := b.RoleTargets(); got["aria-2"] == "" || (got["aria-2"] != role && got["aria-2"] != dup) {
-		t.Fatalf("roles %v after duplicating the role; the copy points where its source did", got)
+	if got, _ := b.RoleForms(); got[role] != "aria-2" || got[dup] != "aria-2" {
+		t.Fatalf("roles %v after duplicating the role; both the role and its copy point at aria-2", got)
 	}
 	if _, err := b.ApplyForm(role, targetPatch("")); err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func TestRoleIndexFollowsEveryWrite(t *testing.T) {
 	if err := b.Remove(dup, true); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := b.RoleTargets(); len(got) != 0 {
+	if got, _ := b.roleTargetsForTest(); len(got) != 0 {
 		t.Fatalf("roles %v after uncasting one and deleting the other", got)
 	}
 }
@@ -69,11 +69,11 @@ func TestRoleIndexSeedsFromDiskAfterARestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b2.Close()
-	if _, ready := b2.RoleTargets(); ready {
+	if _, ready := b2.roleTargetsForTest(); ready {
 		t.Fatal("a fresh backend claims a complete role index before reading any form")
 	}
 	b2.SeedRoles(context.Background(), 0)
-	got, ready := b2.RoleTargets()
+	got, ready := b2.roleTargetsForTest()
 	if !ready || got["aria-9"] != role {
 		t.Fatalf("roles %v ready=%v after the seed, want aria-9 -> %s", got, ready, role)
 	}

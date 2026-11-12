@@ -116,7 +116,7 @@ func (a *Angelus) pastGrace(g reapedGroup, now time.Time) bool {
 }
 
 func (a *Angelus) purge(keeper ttlKeeper, g reapedGroup) error {
-	roles, ready := a.roleTargets()
+	roles, ready := a.roles()
 	if !ready {
 		slog.Debug("reaped node past its grace, waiting for the role index", "node", g.root)
 		return errNotYet
@@ -141,23 +141,19 @@ func (a *Angelus) purge(keeper ttlKeeper, g reapedGroup) error {
 }
 
 func (a *Angelus) rolesIn(ids []string) []string {
-	forms := a.roleForms()
+	roles, _ := a.roles()
 	var out []string
 	for _, id := range ids {
-		if _, ok := forms[id]; ok {
+		if roles.isRole(id) {
 			out = append(out, id)
 		}
 	}
 	return out
 }
 
-func (a *Angelus) liveIn(ids []string, bound map[string][]int, roles map[string]string) (string, string) {
-	isRole := make(map[string]bool, len(roles))
-	for _, role := range roles {
-		isRole[role] = true
-	}
+func (a *Angelus) liveIn(ids []string, bound map[string][]int, roles roleSet) (string, string) {
 	for _, id := range ids {
-		if isRole[id] {
+		if roles.isRole(id) {
 			return id, "role " + id + " is in the set"
 		}
 		if a.Registry.Get(id) != nil {
@@ -169,7 +165,7 @@ func (a *Angelus) liveIn(ids []string, bound map[string][]int, roles map[string]
 		if len(bound[id]) > 0 {
 			return id, "a shell is bound"
 		}
-		if role, ok := roles[id]; ok {
+		if role, ok := roles.pointingAt(id); ok {
 			return id, "role " + role + " points at it"
 		}
 	}
