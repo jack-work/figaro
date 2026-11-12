@@ -146,6 +146,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodScopes:             h.scopes,
 		rpc.MethodGrants:             h.scopes,
 		rpc.MethodDecide:             h.decide,
+		rpc.MethodSlotPages:          h.slotPages,
 		rpc.MethodHello:              h.hello,
 		rpc.MethodNodeResolve:        h.nodeResolve,
 		rpc.MethodTroupeMembers:      h.troupeMembers,

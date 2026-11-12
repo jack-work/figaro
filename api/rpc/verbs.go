@@ -43,6 +43,8 @@ var methodVerbs = map[string]Verb{
 
 	MethodDecide: VerbDecide,
 
+	MethodSlotPages: VerbLease,
+
 	MethodQueued:  VerbRead,
 	MethodRead:    VerbRead,
 	MethodContext: VerbRead,

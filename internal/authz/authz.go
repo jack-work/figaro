@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -294,6 +295,18 @@ func Enforce(p *Policies) Policy {
 		if r.Aria != "" {
 			res = Aria(r.Aria)
 		}
+		if verb == rpc.VerbLease || verb == rpc.VerbSay {
+			if r.Door == DoorNode {
+				return Deny("%s: %s is asked of the daemon that holds the pool, never through a node door", r.Method, verb)
+			}
+		}
+		if verb == rpc.VerbLease {
+			pool, err := poolNamed(r.Params)
+			if err != nil {
+				return Deny("%s: %v", r.Method, err)
+			}
+			res = Pool(pool)
+		}
 		on := []Resource{res}
 		if r.Method == rpc.MethodDecide {
 			var err error
@@ -374,6 +387,21 @@ func (p *Policies) holdsFigaro(figaro string) bool {
 	}
 	_, held := ff.Ancestry(figaro)
 	return held
+}
+
+func poolNamed(params json.RawMessage) (string, error) {
+	var req struct {
+		Pool string `json:"pool"`
+	}
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return "", fmt.Errorf("parse params: %w", err)
+		}
+	}
+	if req.Pool == "" {
+		return "", errors.New("the call names no pool")
+	}
+	return req.Pool, nil
 }
 
 func (p *Policies) pinnedToBox(s jkauthz.Subject, figaro string) bool {
