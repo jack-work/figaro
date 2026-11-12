@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/mark"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -704,9 +705,17 @@ func (in *interactiveInput) refollow(gen uint64, id string, ep sdk.Addr) bool {
 }
 
 const (
-	reconnectFirst = 100 * time.Millisecond
-	reconnectMax   = 2 * time.Second
+	reconnectFirst     = 100 * time.Millisecond
+	reconnectMax       = 2 * time.Second
+	reconnectAfterBind = 20 * time.Millisecond
 )
+
+func nextReconnectWait(wait time.Duration, socketBound bool) time.Duration {
+	if socketBound {
+		return reconnectAfterBind
+	}
+	return min(wait*2, reconnectMax)
+}
 
 func (in *interactiveInput) reconnect(gen uint64, id string, ep sdk.Addr) bool {
 	in.mu.Lock()
@@ -719,14 +728,22 @@ func (in *interactiveInput) reconnect(gen uint64, id string, ep sdk.Addr) bool {
 	in.dropAngelus()
 	in.setAway()
 	in.progress("the angelus went away: reconnecting to " + ariaName(id))
+	var socketBack <-chan struct{}
+	if d := resolveDoor(); !d.configured {
+		var stop func()
+		socketBack, stop = watchSocketCreated(boot.AngelusSocketPath())
+		defer stop()
+	}
 	wait := reconnectFirst
 	for {
 		select {
 		case <-life.Done():
 			return false
+		case <-socketBack:
+			wait = nextReconnectWait(wait, true)
 		case <-time.After(wait):
+			wait = nextReconnectWait(wait, false)
 		}
-		wait = min(wait*2, reconnectMax)
 		if !in.current(gen) {
 			in.sendHeld(life)
 			return true
