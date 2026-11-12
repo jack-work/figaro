@@ -164,7 +164,7 @@ const roleSeedPace = 2 * time.Millisecond
 
 func (a *Angelus) seedRoles(ctx context.Context) {
 	if s, ok := a.Backend.(roleSeeder); ok {
-		go s.SeedRoles(ctx, roleSeedPace)
+		a.Go("role seeding", func() { s.SeedRoles(ctx, roleSeedPace) })
 	}
 }
 

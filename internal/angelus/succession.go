@@ -217,7 +217,15 @@ func (h *handlers) turnEnded(e figaro.TurnEnd) {
 	if h.succ.succeededBy(e.ID) == nil && h.succ.of(e.ID) == nil && !e.AtThreshold() {
 		return
 	}
-	go h.advanceSuccession(e)
+	h.angelus.Go("succession", func() { h.advanceSuccession(e) })
+}
+
+func (h *handlers) pausedByTheStop(rec successionRecord, step string) bool {
+	if !h.angelus.stopping() {
+		return false
+	}
+	slog.Info("succession paused by the stop", "aria", rec.Old, "phase", rec.Phase, "successor", rec.Successor, "before", step)
+	return true
 }
 
 func (h *handlers) advanceSuccession(e figaro.TurnEnd) {
@@ -379,6 +387,9 @@ func (h *handlers) beginSuccession(ctx context.Context, e figaro.TurnEnd) {
 		h.failSuccession(ctx, rec, err.Error())
 		return
 	}
+	if h.pausedByTheStop(rec, "the final handoff prompt") {
+		return
+	}
 	rec.DeadlineMS = h.succ.now().Add(e.Retirement.SuccessionTimeout()).UnixMilli()
 	if err := h.succ.put(rec); err != nil {
 		h.failSuccession(ctx, rec, "record the succession: "+err.Error())
@@ -421,6 +432,9 @@ func (h *handlers) carriedScopes(old string, snap form.Snapshot) (json.RawMessag
 }
 
 func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
+	if h.pausedByTheStop(rec, "mint") {
+		return
+	}
 	r, snap := h.retirementOf(rec.Old)
 	roles, err := h.rolesHeldBy(rec.Old)
 	if err != nil {
@@ -475,6 +489,12 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 		return
 	}
 	for i, role := range rec.Roles {
+		if h.pausedByTheStop(rec, "cast into "+role) {
+			if err := h.succ.put(rec); err != nil {
+				slog.Error("succession: record the successor minted before the stop", "aria", rec.Old, "successor", rec.Successor, "err", err)
+			}
+			return
+		}
 		if err := h.castSuccessor(ctx, rec.Successor, role); err != nil {
 			why := fmt.Sprintf("cast into %s refused: %s", role, err)
 			if back := h.repoint(ctx, rec.Roles[:i+1], rec.Old); back != "" {
@@ -491,6 +511,9 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 	rec.DeadlineMS = h.succ.now().Add(r.SuccessionTimeout()).UnixMilli()
 	if err := h.succ.put(rec); err != nil {
 		h.failSuccession(ctx, rec, "record the succession: "+err.Error())
+		return
+	}
+	if h.pausedByTheStop(rec, "the ramp prompt") {
 		return
 	}
 	next, err := h.successionParty(ctx, rec.Successor)
@@ -634,6 +657,9 @@ func (h *handlers) lastTurns(id string, n int) string {
 }
 
 func (h *handlers) completeSuccession(ctx context.Context, rec successionRecord) {
+	if h.pausedByTheStop(rec, "retire the predecessor") {
+		return
+	}
 	var unpurged error
 	if rec.Purge {
 		if unpurged = h.purgePredecessor(ctx, rec); unpurged == nil {

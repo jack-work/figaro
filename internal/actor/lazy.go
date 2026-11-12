@@ -20,9 +20,11 @@ const (
 // Lazy is a single-writer queue whose goroutine exists only while there is
 // work, lingering for an affinity window after draining.
 type Lazy[T any] struct {
-	mu     sync.Mutex
-	items  []T
-	closed bool
+	mu       sync.Mutex
+	items    []T
+	closed   bool
+	draining bool
+	settled  sync.Cond
 
 	st     atomic.Uint32
 	wake   chan struct{}
@@ -35,7 +37,9 @@ type Lazy[T any] struct {
 
 // NewLazy: batch caps one drain (<=0 takes everything).
 func NewLazy[T any](batch int, linger time.Duration, drain func([]T)) *Lazy[T] {
-	return &Lazy[T]{wake: make(chan struct{}, 1), linger: linger, batch: batch, drain: drain}
+	q := &Lazy[T]{wake: make(chan struct{}, 1), linger: linger, batch: batch, drain: drain}
+	q.settled.L = &q.mu
+	return q
 }
 
 // Submit never waits for the work.
@@ -86,7 +90,17 @@ func (q *Lazy[T]) take() []T {
 	}
 	out := q.items[:n:n]
 	q.items = q.items[n:]
+	q.draining = true
 	return out
+}
+
+func (q *Lazy[T]) drained() {
+	q.mu.Lock()
+	q.draining = false
+	if len(q.items) == 0 {
+		q.settled.Broadcast()
+	}
+	q.mu.Unlock()
 }
 
 func (q *Lazy[T]) pending() int {
@@ -106,6 +120,7 @@ func (q *Lazy[T]) work() {
 				break
 			}
 			q.drain(batch)
+			q.drained()
 		}
 
 		if !q.st.CompareAndSwap(uint32(lazyRunning), uint32(lazyLingering)) {
@@ -142,6 +157,15 @@ func (q *Lazy[T]) Close() {
 	q.closed = true
 	q.mu.Unlock()
 	q.ensure()
+}
+
+func (q *Lazy[T]) CloseAndSettle() {
+	q.Close()
+	q.mu.Lock()
+	for q.draining || len(q.items) > 0 {
+		q.settled.Wait()
+	}
+	q.mu.Unlock()
 }
 
 func (q *Lazy[T]) Closed() bool {

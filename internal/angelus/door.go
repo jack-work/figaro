@@ -147,6 +147,11 @@ func (a *Angelus) Serve(ctx context.Context, ln net.Listener, door authz.Door, a
 	if admit == nil {
 		admit = authz.Admit
 	}
+	leave, ok := a.enterDoor("door "+door.String(), ln)
+	if !ok {
+		return errStopping
+	}
+	defer leave()
 	go func() {
 		<-ctx.Done()
 		ln.Close()
@@ -250,15 +255,19 @@ func (a *Angelus) handleConn(ctx context.Context, door authz.Door, conn io.ReadW
 		l.end(errors.New(l.reason))
 		f.srv.Stop()
 	case <-ctx.Done():
-		if reason, shut := doorShutReason(ctx); shut {
-			_ = f.srv.Notify(rpc.MethodDoorLapsed, rpc.DoorLapsed{Reason: reason})
-			out.drain(lapseNoticeGrace)
+		if shut := doorShut(ctx); shut != nil {
+			_ = f.srv.Notify(rpc.MethodDoorLapsed, rpc.DoorLapsed{Reason: shut.Reason})
+			out.drain(shut.noticeGrace())
 		}
 		f.srv.Stop()
 	}
 }
 
-const lapseNoticeGrace = 2 * time.Second
+const (
+	lapseNoticeGrace = 2 * time.Second
+	stopNoticeGrace  = 250 * time.Millisecond
+	stoppingReason   = "daemon stopping"
+)
 
 type reasonedCloser interface {
 	closeWith(reason error) error

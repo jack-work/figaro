@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -97,6 +98,8 @@ type successionRig struct {
 	ctx  context.Context
 	hs   *angelus.Handlers
 	p    *successionProvider
+
+	stopped bool
 }
 
 func successionDaemon(t *testing.T) *successionRig {
@@ -120,6 +123,9 @@ func successionDaemon(t *testing.T) *successionRig {
 			p.holdOthers = false
 			p.holdFrom = map[string]int{}
 		})
+		if r.stopped {
+			return
+		}
 		for range 3 {
 			for _, id := range r.arias() {
 				waitIdle(t, a, id)
@@ -783,4 +789,51 @@ func TestSuccessionWaitsForTheHandoffTurnItself(t *testing.T) {
 	r.p.set(func() { r.p.holdFrom[old] = 0 })
 	release()
 	r.eventually(func() bool { return r.retired(old) }, "the predecessor never retired")
+}
+
+// El Inspector XV: a succession takes no new step (mint, cast, prompt) once
+// the stop has begun. Here the handoff turn ends just before the stop and its
+// succession reaches the mint step after the seal: it mints nothing, and the
+// record stays at the handoff phase for the next start to resume or time out.
+func TestASuccessionAtItsMintStepWhenTheStopBeginsMintsNothing(t *testing.T) {
+	logs := captureLogs(t)
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	r.role(old, map[string]any{"name": "warden"})
+	var mints atomic.Int32
+	r.a.SuccessorMinter = func(context.Context, angelus.SuccessorMint) (angelus.MintedSuccessor, bool, error) {
+		mints.Add(1)
+		return angelus.MintedSuccessor{}, false, nil
+	}
+	r.p.set(func() { r.p.holdFrom[old] = 2; r.p.usage[old] = 100_000 })
+	require.NoError(t, promptOn(r.ctx, r.a, old, "the work that crosses"))
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "handoff" }, "the succession never began")
+
+	letGo := r.hs.HoldSuccessionsForTest()
+	r.p.set(func() { close(r.p.release); r.p.release = make(chan struct{}); r.p.holdFrom[old] = 0 })
+	r.eventually(func() bool {
+		for _, out := range r.a.OutForTest() {
+			if out == "succession" {
+				return true
+			}
+		}
+		return false
+	}, "canary: the handoff turn's end never started its succession step")
+	waitIdle(t, r.a, old)
+
+	r.stopped = true
+	stopped := make(chan struct{})
+	go func() { r.a.Shutdown(time.Second); close(stopped) }()
+	r.eventually(r.a.StoppingForTest, "the stop never sealed")
+	letGo()
+	select {
+	case <-stopped:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Shutdown never returned")
+	}
+	require.Zero(t, mints.Load(), "a succession minted a successor after the stop began")
+	require.Contains(t, logs.String(), "succession paused by the stop")
+	require.Contains(t, logs.String(), "before=mint")
+	require.NotContains(t, logs.String(), "successor minted and cast")
+	require.Equal(t, "handoff", r.hs.SuccessionPhase(old), "the record was not left for the next start")
 }
