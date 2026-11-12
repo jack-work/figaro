@@ -39,7 +39,9 @@ func placeOf(node, under string) hierarchy.Plan {
 // what a move in the drawn tree asks of anyone else. For the provisioner
 // the guard asks one thing instead: is this the placement its mint is
 // making. Every other move is refused before any grant is read, and so is
-// a placement by a provisioner subject that serves no lease or two.
+// a placement by a provisioner subject that serves no lease or two. A
+// restore is refused with them: kill on the revived node is all it asks,
+// and a lease handler has no business reviving what a release reaped.
 func TestTheProvisionerMovesANodeOnlyByThePlacementItsMintMakes(t *testing.T) {
 	serving := ProvisionerServing(leaseA)
 	var asked []placementAsked
@@ -58,6 +60,7 @@ func TestTheProvisionerMovesANodeOnlyByThePlacementItsMintMakes(t *testing.T) {
 		"an arrange of its own lease's figaro": {Op: hierarchy.Arrange, Node: "in-a", Moves: drawn},
 		"a promote of its own lease's figaro":  {Op: hierarchy.Promote, Node: "in-a", Moves: drawn},
 		"a demote of its own lease's figaro":   {Op: hierarchy.Demote, Node: "in-a", To: "in-b", Moves: drawn},
+		"a restore of its own lease's figaro":  {Op: hierarchy.Restore, Revive: []string{"in-a"}},
 		"a placement that moves a second node": {Op: hierarchy.Place, Node: "in-a", To: "pool-node", Moves: []hierarchy.Move{{Node: "in-a", To: "pool-node", Tree: hierarchy.Storage}, {Node: "in-b", To: "pool-node", Tree: hierarchy.Storage}}},
 		"a placement that lands elsewhere":     {Op: hierarchy.Place, Node: "in-a", To: "pool-node", Moves: []hierarchy.Move{{Node: "in-a", To: "owners", Tree: hierarchy.Storage}}},
 	} {

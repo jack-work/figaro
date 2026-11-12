@@ -97,7 +97,7 @@ func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hier
 	if !ok {
 		return hierarchy.Verdict{}, fmt.Errorf("%s: no caller to authorize", p.Op)
 	}
-	if IsProvisioner(caller.Subject.Principal) && !p.Op.Deletes() && p.Op != hierarchy.Restore {
+	if IsProvisioner(caller.Subject.Principal) && !p.Op.Deletes() {
 		return hierarchy.Verdict{}, g.provisionerPlaces(caller, p)
 	}
 	switch p.Op {
@@ -347,7 +347,7 @@ func (g TopologyGuard) freshPlacement(by hierarchy.Principal, p hierarchy.Plan) 
 
 func (g TopologyGuard) provisionerPlaces(c TopologyCaller, p hierarchy.Plan) error {
 	if p.Op != hierarchy.Place {
-		return fmt.Errorf("%s %s: %s moves a node only by placing one it just minted under its pool's node", p.Op, p.Node, c.Subject.Principal)
+		return fmt.Errorf("%s %s: in the topology %s deletes its lease's nodes and places what it just minted under its pool's node, and nothing else", p.Op, p.Node, c.Subject.Principal)
 	}
 	box, ok := leaseServed(c.Subject)
 	if !ok || g.MintPlaces == nil {
