@@ -94,7 +94,7 @@ type Move struct {
 	ToOwner        string
 	Rehome         bool
 	WithinLineage  bool
-	ToAria         bool
+	ToReceiver     bool
 	Home           bool
 }
 
@@ -553,7 +553,7 @@ func (h *Hierarchy) annotate(moves []Move) {
 		}
 		if n, ok := h.eng.Node(m.To); ok {
 			m.ToOwner = n.Owner
-			m.ToAria = n.Aria
+			m.ToReceiver = n.Aria || n.Form
 		}
 		up, _ := h.eng.Stored(m.Node)
 		m.Home = m.To != "" && m.To == up
