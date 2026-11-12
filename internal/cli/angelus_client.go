@@ -152,17 +152,20 @@ func ensureAngelus() {
 			lastNotice = time.Now()
 			notified = true
 			fmt.Fprintf(stderrw, "angelus: %s (waited %s; giving up at %s)\n",
-				startupActivity(), time.Since(start).Round(time.Second), startupHardCap)
+				startupActivity(cmd.Process.Pid), time.Since(start).Round(time.Second), startupHardCap)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 }
 
 // startupActivity says only what it can check; NeedsFlatten is one file read.
-func startupActivity() string {
+func startupActivity(spawned int) string {
 	if need, err := xwal.NeedsFlatten(boot.AriaRoot()); err == nil && need {
 		return "migrating the store layout: let it finish; interrupting a migration " +
 			"is the one thing that can cost you arias"
+	}
+	if who, pid, held := boot.StoreLockHolder(); held && pid != spawned {
+		return "waiting for the store lock, held by " + who
 	}
 	return "still starting"
 }

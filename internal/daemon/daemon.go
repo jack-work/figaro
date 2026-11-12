@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -41,6 +42,10 @@ const lockHandoff = 10 * time.Second
 // lockStore returns the flock handle that admits one angelus per store; closing it
 // releases the lock.
 func lockStore() (*os.File, bool) {
+	return lockStoreWithin(lockHandoff, os.Stderr)
+}
+
+func lockStoreWithin(handoff time.Duration, notice io.Writer) (*os.File, bool) {
 	dir := boot.StateDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, false
@@ -49,7 +54,8 @@ func lockStore() (*os.File, bool) {
 	if err != nil {
 		return nil, false
 	}
-	deadline := time.Now().Add(lockHandoff)
+	deadline := time.Now().Add(handoff)
+	said := false
 	for {
 		if err := boot.TryLockFile(f); err == nil {
 			boot.RecordStoreLockOwner(f)
@@ -58,6 +64,13 @@ func lockStore() (*os.File, bool) {
 		if incumbentAnswers() || time.Now().After(deadline) {
 			f.Close()
 			return nil, false
+		}
+		if !said {
+			if who, _, held := boot.StoreLockHolder(); held {
+				said = true
+				fmt.Fprintf(notice, "angelus: nothing answers on %s and the store lock is held by %s; waiting up to %s for it to be released\n",
+					boot.AngelusSocketPath(), who, handoff)
+			}
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
