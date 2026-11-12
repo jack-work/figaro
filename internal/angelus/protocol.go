@@ -95,6 +95,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		c.SetDetachCarry(h.carryBeforeDetach)
 	}
 	h.pools = pinPoolOutfits(cfg.Config, h.outfitter)
+	h.mintPoolNodes(cfg.Config)
 	h.noticeUpgrade()
 	h.startNav()
 	h.succ = newSuccessions(h.angelus.SuccessionsPath)

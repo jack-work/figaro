@@ -119,3 +119,24 @@ func (hs *Handlers) PoolOutfitHash(pool string) (string, error) {
 	p, err := hs.h.poolOutfit(pool)
 	return p.hash, err
 }
+
+func (hs *Handlers) MintLeased(ctx context.Context, pool, key string, generation uint64) (figaro, role string, err error) {
+	m, err := hs.h.mintLeased(ctx, pool, key, generation)
+	return m.Figaro, m.Role, err
+}
+
+func (hs *Handlers) Place(ctx context.Context, node, under string) error {
+	return hs.h.place(ctx, node, under)
+}
+
+func (hs *Handlers) PoolNode(pool string) (string, bool) {
+	return poolNodeOf(hs.h.angelus.Backend, pool)
+}
+
+func (s *SlotPools) BeginMint(box string) (minted func(id string), done func(), err error) {
+	call, err := s.beginMint(box)
+	if err != nil {
+		return nil, nil, err
+	}
+	return call.minted, call.done, nil
+}

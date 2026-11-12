@@ -34,7 +34,8 @@ func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
 			}
 			return nil, false
 		},
-		Empty: a.ownsNoMessages,
+		Empty:      a.ownsNoMessages,
+		MintPlaces: a.mintPlaces,
 	}
 }
 

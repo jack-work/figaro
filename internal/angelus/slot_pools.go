@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"sync"
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/slotpool"
@@ -12,6 +13,9 @@ import (
 type SlotPools struct {
 	Ledger      *slotpool.Ledger
 	Generations *slotpool.Generations
+
+	mu      sync.Mutex
+	minting map[string]map[string]bool
 }
 
 func OpenSlotPools(dir string, loaded *config.Loaded) (*SlotPools, error) {
@@ -49,4 +53,50 @@ func (s *SlotPools) InForce(box string) bool {
 		}
 	}
 	return false
+}
+
+func (s *SlotPools) leaseOf(box string) (slotpool.Lease, bool) {
+	for _, l := range s.Ledger.Leases() {
+		if l.State != slotpool.Released && config.LeasedBoxName(l.Slot, l.Generation) == box {
+			return l, true
+		}
+	}
+	return slotpool.Lease{}, false
+}
+
+type mintCall struct {
+	slots *SlotPools
+	box   string
+}
+
+func (s *SlotPools) beginMint(box string) (*mintCall, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, busy := s.minting[box]; busy {
+		return nil, fmt.Errorf("lease %s already has a mint under way", box)
+	}
+	if s.minting == nil {
+		s.minting = map[string]map[string]bool{}
+	}
+	s.minting[box] = map[string]bool{}
+	return &mintCall{slots: s, box: box}, nil
+}
+
+func (m *mintCall) minted(id string) {
+	m.slots.mu.Lock()
+	defer m.slots.mu.Unlock()
+	m.slots.minting[m.box][id] = true
+}
+
+func (m *mintCall) done() {
+	m.slots.mu.Lock()
+	defer m.slots.mu.Unlock()
+	delete(m.slots.minting, m.box)
+}
+
+func (s *SlotPools) mintedInThisCall(box, id string) (minting, minted bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids, minting := s.minting[box]
+	return minting, ids[id]
 }
