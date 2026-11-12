@@ -238,10 +238,13 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 
 func (a *Angelus) migrateLibrettoRefs() {
 	rec, ok := a.Backend.(librettoReconciler)
-	if !ok || !rec.RefsNeedMigration() {
+	if !ok {
 		return
 	}
 	go func() {
+		if !rec.RefsNeedMigration() {
+			return
+		}
 		audit, err := rec.ReconcileLibrettos()
 		if err != nil {
 			slog.Warn("libretto refs migration failed", "err", err)
