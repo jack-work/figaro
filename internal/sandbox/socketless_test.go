@@ -23,7 +23,6 @@ outfit = "group"
 provider = "rou2"
 rou2_lease_class = "group"
 say_url = "https://broker.example/say"
-page_route = "admin"
 slots = ["slot0"]
 `
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o600); err != nil {

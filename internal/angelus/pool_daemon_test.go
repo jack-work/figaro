@@ -18,7 +18,6 @@ outfit = "broker-group"
 provider = "rou2"
 rou2_lease_class = "chat-group"
 say_url = "https://broker.example/groups/say"
-page_route = "admin"
 slots = ["slot0"]
 `
 

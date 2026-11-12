@@ -39,7 +39,7 @@ var whatAGuestOutfitCannotCarry = []struct{ key, why string }{
 	{"system.decide", "a pool figaro asks no decision model"},
 	{"system.studies", "a pool figaro studies no form"},
 	{"system.retirement.ramp", "it names a file on the host"},
-	{"system.retirement.page", "the lease stamps it from the pool"},
+	{"system.retirement.page", "a pool pages through the broker and never a figaro"},
 	{"system.sandbox", "the lease stamps it"},
 	{"system.scopes", "the lease stamps it"},
 }

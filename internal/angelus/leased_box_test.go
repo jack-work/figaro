@@ -18,7 +18,6 @@ outfit = "leased"
 provider = "mock"
 rou2_lease_class = "group"
 say_url = "https://broker.example/groups/say"
-page_route = "admin"
 slots = ["slot0"]
 `
 

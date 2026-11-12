@@ -23,7 +23,6 @@ type PoolConfig struct {
 	Rou2LeaseClass    string     `toml:"rou2_lease_class"`
 	SayURL            string     `toml:"say_url"`
 	SuccessionsPerDay *int       `toml:"successions_per_day"`
-	PageRoute         string     `toml:"page_route"`
 	SearchCredential  string     `toml:"search_credential"`
 	DeliverMaxBytes   int        `toml:"deliver_max_bytes"`
 	Slots             []PoolSlot `toml:"slots"`
@@ -111,8 +110,6 @@ func (c Config) validateSlot() error {
 			return fmt.Errorf("%s.provider: a pool names the one provider its figaros use", where)
 		case p.Rou2LeaseClass == "":
 			return fmt.Errorf("%s.rou2_lease_class: a lease spends under a class of caps, and none is named", where)
-		case strings.TrimSpace(p.PageRoute) == "":
-			return fmt.Errorf("%s.page_route: a failed succession or purge is paged through broker, and no route of broker's is named", where)
 		case p.SuccessionsPerDay != nil && *p.SuccessionsPerDay < 0:
 			return fmt.Errorf("%s.successions_per_day %d is negative", where, *p.SuccessionsPerDay)
 		case p.DeliverMaxBytes < 0:
