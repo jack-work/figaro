@@ -158,6 +158,13 @@ func (r *successionRig) key(id, key string) string {
 	return ""
 }
 
+func (r *successionRig) has(id, key string) bool {
+	r.t.Helper()
+	snap, err := r.a.Backend.FormState(id)
+	require.NoError(r.t, err)
+	return snap.Has(key)
+}
+
 func (r *successionRig) holder(role string) string { return r.key(role, "target-aria") }
 
 func (r *successionRig) heard(id string) string {
@@ -237,7 +244,7 @@ func TestSuccessionWarnsOnceAtEightyPercent(t *testing.T) {
 	turnOn(t, r.a, old, "and another")
 	require.Equal(t, 1, strings.Count(r.heard(old), "Start handing over"), "one warning, once")
 	require.Contains(t, r.heard(old), "75000")
-	require.Equal(t, "true", r.key(old, "system.succession_warned"))
+	require.True(t, r.has(old, "system.succession_warned"))
 	require.False(t, r.retired(old))
 	require.Empty(t, r.hs.SuccessionPhase(old))
 }
@@ -273,7 +280,7 @@ func TestSuccessionMovesEveryRoleThenRetires(t *testing.T) {
 	require.Contains(t, asked, scribe+" (scribe): handoff at /notes/scribe.md", "the role's own handoff-key was not followed")
 	require.Equal(t, 1, strings.Count(asked, "write your handoff now"))
 	require.NotContains(t, asked, "Start handing over", "the final prompt restates the warning; it must not also carry it")
-	require.Equal(t, "true", r.key(old, "system.succession_warned"))
+	require.True(t, r.has(old, "system.succession_warned"))
 	require.Equal(t, "tend the vines", r.key(old, "mantra"), "the warning's bookkeeping must not cost the prompt its other form writes")
 
 	next := r.hs.SuccessorOf(old)
