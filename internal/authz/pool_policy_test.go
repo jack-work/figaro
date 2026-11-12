@@ -36,6 +36,7 @@ groups = [` + groups + `]
 func policiesFor(pool bool) *Policies {
 	p := NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "1000"}, nil)
 	p.SetPoolDaemon(pool)
+	p.SetIssuerScopes([]string{"auth.kelliher.info"})
 	return p
 }
 
@@ -52,6 +53,9 @@ func TestAPoolDaemonsPolicyBindsOnlyNamedLocalPrincipals(t *testing.T) {
 		"a troupe's service":       {`"service:ci@troupe:kelliher"`, ``},
 		"an api key's user":        {`"user:ci@troupe:kelliher"`, ``},
 		"a troupe's group":         {`"service:broker-server@auth.kelliher.info"`, `"admins@troupe:kelliher"`},
+		"another issuer's group":   {`"service:broker-server@auth.kelliher.info"`, `"rou2-admin@login.example"`},
+		"a group of no issuer":     {`"service:broker-server@auth.kelliher.info"`, `"rou2-admin"`},
+		"a group of a longer host": {`"service:broker-server@auth.kelliher.info"`, `"rou2-admin@auth.kelliher.info.example"`},
 		"a wildcard beside a name": {`"service:broker-server@auth.kelliher.info", "service:*"`, ``},
 	} {
 		path := poolPolicy(t, c.principals, c.groups)

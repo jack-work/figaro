@@ -2,6 +2,7 @@ package authz
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jack-work/jkauthz"
@@ -9,7 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/apikey"
 )
 
-func refuseWhatAPoolPolicyCannotBind(policy []byte) error {
+func refuseWhatAPoolPolicyCannotBind(policy []byte, issuerScopes []string) error {
 	troupeScope := apikey.Scope("")
 	for _, b := range binds(policy) {
 		for _, name := range b.Principals {
@@ -34,10 +35,21 @@ func refuseWhatAPoolPolicyCannotBind(policy []byte) error {
 			return fmt.Errorf("a daemon that leases slots binds %s: %s; its policy names broker's client and the admin, each by name", name, why)
 		}
 		for _, g := range b.Groups {
-			if _, scope, _ := strings.Cut(g, "@"); strings.HasPrefix(scope, troupeScope) {
+			_, scope, _ := strings.Cut(g, "@")
+			if strings.HasPrefix(scope, troupeScope) {
 				return fmt.Errorf("a daemon that leases slots binds group %s: it is a troupe's group", g)
+			}
+			if !slices.Contains(issuerScopes, scope) {
+				return fmt.Errorf("a daemon that leases slots binds group %s: a group comes from an issuer its config names (%s), and this one does not", g, orNone(issuerScopes))
 			}
 		}
 	}
 	return nil
+}
+
+func orNone(names []string) string {
+	if len(names) == 0 {
+		return "it names none"
+	}
+	return strings.Join(names, ", ")
 }

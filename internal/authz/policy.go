@@ -274,7 +274,7 @@ func (p *Policies) load(data []byte) error {
 		return err
 	}
 	if p.pool {
-		if err := refuseWhatAPoolPolicyCannotBind(data); err != nil {
+		if err := refuseWhatAPoolPolicyCannotBind(data, p.scopes); err != nil {
 			return err
 		}
 	}
