@@ -499,6 +499,9 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	if pm, _ := b.Meta(parent); pm != nil && pm.RetiredAtMS > 0 {
 		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemRetiredKey}))
 	}
+	if snap, err := b.FormState(parent); err == nil && snap.Has(SystemSuccessionFailedKey) {
+		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemSuccessionFailedKey}))
+	}
 	if pm, _ := b.Meta(parent); pm != nil && pm.ReapedAtMS > 0 {
 		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemReapedKey, SystemReapedUntilKey, SystemReapedByKey}))
 	}

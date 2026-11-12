@@ -379,10 +379,13 @@ func TestSuccessionFailureIsStickyUntilCleared(t *testing.T) {
 	r.cross(old)
 	r.requireUnretiredAndPaged(old, "", "the final handoff turn failed")
 	r.p.set(func() { r.p.failFrom[old] = 0 })
+	fr, err := r.acli.Fork(r.ctx, old, 0, 0, nil, nil)
+	require.NoError(t, err)
+	require.Empty(t, r.failed(fr.Alternative), "a fork inherited the failure and would never hand over")
 	turnOn(t, r.a, old, "carry on past the threshold")
 	waitIdle(t, r.a, old)
 	require.Equal(t, 1, strings.Count(r.heard(old), "write your handoff now"), "a failed succession started again on its own")
-	require.Len(t, r.arias(), 1)
+	require.Len(t, r.arias(), 2)
 
 	var out rpc.SetResponse
 	require.NoError(t, dialAria(t, r.a, old, nil).Call(r.ctx, rpc.MethodSet,
