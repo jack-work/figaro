@@ -20,6 +20,8 @@ var configuredOTLP string
 
 func SetOTLPEndpoint(endpoint string) { configuredOTLP = strings.TrimSpace(endpoint) }
 
+const ExitFlush = time.Second
+
 const (
 	otlpTimeout  = 5 * time.Second
 	otlpLogQueue = 4096
