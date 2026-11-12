@@ -60,7 +60,7 @@ about generation speed. Copilot's messages
 route does this to tool arguments (traced on 11-08: the opening empty delta
 at once, nothing for 2.7 to 5.9 s, then every argument within about 20 ms);
 its text streamed. Leave rounds with `round.streamed=false` out of TPOT.
-Timestamped events: `provider.request_built`, `http.body_sent` (upload
+Timestamped events: `provider.catchup.<phase>` (`peeked`, `tail_read`, `verified`, `seeded`, `encoded`), `provider.caught_up`, `provider.auth_resolved`, `provider.projected`, `provider.request_built`, `http.body_sent` (upload
 done, `http.req_bytes`), `http.request` (response headers),
 `http.first_byte`, `first_thinking`, `first_text`, `first_tool`,
 `first_tool_arg`, `last_output`, `http.body_done` (`http.resp_bytes`),

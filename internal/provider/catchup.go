@@ -160,6 +160,7 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 		d.Commit(entry, msg)
 		stats.Encoded++
 	}
+	cfg.phase("encoded")
 	return stats, nil
 }
 

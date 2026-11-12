@@ -1005,6 +1005,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if src == nil {
 		return fmt.Errorf("empty context")
 	}
+	figOtel.Event(ctx, "provider.caught_up")
 
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
@@ -1013,6 +1014,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		}
 		return fmt.Errorf("resolve token: %w", err)
 	}
+	figOtel.Event(ctx, "provider.auth_resolved")
 	model := a.resolveModel(in.Snapshot)
 	if e, ok := a.SeedModel(model); ok {
 		in.Images = provider.ImageLimitsOf(e, providerName, model, false)
@@ -1022,6 +1024,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return err
 	}
+	figOtel.Event(ctx, "provider.projected")
 
 	ctx, settle := provider.WatchFirstByte(ctx, provider.FirstByteTimeout(in.Snapshot))
 	defer func() { err = provider.NameStreamCut(settle(err), providerName) }()
@@ -1153,6 +1156,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if err != nil {
 		return err
 	}
+	figOtel.Event(ctx, "provider.projected")
 	label := a.TransportLabel
 	if label == "" {
 		label = "copilot"
