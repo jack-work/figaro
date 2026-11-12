@@ -428,7 +428,7 @@ func Run() {
 		Poll:      loaded.ModelsPoll(),
 		Form:      modelsForm(backend),
 	})
-	go a.Models.Run(ctx)
+	a.Go("model catalog", func() { a.Models.Run(ctx) })
 	go warmRoutes(build, catalogProviders(loaded))
 
 	if err := federate(ctx, a, loaded); err != nil {
@@ -473,8 +473,8 @@ func Run() {
 	handlers.LoadNav()
 	angelus.RestoreBindings(a.Registry, a.BindingsPath(), handlers.RequireAria)
 	go angelus.PersistBindings(a.Registry, a.BindingsPath())
-	go handlers.PersistNav(ctx.Done())
-	go handlers.Redeliver(ctx)
+	a.Go("nav persistence", func() { handlers.PersistNav(ctx.Done()) })
+	a.Go("spool redelivery", func() { handlers.Redeliver(ctx) })
 
 	drained := make(chan struct{})
 	go func() {
@@ -522,12 +522,12 @@ func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded
 		return err
 	}
 	slog.Info("web door listening", "path", web.Path, "authn", web.Authn, "max_conn_age", web.MaxConnAge.String(), "edge_follow_max_age", door.FollowMaxAge.String(), "admits", admit != nil)
-	go func() {
+	a.Go("door web", func() {
 		defer os.Remove(web.Path)
 		if err := a.ServeWeb(ctx, ln, door); err != nil {
 			slog.Error("web door", "err", err)
 		}
-	}()
+	})
 	return nil
 }
 

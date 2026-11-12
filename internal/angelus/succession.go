@@ -217,7 +217,7 @@ func (h *handlers) turnEnded(e figaro.TurnEnd) {
 	if h.succ.succeededBy(e.ID) == nil && h.succ.of(e.ID) == nil && !e.AtThreshold() {
 		return
 	}
-	go h.advanceSuccession(e)
+	h.angelus.Go("succession", func() { h.advanceSuccession(e) })
 }
 
 func (h *handlers) advanceSuccession(e figaro.TurnEnd) {

@@ -180,3 +180,54 @@ func FuzzLazyInterleavings(f *testing.F) {
 		}
 	})
 }
+
+// CloseAndSettle returns only once the batch in flight has finished and the
+// queue is empty: a caller may then release what the drain was using.
+func TestLazyCloseAndSettleWaitsForTheBatchInFlight(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var drained atomic.Int64
+	q := NewLazy(1, time.Millisecond, func(batch []int) {
+		if drained.Load() == 0 {
+			close(entered)
+			<-release
+		}
+		drained.Add(int64(len(batch)))
+	})
+	for i := 0; i < 3; i++ {
+		if err := q.Submit(i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	<-entered
+	settled := make(chan struct{})
+	go func() { q.CloseAndSettle(); close(settled) }()
+	select {
+	case <-settled:
+		t.Fatal("CloseAndSettle returned with a batch in flight")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-settled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("CloseAndSettle never returned")
+	}
+	if got := drained.Load(); got != 3 {
+		t.Fatalf("drained %d of 3 before settling", got)
+	}
+	if err := q.Submit(9); err == nil {
+		t.Fatal("Submit accepted after CloseAndSettle")
+	}
+}
+
+func TestLazyCloseAndSettleOnAnIdleQueueReturns(t *testing.T) {
+	q := NewLazy(0, time.Millisecond, func([]int) {})
+	done := make(chan struct{})
+	go func() { q.CloseAndSettle(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("CloseAndSettle on an idle queue never returned")
+	}
+}
