@@ -487,17 +487,17 @@ const perRowResumedChannel = "copilot-responses"
 // change between rows. The batched path resumes to the rows the per-row path
 // resumes to, for every prefix. Whether those are the rows of an
 // uninterrupted run is the deriver seed's promise, not the batch's: where the
-// prefix ends just after a user record whose row is empty, the seed adopts
-// that record's form version though its window was never written, and the
-// change it carried is lost. Those prefixes are skipped for that comparison
-// until the seed is fixed.
+// prefix ends on the assistant's row that follows a user record whose row is
+// empty, the seed adopts that record's form version though its window was
+// never written, and the change it carried is lost. Those prefixes are
+// skipped for that comparison until the seed is fixed.
 func TestCatchUpResumedUnderChangingFormsWritesThePerRowRows(t *testing.T) {
 	cases := []struct {
 		prefix          int
 		seedLosesWindow bool
 	}{
-		{prefix: 1}, {prefix: 6}, {prefix: 9}, {prefix: 100}, {prefix: 239},
-		{prefix: 10, seedLosesWindow: true}, {prefix: 24, seedLosesWindow: true},
+		{prefix: 1}, {prefix: 6}, {prefix: 10}, {prefix: 24}, {prefix: 100}, {prefix: 239},
+		{prefix: 11, seedLosesWindow: true}, {prefix: 25, seedLosesWindow: true},
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("%d rows", tc.prefix), func(t *testing.T) {
@@ -510,8 +510,13 @@ func TestCatchUpResumedUnderChangingFormsWritesThePerRowRows(t *testing.T) {
 			f.reopen(t, 4096)
 			perRowCatchUp(t, f.formConfig(t, perRowResumedChannel, nil), 0)
 			cfg := f.formConfig(t, batchedChannel, nil)
-			if _, err := CatchUp(cfg); err != nil {
+			stats, err := CatchUp(cfg)
+			if err != nil {
 				t.Fatal(err)
+			}
+			if stats.RepairedAt != 0 || stats.Visited != len(uninterrupted)-tc.prefix {
+				t.Fatalf("resume visited %d records and repaired at %d, want %d and no repair: the rows were not resumed",
+					stats.Visited, stats.RepairedAt, len(uninterrupted)-tc.prefix)
 			}
 			resumed := rowDump(cfg.Translator)
 			sameRows(t, "resumed in batches against resumed row by row", resumed,
