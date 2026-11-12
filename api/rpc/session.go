@@ -148,6 +148,8 @@ type UnbindResponse struct {
 
 const ReapedFormID = "@reaped"
 
+const SuccessionsFormID = "@successions"
+
 const AriasFormID = "@arias"
 
 const TroupeFormID = "@troupe"

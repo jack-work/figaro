@@ -17,6 +17,7 @@ var ownerHeldKeys = []string{
 	"system.keepalive",
 	"system.retired",
 	"system.retirement",
+	"system.succession_failed",
 	"system.keep",
 }
 

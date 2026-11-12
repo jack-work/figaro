@@ -166,6 +166,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		DefaultForm:     h.defaultForm,
 		Spool:           h.angelus.Spool,
 		TellFailure:     h.tellFailure,
+		TurnEnded:       h.turnEnded,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {

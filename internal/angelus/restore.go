@@ -154,6 +154,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		DefaultForm:     h.defaultForm,
 		Spool:           h.angelus.Spool,
 		TellFailure:     h.tellFailure,
+		TurnEnded:       h.turnEnded,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {

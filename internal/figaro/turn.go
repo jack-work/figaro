@@ -216,6 +216,10 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 		mv, _ := json.Marshal(firstChars(prompt.text, 60))
 		seed["mantra"] = mv
 	}
+	warning, warn := a.handoverWarning()
+	if warn {
+		seed[store.SystemSuccessionWarnedKey] = json.RawMessage("true")
+	}
 	combined := form.Build(form.Snapshot{}, seed, nil)
 	if !combined.IsIdentity() {
 		// Durability precedes visibility: a failed append does not advance the in-memory form.
@@ -233,6 +237,9 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 		msg.Content = append(msg.Content, blocks...)
 	} else if prompt.text != "" {
 		msg.Content = append(msg.Content, message.TextContent(prompt.text))
+	}
+	if warn && !asksForHandoff(prompt.segments) {
+		msg.Content = append(msg.Content, message.SenderText(successionSender, warning))
 	}
 	if len(msg.Content) > 0 {
 		// Only an inquiry opens a turn; a steer joins the one in flight, or the live

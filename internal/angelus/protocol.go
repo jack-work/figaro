@@ -93,6 +93,8 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	}
 	h.noticeUpgrade()
 	h.startNav()
+	h.succ = newSuccessions(h.angelus.SuccessionsPath)
+	h.angelus.successionSweep = h.sweepSuccessions
 	h.startReapedForm()
 	h.startTroupeForm()
 	h.publishCatalogs()
@@ -325,6 +327,7 @@ type handlers struct {
 	nav        *primitive.Sessions[navstack.History]
 	navForms   navForms
 	reapedMu   sync.Mutex
+	succ       *successions
 
 	gcOnce      sync.Once
 	gcCollector *gc.Collector
