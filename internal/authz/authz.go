@@ -279,13 +279,13 @@ func Enforce(p *Policies) Policy {
 			d.DropClaim = dropped
 			return d
 		}
-		if checkedByHandler(r.Method) {
+		if checkedByHandler(r.Method) && !p.pool.Load() {
 			return decided(Allow())
 		}
 		if verb == rpc.VerbNone && r.Door.Trusted() {
 			return Allow()
 		}
-		if verb == rpc.VerbNone || filtersPerRow(r) {
+		if verb == rpc.VerbNone || (filtersPerRow(r) && !p.pool.Load()) {
 			if !p.HoldsRole(r.Subject) {
 				return Deny("%s: %s holds no role here", r.Method, r.Subject.Principal)
 			}

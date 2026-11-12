@@ -176,6 +176,7 @@ func guardedAsProvisioner(t *testing.T, p *Policies) (map[string]jkrpc.HandlerFu
 	for _, m := range rpc.GuardedMethods() {
 		handlers[m] = ok
 	}
+	p.SetPoolDaemon(true)
 	return Guard(handlers, AriaHeader{}, Enforce(p)), func(box string) context.Context {
 		return WithDoor(WithSubject(context.Background(), ProvisionerServing(box)), DoorInProcess)
 	}
@@ -206,17 +207,18 @@ func TestTheGuardRefusesTheProvisionerACreate(t *testing.T) {
 
 // R2, D2 at the guard: serving lease A, the provisioner is refused every
 // guarded method against the owner's figaro, lease B's figaro and the
-// daemon. Against A's own figaro it passes the methods whose verb is set
-// or kill and no other, so it cannot read, prompt or fork what it minted.
+// daemon, the ones other daemons leave to their handlers among them.
+// Against A's own figaro it passes the methods whose verb is set or kill
+// and no other, so it cannot read, prompt or fork what it minted.
 func TestTheGuardRefusesTheProvisionerEveryMethodOutsideItsLease(t *testing.T) {
 	p := poolPolicies(t, brokerGroupsPolicy, leaseA, leaseB)
 	h, serving := guardedAsProvisioner(t, p)
 	ctx := serving(leaseA)
-	var decidedInTheHandler []string
+	var unverbed []string
 	for _, m := range rpc.GuardedMethods() {
 		verb, _ := rpc.VerbOf(m)
-		if verb == rpc.VerbNone || checkedByHandler(m) {
-			decidedInTheHandler = append(decidedInTheHandler, m)
+		if verb == rpc.VerbNone {
+			unverbed = append(unverbed, m)
 			continue
 		}
 		for _, aria := range []string{"owners", "in-b", "in-local", "never-minted", ""} {
@@ -234,10 +236,7 @@ func TestTheGuardRefusesTheProvisionerEveryMethodOutsideItsLease(t *testing.T) {
 			t.Errorf("%s (%s) on lease %s's own figaro: served %v, want %v (%v)", m, verb, leaseA, err == nil, own, err)
 		}
 	}
-	want := []string{rpc.MethodHello, rpc.MethodImportStatus, rpc.MethodNodeLearn, rpc.MethodTroupeEntries, rpc.MethodTroupeSign, rpc.MethodTroupeIdentity, rpc.MethodTroupeLeave, rpc.MethodTroupePolicySet,
-		rpc.MethodTroupeAPIKeyMint, rpc.MethodTroupeAPIKeyRevoke, rpc.MethodTroupeAPIKeyList, rpc.MethodGCPlan, rpc.MethodGCApply, rpc.MethodGCUndo}
-	slices.Sort(want)
-	if !slices.Equal(decidedInTheHandler, want) {
-		t.Errorf("methods the guard leaves to their handler: %v, want %v; a new one needs its handler shown to refuse the provisioner", decidedInTheHandler, want)
+	if want := []string{rpc.MethodHello}; !slices.Equal(unverbed, want) {
+		t.Errorf("methods with no verb, which the guard serves any in-process caller: %v, want %v", unverbed, want)
 	}
 }

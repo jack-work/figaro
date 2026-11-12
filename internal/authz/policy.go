@@ -221,7 +221,7 @@ type Policies struct {
 	troupe  atomic.Pointer[troupeLayer]
 	schema  jkauthz.Schema[Resource]
 	boxes   []string
-	pool    bool
+	pool    atomic.Bool
 	parsed  parsedGrants
 	retired []string
 
@@ -249,9 +249,7 @@ func (p *Policies) SetIssuerScopes(scopes []string) {
 }
 
 func (p *Policies) SetPoolDaemon(pool bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.pool = pool
+	p.pool.Store(pool)
 }
 
 func (p *Policies) SetBoxes(names []string) {
@@ -264,7 +262,7 @@ func (p *Policies) Reload(path string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.path = path
-	if path == "" && p.pool {
+	if path == "" && p.pool.Load() {
 		return errors.New("policy: a daemon that leases slots names its policy file and never takes the default policy")
 	}
 	if path == "" {
@@ -299,7 +297,7 @@ func (p *Policies) load(data []byte) error {
 	if err != nil {
 		return err
 	}
-	if p.pool {
+	if p.pool.Load() {
 		if err := refuseWhatAPoolPolicyCannotBind(data, p.scopes); err != nil {
 			return err
 		}
