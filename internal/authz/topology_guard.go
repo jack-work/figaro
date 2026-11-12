@@ -70,12 +70,13 @@ var ErrSystemOnly = errors.New("only the daemon may run this plan")
 var ErrSplitsReapedGroup = errors.New("a delete would split a reaped group")
 
 type TopologyGuard struct {
-	Policies  func() *Policies
-	Owner     func() jkauthz.Principal
-	Placement func(id string) (zone string, deadlineMS int64)
-	Holds     func(ctx context.Context, root string, taken []string) (node, why string)
-	Reaped    func(ctx context.Context, root string) (nodes []string, due bool)
-	Empty     func(id string) bool
+	Policies   func() *Policies
+	Owner      func() jkauthz.Principal
+	Placement  func(id string) (zone string, deadlineMS int64)
+	Holds      func(ctx context.Context, root string, taken []string) (node, why string)
+	Reaped     func(ctx context.Context, root string) (nodes []string, due bool)
+	Empty      func(id string) bool
+	MintPlaces func(box, node, under string) error
 }
 
 func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hierarchy.Plan) (hierarchy.Verdict, error) {
@@ -95,6 +96,9 @@ func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hier
 	caller, ok := by.Subject.(TopologyCaller)
 	if !ok {
 		return hierarchy.Verdict{}, fmt.Errorf("%s: no caller to authorize", p.Op)
+	}
+	if IsProvisioner(caller.Subject.Principal) && !p.Op.Deletes() && p.Op != hierarchy.Restore {
+		return hierarchy.Verdict{}, g.provisionerPlaces(caller, p)
 	}
 	switch p.Op {
 	case hierarchy.Kill, hierarchy.Reap:
@@ -339,6 +343,25 @@ func (g TopologyGuard) freshPlacement(by hierarchy.Principal, p hierarchy.Plan) 
 		}
 	}
 	return true
+}
+
+func (g TopologyGuard) provisionerPlaces(c TopologyCaller, p hierarchy.Plan) error {
+	if p.Op != hierarchy.Place {
+		return fmt.Errorf("%s %s: %s moves a node only by placing one it just minted under its pool's node", p.Op, p.Node, c.Subject.Principal)
+	}
+	box, ok := leaseServed(c.Subject)
+	if !ok || g.MintPlaces == nil {
+		return fmt.Errorf("place %s under %s: %s places only while it mints for one lease", p.Node, p.To, c.Subject.Principal)
+	}
+	for _, m := range p.Moves {
+		if m.Node != p.Node || m.To != p.To {
+			return fmt.Errorf("place %s under %s: the plan also moves %s under %s", p.Node, p.To, m.Node, m.To)
+		}
+	}
+	if err := g.MintPlaces(box, p.Node, p.To); err != nil {
+		return fmt.Errorf("place %s under %s: %w", p.Node, p.To, err)
+	}
+	return nil
 }
 
 func (g TopologyGuard) each(c TopologyCaller, verb rpc.Verb, ids []string) error {
