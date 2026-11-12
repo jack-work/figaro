@@ -443,7 +443,7 @@ func short12(s string) string {
 }
 
 func storeOwnerHint() string {
-	pid, held := boot.StoreLockOwner()
+	_, pid, held := boot.StoreLockHolder()
 	if !held || pid <= 0 {
 		return ""
 	}
