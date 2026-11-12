@@ -43,10 +43,10 @@ func drawnTree(b *store.XwalBackend, ids ...string) map[string]string {
 	return out
 }
 
-// An aria drawn at the root while it still reads through its outfit
-// version: normalize detaches it, its history becomes the root, and the
-// override now names exactly that, so it goes.
-func TestNormalizeDropsTheOverrideHistoryNowAgreesWith(t *testing.T) {
+// An aria drawn at the root while it reads through its outfit version:
+// normalize detaches it, so it reads through nothing, but it stays placed
+// under the outfit. The override still says something and stays.
+func TestNormalizeKeepsTheOverrideOfAnAriaItDetaches(t *testing.T) {
 	b, _ := backend(t, true)
 	stump, err := b.CreateOutfit("d", patch("system.model", "m"))
 	if err != nil {
@@ -63,15 +63,22 @@ func TestNormalizeDropsTheOverrideHistoryNowAgreesWith(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []topo.Stale{{ID: conv, Under: "null", Reason: topo.StaleHistoryAgrees}}
-	if !reflect.DeepEqual(r.Dropped, want) {
-		t.Fatalf("dropped %+v, want %+v", r.Dropped, want)
+	if len(r.Detached) != 1 || r.Detached[0] != conv || len(r.Dropped) != 0 {
+		t.Fatalf("report %+v, want %s detached and nothing dropped", r, conv)
 	}
-	if got := b.Store().Tree().Edges(); len(got) != 0 {
-		t.Fatalf("edges after normalize %v, want none", got)
+	if got := b.Store().Tree().Edges(); got[conv] != "null" {
+		t.Fatalf("edges after normalize %v, want %s still drawn at the root", got, conv)
 	}
-	if n, _ := b.Store().Node(conv); n.Parent != "null" || n.Present != "null" {
-		t.Fatalf("%s: parent %q drawn under %q, want the root for both", conv, n.Parent, n.Present)
+	n, _ := b.Store().Node(conv)
+	if n.Parent != stump || n.Present != "null" {
+		t.Fatalf("%s: placed under %q, drawn under %q, want its outfit %s and the root", conv, n.Parent, n.Present, stump)
+	}
+	if n.ForkPoint != "null" {
+		t.Fatalf("%s still reads through %q after the detach", conv, n.ForkPoint)
+	}
+	again, err := b.Normalize(false)
+	if err != nil || len(again.Detached) != 0 || len(again.Dropped) != 0 {
+		t.Fatalf("a second normalize found work: %+v, %v", again, err)
 	}
 }
 
