@@ -95,7 +95,7 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 	}
 	h.reloadMu.Lock()
 	defer h.reloadMu.Unlock()
-	fresh, err := config.Load(loaded.ConfigDir)
+	fresh, err := loaded.Reload()
 	if err != nil {
 		slog.Error("config reload refused; the running config stays", "err", err)
 		return nil, fmt.Errorf("configure: %w", err)

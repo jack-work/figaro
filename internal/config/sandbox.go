@@ -33,12 +33,14 @@ func (b BoxConfig) AnyProvider() bool { return isAnyList(b.Providers) }
 func isAnyList(l []string) bool { return len(l) == 1 && l[0] == "*" }
 
 func (l *Loaded) Box(name string) (BoxConfig, bool) {
-	b, ok := l.cfg().Sandbox.Boxes[name]
-	return b, ok
+	if b, ok := l.cfg().Sandbox.Boxes[name]; ok {
+		return b, true
+	}
+	return l.leasedBoxes().box(name)
 }
 
 func (l *Loaded) BoxPurgeGrace(name string) (time.Duration, bool) {
-	b, ok := l.cfg().Sandbox.Boxes[name]
+	b, ok := l.Box(name)
 	if !ok || b.PurgeGrace == "" {
 		return 0, false
 	}
@@ -52,7 +54,7 @@ func (l *Loaded) BoxPurgeGrace(name string) (time.Duration, bool) {
 func (l *Loaded) ShortestBoxPurgeGrace() (time.Duration, bool) {
 	var least time.Duration
 	found := false
-	for name := range l.cfg().Sandbox.Boxes {
+	for _, name := range append(sortedKeys(l.cfg().Sandbox.Boxes), l.LeasedBoxes()...) {
 		if d, ok := l.BoxPurgeGrace(name); ok && (!found || d < least) {
 			least, found = d, true
 		}

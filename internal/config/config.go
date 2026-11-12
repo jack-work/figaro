@@ -730,6 +730,8 @@ type Loaded struct {
 	ConfigDir  string
 	ConfigPath string
 	Detached   bool
+
+	leased *leasedBoxes
 }
 
 const DetachedEnv = "FIGARO_DETACHED"
@@ -834,6 +836,9 @@ func DefaultConfigDir() string {
 // Load returns defaults when config.toml is missing.
 func Load(configDir string) (*Loaded, error) {
 	l, err := load(configDir)
+	if err == nil && l.PoolDaemon() {
+		l.leased = newLeasedBoxes()
+	}
 	if err != nil || os.Getenv(DetachedEnv) == "" {
 		return l, err
 	}
