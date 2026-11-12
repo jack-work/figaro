@@ -81,15 +81,19 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID, wokeBy string) (figa
 }
 
 func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figaro.Figaro, error) {
+	laps := figOtel.StartLaps("figaro.wake")
+	defer laps.End(ctx, attribute.String("figaro.id", ariaID), attribute.String("woke_by", wokeBy))
 	if b := h.angelus.Backend; b != nil {
 		if _, err := b.OpenFigIR(ariaID); err != nil {
 			return nil, fmt.Errorf("restore %s: %w", ariaID, err)
 		}
 	}
+	laps.Lap("ir_open")
 	cb := h.openAriaForm(ariaID)
 	if cb == nil {
 		return nil, fmt.Errorf("restore %s: form unavailable", ariaID)
 	}
+	laps.Lap("form_open")
 	cbSnap := cb.Snapshot()
 	cbStr := func(key string) string {
 		raw, ok := cbSnap.Get(key)
@@ -119,6 +123,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 	if err != nil {
 		return nil, fmt.Errorf("restore %s: create provider: %w", ariaID, err)
 	}
+	laps.Lap("provider")
 
 	var createdAt, lastActive time.Time
 	if meta, _ := h.angelus.Backend.Meta(ariaID); meta != nil {
@@ -129,11 +134,13 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 	if ts := h.angelus.Backend.LastTS(ariaID); ts != 0 {
 		lastActive = time.UnixMilli(ts)
 	}
+	laps.Lap("meta")
 	loaded, _ := h.settings()
 	box, err := sandbox.Open(ctx, h.angelus.Sessions, loaded, cbStr("system.sandbox"), ariaID, cbStr("system.cwd"))
 	if err != nil {
 		return nil, fmt.Errorf("restore %s: sandbox: %w", ariaID, err)
 	}
+	laps.Lap("sandbox")
 	reg := tool.DefaultRegistry(box, cwdFromForm(cb, box),
 		tool.WithImageBudget(loaded.InlineImageBudget()))
 	agent := figaro.NewAgent(figaro.Config{
@@ -156,6 +163,8 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		TellFailure:     h.tellFailure,
 	})
 
+	laps.Lap("agent")
+
 	if err := h.angelus.Registry.Register(agent); err != nil {
 		agent.Kill()
 		box.Close()
@@ -165,6 +174,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 	agent.OnTeardown(h.bindAgentToHub(ariaID, agent))
 	agent.OnTeardown(func() { box.Close() })
 	agent.Redeliver()
+	laps.Lap("register")
 
 	slog.Info("restored figaro",
 		"id", ariaID, "provider", provName, "model", knobs.Model, "woke_by", wokeBy)
