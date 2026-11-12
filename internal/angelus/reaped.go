@@ -141,14 +141,10 @@ func (a *Angelus) purge(keeper ttlKeeper, g reapedGroup) error {
 }
 
 func (a *Angelus) rolesIn(ids []string) []string {
-	roles, _ := a.roleTargets()
-	isRole := make(map[string]bool, len(roles))
-	for _, role := range roles {
-		isRole[role] = true
-	}
+	forms := a.roleForms()
 	var out []string
 	for _, id := range ids {
-		if isRole[id] {
+		if _, ok := forms[id]; ok {
 			out = append(out, id)
 		}
 	}

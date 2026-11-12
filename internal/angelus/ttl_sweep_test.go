@@ -40,6 +40,14 @@ func (f *ttlFakeBackend) RoleTargets() (map[string]string, bool) {
 	return out, !f.rolesWarming
 }
 
+func (f *ttlFakeBackend) RoleForms() (map[string]string, bool) {
+	out := make(map[string]string, len(f.roles))
+	for role, target := range f.roles {
+		out[role] = target
+	}
+	return out, !f.rolesWarming
+}
+
 func (f *ttlFakeBackend) Forms() []store.NodeView {
 	var out []store.NodeView
 	for role := range f.roles {

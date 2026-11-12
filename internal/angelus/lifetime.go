@@ -268,6 +268,7 @@ func (a *Angelus) heldIn(taken []string, self string, bound map[string][]int, ro
 
 type roleIndexer interface {
 	RoleTargets() (map[string]string, bool)
+	RoleForms() (map[string]string, bool)
 }
 
 var errRoleIndexMissed = errors.New("a role the index missed points into the delete set")
@@ -328,6 +329,15 @@ func (a *Angelus) roleTargets() (map[string]string, bool) {
 		return map[string]string{}, true
 	}
 	return idx.RoleTargets()
+}
+
+func (a *Angelus) roleForms() map[string]string {
+	idx, ok := a.Backend.(roleIndexer)
+	if !ok {
+		return map[string]string{}
+	}
+	forms, _ := idx.RoleForms()
+	return forms
 }
 
 var touchingMethods = map[string]bool{
