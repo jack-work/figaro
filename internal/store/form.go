@@ -513,6 +513,11 @@ func (f *Form) Close() {
 	f.q.Close()
 }
 
+func (f *Form) CloseAndSettle() {
+	f.closed.Store(true)
+	f.q.CloseAndSettle()
+}
+
 // runBatch: reduce each submission against a running state, append, one sync
 // for the batch, publish, then answer and emit.
 func (f *Form) runBatch(batch []*formWrite) {
