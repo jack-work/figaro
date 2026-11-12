@@ -347,7 +347,8 @@ parent. Without
 lists them). Someone with `adopt` there accepts or refuses it. Accept checks
 the move again as its proposer, with the grants the proposer holds then. A
 move that needs two parents' consent is refused. Proposals live in memory:
-they lapse after a day, a restart drops them, and each parent holds 16.
+they lapse after a day, a restart drops them, each parent holds 16, and
+one proposer holds 4 on a parent and 64 in all.
 `adopt` must stay out of a troupe policy until every member runs a release
 that knows the verb.
 
