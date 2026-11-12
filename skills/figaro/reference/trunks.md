@@ -188,8 +188,8 @@ with no credentials and no tokens.
   a legacy alias (the tilde must be quoted in the shell). Attending a
   cauterized (null/outfit) figaro is rejected with a nudge toward
   `attend null` / `ls -H` / `ls -g`.
-- **`kill <id>`**: refuses when anything is drawn under it; a refusal
-  writes nothing.
+- **`kill <id>`**: refuses when anything is drawn under it, and names both
+  ways out; a refusal writes nothing.
   **`kill -r <id>`**: takes it and everything drawn under it.
   **`kill --keep-children <id>`**: takes it alone and lifts its children to
   its parent, or to the top; each carries the narrowing it inherited through

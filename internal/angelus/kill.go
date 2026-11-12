@@ -68,7 +68,7 @@ func (h *handlers) reapGroup(id string, recursive bool, until time.Time, expect 
 			}
 		}
 		if live > 0 {
-			return time.Time{}, false, fmt.Errorf("%w: %q has %d; -r takes them too", store.ErrHasBranches, id, live)
+			return time.Time{}, false, hierarchy.HasChildren(id, live)
 		}
 	}
 	for _, n := range fresh {
