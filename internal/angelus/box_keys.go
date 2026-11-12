@@ -443,16 +443,25 @@ func hostCwdOf(ctx context.Context, requested string) string {
 	return requested
 }
 
-func (h *handlers) carryNarrowingOf(parent string) error {
-	if h.angelus.Policies == nil {
+type detachCarrier interface {
+	SetDetachCarry(func(ids []string) error)
+}
+
+func (h *handlers) carryBeforeDetach(ids []string) error {
+	p := h.angelus.Policies
+	if p == nil {
 		return nil
 	}
-	for _, n := range h.angelus.Backend.Conversations() {
-		if n.Parent != parent {
+	for _, id := range ids {
+		if n, ok := h.angelus.Backend.Node(id); !ok || n.Kind != store.KindConversation {
 			continue
 		}
-		if err := h.carryNarrowing(n.ID); err != nil {
-			return fmt.Errorf("%s: %w", n.ID, err)
+		g, held := p.ExplainGrants(id)
+		if !held || len(g.Unread) > 0 {
+			return fmt.Errorf("%s would leave the figaro that narrows it, and its scopes cannot be read to carry that narrowing", id)
+		}
+		if err := h.carryNarrowing(id); err != nil {
+			return fmt.Errorf("carrying the narrowing of %s: %w", id, err)
 		}
 	}
 	return nil

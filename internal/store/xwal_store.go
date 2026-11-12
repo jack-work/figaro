@@ -179,6 +179,8 @@ type XwalStore struct {
 	// deleting serializes whole deletes: two interleaved would re-home an aria
 	// under a parent the other is in the middle of taking.
 	deleting sync.Mutex
+
+	detachCarry atomic.Pointer[func(ids []string) error]
 }
 
 // xwalTopology is the .from adjacency, the only lineage figwal considers authoritative.
@@ -964,6 +966,9 @@ func (s *XwalStore) Normalize(dryRun bool) (NormalizeReport, error) {
 		dropped, _, err := s.tree.Prune(s.redundantGiven(assume), true)
 		r.Dropped = dropped
 		return r, err
+	}
+	if err := s.carryOut(detach); err != nil {
+		return r, fmt.Errorf("normalize: %w", err)
 	}
 	for _, id := range detach {
 		node, ok := s.trunks.HeadNode(id)
