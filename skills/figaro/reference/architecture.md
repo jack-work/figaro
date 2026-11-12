@@ -324,7 +324,8 @@ principals by `[[bind]]`. A permission is `verb:selector`
 (`send:role:@53c6b72b`, `read:owner:self`, `*:*`); the verb ends at the first
 colon, and either side may be `*`. Selectors are `aria:<id>`, `role:@<form id>`,
 `owner:self`, `lineage:<id>`, `sandbox:<name>`, `sandboxed:self`, `unboxed`,
-`troupe:<name>` and `outfit:<name>`. A role's permissions are kept canonical: duplicates and
+`troupe:<name>`, `outfit:<name>`, `pool:<name>` and `lease:self`. The last two
+go with the verbs `lease` and `say`, which a troupe cannot lend. A role's permissions are kept canonical: duplicates and
 any another covers are dropped, then sorted by verb and selector. The
 `{ verbs, on }` tables of 0.59 and earlier are refused, and the error spells them as
 strings. `grants` is the old name for `permissions` (and for the `[figaros]`

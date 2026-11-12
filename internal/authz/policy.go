@@ -26,6 +26,8 @@ const (
 	ResourceSandbox
 	ResourceTroupe
 	ResourceOutfit
+	ResourcePool
+	ResourceLease
 )
 
 type Resource struct {
@@ -46,6 +48,10 @@ func Troupe(name string) Resource { return Resource{Kind: ResourceTroupe, ID: na
 
 func Outfit(name string) Resource { return Resource{Kind: ResourceOutfit, ID: name} }
 
+func Pool(name string) Resource { return Resource{Kind: ResourcePool, ID: name} }
+
+func Lease(box string) Resource { return Resource{Kind: ResourceLease, ID: box} }
+
 var Daemon = Resource{}
 
 type Facts interface {
@@ -65,6 +71,9 @@ const (
 	selSandbox = "sandbox:"
 	selTroupe  = "troupe:"
 	selOutfit  = "outfit:"
+	selPool    = "pool:"
+	selLease   = "lease:self"
+	selBoxedIn = "sandboxed:"
 	selBoxed   = "sandboxed:self"
 	selUnboxed = "unboxed"
 	selSelf    = "self"
@@ -77,10 +86,13 @@ func isFormIDHex(s string) bool {
 }
 
 func (selectors) Validate(sel string) error {
-	if sel == selOwner || sel == selBoxed || sel == selUnboxed {
+	if sel == selOwner || sel == selBoxed || sel == selUnboxed || sel == selLease {
 		return nil
 	}
-	for _, prefix := range []string{selAria, selRole, selLineage, selSandbox, selTroupe, selOutfit} {
+	if strings.HasPrefix(sel, selBoxedIn) {
+		return fmt.Errorf("%s names a box, which only a grant the daemon computes may do; a policy says %s", sel, selBoxed)
+	}
+	for _, prefix := range []string{selAria, selRole, selLineage, selSandbox, selTroupe, selOutfit, selPool} {
 		if rest, ok := strings.CutPrefix(sel, prefix); ok {
 			if rest == "" {
 				return fmt.Errorf("%s names nothing", prefix)
@@ -94,7 +106,7 @@ func (selectors) Validate(sel string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("want aria:<id>, role:@<form id>, owner:self, lineage:<id>, sandbox:<name>, sandbox:self, sandboxed:self, unboxed, troupe:<name> or outfit:<name>")
+	return fmt.Errorf("want aria:<id>, role:@<form id>, owner:self, lineage:<id>, sandbox:<name>, sandbox:self, sandboxed:self, unboxed, troupe:<name>, outfit:<name>, pool:<name> or lease:self")
 }
 
 func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
@@ -112,6 +124,12 @@ func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
 	case ResourceOutfit:
 		name, ok := strings.CutPrefix(sel, selOutfit)
 		return ok && name == r.ID
+	case ResourcePool:
+		name, ok := strings.CutPrefix(sel, selPool)
+		return ok && name == r.ID
+	case ResourceLease:
+		box, isBox := BoxOf(s.Principal)
+		return sel == selLease && isBox && box == r.ID
 	}
 	if r.Kind != ResourceAria {
 		return false
@@ -143,6 +161,13 @@ func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
 	case strings.HasPrefix(sel, selLineage):
 		root := sel[len(selLineage):]
 		return root == r.ID || (m.facts != nil && m.facts.DescendsFrom(r.ID, root))
+	case strings.HasPrefix(sel, selBoxedIn):
+		box := sel[len(selBoxedIn):]
+		if box == "" || m.facts == nil {
+			return false
+		}
+		held, read := m.facts.SandboxOf(r.ID)
+		return read && held == box
 	}
 	return false
 }
@@ -427,7 +452,12 @@ func (p *Policies) Allow(s jkauthz.Subject, verb rpc.Verb, r Resource) Verdict {
 }
 
 func LocalOnly(verb rpc.Verb, r Resource) bool {
+	if verb == rpc.VerbLease || verb == rpc.VerbSay {
+		return true
+	}
 	switch r.Kind {
+	case ResourcePool, ResourceLease:
+		return true
 	case ResourceSandbox:
 		return r.ID == "local"
 	case ResourceTroupe:
@@ -491,6 +521,10 @@ func (r Resource) String() string {
 		return "troupe:" + r.ID
 	case ResourceOutfit:
 		return "outfit:" + r.ID
+	case ResourcePool:
+		return "pool:" + r.ID
+	case ResourceLease:
+		return "lease:" + r.ID
 	}
 	return "the daemon"
 }
