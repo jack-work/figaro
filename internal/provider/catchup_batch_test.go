@@ -68,6 +68,7 @@ type batchFixture struct {
 	root    string
 	backend *store.XwalBackend
 	aria    string
+	studied string
 	log     store.Log[message.Message]
 }
 
@@ -85,6 +86,14 @@ func openBatchFixture(t *testing.T, root string, segmentSize int) *batchFixture 
 // varying size, some with several blocks.
 func (f *batchFixture) newAria(t *testing.T, n int) {
 	t.Helper()
+	f.createAria(t)
+	for i := 0; i < n; i++ {
+		f.appendRecord(t, i)
+	}
+}
+
+func (f *batchFixture) createAria(t *testing.T) {
+	t.Helper()
 	outfit, err := f.backend.CreateOutfit("batch", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"skills.x": json.RawMessage(`1`),
 	}, nil))
@@ -95,20 +104,22 @@ func (f *batchFixture) newAria(t *testing.T, n int) {
 		t.Fatal(err)
 	}
 	f.openLog(t)
-	for i := 0; i < n; i++ {
-		role := message.RoleInput
-		if i%2 == 1 {
-			role = message.RoleOutput
-		}
-		content := []message.Content{message.TextContent(fmt.Sprintf("record %d %s", i, strings.Repeat("x", (i*37)%400)))}
-		if i%5 == 0 {
-			content = append(content, message.TextContent("second block"))
-		}
-		if _, err := f.log.Append(store.Entry[message.Message]{Payload: message.Message{
-			Role: role, Content: content, Timestamp: int64(1000 + i),
-		}}); err != nil {
-			t.Fatal(err)
-		}
+}
+
+func (f *batchFixture) appendRecord(t *testing.T, i int) {
+	t.Helper()
+	role := message.RoleInput
+	if i%2 == 1 {
+		role = message.RoleOutput
+	}
+	content := []message.Content{message.TextContent(fmt.Sprintf("record %d %s", i, strings.Repeat("x", (i*37)%400)))}
+	if i%5 == 0 {
+		content = append(content, message.TextContent("second block"))
+	}
+	if _, err := f.log.Append(store.Entry[message.Message]{Payload: message.Message{
+		Role: role, Content: content, Timestamp: int64(1000 + i),
+	}}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -166,12 +177,14 @@ func (f *batchFixture) config(t *testing.T, channel string) CatchUpConfig {
 }
 
 // rowDump is everything a row is, payload bytes included: LT, FigaroLT,
-// fingerprint, record hash, payload.
+// fingerprint, record hash, the form and study versions stamped on the row,
+// payload.
 func rowDump(rows store.Log[[]json.RawMessage]) []string {
 	var out []string
 	store.ScanAll(rows, func(e store.Entry[[]json.RawMessage]) bool {
 		payload, _ := json.Marshal(e.Payload)
-		out = append(out, fmt.Sprintf("%d %d %s %s %s", e.LT, e.FigaroLT, e.Fingerprint, e.FigaroHash, payload))
+		out = append(out, fmt.Sprintf("%d %d %s %s form=%d studies=%v %s",
+			e.LT, e.FigaroLT, e.Fingerprint, e.FigaroHash, e.FormChannelVersion, e.StudyVersions, payload))
 		return true
 	})
 	return out
@@ -262,6 +275,252 @@ func TestCatchUpResumesFromADurablePrefix(t *testing.T) {
 				t.Fatalf("visited %d records after a prefix of %d, want %d", stats.Visited, prefix, len(want)-prefix)
 			}
 			sameRows(t, "resumed", rowDump(cfg.Translator), want)
+		})
+	}
+}
+
+// boundFormOf and studiedFormOf answer the deriver from the fixture's store the
+// way the agent's views do: patches by absolute range, and for the bound form
+// the state at a version.
+type boundFormOf struct{ f *batchFixture }
+
+func (v boundFormOf) PatchesBetween(after, upTo uint64) []message.Patch {
+	ps, err := v.f.backend.FormPatchesBetween(v.f.aria, after, upTo)
+	if err != nil {
+		return nil
+	}
+	out := make([]message.Patch, len(ps))
+	for i := range ps {
+		out[i] = ps[i].Patch
+	}
+	return out
+}
+
+func (v boundFormOf) StateAt(version uint64) (form.Snapshot, bool) {
+	snap, err := v.f.backend.FormStateAt(v.f.aria, version)
+	return snap, err == nil
+}
+
+type studiedFormOf struct{ f *batchFixture }
+
+func (v studiedFormOf) PatchesBetween(after, upTo uint64) []message.Patch {
+	lib, err := v.f.backend.Libretto(v.f.studied)
+	if err != nil {
+		return nil
+	}
+	ps := lib.PatchesBetween(after, upTo)
+	out := make([]message.Patch, len(ps))
+	for i := range ps {
+		out[i] = ps[i].Patch
+	}
+	return out
+}
+
+func waitForFold(t *testing.T, lib *store.Libretto, version uint64) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if lib.At() >= version {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("the libretto did not fold source version %d (at %d)", version, lib.At())
+}
+
+// newAriaWithChangingForms gives the fixture a conversation whose forms move
+// under it: the bound form is patched before every user record and a studied
+// form before every fourth record, so the IR entries are stamped with form and
+// study versions that differ from row to row.
+func (f *batchFixture) newAriaWithChangingForms(t *testing.T, n int) {
+	t.Helper()
+	f.createAria(t)
+	src, _, err := f.backend.CreateForm("", setKey("status", "created"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.studied = src
+	decl, err := f.backend.StudyForm(f.aria, src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.backend.SetObservedForms(f.aria, decl.Studies)
+	lib, err := f.backend.Libretto(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		if i%2 == 0 {
+			if _, err := f.backend.ApplyForm(f.aria, setKey("mantra", fmt.Sprintf("before record %d", i))); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if i%4 == 0 {
+			v, err := f.backend.ApplyForm(src, setKey("status", fmt.Sprintf("before record %d", i)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			waitForFold(t, lib, v)
+		}
+		f.appendRecord(t, i)
+	}
+}
+
+// stampedVersions counts the distinct form and study versions the IR entries
+// carry.
+func (f *batchFixture) stampedVersions() (bound, studied int) {
+	forms, studies := map[uint64]bool{}, map[uint64]bool{}
+	entries, _ := store.TailAfter(f.log, 0)
+	for _, e := range entries {
+		forms[e.FormChannelVersion] = true
+		if v, ok := e.StudyVersions[f.studied]; ok {
+			studies[v] = true
+		}
+	}
+	return len(forms), len(studies)
+}
+
+func patchLines(patches []message.Patch) []string {
+	out := []string{}
+	for i, p := range patches {
+		for _, ent := range p.Entries() {
+			if ent.IsRemoval() {
+				out = append(out, fmt.Sprintf("%d -%s", i, ent.Key))
+			} else {
+				out = append(out, fmt.Sprintf("%d %s=%s", i, ent.Key, ent.New))
+			}
+		}
+	}
+	return out
+}
+
+// formWindows counts the messages an Encode was handed with a form change to
+// carry.
+type formWindows struct{ bound, studied int }
+
+// formConfig wires the fixture's forms into the catch-up and encodes each
+// message as what the deriver handed over: the bound form's state before the
+// message, the patches in its window, and each studied form's patches and
+// version. Two derivations that differ anywhere differ in the row's bytes.
+func (f *batchFixture) formConfig(t *testing.T, channel string, seen *formWindows) CatchUpConfig {
+	t.Helper()
+	cfg := f.config(t, channel)
+	cfg.Form = boundFormOf{f}
+	cfg.Studies = map[string]Form{f.studied: studiedFormOf{f}}
+	cfg.Encode = func(msg message.Message, snap form.Snapshot) ([]json.RawMessage, error) {
+		if msg.Timestamp%7 == 0 {
+			return nil, nil
+		}
+		state, err := json.Marshal(snap)
+		if err != nil {
+			return nil, err
+		}
+		study := map[string][]string{}
+		for fid, ps := range msg.StudyPatches {
+			study[fid] = patchLines(ps)
+		}
+		body, err := json.Marshal(map[string]any{
+			"role": string(msg.Role), "ts": msg.Timestamp,
+			"form": json.RawMessage(state), "patches": patchLines(msg.Patches),
+			"study": study, "study_at": msg.StudyAt,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if seen != nil {
+			if len(msg.Patches) > 0 {
+				seen.bound++
+			}
+			if len(msg.StudyPatches) > 0 {
+				seen.studied++
+			}
+		}
+		return []json.RawMessage{body}, nil
+	}
+	return cfg
+}
+
+// perRowReference writes the fixture's rows on the per-row channel in one
+// uninterrupted run and returns them, after checking that the fixture is the
+// shape under test: versions that change from entry to entry, and messages
+// that carried those changes into the encoder.
+func (f *batchFixture) perRowReference(t *testing.T) []string {
+	t.Helper()
+	var seen formWindows
+	perRowCatchUp(t, f.formConfig(t, perRowChannel, &seen), 0)
+	if bound, studied := f.stampedVersions(); bound < 90 || studied < 40 {
+		t.Fatalf("the IR entries carry %d form versions and %d study versions: the forms did not change between rows", bound, studied)
+	}
+	if seen.bound < 90 || seen.studied < 40 {
+		t.Fatalf("%d messages carried a bound form change and %d a studied one: the encoder saw too few", seen.bound, seen.studied)
+	}
+	return rowDump(f.formConfig(t, perRowChannel, nil).Translator)
+}
+
+// When the bound form and a studied form change between rows, the batched
+// catch-up hands the encoder what the per-row path handed it: the same state,
+// the same patch window and the same study versions for every row, in one
+// batch or many, and after the store reopens.
+func TestBatchedCatchUpDerivesTheFormsThePerRowPathDerived(t *testing.T) {
+	for _, batchBytes := range []int{0, 1, 700} {
+		t.Run(fmt.Sprintf("batch of %d bytes", batchBytes), func(t *testing.T) {
+			f := openBatchFixture(t, t.TempDir(), 4096)
+			f.newAriaWithChangingForms(t, 240)
+			want := f.perRowReference(t)
+
+			cfg := f.formConfig(t, batchedChannel, nil)
+			cfg.BatchBytes = batchBytes
+			if _, err := CatchUp(cfg); err != nil {
+				t.Fatal(err)
+			}
+			sameRows(t, "live", rowDump(cfg.Translator), want)
+
+			f.reopen(t, 4096)
+			sameRows(t, "after reopen", rowDump(f.formConfig(t, batchedChannel, nil).Translator), want)
+		})
+	}
+}
+
+const perRowResumedChannel = "copilot-responses"
+
+// A catch-up stopped part way and resumed after a reopen, under forms that
+// change between rows. The batched path resumes to the rows the per-row path
+// resumes to, for every prefix. Whether those are the rows of an
+// uninterrupted run is the deriver seed's promise, not the batch's: where the
+// prefix ends just after a user record whose row is empty, the seed adopts
+// that record's form version though its window was never written, and the
+// change it carried is lost. Those prefixes are skipped for that comparison
+// until the seed is fixed.
+func TestCatchUpResumedUnderChangingFormsWritesThePerRowRows(t *testing.T) {
+	cases := []struct {
+		prefix          int
+		seedLosesWindow bool
+	}{
+		{prefix: 1}, {prefix: 6}, {prefix: 9}, {prefix: 100}, {prefix: 239},
+		{prefix: 10, seedLosesWindow: true}, {prefix: 24, seedLosesWindow: true},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%d rows", tc.prefix), func(t *testing.T) {
+			f := openBatchFixture(t, t.TempDir(), 4096)
+			f.newAriaWithChangingForms(t, 240)
+			uninterrupted := f.perRowReference(t)
+
+			perRowCatchUp(t, f.formConfig(t, perRowResumedChannel, nil), tc.prefix)
+			perRowCatchUp(t, f.formConfig(t, batchedChannel, nil), tc.prefix)
+			f.reopen(t, 4096)
+			perRowCatchUp(t, f.formConfig(t, perRowResumedChannel, nil), 0)
+			cfg := f.formConfig(t, batchedChannel, nil)
+			if _, err := CatchUp(cfg); err != nil {
+				t.Fatal(err)
+			}
+			resumed := rowDump(cfg.Translator)
+			sameRows(t, "resumed in batches against resumed row by row", resumed,
+				rowDump(f.formConfig(t, perRowResumedChannel, nil).Translator))
+
+			if tc.seedLosesWindow {
+				t.Skip("owned by lane startup-exit-waits: SeedAt adopts the form version of a user record whose row is empty")
+			}
+			sameRows(t, "resumed against uninterrupted", resumed, uninterrupted)
 		})
 	}
 }
