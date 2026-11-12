@@ -19,6 +19,8 @@ var ErrWouldOrphan = errors.New("delete would orphan a surviving aria")
 // ErrHasBranches is checked before anything is written: the boundary repair a delete performs cannot be taken back.
 var ErrHasBranches = hierarchy.ErrHasBranches
 
+var ErrNoDetachCarry = errors.New("store: no detach carry is wired")
+
 var ErrDeleteSetChanged = errors.New("the nodes a delete takes changed since it was decided")
 
 // VersionedPatch carries a patch's durable version: its index in the (unkeyed) form channel.

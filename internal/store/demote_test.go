@@ -55,6 +55,7 @@ func demoteFixture(t *testing.T) (b *store.XwalBackend, parent string, early, mi
 // without -r is allowed and every branch survives, readable.
 func TestDemotedAriaDeletesAloneAndBranchesSurvive(t *testing.T) {
 	b, parent, early, mid, late := demoteFixture(t)
+	b.SetDetachCarry(carryNothing)
 	was := presentOf(t, b)[parent]
 
 	under, err := b.Demote(parent, mid)
