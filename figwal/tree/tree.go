@@ -15,6 +15,31 @@ type Ref struct {
 	Base uint64 // first coordinate that is the CHILD's own; 0 for the root
 }
 
+func Visible(lineage []Ref) []Ref {
+	ordered := true
+	for i := 1; i < len(lineage) && ordered; i++ {
+		ordered = lineage[i].Base == 0 || lineage[i].Base >= lineage[i-1].Base
+	}
+	if ordered {
+		return lineage
+	}
+	out := make([]Ref, len(lineage))
+	at := len(out)
+	ceiling := ^uint64(0)
+	for i := len(lineage) - 1; i >= 0; i-- {
+		ref := lineage[i]
+		if i > 0 && ref.Base > ceiling {
+			continue
+		}
+		at--
+		out[at] = ref
+		if ref.Base > 0 && ref.Base-1 < ceiling {
+			ceiling = ref.Base - 1
+		}
+	}
+	return out[at:]
+}
+
 // Coord names a contiguous unit range within one node, (From..To].
 type Coord struct {
 	Node     string

@@ -286,6 +286,7 @@ func (l *treeLog[T]) cuts(from, to uint64) []fwtree.Coord {
 	if l.seedOnAppend && len(refs) > 1 {
 		refs = l.rebase(refs)
 	}
+	refs = fwtree.Visible(refs)
 	var out []fwtree.Coord
 	lo := from
 	for i, ref := range refs {

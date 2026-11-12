@@ -442,6 +442,7 @@ func (c *Cache[U]) DropNode(node string) {
 func (c *Cache[U]) split(lineage []Ref, from, to uint64) []Coord {
 	var cuts []Coord
 	lo := from
+	lineage = Visible(lineage)
 	for i, ref := range lineage {
 		hi := to
 		if i+1 < len(lineage) && lineage[i+1].Base > 0 && lineage[i+1].Base-1 < hi {

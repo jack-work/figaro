@@ -108,6 +108,11 @@ rules fall out of the same fact:
 
 - **`:19.0` keeps the turn's question and drops every answer to it**, a
   different place from `:19`, which drops the question too.
+- **`:1` is the turn-0 fork**: no turn at all, only what the outfit gave the
+  conversation at birth. It is the coordinate for a builder that should sit
+  in its lead's lineage and start clean. `:1.0` is not: it keeps turn 1's
+  question, and in a succession line that question was put to the first
+  holder.
 - **A fork never strands a tool call.** A tool node carries both its
   coordinates (the invoke and its result), so a cut that would land between
   them retreats past the whole call. Anthropic rejects a conversation whose
