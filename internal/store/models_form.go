@@ -112,6 +112,9 @@ func (l *compactingStumpLog) dropSealed(x *xwal.XWAL, last uint64) error {
 func (b *XwalBackend) ModelsForm() (*Form, error) {
 	b.modelsMu.Lock()
 	defer b.modelsMu.Unlock()
+	if b.closed.Load() {
+		return nil, ErrClosed
+	}
 	if b.models != nil {
 		return b.models, nil
 	}

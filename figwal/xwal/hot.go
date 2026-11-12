@@ -58,6 +58,12 @@ func (t *Trunks) ensureNoOpenHeads() error {
 	}
 }
 
+func (t *Trunks) seal() {
+	t.hotMu.Lock()
+	t.sealed.Store(true)
+	t.hotMu.Unlock()
+}
+
 func (t *Trunks) borrowHotUntracked(branch []string) (*XWAL, func() error, error) {
 	key := strings.Join(branch, "\x00")
 	if holder := rootFenceHolder(t.registryRoot, key); holder != nil && holder != t {
@@ -74,6 +80,10 @@ func (t *Trunks) borrowHotUntracked(branch []string) (*XWAL, func() error, error
 		t.hotMu.Unlock()
 		<-fence
 		t.hotMu.Lock()
+	}
+	if t.sealed.Load() {
+		t.hotMu.Unlock()
+		return nil, nil, ErrClosed
 	}
 	if t.isDead(branch) {
 		t.hotMu.Unlock()
