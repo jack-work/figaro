@@ -82,24 +82,43 @@ func TestPlacingMovesTheAuthorityParentAndLeavesTheForkPoint(t *testing.T) {
 		t.Fatalf("placing a node under one placed beneath it: err = %v, want ErrMoveCycle", err)
 	}
 
-	if err := f.Place(key(lieutenant), forkPoint); err != nil {
-		t.Fatalf("placing back under the fork point: %v", err)
+	x, err := f.ForkAt(trunk, 2)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if n, _ := f.idx.Node(key(lieutenant)); n.Placed != "" || n.PlacedTop {
+	y, err := f.ForkAt(trunk, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.idx.ParentOf(key(x)); got != key(trunk) {
+		t.Fatalf("setup: x was cut from %q, want the trunk %q", got, key(trunk))
+	}
+	if err := f.Place(key(x), key(y)); err != nil {
+		t.Fatalf("placing x under a sibling cut at the same point: %v", err)
+	}
+	if err := f.Place(key(x), key(trunk)); err != nil {
+		t.Fatalf("placing x back under its fork point: %v", err)
+	}
+	if n, _ := f.idx.Node(key(x)); n.Placed != "" || n.PlacedTop {
 		t.Fatalf("a node placed where it was forked keeps a record: %+v", n)
 	}
 }
 
 func TestDetachKeepsThePlacementAndUnplaceDropsIt(t *testing.T) {
 	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
-	if _, _, err := f.Append(trunk, 0, []byte(`"a"`), nil); err != nil {
-		t.Fatal(err)
+	for _, p := range []string{`"a"`, `"b"`} {
+		if _, _, err := f.Append(trunk, 0, []byte(p), nil); err != nil {
+			t.Fatal(err)
+		}
 	}
-	child, err := f.ForkAt(trunk, 1)
+	child, err := f.ForkAt(trunk, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	key := func(id string) string { k, _ := f.idx.Head(id); return k }
+	if got := f.idx.ParentOf(key(child)); got != key(trunk) {
+		t.Fatalf("setup: the child was cut from %q, want the trunk %q", got, key(trunk))
+	}
 	if err := f.Detach(key(child)); err != nil {
 		t.Fatal(err)
 	}
