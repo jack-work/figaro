@@ -58,29 +58,29 @@ role = "setter"
 principals = ["user:mallory"]
 `
 
-// Engineer VI, ask 3: a storage move changes the drawn position too, so set
-// without kill is refused outright and never reaches the drawn-only downgrade.
-func TestSetWithoutKillOnAStorageMoveIsRefusedNotDowngraded(t *testing.T) {
+// Engineer VI, ask 3: a move takes kill on what it moves, so set without
+// kill is refused on that ground before the owner rule is reached.
+func TestSetWithoutKillOnAMoveIsRefusedForWantOfKill(t *testing.T) {
 	g := topologyGuard(t, setOnlyPolicy)
-	p := hierarchy.Plan{Op: hierarchy.Arrange, Moves: []hierarchy.Move{{Node: "a", From: "s", To: "b", Tree: hierarchy.Storage}}}
+	p := hierarchy.Plan{Op: hierarchy.Arrange, Moves: []hierarchy.Move{{Node: "a", From: "s", To: "b"}}}
 	_, err := g.Check(context.Background(), guardCaller(jkauthz.KindUser, "mallory", DoorLocal), p)
-	if err == nil || errors.Is(err, hierarchy.ErrDrawnOnly) {
-		t.Fatalf("set-only storage move = %v, want a refusal that is not ErrDrawnOnly", err)
+	if err == nil || errors.Is(err, ErrOwnersMove) {
+		t.Fatalf("set-only move = %v, want a refusal for want of kill", err)
 	}
 }
 
-func TestTheOwnersStorageMoveUnderAForeignMinterIsDrawnOnly(t *testing.T) {
+func TestTheOwnersMoveUnderAForeignMinterIsRefused(t *testing.T) {
 	g := topologyGuard(t, setOnlyPolicy)
 	owner := guardCaller(guardOwner.Kind, guardOwner.ID, DoorLocal)
-	mine := hierarchy.Move{Node: "a", From: "s", To: "b", Tree: hierarchy.Storage, NodeOwner: guardOwner.String()}
+	mine := hierarchy.Move{Node: "a", From: "s", To: "b", NodeOwner: guardOwner.String()}
 	if _, err := g.Check(context.Background(), owner, hierarchy.Plan{Op: hierarchy.Arrange, Moves: []hierarchy.Move{mine}}); err != nil {
-		t.Fatalf("the owner's storage move between his own arias: %v", err)
+		t.Fatalf("the owner's move between his own arias: %v", err)
 	}
 	foreign := mine
 	foreign.ToOwner = "sandbox:judge"
 	_, err := g.Check(context.Background(), owner, hierarchy.Plan{Op: hierarchy.Arrange, Moves: []hierarchy.Move{foreign}})
-	if !errors.Is(err, hierarchy.ErrDrawnOnly) {
-		t.Fatalf("the owner's storage move under a box-minted parent = %v, want ErrDrawnOnly", err)
+	if !errors.Is(err, ErrOwnersMove) {
+		t.Fatalf("the owner's move under a box-minted parent = %v, want ErrOwnersMove", err)
 	}
 }
 
@@ -89,7 +89,7 @@ func TestTheOwnersStorageMoveUnderAForeignMinterIsDrawnOnly(t *testing.T) {
 func TestARehomeIntoAnotherSandboxIsRefused(t *testing.T) {
 	g := topologyGuard(t, setOnlyPolicy)
 	p := hierarchy.Plan{Op: hierarchy.Purge, Node: "z", Delete: []string{"z"},
-		Moves: []hierarchy.Move{{Node: "o", From: "z", To: "box-1", Tree: hierarchy.Drawn, Rehome: true}}}
+		Moves: []hierarchy.Move{{Node: "o", From: "z", To: "box-1", Rehome: true}}}
 	if _, err := g.Check(context.Background(), hierarchy.System, p); err == nil {
 		t.Fatal("a re-home under a node in another sandbox passed the guard")
 	}
@@ -97,14 +97,9 @@ func TestARehomeIntoAnotherSandboxIsRefused(t *testing.T) {
 
 func TestTheSystemPrincipalOnlyRehomesAndSweeps(t *testing.T) {
 	g := topologyGuard(t, setOnlyPolicy)
-	p := hierarchy.Plan{Op: hierarchy.Promote, Moves: []hierarchy.Move{{Node: "a", From: "p", To: "g", Tree: hierarchy.Drawn}}}
+	p := hierarchy.Plan{Op: hierarchy.Promote, Moves: []hierarchy.Move{{Node: "a", From: "p", To: "g"}}}
 	if _, err := g.Check(context.Background(), hierarchy.System, p); err == nil {
 		t.Fatal("the system principal promoted")
-	}
-	p = hierarchy.Plan{Op: hierarchy.Purge, Node: "z", Delete: []string{"z"},
-		Moves: []hierarchy.Move{{Node: "o", From: "z", To: "p", Tree: hierarchy.Storage, Rehome: true}}}
-	if _, err := g.Check(context.Background(), hierarchy.System, p); err == nil {
-		t.Fatal("the system principal re-homed in storage")
 	}
 }
 

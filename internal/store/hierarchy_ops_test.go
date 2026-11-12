@@ -26,7 +26,7 @@ func (b *XwalBackend) Arrange(parents map[string]string, restore []string, _ fun
 }
 
 func (b *XwalBackend) Move(id, under string) error {
-	return hierarchytest.Of(b).Move(id, under)
+	return hierarchytest.Seat(b, id, under)
 }
 
 type treeEngine struct{ x *TopologyTree }
@@ -50,7 +50,6 @@ func (e treeEngine) Placement(string) (string, int64) { return "local", 0 }
 func (e treeEngine) WriteDrawn(set map[string]string, remove []string) error {
 	return e.x.Write(set, remove)
 }
-func (e treeEngine) MoveStorage(string, string) error { return hierarchy.ErrStorageRefused }
 func (e treeEngine) Remove(string, bool, []string, map[string]string) error {
 	return hierarchy.ErrUnsupported
 }

@@ -53,10 +53,9 @@ func (f storeFacts) DescendsFrom(aria, root string) bool {
 		if !ok {
 			return false
 		}
-		if n.Parent == root {
+		if id = presented(n); id == root {
 			return true
 		}
-		id = n.Parent
 	}
 	return false
 }

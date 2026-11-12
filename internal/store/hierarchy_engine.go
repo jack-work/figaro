@@ -3,7 +3,6 @@ package store
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -140,9 +139,6 @@ func (s *XwalStore) move(id, under string) error {
 		}
 	}
 	if err := s.trunks.Reparent(node, parent); err != nil {
-		if errors.Is(err, ErrMoveCopies) || errors.Is(err, ErrMoveCycle) {
-			return fmt.Errorf("move %s under %s: %w: %w", id, under, hierarchy.ErrStorageRefused, err)
-		}
 		return fmt.Errorf("move %s under %s: %w", id, under, err)
 	}
 	_, err := s.CleanTopology(false)

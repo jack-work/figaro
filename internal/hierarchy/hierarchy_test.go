@@ -17,7 +17,6 @@ type fakeEngine struct {
 	owner    map[string]string
 	zone     map[string]string
 	deadline map[string]int64
-	refuse   bool
 	writes   int
 	removed  []string
 	pins     map[string]string
@@ -106,14 +105,6 @@ func (f *fakeEngine) WriteDrawn(set map[string]string, remove []string) error {
 	return nil
 }
 
-func (f *fakeEngine) MoveStorage(id, under string) error {
-	if f.refuse {
-		return hierarchy.ErrStorageRefused
-	}
-	f.stored[id] = under
-	return nil
-}
-
 func (f *fakeEngine) Remove(id string, _ bool, expect []string, pins map[string]string) error {
 	f.removed = expect
 	f.pins = pins
@@ -162,7 +153,7 @@ func TestAHandBuiltPlanThatHidesTheClimbedParentIsRefused(t *testing.T) {
 	f := chain()
 	h := hierarchy.New(f, hierarchytest.Open{})
 	p := hierarchy.Plan{Op: hierarchy.Promote, Node: "X", Levels: 1,
-		Moves: []hierarchy.Move{{Node: "X", From: "P", To: "stump", Tree: hierarchy.Drawn}}}
+		Moves: []hierarchy.Move{{Node: "X", From: "P", To: "stump"}}}
 	if _, err := h.Apply(context.Background(), anyone, p); !errors.Is(err, hierarchy.ErrPlanMismatch) {
 		t.Fatalf("apply of a plan missing P = %v, want ErrPlanMismatch", err)
 	}
@@ -184,40 +175,22 @@ func TestAStalePlanIsRefused(t *testing.T) {
 	}
 }
 
-func TestDrawnOnlyRewritesStorageMovesAndChecksAgain(t *testing.T) {
-	f := chain()
-	calls := 0
-	h := hierarchy.New(f, guardFunc(func(_ hierarchy.Principal, p hierarchy.Plan) error {
-		calls++
-		for _, m := range p.Moves {
-			if m.Tree == hierarchy.Storage {
-				return hierarchy.ErrDrawnOnly
+// The fork point is a fact of the store. Arranging a node, or placing a
+// fresh fork under the figaro it was asked of, says only where it is drawn.
+func TestArrangeAndPlaceLeaveTheForkPointAlone(t *testing.T) {
+	for name, plan := range map[string]hierarchy.Plan{
+		"arrange": {Op: hierarchy.Arrange, Parents: map[string]string{"C": "P"}},
+		"place":   {Op: hierarchy.Place, Node: "C", To: "P"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := chain()
+			if _, err := hierarchy.New(f, hierarchytest.Open{}).Apply(context.Background(), anyone, plan); err != nil {
+				t.Fatal(err)
 			}
-		}
-		return nil
-	}))
-	p, err := h.Apply(context.Background(), anyone, hierarchy.Plan{Op: hierarchy.Arrange, Parents: map[string]string{"C": "P"}, Storage: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if calls != 2 || p.Moves[0].Tree != hierarchy.Drawn {
-		t.Fatalf("calls %d, moves %+v: want a second check of the drawn plan", calls, p.Moves)
-	}
-	if f.stored["C"] != "X" || f.over["C"] != "P" {
-		t.Fatalf("stored %q, drawn %q: want history under X, drawn under P", f.stored["C"], f.over["C"])
-	}
-}
-
-func TestAStorageMoveTheStoreRefusesIsDrawn(t *testing.T) {
-	f := chain()
-	f.refuse = true
-	h := hierarchy.New(f, hierarchytest.Open{})
-	p, err := h.Apply(context.Background(), anyone, hierarchy.Plan{Op: hierarchy.Arrange, Parents: map[string]string{"C": "P"}, Storage: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.Moves[0].Tree != hierarchy.Drawn || f.over["C"] != "P" {
-		t.Fatalf("moves %+v, override %q: want the refused storage move drawn", p.Moves, f.over["C"])
+			if f.stored["C"] != "X" || f.over["C"] != "P" {
+				t.Fatalf("stored %q, drawn %q: want the fork point still X, drawn under P", f.stored["C"], f.over["C"])
+			}
+		})
 	}
 }
 

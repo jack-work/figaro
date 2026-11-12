@@ -9,23 +9,6 @@ import (
 	"sync"
 )
 
-type Tree int
-
-const (
-	Drawn Tree = iota + 1
-	Storage
-)
-
-func (t Tree) String() string {
-	switch t {
-	case Drawn:
-		return "drawn"
-	case Storage:
-		return "storage"
-	}
-	return "tree?"
-}
-
 type Op int
 
 const (
@@ -86,7 +69,6 @@ var System = Principal{System: true}
 
 type Move struct {
 	Node, From, To string
-	Tree           Tree
 	NodeOwner      string
 	ToOwner        string
 	Rehome         bool
@@ -109,7 +91,6 @@ type Plan struct {
 	Parents   map[string]string
 	Restore   []string
 	Revive    []string
-	Storage   bool
 	Recursive bool
 	IfVersion Version
 
@@ -148,7 +129,6 @@ type Engine interface {
 	StorageOrphans(id string) []string
 	Placement(id string) (zone string, deadlineMS int64)
 	WriteDrawn(set map[string]string, remove []string) error
-	MoveStorage(id, under string) error
 	Remove(id string, recursive bool, expect []string, pins map[string]string) error
 }
 
@@ -156,8 +136,6 @@ var (
 	ErrNoGuard        = errors.New("hierarchy: no guard: every plan is refused")
 	ErrStale          = errors.New("hierarchy: the topology moved since the plan was made")
 	ErrPlanMismatch   = errors.New("hierarchy: the plan's moves are not what the operation does")
-	ErrDrawnOnly      = errors.New("hierarchy: this move may change only the drawn tree")
-	ErrStorageRefused = errors.New("hierarchy: the store refused the storage move")
 	ErrAtTop          = errors.New("hierarchy: nothing above to promote into")
 	ErrHasBranches    = errors.New("aria has live branches")
 	ErrUnsupported    = errors.New("hierarchy: this store keeps no presentation hierarchy")
@@ -239,10 +217,6 @@ func (h *Hierarchy) checkLocked(ctx context.Context, by Principal, p Plan) (Plan
 		return plan, fmt.Errorf("%w: %s %s", ErrPlanMismatch, p.Op, p.Node)
 	}
 	v, err := h.guard.Check(ctx, by, plan)
-	if errors.Is(err, ErrDrawnOnly) && hasStorage(plan) {
-		plan = drawnOnly(plan)
-		v, err = h.guard.Check(ctx, by, plan)
-	}
 	if err != nil {
 		return plan, err
 	}
@@ -250,19 +224,6 @@ func (h *Hierarchy) checkLocked(ctx context.Context, by Principal, p Plan) (Plan
 		return plan, fmt.Errorf("%w %s", ErrParked, v.Park)
 	}
 	return plan, nil
-}
-
-func hasStorage(p Plan) bool {
-	return slices.ContainsFunc(p.Moves, func(m Move) bool { return m.Tree == Storage })
-}
-
-func drawnOnly(p Plan) Plan {
-	moves := slices.Clone(p.Moves)
-	for i := range moves {
-		moves[i].Tree = Drawn
-	}
-	p.Moves = moves
-	return p
 }
 
 func sameEffect(handed, derived Plan) bool {
@@ -335,25 +296,21 @@ func (o *overlay) set(id, to string) {
 	o.moved[id] = to
 }
 
-func (o *overlay) moves(tree map[string]Tree) []Move {
+func (o *overlay) moves() []Move {
 	var out []Move
 	for _, id := range o.order {
 		to := o.moved[id]
-		t := tree[id]
-		if t == 0 {
-			t = Drawn
-		}
-		if to == o.from[id] && t == Drawn {
+		if to == o.from[id] {
 			continue
 		}
-		out = append(out, Move{Node: id, From: o.from[id], To: to, Tree: t})
+		out = append(out, Move{Node: id, From: o.from[id], To: to})
 	}
 	return out
 }
 
 func (h *Hierarchy) derive(p Plan) (Plan, error) {
 	out := Plan{Op: p.Op, Node: p.Node, Levels: p.Levels, To: p.To, Parents: p.Parents, Restore: p.Restore,
-		Revive: p.Revive, Storage: p.Storage, Recursive: p.Recursive, IfVersion: p.IfVersion}
+		Revive: p.Revive, Recursive: p.Recursive, IfVersion: p.IfVersion}
 	var err error
 	switch p.Op {
 	case Promote:
@@ -361,7 +318,7 @@ func (h *Hierarchy) derive(p Plan) (Plan, error) {
 	case Demote:
 		out.Moves, out.To, err = h.deriveDemote(p.Node, p.To)
 	case Arrange:
-		out.Moves, err = h.deriveArrange(p.Parents, p.Restore, p.Storage)
+		out.Moves, err = h.deriveArrange(p.Parents, p.Restore)
 	case Place:
 		out.Moves, err = h.derivePlace(p.Node, p.To)
 	case Restore:
@@ -465,7 +422,7 @@ func (h *Hierarchy) derivePromote(id string, levels int) ([]Move, int, error) {
 	if climbed == 0 {
 		return nil, 0, ErrAtTop
 	}
-	return o.moves(nil), climbed, nil
+	return o.moves(), climbed, nil
 }
 
 func (h *Hierarchy) deriveDemote(id, prefer string) ([]Move, string, error) {
@@ -488,7 +445,7 @@ func (h *Hierarchy) deriveDemote(id, prefer string) ([]Move, string, error) {
 	}
 	o.set(under, parent)
 	o.set(id, under)
-	return o.moves(nil), under, nil
+	return o.moves(), under, nil
 }
 
 func (h *Hierarchy) demoteTarget(id, prefer string) string {
@@ -528,7 +485,7 @@ func (h *Hierarchy) stumpOf(id string) string {
 	return ""
 }
 
-func (h *Hierarchy) deriveArrange(parents map[string]string, restore []string, storage bool) ([]Move, error) {
+func (h *Hierarchy) deriveArrange(parents map[string]string, restore []string) ([]Move, error) {
 	for _, id := range restore {
 		if !h.drawable(id) {
 			return nil, fmt.Errorf("arrange: no aria or form %q", id)
@@ -540,7 +497,6 @@ func (h *Hierarchy) deriveArrange(parents map[string]string, restore []string, s
 	}
 	sort.Strings(ids)
 	o := newOverlay(h.eng)
-	trees := map[string]Tree{}
 	over := h.eng.Overrides()
 	for _, id := range restore {
 		up, _ := h.eng.Stored(id)
@@ -552,8 +508,7 @@ func (h *Hierarchy) deriveArrange(parents map[string]string, restore []string, s
 			return nil, fmt.Errorf("arrange: no aria or form %q", id)
 		}
 		parent := parents[id]
-		explicit := parent != ""
-		if !explicit {
+		if parent == "" {
 			var err error
 			if parent, err = h.topOf(id); err != nil {
 				return nil, err
@@ -563,11 +518,6 @@ func (h *Hierarchy) deriveArrange(parents map[string]string, restore []string, s
 		}
 		o.set(id, parent)
 		over[id] = parent
-		if storage && explicit {
-			if up, _ := h.eng.Stored(id); up != parent {
-				trees[id] = Storage
-			}
-		}
 	}
 	for _, id := range ids {
 		if under, ok := drawnBelow(o.parent, id); ok {
@@ -587,7 +537,7 @@ func (h *Hierarchy) deriveArrange(parents map[string]string, restore []string, s
 			o.set(id, up)
 		}
 	}
-	return o.moves(trees), nil
+	return o.moves(), nil
 }
 
 func drawnBelow(parentOf func(string) (string, bool), id string) (string, bool) {
@@ -616,11 +566,11 @@ func (h *Hierarchy) derivePlace(id, under string) ([]Move, error) {
 	if _, drawn := h.eng.Overrides()[id]; drawn {
 		return nil, fmt.Errorf("place: %q is already drawn elsewhere; arrange it instead", id)
 	}
-	if up, _ := h.eng.Stored(id); up == under {
+	from, _ := h.eng.Drawn(id)
+	if from == under {
 		return nil, nil
 	}
-	from, _ := h.eng.Drawn(id)
-	return []Move{{Node: id, From: from, To: under, Tree: Storage}}, nil
+	return []Move{{Node: id, From: from, To: under}}, nil
 }
 
 func (h *Hierarchy) deriveDelete(id string, recursive bool) ([]string, []Move, error) {
@@ -650,7 +600,7 @@ func (h *Hierarchy) deriveDelete(id string, recursive bool) ([]string, []Move, e
 		if doomed[from] || !h.fits(orphan, from) {
 			to = h.home(orphan, doomed)
 		}
-		moves = append(moves, Move{Node: orphan, From: from, To: to, Tree: Drawn, Rehome: true})
+		moves = append(moves, Move{Node: orphan, From: from, To: to, Rehome: true})
 	}
 	for child, up := range h.eng.Overrides() {
 		if !doomed[child] && doomed[up] {
@@ -680,7 +630,7 @@ func (h *Hierarchy) deriveDepart(ids []string) ([]string, []Move, error) {
 		if gone[child] || !gone[up] {
 			continue
 		}
-		moves = append(moves, Move{Node: child, From: up, To: h.home(child, gone), Tree: Drawn, Rehome: true})
+		moves = append(moves, Move{Node: child, From: up, To: h.home(child, gone), Rehome: true})
 	}
 	sort.Slice(moves, func(i, j int) bool { return moves[i].Node < moves[j].Node })
 	return slices.Clone(ids), moves, nil
@@ -761,20 +711,6 @@ func (h *Hierarchy) commit(p Plan) (Plan, error) {
 			pins[m.Node] = m.To
 		}
 		return p, h.eng.Remove(p.Node, p.Recursive || p.Op == Sweep || p.Op == Purge, p.Delete, pins)
-	}
-	for i := range p.Moves {
-		m := &p.Moves[i]
-		if m.Tree != Storage {
-			continue
-		}
-		err := h.eng.MoveStorage(m.Node, m.To)
-		if errors.Is(err, ErrStorageRefused) {
-			m.Tree = Drawn
-			continue
-		}
-		if err != nil {
-			return p, err
-		}
 	}
 	set := map[string]string{}
 	var remove []string
