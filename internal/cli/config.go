@@ -102,13 +102,16 @@ func promptFirstRunWithoutKeyring(h *managed.Hush, appName string) ([]byte, erro
 
 // ensureHush must be called from the CLI process.
 func ensureHush() {
-	h := MustHush()
-	if err := h.EnsureReady(); err != nil {
-		if explainHushFailure(stderrw, err) {
-			os.Exit(1)
-		}
-		die("hush: %s", err)
+	if err := MustHush().EnsureReady(); err != nil {
+		dieHush(err)
 	}
+}
+
+func dieHush(err error) {
+	if explainHushFailure(stderrw, err) {
+		os.Exit(1)
+	}
+	die("hush: %s", err)
 }
 
 func explainHushFailure(w io.Writer, err error) bool {

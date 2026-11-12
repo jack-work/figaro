@@ -321,6 +321,7 @@ func registerOnAppend(backend store.Backend, p providerPkg.Provider) {
 func Run() {
 	mark.Init("angelus")
 	mark.Mark("boot.begin")
+	hushGate := boot.TakeHushGate()
 	boot.PromptPassphrase = nil
 	if err := boot.MissingConfigDir(os.Getenv); err != nil {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
@@ -447,6 +448,11 @@ func Run() {
 	a.RemoveAria = handlers.RemoveAria
 	a.RemoveAriaIf = handlers.RemoveAriaIf
 
+	if !hushGate.Await() {
+		slog.Error("angelus exiting", "err", boot.ErrHushGateShut)
+		fmt.Fprintf(os.Stderr, "angelus: %v; exiting\n", boot.ErrHushGateShut)
+		os.Exit(1)
+	}
 	if err := serveWebDoor(ctx, a, loaded); err != nil {
 		slog.Error("angelus web door", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
