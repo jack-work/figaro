@@ -31,6 +31,8 @@ as a float.
 | `list.warm` | angelus | `rows`, `ms` | the boot-time read of every figaro's listing state, so the first list is warm |
 | `cli.start` | cli | | the CLI's first line of `Run`; minus the exec time it is Go runtime start |
 | `daemon.boot.<phase>` | angelus | `ms` | one boot phase, `boot.begin` to the socket: `config`, `lock`, `otel`, `store_open`, `store_wire`, `node_sweep`, `angelus`, `providers`, `federate`, `handlers`, `doors`, `nav`, `bindings`; `daemon.boot` is their sum |
+| `daemon.stop.<phase>` | angelus | `ms` | one phase of a graceful stop: `figaros` (drain), `stop`, `backend_close`; `daemon.stop` is their sum |
+| `daemon.exit` | angelus | | the daemon's last act, after the telemetry flush |
 | `figaro.wake.<phase>` | angelus | `ms` | one phase of waking a dormant figaro: `ir_open`, `form_open`, `provider`, `meta`, `sandbox`, `agent`, `register`; `figaro.wake` is their sum |
 | `mem` | cli | `rss`, `heap_alloc`, `heap_inuse`, `sys`, `gc`, `goroutines`, `window_msgs`, `rowcache_rows` | sampled once a second and at exit |
 

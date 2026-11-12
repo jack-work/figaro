@@ -561,6 +561,7 @@ func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 		return
 	}
 	a.Registry.SetDraining()
+	laps := figOtel.StartLaps("daemon.stop")
 
 	figaros := a.Registry.All()
 	slog.Info("angelus graceful shutdown beginning", "figaros", len(figaros))
@@ -590,16 +591,20 @@ func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 		}(f)
 	}
 	wg.Wait()
+	laps.Lap("figaros")
 
 	slog.Info("angelus graceful shutdown complete")
 
 	a.Stop()
+	laps.Lap("stop")
 
 	if a.Backend != nil {
 		if err := a.Backend.Close(); err != nil {
 			slog.Error("angelus backend close", "err", err)
 		}
 	}
+	laps.Lap("backend_close")
+	laps.End(context.Background(), attribute.Int("figaros", len(figaros)))
 }
 
 func (a *Angelus) HaltTurns(grace time.Duration) int {

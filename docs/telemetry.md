@@ -36,6 +36,7 @@ process exits or resubmits first. Its W3C traceparent rides
 
 `daemon.boot` (daemon, one per start): `boot.begin` to the socket, with one
 child per phase (`daemon.boot.store_open` and so on, as in the marks).
+`daemon.stop`: a graceful stop, phases `figaros`, `stop`, `backend_close`.
 `figaro.wake`: one dormant figaro restored, `figaro.id`, `woke_by`, with a
 child per phase. Both are recorded as they run and exported at their end, so
 phases before the exporter starts still land.

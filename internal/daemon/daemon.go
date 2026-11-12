@@ -311,6 +311,7 @@ func registerOnAppend(backend store.Backend, p providerPkg.Provider) {
 func Run() {
 	mark.Init("angelus")
 	mark.Mark("boot.begin")
+	defer mark.Mark("daemon.exit")
 	laps := figOtel.StartLaps("daemon.boot")
 	boot.PromptPassphrase = nil
 	if err := boot.MissingConfigDir(os.Getenv); err != nil {
