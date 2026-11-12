@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,21 +92,24 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 		}
 		resp.DefaultOutfit = req.DefaultOutfit
 	}
-	if fresh, err := config.Load(loaded.ConfigDir); err == nil {
-		routed.RegisterDeclared(fresh)
-		h.configMu.Lock()
-		h.config = fresh
-		if h.outfitter != nil {
-			h.outfitter.Reload()
-		} else {
-			h.outfitter = newOutfitter(h.angelus, fresh)
-		}
-		ofit := h.outfitter
-		h.configMu.Unlock()
-		ofit.Warm(fresh.Config.DefaultOutfit)
-		if err := h.reloadPolicy(); err != nil {
-			return nil, err
-		}
+	fresh, err := config.Load(loaded.ConfigDir)
+	if err != nil {
+		slog.Error("config reload refused; the running config stays", "err", err)
+		return nil, fmt.Errorf("configure: %w", err)
+	}
+	routed.RegisterDeclared(fresh)
+	h.configMu.Lock()
+	h.config = fresh
+	if h.outfitter != nil {
+		h.outfitter.Reload()
+	} else {
+		h.outfitter = newOutfitter(h.angelus, fresh)
+	}
+	ofit := h.outfitter
+	h.configMu.Unlock()
+	ofit.Warm(fresh.Config.DefaultOutfit)
+	if err := h.reloadPolicy(); err != nil {
+		return nil, err
 	}
 	return resp, nil
 }
