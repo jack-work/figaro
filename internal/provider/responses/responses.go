@@ -543,6 +543,7 @@ func (p *Provider) inputFor(ctx context.Context, in provider.SendInput) ([]json.
 	templates := p.templatesForEncoding()
 
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
+		Context:     ctx,
 		Phase:       provider.TracePhases(ctx),
 		Log:         in.FigLog,
 		Translator:  rows,

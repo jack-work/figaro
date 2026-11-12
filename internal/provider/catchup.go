@@ -19,6 +19,7 @@ import (
 // log. The watermark and cursors are read from the log's newest row; nothing
 // is held between calls.
 type CatchUpConfig struct {
+	Context     context.Context
 	Log         store.Log[message.Message]
 	Translator  store.Log[[]json.RawMessage]
 	Form        Form
@@ -44,6 +45,13 @@ func (cfg CatchUpConfig) batchBytes() int {
 		return cfg.BatchBytes
 	}
 	return defaultCatchUpBatchBytes
+}
+
+func (cfg CatchUpConfig) cancelled() error {
+	if cfg.Context == nil {
+		return nil
+	}
+	return cfg.Context.Err()
 }
 
 func (cfg CatchUpConfig) phase(name string) {
@@ -154,6 +162,10 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 
 	var failed error
 	for _, entry := range entries {
+		if err := cfg.cancelled(); err != nil {
+			failed = fmt.Errorf("stopped before %d: %w", entry.LT, err)
+			break
+		}
 		msg, snap, translatable := d.Next(entry)
 		if !translatable {
 			continue

@@ -396,6 +396,7 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 func (p *Provider) catchUp(ctx context.Context, figLog store.Log[message.Message], rows store.Log[[]json.RawMessage],
 	form provider.Form, studies map[string]provider.Form) (provider.RowSeq, error) {
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
+		Context:     ctx,
 		Log:         figLog,
 		Translator:  rows,
 		Form:        form,
