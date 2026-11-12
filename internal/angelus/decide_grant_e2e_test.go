@@ -228,3 +228,30 @@ func TestSendOnAnAriaStillDecidesOnIt(t *testing.T) {
 	ok, reply := r.reached(r.herald(), ask(map[string]any{rpc.AriaKey: r.owned}))
 	require.True(t, ok, "an aria-bound decide with send on it: %+v", reply.Error)
 }
+
+// An override of the decision model is checked on the daemon whatever else
+// the decide names: send on an aria decides on it but may not pick its
+// model, and decide:* may.
+func TestAnOverrideOnAnAriaBoundDecideNeedsTheDaemon(t *testing.T) {
+	overrides := map[string]map[string]any{
+		"a provider override": {"provider": "mock"},
+		"a model override":    {"model": "decision-2"},
+		"an api override":     {"api": "openai"},
+	}
+	r := heraldDoor(t, "decide:outfit:herald-decide")
+	c := r.herald()
+	r.grant("send:aria:" + r.owned)
+	ok, reply := r.reached(c, ask(map[string]any{rpc.AriaKey: r.owned}))
+	require.True(t, ok, "control: send on the aria, no override: %+v", reply.Error)
+	for name, o := range overrides {
+		o[rpc.AriaKey] = r.owned
+		ok, reply := r.reached(c, ask(o))
+		require.False(t, ok, "%s on the aria with send:aria reached the model", name)
+		require.NotNil(t, reply.Error, name)
+	}
+	r.grant("decide:*")
+	for name, o := range overrides {
+		ok, reply := r.reached(c, ask(o))
+		require.True(t, ok, "canary: %s on the aria with decide:* did not reach the model: %+v", name, reply.Error)
+	}
+}

@@ -291,40 +291,56 @@ func Enforce(p *Policies) Policy {
 		if r.Aria != "" {
 			res = Aria(r.Aria)
 		}
-		if r.Method == rpc.MethodDecide && r.Aria == "" {
+		on := []Resource{res}
+		if r.Method == rpc.MethodDecide {
 			var err error
-			if res, err = decideResource(r.Params); err != nil {
+			if on, err = decideResources(r.Aria, r.Params); err != nil {
 				return Deny("%s: %v", r.Method, err)
 			}
 		}
 		view := p.Figaro(figaro)
-		if d := view.Allow(r.Subject, verb, res); !d.Allowed {
-			if allowedByAnother(view, r, verb, res) {
-				return decided(Allow())
+		for _, res := range on {
+			if d := allowedOn(view, r, figaro, verb, res); !d.Allow {
+				return d
 			}
-			if d.Narrowed() {
-				slog.Info("authz: figaro refused", "figaro", figaro, "method", r.Method, "verb", verb, "on", res.String(), "reason", d.Reason())
-			}
-			if res.Kind == ResourceAria && (verb == rpc.VerbRead || !view.Allow(r.Subject, rpc.VerbRead, res).Allowed) {
-				return Decision{Hidden: true}
-			}
-			return Deny("%s: %s", r.Method, d.Reason())
 		}
 		return decided(Allow())
 	})
 }
 
-func decideResource(params json.RawMessage) (Resource, error) {
+func allowedOn(view FigaroView, r Request, figaro string, verb rpc.Verb, res Resource) Decision {
+	d := view.Allow(r.Subject, verb, res)
+	if d.Allowed || allowedByAnother(view, r, verb, res) {
+		return Allow()
+	}
+	if d.Narrowed() {
+		slog.Info("authz: figaro refused", "figaro", figaro, "method", r.Method, "verb", verb, "on", res.String(), "reason", d.Reason())
+	}
+	if res.Kind == ResourceAria && (verb == rpc.VerbRead || !view.Allow(r.Subject, rpc.VerbRead, res).Allowed) {
+		return Decision{Hidden: true}
+	}
+	return Deny("%s: %s", r.Method, d.Reason())
+}
+
+func decideResources(aria string, params json.RawMessage) ([]Resource, error) {
 	var req rpc.DecideRequest
 	if len(params) > 0 {
 		if err := json.Unmarshal(params, &req); err != nil {
-			return Daemon, fmt.Errorf("parse params: %w", err)
+			return nil, fmt.Errorf("parse params: %w", err)
 		}
 	}
-	if req.Provider != "" || req.Model != "" || req.API != "" {
-		return Daemon, nil
+	overrides := req.Provider != "" || req.Model != "" || req.API != ""
+	var on []Resource
+	switch {
+	case aria != "":
+		on = append(on, Aria(aria))
+	case !overrides:
+		on = append(on, Outfit(cmp.Or(req.Outfit, outfit.NameDefault)))
 	}
-	return Outfit(cmp.Or(req.Outfit, outfit.NameDefault)), nil
+	if overrides {
+		on = append(on, Daemon)
+	}
+	return on, nil
 }
 
 func (p *Policies) pinnedToBox(s jkauthz.Subject, figaro string) bool {

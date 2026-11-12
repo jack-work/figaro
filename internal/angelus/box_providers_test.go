@@ -44,18 +44,26 @@ func TestABoxCannotDecideThroughAnUnlistedProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := d.dial(t)
-	ask := func(prov string) error {
-		return boxOnAria(t, c, rpc.MethodDecide, boxed.FigaroID, rpc.DecideRequest{FigaroID: boxed.FigaroID, Question: "go?", Provider: prov, Model: "decision-1"}, nil)
+	decideIn := func(prov string) error {
+		settings := map[string]any{"system.decide.provider": prov, "system.decide.model": "decision-1"}
+		if _, err := d.h[rpc.MethodSet](asOwner(), withAria(t, boxed.FigaroID, rpc.SetRequest{Patch: *heldPatch(t, settings)})); err != nil {
+			t.Fatal(err)
+		}
+		return boxOnAria(t, c, rpc.MethodDecide, boxed.FigaroID, rpc.DecideRequest{FigaroID: boxed.FigaroID, Question: "go?"}, nil)
 	}
-	_ = ask("mock")
+	_ = decideIn("mock")
 	if legit.hits.Load() == 0 {
-		t.Fatal("canary: a listed provider's decision went nowhere, so the refusal below proves nothing")
+		t.Fatal("canary: a listed provider's decision went nowhere, so the refusals below prove nothing")
 	}
 	before := legit.hits.Load()
-	if err := ask("anthropic"); err == nil || !strings.Contains(err.Error(), "does not allow provider") {
+	if err := decideIn("anthropic"); err == nil || !strings.Contains(err.Error(), "does not allow provider") {
 		t.Errorf("a decision through an unlisted provider: %v", err)
 	}
+	override := rpc.DecideRequest{FigaroID: boxed.FigaroID, Question: "go?", Provider: "mock", Model: "decision-1"}
+	if err := boxOnAria(t, c, rpc.MethodDecide, boxed.FigaroID, override, nil); err == nil {
+		t.Error("the box overrode the decision model, which needs decide on the daemon")
+	}
 	if legit.hits.Load() != before {
-		t.Fatal("the refused decision reached a provider")
+		t.Fatal("a refused decision reached a provider")
 	}
 }

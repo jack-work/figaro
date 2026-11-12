@@ -489,9 +489,10 @@ longer grace gets the box's; `kill --now` still purges at once.
 **Decisions.** `figaro.decide` is the `decide` verb, with `send` sufficient.
 Bound to an aria it is checked on `aria:<id>`; with `outfit` (or neither,
 meaning `default`) on `outfit:<name>`, and the daemon dresses that outfit's
-`[system.decide]`. A request that also overrides provider, model or api is
-checked on the daemon, so `decide:outfit:<name>` decides in that outfit's
-model only. Naming an aria and an outfit is refused.
+`[system.decide]`. An override of provider, model or api is also checked on
+the daemon, whatever else the request names, so `decide:outfit:<name>`
+decides in that outfit's model only and send on an aria does not pick its
+model. Naming an aria and an outfit is refused.
 
 **Troupes.** `join` on `troupe:<name>` is checked by `troupe.sign` and
 `troupe.identity` themselves, and `admin` on it by `troupe.entries` (from a
