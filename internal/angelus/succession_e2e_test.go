@@ -638,8 +638,13 @@ func TestSuccessionWaitsForTheHandoffTurnItself(t *testing.T) {
 	require.NoError(t, promptOn(r.ctx, r.a, old, "the work that crosses"))
 	r.eventually(func() bool { return calls() == 1 }, "the crossing turn never started")
 	require.NoError(t, promptOn(r.ctx, r.a, old, "queued before the threshold"))
+	// The succession is held until the queued turn has started: begun sooner,
+	// its handoff prompt joins the queued one in a single turn and there is no
+	// queued-only turn to tell apart.
+	begin := r.hs.HoldSuccessionsForTest()
 	release()
 	r.eventually(func() bool { return calls() == 2 }, "the queued prompt never ran")
+	begin()
 	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "handoff" }, "the succession never began")
 	release()
 	r.eventually(func() bool { return calls() == 3 }, "the handoff turn never started")

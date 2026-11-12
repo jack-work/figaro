@@ -86,6 +86,11 @@ func (hs *Handlers) SuccessorOf(old string) string {
 	return ""
 }
 
+func (hs *Handlers) HoldSuccessionsForTest() (letGo func()) {
+	hs.h.succ.run.Lock()
+	return hs.h.succ.run.Unlock
+}
+
 func (hs *Handlers) WaitSuccessionsForTest() {
 	hs.h.succ.run.Lock()
 	defer hs.h.succ.run.Unlock()
