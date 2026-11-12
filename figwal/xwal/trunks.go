@@ -44,6 +44,7 @@ type Trunks struct {
 	testStoreClose    func()
 	testAppendBorrow  func()
 	testHeadSync      func(key string) error
+	testBatchSync     func(sync func() error) error
 }
 
 // ErrUnknownTrunk reports an operation addressed to a trunk id with no

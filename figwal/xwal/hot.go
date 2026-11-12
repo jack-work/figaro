@@ -670,6 +670,10 @@ func (t *Trunks) unloadReadersOf(node string) error {
 func (t *Trunks) cutChannel(trunk, channel string, edit func(*XWAL) error) error {
 	unlockLineage := t.lockLineage(trunk)
 	defer unlockLineage()
+	return t.cutChannelLocked(trunk, channel, edit)
+}
+
+func (t *Trunks) cutChannelLocked(trunk, channel string, edit func(*XWAL) error) error {
 	t.mu.RLock()
 	node, err := t.headKey(trunk)
 	t.mu.RUnlock()

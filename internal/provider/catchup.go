@@ -26,6 +26,7 @@ type CatchUpConfig struct {
 	Fingerprint string
 	Provider    string
 	Encode      func(message.Message, form.Snapshot) ([]json.RawMessage, error)
+	BatchBytes  int
 
 	ReportEncodeError func(uint64, error)
 	ReportWriteError  func(uint64, error)
@@ -34,6 +35,15 @@ type CatchUpConfig struct {
 
 func TracePhases(ctx context.Context) func(string) {
 	return func(name string) { figOtel.Event(ctx, "provider.catchup."+name) }
+}
+
+const defaultCatchUpBatchBytes = 8 << 20
+
+func (cfg CatchUpConfig) batchBytes() int {
+	if cfg.BatchBytes > 0 {
+		return cfg.BatchBytes
+	}
+	return defaultCatchUpBatchBytes
 }
 
 func (cfg CatchUpConfig) phase(name string) {
@@ -118,6 +128,31 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 	d.SeedAt(cfg.Log, SeedLT(cfg.Translator))
 	cfg.phase("seeded")
 
+	var (
+		batch  []store.Entry[[]json.RawMessage]
+		queued int
+	)
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		rows := batch
+		batch, queued = nil, 0
+		if _, werr := store.AppendBatch(cfg.Translator, rows); werr != nil {
+			if cfg.ReportWriteError != nil {
+				cfg.ReportWriteError(rows[0].FigaroLT, werr)
+			}
+			return fmt.Errorf("write rows from %d: %w", rows[0].FigaroLT, werr)
+		}
+		for _, row := range rows {
+			if len(row.Payload) > 0 {
+				stats.Encoded++
+			}
+		}
+		return nil
+	}
+
+	var failed error
 	for _, entry := range entries {
 		msg, snap, translatable := d.Next(entry)
 		if !translatable {
@@ -130,7 +165,8 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 			if cfg.ReportEncodeError != nil {
 				cfg.ReportEncodeError(entry.LT, err)
 			}
-			return stats, fmt.Errorf("encode at %d: %w", entry.LT, err)
+			failed = fmt.Errorf("encode at %d: %w", entry.LT, err)
+			break
 		}
 		// An empty row commits no cursor: its window rides the next entry
 		// that carries bytes, and SeedLT resumes from there.
@@ -141,26 +177,31 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 		}
 		hash, herr := store.FigaroHash(entry.Payload)
 		if herr != nil {
-			return stats, fmt.Errorf("hash record at %d: %w", entry.LT, herr)
+			failed = fmt.Errorf("hash record at %d: %w", entry.LT, herr)
+			break
 		}
-		if _, werr := cfg.Translator.Append(store.Entry[[]json.RawMessage]{
+		batch = append(batch, store.Entry[[]json.RawMessage]{
 			FigaroLT:    entry.LT,
 			Payload:     encoded,
 			Fingerprint: cfg.Fingerprint,
 			FigaroHash:  hash,
-		}); werr != nil {
-			if cfg.ReportWriteError != nil {
-				cfg.ReportWriteError(entry.LT, werr)
+		})
+		for _, raw := range encoded {
+			queued += len(raw)
+		}
+		if !empty {
+			d.Commit(entry, msg)
+		}
+		if queued >= cfg.batchBytes() {
+			if failed = flush(); failed != nil {
+				break
 			}
-			return stats, fmt.Errorf("write row at %d: %w", entry.LT, werr)
 		}
-		if empty {
-			continue
-		}
-		d.Commit(entry, msg)
-		stats.Encoded++
 	}
-	return stats, nil
+	if werr := flush(); failed == nil {
+		failed = werr
+	}
+	return stats, failed
 }
 
 // SeedLT is the FigaroLT the deriver resumes from: the newest row that
