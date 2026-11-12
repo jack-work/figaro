@@ -8,6 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -337,5 +338,41 @@ func TestAWriterWithNoGrantsHoldsEveryFigaroVerbAndNoForeignOne(t *testing.T) {
 	err = r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"read:*", "egress:*"}))
 	if err == nil || !strings.Contains(err.Error(), "egress:*") {
 		t.Fatalf("a writer with no grants gave a foreign one: %v", err)
+	}
+}
+
+// P2: a figaro's protected keys are written by the figaros it answers to. One
+// the owner places it under becomes a writer, though its history was never
+// cut from that one.
+func TestProtectedKeysFollowThePlacementNotTheForkPoint(t *testing.T) {
+	r := newLineageRig(t, "")
+	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+		t.Fatal(err)
+	}
+	c := r.dial(t)
+	err := r.setAs(t, c, r.child, r.sibling, grantsPatch(t, []string{"read:*"}))
+	if err == nil || !strings.Contains(err.Error(), "no ancestor") {
+		t.Fatalf("control: a figaro the sibling does not answer to wrote its scopes: %v", err)
+	}
+
+	if err := setTopology(t, r.grantRig, asOwner(), map[string]string{r.sibling: r.child}); err != nil {
+		t.Fatalf("the owner placing the sibling under the child: %v", err)
+	}
+	n, _ := r.backend.Node(r.sibling)
+	if n.Parent != r.child || n.ForkPoint != r.parent {
+		t.Fatalf("the sibling answers to %s and was cut from %s, want %s and %s", n.Parent, n.ForkPoint, r.child, r.parent)
+	}
+
+	if err := r.setAs(t, c, r.child, r.sibling, grantsPatch(t, []string{"read:*"})); err != nil {
+		t.Fatalf("the figaro it answers to cannot write its scopes: %v", err)
+	}
+	if got := grantsOn(t, r, r.sibling); got != `["read:*"]` {
+		t.Fatalf("scopes %s, want the ones the child wrote", got)
+	}
+	if err := r.setAs(t, c, r.parent, r.sibling, grantsPatch(t, []string{"read:*", "kill:*"})); err != nil {
+		t.Fatalf("the figaro above both still writes its scopes: %v", err)
+	}
+	if err := r.setAs(t, c, r.sibling, r.child, grantsPatch(t, []string{"read:*"})); err == nil {
+		t.Fatal("the placed figaro wrote the scopes of the one it answers to")
 	}
 }

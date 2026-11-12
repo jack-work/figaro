@@ -28,7 +28,7 @@ func TestNoAuthorityReaderNamesTheForkPoint(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, name := range []string{"ForkPoint", "ForkAdjacency"} {
+		for _, name := range []string{"ForkPoint", "ForkAdjacency", "chainOf(", "LineageLinks(", ".Lineage("} {
 			if strings.Contains(string(src), name) {
 				t.Errorf("%s names %s: authority reads the placement (NodeView.Parent) only", f, name)
 			}

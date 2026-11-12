@@ -231,9 +231,10 @@ func (s successionLine) builder(t *testing.T, keepQuestion bool) string {
 	}
 	forked, err := s.acli.Fork(s.ctx, s.lead, turn, lt, nil, nil)
 	require.NoError(t, err)
-	links := s.w.backend.LineageLinks(forked.Alternative)
-	require.GreaterOrEqual(t, len(links), 2)
-	require.Equal(t, s.lead, links[len(links)-2].Node, "the builder's history parent is not its lead")
+	n, ok := s.w.backend.Node(forked.Alternative)
+	require.True(t, ok)
+	require.Equal(t, s.lead, n.Parent, "the builder does not answer to its lead")
+	require.Equal(t, s.first, n.ForkPoint, "the builder's history was not cut from the figaro that holds the cut")
 	return forked.Alternative
 }
 

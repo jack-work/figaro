@@ -435,9 +435,9 @@ func (h *Hierarchy) topOf(id string) (string, error) {
 	if h.isAria(id) {
 		return h.stumpOf(id), nil
 	}
-	up, _ := h.eng.ForkPoint(id)
+	up, _ := h.eng.Placed(id)
 	if h.drawable(up) {
-		return "", fmt.Errorf("arrange: %q is stored under %q, so it cannot be drawn at the top; draw it under another node", id, up)
+		return "", fmt.Errorf("arrange: %q is placed under %q, so it cannot be drawn at the top; draw it under another node", id, up)
 	}
 	return up, nil
 }

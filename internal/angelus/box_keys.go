@@ -189,18 +189,21 @@ func (h *handlers) refuseScopesBeyondWriter(ctx context.Context, c callerKeys, l
 }
 
 func (h *handlers) ancestorsOf(line lineage) []string {
-	chain, err := h.angelus.chainOf(line.of)
-	if err != nil || len(chain) == 0 || chain[len(chain)-1].Node != line.of {
+	if h.angelus.Backend == nil {
+		return nil
+	}
+	n, ok := h.angelus.Backend.Node(line.of)
+	if !ok || n.Kind != "conversation" {
+		return nil
+	}
+	chain, held := storeFacts{backend: h.angelus.Backend}.Ancestry(line.of)
+	if !held {
 		return nil
 	}
 	if !line.self {
 		chain = chain[:len(chain)-1]
 	}
-	out := make([]string, len(chain))
-	for i, l := range chain {
-		out[i] = l.Node
-	}
-	return out
+	return chain
 }
 
 func (c callerKeys) deny() []rpc.KeyDeny {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/hierarchy/hierarchytest"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -15,11 +16,15 @@ import (
 // board before the placement goes, and it does not fall back under the node
 // its history was cut from.
 func TestAFigaroLosingItsPlacementParentKeepsItsNarrowing(t *testing.T) {
-	backend, err := store.NewXwalBackend(t.TempDir(), 0)
+	root := t.TempDir()
+	backend, err := store.NewXwalBackend(root, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { backend.Close() })
+	if err := wire.Install(backend.Store(), root, wire.Capabilities{Trunks: true}); err != nil {
+		t.Fatal(err)
+	}
 	a := &Angelus{Backend: backend}
 	a.Policies = authz.NewPolicies(jkauthzOwner(), StoreFacts(backend))
 	if err := a.Policies.Reload(""); err != nil {
