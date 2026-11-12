@@ -1,11 +1,5 @@
-# .goreleaser.yaml: build the release artifacts and hang them off the GitHub
-# release that scripts/release.sh already created.
-#
-# The division of labour matters. release.sh owns the version (flake.nix), the
-# annotated tag, and the hand-written notes; it pushes the tag and creates the
-# release. This file owns nothing but bytes: cross-compiled binaries, archives,
-# checksums, and the Homebrew formula. Everything below is downstream of a tag
-# that already exists.
+# .goreleaser.yaml: build the release artifacts and publish the GitHub release
+# for a v* tag that scripts/release.sh pushed.
 #
 #   goreleaser check                     # validate this file
 #   goreleaser build --snapshot --clean  # local binaries, no tag needed
@@ -73,20 +67,14 @@ snapshot:
   version_template: "{{ incpatch .Version }}-snapshot"
 
 changelog:
-  # release.sh writes the notes by hand from the annotated tag message.
-  # Nothing here should generate a competing changelog.
   disable: true
 
 release:
   github:
     owner: jack-work
     name: figaro
-  # THE IMPORTANT LINE. release.sh has already created the release with prose
-  # notes taken from the tag. The default mode (replace) would overwrite that
-  # body with goreleaser's own; `keep-existing` uploads the assets and leaves
-  # the notes exactly as written. If the release does not exist yet (someone
-  # pushed a tag without release.sh), goreleaser still creates it.
-  mode: keep-existing
+  name_template: "{{ .Env.FIGARO_RELEASE_TITLE }}"
+  mode: replace
 
 # A cask, not a formula. `brews:` is deprecated as of goreleaser 2.10 and
 # `goreleaser check` now FAILS on it, so a formula is no longer a validated
