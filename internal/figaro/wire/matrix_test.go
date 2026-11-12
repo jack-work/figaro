@@ -31,6 +31,7 @@ func backend(t *testing.T, trunks bool) (*store.XwalBackend, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { b.Close() })
+	b.SetDetachCarry(func([]string) error { return nil })
 	if err := wire.Install(b.Store(), root, wire.Capabilities{Trunks: trunks}); err != nil {
 		t.Fatal(err)
 	}

@@ -162,9 +162,12 @@ func (b *XwalBackend) SetDetachCarry(carry func(ids []string) error) {
 }
 
 func (s *XwalStore) carryOut(ids []string) error {
-	carry := s.detachCarry.Load()
-	if carry == nil || len(ids) == 0 {
+	if len(ids) == 0 {
 		return nil
+	}
+	carry := s.detachCarry.Load()
+	if carry == nil {
+		return fmt.Errorf("%w: it would detach %v, and nothing is wired to carry their narrowing", ErrNoDetachCarry, ids)
 	}
 	return (*carry)(ids)
 }

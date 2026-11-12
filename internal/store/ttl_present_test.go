@@ -110,6 +110,7 @@ func TestPromotedChildSurvivesItsExpiredFormerParent(t *testing.T) {
 		}
 	}
 
+	b.SetDetachCarry(carryNothing)
 	if err := b.Remove(parent, true); err != nil {
 		t.Fatalf("removing the promoted-past parent: %v", err)
 	}
