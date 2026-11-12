@@ -479,7 +479,7 @@ func Run() {
 		slog.Info("angelus signal received, draining figaros")
 		a.Shutdown(5 * time.Second)
 	}()
-	laps.End(ctx)
+	laps.End(ctx, bootAttrs(os.Getenv, runtimeDir, laps.Started(), len(backend.ConversationIDs()))...)
 
 	err = a.Run(ctx)
 	if ctx.Err() != nil {

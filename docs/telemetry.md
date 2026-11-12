@@ -36,6 +36,10 @@ process exits or resubmits first. Its W3C traceparent rides
 
 `daemon.boot` (daemon, one per start): `boot.begin` to the socket, with one
 child per phase (`daemon.boot.store_open` and so on, as in the marks).
+Attrs `store.arias`, `boot.reason` (`cli`, `upgrade`, `unit`, `direct`) and,
+after a graceful stop, `boot.after_stop_ms` (since that stop ended).
+`cli.run` (client): the whole CLI process, `verb` (a command name, or
+`prompt`, never the prompt).
 `daemon.stop`: a graceful stop, phases `figaros`, `stop`, `backend_close`.
 `figaro.wake`: one dormant figaro restored, `figaro.id`, `woke_by`, with a
 child per phase. Both are recorded as they run and exported at their end, so

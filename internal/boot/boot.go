@@ -169,6 +169,10 @@ func AriaRoot() string { return filepath.Join(StateDir(), "arias") }
 
 func BindingsPath(runtimeDir string) string { return filepath.Join(runtimeDir, "bindings.json") }
 
+func StopStampPath(runtimeDir string) string { return filepath.Join(runtimeDir, "angelus.stopped") }
+
+const BootReasonEnv = "_FIGARO_BOOT_REASON"
+
 func AngelusRuntimeDir() string {
 	// FIGARO_RUNTIME_DIR is used as-is, with no "figaro" suffix.
 	if d := os.Getenv("FIGARO_RUNTIME_DIR"); d != "" {

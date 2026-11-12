@@ -377,6 +377,7 @@ func runUpgrade(o upgradeOptions) {
 	}
 	runStop(stopOptions{keepAgent: true})
 	start := exec.Command(to, "ls", "-j")
+	start.Env = append(os.Environ(), boot.BootReasonEnv+"=upgrade")
 	start.Stdout = nil
 	start.Stderr = stderrw
 	if err := start.Run(); err != nil {

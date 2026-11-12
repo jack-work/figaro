@@ -27,6 +27,13 @@ func StartLaps(name string) *Laps {
 	return &Laps{name: name, start: now, last: now}
 }
 
+func (l *Laps) Started() time.Time {
+	if l == nil {
+		return time.Time{}
+	}
+	return l.start
+}
+
 func (l *Laps) Lap(name string) {
 	if l == nil {
 		return

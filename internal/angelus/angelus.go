@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -605,6 +606,9 @@ func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 	}
 	laps.Lap("backend_close")
 	laps.End(context.Background(), attribute.Int("figaros", len(figaros)))
+	if a.RuntimeDir != "" {
+		_ = os.WriteFile(boot.StopStampPath(a.RuntimeDir), []byte(strconv.FormatInt(time.Now().UnixMilli(), 10)), 0o600)
+	}
 }
 
 func (a *Angelus) HaltTurns(grace time.Duration) int {

@@ -17,6 +17,8 @@ import (
 	"github.com/jack-work/figaro/internal/mark"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/term"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Run dispatches a CLI invocation; progName is argv[0]'s basename.
@@ -30,6 +32,7 @@ func Run(progName string, args []string) {
 	}
 
 	mark.Init("cli")
+	started := time.Now()
 	mark.Mark("cli.start")
 	atExit(profileSession())
 
@@ -112,8 +115,13 @@ func Run(progName string, args []string) {
 		atExit(flush)
 		defer flush()
 	}
+	_, run := figOtel.Start(ctx, "cli.run", trace.WithTimestamp(started))
+	endRun := sync.OnceFunc(func() { run.End() })
+	atExit(endRun)
+	defer endRun()
 
 	if len(args) == 0 && bareOpensPager() {
+		run.SetAttributes(attribute.String("verb", "listen"))
 		runListen(loaded, "", "", "")
 		return
 	}
@@ -124,6 +132,7 @@ func Run(progName string, args []string) {
 	}
 
 	router := buildRouter(progName, loaded)
+	run.SetAttributes(attribute.String("verb", cliVerb(args, router.HasCommand)))
 
 	if args, err = dotGetArgs(args); err != nil {
 		dieUsage("%s", err)
@@ -2232,4 +2241,14 @@ auto-load it on the next tab.
 	}
 
 	return r
+}
+
+func cliVerb(args []string, known func(string) bool) string {
+	switch {
+	case len(args) == 0:
+		return "help"
+	case known(args[0]):
+		return args[0]
+	}
+	return "prompt"
 }
