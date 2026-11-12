@@ -301,10 +301,11 @@ type nodeMarker struct {
 func writeNodeMarker(dir string, n nodeMarker) error {
 	// writeSyncedFile already fsyncs the directory after its rename; a
 	// second SyncDir here made every fork commit pay two.
-	body := fmt.Appendf(nil, "from=%s\nkind=%s\ntrunk=%s\n", n.from, n.kind, n.trunk)
+	var body []byte
 	if n.placed != "" || n.placedTop {
 		body = fmt.Appendf(body, "placed=%s\n", n.placed)
 	}
+	body = fmt.Appendf(body, "from=%s\nkind=%s\ntrunk=%s\n", n.from, n.kind, n.trunk)
 	return writeSyncedFile(filepath.Join(dir, nodeMarkerName), body)
 }
 
@@ -316,10 +317,25 @@ func readNodeMarker(dir string) (n nodeMarker, ok bool) {
 	if err != nil {
 		return nodeMarker{}, false
 	}
-	for _, line := range strings.Split(string(b), "\n") {
-		k, v, found := strings.Cut(strings.TrimSpace(line), "=")
-		if !found {
+	return parseNodeMarker(b)
+}
+
+// parseNodeMarker reads a whole marker or nothing. trunk= is written last and
+// placed= first, so no prefix of a marker parses as the same node without its
+// placement: a torn marker is a node that is not there.
+func parseNodeMarker(b []byte) (n nodeMarker, ok bool) {
+	if len(b) == 0 || b[len(b)-1] != '\n' {
+		return nodeMarker{}, false
+	}
+	sealed := false
+	for _, line := range strings.Split(strings.TrimSuffix(string(b), "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
 			continue
+		}
+		k, v, found := strings.Cut(line, "=")
+		if !found || sealed {
+			return nodeMarker{}, false
 		}
 		switch k {
 		case "from":
@@ -327,10 +343,13 @@ func readNodeMarker(dir string) (n nodeMarker, ok bool) {
 		case "kind":
 			n.kind = v
 		case "trunk":
-			n.trunk = v
+			n.trunk, sealed = v, true
 		case "placed":
 			n.placed, n.placedTop = v, v == ""
 		}
+	}
+	if !sealed {
+		return nodeMarker{}, false
 	}
 	return n, true
 }

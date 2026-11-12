@@ -2,6 +2,7 @@ package xwal
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -139,5 +140,34 @@ func TestAPlacementWhoseNodeIsGoneIsReportedLost(t *testing.T) {
 	ti, ok := f.InfoLight(child)
 	if !ok || ti.PlacedLost != "gone" || ti.Placed != "" {
 		t.Fatalf("info = %+v, want the placement reported lost, never read as the fork point", ti)
+	}
+}
+
+func TestATornMarkerIsNoNodeAtAll(t *testing.T) {
+	dir := t.TempDir()
+	for _, m := range []nodeMarker{
+		{from: "parent", kind: "conversation", trunk: "t1", placed: "elsewhere"},
+		{from: "parent", kind: "conversation", trunk: "t1", placedTop: true},
+		{from: "parent", kind: "conversation", trunk: "t1"},
+		{kind: "loadout"},
+	} {
+		if err := writeNodeMarker(dir, m); err != nil {
+			t.Fatal(err)
+		}
+		whole, err := os.ReadFile(filepath.Join(dir, nodeMarkerName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, ok := parseNodeMarker(whole); !ok || got != m {
+			t.Fatalf("a whole marker read back as %+v (ok %v), want %+v", got, ok, m)
+		}
+		for cut := 0; cut < len(whole); cut++ {
+			if got, ok := parseNodeMarker(whole[:cut]); ok {
+				t.Fatalf("marker %q cut at %d read as %+v: a torn marker must be no node, never the node without its placement", whole, cut, got)
+			}
+		}
+	}
+	if _, ok := parseNodeMarker([]byte("from=a\nkind=conversation\ntrunk=t1\nplaced=late\n")); ok {
+		t.Fatal("a marker with a line after trunk= was read: trunk= seals it")
 	}
 }

@@ -195,6 +195,9 @@ func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins 
 			return fmt.Errorf("%q takes the node %v answer to: %w", id, unplaced, err)
 		}
 	}
+	if err := s.unplace(unplaced); err != nil {
+		return err
+	}
 	if bury != nil {
 		bury(taken)
 	}
@@ -247,9 +250,6 @@ func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins 
 	}
 	if unlinked != nil {
 		unlinked(taken)
-	}
-	if err := s.unplace(unplaced); err != nil {
-		return err
 	}
 	// Presentation is repaired with s.mu released: an edge resolves through
 	// the topology snapshot, which takes that lock itself.

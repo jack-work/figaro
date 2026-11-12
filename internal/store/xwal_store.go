@@ -1053,6 +1053,18 @@ func (s *XwalStore) anyPlaced() bool {
 	return false
 }
 
+// PlacedNodes is every node that answers to a node other than its fork point,
+// a lost placement included: what a downgrade below this release would move.
+func (s *XwalStore) PlacedNodes() []NodeView {
+	var out []NodeView
+	for _, n := range s.topologySnapshot().nodes {
+		if n.Parent != n.ForkPoint {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // placedUnder is the nodes outside the set that answer to a node inside it.
 func (s *XwalStore) placedUnder(set []string) []string {
 	in := make(map[string]bool, len(set))

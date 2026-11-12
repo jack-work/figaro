@@ -50,7 +50,7 @@ func (f storeFacts) DescendsFrom(aria, root string) bool {
 	for id := aria; id != "" && !seen[id]; {
 		seen[id] = true
 		n, ok := f.backend.Node(id)
-		if !ok || n.Unplaced {
+		if !ok || unplaced(n) {
 			return false
 		}
 		if n.Parent == root {
@@ -85,7 +85,7 @@ func (f storeFacts) SandboxOf(aria string) (string, bool) {
 
 func (f storeFacts) Ancestry(aria string) ([]string, bool) {
 	n, ok := f.backend.Node(aria)
-	if !ok || n.Unplaced {
+	if !ok || unplaced(n) {
 		return nil, false
 	}
 	out := []string{aria}
@@ -93,7 +93,7 @@ func (f storeFacts) Ancestry(aria string) ([]string, bool) {
 		if n, ok = f.backend.Node(n.Parent); !ok || n.Kind != "conversation" {
 			break
 		}
-		if n.Unplaced {
+		if unplaced(n) {
 			return nil, false
 		}
 		out = append(out, n.ID)
@@ -120,3 +120,15 @@ func (f storeFacts) OwnGrants(aria string) (json.RawMessage, bool, error) {
 }
 
 var retiredGrantsWarned sync.Map
+
+var unplacedWarned sync.Map
+
+func unplaced(n store.NodeView) bool {
+	if !n.Unplaced {
+		return false
+	}
+	if _, warned := unplacedWarned.LoadOrStore(n.ID, struct{}{}); !warned {
+		slog.Warn("the node this figaro was placed under is gone: it and everything under it hold nothing until the owner places it again", "id", n.ID, "placed", n.Parent)
+	}
+	return true
+}
