@@ -411,6 +411,7 @@ func (p *Provider) catchUp(ctx context.Context, figLog store.Log[message.Message
 		ReportWriteError: func(lt uint64, err error) {
 			slog.Warn("openaichat write row failed", "lt", lt, "err", err)
 		},
+		ReportStopped: provider.LogCatchUpStopped(p.Name()),
 	}); err != nil {
 		// A send that cannot write its rows must not proceed.
 		return nil, fmt.Errorf("openaichat catch up: %w", err)

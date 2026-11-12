@@ -571,6 +571,7 @@ func (p *Provider) inputFor(ctx context.Context, in provider.SendInput) ([]json.
 		ReportWriteError: func(lt uint64, err error) {
 			slog.Error("responses write row", "aria", in.AriaID, "lt", lt, "err", err)
 		},
+		ReportStopped: provider.LogCatchUpStopped(p.Namespace()),
 	}); err != nil {
 		// A send that cannot write its rows must not proceed.
 		return nil, fmt.Errorf("responses catch up: %w", err)

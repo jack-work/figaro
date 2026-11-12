@@ -1255,6 +1255,7 @@ func (a *Anthropic) catchUp(ctx context.Context, figLog store.Log[message.Messag
 		ReportWriteError: func(lt uint64, err error) {
 			slog.Error("anthropic write row", "flt", lt, "err", err)
 		},
+		ReportStopped: provider.LogCatchUpStopped(a.Name()),
 	}); err != nil {
 		// A send that cannot write its rows must not proceed.
 		return nil, fmt.Errorf("anthropic catch up: %w", err)
