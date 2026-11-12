@@ -525,8 +525,8 @@ func (h *handlers) placeBeside(ctx context.Context, id, sibling string) error {
 	if eng == nil {
 		return nil
 	}
-	want, ok := eng.Drawn(sibling)
-	if !ok || want == "" {
+	want := eng.Overrides()[sibling]
+	if stored, _ := eng.Stored(sibling); want == "" || want == stored {
 		return nil
 	}
 	if have, _ := eng.Drawn(id); have == want {

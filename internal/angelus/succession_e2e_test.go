@@ -16,7 +16,9 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/turns"
 	"github.com/jack-work/figaro/sdk"
 )
@@ -103,9 +105,26 @@ func successionDaemon(t *testing.T) *successionRig {
 	require.NoError(t, os.WriteFile(dir+"/outfits/heir.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"heir-model\"\n"), 0o600))
 	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte("default_outfit = \"mock\"\n"), 0o600))
 	p := newSuccessionProvider()
-	a, acli, ctx, hs := daemonWithProvider(t, dir, nil, func() provider.Provider { return p })
-	t.Cleanup(func() { p.set(func() { close(p.release); p.release = make(chan struct{}) }) })
-	return &successionRig{t: t, a: a, acli: acli, ctx: ctx, hs: hs, p: p}
+	tree := t.TempDir()
+	a, acli, ctx, hs := daemonWithProvider(t, dir, func(_ *angelus.Angelus, b *store.XwalBackend) {
+		require.NoError(t, wire.Install(b.Store(), tree, wire.Capabilities{Trunks: true}))
+	}, func() provider.Provider { return p })
+	r := &successionRig{t: t, a: a, acli: acli, ctx: ctx, hs: hs, p: p}
+	t.Cleanup(func() {
+		p.set(func() {
+			close(p.release)
+			p.release = make(chan struct{})
+			p.holdOthers = false
+			p.holdFrom = map[string]int{}
+		})
+		for range 3 {
+			for _, id := range r.arias() {
+				waitIdle(t, a, id)
+			}
+			hs.WaitSuccessionsForTest()
+		}
+	})
+	return r
 }
 
 func (r *successionRig) aria(retirement map[string]any) string {
@@ -203,7 +222,7 @@ func (r *successionRig) cross(old string) {
 	turnOn(r.t, r.a, old, "the work that crosses")
 }
 
-func TestASucceedingAriaIsWarnedOnceAtEightyPercentAndDoesNotRetire(t *testing.T) {
+func TestSuccessionWarnsOnceAtEightyPercent(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(succeeding(nil))
 	r.p.set(func() { r.p.usage[old] = 50_000 })
@@ -222,7 +241,7 @@ func TestASucceedingAriaIsWarnedOnceAtEightyPercentAndDoesNotRetire(t *testing.T
 	require.Empty(t, r.hs.SuccessionPhase(old))
 }
 
-func TestAnAriaWithActionRetireIsNeverWarnedAndRetiresAsBefore(t *testing.T) {
+func TestSuccessionIsOffForActionRetire(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(map[string]any{"context_threshold": succeedAt, "action": "retire"})
 	role := r.role(old, map[string]any{"name": "warden"})
@@ -236,7 +255,7 @@ func TestAnAriaWithActionRetireIsNeverWarnedAndRetiresAsBefore(t *testing.T) {
 	require.Len(t, r.arias(), 1, "action=retire minted a successor")
 }
 
-func TestSuccessionHandsEveryRoleToASuccessorAndRetiresOnlyAfterItsFirstTurn(t *testing.T) {
+func TestSuccessionMovesEveryRoleThenRetires(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(succeeding(map[string]any{"ramp": "/etc/ramp.md", "ramp_turns": 2}))
 	ownerSets(t, r.a, old, map[string]any{"system.model": "lane-model", "system.thinking_effort": "high", "mantra": "tend the vines"})
@@ -288,7 +307,7 @@ func TestSuccessionHandsEveryRoleToASuccessorAndRetiresOnlyAfterItsFirstTurn(t *
 	require.ErrorContains(t, promptOn(r.ctx, r.a, old, "after"), "retired")
 }
 
-func TestASuccessorWearsItsRolesOutfitAndStaysAsNarrowAsItsPredecessor(t *testing.T) {
+func TestSuccessionKeepsTheSuccessorNarrow(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(succeeding(nil))
 	ownerSets(t, r.a, old, map[string]any{"system.scopes": []string{"send:*"}, "system.model": "lane-model"})
@@ -310,7 +329,7 @@ func TestASuccessorWearsItsRolesOutfitAndStaysAsNarrowAsItsPredecessor(t *testin
 	require.JSONEq(t, `["send:*"]`, string(scopes))
 }
 
-func TestASuccessorIsDrawnUnderItsPredecessorsParent(t *testing.T) {
+func TestSuccessionDrawsTheSuccessorBesideIt(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(succeeding(nil))
 	parent := r.aria(nil)
@@ -338,7 +357,7 @@ func (r *successionRig) requireUnretiredAndPaged(old, king, why string, roles ..
 	}
 }
 
-func TestAFailedHandoffTurnMintsNobodyAndPages(t *testing.T) {
+func TestSuccessionFailedHandoffTurnPages(t *testing.T) {
 	r := successionDaemon(t)
 	king := r.aria(nil)
 	old := r.aria(succeeding(map[string]any{"page": king}))
@@ -349,7 +368,7 @@ func TestAFailedHandoffTurnMintsNobodyAndPages(t *testing.T) {
 	require.Len(t, r.arias(), 2, "a successor was minted after a failed handoff turn")
 }
 
-func TestAFailedSuccessionIsNotRetriedUntilTheOwnerClearsIt(t *testing.T) {
+func TestSuccessionFailureIsStickyUntilCleared(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(succeeding(nil))
 	r.p.set(func() { r.p.failFrom[old] = 2 })
@@ -368,7 +387,7 @@ func TestAFailedSuccessionIsNotRetriedUntilTheOwnerClearsIt(t *testing.T) {
 	r.eventually(func() bool { return r.retired(old) }, "clearing the failure did not let the succession run")
 }
 
-func TestAMintThatFailsLeavesTheSeatAndPagesTheHolderOfTheDrawnParent(t *testing.T) {
+func TestSuccessionMintFailurePagesDrawnParent(t *testing.T) {
 	r := successionDaemon(t)
 	king := r.aria(nil)
 	old := r.aria(succeeding(nil))
@@ -380,7 +399,7 @@ func TestAMintThatFailsLeavesTheSeatAndPagesTheHolderOfTheDrawnParent(t *testing
 	require.Len(t, r.arias(), 2)
 }
 
-func TestRolesThatDisagreeOnTheOutfitRefuseTheSuccessionNamingBoth(t *testing.T) {
+func TestSuccessionRefusesDisagreeingOutfits(t *testing.T) {
 	r := successionDaemon(t)
 	king := r.aria(nil)
 	old := r.aria(succeeding(map[string]any{"page": king}))
@@ -393,7 +412,7 @@ func TestRolesThatDisagreeOnTheOutfitRefuseTheSuccessionNamingBoth(t *testing.T)
 	require.NotContains(t, r.heard(old), "write your handoff now", "the refusal must come before the final turn is spent")
 }
 
-func TestARefusedCastPointsEveryRoleBackAndDiscardsTheSuccessor(t *testing.T) {
+func TestSuccessionRefusedCastGivesSeatsBack(t *testing.T) {
 	r := successionDaemon(t)
 	king := r.aria(nil)
 	old := r.aria(succeeding(map[string]any{"page": king}))
@@ -414,7 +433,7 @@ func TestARefusedCastPointsEveryRoleBackAndDiscardsTheSuccessor(t *testing.T) {
 	r.eventually(func() bool { return len(r.arias()) == 2 }, "the unprompted successor was kept")
 }
 
-func TestASuccessorWhoseFirstTurnFailsGivesTheSeatBackAndIsKept(t *testing.T) {
+func TestSuccessionFailedRampGivesSeatsBack(t *testing.T) {
 	r := successionDaemon(t)
 	king := r.aria(nil)
 	old := r.aria(succeeding(map[string]any{"page": king}))
@@ -433,7 +452,7 @@ func TestASuccessorWhoseFirstTurnFailsGivesTheSeatBackAndIsKept(t *testing.T) {
 	require.Equal(t, "24h0m0s", r.key(next, "system.ttl"))
 }
 
-func TestAHandoffTurnThatOutlastsTheTimeoutPages(t *testing.T) {
+func TestSuccessionHandoffTimeoutPages(t *testing.T) {
 	r := successionDaemon(t)
 	king := r.aria(nil)
 	old := r.aria(succeeding(map[string]any{"page": king, "timeout": "10m"}))
@@ -450,7 +469,7 @@ func TestAHandoffTurnThatOutlastsTheTimeoutPages(t *testing.T) {
 	require.Len(t, r.arias(), 2, "a handoff turn that ended after its timeout still minted a successor")
 }
 
-func TestASuccessorThatNeverFinishesRampingPagesAndTheSeatGoesBack(t *testing.T) {
+func TestSuccessionRampTimeoutGivesSeatsBack(t *testing.T) {
 	r := successionDaemon(t)
 	king := r.aria(nil)
 	old := r.aria(succeeding(map[string]any{"page": king}))
@@ -463,7 +482,7 @@ func TestASuccessorThatNeverFinishesRampingPagesAndTheSeatGoesBack(t *testing.T)
 	r.requireUnretiredAndPaged(old, king, "the successor's first turn did not end before the timeout", role)
 }
 
-func TestInFlightSuccessionsAreListedInTheCatalog(t *testing.T) {
+func TestSuccessionsInFlightAreInTheCatalog(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(succeeding(nil))
 	r.p.set(func() { r.p.holdOthers = true })
@@ -477,7 +496,7 @@ func TestInFlightSuccessionsAreListedInTheCatalog(t *testing.T) {
 }
 
 // The slot pool mints its own successors: its outfit, its scopes, its bound.
-func TestAMinterThatClaimsAPredecessorMintsItsSuccessor(t *testing.T) {
+func TestSuccessionMinterMintsWhatItClaims(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(succeeding(nil))
 	other := r.aria(succeeding(nil))
@@ -510,7 +529,7 @@ func TestAMinterThatClaimsAPredecessorMintsItsSuccessor(t *testing.T) {
 	require.Len(t, r.arias(), 4)
 }
 
-func TestAMinterThatRefusesLeavesThePredecessorUnretiredAndPages(t *testing.T) {
+func TestSuccessionMinterRefusalPages(t *testing.T) {
 	r := successionDaemon(t)
 	king := r.aria(nil)
 	old := r.aria(succeeding(map[string]any{"page": king}))
@@ -524,7 +543,7 @@ func TestAMinterThatRefusesLeavesThePredecessorUnretiredAndPages(t *testing.T) {
 }
 
 // A lease holds at most two figaros: the old one goes when the new one has ramped, not a ttl later.
-func TestAMinterMayHaveThePredecessorPurgedOnceTheSuccessorHasRamped(t *testing.T) {
+func TestSuccessionMinterMayPurgePredecessor(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(succeeding(nil))
 	role := r.role(old, map[string]any{"name": "lease"})
