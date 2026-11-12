@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/figwal/xwal"
 )
 
 func TestMain(m *testing.M) {
@@ -271,19 +270,20 @@ func BenchmarkFormState10000(b *testing.B) {
 }
 
 func BenchmarkVectors10000Branches(b *testing.B) {
-	infos := make([]xwal.TrunkInfo, 10_000)
-	for i := range infos {
-		infos[i].ID = fmt.Sprintf("trunk-%05d", i)
+	nodes := make([]NodeView, 10_000)
+	pres := make(map[string]string, len(nodes))
+	for i := range nodes {
+		nodes[i].ID = fmt.Sprintf("trunk-%05d", i)
+		nodes[i].Kind = string(kindConversation)
 		if i > 0 {
-			infos[i].Parent = infos[(i-1)/4].ID
+			pres[nodes[i].ID] = nodes[(i-1)/4].ID
 		}
 	}
-	s := &XwalStore{}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if got := len(s.vectorsLocked(infos)); got != len(infos) {
-			b.Fatalf("vectors = %d, want %d", got, len(infos))
+		if got := len(presentVectors(nodes, pres)); got != len(nodes) {
+			b.Fatalf("vectors = %d, want %d", got, len(nodes))
 		}
 	}
 }

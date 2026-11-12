@@ -706,7 +706,7 @@ type NodeView struct {
 
 // view: a top-level conversation's parent is its outfit stump, or the root
 // when outfitless.
-func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
+func (s *XwalStore) view(t xwal.TrunkInfo, stump string) NodeView {
 	top := func(parent, stump string) string {
 		switch {
 		case parent != "":
@@ -716,7 +716,6 @@ func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
 		}
 		return rootID // outfitless top-level conversation
 	}
-	p := at[t.ID]
 	fork := top(t.Parent, t.Stump)
 	parent := fork
 	switch {
@@ -725,7 +724,7 @@ func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
 	case t.Placed != "" || t.PlacedStump != "":
 		parent = top(t.Placed, t.PlacedStump)
 	case t.Parent != "":
-		parent = top("", p.stump)
+		parent = top("", stump)
 	}
 	// The trunk's own kind from its figwal marker; empty (never written) means
 	// conversation.
@@ -735,59 +734,39 @@ func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
 	}
 	return NodeView{
 		ID: t.ID, Parent: parent, ForkPoint: fork, Unplaced: t.PlacedLost != "", Kind: kind, Trunk: t.ID,
-		Stump: p.stump, Vector: p.vec, BranchedLT: t.BranchedLT,
+		Stump: stump, BranchedLT: t.BranchedLT,
 	}
 }
 
-// place is a conversation trunk's fork-tree vector (child-index path,
-// siblings ordered by id) and the stump it was born under; one map because
-// both are found by the same walk.
-type place struct {
-	vec   []int
-	stump string
-}
-
-func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string]place {
-	live := make(map[string]bool, len(infos))
+func forkStumps(infos []xwal.TrunkInfo) map[string]string {
+	type fork struct{ from, stump string }
+	forks := make(map[string]fork, len(infos))
 	for _, ti := range infos {
-		// Forms are not part of the conversation fork-tree: a form-born aria is
-		// a top-level conversation, not a branch of an invisible parent.
-		if ti.Kind == string(kindForm) {
-			continue
-		}
-		live[ti.ID] = true
-	}
-	type seed struct{ id, stump string }
-	kids := map[string][]string{}
-	var roots []seed
-	for _, ti := range infos {
-		if ti.Kind == string(kindForm) {
-			continue
-		}
-		if ti.Parent != "" && live[ti.Parent] {
-			kids[ti.Parent] = append(kids[ti.Parent], ti.ID) // branch of a conversation
-		} else {
-			roots = append(roots, seed{ti.ID, ti.Stump}) // top-level (parent is a stump/root/form)
+		if ti.Kind != string(kindForm) {
+			forks[ti.ID] = fork{ti.Parent, ti.Stump}
 		}
 	}
-	sort.Slice(roots, func(i, j int) bool { return roots[i].id < roots[j].id })
-	for k := range kids {
-		sort.Strings(kids[k])
-	}
-	// The stump rides alongside the vector: figwal names it only for a trunk
-	// rooted directly at one, so a branch inherits it.
-	at := make(map[string]place, len(infos))
-	var assign func(id string, prefix []int, from string)
-	assign = func(id string, prefix []int, from string) {
-		at[id] = place{prefix, from}
-		for i, c := range kids[id] {
-			assign(c, append(append([]int(nil), prefix...), i), from)
+	out := make(map[string]string, len(forks))
+	var walked []string
+	for id := range forks {
+		walked = walked[:0]
+		at := id
+		for {
+			if _, known := out[at]; known {
+				break
+			}
+			walked = append(walked, at)
+			if _, live := forks[forks[at].from]; !live || len(walked) > len(forks) {
+				out[at] = forks[at].stump
+				break
+			}
+			at = forks[at].from
+		}
+		for _, w := range walked {
+			out[w] = out[at]
 		}
 	}
-	for i, r := range roots {
-		assign(r.id, []int{i}, r.stump)
-	}
-	return at
+	return out
 }
 
 // presentLocked stamps every node's display parent and the vectors that
@@ -799,28 +778,18 @@ func (s *XwalStore) presentLocked(nodes []NodeView) uint64 {
 		edges, rev = s.tree.Edges(), s.tree.Rev()
 	}
 	parent := make(map[string]string, len(nodes))
-	placed := false
 	for _, n := range nodes {
 		parent[n.ID] = n.Parent
-		placed = placed || n.Parent != n.ForkPoint
 	}
 	pres := topo.Present(parent, edges)
-	for i := range nodes {
-		nodes[i].Present = pres[nodes[i].ID]
-	}
-	if len(edges) == 0 && !placed {
-		return rev
-	}
 	vecs := presentVectors(nodes, pres)
 	for i := range nodes {
-		if v, ok := vecs[nodes[i].ID]; ok {
-			nodes[i].Vector = v
-		}
+		nodes[i].Present = pres[nodes[i].ID]
+		nodes[i].Vector = vecs[nodes[i].ID]
 	}
 	return rev
 }
 
-// presentVectors is vectorsLocked over the display edges.
 func presentVectors(nodes []NodeView, pres map[string]string) map[string][]int {
 	live := make(map[string]bool, len(nodes))
 	for _, n := range nodes {
@@ -877,10 +846,10 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 	}
 
 	infos := s.listTrunks()
-	at := s.vectorsLocked(infos)
+	stumps := forkStumps(infos)
 	nodes := make([]NodeView, 0, len(infos)+1)
 	for _, t := range infos {
-		nodes = append(nodes, s.view(t, at))
+		nodes = append(nodes, s.view(t, stumps[t.ID]))
 	}
 	nodes = append(nodes, NodeView{ID: rootID, Kind: string(kindNull), Trunk: rootID})
 	for _, st := range s.listStumps() {
