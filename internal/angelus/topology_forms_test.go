@@ -243,3 +243,62 @@ func TestAKillThatTakesARoleNamesIt(t *testing.T) {
 		}
 	}
 }
+
+// El Inspector: kill -r --now A with role R1 drawn under A and role R2 drawn
+// under R1 printed only 'took role @R2'. Both roles named one holder, and the
+// target-keyed role index kept one role per target. Every role form in the
+// set is named, whether or not the roles share a holder.
+func TestAKillNamesARoleThatParentsAnotherRole(t *testing.T) {
+	for _, shared := range []bool{false, true} {
+		r := newRigWith(t, guardPolicy)
+		if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+			t.Fatal(err)
+		}
+		holder, err := r.create(asOwner(), "mock")
+		if err != nil {
+			t.Fatal(err)
+		}
+		successor := func() string {
+			s, err := r.create(asOwner(), "mock")
+			if err != nil {
+				t.Fatal(err)
+			}
+			return s.FigaroID
+		}
+		mintRole := func(holderOf string) string {
+			target, _ := json.Marshal(holderOf)
+			patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": target}, nil)
+			v, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: &patch})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return v.(rpc.FormCreateResponse).FormID
+		}
+		first := successor()
+		second := first
+		if !shared {
+			second = successor()
+		}
+		r1, r2 := mintRole(first), mintRole(second)
+		if err := setTopology(t, r, asOwner(), map[string]string{r1: holder.FigaroID, r2: r1}); err != nil {
+			t.Fatal(err)
+		}
+		r.a.SweepLifetimesNow()
+		if shared {
+			byTarget, _ := r.backend.RoleTargets()
+			if byTarget[first] == "" || len(byTarget) != 1 {
+				t.Fatalf("canary: the target-keyed index %v should hold one role for %s; reading roles from it would no longer drop one", byTarget, first)
+			}
+		}
+
+		out, err := r.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: holder.FigaroID, Recursive: true, Now: true})
+		if err != nil {
+			t.Fatalf("shared=%t: kill -r --now of the holder: %v", shared, err)
+		}
+		resp := out.(rpc.KillResponse)
+		got := slices.Sorted(slices.Values(resp.Roles))
+		if want := slices.Sorted(slices.Values([]string{r1, r2})); !slices.Equal(got, want) {
+			t.Errorf("shared=%t: the kill names roles %v, want %v (removed %v)", shared, got, want, resp.Removed)
+		}
+	}
+}
