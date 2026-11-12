@@ -617,6 +617,10 @@ func (a *Angelus) closeBackend() {
 	if len(waitedOn) > 0 {
 		slog.Info("angelus shutdown join", "waited_ms", time.Since(start).Milliseconds(), "on", waitedOn, "still_out", stillOut)
 	}
+	if len(stillOut) > 0 {
+		slog.Error("angelus shutdown join timed out; the store is fenced and keeps its unclean mark",
+			"bound", bound.String(), "still_out", stillOut)
+	}
 	if a.Backend == nil {
 		return
 	}
@@ -626,8 +630,6 @@ func (a *Angelus) closeBackend() {
 		}
 		return
 	}
-	slog.Error("angelus shutdown join timed out; the store is fenced and keeps its unclean mark",
-		"bound", bound.String(), "still_out", stillOut)
 	b, ok := a.Backend.(abandoner)
 	if !ok {
 		return

@@ -2,6 +2,7 @@ package angelus_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -13,7 +14,9 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -183,5 +186,62 @@ func TestNothingReopensTheStoreAfterACleanStop(t *testing.T) {
 	}
 	if r.a.Go("late", func() {}) {
 		t.Fatal("a goroutine was admitted after the stop sealed the join")
+	}
+}
+
+// The timeout log names a call by method, aria id and door. It never prints
+// request params (troupe sign, api key mint and provider login carry
+// secrets), and an aria field that is not an id prints as "-".
+func TestStragglerLogNamesMethodAriaAndDoorNeverParams(t *testing.T) {
+	logs := captureLogs(t)
+	r := newJoinRig(t)
+	r.a.SetJoinBoundForTest(50 * time.Millisecond)
+	release := make(chan struct{})
+	defer close(release)
+	block := func(context.Context, json.RawMessage) (any, error) { <-release; return nil, nil }
+	entered := make(chan struct{}, 2)
+	call := func(method, aria string) {
+		params, _ := json.Marshal(map[string]string{rpc.AriaKey: aria, "secret": "hunter2-do-not-log"})
+		h := r.a.JoinedForTest(method, func(ctx context.Context, p json.RawMessage) (any, error) {
+			entered <- struct{}{}
+			return block(ctx, p)
+		})
+		go h(authz.WithDoor(context.Background(), authz.DoorBox), params)
+	}
+	call("troupe.sign", r.aria)
+	call("apikey.mint", "../../etc/passwd\nforged=line")
+	<-entered
+	<-entered
+	r.a.Shutdown(time.Second)
+
+	out := logs.String()
+	for _, want := range []string{"troupe.sign aria=" + r.aria + " door=" + authz.DoorBox.String(), "apikey.mint aria=- door=" + authz.DoorBox.String()} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the timeout log lacks %q:\n%s", want, out)
+		}
+	}
+	for _, never := range []string{"hunter2", "passwd", "forged"} {
+		if strings.Contains(out, never) {
+			t.Errorf("the timeout log printed %q from the request params:\n%s", never, out)
+		}
+	}
+}
+
+// Once the stop has sealed the join, a request that still arrives is refused
+// with the fixed error and its handler never runs.
+func TestARequestAfterTheSealIsRefusedUnrun(t *testing.T) {
+	r := newJoinRig(t)
+	ran := false
+	h := r.a.JoinedForTest("set", func(context.Context, json.RawMessage) (any, error) { ran = true; return "ok", nil })
+	if _, err := h(context.Background(), nil); err != nil || !ran {
+		t.Fatalf("before the stop: err=%v ran=%v", err, ran)
+	}
+	ran = false
+	r.a.Shutdown(time.Second)
+	if _, err := h(context.Background(), nil); !errors.Is(err, angelus.ErrStoppingForTest) {
+		t.Fatalf("after the stop: got %v, want the daemon-stopping refusal", err)
+	}
+	if ran {
+		t.Fatal("the handler ran after the stop sealed the join")
 	}
 }
