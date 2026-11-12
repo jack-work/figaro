@@ -144,3 +144,5 @@ func (s *SlotPools) BeginMint(box string) (minted func(id string), done func(), 
 func (hs *Handlers) KeepReleasingSlotsEvery(ctx context.Context, every time.Duration) {
 	hs.h.keepReleasingSlots(ctx, every)
 }
+
+func (s *SlotPools) ForgetDeliveries(box string) { s.forgetDeliveries(box) }

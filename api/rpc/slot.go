@@ -4,6 +4,7 @@ const (
 	MethodSlotPages   = "figaro.slot.pages"
 	MethodSlotLease   = "figaro.slot.lease"
 	MethodSlotRelease = "figaro.slot.release"
+	MethodSlotDeliver = "figaro.slot.deliver"
 )
 
 const ErrCodeSlot = -32021
@@ -13,6 +14,8 @@ const (
 	SlotPoolEmpty    = "pool_empty"
 	SlotReleasing    = "releasing"
 	SlotNoSuchLease  = "no_such_lease"
+	SlotStale        = "stale_generation"
+	SlotTooLarge     = "too_large"
 )
 
 type SlotRefusal struct {
@@ -47,6 +50,18 @@ type SlotReleaseRequest struct {
 
 type SlotReleaseResponse struct {
 	Released bool `json:"released"`
+}
+
+type SlotDeliverRequest struct {
+	Pool       string `json:"pool"`
+	Key        string `json:"key"`
+	Generation uint64 `json:"generation"`
+	ID         string `json:"id"`
+	Text       string `json:"text"`
+}
+
+type SlotDeliverResponse struct {
+	Queued bool `json:"queued"`
 }
 
 type SlotPagesRequest struct {

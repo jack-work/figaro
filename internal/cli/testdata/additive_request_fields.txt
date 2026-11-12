@@ -140,6 +140,11 @@ SetRequest.Assert
 SetRequest.IfVersion
 SetRequest.Outfits
 SetRequest.Patch
+SlotDeliverRequest.Generation
+SlotDeliverRequest.ID
+SlotDeliverRequest.Key
+SlotDeliverRequest.Pool
+SlotDeliverRequest.Text
 SlotLeaseRequest.Key
 SlotLeaseRequest.Pool
 SlotPagesRequest.Pool

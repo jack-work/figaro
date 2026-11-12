@@ -150,6 +150,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodSlotPages:          h.slotPages,
 		rpc.MethodSlotLease:          h.slotLease,
 		rpc.MethodSlotRelease:        h.slotRelease,
+		rpc.MethodSlotDeliver:        h.slotDeliver,
 		rpc.MethodHello:              h.hello,
 		rpc.MethodNodeResolve:        h.nodeResolve,
 		rpc.MethodTroupeMembers:      h.troupeMembers,

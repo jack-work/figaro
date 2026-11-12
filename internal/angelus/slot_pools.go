@@ -17,8 +17,9 @@ type SlotPools struct {
 
 	leasing sync.Mutex
 
-	mu      sync.Mutex
-	minting map[string]map[string]bool
+	mu        sync.Mutex
+	minting   map[string]map[string]bool
+	delivered map[string]map[string]bool
 }
 
 func OpenSlotPools(dir string, loaded *config.Loaded) (*SlotPools, error) {
@@ -102,4 +103,27 @@ func (s *SlotPools) mintedInThisCall(box, id string) (minting, minted bool) {
 	defer s.mu.Unlock()
 	ids, minting := s.minting[box]
 	return minting, ids[id]
+}
+
+func (s *SlotPools) deliveredTo(box string, fromStore func() (map[string]bool, error)) (map[string]bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if seen, ok := s.delivered[box]; ok {
+		return seen, nil
+	}
+	seen, err := fromStore()
+	if err != nil {
+		return nil, err
+	}
+	if s.delivered == nil {
+		s.delivered = map[string]map[string]bool{}
+	}
+	s.delivered[box] = seen
+	return seen, nil
+}
+
+func (s *SlotPools) forgetDeliveries(box string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.delivered, box)
 }

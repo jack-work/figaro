@@ -111,6 +111,7 @@ func (h *handlers) releaseLease(ctx context.Context, pool, key string, generatio
 		unclosed = h.closeCaller(ctx, loaded, pool, row.Rou2Lease)
 	}
 	loaded.ReleaseBox(box)
+	slots.forgetDeliveries(box)
 
 	ctx = authz.WithSubject(inProcess(ctx), authz.ProvisionerServing(box))
 	purged := h.everythingOfLease(box, row.Minted)

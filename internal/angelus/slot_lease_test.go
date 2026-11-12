@@ -17,6 +17,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/figaro/wire"
+	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/slotpool"
 )
 
@@ -64,7 +65,9 @@ principals = ["user:broker", "user:rival"]
 
 func leasingRig(t *testing.T) grantRig {
 	t.Helper()
-	r := newRigConfigured(t, leasingPolicy, leasingConfig)
+	r := newRigProviding(t, leasingPolicy, leasingConfig, func(string, provider.Knobs) (provider.Provider, error) {
+		return &mockProviderForIntegration{}, nil
+	}, thatWakesFigaros)
 	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)
 	}
