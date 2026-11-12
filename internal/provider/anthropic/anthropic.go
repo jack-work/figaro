@@ -1240,6 +1240,7 @@ func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 // on disk, never a slice of them. Nil means the log has no rows.
 func (a *Anthropic) catchUp(ctx context.Context, figLog store.Log[message.Message], rows store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) (provider.RowSeq, error) {
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
+		Context:     ctx,
 		Log:         figLog,
 		Translator:  rows,
 		Form:        form,
