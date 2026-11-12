@@ -29,7 +29,7 @@ sense.
 | **libretto** | `@libretto::<id>`, the durable copy of a studied form's state: one per source, shared by every observer, refcounted, never listed or forked. |
 | **outfit** | A named patch in `outfits/<name>.toml`, folded into a form at birth or onto a live figaro, and stored once per content version (`<name>@<hash>`). |
 | **intrinsic** | A form a host publishes as part of itself (`<id>/runtime`, `<id>/queue`): derived, never persisted, gone with its host. |
-| **catalog** | A live, daemon-scoped, read-only form: `@models` and `@reaped`. |
+| **catalog** | A live, daemon-scoped, read-only form: `@models`, `@reaped` and `@successions`. |
 | **stump** | A form that cannot be forked or branched. Three today, as special cases: the null (ur) form, `@topology`, and the store behind `@models`. |
 
 ---
@@ -244,6 +244,18 @@ job by hand. In the pager `:succeed` takes the same flags; when the
 predecessor is on screen the pager attends the successor before the
 predecessor is retired, unless `--stay`.
 
+**Succession without anyone asking.** A holder whose `system.retirement`
+says `action = "succeed"` is replaced by the daemon when its context reaches
+the threshold: a final handoff turn, a successor minted clean (no fork) and
+cast into every role the holder has, and the holder retired once the
+successor's first turn ends. The daemon reads two keys of each role:
+`succession-policy.outfit` dresses the successor (roles that disagree stop
+the succession), and `succession-policy.handoff-key` names the key whose
+value is the handoff path (`handoff` when unset). `succession-policy` is
+box-held: a box cannot pick the outfit the daemon dresses its successor in.
+The whole flow and its failure modes are under `system.retirement` in
+[cli.md](../cli.md).
+
 **Study and cast.** `fig study [<figaro>] <@form>` subscribes a figaro to
 an unbound form, and `fig study <figaro> <other> [--keys <prefix,…>]` to
 another figaro's bound form; `fig drop` unsubscribes; `fig cast [<figaro>] <@form>`
@@ -412,6 +424,22 @@ grace_hours
 `nodes` is every node the group holds (the root first or not; order is not
 meaningful). It changes when the sweep reaps or purges, and when a node is
 restored (`figaro reaped restore`, or removing `system.reaped` by hand).
+
+## `@successions`: handovers in flight
+
+`@successions` is a catalog like `@reaped`: read-only, held in memory, kept
+across restarts in `successions.json` in the state dir. One entry per figaro
+handing over under `system.retirement` with `action = "succeed"`:
+
+```
+items.<old>.{phase, deadline, successor, roles}
+```
+
+`phase` is `handoff` while the final turn runs and `ramping` while the
+successor's first turn does. `deadline` is unix milliseconds; the sweep fails
+a succession that is past it. The entry goes when the succession completes
+or fails; a failure's reason is on the old figaro, at
+`system.succession_failed`.
 
 ## `@models`: the model catalog
 
