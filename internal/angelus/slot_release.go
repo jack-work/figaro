@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -14,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/slotpool"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/jkauthz"
 )
 
 const leasePurgeWait = 10 * time.Second
@@ -101,19 +103,11 @@ func (h *handlers) releaseLease(ctx context.Context, pool, key string, generatio
 	loaded, _ := h.settings()
 	loaded.ReleaseBox(box)
 
-	kill := h.angelus.Handlers[rpc.MethodKill]
-	if kill == nil {
-		return refused(errors.New("the daemon serves no kill"))
-	}
 	ctx = authz.WithSubject(inProcess(context.WithoutCancel(ctx)), authz.ProvisionerServing(box))
 	purged := h.everythingOfLease(box, row.Minted)
 	for _, id := range purged {
-		if _, ok := h.angelus.Backend.Node(id); !ok {
-			continue
-		}
-		raw, _ := json.Marshal(rpc.KillRequest{FigaroID: id, Recursive: true, Now: true})
-		if _, err := kill(ctx, raw); err != nil {
-			return refused(fmt.Errorf("purge %s: %w", id, err))
+		if err := h.purgeNow(ctx, id); err != nil {
+			return refused(err)
 		}
 	}
 	if left := h.everythingOfLease(box, row.Minted); len(left) > 0 {
@@ -130,3 +124,96 @@ func (h *handlers) releaseLease(ctx context.Context, pool, key string, generatio
 }
 
 func leaseIsOver(l slotpool.Lease) bool { return l.State == slotpool.Released }
+
+func (h *handlers) purgeNow(ctx context.Context, id string) error {
+	if _, ok := h.angelus.Backend.Node(id); !ok {
+		return nil
+	}
+	kill := h.angelus.Handlers[rpc.MethodKill]
+	if kill == nil {
+		return errors.New("the daemon serves no kill")
+	}
+	raw, _ := json.Marshal(rpc.KillRequest{FigaroID: id, Recursive: true, Now: true})
+	if _, err := kill(ctx, raw); err != nil {
+		return fmt.Errorf("purge %s: %w", id, err)
+	}
+	return nil
+}
+
+func leasedBoxOfSlot(name string, slots []string) bool {
+	for _, slot := range slots {
+		digits, ok := strings.CutPrefix(name, slot+"-g")
+		if ok && digits != "" && strings.Trim(digits, "0123456789") == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *handlers) orphansOfLeases() []string {
+	backend, slots := h.angelus.Backend, h.angelus.Slots
+	loaded, _ := h.settings()
+	var names []string
+	for _, pool := range loaded.Pools() {
+		p, _ := loaded.Pool(pool)
+		names = append(names, p.SlotNames()...)
+	}
+	var forms, figaros []string
+	for _, n := range backend.Nodes() {
+		if n.Kind != store.KindForm && n.Kind != store.KindConversation {
+			continue
+		}
+		box := ""
+		if snap, err := backend.FormState(n.ID); err == nil {
+			if s := snap.Lookup("system.sandbox"); s != nil {
+				box = *s
+			}
+		}
+		if m, _ := backend.Meta(n.ID); box == "" && m != nil {
+			if by, err := jkauthz.ParsePrincipal(m.MintedBy); err == nil {
+				box, _ = authz.BoxOf(by)
+			}
+		}
+		if !leasedBoxOfSlot(box, names) {
+			continue
+		}
+		if _, held := slots.leaseOf(box); held {
+			continue
+		}
+		if n.Kind == store.KindForm {
+			forms = append(forms, n.ID)
+		} else {
+			figaros = append(figaros, n.ID)
+		}
+	}
+	return append(forms, figaros...)
+}
+
+func (hs *Handlers) RecoverSlotPools(ctx context.Context) { hs.h.recoverSlotPools(ctx) }
+
+func (h *handlers) recoverSlotPools(ctx context.Context) {
+	slots := h.angelus.Slots
+	if slots == nil || h.angelus.Backend == nil {
+		return
+	}
+	slots.leasing.Lock()
+	defer slots.leasing.Unlock()
+	for _, l := range slots.Ledger.Leases() {
+		if l.State != slotpool.Minting && l.State != slotpool.Releasing {
+			continue
+		}
+		if err := h.releaseLease(ctx, l.Pool, l.Key, l.Generation); err != nil {
+			slog.Error("slot pool: a lease the last run left unfinished is not yet released, and its slot is not offered", "pool", l.Pool, "slot", l.Slot, "generation", l.Generation, "err", err)
+		}
+	}
+	owner := authz.WithSubject(inProcess(context.WithoutCancel(ctx)), jkauthz.Subject{Principal: h.angelus.owner()})
+	orphans := h.orphansOfLeases()
+	for _, id := range orphans {
+		if err := h.purgeNow(owner, id); err != nil {
+			slog.Error("slot pool: a node in a leased box that no lease holds could not be purged", "node", id, "err", err)
+		}
+	}
+	if len(orphans) > 0 {
+		slog.Warn("slot pool: purged nodes in leased boxes that no lease holds", "nodes", len(orphans))
+	}
+}

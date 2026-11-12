@@ -251,12 +251,22 @@ func TestTheProvisionerPlacesOnlyWhatItsMintJustBoreAndOnlyUnderItsPool(t *testi
 // A lease that cannot be placed under its pool's node is not minted: left
 // where the store put it, the figaro would hang under its outfit and take
 // whatever a grant on that lineage gives. A pool daemon's config refuses
-// trunks = false; this is the mint's own refusal.
+// trunks = false; this is the mint's own refusal, and nothing of the box
+// is left behind.
 func TestWithNoDrawnTreeNothingIsMinted(t *testing.T) {
 	r, box := mintRigWithNoDrawnTree(t)
 	figaro, role, err := r.hs.MintLeased(asBroker(), "groups", "chat:10", 1)
 	if err == nil {
 		t.Fatalf("with no tree to place into the mint bore %s and %s", figaro, role)
 	}
-	_ = box
+	for _, n := range r.backend.Nodes() {
+		if n.Kind != store.KindForm && n.Kind != store.KindConversation {
+			continue
+		}
+		if snap, err := r.backend.FormState(n.ID); err == nil {
+			if in := snap.Lookup("system.sandbox"); in != nil && *in == box {
+				t.Errorf("the refused mint left %s (%s) in the box", n.ID, n.Kind)
+			}
+		}
+	}
 }

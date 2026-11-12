@@ -464,6 +464,9 @@ func Run() {
 	a.Handlers = handlers.Map
 	a.RemoveAria = handlers.RemoveAria
 	a.RemoveAriaIf = handlers.RemoveAriaIf
+	if loaded.PoolDaemon() {
+		handlers.RecoverSlotPools(ctx)
+	}
 
 	if !hushGate.Await() {
 		slog.Error("angelus exiting", "err", boot.ErrHushGateShut)

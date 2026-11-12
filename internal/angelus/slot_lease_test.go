@@ -249,6 +249,7 @@ func TestAReleaseDeletesEverythingOfTheLeaseAndFreesItsSlot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	strayForm := r.formIn(t, lease.Box)
 	node, _ := r.hs.PoolNode("groups")
 
 	for why, call := range map[string]func() error{
@@ -272,7 +273,7 @@ func TestAReleaseDeletesEverythingOfTheLeaseAndFreesItsSlot(t *testing.T) {
 	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err != nil {
 		t.Fatal(err)
 	}
-	for name, id := range map[string]string{"the figaro": lease.Aria, "the role": lease.Role, "a figaro the owner bore in the box": stray.FigaroID} {
+	for name, id := range map[string]string{"the figaro": lease.Aria, "the role": lease.Role, "a figaro the owner bore in the box": stray.FigaroID, "a form held in the box that no row names": strayForm} {
 		if ariaExists(r.a, id) {
 			t.Errorf("%s outlived the release", name)
 		}
@@ -297,5 +298,64 @@ func TestAReleaseDeletesEverythingOfTheLeaseAndFreesItsSlot(t *testing.T) {
 	}
 	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err != nil || !ariaExists(r.a, next.Aria) {
 		t.Errorf("a late release of generation 1 touched generation 2 (%v)", err)
+	}
+}
+
+func (r grantRig) formIn(t *testing.T, box string) string {
+	t.Helper()
+	out, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: heldPatch(t, map[string]any{"system.sandbox": box, "note": "held"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out.(rpc.FormCreateResponse).FormID
+}
+
+// What a start does before any door serves (El Inspector XV, C4). A lease
+// the last run left minting is released, with what it had minted. A node
+// that carries a leased box's name and that no lease holds, which is what
+// a crash between a birth and its ledger write leaves, is purged. A live
+// lease, the pools' nodes and a form in a box that is no slot's keep.
+func TestAStartReleasesUnfinishedLeasesAndPurgesWhatNoLeaseHolds(t *testing.T) {
+	r := leasingRig(t)
+	live, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.a.Slots.Ledger.Begin("groups", "slot1", "chat:11", 1, "user:broker"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.a.Settings.LeaseBox("groups", "slot1", 1); err != nil {
+		t.Fatal(err)
+	}
+	figaro, role, err := r.hs.MintLeased(asBroker(), "groups", "chat:11", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unnamed := r.formIn(t, "slot1-g1")
+	orphan := r.formIn(t, "slot5-g3")
+	elsewhere := r.formIn(t, "slot5-gx")
+	inLive := r.formIn(t, live.Box)
+	node, _ := r.hs.PoolNode("groups")
+
+	r.hs.RecoverSlotPools(context.Background())
+
+	for name, id := range map[string]string{"the unfinished lease's figaro": figaro, "its role": role, "a form in its box that its row does not name": unnamed, "a form in a box no lease holds": orphan} {
+		if ariaExists(r.a, id) {
+			t.Errorf("%s outlived the start", name)
+		}
+	}
+	for name, id := range map[string]string{"the live lease's figaro": live.Aria, "its role": live.Role, "a form in the live lease's box": inLive, "a form whose box is no slot's generation": elsewhere, "the pool's node": node} {
+		if !ariaExists(r.a, id) {
+			t.Errorf("the start deleted %s", name)
+		}
+	}
+	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:11", 1); row.State != slotpool.Released {
+		t.Errorf("the unfinished lease's row is %s, want released", row.State)
+	}
+	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); row.State != slotpool.Live {
+		t.Errorf("the live lease's row is %s", row.State)
+	}
+	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:12"}`); err != nil || next.Box != "slot1-g2" {
+		t.Errorf("after the start the freed slot leases %+v (%v), want slot1 at generation 2", next, err)
 	}
 }

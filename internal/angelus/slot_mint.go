@@ -165,7 +165,7 @@ func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation 
 	defer call.done()
 
 	serving := authz.ProvisionerServing(box)
-	ctx = authz.WithSubject(inProcess(ctx), serving)
+	ctx = authz.WithSubject(inProcess(context.WithoutCancel(ctx)), serving)
 	birth := leaseBirthPatch(box)
 	if err := h.provisionerBears(serving, form.Snapshot{}.Apply(pinned.patch).Apply(birth)); err != nil {
 		return refused(err)
@@ -173,9 +173,13 @@ func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation 
 	var out leasedMint
 	kept := false
 	defer func() {
-		if !kept {
-			h.discardBirth(out.Role)
-			h.discardBirth(out.Figaro)
+		if kept {
+			return
+		}
+		for _, id := range []string{out.Role, out.Figaro} {
+			if err := h.purgeNow(ctx, id); err != nil {
+				slog.Error("slot pool: a mint that failed left a node behind for the release to purge", "node", id, "err", err)
+			}
 		}
 	}()
 	record := func(id string) error {
