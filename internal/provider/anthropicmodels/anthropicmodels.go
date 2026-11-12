@@ -21,7 +21,7 @@ func normalize(model string) string {
 // newer models on it (claude_code_version_too_old). Track the `latest` npm
 // dist-tag, not `stable`: model floors can sit above stable. When a model
 // 400s, record its floor in versionFloors and bump this.
-const ClaudeCodeVersion = "2.1.281"
+const ClaudeCodeVersion = "2.1.322"
 
 // versionFloors holds, per model prefix, the client version a
 // claude_code_version_too_old 400 named.
