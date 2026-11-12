@@ -1256,6 +1256,13 @@ func (b *XwalBackend) Close() error {
 	return b.store.trunks.Close()
 }
 
+func (b *XwalBackend) Abandon() error {
+	for _, f := range b.fence() {
+		f.Close()
+	}
+	return b.store.trunks.Abandon()
+}
+
 func (b *XwalBackend) fence() []*Form {
 	b.closeLibrettos()
 	b.closed.Store(true)

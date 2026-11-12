@@ -214,6 +214,31 @@ func TestABoxCallInFlightAtAStopIsDecidedByTheLoadedPolicy(t *testing.T) {
 	}
 }
 
+// S1, past the bound: a call still undecided when the join gives up meets a
+// fenced store. Its decision may no longer read facts, and it must still be
+// a refusal.
+func TestABoxCallDecidedAfterTheFenceIsRefused(t *testing.T) {
+	r := newStopRig(t)
+	r.a.joinFor = 50 * time.Millisecond
+	held := holdDoor(t, r.door)
+	r.facts.armed.Store(true)
+	go r.setFromTheBox(held.c)
+	select {
+	case <-r.facts.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("canary: the guard never consulted the policy's facts for this call")
+	}
+	r.cancel()
+	r.a.Shutdown(time.Second)
+	if _, err := r.backend.OpenFigIR(r.aria); !errors.Is(err, store.ErrClosed) {
+		t.Fatalf("canary: the store is not fenced after a timed-out join: %v", err)
+	}
+	close(r.facts.release)
+	if got := r.decision(t); got == nil {
+		t.Fatal("a box call decided after the fence was allowed")
+	}
+}
+
 // S5: a held box connection learns why it ended, the door's socket is gone
 // once the stop returns, and the accept loop has been joined.
 func TestAStopLapsesHeldBoxConnectionsAndRemovesTheSocket(t *testing.T) {
