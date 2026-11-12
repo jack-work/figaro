@@ -487,7 +487,8 @@ a reaped or killed figaro in that box waits before it is purged, in place of
 longer grace gets the box's; `kill --now` still purges at once.
 
 **Decisions.** `figaro.decide` is the `decide` verb, with `send` sufficient.
-Bound to an aria it is checked on `aria:<id>`; with `outfit` (or neither,
+Bound to an aria it needs that and `read` on `aria:<id>`, since it reads
+the transcript and form (without `read` the aria is not found); with `outfit` (or neither,
 meaning `default`) on `outfit:<name>`, and the daemon dresses that outfit's
 `[system.decide]`. An override of provider, model or api is also checked on
 the daemon, whatever else the request names, so `decide:outfit:<name>`

@@ -221,17 +221,28 @@ func TestAWiderDecideGrantReachesWhatTheNarrowOneDoesNot(t *testing.T) {
 	}
 }
 
-// send on an aria still decides on it, as it did when decide was a send.
-func TestSendOnAnAriaStillDecidesOnIt(t *testing.T) {
+// A decide bound to an aria reads its transcript and form, so it needs read
+// on the aria as well as send: send alone is not found, send and read
+// decide on it as send did before the decide verb.
+func TestAnAriaBoundDecideNeedsReadAndSend(t *testing.T) {
 	r := heraldDoor(t, "decide:outfit:herald-decide")
-	r.grant("decide:outfit:herald-decide", "send:aria:"+r.owned)
-	ok, reply := r.reached(r.herald(), ask(map[string]any{rpc.AriaKey: r.owned}))
-	require.True(t, ok, "an aria-bound decide with send on it: %+v", reply.Error)
+	c := r.herald()
+	r.grant("send:aria:" + r.owned)
+	ok, reply := r.reached(c, ask(map[string]any{rpc.AriaKey: r.owned}))
+	require.False(t, ok, "send without read decided on the aria")
+	require.NotNil(t, reply.Error)
+	require.Contains(t, reply.Error.Message, "not found")
+	r.grant("send:aria:"+r.owned, "read:aria:"+r.owned)
+	ok, reply = r.reached(c, ask(map[string]any{rpc.AriaKey: r.owned}))
+	require.True(t, ok, "send and read on the aria: %+v", reply.Error)
+	r.grant("read:aria:" + r.owned)
+	ok, _ = r.reached(c, ask(map[string]any{rpc.AriaKey: r.owned}))
+	require.False(t, ok, "read without send decided on the aria")
 }
 
 // An override of the decision model is checked on the daemon whatever else
-// the decide names: send on an aria decides on it but may not pick its
-// model, and decide:* may.
+// the decide names: send and read on an aria decide on it but may not pick
+// its model, and decide:* may.
 func TestAnOverrideOnAnAriaBoundDecideNeedsTheDaemon(t *testing.T) {
 	overrides := map[string]map[string]any{
 		"a provider override": {"provider": "mock"},
@@ -240,16 +251,16 @@ func TestAnOverrideOnAnAriaBoundDecideNeedsTheDaemon(t *testing.T) {
 	}
 	r := heraldDoor(t, "decide:outfit:herald-decide")
 	c := r.herald()
-	r.grant("send:aria:" + r.owned)
+	r.grant("send:aria:"+r.owned, "read:aria:"+r.owned)
 	ok, reply := r.reached(c, ask(map[string]any{rpc.AriaKey: r.owned}))
-	require.True(t, ok, "control: send on the aria, no override: %+v", reply.Error)
+	require.True(t, ok, "control: send and read on the aria, no override: %+v", reply.Error)
 	for name, o := range overrides {
 		o[rpc.AriaKey] = r.owned
 		ok, reply := r.reached(c, ask(o))
 		require.False(t, ok, "%s on the aria with send:aria reached the model", name)
 		require.NotNil(t, reply.Error, name)
 	}
-	r.grant("decide:*")
+	r.grant("decide:*", "read:aria:"+r.owned)
 	for name, o := range overrides {
 		ok, reply := r.reached(c, ask(o))
 		require.True(t, ok, "canary: %s on the aria with decide:* did not reach the model: %+v", name, reply.Error)
