@@ -22,4 +22,3 @@ github.com/jack-work/figaro/internal/cli github.com/jack-work/figaro/internal/pr
 github.com/jack-work/figaro/internal/cli github.com/jack-work/figaro/internal/store
 github.com/jack-work/figaro/internal/cli github.com/jack-work/figaro/figwal/xwal
 github.com/jack-work/figaro/internal/store internal/store/xwal_store.go
-github.com/jack-work/figaro/internal/tool github.com/jack-work/figaro/internal/sandbox/local

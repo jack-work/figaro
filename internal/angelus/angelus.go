@@ -26,8 +26,8 @@ import (
 	"github.com/jack-work/figaro/internal/modelcat"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/peer"
+	"github.com/jack-work/figaro/internal/sandbox/local"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/troupe"
 	"github.com/jack-work/figaro/internal/uiir"
 	"github.com/jack-work/jkrpc"
@@ -61,7 +61,7 @@ type Angelus struct {
 
 	// Sessions is daemon-wide, scoped by aria id: killing or hibernating an
 	// agent must not take its children's addressability with it.
-	Sessions *tool.SessionRegistry
+	Sessions *local.Host
 
 	// Settings nil means every default.
 	Settings *config.Loaded
@@ -129,7 +129,7 @@ func New(cfg Config) *Angelus {
 		Spool:      figaro.NewSpool(cfg.SpoolDir),
 		pprofDir:   cfg.PprofDir,
 		StartedAt:  time.Now(),
-		Sessions:   tool.NewSessionRegistry(tool.DefaultSessionTTL),
+		Sessions:   local.NewHost(local.DefaultTTL),
 		Settings:   cfg.Settings,
 		Models:     cfg.Models,
 		Hubs:       newHubs(),
