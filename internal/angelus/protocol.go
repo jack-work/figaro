@@ -322,12 +322,13 @@ type handlers struct {
 	cappedMu sync.Mutex
 	capped   map[string]time.Time
 
-	reapedForm *store.Form
-	troupeForm *store.Form
-	nav        *primitive.Sessions[navstack.History]
-	navForms   navForms
-	reapedMu   sync.Mutex
-	succ       *successions
+	reapedForm         *store.Form
+	troupeForm         *store.Form
+	nav                *primitive.Sessions[navstack.History]
+	navForms           navForms
+	reapedMu           sync.Mutex
+	succ               *successions
+	successionCastHook func(role string) error
 
 	gcOnce      sync.Once
 	gcCollector *gc.Collector

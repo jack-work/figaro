@@ -450,7 +450,7 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 		return
 	}
 	for i, role := range rec.Roles {
-		if _, err := h.castForHub(ctx, rec.Successor, rpc.CastRequest{FormID: role}); err != nil {
+		if err := h.castSuccessor(ctx, rec.Successor, role); err != nil {
 			why := fmt.Sprintf("cast into %s refused: %s", role, err)
 			if back := h.repoint(ctx, rec.Roles[:i+1], rec.Old); back != "" {
 				why += "; " + back
@@ -477,6 +477,16 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 		return
 	}
 	slog.Info("successor minted and cast", "aria", rec.Old, "successor", rec.Successor, "roles", rec.Roles)
+}
+
+func (h *handlers) castSuccessor(ctx context.Context, successor, role string) error {
+	if h.successionCastHook != nil {
+		if err := h.successionCastHook(role); err != nil {
+			return err
+		}
+	}
+	_, err := h.castForHub(ctx, successor, rpc.CastRequest{FormID: role})
+	return err
 }
 
 func (h *handlers) placeBeside(ctx context.Context, id, sibling string) error {

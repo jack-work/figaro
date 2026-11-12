@@ -114,9 +114,9 @@ type Angelus struct {
 }
 
 type Config struct {
-	RuntimeDir string
-	PprofDir   string
-	SpoolDir   string
+	RuntimeDir      string
+	PprofDir        string
+	SpoolDir        string
 	SuccessionsPath string
 	Backend         store.Backend
 	Settings        *config.Loaded // nil = defaults
