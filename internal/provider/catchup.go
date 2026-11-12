@@ -31,6 +31,7 @@ type CatchUpConfig struct {
 
 	ReportEncodeError func(uint64, error)
 	ReportWriteError  func(uint64, error)
+	ReportStopped     func(beforeLT uint64, rowsWritten int)
 	Phase             func(name string)
 }
 
@@ -52,6 +53,13 @@ func (cfg CatchUpConfig) cancelled() error {
 		return nil
 	}
 	return cfg.Context.Err()
+}
+
+func LogCatchUpStopped(provider string) func(beforeLT uint64, rowsWritten int) {
+	return func(beforeLT uint64, rowsWritten int) {
+		slog.Info("catch-up stopped: the turn was cancelled",
+			"provider", provider, "before_lt", beforeLT, "rows_written", rowsWritten)
+	}
 }
 
 func (cfg CatchUpConfig) phase(name string) {
@@ -137,8 +145,10 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 	cfg.phase("seeded")
 
 	var (
-		batch  []store.Entry[[]json.RawMessage]
-		queued int
+		batch         []store.Entry[[]json.RawMessage]
+		queued        int
+		written       int
+		stoppedBefore uint64
 	)
 	flush := func() error {
 		if len(batch) == 0 {
@@ -152,6 +162,7 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 			}
 			return fmt.Errorf("write rows from %d: %w", rows[0].FigaroLT, werr)
 		}
+		written += len(rows)
 		for _, row := range rows {
 			if len(row.Payload) > 0 {
 				stats.Encoded++
@@ -164,6 +175,7 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 	for _, entry := range entries {
 		if err := cfg.cancelled(); err != nil {
 			failed = fmt.Errorf("stopped before %d: %w", entry.LT, err)
+			stoppedBefore = entry.LT
 			break
 		}
 		msg, snap, translatable := d.Next(entry)
@@ -212,6 +224,12 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 	}
 	if werr := flush(); failed == nil {
 		failed = werr
+	}
+	if stoppedBefore != 0 {
+		cfg.phase("stopped")
+		if cfg.ReportStopped != nil {
+			cfg.ReportStopped(stoppedBefore, written)
+		}
 	}
 	return stats, failed
 }
