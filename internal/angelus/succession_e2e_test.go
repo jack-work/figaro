@@ -10,12 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/jkauthz"
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -356,10 +358,7 @@ func TestSuccessionKeepsInheritedNarrowing(t *testing.T) {
 	r := successionDaemon(t)
 	parent := r.aria(nil)
 	turnOn(t, r.a, parent, "before the fork")
-	fr, err := r.acli.Fork(r.ctx, parent, 0, 0, nil, nil)
-	require.NoError(t, err)
-	old := fr.Alternative
-	r.p.set(func() { r.p.known[old] = true })
+	old := r.forkOf(parent)
 	ownerSets(t, r.a, old, map[string]any{"system.retirement": succeeding(nil)})
 	ownerSets(t, r.a, parent, map[string]any{"system.scopes": []string{"send:*"}})
 	require.False(t, r.has(old, "system.scopes"), "the predecessor is narrowed by its own key, not its parent's")
@@ -371,6 +370,63 @@ func TestSuccessionKeepsInheritedNarrowing(t *testing.T) {
 	after, held := r.a.Policies.Effective(next)
 	require.True(t, held)
 	require.Equal(t, []string{"send:*"}, after.Strings(), "the successor left its predecessor's ancestors and their narrowing behind")
+}
+
+func (r *successionRig) forkOf(parent string) string {
+	r.t.Helper()
+	fr, err := r.acli.Fork(r.ctx, parent, 0, 0, nil, nil)
+	require.NoError(r.t, err)
+	r.p.set(func() { r.p.known[fr.Alternative] = true })
+	return fr.Alternative
+}
+
+func (r *successionRig) maySend(figaro, to string) bool {
+	owner := jkauthz.Subject{Principal: r.a.Peercred.Self()}
+	return r.a.Policies.AllowFigaro(owner, figaro, rpc.VerbSend, authz.Aria(to)).Allowed
+}
+
+func (r *successionRig) ownScopes(id string) string {
+	r.t.Helper()
+	snap, err := r.a.Backend.FormState(id)
+	require.NoError(r.t, err)
+	raw, _ := snap.Get(form.ScopesKey)
+	return string(raw)
+}
+
+// Inspector XV's ruling: what the predecessor held over itself the successor
+// holds over itself, and nothing over the retired predecessor.
+func TestSuccessionGivesTheSuccessorItsOwnSelf(t *testing.T) {
+	r := successionDaemon(t)
+	parent := r.aria(nil)
+	turnOn(t, r.a, parent, "before the fork")
+	old := r.forkOf(parent)
+	ownerSets(t, r.a, old, map[string]any{"system.retirement": succeeding(nil), "system.scopes": []string{"*:lineage:self"}})
+	ownerSets(t, r.a, parent, map[string]any{"system.scopes": []string{"send:*"}})
+	stranger := r.aria(nil)
+	require.True(t, r.maySend(old, old))
+	require.False(t, r.maySend(old, stranger))
+
+	next := r.heldAtItsRamp(old)
+	require.JSONEq(t, `["send:lineage:self"]`, r.ownScopes(next))
+	require.True(t, r.maySend(next, next), "the successor cannot reach itself as its predecessor could")
+	require.False(t, r.maySend(next, old), "the successor kept its predecessor's hold over the predecessor")
+	require.False(t, r.maySend(next, stranger))
+}
+
+func TestSuccessionLeavesAnAncestorsLineageLiteral(t *testing.T) {
+	r := successionDaemon(t)
+	grandparent := r.aria(nil)
+	turnOn(t, r.a, grandparent, "before the forks")
+	parent := r.forkOf(grandparent)
+	old := r.forkOf(parent)
+	ownerSets(t, r.a, old, map[string]any{"system.retirement": succeeding(nil)})
+	ownerSets(t, r.a, parent, map[string]any{"system.scopes": []string{"send:lineage:" + grandparent}})
+	require.True(t, r.maySend(old, grandparent))
+
+	next := r.heldAtItsRamp(old)
+	require.JSONEq(t, `["send:lineage:`+grandparent+`"]`, r.ownScopes(next))
+	require.True(t, r.maySend(next, grandparent))
+	require.False(t, r.maySend(next, next), "an ancestor's lineage was rewritten into the successor's own")
 }
 
 func TestSuccessionRefusesScopesItCannotRead(t *testing.T) {

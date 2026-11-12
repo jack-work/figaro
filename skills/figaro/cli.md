@@ -329,9 +329,11 @@ system.retirement = { context_threshold = 300000, ttl = "72h", action = "succeed
    provider, model and thinking. It carries the same `system.retirement`,
    `system.sandbox` and `system.tools`, whatever the outfit says. Its
    `system.scopes` are the old one's, or the old one's effective set when
-   its ancestors narrowed it: the successor is born outside that lineage.
-   Scopes nobody can read refuse the succession. It is drawn beside the old
-   one when the old one was drawn somewhere by hand.
+   its ancestors narrowed it, with what it held over itself written as
+   `self`. The successor is born outside that lineage, so a grant over an
+   ancestor's lineage no longer reaches the successor itself. Scopes nobody
+   can read refuse the succession. It is drawn beside the old one when the
+   old one was drawn somewhere by hand.
 4. The successor is cast into every role the old one holds, then prompted
    with a ramp brief: the predecessor's id, the roles and handoff paths, the
    predecessor's last `ramp_turns` turns (5), and the `ramp` path to read

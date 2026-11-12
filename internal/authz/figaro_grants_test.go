@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/jkauthz"
 )
 
@@ -213,5 +214,91 @@ func TestExportedSetsSpellEveryStarVerbOut(t *testing.T) {
 	}
 	if out := ExportGrants(nil); out == nil || len(out) != 0 {
 		t.Fatalf("an empty set exports %#v, want []", out)
+	}
+}
+
+// A successor is born outside its predecessor's lineage, so the daemon writes
+// the predecessor's effective set into the successor's own key. Inspector XV:
+// an object naming exactly the predecessor goes back to its self form, and
+// nothing else moves.
+func TestASuccessorsScopesAreWrittenOnlyWhenAncestorsNarrow(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		own      map[string]string
+		figaro   string
+		want     string
+		narrowed bool
+	}{
+		{"its own lineage under a narrowing parent", map[string]string{"top": `["send:*"]`, "kid": `["*:lineage:self"]`}, "kid", "send:lineage:self", true},
+		{"itself alone", map[string]string{"top": `["send:*"]`, "kid": `["*:aria:self"]`}, "kid", "send:aria:self", true},
+		{"an ancestor's lineage stays literal", map[string]string{"kid": `["send:lineage:top"]`}, "grandkid", "send:lineage:top", true},
+		{"an ancestor's own self stays literal", map[string]string{"top": `["send:lineage:self"]`}, "kid", "send:lineage:top", true},
+		{"a longer id is not the predecessor", map[string]string{"top": `["send:aria:kidney", "read:lineage:kid"]`}, "kid", "read:lineage:self, send:aria:kidney", true},
+		{"only its own key: nothing to write", map[string]string{"kid": `["read:*"]`}, "kid", "", false},
+		{"no key anywhere: nothing to write", nil, "grandkid", "", false},
+	} {
+		got, narrowed, held := NewPolicies(me, lineageFakes(c.own)).SuccessorScopes(c.figaro)
+		if !held || narrowed != c.narrowed || got.String() != c.want {
+			t.Errorf("%s: %q narrowed=%v held=%v, want %q narrowed=%v", c.name, got, narrowed, held, c.want, c.narrowed)
+		}
+	}
+	if _, _, held := NewPolicies(me, lineageFakes(nil)).SuccessorScopes("elsewhere"); held {
+		t.Error("a figaro this node does not hold has scopes to hand on")
+	}
+}
+
+// Every verb, over the predecessor, its child, an ancestor and a stranger,
+// with the predecessor and its child mapped to the successor and its child.
+func TestASuccessorReachesNothingItsPredecessorCouldNot(t *testing.T) {
+	own := map[string]string{
+		"top": `["send:*", "fork:*", "set:*", "read:lineage:self"]`,
+		"kid": `["send:lineage:self", "fork:aria:self", "set:*", "read:*", "kill:*"]`,
+	}
+	f := lineageFakes(own)
+	scopes, narrowed, held := NewPolicies(me, f).SuccessorScopes("kid")
+	if !held || !narrowed {
+		t.Fatalf("narrowed=%v held=%v", narrowed, held)
+	}
+	written, _ := json.Marshal(scopes.Strings())
+	f.own["heir"] = string(written)
+	f.chains["heir"], f.chains["heirkid"] = []string{"heir"}, []string{"heir", "heirkid"}
+	f.parents["heirkid"] = "heir"
+	p := NewPolicies(me, f)
+	if err := p.load([]byte(sandboxPolicy)); err != nil {
+		t.Fatal(err)
+	}
+	may := func(figaro string, verb rpc.Verb, on string) bool {
+		return p.AllowFigaro(subject(me), figaro, verb, Aria(on)).Allowed
+	}
+	if !may("kid", rpc.VerbSend, "grandkid") || may("kid", rpc.VerbKill, "kid") || !may("kid", rpc.VerbRead, "top") {
+		t.Fatal("the predecessor's own table is not the one this test assumes")
+	}
+
+	// The predecessor read itself and its child as members of top's lineage.
+	// That grant stays literal, and the successor is outside that lineage.
+	lostWithTheLineage := map[string]bool{"read heir": true, "read heirkid": true}
+	predecessors := map[string]string{"heir": "kid", "heirkid": "grandkid"}
+	for _, verb := range rpc.Verbs() {
+		for _, pair := range [][2]string{{"kid", "heir"}, {"grandkid", "heirkid"}, {"top", "top"}, {"aaaa0001", "aaaa0001"}} {
+			was, is := may("kid", verb, pair[0]), may("heir", verb, pair[1])
+			if lostWithTheLineage[string(verb)+" "+pair[1]] {
+				if !was || is {
+					t.Errorf("%s on %s: predecessor %v, successor %v, want true then false", verb, pair[1], was, is)
+				}
+				continue
+			}
+			if was != is {
+				t.Errorf("%s: predecessor on %s %v, successor on %s %v", verb, pair[0], was, pair[1], is)
+			}
+		}
+		for _, on := range []string{"kid", "grandkid", "top", "aaaa0001", "heir", "heirkid"} {
+			before := on
+			if mapped, ok := predecessors[on]; ok {
+				before = mapped
+			}
+			if may("heir", verb, on) && !may("kid", verb, before) {
+				t.Errorf("the successor may %s on %s; its predecessor could not on %s", verb, on, before)
+			}
+		}
 	}
 }
