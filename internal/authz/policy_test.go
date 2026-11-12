@@ -50,7 +50,7 @@ func facts() fakeFacts {
 	return fakeFacts{
 		owners:  map[string]jkauthz.Principal{"aaaa0001": box, "aaaa0002": me},
 		parents: map[string]string{"cccc0002": "cccc0001", "cccc0003": "cccc0002"},
-		roles:   map[string]string{"@herald": "bbbb0001"},
+		roles:   map[string]string{"@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5c": "bbbb0001"},
 	}
 }
 
@@ -99,7 +99,7 @@ permissions = ["*:*"]
 
 [roles.box]
 permissions = [
-  "read:owner:self", "read:role:@herald", "read:lineage:cccc0001", "listen:owner:self", "listen:role:@herald", "listen:lineage:cccc0001", "send:owner:self", "send:role:@herald", "send:lineage:cccc0001", "set:owner:self", "set:role:@herald", "set:lineage:cccc0001",
+  "read:owner:self", "read:role:@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5c", "read:lineage:cccc0001", "listen:owner:self", "listen:role:@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5c", "listen:lineage:cccc0001", "send:owner:self", "send:role:@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5c", "send:lineage:cccc0001", "set:owner:self", "set:role:@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5c", "set:lineage:cccc0001",
   "create:*",
   "use:sandbox:dev-3",
 ]
@@ -281,5 +281,48 @@ func TestReloadingWithNoPathRestoresTheDefault(t *testing.T) {
 	}
 	if d := p.Allow(subject(me), rpc.VerbRead, Daemon); !d.Allowed {
 		t.Fatal(d.Reason())
+	}
+}
+
+// A role selector matches the role form by its id; a role name matched
+// nothing in silence, so it is refused at load.
+func TestARoleSelectorTakesTheRoleFormsIDNotItsName(t *testing.T) {
+	for _, sel := range []string{"role:@w29-parent", "role:@herald", "role:@53c6b", "role:@4E0A1D5C", "role:@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5"} {
+		p := NewPolicies(me, facts())
+		err := p.Reload(writePolicy(t, `
+[roles.r]
+permissions = ["send:`+sel+`"]`))
+		if err == nil || !strings.Contains(err.Error(), "names no form") || !strings.Contains(err.Error(), "not a role name") {
+			t.Errorf("%q: %v, want refused as naming no form", sel, err)
+		}
+	}
+	for _, id := range []string{"@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5c", "@53c6b72b"} {
+		f := facts()
+		f.roles = map[string]string{id: "bbbb0001"}
+		p := NewPolicies(me, f)
+		if err := p.Reload(writePolicy(t, `
+[roles.r]
+permissions = ["send:role:`+id+`"]
+
+[[bind]]
+role = "r"
+principals = ["user:1001"]`)); err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if d := p.Allow(subject(other), rpc.VerbSend, Aria("bbbb0001")); !d.Allowed {
+			t.Errorf("role:%s does not reach the aria its role points at: %s", id, d.Reason())
+		}
+		if d := p.Allow(subject(other), rpc.VerbSend, Aria("aaaa0002")); d.Allowed {
+			t.Errorf("role:%s reaches an aria its role does not point at", id)
+		}
+	}
+}
+
+func TestAnUnknownSelectorNamesTheRoleFormID(t *testing.T) {
+	err := NewPolicies(me, facts()).Reload(writePolicy(t, `
+[roles.r]
+permissions = ["read:path:/srv"]`))
+	if err == nil || !strings.Contains(err.Error(), "role:@<form id>") {
+		t.Fatalf("%v, want the selector list to say role:@<form id>", err)
 	}
 }

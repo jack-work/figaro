@@ -72,7 +72,7 @@ func gridFacts() fakeFacts {
 			"a-herald": {Kind: jkauthz.KindUser, ID: "1000"},
 		},
 		parents: map[string]string{"a-child": "a-box0", "a-grandchild": "a-child"},
-		roles:   map[string]string{"@herald": "a-herald"},
+		roles:   map[string]string{"@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5c": "a-herald"},
 		boxed: map[string]string{
 			"a-admin": "local", "a-box0": "box0", "a-child": "box0", "a-grandchild": "box0",
 			"a-chat": "chat", "a-bwrap": "bwrap", "a-gone": "box0",
