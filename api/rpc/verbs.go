@@ -13,10 +13,11 @@ const (
 	VerbAdmin  Verb = "admin"
 	VerbUse    Verb = "use"
 	VerbJoin   Verb = "join"
+	VerbDecide Verb = "decide"
 )
 
 func Verbs() []Verb {
-	return []Verb{VerbRead, VerbListen, VerbSend, VerbFork, VerbSet, VerbCreate, VerbKill, VerbAdmin, VerbUse, VerbJoin}
+	return []Verb{VerbRead, VerbListen, VerbSend, VerbFork, VerbSet, VerbCreate, VerbKill, VerbAdmin, VerbUse, VerbJoin, VerbDecide}
 }
 
 const VerbNone Verb = ""
@@ -36,7 +37,8 @@ var methodVerbs = map[string]Verb{
 	MethodInterrupt:   VerbSend,
 	MethodQueueUpdate: VerbSend,
 	MethodQueueDelete: VerbSend,
-	MethodDecide:      VerbSend,
+
+	MethodDecide: VerbDecide,
 
 	MethodQueued:  VerbRead,
 	MethodRead:    VerbRead,
@@ -121,6 +123,7 @@ func VerbOf(method string) (Verb, bool) {
 
 var sufficientVerbs = map[string][]Verb{
 	MethodAttach: {VerbSend},
+	MethodDecide: {VerbSend},
 }
 
 func VerbsOf(method string) ([]Verb, bool) {

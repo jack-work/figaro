@@ -321,8 +321,8 @@ roles of permissions (`[roles.<name>] permissions = [...]`), bound to
 principals by `[[bind]]`. A permission is `verb:selector`
 (`send:role:@herald`, `read:owner:self`, `*:*`); the verb ends at the first
 colon, and either side may be `*`. Selectors are `aria:<id>`, `role:@<name>`,
-`owner:self`, `lineage:<id>`, `sandbox:<name>`, `sandboxed:self`, `unboxed`
-and `troupe:<name>`. A role's permissions are kept canonical: duplicates and
+`owner:self`, `lineage:<id>`, `sandbox:<name>`, `sandboxed:self`, `unboxed`,
+`troupe:<name>` and `outfit:<name>`. A role's permissions are kept canonical: duplicates and
 any another covers are dropped, then sorted by verb and selector. The
 `{ verbs, on }` tables of 0.59 and earlier are refused, and the error spells them as
 strings. `grants` is the old name for `permissions` (and for the `[figaros]`
@@ -485,6 +485,13 @@ box reaches its own; the daemon refuses one inside any of them.
 a reaped or killed figaro in that box waits before it is purged, in place of
 `[memory] reaped_grace_hours` and `kill_grace_hours`. A kill asking for a
 longer grace gets the box's; `kill --now` still purges at once.
+
+**Decisions.** `figaro.decide` is the `decide` verb, with `send` sufficient.
+Bound to an aria it is checked on `aria:<id>`; with `outfit` (or neither,
+meaning `default`) on `outfit:<name>`, and the daemon dresses that outfit's
+`[system.decide]`. A request that also overrides provider, model or api is
+checked on the daemon, so `decide:outfit:<name>` decides in that outfit's
+model only. Naming an aria and an outfit is refused.
 
 **Troupes.** `join` on `troupe:<name>` is checked by `troupe.sign` and
 `troupe.identity` themselves, and `admin` on it by `troupe.entries` (from a

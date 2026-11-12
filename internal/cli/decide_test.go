@@ -57,3 +57,20 @@ func TestDecideProviderFlag(t *testing.T) {
 		t.Fatalf("request = %+v", req)
 	}
 }
+
+// An outfit decide names no aria, even from a bound shell: the binding is
+// dropped so a caller granted only decide:outfit:<name> is not refused for it.
+func TestDecideOutfitFlagDropsTheBinding(t *testing.T) {
+	for _, args := range [][]string{{"-O", "herald-decide", "--", "q"}, {"--outfit=herald-decide", "--", "q"}} {
+		p, err := parseDecideArgs(args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if req := p.request("bound0001"); req.Outfit != "herald-decide" || req.FigaroID != "" {
+			t.Fatalf("%q: request = %+v", args, req)
+		}
+	}
+	if _, err := parseDecideArgs([]string{"--id", "a", "-O", "herald-decide", "--", "q"}); err == nil {
+		t.Fatal("--id with --outfit was accepted")
+	}
+}

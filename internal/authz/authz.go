@@ -2,6 +2,7 @@
 package authz
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
 	"go.opentelemetry.io/otel/attribute"
@@ -289,6 +291,12 @@ func Enforce(p *Policies) Policy {
 		if r.Aria != "" {
 			res = Aria(r.Aria)
 		}
+		if r.Method == rpc.MethodDecide && r.Aria == "" {
+			var err error
+			if res, err = decideResource(r.Params); err != nil {
+				return Deny("%s: %v", r.Method, err)
+			}
+		}
 		view := p.Figaro(figaro)
 		if d := view.Allow(r.Subject, verb, res); !d.Allowed {
 			if allowedByAnother(view, r, verb, res) {
@@ -304,6 +312,19 @@ func Enforce(p *Policies) Policy {
 		}
 		return decided(Allow())
 	})
+}
+
+func decideResource(params json.RawMessage) (Resource, error) {
+	var req rpc.DecideRequest
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return Daemon, fmt.Errorf("parse params: %w", err)
+		}
+	}
+	if req.Provider != "" || req.Model != "" || req.API != "" {
+		return Daemon, nil
+	}
+	return Outfit(cmp.Or(req.Outfit, outfit.NameDefault)), nil
 }
 
 func (p *Policies) pinnedToBox(s jkauthz.Subject, figaro string) bool {

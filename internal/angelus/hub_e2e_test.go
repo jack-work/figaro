@@ -72,7 +72,7 @@ func daemonWithHandlers(t testing.TB, dir string, setup func(*angelus.Angelus, *
 	return daemonWithProvider(t, dir, setup, func() provider.Provider { return &mockProviderForIntegration{} })
 }
 
-func daemonWithProvider(t testing.TB, dir string, setup func(*angelus.Angelus, *store.XwalBackend), mock func() provider.Provider) (*angelus.Angelus, *sdk.Angelus, context.Context, *angelus.Handlers) {
+func daemonWithProvider(t testing.TB, dir string, setup func(*angelus.Angelus, *store.XwalBackend), mock func() provider.Provider, opts ...func(*angelus.ServerConfig)) (*angelus.Angelus, *sdk.Angelus, context.Context, *angelus.Handlers) {
 	t.Helper()
 	loaded, err := config.Load(dir)
 	require.NoError(t, err)
@@ -91,7 +91,7 @@ func daemonWithProvider(t testing.TB, dir string, setup func(*angelus.Angelus, *
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	hs := angelus.NewHandlers(angelus.ServerConfig{
+	cfg := angelus.ServerConfig{
 		Angelus: a,
 		Config:  loaded,
 		ProviderFactory: func(name string, _ provider.Knobs) (provider.Provider, error) {
@@ -104,7 +104,11 @@ func daemonWithProvider(t testing.TB, dir string, setup func(*angelus.Angelus, *
 		Ctx: ctx,
 		// Without FormTemplates restoreOne fails "form unavailable".
 		FormTemplates: template.New("t"),
-	})
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	hs := angelus.NewHandlers(cfg)
 	a.Handlers = hs.Map
 	a.RemoveAria = hs.RemoveAria
 	a.RemoveAriaIf = hs.RemoveAriaIf

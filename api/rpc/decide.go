@@ -2,6 +2,7 @@ package rpc
 
 type DecideRequest struct {
 	FigaroID string   `json:"figaro_id,omitempty"`
+	Outfit   string   `json:"outfit,omitempty"`
 	Question string   `json:"question"`
 	Choices  []string `json:"choices,omitempty"`
 	Provider string   `json:"provider,omitempty"`
