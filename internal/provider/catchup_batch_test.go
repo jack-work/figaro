@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
@@ -457,4 +459,181 @@ func TestACatchUpThatFailedOnDiskResumesAfterReopen(t *testing.T) {
 		t.Fatalf("resume visited %d records and repaired at %d, want %d and no repair", stats.Visited, stats.RepairedAt, len(want)-len(onDisk))
 	}
 	sameRows(t, "resumed", rowDump(cfg.Translator), want)
+}
+
+// otherFigaro is a second conversation in the fixture's store with n records
+// of its own: another lineage than the one a catch-up writes.
+func (f *batchFixture) otherFigaro(t *testing.T, n int) string {
+	t.Helper()
+	outfit, err := f.backend.CreateOutfit("batch", form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"skills.x": json.RawMessage(`1`),
+	}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := f.backend.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log, err := f.backend.OpenFigIR(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+			Role: message.RoleInput, Content: []message.Content{message.TextContent(fmt.Sprintf("other %d", i))}, Timestamp: int64(5000 + i),
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return id
+}
+
+// slowBatchSync stands in for a disk that stalls: the first batch a catch-up
+// writes stops at its sync, with the rows buffered and the lineage held, until
+// the test lets it go. reached closes when it is there; synced counts the
+// batches whose sync has returned.
+type slowBatchSync struct {
+	reached chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+	synced  atomic.Int32
+}
+
+func stallFirstBatchSync(t *testing.T, b *store.XwalBackend) *slowBatchSync {
+	t.Helper()
+	s := &slowBatchSync{reached: make(chan struct{}), release: make(chan struct{})}
+	b.BatchSyncForTest(func(sync func() error) error {
+		if s.calls.Add(1) == 1 {
+			close(s.reached)
+			<-s.release
+		}
+		err := sync()
+		s.synced.Add(1)
+		return err
+	})
+	t.Cleanup(func() { b.BatchSyncForTest(nil) })
+	return s
+}
+
+const batchWaitLimit = 20 * time.Second
+
+// A batch holds its own figaro's lineage for as long as its sync takes, and
+// nothing else: while the sync is stalled, a reader of another figaro opens
+// its node and reads without waiting for it.
+func TestAStalledBatchSyncDoesNotHoldBackAReaderOfAnotherFigaro(t *testing.T) {
+	f := openBatchFixture(t, t.TempDir(), 0)
+	f.newAria(t, 40)
+	other := f.otherFigaro(t, 5)
+	cfg := f.config(t, batchedChannel)
+
+	stall := stallFirstBatchSync(t, f.backend)
+	caughtUp := make(chan error, 1)
+	go func() {
+		_, err := CatchUp(cfg)
+		caughtUp <- err
+	}()
+	select {
+	case <-stall.reached:
+	case err := <-caughtUp:
+		t.Fatalf("the catch-up ended without a batch sync (err %v)", err)
+	}
+
+	read := make(chan int, 1)
+	go func() { read <- f.backend.OpenNode(other).Len() }()
+	select {
+	case n := <-read:
+		if n != 5 {
+			t.Errorf("the other figaro read %d records, want 5", n)
+		}
+	case <-time.After(batchWaitLimit):
+		t.Error("a reader of another figaro waited on a batch whose sync was stalled")
+	}
+
+	close(stall.release)
+	if err := <-caughtUp; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// What does wait on a stalled batch: a reader of the same figaro, by design,
+// and a fork anywhere, which needs the tree the batch is reading. Each waits
+// holding the store's own lock, so a reader of another figaro that arrives
+// behind one of them waits too. The bound on all of them is one batch: when a
+// catch-up is cut into several, everything queued behind the first is through
+// before the second is written.
+func TestWhatQueuesBehindAStalledBatchSyncIsFreedByThatOneSync(t *testing.T) {
+	cases := []struct {
+		name  string
+		first func(f *batchFixture, third string)
+	}{
+		{"behind a reader of the same figaro", func(f *batchFixture, _ string) {
+			f.backend.OpenNode(f.aria).Len()
+		}},
+		{"behind a fork of a third figaro", func(f *batchFixture, third string) {
+			f.backend.Fork(third)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := openBatchFixture(t, t.TempDir(), 0)
+			f.newAria(t, 40)
+			other := f.otherFigaro(t, 5)
+			third := f.otherFigaro(t, 5)
+			cfg := f.config(t, batchedChannel)
+			cfg.BatchBytes = 2048
+
+			stall := stallFirstBatchSync(t, f.backend)
+			queued := make(chan struct{})
+			encode := cfg.Encode
+			var checked atomic.Bool
+			cfg.Encode = func(msg message.Message, snap form.Snapshot) ([]json.RawMessage, error) {
+				if stall.synced.Load() == 1 && checked.CompareAndSwap(false, true) {
+					select {
+					case <-queued:
+					case <-time.After(batchWaitLimit):
+						t.Error("the first batch's sync returned and what queued behind it is still waiting")
+					}
+				}
+				return encode(msg, snap)
+			}
+			caughtUp := make(chan error, 1)
+			go func() {
+				_, err := CatchUp(cfg)
+				caughtUp <- err
+			}()
+			select {
+			case <-stall.reached:
+			case err := <-caughtUp:
+				t.Fatalf("the catch-up ended without a batch sync (err %v)", err)
+			}
+
+			firstDone := make(chan struct{})
+			go func() {
+				tc.first(f, third)
+				close(firstDone)
+			}()
+			select {
+			case <-firstDone:
+				t.Error("it got through while the batch was buffered and its sync stalled")
+			case <-time.After(100 * time.Millisecond):
+			}
+			go func() {
+				f.backend.OpenNode(other).Len()
+				<-firstDone
+				close(queued)
+			}()
+
+			close(stall.release)
+			if err := <-caughtUp; err != nil {
+				t.Fatal(err)
+			}
+			if n := stall.calls.Load(); n < 2 {
+				t.Fatalf("the catch-up wrote %d batch, the test needs a second one to be held back", n)
+			}
+			if !checked.Load() {
+				t.Fatal("no record was encoded after the first batch, so nothing was checked")
+			}
+		})
+	}
 }

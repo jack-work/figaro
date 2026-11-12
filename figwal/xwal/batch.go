@@ -79,6 +79,10 @@ func (t *Trunks) appendChannelBatchLocked(trunk, channel string, rows []ChannelR
 	}
 }
 
+func (t *Trunks) BatchSyncForTest(wrap func(sync func() error) error) {
+	t.testBatchSync = wrap
+}
+
 func (s *Store) AppendBatch(trunk, channel string, rows []ChannelRow) (uint64, error) {
 	if err := s.poisoned(trunk); err != nil {
 		return 0, err
