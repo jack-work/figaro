@@ -110,6 +110,7 @@ type Angelus struct {
 	pprofDir   string
 
 	SuccessionsPath string
+	SuccessorMinter SuccessorMinter
 	successionSweep func()
 }
 

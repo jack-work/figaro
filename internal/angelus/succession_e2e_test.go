@@ -636,6 +636,53 @@ func TestSuccessionsInFlightAreInTheCatalog(t *testing.T) {
 	require.Contains(t, string(raw), "ramping")
 }
 
+// The slot pool mints its own successors: its outfit, its scopes, its bound.
+func TestSuccessionMinterMintsWhatItClaims(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	other := r.aria(succeeding(nil))
+	role := r.role(old, map[string]any{"name": "lease", "succession-policy": map[string]any{"outfit": "mock"}})
+	var asked angelus.SuccessorMint
+	var pooled string
+	r.a.SuccessorMinter = func(ctx context.Context, m angelus.SuccessorMint) (angelus.MintedSuccessor, bool, error) {
+		if m.Predecessor != old {
+			return angelus.MintedSuccessor{}, false, nil
+		}
+		asked = m
+		created, err := r.acli.Create(ctx, dress(t, "heir"), nil)
+		if err != nil {
+			return angelus.MintedSuccessor{}, true, err
+		}
+		pooled = created.FigaroID
+		return angelus.MintedSuccessor{ID: pooled}, true, nil
+	}
+	r.cross(old)
+	r.eventually(func() bool { return r.retired(old) }, "the predecessor never retired")
+	require.Equal(t, pooled, r.holder(role), "the minter's figaro did not take the seat")
+	require.Equal(t, "heir-model", r.key(pooled, "system.model"), "the daemon minted over the minter")
+	require.Equal(t, []string{role}, asked.Roles)
+	require.Equal(t, []string{"mock"}, asked.Default.Outfits)
+	require.Contains(t, r.heard(pooled), "You succeed figaro "+old)
+	require.Len(t, r.arias(), 3)
+
+	r.cross(other)
+	r.eventually(func() bool { return r.retired(other) }, "an aria the minter does not claim must be minted by the daemon")
+	require.Len(t, r.arias(), 4)
+}
+
+func TestSuccessionMinterRefusalPages(t *testing.T) {
+	r := successionDaemon(t)
+	king := r.aria(nil)
+	old := r.aria(succeeding(map[string]any{"page": king}))
+	role := r.role(old, map[string]any{"name": "lease"})
+	r.a.SuccessorMinter = func(context.Context, angelus.SuccessorMint) (angelus.MintedSuccessor, bool, error) {
+		return angelus.MintedSuccessor{}, true, errors.New("4 successions a day, all spent")
+	}
+	r.cross(old)
+	r.requireUnretiredAndPaged(old, king, "4 successions a day, all spent", role)
+	require.Len(t, r.arias(), 2)
+}
+
 // A prompt queued before the threshold was crossed runs first. Its turn ending
 // is not the handoff: minting then would give the successor a predecessor that
 // has not written anything down yet.
