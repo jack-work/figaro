@@ -131,6 +131,39 @@ func (s *snapshotRig) fork(b *testing.B, id string, turn uint64) string {
 	return resp.Alternative
 }
 
+// A figaro's allocation counters are the whole process's, and a daemon
+// that has just booted or just answered is still working. Every measured
+// operation therefore starts from an idle daemon, with the clock and the
+// counters stopped while it waits: allocs/op and B/op are then what the
+// operation itself costs, on both sides of the socket.
+func idleDaemon(b *testing.B) {
+	b.Helper()
+	mallocs := func() uint64 {
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		return m.Mallocs
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for last := mallocs(); ; {
+		time.Sleep(100 * time.Millisecond)
+		now := mallocs()
+		if now-last < 16 {
+			return
+		}
+		if time.Now().After(deadline) {
+			b.Fatal("the daemon never went idle: its allocations would be counted against the operation")
+		}
+		last = now
+	}
+}
+
+func fromIdle(b *testing.B) {
+	b.Helper()
+	b.StopTimer()
+	idleDaemon(b)
+	b.StartTimer()
+}
+
 func heapMB() float64 {
 	runtime.GC()
 	var m runtime.MemStats
@@ -187,6 +220,7 @@ func BenchmarkSnapshotList(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for b.Loop() {
+		fromIdle(b)
 		if _, err := s.acli.List(s.ctx); err != nil {
 			b.Fatal(err)
 		}
@@ -206,6 +240,7 @@ func BenchmarkSnapshotFork(b *testing.B) {
 			lead := s.lead(b)
 			b.ReportAllocs()
 			for b.Loop() {
+				fromIdle(b)
 				s.fork(b, lead, cut.turn)
 			}
 		})
@@ -233,6 +268,7 @@ func BenchmarkSnapshotFirstSendAfterFork(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+		idleDaemon(b)
 		b.StartTimer()
 		if _, _, err := fcli.Qua(s.ctx, "first prompt", nil); err != nil {
 			b.Fatal(err)
@@ -257,6 +293,7 @@ func BenchmarkSnapshotPromoteDemote(b *testing.B) {
 	alt := s.fork(b, lead, 1)
 	b.ReportAllocs()
 	for b.Loop() {
+		fromIdle(b)
 		if _, err := s.acli.Promote(s.ctx, alt, 1); err != nil {
 			b.Fatal(err)
 		}
@@ -277,6 +314,7 @@ func BenchmarkSnapshotKillRecursive(b *testing.B) {
 		for range 3 {
 			s.fork(b, alt, 0)
 		}
+		idleDaemon(b)
 		b.StartTimer()
 		if _, err := s.acli.Kill(s.ctx, rpc.KillRequest{FigaroID: alt, Recursive: true, Now: true}); err != nil {
 			b.Fatal(err)
