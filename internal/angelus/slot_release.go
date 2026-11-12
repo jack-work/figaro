@@ -296,5 +296,6 @@ func (h *handlers) purgeTakingOnly(ctx context.Context, id string, allowed []str
 			return fmt.Errorf("its delete would take %s, which is not in a leased box that no lease holds", taken)
 		}
 	}
-	return h.purgeNow(ctx, id)
+	_, err = h.removeAria(ctx, by, hierarchy.Plan{Op: hierarchy.Kill, Node: id, Recursive: true, Delete: plan.Delete})
+	return err
 }
