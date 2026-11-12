@@ -19,7 +19,10 @@ import (
 	"github.com/jack-work/jkauthz"
 )
 
-const leasePurgeWait = 10 * time.Second
+const (
+	leasePurgeWait         = 10 * time.Second
+	unfinishedReleaseEvery = time.Minute
+)
 
 func (h *handlers) everythingOfLease(box string, minted []string) []string {
 	backend := h.angelus.Backend
@@ -208,6 +211,45 @@ func (h *handlers) orphansOfLeases() []string {
 
 func (hs *Handlers) RecoverSlotPools(ctx context.Context) { hs.h.recoverSlotPools(ctx) }
 
+func (hs *Handlers) KeepReleasingSlots(ctx context.Context) {
+	hs.h.keepReleasingSlots(ctx, unfinishedReleaseEvery)
+}
+
+func (h *handlers) keepReleasingSlots(ctx context.Context, every time.Duration) {
+	tick := time.NewTicker(every)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			h.finishUnfinishedLeases(ctx)
+		}
+	}
+}
+
+func (h *handlers) finishUnfinishedLeases(ctx context.Context) {
+	slots := h.angelus.Slots
+	if slots == nil || h.angelus.Backend == nil {
+		return
+	}
+	slots.leasing.Lock()
+	defer slots.leasing.Unlock()
+	h.releaseUnfinishedLeases(ctx)
+}
+
+func (h *handlers) releaseUnfinishedLeases(ctx context.Context) {
+	slots := h.angelus.Slots
+	for _, l := range slots.Ledger.Leases() {
+		if l.State != slotpool.Minting && l.State != slotpool.Releasing {
+			continue
+		}
+		if err := h.releaseLease(ctx, l.Pool, l.Key, l.Generation); err != nil {
+			slog.Error("slot pool: an unfinished lease is not yet released, and its slot is not offered", "pool", l.Pool, "slot", l.Slot, "generation", l.Generation, "err", err)
+		}
+	}
+}
+
 func (h *handlers) recoverSlotPools(ctx context.Context) {
 	slots := h.angelus.Slots
 	if slots == nil || h.angelus.Backend == nil {
@@ -215,14 +257,7 @@ func (h *handlers) recoverSlotPools(ctx context.Context) {
 	}
 	slots.leasing.Lock()
 	defer slots.leasing.Unlock()
-	for _, l := range slots.Ledger.Leases() {
-		if l.State != slotpool.Minting && l.State != slotpool.Releasing {
-			continue
-		}
-		if err := h.releaseLease(ctx, l.Pool, l.Key, l.Generation); err != nil {
-			slog.Error("slot pool: a lease the last run left unfinished is not yet released, and its slot is not offered", "pool", l.Pool, "slot", l.Slot, "generation", l.Generation, "err", err)
-		}
-	}
+	h.releaseUnfinishedLeases(ctx)
 	owner := authz.WithSubject(inProcess(context.WithoutCancel(ctx)), jkauthz.Subject{Principal: h.angelus.owner()})
 	orphans := h.orphansOfLeases()
 	purged := 0

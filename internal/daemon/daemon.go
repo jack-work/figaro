@@ -474,6 +474,7 @@ func Run() {
 	a.RemoveAriaIf = handlers.RemoveAriaIf
 	if loaded.PoolDaemon() {
 		handlers.RecoverSlotPools(ctx)
+		go handlers.KeepReleasingSlots(ctx)
 	}
 
 	if !hushGate.Await() {

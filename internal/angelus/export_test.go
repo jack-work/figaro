@@ -140,3 +140,7 @@ func (s *SlotPools) BeginMint(box string) (minted func(id string), done func(), 
 	}
 	return call.minted, call.done, nil
 }
+
+func (hs *Handlers) KeepReleasingSlotsEvery(ctx context.Context, every time.Duration) {
+	hs.h.keepReleasingSlots(ctx, every)
+}

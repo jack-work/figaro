@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/slotpool"
@@ -46,6 +47,12 @@ func (f *rigRou2) Close(_ context.Context, id string) error {
 	}
 	f.closed = append(f.closed, id)
 	return nil
+}
+
+func (f *rigRou2) closeFails(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failClose = err
 }
 
 var rigRou2s sync.Map
@@ -198,5 +205,50 @@ func TestWithNoRou2NothingIsLeased(t *testing.T) {
 	}
 	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); row.State != slotpool.Released || row.Rou2Lease != "" {
 		t.Errorf("the row is %s naming %q, want released and naming none", row.State, row.Rou2Lease)
+	}
+}
+
+// A lease left releasing is finished on a timer, with no call from broker:
+// each pass runs the release again, and the slot comes back once the step
+// that could not finish can.
+func TestAReleasingLeaseIsFinishedOnATimerOnceItCanBe(t *testing.T) {
+	r := leasingRig(t)
+	rou2 := rou2Of(r)
+	if _, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err != nil {
+		t.Fatal(err)
+	}
+	rou2.closeFails(errors.New("rou2 is away"))
+	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err == nil {
+		t.Fatal("a release whose rou2 lease did not close answered released")
+	}
+	state := func() slotpool.State {
+		row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1)
+		return row.State
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	ended := make(chan struct{})
+	go func() {
+		r.hs.KeepReleasingSlotsEvery(ctx, 5*time.Millisecond)
+		close(ended)
+	}()
+	time.Sleep(40 * time.Millisecond)
+	if got := state(); got != slotpool.Releasing {
+		t.Errorf("while rou2 is away the row is %s, want releasing", got)
+	}
+	rou2.closeFails(nil)
+	for deadline := time.Now().Add(5 * time.Second); state() != slotpool.Released && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := state(); got != slotpool.Released {
+		t.Fatalf("with rou2 back the row is %s, want released by the timer", got)
+	}
+	cancel()
+	select {
+	case <-ended:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the timer outlived its context")
+	}
+	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err != nil || next.Box != "slot0-g2" {
+		t.Errorf("after the timer's release the key leases %+v (%v), want slot0 at generation 2", next, err)
 	}
 }
