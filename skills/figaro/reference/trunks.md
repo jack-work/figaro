@@ -320,6 +320,10 @@ picks the child) and `TopologyTree.Demote` (which writes the patch).
 - A figaro merely promoted under the target therefore survives. Its
   presentation edge is forgotten and it returns to where its history puts
   it.
+- A survivor whose history is detached from a removed figaro (or by
+  `doctor normalize`) first writes the scopes it held through it into its own
+  `system.scopes`, so no delete widens it; if those scopes cannot be read,
+  the delete is refused.
 - A survivor that read its history THROUGH the removed set absorbs that
   prefix first, and is then pinned where it was drawn, so a delete never
   teleports an untouched figaro to the genesis root.

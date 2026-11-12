@@ -139,6 +139,12 @@ func TestALiftedChildKeepsTheNarrowingItInheritedThroughTheKilledFigaro(t *testi
 		if _, err := killAs(r, rpc.KillRequest{FigaroID: x, KeepChildren: true, Now: now}); err != nil {
 			t.Fatal(err)
 		}
+		if !now {
+			if eff, _ := r.a.Policies.Effective(c); eff.String() != before.String() {
+				t.Fatalf("reaped: C widened from %s to %s", before, eff)
+			}
+			purgeDue(t, r, x)
+		}
 		if got := scopesOf(t, r, c); got != `["read:*","kill:*"]` {
 			t.Fatalf("now=%v: C carries %s, want X's narrowing", now, got)
 		}

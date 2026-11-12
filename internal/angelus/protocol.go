@@ -91,6 +91,9 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	if cfg.Config != nil {
 		h.outfitter.Warm(cfg.Config.Config.DefaultOutfit)
 	}
+	if c, ok := h.angelus.Backend.(detachCarrier); ok {
+		c.SetDetachCarry(h.carryBeforeDetach)
+	}
 	h.noticeUpgrade()
 	h.startNav()
 	h.succ = newSuccessions(h.angelus.SuccessionsPath)

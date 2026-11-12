@@ -745,11 +745,6 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 		}
 		return nil, fmt.Errorf("kill %s: %w", req.FigaroID, err)
 	}
-	if req.KeepChildren {
-		if err := h.carryNarrowingOf(req.FigaroID); err != nil {
-			return nil, fmt.Errorf("kill --keep-children %s: %w", req.FigaroID, err)
-		}
-	}
 	if h.afterKillCheck != nil {
 		h.afterKillCheck()
 	}

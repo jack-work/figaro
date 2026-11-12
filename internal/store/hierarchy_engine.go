@@ -157,6 +157,18 @@ func (s *XwalStore) move(id, under string) error {
 	return err
 }
 
+func (b *XwalBackend) SetDetachCarry(carry func(ids []string) error) {
+	b.store.detachCarry.Store(&carry)
+}
+
+func (s *XwalStore) carryOut(ids []string) error {
+	carry := s.detachCarry.Load()
+	if carry == nil || len(ids) == 0 {
+		return nil
+	}
+	return (*carry)(ids)
+}
+
 func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins map[string]string, bury, unlinked func([]string)) error {
 	s.deleting.Lock()
 	defer s.deleting.Unlock()
@@ -178,6 +190,9 @@ func (s *XwalStore) removeLeaf(id string, recursive bool, expect []string, pins 
 		}
 	}
 	s.mu.Unlock()
+	if err := s.carryOut(s.deleteOrphans(id)); err != nil {
+		return fmt.Errorf("delete %s: %w", id, err)
+	}
 	if bury != nil {
 		bury(taken)
 	}
