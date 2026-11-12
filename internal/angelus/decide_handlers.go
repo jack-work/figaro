@@ -20,7 +20,20 @@ func (h *handlers) decide(ctx context.Context, params json.RawMessage) (any, err
 	if h.decider == nil {
 		return nil, errors.New("decide: this daemon has no decision model configured")
 	}
+	if req.FigaroID != "" && req.Outfit != "" {
+		return nil, fmt.Errorf("decide: name an aria or an outfit, not both")
+	}
 	src := decide.Source{Context: req.Context, Defaults: h.defaultForm()}
+	if req.Outfit != "" {
+		if err := h.refuseBoxOutfits(ctx, []string{req.Outfit}, false); err != nil {
+			return nil, err
+		}
+		patch, err := h.dress([]string{req.Outfit}, nil)
+		if err != nil {
+			return nil, err
+		}
+		src.Defaults = form.Snapshot{}.Apply(patch)
+	}
 	if req.FigaroID != "" {
 		if err := h.requireAria(req.FigaroID); err != nil {
 			return nil, err

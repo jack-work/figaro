@@ -24,6 +24,7 @@ const (
 	ResourceAria
 	ResourceSandbox
 	ResourceTroupe
+	ResourceOutfit
 )
 
 type Resource struct {
@@ -41,6 +42,8 @@ func Sandbox(name string) Resource {
 }
 
 func Troupe(name string) Resource { return Resource{Kind: ResourceTroupe, ID: name} }
+
+func Outfit(name string) Resource { return Resource{Kind: ResourceOutfit, ID: name} }
 
 var Daemon = Resource{}
 
@@ -60,6 +63,7 @@ const (
 	selLineage = "lineage:"
 	selSandbox = "sandbox:"
 	selTroupe  = "troupe:"
+	selOutfit  = "outfit:"
 	selBoxed   = "sandboxed:self"
 	selUnboxed = "unboxed"
 	selSelf    = "self"
@@ -69,7 +73,7 @@ func (selectors) Validate(sel string) error {
 	if sel == selOwner || sel == selBoxed || sel == selUnboxed {
 		return nil
 	}
-	for _, prefix := range []string{selAria, selRole, selLineage, selSandbox, selTroupe} {
+	for _, prefix := range []string{selAria, selRole, selLineage, selSandbox, selTroupe, selOutfit} {
 		if rest, ok := strings.CutPrefix(sel, prefix); ok {
 			if rest == "" {
 				return fmt.Errorf("%s names nothing", prefix)
@@ -80,7 +84,7 @@ func (selectors) Validate(sel string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("want aria:<id>, role:@<name>, owner:self, lineage:<id>, sandbox:<name>, sandbox:self, sandboxed:self, unboxed or troupe:<name>")
+	return fmt.Errorf("want aria:<id>, role:@<name>, owner:self, lineage:<id>, sandbox:<name>, sandbox:self, sandboxed:self, unboxed, troupe:<name> or outfit:<name>")
 }
 
 func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
@@ -94,6 +98,9 @@ func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
 		return ok && name == r.ID
 	case ResourceTroupe:
 		name, ok := strings.CutPrefix(sel, selTroupe)
+		return ok && name == r.ID
+	case ResourceOutfit:
+		name, ok := strings.CutPrefix(sel, selOutfit)
 		return ok && name == r.ID
 	}
 	if r.Kind != ResourceAria {
@@ -456,6 +463,8 @@ func (r Resource) String() string {
 		return "sandbox:" + r.ID
 	case ResourceTroupe:
 		return "troupe:" + r.ID
+	case ResourceOutfit:
+		return "outfit:" + r.ID
 	}
 	return "the daemon"
 }

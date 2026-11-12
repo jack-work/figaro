@@ -1,0 +1,230 @@
+package angelus_test
+
+import (
+	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/provider"
+)
+
+const heraldPolicy = `
+[roles.owner]
+permissions = ["*:*"]
+
+[roles.herald-decide]
+permissions = [HERALD]
+
+[[bind]]
+role = "owner"
+principals = ["user:UID", "user:admin@auth.kelliher.info"]
+
+[[bind]]
+role = "herald-decide"
+principals = ["service:herald-server@auth.kelliher.info"]
+`
+
+type heraldRig struct {
+	t      *testing.T
+	a      *angelus.Angelus
+	path   string
+	policy string
+	owned  string
+	host   *countingHost
+	served []string
+}
+
+// heraldDoor is spain's web door with herald's service principal bound to
+// the given permissions, a decision model that counts what reaches it, and
+// one aria the owner made.
+func heraldDoor(t *testing.T, permissions ...string) *heraldRig {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
+	decides := "[system.decide]\nprovider = \"mock\"\nmodel = \"decision-1\"\n"
+	for name, body := range map[string]string{
+		"mock":          "[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\n" + decides,
+		"herald-decide": decides,
+		"herald-group":  decides,
+		"herald":        decides,
+	} {
+		require.NoError(t, os.WriteFile(dir+"/outfits/"+name+".toml", []byte(body), 0o600))
+	}
+	r := &heraldRig{t: t, policy: filepath.Join(dir, "policy.toml"), host: newCountingHost(t)}
+	r.grant(permissions...)
+	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte(`default_outfit = "mock"
+[authz]
+policy = "`+r.policy+`"
+[authz.upstream]
+issuer = "https://auth.kelliher.info"
+[authz.upstream.services]
+herald-server = "service"
+`), 0o600))
+	a, acli, ctx, hs := daemonWithProvider(t, dir, nil, func() provider.Provider { return &mockProviderForIntegration{} }, decideThrough(r.host))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	r.a, r.owned = a, created.FigaroID
+	for m := range hs.Map {
+		r.served = append(r.served, m)
+	}
+	slices.Sort(r.served)
+
+	loaded, err := config.Load(dir)
+	require.NoError(t, err)
+	r.path = filepath.Join(filepath.Dir(a.SocketPath), "web.sock")
+	u, err := authz.NewUpstream(loaded.Config.Authz.Upstream, r.path, a.SocketPath, nil)
+	require.NoError(t, err)
+	ln, err := angelus.ListenUnix(r.path, 0o660)
+	require.NoError(t, err)
+	go a.ServeWeb(ctx, ln, angelus.Web{Admit: u.AdmitRequest})
+	return r
+}
+
+func (r *heraldRig) grant(permissions ...string) {
+	r.t.Helper()
+	quoted := make([]string, len(permissions))
+	for i, p := range permissions {
+		quoted[i] = strconv.Quote(p)
+	}
+	text := strings.NewReplacer("UID", strconv.Itoa(os.Getuid()), "HERALD", strings.Join(quoted, ", ")).Replace(heraldPolicy)
+	require.NoError(r.t, os.WriteFile(r.policy, []byte(text), 0o600))
+	if r.a != nil {
+		require.NoError(r.t, r.a.Policies.Reload(r.policy))
+	}
+}
+
+func (r *heraldRig) herald() *edgeClient {
+	r.t.Helper()
+	c, _, err := forge(r.t, r.path, http.Header{"Remote-User": {"herald-server"}, "Remote-Principal": {"service"}, "Remote-Client": {"herald-server"}})
+	require.NoError(r.t, err)
+	return c
+}
+
+// reached reports whether a decide call got past the policy to the
+// decision model.
+func (r *heraldRig) reached(c *edgeClient, params map[string]any) (bool, rpcReply) {
+	r.t.Helper()
+	before := r.host.hits.Load()
+	reply := c.call(rpc.MethodDecide, params)
+	return r.host.hits.Load() > before, reply
+}
+
+func ask(extra map[string]any) map[string]any {
+	params := map[string]any{"question": "go?"}
+	for k, v := range extra {
+		params[k] = v
+	}
+	return params
+}
+
+// Herald's service principal holds decide:outfit:herald-decide and nothing else:
+// it decides in that outfit, and every other outfit, the default, an
+// override of the decision model, and an aria are refused before the model
+// is asked.
+func TestDecideOnOneOutfitReachesThatOutfitAndNoOther(t *testing.T) {
+	r := heraldDoor(t, "decide:outfit:herald-decide")
+	c := r.herald()
+
+	ok, reply := r.reached(c, ask(map[string]any{"outfit": "herald-decide"}))
+	require.True(t, ok, "herald's own outfit did not reach the model: %+v", reply.Error)
+
+	for name, params := range map[string]map[string]any{
+		"the group outfit":       {"outfit": "herald-group"},
+		"the default outfit":     {},
+		"the default, by name":   {"outfit": "default"},
+		"a provider override":    {"outfit": "herald-decide", "provider": "mock"},
+		"a model override":       {"outfit": "herald-decide", "model": "decision-2"},
+		"an api override":        {"outfit": "herald-decide", "api": "chat"},
+		"an aria":                {rpc.AriaKey: r.owned},
+		"an aria and the outfit": {rpc.AriaKey: r.owned, "outfit": "herald-decide"},
+		"a near-miss name":       {"outfit": "herald-decide "},
+		"a prefix of the name":   {"outfit": "herald"},
+	} {
+		ok, reply := r.reached(c, ask(params))
+		require.False(t, ok, "%s reached the model", name)
+		require.NotNil(t, reply.Error, name)
+	}
+}
+
+// Every route the door serves, called by herald with an aria the owner
+// holds: hello answers, the row-filtered listings (and herald's own api
+// keys, of which it has none) answer with nothing of anyone else's, and
+// everything else is refused. The canary widens the grant
+// with read:* and the same calls start answering, so the refusals above
+// come from the grant and not from calls that could never succeed.
+func TestDecideOnOneOutfitIsRefusedOnEveryOtherRoute(t *testing.T) {
+	r := heraldDoor(t, "decide:outfit:herald-decide")
+	c := r.herald()
+	require.Greater(t, len(r.served), 60, "the door serves %d routes; the sweep is broken", len(r.served))
+
+	answered := func(m string) rpcReply {
+		return c.call(m, onAria(r.owned, map[string]any{"text": "witness-herald", "question": "go?", "version": rpc.ProtocolVersion}))
+	}
+	rows := map[string]bool{rpc.MethodList: true, rpc.MethodNodeResolve: true, rpc.MethodTroupeAPIKeyList: true}
+	for _, m := range r.served {
+		if _, ok := rpc.VerbOf(m); !ok {
+			t.Errorf("%s is served with no verb", m)
+		}
+		if m == rpc.MethodDecide {
+			continue
+		}
+		reply := answered(m)
+		switch {
+		case m == rpc.MethodHello:
+			require.Nil(t, reply.Error, m)
+		case rows[m]:
+			if reply.Error == nil {
+				require.NotContains(t, string(reply.Result), r.owned, "%s showed herald the owner's aria", m)
+				require.NotContains(t, string(reply.Result), "user:", "%s showed herald another principal's rows", m)
+			}
+		default:
+			require.NotNil(t, reply.Error, "%s answered herald: %s", m, reply.Result)
+		}
+	}
+	require.Zero(t, r.host.hits.Load(), "the sweep reached the decision model")
+
+	owner, _, err := forge(t, r.path, http.Header{"Remote-User": {"admin"}})
+	require.NoError(t, err)
+	require.Nil(t, owner.call(rpc.MethodContext, onAria(r.owned, nil)).Error, "the owner's aria did not survive the sweep")
+
+	r.grant("decide:outfit:herald-decide", "read:*")
+	for _, m := range []string{rpc.MethodContext, rpc.MethodForm, rpc.MethodIR, rpc.MethodLineage, rpc.MethodRead} {
+		require.Nil(t, answered(m).Error, "canary: %s with read:* still refused", m)
+	}
+}
+
+// The canary for the outfit check: widened to decide:*, the same calls the
+// narrow grant refused reach the model, and send:* (what an aria-less
+// decide needed before the decide verb) still does.
+func TestAWiderDecideGrantReachesWhatTheNarrowOneDoesNot(t *testing.T) {
+	for _, wide := range []string{"decide:*", "send:*"} {
+		r := heraldDoor(t, wide)
+		c := r.herald()
+		for name, params := range map[string]map[string]any{
+			"the group outfit":   {"outfit": "herald-group"},
+			"the default outfit": {},
+			"a model override":   {"outfit": "herald-decide", "model": "decision-2"},
+		} {
+			ok, reply := r.reached(c, ask(params))
+			require.True(t, ok, "%s: %s did not reach the model: %+v", wide, name, reply.Error)
+		}
+	}
+}
+
+// send on an aria still decides on it, as it did when decide was a send.
+func TestSendOnAnAriaStillDecidesOnIt(t *testing.T) {
+	r := heraldDoor(t, "decide:outfit:herald-decide")
+	r.grant("decide:outfit:herald-decide", "send:aria:"+r.owned)
+	ok, reply := r.reached(r.herald(), ask(map[string]any{rpc.AriaKey: r.owned}))
+	require.True(t, ok, "an aria-bound decide with send on it: %+v", reply.Error)
+}

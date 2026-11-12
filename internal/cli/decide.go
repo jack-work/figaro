@@ -21,6 +21,7 @@ const decideTimeout = 2 * time.Minute
 
 type decidePlan struct {
 	id       string
+	outfit   string
 	choices  []string
 	provider string
 	model    string
@@ -34,6 +35,7 @@ type decidePlan struct {
 
 var decideFlagDefs = []cmdkit.FlagDef{
 	{Long: "id", Description: "Read this aria's conversation and form (default: the one bound to this shell)"},
+	{Long: "outfit", Short: "O", Description: "Decide in this outfit's [system.decide] instead of an aria's, unbound"},
 	{Long: "choices", Short: "C", Description: "Options, comma separated: -C=\"option 1\",\"option 2\"; @key names a form key"},
 	{Long: "provider", Description: "Provider to send the decision through, for this call (default: system.decide.provider)"},
 	{Long: "model", Short: "m", Description: "Decision model for this call (default: system.decide.model)"},
@@ -69,6 +71,12 @@ func parseDecideArgs(args []string) (decidePlan, error) {
 				return p, err
 			}
 			p.id = v
+		case a == "-O" || a == "--outfit" || strings.HasPrefix(a, "--outfit="):
+			v, err := value(&i, a, "--outfit")
+			if err != nil {
+				return p, err
+			}
+			p.outfit = v
 		case a == "-C" || strings.HasPrefix(a, "-C=") || a == "--choices" || strings.HasPrefix(a, "--choices="):
 			v, err := value(&i, a, "-C")
 			if err != nil {
@@ -123,6 +131,9 @@ func parseDecideArgs(args []string) (decidePlan, error) {
 			words = append(words, a)
 		}
 	}
+	if p.id != "" && p.outfit != "" {
+		return p, fmt.Errorf("--id and --outfit: decide reads an aria or an outfit, not both")
+	}
 	p.question = strings.TrimSpace(strings.Join(words, " "))
 	p.choices = apidecide.Dedupe(p.choices)
 	if p.question == "" && len(p.choices) == 0 {
@@ -132,8 +143,12 @@ func parseDecideArgs(args []string) (decidePlan, error) {
 }
 
 func (p decidePlan) request(aria string) rpc.DecideRequest {
+	if p.outfit != "" {
+		aria = ""
+	}
 	return rpc.DecideRequest{
 		FigaroID: aria,
+		Outfit:   p.outfit,
 		Question: p.question,
 		Choices:  p.choices,
 		Provider: p.provider,
@@ -181,7 +196,7 @@ func runDecide(loaded *config.Loaded, args []string, in io.Reader, out io.Writer
 }
 
 func decideTarget(ctx context.Context, acli *sdk.Angelus, p decidePlan) (string, error) {
-	if p.id != "" {
+	if p.id != "" || p.outfit != "" {
 		return p.id, nil
 	}
 	r, err := resolveBinding(ctx, acli, shellPID)
@@ -196,7 +211,7 @@ func registerDecide(r *cmdkit.Router) {
 		Name:  "decide",
 		Group: "Prompt",
 		Short: "Ask a decision model a yes/no or multiple-choice question",
-		Usage: "decide [--id <id>] [-C <a,b,...>] [--provider <name>] [-m <model>] [--api systemone|openai] [--context <text|->] [--score] [-j] -- <question>",
+		Usage: "decide [--id <id> | -O <outfit>] [-C <a,b,...>] [--provider <name>] [-m <model>] [--api systemone|openai] [--context <text|->] [--score] [-j] -- <question>",
 		Long: `Asks a System One decision model (jev) one typed question and prints its
 scored answer. Nothing is written to any aria: bound to one, decide only READS
 its conversation and form, and never waits on a running turn.
@@ -225,12 +240,16 @@ passage is sent whole and the window is centred on it instead. Only the form
 keys the options name are sent.
 
 Unbound (or under -A, which ignores the binding) it is stateless: the
-question, --context and the model's own training are all it has.
+question, --context and the model's own training are all it has. -O names
+the outfit whose [system.decide] answers, unbound; a caller granted only
+decide:outfit:<name> calls it this way and may not pass --provider, -m or
+--api.
 
 Where it goes is a provider: its base_url, with /systemone or /decisions
 appended, and its credential, so figaro provider login <name> covers decide
 too.
-Each setting is the flag, else the aria's form, else the default outfit's:
+Each setting is the flag, else the aria's form, else the default outfit's
+(under -O, that outfit's instead):
 
   --provider   system.decide.provider   which provider (rou2, azure, ...)
   -m           system.decide.model      which model; required

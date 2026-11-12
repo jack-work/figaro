@@ -122,3 +122,18 @@ func TestEveryClassifiedVerbIsAPolicyVerb(t *testing.T) {
 		}
 	}
 }
+
+// decide is granted on outfit:<name> as well as on arias, so only
+// figaro.decide carries it; send stays sufficient for the callers that
+// decided under send before the verb existed.
+func TestDecideIsCarriedOnlyByDecideAndSendStillSuffices(t *testing.T) {
+	for m, v := range methodVerbs {
+		if v == VerbDecide && m != MethodDecide {
+			t.Errorf("%s is classified as decide", m)
+		}
+	}
+	verbs, _ := VerbsOf(MethodDecide)
+	if len(verbs) != 2 || verbs[0] != VerbDecide || verbs[1] != VerbSend {
+		t.Fatalf("figaro.decide is checked as %v, want [decide send]", verbs)
+	}
+}
