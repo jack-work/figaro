@@ -196,13 +196,6 @@ func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation 
 	if _, err := backend.ApplyFormPrivileged(out.Figaro, withAriaID(form.Patch{}, out.Figaro)); err != nil {
 		return refused(fmt.Errorf("stamp aria id: %w", err))
 	}
-	born, err := backend.FormState(out.Figaro)
-	if err != nil {
-		return refused(err)
-	}
-	if err := h.provisionerBears(serving, born); err != nil {
-		return refused(err)
-	}
 	role := leaseRolePatch(box, out.Figaro)
 	held := form.Snapshot{}.Apply(role)
 	if err := h.provisionerBears(serving, held); err != nil {
