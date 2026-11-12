@@ -62,7 +62,10 @@ func runAdopt(loaded *config.Loaded, args []string, asJSON bool) {
 			for _, m := range p.Moves {
 				moves = append(moves, fmt.Sprintf("%s %s>%s", m.Node, orDash(m.From), orDash(m.To)))
 			}
-			fmt.Fprintf(stdout, "%s  %s %s by %s, until %s\n    %s\n", p.ID, p.Op, p.Node, p.By,
+			if p.Withheld > 0 {
+				moves = append(moves, fmt.Sprintf("%d more you cannot read", p.Withheld))
+			}
+			fmt.Fprintf(stdout, "%s  %s %s by %s, until %s\n    %s\n", p.ID, p.Op, orDash(p.Node), p.By,
 				time.UnixMilli(p.ExpiresMS).Format(time.DateTime), strings.Join(moves, ", "))
 		}
 		return nil

@@ -342,15 +342,15 @@ troupe's reach off the node's boxes.
 the topology guard checks: `kill` on every node whose position changes, and
 `adopt` on every aria or form that receives a node, unless the caller owns
 it (never through a box door), or the node goes back under its history
-parent. Without
-`adopt` the move parks on that parent as a proposal (`figaro adopt <parent>`
-lists them). Someone with `adopt` there accepts or refuses it. Accept checks
-the move again as its proposer, with the grants the proposer holds then. A
-move that needs two parents' consent is refused. Proposals live in memory:
-they lapse after a day, a restart drops them, each parent holds 16, and
-one proposer holds 4 on a parent and 64 in all.
-`adopt` must stay out of a troupe policy until every member runs a release
-that knows the verb.
+parent. Without `adopt` the move parks on that parent as a proposal.
+`figaro adopt <parent>` lists them to its adopt holders, and to a proposer
+its own, showing only ids the caller may read. Someone with `adopt` there
+accepts or refuses it. Accept checks the move again as its proposer, with
+the grants the proposer holds then. A move that needs two parents' consent
+is refused. Proposals live in memory: they lapse after a day, a restart
+drops them, each parent holds 16, and one proposer holds 4 on a parent and
+64 in all. `adopt` must stay out of a troupe policy until every member runs
+a release that knows the verb.
 
 **Sandboxes.** `use` on `sandbox:<name>` is checked on the dressed form at
 create, fork, bind, import and `figaro.set`. A figaro minted by a sandbox

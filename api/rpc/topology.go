@@ -130,6 +130,7 @@ type Proposal struct {
 	Node      string         `json:"node,omitempty"`
 	By        string         `json:"by"`
 	Moves     []ProposedMove `json:"moves"`
+	Withheld  int            `json:"withheld,omitempty"`
 	Accepts   []string       `json:"accepts,omitempty"`
 	ExpiresMS int64          `json:"expires_ms"`
 }
