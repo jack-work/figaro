@@ -130,6 +130,8 @@ type Content struct {
 	Sender string `json:"sender,omitempty"`
 
 	Principal string `json:"principal,omitempty"`
+
+	Delivery string `json:"delivery,omitempty"`
 }
 
 type Usage struct {

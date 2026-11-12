@@ -45,6 +45,7 @@ type promptSegment struct {
 	text      string
 	notice    bool
 	handoff   bool
+	delivery  string
 }
 
 type event struct {

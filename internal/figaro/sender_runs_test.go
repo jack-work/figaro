@@ -80,3 +80,23 @@ func TestSenderRunsNeverFoldAcrossPrincipals(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+// A delivery is one block under its own id: nothing is folded into it and
+// it is folded into nothing, or the id would cover a neighbour's text and a
+// second delivery's id would be lost with its block.
+func TestSenderRunsKeepsEachDeliveryItsOwnBlock(t *testing.T) {
+	got := senderRuns([]promptSegment{
+		{principal: "user:broker", text: "before"},
+		{principal: "user:broker", text: "one", delivery: "m1"},
+		{principal: "user:broker", text: "two", delivery: "m2"},
+		{principal: "user:broker", text: "after"},
+	})
+	if len(got) != 4 {
+		t.Fatalf("got %d blocks, want 4: %+v", len(got), got)
+	}
+	for i, want := range []struct{ text, delivery string }{{"before", ""}, {"one", "m1"}, {"two", "m2"}, {"after", ""}} {
+		if got[i].Text != want.text || got[i].Delivery != want.delivery || got[i].Principal != "user:broker" {
+			t.Errorf("block %d is %+v, want %q under delivery %q", i, got[i], want.text, want.delivery)
+		}
+	}
+}
