@@ -19,7 +19,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/jack-work/figaro/internal/mark"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/sdk"
@@ -719,13 +723,21 @@ func (in *interactiveInput) reconnect(gen uint64, id string, ep sdk.Addr) bool {
 	in.dropAngelus()
 	in.setAway()
 	in.progress("the angelus went away: reconnecting to " + ariaName(id))
+	_, span := figOtel.Start(life, "cli.reconnect", trace.WithAttributes(attribute.String("figaro.id", id)))
+	attempts := 0
+	defer func() {
+		span.SetAttributes(attribute.Int("attempts", attempts))
+		span.End()
+	}()
 	wait := reconnectFirst
 	for {
 		select {
 		case <-life.Done():
+			span.SetAttributes(attribute.Bool("ok", false))
 			return false
 		case <-time.After(wait):
 		}
+		attempts++
 		wait = min(wait*2, reconnectMax)
 		if !in.current(gen) {
 			in.sendHeld(life)
@@ -743,6 +755,7 @@ func (in *interactiveInput) reconnect(gen uint64, id string, ep sdk.Addr) bool {
 			continue
 		}
 		in.note("reconnected to " + ariaName(id))
+		span.SetAttributes(attribute.Bool("ok", true))
 		in.sendHeld(life)
 		return true
 	}

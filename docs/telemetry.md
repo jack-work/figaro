@@ -38,6 +38,10 @@ process exits or resubmits first. Its W3C traceparent rides
 child per phase (`daemon.boot.store_open` and so on, as in the marks).
 Attrs `store.arias`, `boot.reason` (`cli`, `upgrade`, `unit`, `direct`) and,
 after a graceful stop, `boot.after_stop_ms` (since that stop ended).
+`cli.open` (client): process start to the first painted transcript of
+`listen`, `figaro.id`, `cli.painted`. `cli.reconnect` (client): a pager's
+wait for a restarted daemon, `figaro.id`, `attempts`, `ok`.
+`angelus.list_warm` (daemon): the boot walk the first list waits for, `rows`.
 `cli.run` (client): the whole CLI process, `verb` (a command name, or
 `prompt`, never the prompt).
 `daemon.stop`: a graceful stop, phases `figaros`, `stop`, `backend_close`.

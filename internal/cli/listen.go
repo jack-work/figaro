@@ -100,6 +100,8 @@ type tailOpts struct {
 func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr, figaroID string, loaded *config.Loaded, opt tailOpts) {
 	ctx, span := figOtel.Start(ctx, "cli.listen")
 	defer span.End()
+	startOpen(ctx, figaroID)
+	defer endOpen(false)
 	runSession(ctx, cancel, sessionOpts{
 		figaroID: figaroID, ep: ep, loaded: loaded,
 		set:  listenSettings(loaded),

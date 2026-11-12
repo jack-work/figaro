@@ -3,7 +3,10 @@ package angelus
 import (
 	"context"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/jack-work/figaro/internal/mark"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
 func (a *Angelus) warmListing(ctx context.Context) {
@@ -11,7 +14,10 @@ func (a *Angelus) warmListing(ctx context.Context) {
 		return
 	}
 	done := mark.Span("list.warm")
+	_, span := figOtel.Start(ctx, "angelus.list_warm")
+	defer span.End()
 	nodes := a.Backend.Conversations()
+	span.SetAttributes(attribute.Int("rows", len(nodes)))
 	for _, n := range nodes {
 		if ctx.Err() != nil {
 			return

@@ -580,6 +580,9 @@ func (t *transcript) paint(screen []string) {
 	t.paintBuf = buf
 	t.screenSpare, t.prev = t.prev, screen
 	submitPainted(t.subjectID())
+	if t.index.total > 0 {
+		endOpen(true)
+	}
 	if mark.Enabled() {
 		mark.Mark("frame", "aria", t.subjectID(), "bytes", len(buf), "full", full,
 			"content", t.index.total > 0, "tail", t.follow, "rows", len(screen))

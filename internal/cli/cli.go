@@ -33,6 +33,7 @@ func Run(progName string, args []string) {
 
 	mark.Init("cli")
 	started := time.Now()
+	processStarted.Store(&started)
 	mark.Mark("cli.start")
 	atExit(profileSession())
 
