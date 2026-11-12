@@ -182,7 +182,11 @@ func runDecide(loaded *config.Loaded, args []string, in io.Reader, out io.Writer
 			callErr = err
 			return nil
 		}
-		resp, callErr = acli.Decide(ctx, p.request(aria))
+		req := p.request(aria)
+		if callErr = refuseUnknownFields(req); callErr != nil {
+			return nil
+		}
+		resp, callErr = acli.Decide(ctx, req)
 		return nil
 	})
 	if callErr != nil {

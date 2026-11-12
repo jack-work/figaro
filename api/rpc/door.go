@@ -8,14 +8,15 @@ const ProtocolVersion = 1
 type Capability string
 
 const (
-	CapQuaImages  Capability = "qua.images"
-	CapFormSeq    Capability = "form.seq"
-	CapFormAccess Capability = "form.access"
-	CapFormView   Capability = "form.view"
-	CapNormalize  Capability = "normalize.report"
-	CapUnfollow   Capability = "unfollow"
-	CapChannels   Capability = "follow.channels"
-	CapStudyKeys  Capability = "study.keys"
+	CapQuaImages    Capability = "qua.images"
+	CapFormSeq      Capability = "form.seq"
+	CapFormAccess   Capability = "form.access"
+	CapFormView     Capability = "form.view"
+	CapNormalize    Capability = "normalize.report"
+	CapUnfollow     Capability = "unfollow"
+	CapChannels     Capability = "follow.channels"
+	CapStudyKeys    Capability = "study.keys"
+	CapDecideOutfit Capability = "decide.outfit"
 )
 
 type PrincipalKind string
