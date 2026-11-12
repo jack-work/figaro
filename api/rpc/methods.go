@@ -76,6 +76,8 @@ const (
 	MethodDemote        = "figaro.demote"
 	MethodImport        = "figaro.import"
 	MethodNormalize     = "figaro.normalize"
+	MethodForksRestore  = "figaro.forks.restore"
+	MethodPlacements    = "figaro.placements"
 	MethodGC            = "figaro.gc"
 	MethodGCPlan        = "figaro.gc.plan"
 	MethodGCApply       = "figaro.gc.apply"

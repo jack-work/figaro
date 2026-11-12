@@ -207,6 +207,9 @@ type Backend interface {
 
 	Normalize(dryRun bool) (NormalizeReport, error)
 
+	RestoreForks(dryRun bool) ([]ForkRestore, error)
+	Placements() PlacementReport
+
 	OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo, error)
 
 	Node(id string) (NodeView, bool)

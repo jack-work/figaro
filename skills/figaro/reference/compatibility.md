@@ -51,6 +51,10 @@ capabilities.
   normalize through one that does not, since an older daemon would drop
   `dry_run` and do the real thing. `figaro normalize` became `figaro
   doctor normalize`, with the old name kept hidden for one minor.
+- **`figaro.forks.restore` and `figaro.placements`** are new methods
+  behind `figaro doctor restore-forks` and `figaro doctor placements`. A
+  daemon before them answers with an unknown method and changes nothing,
+  so neither needs a capability; `dry_run` arrived with its method.
 - **`figaro gc` plans before it acts.** It calls `figaro.gc.plan`,
   `figaro.gc.apply` and `figaro.gc.undo`, methods a daemon before them
   lacks; against one the verb fails with an unknown method and changes

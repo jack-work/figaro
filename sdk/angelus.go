@@ -194,6 +194,22 @@ func (c *Angelus) Normalize(ctx context.Context, dryRun bool) (*rpc.NormalizeRes
 	return &resp, nil
 }
 
+func (c *Angelus) RestoreForks(ctx context.Context, dryRun bool) (*rpc.RestoreForksResponse, error) {
+	var resp rpc.RestoreForksResponse
+	if err := c.call(ctx, rpc.MethodForksRestore, rpc.RestoreForksRequest{DryRun: dryRun}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *Angelus) Placements(ctx context.Context) (*rpc.PlacementsResponse, error) {
+	var resp rpc.PlacementsResponse
+	if err := c.call(ctx, rpc.MethodPlacements, struct{}{}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Promote climbs a trunk up `levels` levels, stopping at the outfit version or root it was born under; <= 0 means one.
 func (c *Angelus) Promote(ctx context.Context, figaroID string, levels int) (*rpc.PromoteResponse, error) {
 	var resp rpc.PromoteResponse

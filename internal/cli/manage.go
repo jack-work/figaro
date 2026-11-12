@@ -1052,6 +1052,80 @@ func printNormalize(resp rpc.NormalizeResponse) {
 	fmt.Fprintf(stderrw, "%d %s, %d override(s) %s\n", len(resp.Detached), detach, len(resp.Dropped), drop)
 }
 
+func runRestoreForks(loaded *config.Loaded, dryRun, jsonOut bool) {
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		resp, err := acli.RestoreForks(ctx, dryRun)
+		if err != nil {
+			return fmt.Errorf("restore-forks: %w", err)
+		}
+		if jsonOut {
+			enc := json.NewEncoder(stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(resp)
+		}
+		printRestoreForks(*resp)
+		return nil
+	})
+}
+
+func nodeLabel(handle, id string) string {
+	switch {
+	case handle != "":
+		return handle
+	case id == "" || id == "null":
+		return "the top"
+	}
+	return id
+}
+
+func printRestoreForks(resp rpc.RestoreForksResponse) {
+	restore := "restored"
+	if resp.DryRun {
+		restore = "would restore"
+	}
+	for _, r := range resp.Restored {
+		was := nodeLabel(r.WasHandle, r.Was)
+		fmt.Fprintf(stdout, "%s  %s  fork point %s -> %s, placed under %s\n", restore, nodeLabel(r.Handle, r.ID), was, nodeLabel(r.ForkPointHandle, r.ForkPoint), was)
+	}
+	for _, r := range resp.Kept {
+		fmt.Fprintf(stdout, "kept  %s  fork point %s: %s\n", nodeLabel(r.Handle, r.ID), nodeLabel(r.WasHandle, r.Was), r.Kept)
+	}
+	fmt.Fprintf(stderrw, "%d %s, %d kept\n", len(resp.Restored), restore, len(resp.Kept))
+}
+
+func runPlacements(loaded *config.Loaded, jsonOut bool) {
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		resp, err := acli.Placements(ctx)
+		if err != nil {
+			return fmt.Errorf("placements: %w", err)
+		}
+		if jsonOut {
+			enc := json.NewEncoder(stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(resp)
+		}
+		printPlacements(*resp)
+		return nil
+	})
+}
+
+func printPlacements(resp rpc.PlacementsResponse) {
+	for _, p := range resp.Placed {
+		fmt.Fprintf(stdout, "placed  %s  under %s, fork point %s\n", nodeLabel(p.Handle, p.ID), nodeLabel(p.UnderHandle, p.Under), nodeLabel(p.ForkPointHandle, p.ForkPoint))
+	}
+	for _, p := range resp.Lost {
+		fmt.Fprintf(stdout, "lost  %s  placement names no node (%s): it holds nothing until its owner places it\n", nodeLabel(p.Handle, p.ID), p.Names)
+	}
+	for _, p := range resp.Dangling {
+		fmt.Fprintf(stdout, "dangling  %s  fork point names no node (%s): read as top-level\n", nodeLabel(p.Handle, p.ID), p.Names)
+	}
+	fmt.Fprintf(stderrw, "%d placed, %d lost, %d with a fork point that names no node\n", len(resp.Placed), len(resp.Lost), len(resp.Dangling))
+}
+
 // runPromote changes only the presentation hierarchy: nothing moves on disk.
 func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 	target := idFlag

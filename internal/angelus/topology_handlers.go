@@ -548,6 +548,62 @@ func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (inter
 	return resp, nil
 }
 
+func (h *handlers) restoreForks(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.RestoreForksRequest
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+	}
+	report, err := h.angelus.Backend.RestoreForks(req.DryRun)
+	if err != nil {
+		return nil, err
+	}
+	resp := rpc.RestoreForksResponse{DryRun: req.DryRun, Restored: []rpc.RestoredFork{}, Kept: []rpc.RestoredFork{}}
+	handle := func(id string) string {
+		_, words := names(h.angelus.Backend, id)
+		return words
+	}
+	for _, r := range report {
+		row := rpc.RestoredFork{
+			NormalizedAria: rpc.NormalizedAria{ID: r.ID, Handle: handle(r.ID)},
+			Was:            r.Was, WasHandle: handle(r.Was),
+			ForkPoint: r.ForkPoint, ForkPointHandle: handle(r.ForkPoint),
+			Kept: r.Kept,
+		}
+		if r.Kept != "" {
+			resp.Kept = append(resp.Kept, row)
+			continue
+		}
+		resp.Restored = append(resp.Restored, row)
+	}
+	if !req.DryRun {
+		slog.Info("fork points restored", "restored", len(resp.Restored), "kept", len(resp.Kept))
+	}
+	return resp, nil
+}
+
+func (h *handlers) placements(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	report := h.angelus.Backend.Placements()
+	handle := func(id string) string {
+		_, words := names(h.angelus.Backend, id)
+		return words
+	}
+	rows := func(in []store.PlacedNode) []rpc.PlacedAria {
+		out := make([]rpc.PlacedAria, 0, len(in))
+		for _, p := range in {
+			out = append(out, rpc.PlacedAria{
+				NormalizedAria: rpc.NormalizedAria{ID: p.ID, Handle: handle(p.ID)},
+				ForkPoint:      p.ForkPoint, ForkPointHandle: handle(p.ForkPoint),
+				Under: p.Under, UnderHandle: handle(p.Under),
+				Names: p.Names,
+			})
+		}
+		return out
+	}
+	return rpc.PlacementsResponse{Placed: rows(report.Placed), Lost: rows(report.Lost), Dangling: rows(report.Dangling)}, nil
+}
+
 func importedKeys(p form.Patch) map[string]json.RawMessage {
 	keys := map[string]json.RawMessage{}
 	for _, e := range p.Entries() {

@@ -132,6 +132,7 @@ ReadRequest.Limit
 ReapedRestoreRequest.FigaroID
 ReapedRestoreRequest.Keep
 ResolveRequest.PID
+RestoreForksRequest.DryRun
 SetRequest.Assert
 SetRequest.IfVersion
 SetRequest.Outfits

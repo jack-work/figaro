@@ -108,6 +108,8 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodOutfits:            h.outfits,
 		rpc.MethodConfigure:          h.configure,
 		rpc.MethodNormalize:          h.normalize,
+		rpc.MethodForksRestore:       h.restoreForks,
+		rpc.MethodPlacements:         h.placements,
 		rpc.MethodGC:                 h.gc,
 		rpc.MethodGCPlan:             h.gcPlan,
 		rpc.MethodGCApply:            h.gcApply,

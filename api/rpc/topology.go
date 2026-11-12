@@ -91,6 +91,48 @@ type NormalizeResponse struct {
 	Unsupported bool              `json:"unsupported,omitempty"`
 }
 
+type RestoreForksRequest struct {
+	DryRun bool `json:"dry_run,omitempty"`
+}
+
+// RestoredFork is a figaro an older release moved by rewriting its fork
+// point. Was is the figaro it names today and keeps answering to; ForkPoint
+// is the holder of its cut, empty when Kept says why it was left alone.
+type RestoredFork struct {
+	NormalizedAria
+	Was             string `json:"was"`
+	WasHandle       string `json:"was_handle,omitempty"`
+	ForkPoint       string `json:"fork_point,omitempty"`
+	ForkPointHandle string `json:"fork_point_handle,omitempty"`
+	Kept            string `json:"kept,omitempty"`
+}
+
+type RestoreForksResponse struct {
+	DryRun   bool           `json:"dry_run,omitempty"`
+	Restored []RestoredFork `json:"restored"`
+	Kept     []RestoredFork `json:"kept"`
+}
+
+// PlacedAria is a figaro whose placement or fork point needs its owner's
+// eye. Names is the store's name for a node that is gone.
+type PlacedAria struct {
+	NormalizedAria
+	ForkPoint       string `json:"fork_point,omitempty"`
+	ForkPointHandle string `json:"fork_point_handle,omitempty"`
+	Under           string `json:"under,omitempty"`
+	UnderHandle     string `json:"under_handle,omitempty"`
+	Names           string `json:"names,omitempty"`
+}
+
+// PlacementsResponse: Placed answer to a figaro other than their fork point,
+// Lost hold nothing because their placement names a node that is gone, and
+// Dangling read as top-level because their fork point names no node.
+type PlacementsResponse struct {
+	Placed   []PlacedAria `json:"placed"`
+	Lost     []PlacedAria `json:"lost"`
+	Dangling []PlacedAria `json:"dangling"`
+}
+
 // PromoteRequest climbs a trunk up to Levels levels, absorbing its
 // parent trunk's run; it stops at the outfit version or root it was born under.
 type PromoteRequest struct {
