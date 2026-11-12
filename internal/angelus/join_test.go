@@ -132,6 +132,35 @@ func TestShutdownWaitsForAWriterBeforeClosingTheStore(t *testing.T) {
 	}
 }
 
+// When the bound expires the straggler is named, the store keeps .unclean,
+// and the straggler's late write gets an error instead of a handle.
+func TestShutdownPastTheBoundNamesTheStragglerAndLeavesUnclean(t *testing.T) {
+	logs := captureLogs(t)
+	r := newJoinRig(t)
+	r.a.SetJoinBoundForTest(50 * time.Millisecond)
+	release := make(chan struct{})
+	wrote := make(chan error, 1)
+	r.a.Go("stuck writer", func() {
+		<-release
+		wrote <- r.write("too-late")
+	})
+	r.a.Shutdown(time.Second)
+
+	if !strings.Contains(logs.String(), "stuck writer") {
+		t.Fatalf("the timeout log does not name the straggler:\n%s", logs.String())
+	}
+	if !r.unclean(t) {
+		t.Fatal(".unclean was cleared although the join timed out")
+	}
+	close(release)
+	if err := <-wrote; !errors.Is(err, store.ErrClosed) {
+		t.Fatalf("a write after the fence: got %v, want store.ErrClosed", err)
+	}
+	if _, err := r.backend.OpenFigIR(r.aria); !errors.Is(err, store.ErrClosed) {
+		t.Fatalf("a read handle after the fence: got %v, want store.ErrClosed", err)
+	}
+}
+
 // After a clean stop nothing reopens the store: writes and read handles are
 // refused alike.
 func TestNothingReopensTheStoreAfterACleanStop(t *testing.T) {
