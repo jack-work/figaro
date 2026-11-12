@@ -683,6 +683,72 @@ func TestSuccessionMinterRefusalPages(t *testing.T) {
 	require.Len(t, r.arias(), 2)
 }
 
+// A lease holds at most two figaros: the old one goes when the new one has ramped, not a ttl later.
+func TestSuccessionMinterMayPurgePredecessor(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	role := r.role(old, map[string]any{"name": "lease"})
+	var pooled string
+	r.a.SuccessorMinter = func(ctx context.Context, m angelus.SuccessorMint) (angelus.MintedSuccessor, bool, error) {
+		created, err := r.acli.Create(ctx, dress(t, "heir"), nil)
+		if err != nil {
+			return angelus.MintedSuccessor{}, true, err
+		}
+		pooled = created.FigaroID
+		return angelus.MintedSuccessor{ID: pooled, PurgePredecessor: true}, true, nil
+	}
+	r.p.set(func() { r.p.holdOthers = true })
+	r.cross(old)
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "ramping" }, "the succession never reached its ramp")
+	require.Contains(t, r.arias(), old, "the predecessor was purged before its successor's first turn ended")
+
+	r.p.set(func() { close(r.p.release); r.p.release = make(chan struct{}); r.p.holdOthers = false })
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "" }, "the succession never finished")
+	r.eventually(func() bool {
+		for _, id := range r.arias() {
+			if id == old {
+				return false
+			}
+		}
+		return true
+	}, "the predecessor was kept")
+	require.Equal(t, pooled, r.holder(role))
+	require.Equal(t, []string{pooled}, r.arias())
+}
+
+// A predecessor that cannot be purged (here it has a live branch) must not
+// linger unnoticed: it retires with its ttl and the page says the purge failed.
+func TestSuccessionFailedPurgeRetiresAndPages(t *testing.T) {
+	r := successionDaemon(t)
+	king := r.aria(nil)
+	old := r.aria(succeeding(map[string]any{"page": king}))
+	role := r.role(old, map[string]any{"name": "lease"})
+	var pooled string
+	r.a.SuccessorMinter = func(ctx context.Context, m angelus.SuccessorMint) (angelus.MintedSuccessor, bool, error) {
+		created, err := r.acli.Create(ctx, dress(t, "heir"), nil)
+		if err != nil {
+			return angelus.MintedSuccessor{}, true, err
+		}
+		pooled = created.FigaroID
+		return angelus.MintedSuccessor{ID: pooled, PurgePredecessor: true}, true, nil
+	}
+	r.p.set(func() { r.p.holdOthers = true })
+	r.cross(old)
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "ramping" }, "the succession never reached its ramp")
+	_, err := r.acli.Fork(r.ctx, old, 0, 0, nil, nil)
+	require.NoError(t, err)
+
+	r.p.set(func() { close(r.p.release); r.p.release = make(chan struct{}); r.p.holdOthers = false })
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "" }, "the succession never finished")
+	require.Contains(t, r.arias(), old, "a predecessor with a live branch was purged")
+	require.True(t, r.retired(old), "an unpurged predecessor was left unretired")
+	require.Equal(t, pooled, r.holder(role))
+	require.Empty(t, r.failed(old), "the handover itself succeeded")
+	r.eventually(func() bool { return strings.Contains(r.heard(king), "could not be purged") }, "nobody was told the purge failed")
+	require.Contains(t, r.heard(king), old)
+	require.Contains(t, r.heard(king), pooled)
+}
+
 // A prompt queued before the threshold was crossed runs first. Its turn ending
 // is not the handoff: minting then would give the successor a predecessor that
 // has not written anything down yet.

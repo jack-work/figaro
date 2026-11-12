@@ -41,6 +41,7 @@ type successionRecord struct {
 	Successor  string   `json:"successor,omitempty"`
 	Roles      []string `json:"roles,omitempty"`
 	DeadlineMS int64    `json:"deadline"`
+	Purge      bool     `json:"purge,omitempty"`
 }
 
 type successions struct {
@@ -466,7 +467,7 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 		h.failSuccession(ctx, rec, "mint the successor: "+err.Error())
 		return
 	}
-	rec.Successor = minted.ID
+	rec.Successor, rec.Purge = minted.ID, minted.PurgePredecessor
 	if err := h.placeBeside(ctx, rec.Successor, rec.Old); err != nil {
 		h.discardSuccessor(ctx, rec.Successor)
 		rec.Successor = ""
@@ -511,7 +512,8 @@ type SuccessorMint struct {
 }
 
 type MintedSuccessor struct {
-	ID string
+	ID               string
+	PurgePredecessor bool
 }
 
 type SuccessorMinter func(ctx context.Context, m SuccessorMint) (minted MintedSuccessor, mine bool, err error)
@@ -632,6 +634,12 @@ func (h *handlers) lastTurns(id string, n int) string {
 }
 
 func (h *handlers) completeSuccession(ctx context.Context, rec successionRecord) {
+	var unpurged error
+	if rec.Purge {
+		if unpurged = h.purgePredecessor(ctx, rec); unpurged == nil {
+			return
+		}
+	}
 	r, snap := h.retirementOf(rec.Old)
 	old, err := h.successionParty(ctx, rec.Old)
 	if err != nil {
@@ -658,6 +666,24 @@ func (h *handlers) completeSuccession(ctx context.Context, rec successionRecord)
 		slog.Error("succession: forget a finished succession", "aria", rec.Old, "err", err)
 	}
 	slog.Info("succession complete", "aria", rec.Old, "successor", rec.Successor, "roles", rec.Roles)
+	if unpurged != nil {
+		h.pageSuccession(ctx, rec.Old, r, fmt.Sprintf(
+			"figaro %s handed over to %s but could not be purged, so it is retired and goes with its ttl instead. Reason: %s.",
+			rec.Old, rec.Successor, unpurged))
+	}
+}
+
+func (h *handlers) purgePredecessor(ctx context.Context, rec successionRecord) error {
+	raw, _ := json.Marshal(rpc.KillRequest{FigaroID: rec.Old})
+	if _, err := h.kill(ctx, raw); err != nil {
+		slog.Error("succession: the predecessor could not be purged and is retired instead", "aria", rec.Old, "successor", rec.Successor, "err", err)
+		return err
+	}
+	if err := h.succ.remove(rec.Old); err != nil {
+		slog.Error("succession: forget a finished succession", "aria", rec.Old, "err", err)
+	}
+	slog.Info("succession complete, predecessor purged", "aria", rec.Old, "successor", rec.Successor, "roles", rec.Roles)
+	return nil
 }
 
 func (h *handlers) failSuccession(ctx context.Context, rec successionRecord, why string) {
