@@ -816,23 +816,26 @@ func shortCwd(p string) string {
 	return p
 }
 
-func runKill(loaded *config.Loaded, idFlag string, args []string, recursive, now bool, when string) {
+func runKill(loaded *config.Loaded, idFlag string, args []string, recursive, keep, now bool, when string) {
 	ariaID := idFlag
 	if ariaID == "" && len(args) > 0 {
 		ariaID = args[0]
 	}
 	if ariaID == "" {
-		dieUsage("usage: figaro kill [--id <trunk> | <trunk>] [-r] [--when <duration> | --now]")
+		dieUsage("usage: figaro kill [--id <trunk> | <trunk>] [-r | --keep-children] [--when <duration> | --now]")
 	}
-	req, err := killRequest(ariaID, recursive, now, when)
+	req, err := killRequest(ariaID, recursive, keep, now, when)
 	if err != nil {
 		dieUsage("kill: %s", err)
 	}
 	runKillRequest(loaded, req)
 }
 
-func killRequest(id string, recursive, now bool, when string) (rpc.KillRequest, error) {
-	req := rpc.KillRequest{FigaroID: id, Recursive: recursive, Now: now}
+func killRequest(id string, recursive, keep, now bool, when string) (rpc.KillRequest, error) {
+	req := rpc.KillRequest{FigaroID: id, Recursive: recursive, KeepChildren: keep, Now: now}
+	if recursive && keep {
+		return req, errors.New("-r takes the children and --keep-children lifts them; ask for one")
+	}
 	if when == "" {
 		return req, nil
 	}
@@ -867,6 +870,9 @@ func runKillRequest(loaded *config.Loaded, req rpc.KillRequest) {
 		name := ariaName(req.FigaroID)
 		for _, role := range resp.Roles {
 			fmt.Fprintf(stderrw, "took role %s\n", role)
+		}
+		for _, kid := range resp.Lifted {
+			fmt.Fprintf(stderrw, "lifted %s\n", ariaName(kid))
 		}
 		if resp.PurgeAt == 0 {
 			fmt.Fprintf(stderrw, "killed %s\n", name)

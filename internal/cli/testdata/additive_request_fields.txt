@@ -83,6 +83,7 @@ ImportTokenRequest.Token
 InterruptRequest.Queue
 KillRequest.FigaroID
 KillRequest.GraceMS
+KillRequest.KeepChildren
 KillRequest.Now
 KillRequest.Recursive
 LineageRequest.Against
