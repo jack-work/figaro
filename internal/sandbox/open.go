@@ -19,6 +19,9 @@ type Opened struct {
 
 func Open(ctx context.Context, host *local.Host, loaded *config.Loaded, kind, aria, workspace string) (Opened, error) {
 	if b, ok := loaded.Box(kind); ok {
+		if b.Exec == "" {
+			return Opened{Sandbox: socketless{box: kind}}, nil
+		}
 		return openBox(ctx, kind, b, aria, workspace)
 	}
 	switch kind {
@@ -51,7 +54,7 @@ func openBox(ctx context.Context, name string, b config.BoxConfig, aria, workspa
 
 func KillBoxScope(ctx context.Context, loaded *config.Loaded, kind, aria string) (int, error) {
 	b, ok := loaded.Box(kind)
-	if !ok {
+	if !ok || b.Exec == "" {
 		return 0, nil
 	}
 	return box.Provider{Name: kind, Socket: b.Exec}.KillScope(ctx, aria)
