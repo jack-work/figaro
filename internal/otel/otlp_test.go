@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -80,4 +81,43 @@ func TestOTLPEndpointDownNeitherFailsInitNorHangsShutdown(t *testing.T) {
 	start := time.Now()
 	_ = shutdown(ctx)
 	assert.Less(t, time.Since(start), 8*time.Second)
+}
+
+// A collector that accepts the request and never answers held daemon exit,
+// and the store lock with it, for the full 5 s export timeout while the next
+// daemon waited. The files already hold every span and log line, so the exit
+// flush gets ExitFlush and no more.
+func TestShutdownAgainstACollectorThatNeverAnswersTakesTheExitFlushBudget(t *testing.T) {
+	var reached atomic.Int32
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached.Add(1)
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	figOtel.SetOTLPEndpoint(srv.URL)
+	defer figOtel.SetOTLPEndpoint("")
+	prev := slog.Default()
+	defer slog.SetDefault(prev)
+
+	ctx := context.Background()
+	shutdown, err := figOtel.Init(ctx, t.TempDir())
+	require.NoError(t, err)
+	_, span := figOtel.Start(ctx, "test.otlp.wedged")
+	span.End()
+	slog.Info("otlp wedged record")
+	figOtel.RecordRPC(ctx, time.Millisecond)
+
+	start := time.Now()
+	_ = shutdown(ctx)
+	took := time.Since(start)
+
+	require.Positive(t, reached.Load(), "the flush never reached the collector, so nothing was bounded")
+	assert.GreaterOrEqual(t, took, figOtel.ExitFlush, "the flush gave up before its budget")
+	assert.Less(t, took, 3*time.Second, "the next daemon waits on the store lock for as long as this takes")
 }

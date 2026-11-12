@@ -307,7 +307,7 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 	shutdown := func(ctx context.Context) error {
 		if _, ok := ctx.Deadline(); !ok && remote != nil {
 			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, otlpTimeout)
+			ctx, cancel = context.WithTimeout(ctx, ExitFlush)
 			defer cancel()
 		}
 		var first error
