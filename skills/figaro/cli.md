@@ -312,6 +312,46 @@ retires again at the end of its first turn. A malformed table (an unknown
 field, a threshold outside 1 token to 100%, a ttl that is not a duration) is
 refused at set.
 
+`action = "succeed"` in that table makes the figaro hand over before it
+retires, so no seat is left with no holder:
+
+```toml
+system.retirement = { context_threshold = 300000, ttl = "72h", action = "succeed", page = "@a1b2c3d4", ramp = "~/succession/ramp.md" }
+```
+
+1. At 80% of the threshold, the next prompt it takes carries one notice to
+   start handing over.
+2. At the threshold it gets one generated final turn, "write your handoff
+   now", naming each role it holds and the path at that role's handoff key
+   (`succession-policy.handoff-key`, `handoff` by default).
+3. When that turn ends the daemon mints the successor: on the roles'
+   `succession-policy.outfit`, or with no role on the figaro's own outfit,
+   provider, model and thinking. It carries the same `system.retirement`,
+   `system.scopes` and `system.sandbox`, and is drawn beside the old one when
+   the old one was drawn somewhere by hand.
+4. The successor is cast into every role the old one holds, then prompted
+   with a ramp brief: the predecessor's id, the roles and handoff paths, the
+   predecessor's last `ramp_turns` turns (5), and the `ramp` path to read
+   first.
+5. The old figaro retires, with `ttl`, only when the successor's first turn
+   ends.
+
+Whatever fails leaves the old figaro unretired and holding its roles: a cast
+the role's owner check refuses, roles naming different outfits, a mint that
+fails, the final turn or the successor's first turn failing or outliving
+`timeout` (30m each; a deadline is noticed on the sweep, so up to one
+`sweep_interval_seconds` late, also after a daemon restart). The reason is
+written to `system.succession_failed` (owner-held) and sent to `page`, a
+figaro or a role; with no `page`, to the figaro it is drawn under (the
+holder, when that node is a role); with neither, it is an ERROR in the daemon
+log. A successor
+whose first turn failed is kept for a day. No new succession starts until the
+owner unsets `system.succession_failed`. Successions in flight are listed in
+the catalog `@successions` (`figaro form show @successions`).
+
+A daemon from before these fields refuses a table that carries `action`,
+`page`, `timeout`, `ramp` or `ramp_turns`.
+
 `system.reap_if_empty = true` reaps a figaro that never had a message: no
 prompt, no reply. Empty means no messages, not no state: a figaro used only as
 a board (keys set, no turns) is reaped too. Once it is a minute past its birth
