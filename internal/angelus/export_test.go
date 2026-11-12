@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/jkrpc"
 	"time"
 )
 
@@ -94,4 +95,20 @@ func (hs *Handlers) HoldSuccessionsForTest() (letGo func()) {
 func (hs *Handlers) WaitSuccessionsForTest() {
 	hs.h.succ.run.Lock()
 	defer hs.h.succ.run.Unlock()
+}
+
+func (a *Angelus) SetJoinBoundForTest(d time.Duration) { a.joinFor = d }
+
+func (a *Angelus) StoppingForTest() bool { return a.inflight.sealed.Load() }
+
+func (a *Angelus) OutForTest() []string {
+	a.inflight.mu.Lock()
+	defer a.inflight.mu.Unlock()
+	return a.inflight.names()
+}
+
+var ErrStoppingForTest = errStopping
+
+func (a *Angelus) JoinedForTest(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
+	return a.refusingWhenStopping(a.joined(method, next))
 }

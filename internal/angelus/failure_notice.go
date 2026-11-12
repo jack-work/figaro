@@ -19,7 +19,7 @@ type failureNoticeReceiver interface {
 const failureNoticeTimeout = 30 * time.Second
 
 func (h *handlers) tellFailure(n figaro.FailureNotice) {
-	go func() {
+	h.angelus.Go("turn failure notice", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), failureNoticeTimeout)
 		defer cancel()
 		if err := h.senderMaySend(ctx, n); err != nil {
@@ -38,7 +38,7 @@ func (h *handlers) tellFailure(n figaro.FailureNotice) {
 		if err := r.SubmitFailureNotice(n.From, n.Text); err != nil {
 			slog.Warn("turn failure notice refused by its receiver", "from", n.From, "to", n.To, "err", err)
 		}
-	}()
+	})
 }
 
 func (h *handlers) senderMaySend(ctx context.Context, n figaro.FailureNotice) error {

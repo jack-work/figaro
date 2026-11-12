@@ -1232,24 +1232,30 @@ func (b *XwalBackend) CollectStump(stumpID string) error {
 }
 
 func (b *XwalBackend) Close() error {
-	// Before the lock: each fold goroutine is stopped and joined, and it
-	// writes to a form while it drains.
+	for _, f := range b.takeForms() {
+		f.CloseAndSettle()
+	}
+	return b.store.trunks.Close()
+}
+
+func (b *XwalBackend) takeForms() []*Form {
 	b.closeLibrettos()
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.open = map[string]*ariaHandle{}
+	forms := make([]*Form, 0, len(b.forms)+1)
 	for _, f := range b.forms {
-		f.Close()
+		forms = append(forms, f)
 	}
 	b.forms = map[string]*Form{}
+	b.open = map[string]*ariaHandle{}
+	b.metas = map[string]*metaCache{}
+	b.mu.Unlock()
 	b.modelsMu.Lock()
 	if b.models != nil {
-		b.models.Close()
+		forms = append(forms, b.models)
 		b.models = nil
 	}
 	b.modelsMu.Unlock()
-	b.metas = map[string]*metaCache{}
-	return b.store.trunks.Close() // Trunks.Close flushes the topology index
+	return forms
 }
 
 func (b *XwalBackend) LoadedHeads() int { return b.store.LoadedHeads() }
