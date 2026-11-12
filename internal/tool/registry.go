@@ -5,10 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/jack-work/figaro/api/sandbox"
-	"github.com/jack-work/figaro/internal/sandbox/local"
 )
 
 type Registry struct {
@@ -127,9 +125,3 @@ func resolve(cwdFn func() string, path string) string {
 	}
 	return filepath.Join(cwdOf(cwdFn), path)
 }
-
-type SessionRegistry = local.Host
-
-func NewSessionRegistry(ttl time.Duration) *SessionRegistry { return local.NewHost(ttl) }
-
-const DefaultSessionTTL = local.DefaultTTL
