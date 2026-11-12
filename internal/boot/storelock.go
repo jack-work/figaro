@@ -1,6 +1,7 @@
 package boot
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -34,4 +35,20 @@ func StoreLockOwner() (pid int, held bool) {
 		return 0, true
 	}
 	return pid, true
+}
+
+func StoreLockHolder() (who string, pid int, held bool) {
+	pid, held = StoreLockOwner()
+	switch {
+	case !held:
+		return "", 0, false
+	case pid <= 0:
+		return "a process that recorded no pid", 0, true
+	case processGone(pid):
+		return fmt.Sprintf("a process other than the one on record (pid %d, which is gone)", pid), 0, true
+	}
+	if cmd := processCommand(pid); cmd != "" {
+		return fmt.Sprintf("pid %d (%s)", pid, cmd), pid, true
+	}
+	return fmt.Sprintf("pid %d", pid), pid, true
 }

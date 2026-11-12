@@ -16,3 +16,7 @@ func TryLockFile(f *os.File) error {
 		0, 1, 0, ol,
 	)
 }
+
+func processGone(int) bool { return false }
+
+func processCommand(int) string { return "" }
