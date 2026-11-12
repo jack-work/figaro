@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -195,6 +196,7 @@ type Policies struct {
 	troupe  atomic.Pointer[troupeLayer]
 	schema  jkauthz.Schema[Resource]
 	boxes   []string
+	pool    bool
 	parsed  parsedGrants
 	retired []string
 
@@ -220,6 +222,12 @@ func (p *Policies) SetIssuerScopes(scopes []string) {
 	p.scopes = scopes
 }
 
+func (p *Policies) SetPoolDaemon(pool bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pool = pool
+}
+
 func (p *Policies) SetBoxes(names []string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -230,6 +238,9 @@ func (p *Policies) Reload(path string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.path = path
+	if path == "" && p.pool {
+		return errors.New("policy: a daemon that leases slots names its policy file and never takes the default policy")
+	}
 	if path == "" {
 		return p.load([]byte(DefaultPolicy(p.self, p.boxes)))
 	}
@@ -261,6 +272,11 @@ func (p *Policies) load(data []byte) error {
 	pol, err := jkauthz.Compile(rest, p.schema)
 	if err != nil {
 		return err
+	}
+	if p.pool {
+		if err := refuseWhatAPoolPolicyCannotBind(data); err != nil {
+			return err
+		}
 	}
 	p.store.Set(pol)
 	p.figaroCeiling.Store(ceiling.set)

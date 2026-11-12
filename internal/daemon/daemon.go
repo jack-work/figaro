@@ -344,6 +344,10 @@ func Run() {
 	defer lockF.Close()
 
 	figOtel.SetConfiguredLevel(loaded.TelemetryLevel())
+	if loaded.PoolDaemon() && figOtel.LogsAtDebug() {
+		fmt.Fprintln(os.Stderr, "angelus: FIGARO_LOG_LEVEL asks for debug logs, which carry prompt text; a daemon that leases slots does not start at that level")
+		os.Exit(1)
+	}
 	figOtel.SetOTLPEndpoint(loaded.TelemetryOTLPEndpoint())
 	figOtel.SetServiceVersion(boot.ServiceVersion())
 	otelShutdown, err := figOtel.Init(context.Background(), loaded.TelemetryDir(boot.StateDir()))
@@ -386,6 +390,7 @@ func Run() {
 	}
 	a.Peercred = peer
 	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
+	a.Policies.SetPoolDaemon(loaded.PoolDaemon())
 	a.Policies.SetBoxes(loaded.DooredBoxes())
 	a.Policies.SetBoxesRequiringClaim(loaded.BoxesRequiringClaim())
 	a.Policies.SetIssuerScopes(authz.IssuerScopes(loaded.Config.Authz))
@@ -398,6 +403,10 @@ func Run() {
 		os.Exit(1)
 	}
 	if err := a.Policies.Reload(loaded.PolicyPath()); err != nil {
+		if loaded.PoolDaemon() {
+			fmt.Fprintf(os.Stderr, "angelus: %v; a daemon that leases slots does not start without its policy\n", err)
+			os.Exit(1)
+		}
 		slog.Error("authz: no policy in force; every call that needs one is refused", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v; every call that needs a policy is refused until it loads\n", err)
 	}

@@ -204,6 +204,8 @@ var configuredLevel string
 // SetConfiguredLevel must be called before Init.
 func SetConfiguredLevel(level string) { configuredLevel = level }
 
+func LogsAtDebug() bool { return envLogLevel() == slog.LevelDebug }
+
 // The file sink exports inline: a queue before it retains records at idle.
 const fileQueue = 0
 

@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -99,6 +100,10 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 		slog.Error("config reload refused; the running config stays", "err", err)
 		return nil, fmt.Errorf("configure: %w", err)
 	}
+	if err := keepsItsKind(loaded, fresh); err != nil {
+		slog.Error("config reload refused; the running config stays", "err", err)
+		return nil, fmt.Errorf("configure: %w", err)
+	}
 	if err := h.angelus.ReloadBoxDoors(fresh); err != nil {
 		slog.Error("config reload refused at a box door; the running config stays", "err", err)
 		return nil, fmt.Errorf("configure: %w", err)
@@ -118,6 +123,16 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 		return nil, fmt.Errorf("configure: the new config and its box doors are in force, but the policy did not reload: %w", err)
 	}
 	return resp, nil
+}
+
+func keepsItsKind(running, fresh *config.Loaded) error {
+	switch {
+	case running.PoolDaemon() && !fresh.PoolDaemon():
+		return errors.New("the new config has no [slot.pools] and this daemon started with one: a pool daemon keeps its refusals until it stops; turn a pool off with enabled = false, or stop the daemon")
+	case !running.PoolDaemon() && fresh.PoolDaemon():
+		return errors.New("the new config has [slot.pools] and this daemon started without one: a daemon becomes a pool daemon only at start")
+	}
+	return nil
 }
 
 func loadedOutfitPath(h *handlers, name string) string {
