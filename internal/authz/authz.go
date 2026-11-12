@@ -304,6 +304,9 @@ func Enforce(p *Policies) Policy {
 				return d
 			}
 		}
+		if r.Method == rpc.MethodDecide && r.Aria != "" && !view.Allow(r.Subject, rpc.VerbRead, Aria(r.Aria)).Allowed {
+			return Decision{Hidden: true}
+		}
 		return decided(Allow())
 	})
 }
