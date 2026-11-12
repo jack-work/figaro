@@ -103,6 +103,7 @@ func successionDaemon(t *testing.T) *successionRig {
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
 	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\n"), 0o600))
 	require.NoError(t, os.WriteFile(dir+"/outfits/heir.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"heir-model\"\n"), 0o600))
+	require.NoError(t, os.WriteFile(dir+"/outfits/tooled.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"heir-model\"\ntools = [\"bash\"]\n"), 0o600))
 	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte("default_outfit = \"mock\"\n"), 0o600))
 	p := newSuccessionProvider()
 	tree := t.TempDir()
@@ -338,6 +339,76 @@ func TestSuccessionKeepsTheSuccessorNarrow(t *testing.T) {
 	scopes, ok := snap.Get("system.scopes")
 	require.True(t, ok, "the successor came out wider than its predecessor")
 	require.JSONEq(t, `["send:*"]`, string(scopes))
+}
+
+func (r *successionRig) heldAtItsRamp(old string) string {
+	r.t.Helper()
+	r.p.set(func() { r.p.holdOthers = true })
+	r.cross(old)
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "ramping" }, "the succession never reached its ramp")
+	return r.hs.SuccessorOf(old)
+}
+
+// Inspector XV, C1: narrowing is the intersection down the ancestry, and the
+// successor is born outside the predecessor's. What the ancestors took away
+// has to travel in the successor's own key.
+func TestSuccessionKeepsInheritedNarrowing(t *testing.T) {
+	r := successionDaemon(t)
+	parent := r.aria(nil)
+	turnOn(t, r.a, parent, "before the fork")
+	fr, err := r.acli.Fork(r.ctx, parent, 0, 0, nil, nil)
+	require.NoError(t, err)
+	old := fr.Alternative
+	r.p.set(func() { r.p.known[old] = true })
+	ownerSets(t, r.a, old, map[string]any{"system.retirement": succeeding(nil)})
+	ownerSets(t, r.a, parent, map[string]any{"system.scopes": []string{"send:*"}})
+	require.False(t, r.has(old, "system.scopes"), "the predecessor is narrowed by its own key, not its parent's")
+	before, held := r.a.Policies.Effective(old)
+	require.True(t, held)
+	require.Equal(t, []string{"send:*"}, before.Strings())
+
+	next := r.heldAtItsRamp(old)
+	after, held := r.a.Policies.Effective(next)
+	require.True(t, held)
+	require.Equal(t, []string{"send:*"}, after.Strings(), "the successor left its predecessor's ancestors and their narrowing behind")
+}
+
+func TestSuccessionRefusesScopesItCannotRead(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	snap, err := r.a.Backend.FormState(old)
+	require.NoError(t, err)
+	_, err = r.a.Backend.ApplyForm(old, form.Build(snap, map[string]json.RawMessage{
+		form.ScopesKey: json.RawMessage(`["send:*"]`), form.RetiredGrantsKey: json.RawMessage(`["*:*"]`),
+	}, nil))
+	require.NoError(t, err)
+	r.cross(old)
+	r.requireUnretiredAndPaged(old, "", "read the predecessor's scopes")
+	require.Len(t, r.arias(), 1, "a successor was minted for a predecessor whose scopes nobody could read")
+}
+
+// Inspector XV, C2: the tool allowlist is owner-held and per figaro. The
+// outfit the role names must not hand back what the owner took away.
+func TestSuccessionKeepsThePredecessorsTools(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	ownerSets(t, r.a, old, map[string]any{"system.tools": []string{}})
+	r.role(old, map[string]any{"name": "warden", "succession-policy": map[string]any{"outfit": "tooled"}})
+	next := r.heldAtItsRamp(old)
+	require.Equal(t, "heir-model", r.key(next, "system.model"))
+	snap, err := r.a.Backend.FormState(next)
+	require.NoError(t, err)
+	tools, ok := snap.Get("system.tools")
+	require.True(t, ok)
+	require.JSONEq(t, `[]`, string(tools), "the successor took the outfit's tools over its predecessor's allowlist")
+}
+
+func TestSuccessionKeepsThePredecessorsSandbox(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	ownerSets(t, r.a, old, map[string]any{"system.sandbox": "local"})
+	next := r.heldAtItsRamp(old)
+	require.Equal(t, "local", r.key(next, "system.sandbox"), "the successor does not carry its predecessor's sandbox key")
 }
 
 func TestSuccessionDrawsTheSuccessorBesideIt(t *testing.T) {

@@ -405,6 +405,21 @@ func copied(snap form.Snapshot, keys map[string]json.RawMessage, names ...string
 	}
 }
 
+func (h *handlers) carriedScopes(old string, snap form.Snapshot) (json.RawMessage, bool, error) {
+	if p := h.angelus.Policies; p != nil {
+		eff, held := p.Effective(old)
+		if !held {
+			return nil, false, errors.New("its effective scopes are not held here")
+		}
+		if alone, _ := p.EffectiveAlone(old); !p.Covers(eff, alone) {
+			raw, err := json.Marshal(eff.Strings())
+			return raw, true, err
+		}
+	}
+	raw, _, ok, err := form.OwnScopes(snap)
+	return raw, ok, err
+}
+
 func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 	r, snap := h.retirementOf(rec.Old)
 	roles, err := h.rolesHeldBy(rec.Old)
@@ -419,7 +434,15 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 		return
 	}
 	keys := map[string]json.RawMessage{store.SystemTTLKey: json.RawMessage(`"0"`)}
-	copied(snap, keys, store.SystemRetirementKey, "system.scopes", "system.sandbox")
+	copied(snap, keys, store.SystemRetirementKey, "system.sandbox", "system.tools")
+	scopes, narrowed, err := h.carriedScopes(rec.Old, snap)
+	if err != nil {
+		h.failSuccession(ctx, rec, "read the predecessor's scopes: "+err.Error())
+		return
+	}
+	if narrowed {
+		keys[form.ScopesKey] = scopes
+	}
 	if outfit == "" {
 		if v := snap.Lookup("system.outfit_name"); v != nil {
 			outfit = *v
