@@ -320,7 +320,7 @@ func (in *interactiveInput) attendFromPager(id string) {
 // commandKill decides the successor before the kill: a dead aria cannot be
 // asked for its parent.
 func (in *interactiveInput) commandKill(ctx context.Context, args []string) (string, error) {
-	spec, recursive, err := parseKillArgs(args)
+	spec, req, err := parseKillArgs(args)
 	if err != nil {
 		return "", err
 	}
@@ -335,11 +335,13 @@ func (in *interactiveInput) commandKill(ctx context.Context, args []string) (str
 	if id == "" {
 		return "", errors.New("kill: no aria named and none on screen")
 	}
-	return in.killAria(ctx, id, recursive, "")
+	req.FigaroID = id
+	return in.killAria(ctx, req, "")
 }
 
 // prefer is honoured only if alive and not the aria being killed.
-func (in *interactiveInput) killAria(ctx context.Context, id string, recursive bool, prefer string) (string, error) {
+func (in *interactiveInput) killAria(ctx context.Context, req rpc.KillRequest, prefer string) (string, error) {
+	id := req.FigaroID
 	acli, err := in.angelus()
 	if err != nil {
 		return "", err
@@ -348,14 +350,14 @@ func (in *interactiveInput) killAria(ctx context.Context, id string, recursive b
 	// under the session.
 	onScreen := id == in.currentID()
 	if !onScreen {
-		if _, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: id, Recursive: recursive}); err != nil {
+		if _, err := acli.Kill(ctx, req); err != nil {
 			return "", fmt.Errorf("kill %s: %w", ariaName(id), err)
 		}
 		return "killed " + ariaName(id), nil
 	}
 	successor := in.successorFor(ctx, acli, id, prefer)
 	if successor == "" {
-		if _, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: id, Recursive: recursive}); err != nil {
+		if _, err := acli.Kill(ctx, req); err != nil {
 			return "", fmt.Errorf("kill %s: %w", ariaName(id), err)
 		}
 		in.leaveSession()
@@ -365,7 +367,7 @@ func (in *interactiveInput) killAria(ctx context.Context, id string, recursive b
 	if aerr != nil {
 		return "", aerr
 	}
-	if _, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: id, Recursive: recursive}); err != nil {
+	if _, err := acli.Kill(ctx, req); err != nil {
 		return "", fmt.Errorf("kill %s: %w", ariaName(id), err)
 	}
 	return "killed " + ariaName(id) + "; " + note, nil
@@ -394,12 +396,14 @@ func (in *interactiveInput) askKill(args []string) {
 	in.mu.Unlock()
 }
 
-func parseKillArgs(args []string) (spec string, recursive bool, err error) {
+func parseKillArgs(args []string) (spec string, req rpc.KillRequest, err error) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
 		case a == "-r" || a == "--recursive":
-			recursive = true
+			req.Recursive = true
+		case a == "--keep-children":
+			req.KeepChildren = true
 		case a == "--id" || a == "-i":
 			if i+1 < len(args) {
 				i++
@@ -408,12 +412,15 @@ func parseKillArgs(args []string) (spec string, recursive bool, err error) {
 		case strings.HasPrefix(a, "--id="):
 			spec = strings.TrimPrefix(a, "--id=")
 		case strings.HasPrefix(a, "-"):
-			return "", false, fmt.Errorf("kill: unknown flag %s", a)
+			return "", req, fmt.Errorf("kill: unknown flag %s", a)
 		default:
 			spec = a
 		}
 	}
-	return spec, recursive, nil
+	if req.Recursive && req.KeepChildren {
+		return "", req, errors.New("kill: -r takes the children and --keep-children lifts them; ask for one")
+	}
+	return spec, req, nil
 }
 
 // successorFor: the caller's preferred neighbour, else the history's most
@@ -1086,7 +1093,7 @@ func (in *interactiveInput) dropPitRow(name, id, next string) {
 	if name != "queue" {
 		if rpc.ValidateAriaID(id) == nil {
 			in.commandAsync(func(ctx context.Context) (string, error) {
-				return in.killAria(ctx, id, false, next)
+				return in.killAria(ctx, rpc.KillRequest{FigaroID: id}, next)
 			})
 		}
 		return

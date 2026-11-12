@@ -1268,21 +1268,29 @@ children is left where it is. ` + "`figaro succeed`" + ` demotes the aria it rep
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:    "kill",
-		Group:   "Session",
-		Short:   "Stop a trunk and reap it; purged after a grace",
-		Usage:   "kill [--id <trunk> | <trunk>] [-r] [--when <duration> | --now]",
+		Name:  "kill",
+		Group: "Session",
+		Short: "Stop a trunk and reap it; purged after a grace",
+		Usage: "kill [--id <trunk> | <trunk>] [-r | --keep-children] [--when <duration> | --now]",
+		Long: `Stop a figaro and reap it. What ` + "`figaro ls`" + ` draws under it decides the rest:
+
+  figaro kill <id>                    refuses when anything is drawn under it
+  figaro kill -r <id>                 takes it and everything drawn under it
+  figaro kill --keep-children <id>    takes it alone; its children move up to its parent, or to the top
+
+A lifted child keeps the scopes the killed figaro narrowed it to.`,
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target trunk id"},
-			{Long: "recursive", Short: "r", IsBool: true, Description: "Also take the trunk's live branches"},
+			{Long: "recursive", Short: "r", IsBool: true, Description: "Also take everything drawn under it"},
+			{Long: "keep-children", IsBool: true, Description: "Take it alone and lift its children to its parent, or to the top"},
 			{Long: "when", Description: "Grace before the purge (90m, 6h, 2d, 1w; 0 deletes now); default [memory] kill_grace_hours, 3 days"},
 			{Long: "now", IsBool: true, Description: "Delete at once instead of reaping"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runKill(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("recursive"), ctx.BoolFlag("now"), ctx.Flag("when"))
+			runKill(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("recursive"), ctx.BoolFlag("keep-children"), ctx.BoolFlag("now"), ctx.Flag("when"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
@@ -1535,7 +1543,7 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 				runFormLs(ld, ctx.BoolFlag("json"))
 				return nil
 			case "rm":
-				runKill(ld, "", args[1:], ctx.BoolFlag("recursive"), true, "")
+				runKill(ld, "", args[1:], ctx.BoolFlag("recursive"), false, true, "")
 				return nil
 			case "set":
 				return runFormSet(ld, ctx.Flag("id"), args[1:])

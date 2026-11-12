@@ -305,7 +305,9 @@ unclassified method fails `TestEveryMethodHasAVerb`), checked on
 caller cannot read before it pages, and `node.resolve` answers only the refs
 the caller may read. A call that reaches a second resource
 checks it too: `study` reads its form, `cast` sets its role, `lineage`
-reads `against`, `kill -r` needs `kill` on every figaro it takes. A prompt or
+reads `against`, `kill -r` needs `kill` on every figaro it takes, and
+`kill --keep-children` needs `kill` on each child it lifts plus the receiving
+parent's consent (`adopt`), and never waits for it. A prompt or
 `figaro.follow` subscribes the connection only where the caller holds
 `listen`. Denials are JSON-RPC **-32020** with the reason verbatim. A request
 for a figaro another node holds is forwarded before this node's policy runs,

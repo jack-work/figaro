@@ -17,10 +17,10 @@ type killReaper interface {
 	DeleteSet(id string) []string
 }
 
-func (h *handlers) reapKilled(ctx context.Context, by hierarchy.Principal, id string, recursive bool, until time.Time, authorized []string) (time.Time, bool, error) {
+func (h *handlers) reapKilled(ctx context.Context, by hierarchy.Principal, id string, recursive, lift bool, until time.Time, authorized []string) (time.Time, bool, error) {
 	var at time.Time
 	var reaped bool
-	_, err := h.angelus.topology().Under(ctx, by, hierarchy.Plan{Op: hierarchy.Reap, Node: id, Delete: authorized}, func(p hierarchy.Plan) error {
+	_, err := h.angelus.topology().Under(ctx, by, hierarchy.Plan{Op: hierarchy.Reap, Node: id, Lift: lift, Delete: authorized}, func(p hierarchy.Plan) error {
 		var err error
 		at, reaped, err = h.reapGroup(id, recursive, until, p.Delete, "")
 		return err

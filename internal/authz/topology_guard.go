@@ -98,7 +98,9 @@ func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hier
 	}
 	switch p.Op {
 	case hierarchy.Kill, hierarchy.Reap:
-		return hierarchy.Verdict{}, g.each(caller, rpc.VerbKill, p.Delete)
+		if err := g.each(caller, rpc.VerbKill, p.Delete); err != nil || !p.Lift {
+			return hierarchy.Verdict{}, err
+		}
 	case hierarchy.Restore:
 		return hierarchy.Verdict{}, g.each(caller, rpc.VerbKill, p.Revive)
 	case hierarchy.Place:
