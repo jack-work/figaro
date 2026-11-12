@@ -39,6 +39,7 @@ type Knobs struct {
 	Model            string
 	MaxTokens        int
 	ReminderRenderer string // "tag" (default) or "tool"
+	Lease            string
 }
 
 // Bus is the sink for per-turn provider output.

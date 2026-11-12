@@ -65,8 +65,8 @@ principals = ["user:broker", "user:rival"]
 
 func leasingRig(t *testing.T) grantRig {
 	t.Helper()
-	r := newRigProviding(t, leasingPolicy, leasingConfig, func(string, provider.Knobs) (provider.Provider, error) {
-		return &mockProviderForIntegration{}, nil
+	r := newRigProviding(t, leasingPolicy, leasingConfig, func(_ string, knobs provider.Knobs) (provider.Provider, error) {
+		return &leasedMock{lease: knobs.Lease}, nil
 	}, thatWakesFigaros)
 	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)

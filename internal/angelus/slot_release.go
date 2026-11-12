@@ -161,6 +161,15 @@ func (h *handlers) purgeNow(ctx context.Context, id string) error {
 	return nil
 }
 
+func poolSlots(loaded *config.Loaded) []string {
+	var names []string
+	for _, pool := range loaded.Pools() {
+		p, _ := loaded.Pool(pool)
+		names = append(names, p.SlotNames()...)
+	}
+	return names
+}
+
 func leasedBoxOfSlot(name string, slots []string) bool {
 	for _, slot := range slots {
 		digits, ok := strings.CutPrefix(name, slot+"-g")
@@ -174,11 +183,7 @@ func leasedBoxOfSlot(name string, slots []string) bool {
 func (h *handlers) orphansOfLeases() []string {
 	backend, slots := h.angelus.Backend, h.angelus.Slots
 	loaded, _ := h.settings()
-	var names []string
-	for _, pool := range loaded.Pools() {
-		p, _ := loaded.Pool(pool)
-		names = append(names, p.SlotNames()...)
-	}
+	names := poolSlots(loaded)
 	var forms, figaros []string
 	for _, n := range backend.Nodes() {
 		if n.Kind != store.KindForm && n.Kind != store.KindConversation {

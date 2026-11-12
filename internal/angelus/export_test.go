@@ -2,9 +2,12 @@ package angelus
 
 import (
 	"context"
-	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/jkrpc"
 	"time"
+
+	"github.com/jack-work/jkrpc"
+
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/provider"
 )
 
 func (a *Angelus) SweepLifetimesNow() {
@@ -146,3 +149,7 @@ func (hs *Handlers) KeepReleasingSlotsEvery(ctx context.Context, every time.Dura
 }
 
 func (s *SlotPools) ForgetDeliveries(box string) { s.forgetDeliveries(box) }
+
+func (hs *Handlers) ProviderIn(box, name string) (provider.Provider, error) {
+	return hs.h.factoryIn(box)(name, provider.Knobs{})
+}

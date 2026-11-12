@@ -1043,7 +1043,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 			body.Attach(httpReq)
 			httpReq.Header.Set("Content-Type", "application/json")
 			a.setAuthHeaders(httpReq, token, betaMessages, messageBetas(model)...)
-			provider.StampFigaroID(ctx, httpReq.Header)
+			provider.StampCaller(ctx, httpReq.Header)
 			return httpReq, nil
 		})
 		if err != nil {

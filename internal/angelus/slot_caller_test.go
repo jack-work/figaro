@@ -12,6 +12,15 @@ import (
 	"github.com/jack-work/figaro/internal/slotpool"
 )
 
+// A provider that sends the rou2 lease it was built with, as the routed
+// one does.
+type leasedMock struct {
+	mockProviderForIntegration
+	lease string
+}
+
+func (m *leasedMock) Lease() string { return m.lease }
+
 // rou2 as the lease handlers see it: the leases this daemon opened and
 // closed, in order, and a way to make either call fail.
 type rigRou2 struct {

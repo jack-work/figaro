@@ -11,6 +11,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/figaro/wire"
+	"github.com/jack-work/figaro/internal/provider"
 )
 
 // A rig can wake a dormant figaro only with form templates in hand.
@@ -164,4 +166,69 @@ func TestADeliveryIsRefusedForAnyLeaseButTheCallersLiveOne(t *testing.T) {
 		t.Errorf("the next generation's figaro holds %+v, want the one delivery", got)
 	}
 	waitIdle(t, r.a, next.Aria)
+}
+
+// A figaro in a leased box spends only under its lease (B4): the provider
+// it is woken with is built with the rou2 lease its ledger row names, a
+// provider that would not send one is refused, and so is any provider
+// once the lease is no longer live.
+func TestALeasedFigarosProviderCarriesItsRou2LeaseOrIsNotBuilt(t *testing.T) {
+	r := leasingRig(t)
+	lease, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := r.hs.ProviderIn(lease.Box, "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.(*leasedMock).Lease(); got != "groups/slot0-g1" {
+		t.Errorf("the leased figaro's provider was built with lease %q, want groups/slot0-g1", got)
+	}
+	if p, err := r.hs.ProviderIn("", "mock"); err != nil || p.(*leasedMock).Lease() != "" {
+		t.Errorf("a figaro in no box got a provider with a lease: %v (%v)", p, err)
+	}
+	if _, err := r.hs.ProviderIn("slot0-g9", "mock"); err == nil {
+		t.Error("a provider was built for a generation of a slot that no lease holds")
+	}
+	if _, err := r.hs.ProviderIn("slot5-g1", "mock"); err == nil {
+		t.Error("a provider was built for a slot with no lease")
+	}
+	rou2Of(r).closeFails(errors.New("rou2 is away"))
+	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err == nil {
+		t.Fatal("the release was to fail")
+	}
+	if _, err := r.hs.ProviderIn(lease.Box, "mock"); err == nil {
+		t.Error("a provider was built for a lease that is being released")
+	}
+}
+
+func TestAProviderThatSendsNoLeaseIsNotBuiltForALeasedFigaro(t *testing.T) {
+	r := newRigProviding(t, leasingPolicy, leasingConfig, func(string, provider.Knobs) (provider.Provider, error) {
+		return &mockProviderForIntegration{}, nil
+	}, thatWakesFigaros)
+	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+		t.Fatal(err)
+	}
+	r.writeLeasedOutfit(t, leasedOutfit)
+	slots, err := angelus.OpenSlotPools(t.TempDir(), r.a.Settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.a.Slots = slots
+	r.a.Policies.SetLeases(slots)
+	installRou2(r)
+	lease, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.hs.ProviderIn(lease.Box, "mock"); err == nil {
+		t.Error("a provider that sends no rou2 lease was built for a figaro in a leased box")
+	}
+	if _, err := r.deliver(asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"m1","text":"t"}`); err == nil || !strings.Contains(err.Error(), "sends no rou2 lease") {
+		t.Errorf("a delivery to a leased figaro on a provider that sends no rou2 lease answered %v, want the provider refused", err)
+	}
+	if _, err := r.hs.ProviderIn("", "mock"); err != nil {
+		t.Errorf("a figaro in no box is refused the same provider: %v", err)
+	}
 }

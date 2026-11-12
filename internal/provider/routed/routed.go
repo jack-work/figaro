@@ -127,6 +127,8 @@ func (p *Provider) SetTemplates(t *template.Template) {
 	}
 }
 
+func (p *Provider) Lease() string { return p.knobs.Lease }
+
 func (p *Provider) knobsNow() provider.Knobs {
 	k := p.knobs
 	k.Model = p.model
@@ -220,6 +222,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if p.spec.SendFigaroID {
 		ctx = provider.WithFigaroID(ctx, in.AriaID)
 	}
+	ctx = provider.WithLease(ctx, p.knobs.Lease)
 	model := snapshotString(in.Snapshot, "system.model")
 	if model == "" {
 		p.mu.RLock()
@@ -405,7 +408,7 @@ func (p *Provider) messagesTransport(client *http.Client) anthropic.TransportFn 
 					req.Header.Add(k, v)
 				}
 			}
-			provider.StampFigaroID(ctx, req.Header)
+			provider.StampCaller(ctx, req.Header)
 			return client.Do(req)
 		})
 	}
