@@ -683,23 +683,39 @@ type outfitLabel struct{ name, version string }
 func (b *XwalBackend) labelAll(nodes []NodeView) []NodeView {
 	// Two shapes: an aria under a stump takes the stump's label, an aria born
 	// of ForkWith states its own on its form.
-	var seen map[string]outfitLabel
+	var stumps []string
+	stumpAt := map[string]int{}
+	var own []int
+	slot := make([]int, len(nodes))
 	for i := range nodes {
 		stump := nodes[i].Stump
 		if stump == "" {
-			l := b.labelOf(&nodes[i])
-			nodes[i].Outfit, nodes[i].Version = l.name, l.version
+			slot[i] = -1 - len(own)
+			own = append(own, i)
 			continue
 		}
-		l, ok := seen[stump]
+		at, ok := stumpAt[stump]
 		if !ok {
-			l = b.stumpLabel(stump)
-			if seen == nil {
-				seen = map[string]outfitLabel{}
-			}
-			seen[stump] = l
+			at = len(stumps)
+			stumpAt[stump] = at
+			stumps = append(stumps, stump)
 		}
-		nodes[i].Outfit, nodes[i].Version = l.name, l.version
+		slot[i] = at
+	}
+	labels := make([]outfitLabel, len(stumps)+len(own))
+	eachInParallel(len(labels), func(k int) {
+		if k < len(stumps) {
+			labels[k] = b.stumpLabel(stumps[k])
+			return
+		}
+		labels[k] = b.labelOf(&nodes[own[k-len(stumps)]])
+	})
+	for i := range nodes {
+		k := slot[i]
+		if k < 0 {
+			k = len(stumps) - 1 - k
+		}
+		nodes[i].Outfit, nodes[i].Version = labels[k].name, labels[k].version
 	}
 	return nodes
 }
