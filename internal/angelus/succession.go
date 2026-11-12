@@ -182,7 +182,9 @@ func (s *successions) publish() {
 }
 
 func (h *handlers) successionsForm() *store.Form {
-	h.succ.load()
+	if h.succ == nil {
+		return nil
+	}
 	return h.succ.form
 }
 
@@ -612,8 +614,11 @@ func (h *handlers) lastTurns(id string, n int) string {
 }
 
 func (h *handlers) completeSuccession(ctx context.Context, rec successionRecord) {
-	if rec.Purge && h.purgePredecessor(ctx, rec) {
-		return
+	var unpurged error
+	if rec.Purge {
+		if unpurged = h.purgePredecessor(ctx, rec); unpurged == nil {
+			return
+		}
 	}
 	r, snap := h.retirementOf(rec.Old)
 	old, err := h.successionParty(ctx, rec.Old)
@@ -641,19 +646,24 @@ func (h *handlers) completeSuccession(ctx context.Context, rec successionRecord)
 		slog.Error("succession: forget a finished succession", "aria", rec.Old, "err", err)
 	}
 	slog.Info("succession complete", "aria", rec.Old, "successor", rec.Successor, "roles", rec.Roles)
+	if unpurged != nil {
+		h.pageSuccession(ctx, rec.Old, r, fmt.Sprintf(
+			"figaro %s handed over to %s but could not be purged, so it is retired and goes with its ttl instead. Reason: %s.",
+			rec.Old, rec.Successor, unpurged))
+	}
 }
 
-func (h *handlers) purgePredecessor(ctx context.Context, rec successionRecord) bool {
+func (h *handlers) purgePredecessor(ctx context.Context, rec successionRecord) error {
 	raw, _ := json.Marshal(rpc.KillRequest{FigaroID: rec.Old})
 	if _, err := h.kill(ctx, raw); err != nil {
 		slog.Error("succession: the predecessor could not be purged and is retired instead", "aria", rec.Old, "successor", rec.Successor, "err", err)
-		return false
+		return err
 	}
 	if err := h.succ.remove(rec.Old); err != nil {
 		slog.Error("succession: forget a finished succession", "aria", rec.Old, "err", err)
 	}
 	slog.Info("succession complete, predecessor purged", "aria", rec.Old, "successor", rec.Successor, "roles", rec.Roles)
-	return true
+	return nil
 }
 
 func (h *handlers) failSuccession(ctx context.Context, rec successionRecord, why string) {
@@ -680,24 +690,24 @@ func (h *handlers) failSuccession(ctx context.Context, rec successionRecord, why
 	if err := h.succ.remove(rec.Old); err != nil {
 		slog.Error("succession: forget a failed succession", "aria", rec.Old, "err", err)
 	}
-	h.pageSuccession(ctx, rec, r, why)
+	h.pageSuccession(ctx, rec.Old, r, fmt.Sprintf(
+		"figaro %s could not hand over at its context threshold and stays unretired, holding %s. Reason: %s. "+
+			"It will not try again until %s is unset on its form.",
+		rec.Old, orNone(rec.Roles), why, store.SystemSuccessionFailedKey))
 }
 
-func (h *handlers) pageSuccession(ctx context.Context, rec successionRecord, r store.Retirement, why string) {
-	to, err := h.pageTarget(ctx, rec.Old, r)
+func (h *handlers) pageSuccession(ctx context.Context, old string, r store.Retirement, text string) {
+	to, err := h.pageTarget(ctx, old, r)
 	if err != nil {
-		slog.Error("succession failed and nobody could be told", "aria", rec.Old, "err", err)
+		slog.Error("succession: nobody could be told", "aria", old, "page", text, "err", err)
 		return
 	}
 	p, err := h.successionParty(ctx, to)
 	if err == nil {
-		err = p.SubmitSuccessionPrompt(rec.Old, fmt.Sprintf(
-			"figaro %s could not hand over at its context threshold and stays unretired, holding %s. Reason: %s. "+
-				"It will not try again until %s is unset on its form.",
-			rec.Old, orNone(rec.Roles), why, store.SystemSuccessionFailedKey), false)
+		err = p.SubmitSuccessionPrompt(old, text, false)
 	}
 	if err != nil {
-		slog.Error("succession failed and its page was not delivered", "aria", rec.Old, "to", to, "err", err)
+		slog.Error("succession: the page was not delivered", "aria", old, "to", to, "page", text, "err", err)
 	}
 }
 
