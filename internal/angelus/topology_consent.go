@@ -8,30 +8,52 @@ import (
 	"log/slog"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/hierarchy"
 )
 
-func parkedProposal(err error) (*rpc.Proposal, bool) {
+func (h *handlers) parkedProposal(ctx context.Context, err error) (*rpc.Proposal, bool) {
 	var parked *hierarchy.ParkedError
 	if !errors.As(err, &parked) {
 		return nil, false
 	}
-	p := wireProposal(parked.Proposal)
+	p := h.shownProposal(parked.Proposal, h.readsIDs(ctx))
 	return &p, true
 }
 
-func wireProposal(p hierarchy.Proposal) rpc.Proposal {
+func (h *handlers) readsIDs(ctx context.Context) func(id string) bool {
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil {
+		return func(id string) bool { return id == "" }
+	}
+	if h.angelus.Policies == nil {
+		open := h.passesUnpoliced(ctx, sub)
+		return func(id string) bool { return id == "" || open }
+	}
+	view := h.angelus.Policies.Figaro(authz.FigaroOf(ctx))
+	return func(id string) bool {
+		return id == "" || view.Allow(sub, rpc.VerbRead, authz.Aria(id)).Allowed
+	}
+}
+
+func (h *handlers) shownProposal(p hierarchy.Proposal, readable func(string) bool) rpc.Proposal {
 	out := rpc.Proposal{
 		ID:        p.ID,
 		Parent:    p.Parent,
 		Op:        p.Plan.Op.String(),
-		Node:      p.Plan.Node,
 		By:        p.By.Name,
 		Moves:     []rpc.ProposedMove{},
 		Accepts:   p.Accepts,
 		ExpiresMS: p.Expires.UnixMilli(),
 	}
+	if readable(p.Plan.Node) {
+		out.Node = p.Plan.Node
+	}
 	for _, m := range p.Plan.Moves {
+		if !readable(m.Node) || !readable(m.From) || !readable(m.To) {
+			out.Withheld++
+			continue
+		}
 		out.Moves = append(out.Moves, rpc.ProposedMove{Node: m.Node, From: m.From, To: m.To, Tree: m.Tree.String()})
 	}
 	return out
@@ -42,9 +64,18 @@ func (h *handlers) parked(ctx context.Context, params json.RawMessage) (interfac
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
+	by, err := topologyPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	adopter := h.allowed(ctx, rpc.VerbAdopt, authz.Aria(req.FigaroID)) == nil
+	readable := h.readsIDs(ctx)
 	resp := rpc.ParkedResponse{Proposals: []rpc.Proposal{}}
 	for _, p := range h.angelus.topology().Parked(req.FigaroID) {
-		resp.Proposals = append(resp.Proposals, wireProposal(p))
+		if !adopter && p.By.Name != by.Name {
+			continue
+		}
+		resp.Proposals = append(resp.Proposals, h.shownProposal(p, readable))
 	}
 	return resp, nil
 }

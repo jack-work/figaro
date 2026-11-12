@@ -84,7 +84,7 @@ func (h *handlers) arrange(ctx context.Context, shown *store.Form, params json.R
 		return rpc.SetResponse{}, err
 	}
 	_, err = h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Arrange, Parents: parents, Restore: restore, Storage: true})
-	if prop, ok := parkedProposal(err); ok {
+	if prop, ok := h.parkedProposal(ctx, err); ok {
 		return rpc.SetResponse{}, fmt.Errorf("%s: nothing moved yet: the move waits on %s as proposal %s until its holder runs `figaro adopt accept %s %s`", rpc.TopologyFormID, prop.Parent, prop.ID, prop.Parent, prop.ID)
 	}
 	if errors.Is(err, hierarchy.ErrUnsupported) {

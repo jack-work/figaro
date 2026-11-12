@@ -2,6 +2,8 @@ package angelus_test
 
 import (
 	"context"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -181,5 +183,78 @@ func TestAFormThatReceivesANodeIsAskedForConsent(t *testing.T) {
 	}
 	if up := presentedUnder(t, r, x); up != role {
 		t.Fatalf("after accept X is drawn under %q, want the form %s", up, role)
+	}
+}
+
+func grantEach(t *testing.T, r grantRig, grants map[string][]string) {
+	t.Helper()
+	text := guardPolicy
+	for principal, gs := range grants {
+		quoted := make([]string, len(gs))
+		for i, g := range gs {
+			quoted[i] = strconv.Quote(g)
+		}
+		role := strings.NewReplacer(":", "-", "@", "-").Replace(principal)
+		text += "\n[roles." + role + "]\ngrants = [" + strings.Join(quoted, ", ") + "]\n\n[[bind]]\nrole = \"" + role + "\"\nprincipals = [\"" + principal + "\"]\n"
+	}
+	text = strings.ReplaceAll(text, "SELF", strconv.Itoa(os.Getuid()))
+	if err := os.WriteFile(r.policy, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.a.Policies.Reload(r.policy); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// El Inspector XIV, P5: the proposals on a parent are shown whole only to
+// its adopt holders; a proposer sees its own; read alone sees none. Every id
+// shown is one the caller may read.
+func TestParkedProposalsShowOnlyToTheirHoldersAndProposers(t *testing.T) {
+	r, q, x := adoptRig(t)
+	grantTo(t, r, "user:eve", "create:*", "use:sandbox:local")
+	ev, err := r.create(as("user", "eve"), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	y := ev.FigaroID
+	grantEach(t, r, map[string][]string{
+		"user:mallory": {"read:*", "set:aria:" + x, "kill:aria:" + x},
+		"user:eve":     {"read:*", "set:aria:" + y, "kill:aria:" + y},
+		"user:ada":     {"read:aria:" + q, "adopt:aria:" + q},
+		"user:zed":     {"read:aria:" + q},
+	})
+	if err := setTopology(t, r, mallory(), map[string]string{x: q}); err == nil {
+		t.Fatal("mallory's move did not park")
+	}
+	if err := setTopology(t, r, as("user", "eve"), map[string]string{y: q}); err == nil {
+		t.Fatal("eve's move did not park")
+	}
+	list := func(ctx context.Context) []rpc.Proposal {
+		t.Helper()
+		out, err := r.call(ctx, rpc.MethodParked, rpc.ParkedRequest{FigaroID: q})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.(rpc.ParkedResponse).Proposals
+	}
+
+	if got := list(as("user", "zed")); len(got) != 0 {
+		t.Fatalf("read on Q alone lists %+v, want nothing", got)
+	}
+	mine := list(mallory())
+	if len(mine) != 1 || mine[0].By != "user:mallory" || len(mine[0].Moves) != 1 || mine[0].Moves[0].Node != x {
+		t.Fatalf("mallory lists %+v, want her own move of X alone", mine)
+	}
+	held := list(as("user", "ada"))
+	if len(held) != 2 {
+		t.Fatalf("Q's adopt holder lists %d proposals, want both", len(held))
+	}
+	for _, p := range held {
+		if len(p.Moves) != 0 || p.Withheld != 1 {
+			t.Fatalf("ada, who cannot read the moved arias, is shown %+v; want them withheld", p)
+		}
+	}
+	if all := list(asOwner()); len(all) != 2 || len(all[0].Moves) != 1 || all[0].Withheld != 0 {
+		t.Fatalf("the owner lists %+v, want both in full", all)
 	}
 }
