@@ -162,6 +162,27 @@ grep -ln -E 'edgeWriter\)|tree\.Forget\(|tree\.Prune\(|trunks\.Reparent\(|trunks
 	esac
 done >>"$found"
 
+NRULES=$((NRULES + 1))
+while IFS= read -r line; do
+	importer=${line%% *}
+	if under "$importer" "$MOD/internal/sandbox" || under "$importer" "$MOD/internal/angelus"; then
+		continue
+	fi
+	for dep in ${line#"$importer"}; do
+		under "$dep" "$MOD/internal/sandbox" || continue
+		if [ "$importer" = "$MOD/internal/cli" ] && [ "$dep" = "$MOD/internal/sandbox/box" ]; then
+			continue
+		fi
+		echo "$importer $dep sandbox-imports"
+	done
+done <"$direct" >>"$found"
+grep -l "\"$MOD/internal/sandbox" internal/cli/*.go | grep -v '_test\.go$' | while IFS= read -r file; do
+	case "$file" in
+	internal/cli/box.go) ;;
+	*) echo "$MOD/internal/cli $file box-serve-edge" ;;
+	esac
+done >>"$found"
+
 sort -u -o "$found" "$found"
 cut -d' ' -f1,2 "$found" | sort -u >"$tmp/pairs"
 
