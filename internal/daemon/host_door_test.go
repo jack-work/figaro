@@ -57,7 +57,7 @@ func TestARequiredBoxStillAnswersItsHostDoor(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			t.Cleanup(cancel)
 			a.Handlers = angelus.NewHandlers(angelus.ServerConfig{Angelus: a, Config: loaded, Ctx: ctx}).Map
-			if err := serveBoxDoors(ctx, a, loaded); err != nil {
+			if err := a.OpenBoxDoors(ctx, loaded); err != nil {
 				t.Fatal(err)
 			}
 			list := func(path string) error {

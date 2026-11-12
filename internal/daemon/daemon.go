@@ -439,7 +439,7 @@ func Run() {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
-	if err := serveBoxDoors(ctx, a, loaded); err != nil {
+	if err := a.OpenBoxDoors(ctx, loaded); err != nil {
 		slog.Error("angelus box door", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
@@ -480,49 +480,6 @@ func Run() {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-func serveBoxDoors(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) error {
-	doors, hosts := loaded.BoxDoors(), loaded.HostDoors()
-	for _, name := range loaded.DooredBoxes() {
-		if err := loaded.BoxDoorWithoutLists(name); err != nil {
-			slog.Error("box door refused", "box", name, "err", err)
-			continue
-		}
-		if b, _ := loaded.Box(name); b.AnyOutfit() || b.AnyProvider() {
-			slog.Info("box door opens with an open list", "box", name, "any_outfit", b.AnyOutfit(), "any_provider", b.AnyProvider())
-		}
-		if err := serveBoxDoor(ctx, a, loaded, name, "door", doors[name], authz.DoorBox); err != nil {
-			return err
-		}
-		if host, ok := hosts[name]; ok {
-			if err := serveBoxDoor(ctx, a, loaded, name, "host_door", host, authz.DoorHost); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func serveBoxDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded, name, field, path string, door authz.Door) error {
-	if path == filepath.Clean(a.SocketPath) {
-		return fmt.Errorf("sandbox.boxes.%s.%s: %s is the CLI door", name, field, path)
-	}
-	if web, ok, _ := loaded.WebDoor(); ok && filepath.Clean(web.Path) == path {
-		return fmt.Errorf("sandbox.boxes.%s.%s: %s is the web door", name, field, path)
-	}
-	ln, err := angelus.ListenUnix(path, 0o660)
-	if err != nil {
-		return fmt.Errorf("sandbox.boxes.%s.%s: %w", name, field, err)
-	}
-	slog.Info("box door listening", "box", name, "door", door.String(), "path", path, "principal", authz.BoxPrincipal(name).String())
-	go func() {
-		defer os.Remove(path)
-		if err := a.Serve(ctx, ln, door, authz.BoxAdmit(name)); err != nil {
-			slog.Error("box door", "box", name, "door", door.String(), "err", err)
-		}
-	}()
-	return nil
 }
 
 func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) error {

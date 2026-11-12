@@ -32,7 +32,7 @@ func TestOnlyAListedBoxOpensItsDoor(t *testing.T) {
 	a.SocketPath = filepath.Join(dir, "angelus.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	if err := serveBoxDoors(ctx, a, loaded); err != nil {
+	if err := a.OpenBoxDoors(ctx, loaded); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(open); err != nil {
