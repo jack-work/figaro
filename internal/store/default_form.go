@@ -43,6 +43,9 @@ func (b *XwalBackend) LoadDefaultForm() (*DefaultFormRecord, error) {
 }
 
 func (b *XwalBackend) SaveDefaultForm(rec *DefaultFormRecord) error {
+	if b.closed.Load() {
+		return ErrClosed
+	}
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
 		return err

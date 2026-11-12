@@ -111,6 +111,9 @@ func (e *hierarchyEngine) Component(id string) ([]string, error) {
 }
 
 func (e *hierarchyEngine) WriteDrawn(set map[string]string, remove []string) error {
+	if e.b.closed.Load() {
+		return ErrClosed
+	}
 	w, ok := e.s().tree.(edgeWriter)
 	if !ok {
 		return hierarchy.ErrUnsupported
@@ -119,10 +122,16 @@ func (e *hierarchyEngine) WriteDrawn(set map[string]string, remove []string) err
 }
 
 func (e *hierarchyEngine) MoveStorage(id, under string) error {
+	if e.b.closed.Load() {
+		return ErrClosed
+	}
 	return e.s().move(id, under)
 }
 
 func (e *hierarchyEngine) Remove(id string, recursive bool, expect []string, pins map[string]string) error {
+	if e.b.closed.Load() {
+		return ErrClosed
+	}
 	return e.s().removeLeaf(id, recursive, expect, pins, e.b.bury, e.b.unlinked)
 }
 

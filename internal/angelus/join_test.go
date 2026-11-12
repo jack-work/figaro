@@ -133,6 +133,34 @@ func TestShutdownWaitsForAWriterBeforeClosingTheStore(t *testing.T) {
 	}
 }
 
+// After a clean stop nothing reopens the store: writes and read handles are
+// refused alike.
+func TestNothingReopensTheStoreAfterACleanStop(t *testing.T) {
+	r := newJoinRig(t)
+	r.a.Shutdown(time.Second)
+	if r.unclean(t) {
+		t.Fatal(".unclean survived a clean stop")
+	}
+	if err := r.write("after"); !errors.Is(err, store.ErrClosed) {
+		t.Fatalf("write after Close: got %v, want store.ErrClosed", err)
+	}
+	if _, err := r.backend.OpenFigIR(r.aria); !errors.Is(err, store.ErrClosed) {
+		t.Fatalf("OpenFigIR after Close: got %v, want store.ErrClosed", err)
+	}
+	if _, err := r.backend.ModelsForm(); !errors.Is(err, store.ErrClosed) {
+		t.Fatalf("ModelsForm after Close: got %v, want store.ErrClosed", err)
+	}
+	if _, err := r.backend.CreateConversation(r.outfit); !errors.Is(err, store.ErrClosed) {
+		t.Fatalf("CreateConversation after Close: got %v, want store.ErrClosed", err)
+	}
+	if r.unclean(t) {
+		t.Fatal("a refused write re-marked the store")
+	}
+	if r.a.Go("late", func() {}) {
+		t.Fatal("a goroutine was admitted after the stop sealed the join")
+	}
+}
+
 // The timeout log names a call by method, aria id and door. It never prints
 // request params (troupe sign, api key mint and provider login carry
 // secrets), and an aria field that is not an id prints as "-".
