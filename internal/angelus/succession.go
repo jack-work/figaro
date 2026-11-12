@@ -523,15 +523,12 @@ func (h *handlers) castSuccessor(ctx context.Context, successor, role string) er
 }
 
 func (h *handlers) placeBeside(ctx context.Context, id, sibling string) error {
-	eng := h.angelus.Backend.HierarchyEngine()
-	if eng == nil {
+	topo := h.angelus.topology()
+	want, ok := topo.DrawnByHand(sibling)
+	if !ok {
 		return nil
 	}
-	want := eng.Overrides()[sibling]
-	if stored, _ := eng.Stored(sibling); want == "" || want == stored {
-		return nil
-	}
-	if have, _ := eng.Drawn(id); have == want {
+	if have, _ := topo.Drawn(id); have == want {
 		return nil
 	}
 	return h.place(ctx, id, want)
@@ -721,9 +718,7 @@ func orNone(roles []string) string {
 func (h *handlers) pageTarget(ctx context.Context, old string, r store.Retirement) (string, error) {
 	ref := r.Page
 	if ref == "" {
-		if eng := h.angelus.Backend.HierarchyEngine(); eng != nil {
-			ref, _ = eng.Drawn(old)
-		}
+		ref, _ = h.angelus.topology().Drawn(old)
 		if ref == "" {
 			return "", errors.New("system.retirement.page is unset and the aria is drawn under nothing")
 		}
