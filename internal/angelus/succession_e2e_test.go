@@ -522,3 +522,36 @@ func TestAMinterThatRefusesLeavesThePredecessorUnretiredAndPages(t *testing.T) {
 	r.requireUnretiredAndPaged(old, king, "4 successions a day, all spent", role)
 	require.Len(t, r.arias(), 2)
 }
+
+// A lease holds at most two figaros: the old one goes when the new one has ramped, not a ttl later.
+func TestAMinterMayHaveThePredecessorPurgedOnceTheSuccessorHasRamped(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	role := r.role(old, map[string]any{"name": "lease"})
+	var pooled string
+	r.a.SuccessorMinter = func(ctx context.Context, m angelus.SuccessorMint) (angelus.MintedSuccessor, bool, error) {
+		created, err := r.acli.Create(ctx, dress(t, "heir"), nil)
+		if err != nil {
+			return angelus.MintedSuccessor{}, true, err
+		}
+		pooled = created.FigaroID
+		return angelus.MintedSuccessor{ID: pooled, PurgePredecessor: true}, true, nil
+	}
+	r.p.set(func() { r.p.holdOthers = true })
+	r.cross(old)
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "ramping" }, "the succession never reached its ramp")
+	require.Contains(t, r.arias(), old, "the predecessor was purged before its successor's first turn ended")
+
+	r.p.set(func() { close(r.p.release); r.p.release = make(chan struct{}); r.p.holdOthers = false })
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "" }, "the succession never finished")
+	r.eventually(func() bool {
+		for _, id := range r.arias() {
+			if id == old {
+				return false
+			}
+		}
+		return true
+	}, "the predecessor was kept")
+	require.Equal(t, pooled, r.holder(role))
+	require.Equal(t, []string{pooled}, r.arias())
+}
