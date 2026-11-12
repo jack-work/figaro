@@ -148,6 +148,9 @@ func (t *Trunks) placement(trunk string) (parent, stump, lost string) {
 	}
 	p := t.node(at)
 	if p == nil {
+		if n.Placed == "" {
+			return "", "", ""
+		}
 		return "", "", at
 	}
 	return p.Trunk, stumpName(at, p), ""

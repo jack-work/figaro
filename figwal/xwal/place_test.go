@@ -162,6 +162,36 @@ func TestAPlacementWhoseNodeIsGoneIsReportedLost(t *testing.T) {
 	}
 }
 
+// Real stores hold nodes whose fork point names no node, and 0.65.4 reads
+// them as top-level. With no placement recorded they still read so: only a
+// recorded placement can be lost.
+func TestAForkPointWhoseNodeIsGoneIsNotALostPlacement(t *testing.T) {
+	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
+	for _, row := range []string{`"a"`, `"b"`} {
+		if _, _, err := f.Append(trunk, 0, []byte(row), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	child, err := f.ForkAt(trunk, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, _ := f.idx.Head(child)
+	n, _ := f.idx.Node(k)
+	m := n.marker()
+	m.from = "gone"
+	if err := writeNodeMarker(f.irDir(k), m); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Refresh(); err != nil {
+		t.Fatal(err)
+	}
+	ti, ok := f.InfoLight(child)
+	if !ok || ti.PlacedLost != "" || ti.Placed != "" || ti.Parent != "" {
+		t.Fatalf("info = %+v, want a node under nothing with no placement lost", ti)
+	}
+}
+
 func TestATornMarkerIsNoNodeAtAll(t *testing.T) {
 	dir := t.TempDir()
 	for _, m := range []nodeMarker{
