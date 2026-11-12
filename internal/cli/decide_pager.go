@@ -50,6 +50,10 @@ func (in *interactiveInput) execDecide(req rpc.DecideRequest) {
 		in.noteErr("decide: " + err.Error())
 		return
 	}
+	if err := refuseUnknownFields(req); err != nil {
+		in.noteErr("decide: " + err.Error())
+		return
+	}
 	resp, err := acli.Decide(ctx, req)
 	if err != nil {
 		in.noteErr("decide: " + wireErrorText(err))
