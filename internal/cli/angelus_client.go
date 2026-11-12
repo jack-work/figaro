@@ -84,7 +84,7 @@ func ensureAngelus() {
 	if err := boot.SpawnRefusal(os.Getenv); err != nil {
 		die("%s", err)
 	}
-	ensureHush()
+	h := MustHush()
 	exe, err := os.Executable()
 	if err != nil {
 		die("find executable: %s", err)
@@ -104,9 +104,15 @@ func ensureAngelus() {
 			defer f.Close()
 		}
 	}
-	if err := cmd.Start(); err != nil {
+	gate, err := gateOnHush(cmd, h)
+	if err != nil {
 		die("start angelus: %s", err)
 	}
+	if err := cmd.Start(); err != nil {
+		gate.decide(err)
+		die("start angelus: %s", err)
+	}
+	hushReady := gate.open(h)
 	if placement, ok := placeAngelus(os.Getenv, ownManagerSocket, boot.AngelusRuntimeDir()); ok {
 		if _, err := moveIntoScope(placement, cmd.Process.Pid); err != nil && cmd.Stderr != nil {
 			fmt.Fprintf(cmd.Stderr, "angelus: left in the caller's cgroup, so it ends with the caller's unit: %s\n", err)
@@ -124,8 +130,21 @@ func ensureAngelus() {
 	var lastNotice time.Time
 	notified := false
 	for {
+		select {
+		case err := <-hushReady:
+			if err != nil {
+				dieHush(err)
+			}
+			hushReady = nil
+		default:
+		}
 		if cli, err := sdk.DialAngelus(ep); err == nil {
 			cli.Close()
+			if hushReady != nil {
+				if err := <-hushReady; err != nil {
+					dieHush(err)
+				}
+			}
 			if notified {
 				fmt.Fprintln(stderrw, "angelus: ready")
 			}
@@ -133,6 +152,12 @@ func ensureAngelus() {
 		}
 		select {
 		case werr := <-exited:
+			if hushReady != nil {
+				if err := <-hushReady; err != nil {
+					dieHush(err)
+				}
+				hushReady = nil
+			}
 			if werr != nil {
 				die("angelus exited during startup (%v)%s", werr, startupDiagnosis())
 			}
@@ -148,7 +173,7 @@ func ensureAngelus() {
 		case time.Since(start) > startupHardCap:
 			die("angelus has not answered in %s%s", startupHardCap, startupDiagnosis())
 		}
-		if time.Since(lastNotice) > startupNoticeEvery && time.Since(start) > startupNoticeAfter {
+		if hushReady == nil && time.Since(lastNotice) > startupNoticeEvery && time.Since(start) > startupNoticeAfter {
 			lastNotice = time.Now()
 			notified = true
 			fmt.Fprintf(stderrw, "angelus: %s (waited %s; giving up at %s)\n",

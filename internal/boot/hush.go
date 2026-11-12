@@ -103,6 +103,9 @@ func strategyHush() (*managed.Hush, error) {
 		return h, nil
 	}
 	hushUsersMu.Unlock()
+	if !daemonHushGate.Await() {
+		return nil, fmt.Errorf("hush: %w", ErrHushGateShut)
+	}
 	if err := h.EnsureReady(); err != nil {
 		return nil, fmt.Errorf("hush: %w", err)
 	}
