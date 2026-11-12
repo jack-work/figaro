@@ -212,10 +212,11 @@ type GCResponse struct {
 }
 
 type KillRequest struct {
-	FigaroID  string `json:"figaro_id"`
-	Recursive bool   `json:"recursive,omitempty"` // also remove the trunk's live branches
-	Now       bool   `json:"now,omitempty"`
-	GraceMS   int64  `json:"grace_ms,omitempty"`
+	FigaroID     string `json:"figaro_id"`
+	Recursive    bool   `json:"recursive,omitempty"` // also remove the trunk's live branches
+	KeepChildren bool   `json:"keep_children,omitempty"`
+	Now          bool   `json:"now,omitempty"`
+	GraceMS      int64  `json:"grace_ms,omitempty"`
 }
 
 type ReapedRestoreRequest struct {
@@ -244,4 +245,5 @@ type KillResponse struct {
 	PurgeAt int64    `json:"purge_at,omitempty"`
 	Removed []string `json:"removed,omitempty"`
 	Roles   []string `json:"roles,omitempty"`
+	Lifted  []string `json:"lifted,omitempty"`
 }

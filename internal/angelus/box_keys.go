@@ -442,6 +442,21 @@ func hostCwdOf(ctx context.Context, requested string) string {
 	return requested
 }
 
+func (h *handlers) carryNarrowingOf(parent string) error {
+	if h.angelus.Policies == nil {
+		return nil
+	}
+	for _, n := range h.angelus.Backend.Conversations() {
+		if n.Parent != parent {
+			continue
+		}
+		if err := h.carryNarrowing(n.ID); err != nil {
+			return fmt.Errorf("%s: %w", n.ID, err)
+		}
+	}
+	return nil
+}
+
 func (h *handlers) carryNarrowing(id string) error {
 	p := h.angelus.Policies
 	if p == nil {

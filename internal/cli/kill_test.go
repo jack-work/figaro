@@ -29,7 +29,7 @@ func TestKillRequestFlags(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			req, err := killRequest("abc", true, c.now, c.when)
+			req, err := killRequest("abc", true, false, c.now, c.when)
 			if c.err != "" {
 				require.ErrorContains(t, err, c.err)
 				return
@@ -41,4 +41,22 @@ func TestKillRequestFlags(t *testing.T) {
 			require.Equal(t, c.grace.Milliseconds(), req.GraceMS)
 		})
 	}
+}
+
+func TestKillRequestRefusesRWithKeepChildren(t *testing.T) {
+	_, err := killRequest("abc", true, true, false, "")
+	require.ErrorContains(t, err, "--keep-children")
+	req, err := killRequest("abc", false, true, true, "")
+	require.NoError(t, err)
+	require.True(t, req.KeepChildren)
+	require.True(t, req.Now)
+}
+
+func TestPagerKillTakesKeepChildren(t *testing.T) {
+	spec, req, err := parseKillArgs([]string{"--keep-children", "abc"})
+	require.NoError(t, err)
+	require.Equal(t, "abc", spec)
+	require.True(t, req.KeepChildren)
+	_, _, err = parseKillArgs([]string{"-r", "--keep-children", "abc"})
+	require.ErrorContains(t, err, "--keep-children")
 }

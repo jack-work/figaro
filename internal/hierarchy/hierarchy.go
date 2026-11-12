@@ -96,6 +96,7 @@ type Move struct {
 	WithinLineage  bool
 	ToReceiver     bool
 	Home           bool
+	Lift           bool
 }
 
 type Version struct {
@@ -116,6 +117,7 @@ type Plan struct {
 	Revive    []string
 	Storage   bool
 	Recursive bool
+	Lift      bool
 	IfVersion Version
 	Consent   *Consent
 
@@ -207,7 +209,12 @@ var (
 	ErrQueueFull      = errors.New("hierarchy: too many proposals already wait")
 	ErrManyParents    = errors.New("hierarchy: the plan needs consent from more than one receiving parent")
 	ErrProposerGone   = errors.New("hierarchy: the proposer is no longer admitted")
+	ErrLiftRecursive  = errors.New("hierarchy: a kill that lifts its children takes nothing under it")
 )
+
+func HasChildren(id string, n int) error {
+	return fmt.Errorf("%w: %q has %d under it; kill -r takes them too, kill --keep-children lifts them to its parent", ErrHasBranches, id, n)
+}
 
 type Hierarchy struct {
 	mu     sync.Mutex
@@ -397,7 +404,7 @@ func (h *Hierarchy) Under(ctx context.Context, by Principal, p Plan, commit func
 	if v.Park != "" {
 		return plan, fmt.Errorf("%w %s: %s never waits", ErrParked, v.Park, plan.Op)
 	}
-	if err := commit(plan); err != nil {
+	if err := h.lifting(plan, func() error { return commit(plan) }); err != nil {
 		return plan, err
 	}
 	if plan.Op == Depart {
@@ -537,8 +544,13 @@ func (o *overlay) moves(tree map[string]Tree) []Move {
 
 func (h *Hierarchy) derive(p Plan) (Plan, error) {
 	out := Plan{Op: p.Op, Node: p.Node, Levels: p.Levels, To: p.To, Parents: p.Parents, Restore: p.Restore,
-		Revive: p.Revive, Storage: p.Storage, Recursive: p.Recursive, IfVersion: p.IfVersion, Consent: p.Consent}
+		Revive: p.Revive, Storage: p.Storage, Recursive: p.Recursive, Lift: p.Lift, IfVersion: p.IfVersion, Consent: p.Consent}
 	var err error
+	if p.Lift {
+		out.Delete, out.Moves, err = h.deriveLift(p.Op, p.Node, p.Recursive)
+		h.annotate(out.Moves)
+		return out, err
+	}
 	switch p.Op {
 	case Promote:
 		out.Moves, out.Levels, err = h.derivePromote(p.Node, p.Levels)
@@ -819,7 +831,7 @@ func (h *Hierarchy) deriveDelete(id string, recursive bool) ([]string, []Move, e
 		taken = []string{id}
 	}
 	if !recursive && len(taken) > 1 {
-		return nil, nil, fmt.Errorf("%w: %q has %d; -r takes them too", ErrHasBranches, id, len(taken)-1)
+		return nil, nil, HasChildren(id, len(taken)-1)
 	}
 	doomed := make(map[string]bool, len(taken))
 	for _, t := range taken {
@@ -849,6 +861,83 @@ func (h *Hierarchy) deriveDelete(id string, recursive bool) ([]string, []Move, e
 	}
 	sort.Slice(moves, func(i, j int) bool { return moves[i].Node < moves[j].Node })
 	return taken, moves, nil
+}
+
+func (h *Hierarchy) deriveLift(op Op, id string, recursive bool) ([]string, []Move, error) {
+	if op != Kill && op != Reap {
+		return nil, nil, fmt.Errorf("hierarchy: %s lifts no children", op)
+	}
+	if recursive {
+		return nil, nil, ErrLiftRecursive
+	}
+	if _, ok := h.eng.Node(id); !ok {
+		return nil, nil, fmt.Errorf("no aria %q", id)
+	}
+	parent, _ := h.eng.Drawn(id)
+	kids := slices.Clone(h.eng.DrawnChildren(id))
+	sort.Strings(kids)
+	var moves []Move
+	lifted := map[string]bool{}
+	for _, kid := range kids {
+		to := parent
+		if to == "" {
+			to = h.stumpOf(kid)
+		}
+		lifted[kid] = true
+		moves = append(moves, Move{Node: kid, From: id, To: to, Tree: Drawn, Lift: true})
+	}
+	if op == Kill {
+		for _, orphan := range h.eng.StorageOrphans(id) {
+			if lifted[orphan] {
+				continue
+			}
+			from, _ := h.eng.Drawn(orphan)
+			to := from
+			if !h.fits(orphan, from) {
+				to = h.home(orphan, map[string]bool{id: true})
+			}
+			moves = append(moves, Move{Node: orphan, From: from, To: to, Tree: Drawn, Rehome: true})
+		}
+	}
+	return []string{id}, moves, nil
+}
+
+func (h *Hierarchy) lifting(p Plan, then func() error) error {
+	if !p.Lift {
+		return then()
+	}
+	before := h.eng.Overrides()
+	set, remove := map[string]string{}, []string(nil)
+	undoSet, undoRemove := map[string]string{}, []string(nil)
+	for _, m := range p.Moves {
+		if !m.Lift {
+			continue
+		}
+		if up, _ := h.eng.Stored(m.Node); m.To == up {
+			remove = append(remove, m.Node)
+		} else {
+			set[m.Node] = m.To
+		}
+		if was, ok := before[m.Node]; ok {
+			undoSet[m.Node] = was
+		} else {
+			undoRemove = append(undoRemove, m.Node)
+		}
+	}
+	if len(set) == 0 && len(remove) == 0 {
+		return then()
+	}
+	if err := h.eng.WriteDrawn(set, remove); err != nil {
+		return fmt.Errorf("lifting the children of %s: %w", p.Node, err)
+	}
+	err := then()
+	if err == nil {
+		return nil
+	}
+	if uerr := h.eng.WriteDrawn(undoSet, undoRemove); uerr != nil {
+		return errors.Join(err, fmt.Errorf("putting the children of %s back: %w", p.Node, uerr))
+	}
+	return err
 }
 
 func (h *Hierarchy) deriveDepart(root string) ([]string, []Move, error) {
@@ -948,11 +1037,25 @@ func (h *Hierarchy) commit(p Plan) (Plan, error) {
 		return p, nil
 	}
 	if p.Op.Deletes() {
-		pins := map[string]string{}
-		for _, m := range p.Moves {
-			pins[m.Node] = m.To
-		}
-		return p, h.eng.Remove(p.Node, p.Recursive || p.Op == Sweep || p.Op == Purge, p.Delete, pins)
+		err := h.lifting(p, func() error {
+			pins := map[string]string{}
+			for _, m := range p.Moves {
+				pins[m.Node] = m.To
+			}
+			if p.Lift {
+				_, after, err := h.deriveDelete(p.Node, false)
+				if err != nil {
+					return err
+				}
+				for _, m := range after {
+					if _, set := pins[m.Node]; !set {
+						pins[m.Node] = m.To
+					}
+				}
+			}
+			return h.eng.Remove(p.Node, p.Recursive || p.Op == Sweep || p.Op == Purge, p.Delete, pins)
+		})
+		return p, err
 	}
 	for i := range p.Moves {
 		m := &p.Moves[i]

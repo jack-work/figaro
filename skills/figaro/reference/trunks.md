@@ -188,9 +188,15 @@ with no credentials and no tokens.
   a legacy alias (the tilde must be quoted in the shell). Attending a
   cauterized (null/outfit) figaro is rejected with a nudge toward
   `attend null` / `ls -H` / `ls -g`.
-- **`kill <id>`**: remove a trunk **and its whole subtree** (children
-  included). Needs `--recursive`/`-r` when anything is drawn under it; a
-  refusal writes nothing. See "Delete, and the two hierarchies" below.
+- **`kill <id>`**: refuses when anything is drawn under it, and names both
+  ways out; a refusal writes nothing.
+  **`kill -r <id>`**: takes it and everything drawn under it.
+  **`kill --keep-children <id>`**: takes it alone and lifts its children to
+  its parent, or to the top; each carries the narrowing it inherited through
+  the killed figaro into its own `system.scopes`. The lift is a move under
+  the caller's authority (kill on each child, consent of the receiving
+  parent); a refused lift refuses the kill. See "Delete, and the two
+  hierarchies" below.
 
 ## ls / list, attend is `cd`
 
@@ -308,7 +314,7 @@ picks the child) and `TopologyTree.Demote` (which writes the patch).
 
 - **What it refuses** is counted on the DRAWN tree, so the warning matches
   what you see: `kill <id>` on a figaro with rows under it refuses and names
-  how many; `-r` takes them.
+  how many; `-r` takes them, `--keep-children` lifts them.
 - **What it removes** is the HISTORY subtree, because that is what owns
   bytes on disk.
 - A figaro merely promoted under the target therefore survives. Its
