@@ -94,6 +94,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	if c, ok := h.angelus.Backend.(detachCarrier); ok {
 		c.SetDetachCarry(h.carryBeforeDetach)
 	}
+	h.pools = pinPoolOutfits(cfg.Config, h.outfitter)
 	h.noticeUpgrade()
 	h.startNav()
 	h.succ = newSuccessions(h.angelus.SuccessionsPath)
@@ -324,6 +325,7 @@ type handlers struct {
 	ctx                context.Context
 	formTmpls          *template.Template
 	outfitter          *outfit.Outfitter
+	pools              poolOutfits
 	availableProviders []string
 	decider            *decide.Engine
 	breaker            *methods.Breaker

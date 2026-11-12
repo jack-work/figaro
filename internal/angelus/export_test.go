@@ -114,3 +114,8 @@ func (a *Angelus) JoinedForTest(method string, next jkrpc.HandlerFunc) jkrpc.Han
 }
 
 func (a *Angelus) LeaveHubForTest(id string) { a.Hubs.putIfAbsent(id, newAriaHub(id)) }
+
+func (hs *Handlers) PoolOutfitHash(pool string) (string, error) {
+	p, err := hs.h.poolOutfit(pool)
+	return p.hash, err
+}

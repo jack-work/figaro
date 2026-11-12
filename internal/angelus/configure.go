@@ -117,6 +117,7 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 		h.outfitter = newOutfitter(h.angelus, fresh)
 	}
 	ofit := h.outfitter
+	h.pools = pinPoolOutfits(fresh, ofit)
 	h.configMu.Unlock()
 	ofit.Warm(fresh.Config.DefaultOutfit)
 	if err := h.reloadPolicy(); err != nil {
