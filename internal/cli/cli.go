@@ -30,6 +30,7 @@ func Run(progName string, args []string) {
 	}
 
 	mark.Init("cli")
+	mark.Mark("cli.start")
 	atExit(profileSession())
 
 	if !lockstepReplayArgs(args) {
