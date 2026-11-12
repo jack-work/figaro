@@ -154,6 +154,9 @@ func (c Config) refuseWhatAPoolDaemonCannotHold(md toml.MetaData, providerFiles 
 			return fmt.Errorf("[%s] beside [slot.pools]: a daemon that leases slots holds no troupe, peer, node door, static box, service token or api key", strings.Join(table, "."))
 		}
 	}
+	if md.IsDefined("authz", "peercred") {
+		return fmt.Errorf("[authz.peercred] beside [slot.pools]: a daemon that leases slots maps no uid to a principal; its own uid is the owner and no other comes in by its socket")
+	}
 	if strings.EqualFold(strings.TrimSpace(c.Telemetry.Level), "debug") {
 		return fmt.Errorf("[telemetry] level = %q beside [slot.pools]: debug logs carry prompt text, and a pool's logs carry ids, lengths and counts only", c.Telemetry.Level)
 	}

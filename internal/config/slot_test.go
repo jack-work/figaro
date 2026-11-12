@@ -170,6 +170,7 @@ func TestAPoolDaemonRefusesWhatItCannotHold(t *testing.T) {
 		"a static box":      {poolBody + "[sandbox.boxes.judge]\nexec = \"/run/box/judge.sock\"\n", nil, "[sandbox.boxes] " + beside},
 		"a service token":   {poolBody + "[service_tokens.edge]\nissuer = \"https://auth.example\"\n", nil, "[service_tokens] " + beside},
 		"an api key":        {strings.Replace(poolBody, "policy = \"policy.toml\"\n", "policy = \"policy.toml\"\n[[authz.api_keys]]\nid = \"k1\"\n", 1), nil, "[authz.api_keys] " + beside},
+		"a uid map":         {strings.Replace(poolBody, "policy = \"policy.toml\"\n", "policy = \"policy.toml\"\n[authz.peercred.uids]\n1001 = \"user:guest\"\n", 1), nil, "[authz.peercred] " + beside},
 		"a debug level":     {"[telemetry]\nlevel = \"Debug\"\n" + poolBody, nil, "level"},
 		"no policy named":   {poolBody[strings.Index(poolBody, "[slot.pools"):], nil, "never falls back to the default policy"},
 		"a stray provider":  {poolBody, []string{"rou2", "anthropic"}, "providers/anthropic.toml " + beside},
