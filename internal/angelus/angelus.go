@@ -615,6 +615,10 @@ func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 	a.closeBackend()
 }
 
+type abandoner interface {
+	Abandon() error
+}
+
 func (a *Angelus) closeBackend() {
 	start := time.Now()
 	bound := a.joinFor
@@ -626,13 +630,24 @@ func (a *Angelus) closeBackend() {
 		slog.Info("angelus shutdown join", "waited_ms", time.Since(start).Milliseconds(), "on", waitedOn, "still_out", stillOut)
 	}
 	if len(stillOut) > 0 {
-		slog.Error("angelus shutdown join timed out", "bound", bound.String(), "still_out", stillOut)
+		slog.Error("angelus shutdown join timed out; the store is fenced and keeps its unclean mark",
+			"bound", bound.String(), "still_out", stillOut)
 	}
 	if a.Backend == nil {
 		return
 	}
-	if err := a.Backend.Close(); err != nil {
-		slog.Error("angelus backend close", "err", err)
+	if len(stillOut) == 0 {
+		if err := a.Backend.Close(); err != nil {
+			slog.Error("angelus backend close", "err", err)
+		}
+		return
+	}
+	b, ok := a.Backend.(abandoner)
+	if !ok {
+		return
+	}
+	if err := b.Abandon(); err != nil {
+		slog.Error("angelus backend abandon", "err", err)
 	}
 }
 
