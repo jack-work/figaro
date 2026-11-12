@@ -410,6 +410,12 @@ func Run() {
 		slog.Error("authz: no policy in force; every call that needs one is refused", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v; every call that needs a policy is refused until it loads\n", err)
 	}
+	if loaded.PoolDaemon() {
+		if a.Slots, err = angelus.OpenSlotPools(filepath.Join(boot.StateDir(), "slot-pool"), loaded); err != nil {
+			fmt.Fprintf(os.Stderr, "angelus: %v; a daemon that leases slots does not start without its ledger\n", err)
+			os.Exit(1)
+		}
+	}
 	figOtel.SetMemProbe(func() figOtel.MemSample {
 		st := a.MemStatus()
 		return figOtel.MemSample{HeapInuse: int64(st.HeapInuseBytes), HeapReleased: int64(st.HeapReleasedBytes),
