@@ -2065,11 +2065,11 @@ the daemon neither reads nor writes it.`,
 	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
-		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; pprof arms the profiler on the running daemon; provider shows recent provider round-trips (including in-flight) and the decision routes methods have stopped asking; librettos recounts derived-form observers; normalize makes every aria own its history and drops the overrides its history now agrees with; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent; snapshot copies the most recently active arias, with their history and every form, into a new store; quarantine lists the segments a corrupt frame keeps closed and releases one by cutting it at the bad frame, after copying it aside (owner only); unit says whether the daemon on the socket is the systemd unit's",
-		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | skills [-j] | keys | ttl [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>",
+		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; pprof arms the profiler on the running daemon; provider shows recent provider round-trips (including in-flight) and the decision routes methods have stopped asking; librettos recounts derived-form observers; normalize makes every aria own its history and drops the overrides its history now agrees with; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent; residents lists live agents and open endpoints whose figaro the store no longer holds; snapshot copies the most recently active arias, with their history and every form, into a new store; quarantine lists the segments a corrupt frame keeps closed and releases one by cutting it at the bad frame, after copying it aside (owner only); unit says whether the daemon on the socket is the systemd unit's",
+		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | skills [-j] | keys | ttl [-j] | residents [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem, provider, normalize)"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem, provider, normalize, residents)"},
 			{Long: "id", Description: "Restrict to one aria (provider)"},
 			// -n is already dry-run on this command.
 			{Long: "count", Short: "c", Description: "How many rows to show (provider); default 20"},
@@ -2092,7 +2092,7 @@ the daemon neither reads nor writes it.`,
 				return runDoctorSnapshot(ctx.Args[1], ctx.Flag("from"), ctx.Flag("arias"), ctx.Flag("max-mb"), ctx.BoolFlag("json"))
 			}
 			if len(ctx.Args) != 1 {
-				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>")
+				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | residents [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>")
 			}
 			switch ctx.Args[0] {
 			case "gc":
@@ -2118,16 +2118,19 @@ the daemon neither reads nor writes it.`,
 				return runDoctorSkills(loaded, ctx.BoolFlag("json"))
 			case "ttl":
 				return runDoctorTTL(loaded, ctx.BoolFlag("json"))
+			case "residents":
+				return runDoctorResidents(loaded, ctx.BoolFlag("json"))
 			case "unit":
 				return runDoctorUnit(ctx.BoolFlag("json"))
 			}
-			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>")
+			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | residents [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>")
 		},
 		CompleteArgs: completeWords([][2]string{
 			{"gc", "remove dead channels"}, {"schema", "channel versions"}, {"term", "terminal capabilities"},
 			{"mem", "the daemon's footprint"}, {"pprof", "arm or disarm the live profiler"}, {"provider", "recent provider round-trips"},
 			{"librettos", "recount derived-form observers"}, {"normalize", "detach promoted arias, drop overrides history agrees with"},
 			{"skills", "what the binary ships"}, {"ttl", "nodes carrying a lifetime"},
+			{"residents", "agents and endpoints the store no longer holds"},
 			{"unit", "whether the daemon on the socket is the systemd unit's"},
 			{"snapshot", "copy recent arias into a new store"},
 			{"quarantine", "segments a corrupt frame keeps closed, and releasing one"},

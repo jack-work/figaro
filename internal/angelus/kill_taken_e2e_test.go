@@ -40,17 +40,13 @@ func listedByID(t *testing.T, acli *sdk.Angelus, ctx context.Context) map[string
 	return out
 }
 
-// Edge, spain W29: after kill -r --now P, status and list still served C, a
-// child the delete took, because only the root's agent and endpoint went.
-func TestKillRNowLeavesNoTakenChildServed(t *testing.T) {
-	a, acli, ctx := daemonFixture(t)
-	root, kids := wokenSubtree(t, a, acli, ctx)
-	resp, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: root, Recursive: true, Now: true})
-	require.NoError(t, err)
-	require.Len(t, resp.Removed, 3)
-
+// requireTaken: no figaro in ids is served or resident after a delete took it.
+func requireTaken(t *testing.T, a *angelus.Angelus, acli *sdk.Angelus, ctx context.Context, ids []string) {
+	t.Helper()
+	requireNoResidents(t, a, acli, ctx)
 	rows := listedByID(t, acli, ctx)
-	for _, id := range append([]string{root}, kids...) {
+	for _, id := range ids {
+		require.False(t, ariaExists(a, id), "the store still holds %s", id)
 		require.Nil(t, a.Registry.Get(id), "%s kept a live agent", id)
 		_, still := rows[id]
 		require.False(t, still, "list still serves %s", id)
@@ -62,6 +58,26 @@ func TestKillRNowLeavesNoTakenChildServed(t *testing.T) {
 		require.Error(t, err, "an attach to %s was taken", id)
 		require.Nil(t, a.Registry.Get(id), "a refused send or attach brought %s back", id)
 	}
+	requireNoResidents(t, a, acli, ctx)
+}
+
+func requireNoResidents(t *testing.T, a *angelus.Angelus, acli *sdk.Angelus, ctx context.Context) {
+	t.Helper()
+	resp, err := acli.Residents(ctx)
+	require.NoError(t, err)
+	require.Empty(t, resp.Residents, "doctor residents: agents or endpoints outlived their figaro")
+	require.Empty(t, a.Residents())
+}
+
+// Edge, spain W29: after kill -r --now P, status and list still served C, a
+// child the delete took, because only the root's agent and endpoint went.
+func TestKillRNowLeavesNoTakenChildServed(t *testing.T) {
+	a, acli, ctx := daemonFixture(t)
+	root, kids := wokenSubtree(t, a, acli, ctx)
+	resp, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: root, Recursive: true, Now: true})
+	require.NoError(t, err)
+	require.Len(t, resp.Removed, 3)
+	requireTaken(t, a, acli, ctx, append([]string{root}, kids...))
 }
 
 func TestKillRWithAGraceReapsEveryTakenChild(t *testing.T) {

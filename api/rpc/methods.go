@@ -108,6 +108,7 @@ const (
 	// MethodMemCollect stops the world; never call it from a ticker.
 	MethodMemCollect = "angelus.mem.collect"
 	MethodPprofArm   = "angelus.pprof.arm"
+	MethodResidents  = "angelus.residents"
 
 	MethodQuarantineList    = "angelus.quarantine.ls"
 	MethodQuarantineRelease = "angelus.quarantine.release"

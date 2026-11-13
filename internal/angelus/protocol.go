@@ -132,6 +132,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodStatus:             h.status,
 		rpc.MethodMemCollect:         h.memCollect,
 		rpc.MethodPprofArm:           h.pprofArm,
+		rpc.MethodResidents:          h.residents,
 		rpc.MethodQuarantineList:     h.quarantineList,
 		rpc.MethodQuarantineRelease:  h.quarantineRelease,
 		rpc.MethodProviderLedger:     h.providerLedger,

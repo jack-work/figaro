@@ -100,6 +100,7 @@ var methodVerbs = map[string]Verb{
 	MethodStatus:            VerbAdmin,
 	MethodMemCollect:        VerbAdmin,
 	MethodPprofArm:          VerbAdmin,
+	MethodResidents:         VerbAdmin,
 	MethodQuarantineList:    VerbAdmin,
 	MethodQuarantineRelease: VerbAdmin,
 	MethodOutfitReload:      VerbAdmin,
