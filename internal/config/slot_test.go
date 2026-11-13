@@ -54,8 +54,8 @@ func TestAPoolLoadsWithItsDefaults(t *testing.T) {
 	if got := p.SlotNames(); len(got) != 2 || got[0] != "slot0" || got[1] != "slot1" {
 		t.Fatalf("slots %v", got)
 	}
-	if p.SuccessionBound() != 4 || p.DeliverCap() != 16<<10 {
-		t.Fatalf("defaults: %d successions a day, %d bytes a deliver", p.SuccessionBound(), p.DeliverCap())
+	if p.SuccessionBound() != 4 || p.DeliverCap() != 16<<10 || p.SayBound() != 20 {
+		t.Fatalf("defaults: %d successions a day, %d bytes a deliver, %d says a minute", p.SuccessionBound(), p.DeliverCap(), p.SayBound())
 	}
 	if _, ok := l.Pool("other"); ok {
 		t.Fatal("a pool nobody declared was found")
@@ -132,6 +132,7 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 		"a pool name with a slash":    {swap("[slot.pools.chat-groups]", `[slot.pools."chat/groups"]`), "pool name"},
 		"negative successions":        {poolBody + "successions_per_day = -1\n", "successions_per_day"},
 		"a negative deliver cap":      {poolBody + "deliver_max_bytes = -1\n", "deliver_max_bytes"},
+		"a negative say bound":        {poolBody + "say_per_minute = -1\n", "say_per_minute"},
 		"a search credential by path": {poolBody + "search_credential = \"/etc/search.key\"\n", "search_credential"},
 		"a search credential of dots": {poolBody + "search_credential = \"..\"\n", "search_credential"},
 	} {
@@ -145,12 +146,12 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 }
 
 func TestAPoolTakesTheKeysItKnows(t *testing.T) {
-	l, err := loadBody(t, poolBody+"successions_per_day = 0\ndeliver_max_bytes = 4096\nsearch_credential = \"search-groups\"\n", "rou2")
+	l, err := loadBody(t, poolBody+"successions_per_day = 0\ndeliver_max_bytes = 4096\nsay_per_minute = 3\nsearch_credential = \"search-groups\"\n", "rou2")
 	if err != nil {
 		t.Fatal(err)
 	}
 	p, _ := l.Pool("chat-groups")
-	if p.SuccessionBound() != 0 || p.DeliverCap() != 4096 || p.SearchCredential != "search-groups" {
+	if p.SuccessionBound() != 0 || p.DeliverCap() != 4096 || p.SayBound() != 3 || p.SearchCredential != "search-groups" {
 		t.Fatalf("pool %+v", p)
 	}
 }

@@ -79,7 +79,7 @@ func TestADeliveryIsQueuedOnceToTheLeasesFigaroUnderItsMessageID(t *testing.T) {
 	if again, err := r.deliver(asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"msg:-100:77","text":"`+text+`"}`); err != nil || !again.Queued {
 		t.Errorf("the same delivery again answered %+v (%v)", again, err)
 	}
-	r.a.Slots.ForgetDeliveries(lease.Box)
+	r.a.Slots.ForgetLease(lease.Box)
 	if again, err := r.deliver(asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"msg:-100:77","text":"`+text+`"}`); err != nil || !again.Queued {
 		t.Errorf("the same delivery after a restart answered %+v (%v)", again, err)
 	}

@@ -151,7 +151,7 @@ func (hs *Handlers) KeepReleasingSlotsEvery(ctx context.Context, every time.Dura
 	hs.h.keepReleasingSlots(ctx, every)
 }
 
-func (s *SlotPools) ForgetDeliveries(box string) { s.forgetDeliveries(box) }
+func (s *SlotPools) ForgetLease(box string) { s.forgetLease(box) }
 
 func (hs *Handlers) ProviderIn(box, name string) (provider.Provider, error) {
 	return hs.h.factoryIn(box)(name, provider.Knobs{})

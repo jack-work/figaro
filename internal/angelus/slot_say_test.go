@@ -10,10 +10,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/config"
 )
 
 type brokerSays struct {
@@ -178,5 +180,41 @@ principals = ["sandbox:*"]
 				t.Errorf("the lease's principal %s was served %s", how, method)
 			}
 		}
+	}
+}
+
+// A lease says at most say_per_minute times in any minute. A say refused
+// for it reaches no broker; a minute after the first, the lease says
+// again. The count is the lease's own: another lease is not slowed.
+func TestALeaseSaysAtMostItsBoundInAnyMinute(t *testing.T) {
+	r, broker, lease := sayRig(t)
+	other, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:11"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 12, 21, 0, 0, 0, time.UTC)
+	r.a.Slots.Now = func() time.Time { return now }
+	ctx := context.Background()
+	for i := range config.DefaultSayPerMinute {
+		if err := r.hs.SayAs(ctx, lease.Box, lease.Aria, "t"); err != nil {
+			t.Fatalf("say %d: %v", i+1, err)
+		}
+		now = now.Add(time.Second)
+	}
+	if err := r.hs.SayAs(ctx, lease.Box, lease.Aria, "t"); err == nil || !strings.Contains(err.Error(), "say_per_minute") {
+		t.Errorf("a say over the bound answered %v", err)
+	}
+	if len(broker.got) != config.DefaultSayPerMinute {
+		t.Errorf("broker was asked %d times, want %d", len(broker.got), config.DefaultSayPerMinute)
+	}
+	if err := r.hs.SayAs(ctx, other.Box, other.Aria, "t"); err != nil {
+		t.Errorf("another lease was slowed: %v", err)
+	}
+	now = now.Add(time.Minute - time.Duration(config.DefaultSayPerMinute)*time.Second)
+	if err := r.hs.SayAs(ctx, lease.Box, lease.Aria, "t"); err != nil {
+		t.Errorf("a say a minute after the first: %v", err)
+	}
+	if err := r.hs.SayAs(ctx, lease.Box, lease.Aria, "t"); err == nil {
+		t.Error("the second say in that second was posted")
 	}
 }

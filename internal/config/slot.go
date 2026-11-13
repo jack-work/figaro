@@ -23,6 +23,7 @@ type PoolConfig struct {
 	Rou2LeaseClass    string     `toml:"rou2_lease_class"`
 	SayURL            string     `toml:"say_url"`
 	SuccessionsPerDay *int       `toml:"successions_per_day"`
+	SayPerMinute      *int       `toml:"say_per_minute"`
 	SearchCredential  string     `toml:"search_credential"`
 	DeliverMaxBytes   int        `toml:"deliver_max_bytes"`
 	Slots             []PoolSlot `toml:"slots"`
@@ -44,6 +45,7 @@ func (s *PoolSlot) UnmarshalTOML(v any) error {
 const (
 	DefaultSuccessionsPerDay = 4
 	DefaultDeliverMaxBytes   = 16 << 10
+	DefaultSayPerMinute      = 20
 
 	reservedOutfit = "default"
 )
@@ -53,6 +55,13 @@ func (p PoolConfig) SuccessionBound() int {
 		return DefaultSuccessionsPerDay
 	}
 	return *p.SuccessionsPerDay
+}
+
+func (p PoolConfig) SayBound() int {
+	if p.SayPerMinute == nil {
+		return DefaultSayPerMinute
+	}
+	return *p.SayPerMinute
 }
 
 func (p PoolConfig) DeliverCap() int {
@@ -112,6 +121,8 @@ func (c Config) validateSlot() error {
 			return fmt.Errorf("%s.rou2_lease_class: a lease spends under a class of caps, and none is named", where)
 		case p.SuccessionsPerDay != nil && *p.SuccessionsPerDay < 0:
 			return fmt.Errorf("%s.successions_per_day %d is negative", where, *p.SuccessionsPerDay)
+		case p.SayPerMinute != nil && *p.SayPerMinute < 0:
+			return fmt.Errorf("%s.say_per_minute %d is negative", where, *p.SayPerMinute)
 		case p.DeliverMaxBytes < 0:
 			return fmt.Errorf("%s.deliver_max_bytes %d is negative", where, p.DeliverMaxBytes)
 		case p.SearchCredential != "" && filepath.Base(p.SearchCredential) != p.SearchCredential:

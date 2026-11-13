@@ -5,7 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/slotpool"
@@ -16,12 +18,14 @@ type SlotPools struct {
 	Generations *slotpool.Generations
 	Caller      func(provider string) (slotpool.Caller, error)
 	SayClient   *http.Client
+	Now         func() time.Time
 
 	leasing sync.Mutex
 
 	mu        sync.Mutex
 	minting   map[string]map[string]bool
 	delivered map[string]map[string]bool
+	spent     map[string][]time.Time
 }
 
 func OpenSlotPools(dir string, loaded *config.Loaded) (*SlotPools, error) {
@@ -124,8 +128,65 @@ func (s *SlotPools) deliveredTo(box string, fromStore func() (map[string]bool, e
 	return seen, nil
 }
 
-func (s *SlotPools) forgetDeliveries(box string) {
+func (s *SlotPools) forgetLease(box string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.delivered, box)
+	for key := range s.spent {
+		if strings.HasPrefix(key, box+" ") {
+			delete(s.spent, key)
+		}
+	}
+}
+
+type bound struct {
+	key    string
+	limit  int
+	window time.Duration
+	span   string
+}
+
+func perMinute(key string, limit int) bound {
+	return bound{key: key, limit: limit, window: time.Minute, span: "minute"}
+}
+
+func perDay(key string, limit int) bound {
+	return bound{key: key, limit: limit, window: 24 * time.Hour, span: "day"}
+}
+
+func (s *SlotPools) spend(box, what string, bounds ...bound) error {
+	now := time.Now()
+	if s.Now != nil {
+		now = s.Now()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := box + " " + what
+	var longest time.Duration
+	for _, b := range bounds {
+		longest = max(longest, b.window)
+	}
+	kept := s.spent[key][:0]
+	for _, at := range s.spent[key] {
+		if now.Sub(at) < longest {
+			kept = append(kept, at)
+		}
+	}
+	for _, b := range bounds {
+		n := 0
+		for _, at := range kept {
+			if now.Sub(at) < b.window {
+				n++
+			}
+		}
+		if n >= b.limit {
+			s.spent[key] = kept
+			return fmt.Errorf("%s: %d in the last %s, and the pool's %s is %d", what, n, b.span, b.key, b.limit)
+		}
+	}
+	if s.spent == nil {
+		s.spent = map[string][]time.Time{}
+	}
+	s.spent[key] = append(kept, now)
+	return nil
 }

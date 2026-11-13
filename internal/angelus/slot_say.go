@@ -87,6 +87,9 @@ func (h *handlers) slotSay(ctx context.Context, params json.RawMessage) (any, er
 	if !ok || !pool.Enabled {
 		return nil, fmt.Errorf("%s: pool %s is not enabled", rpc.MethodSlotSay, row.Pool)
 	}
+	if err := slots.spend(box, "say", perMinute("say_per_minute", pool.SayBound())); err != nil {
+		return nil, fmt.Errorf("%s: %w", rpc.MethodSlotSay, err)
+	}
 	body, _ := json.Marshal(map[string]any{"key": row.Key, "generation": row.Generation, "text": req.Text})
 	post, err := http.NewRequestWithContext(ctx, http.MethodPost, pool.SayURL, bytes.NewReader(body))
 	if err != nil {
