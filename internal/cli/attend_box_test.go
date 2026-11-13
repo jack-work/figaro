@@ -25,7 +25,7 @@ func TestNewInsideABoxNamesTheAriaInsteadOfAttending(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
-	sock := filepath.Join(dir, "door.sock")
+	sock := filepath.Join(dir, "ep.sock")
 	bound := false
 	fakeRPCServer(t, sock, map[string]jkrpc.HandlerFunc{
 		rpc.MethodHello: func(context.Context, json.RawMessage) (any, error) {
@@ -54,7 +54,7 @@ func TestNewInsideABoxNamesTheAriaInsteadOfAttending(t *testing.T) {
 		t.Fatalf("attendNew exited %d inside a box: %s", code, errs.String())
 	}
 	if bound {
-		t.Fatal("the CLI asked a box door to bind a shell")
+		t.Fatal("the CLI asked a box endpoint to bind a shell")
 	}
 	if !strings.Contains(errs.String(), "--id "+id) {
 		t.Fatalf("the CLI did not say how to address the aria: %q", errs.String())

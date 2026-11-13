@@ -9,7 +9,7 @@ import (
 
 var maxEndpointFrame = 64 << 20
 
-var errFrameTooLarge = errors.New("door frame too large")
+var errFrameTooLarge = errors.New("endpoint frame too large")
 
 type frameCapped struct {
 	io.ReadWriteCloser

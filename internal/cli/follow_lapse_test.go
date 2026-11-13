@@ -122,9 +122,9 @@ func TestAPagerFollowsAgainWhenTheEdgeEndsItsFollow(t *testing.T) {
 	select {
 	case <-first.Done():
 	case <-time.After(5 * time.Second):
-		t.Fatal("the edge door never ended the follow")
+		t.Fatal("the edge endpoint never ended the follow")
 	}
-	require.True(t, first.Lapsed(), "the door ended the connection without saying it lapsed")
+	require.True(t, first.Lapsed(), "the endpoint ended the connection without saying it lapsed")
 	require.Eventually(t, func() bool { return in.aria() != first }, 5*time.Second, 10*time.Millisecond, "the pager did not follow again")
 	require.EqualValues(t, 2, stub.upgrades.Load(), "the re-follow did not go back through the edge")
 	require.Equal(t, id, in.currentID())

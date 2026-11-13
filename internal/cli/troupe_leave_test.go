@@ -25,7 +25,7 @@ func (f *fakeLeave) TroupeLeave(_ context.Context, name string) (*rpc.TroupeLeav
 	return &rpc.TroupeLeaveResponse{Node: "node-b", Reached: []string{"node-a"}, Unreachable: []rpc.NodeUnreachable{{Node: "node-c", Error: "connection refused"}}}, nil
 }
 
-const memberConfig = "default_outfit = \"mock\"\n[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n[door.tls]\nlisten = \"10.0.0.2:7443\"\n"
+const memberConfig = "default_outfit = \"mock\"\n[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n[endpoint.tls]\nlisten = \"10.0.0.2:7443\"\n"
 
 // Leaving asks first, then the daemon signs and spreads it, and only then
 // do the keys and the troupe config go; the rest of the config stays.
@@ -48,7 +48,7 @@ func TestTroupeLeaveAsksThenRemovesTheKeysAndConfig(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "the troupe keys survived a leave")
 	cfg := r.config(t)
 	require.Nil(t, cfg["troupe"])
-	require.Nil(t, cfg["door"])
+	require.Nil(t, cfg["endpoint"])
 	require.Equal(t, "mock", cfg["default_outfit"])
 	require.Regexp(t, `node-a\s+reached`, r.out.String())
 	require.Regexp(t, `node-c\s+not reached: connection refused`, r.out.String())

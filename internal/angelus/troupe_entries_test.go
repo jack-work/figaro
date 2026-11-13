@@ -70,7 +70,7 @@ func TestTroupeEntriesFromACallerNeedAdminOnTheTroupe(t *testing.T) {
 	require.Empty(t, a.Peers.(*peer.Ledger).Entries())
 
 	_, err = call(authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalNode, ID: "node-y"}), params)
-	require.Error(t, err, "a node principal that did not arrive by the node door")
+	require.Error(t, err, "a node principal that did not arrive by the node endpoint")
 
 	out, err := call(authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"}), params)
 	require.NoError(t, err)

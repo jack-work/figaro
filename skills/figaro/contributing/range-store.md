@@ -274,7 +274,7 @@ Order, and why:
    store, and the open turn is the last thing in it. Bug B did dissolve: it
    was not fixed. `heldOpen`, `tailRev` and the pager's second copy of the
    catch-up page (`seed`/`withSeed`/`mergeSeed`) are gone; `aria.Client.Merge`
-   is the silent door a fetched page goes through, `Store.TailFrom` derives the
+   is the silent endpoint a fetched page goes through, `Store.TailFrom` derives the
    floor backward so the window can be re-derived per frame instead of cached.
    Proven in a pty, both arms: control frozen at tick-6 with `G` leaping
    thirteen ticks, head advancing tick-7→tick-17 with the rows above the live

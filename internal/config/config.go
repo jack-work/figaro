@@ -41,7 +41,7 @@ type Config struct {
 	Store    StoreConfig    `toml:"store"`
 	Memory   MemoryConfig   `toml:"memory"`
 	Models   ModelsConfig   `toml:"models"`
-	Endpoint EndpointConfig `toml:"door"`
+	Endpoint EndpointConfig `toml:"endpoint"`
 	Quote    QuoteConfig    `toml:"quote"`
 	Authz    AuthzConfig    `toml:"authz"`
 	Sandbox  SandboxConfig  `toml:"sandbox"`
@@ -875,7 +875,7 @@ func load(configDir string) (*Loaded, error) {
 		return nil, fmt.Errorf("%s: %w", configPath, errRetiredBearer)
 	}
 	if md.IsDefined("authz", "figaro_claim") {
-		return nil, fmt.Errorf("%s: [authz] figaro_claim is now per box: set figaro_claim = \"required\" under [sandbox.boxes.<name>], which binds that box's in-box door and never its host door", configPath)
+		return nil, fmt.Errorf("%s: [authz] figaro_claim is now per box: set figaro_claim = \"required\" under [sandbox.boxes.<name>], which binds that box's in-box endpoint and never its host endpoint", configPath)
 	}
 	if err := refuseRenamedKeys(md); err != nil {
 		return nil, fmt.Errorf("%s: %w", configPath, err)

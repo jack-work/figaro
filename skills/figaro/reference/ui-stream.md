@@ -363,11 +363,11 @@ pagination rules, types, and worked examples.
 
 ### Connection and endpoint discovery
 
-The daemon listens on one door, a local Unix-domain socket; the transport
+The daemon listens on one endpoint, a local Unix-domain socket; the transport
 payload is JSON-RPC 2.0 with one JSON object per line. The runtime root is
 `$FIGARO_RUNTIME_DIR` when set, otherwise `$XDG_RUNTIME_DIR/figaro`, otherwise
 the platform temporary directory plus `figaro`. On Windows the last case is
-normally `%TEMP%\figaro`. The door is `angelus.sock`; there are no per-figaro
+normally `%TEMP%\figaro`. The endpoint is `angelus.sock`; there are no per-figaro
 sockets.
 
 Every figaro request names its figaro in `params.figaro_id`, an id or a unique
@@ -408,8 +408,8 @@ never holds up the figaro or its other followers. The daemon drops a
 connection whose queue passes 16 MiB, or one with a single write stalled for
 30 s while more waits. A stall is noticed only when the next frame for that
 connection arrives: a connection that stalls with nothing after it holds one
-frame and one goroutine until it disconnects. All of a daemon's door queues
-also share one budget, `[door] outbox_budget_mib` (192 by default): past it,
+frame and one goroutine until it disconnects. All of a daemon's endpoint queues
+also share one budget, `[endpoint] outbox_budget_mib` (192 by default): past it,
 the connection furthest behind is dropped, so many connections that stop
 reading cannot add up. The rule has one known cost: if many small
 connections that stopped reading push the total over while a reading client
@@ -436,7 +436,7 @@ The protocol is usable by alternate frontends, but it is not yet a public
 contract. `figaro.hello` carries a protocol version and capabilities, and the
 CLI still compares its exact build revision with the angelus because wire
 shapes change between builds. Clients that cannot dial a unix socket use the
-web door (WebSocket, see `[door.web]` in `ARCHITECTURE.md`). Before
+web endpoint (WebSocket, see `[endpoint.web]` in `ARCHITECTURE.md`). Before
 independent frontends are treated as supported clients:
 
 1. define compatibility and required/optional-field rules; and
@@ -702,9 +702,9 @@ command stays open until you close the pager.
 
 ### The pager can open without being asked
 
-Three doors reach it, and **every one of them reads the figaro's tail first**:
+Three endpoints reach it, and **every one of them reads the figaro's tail first**:
 
-| door | when |
+| endpoint | when |
 |---|---|
 | `Ctrl-T` / `Ctrl-L` / `figaro listen` | you asked |
 | an open turn taller than the viewport | it cannot be painted inline |

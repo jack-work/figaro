@@ -20,7 +20,7 @@ func TestANodeWithNoPeersStillHasAnEmptyMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 	if a.Peers == nil {
-		t.Fatal("no membership: the node door would panic on its first log line")
+		t.Fatal("no membership: the node endpoint would panic on its first log line")
 	}
 	if n := a.Peers.Nodes(); len(n) != 0 {
 		t.Fatalf("peers %v", n)

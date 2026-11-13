@@ -705,7 +705,7 @@ func (in *interactiveInput) refollow(gen uint64, id string, ep sdk.Addr) bool {
 	err := in.retarget(life, id, ep)
 	done("err", err != nil)
 	if err != nil {
-		slog.Warn("the door ended the follow at its age limit and following again failed", "aria", id, "err", err)
+		slog.Warn("the endpoint ended the follow at its age limit and following again failed", "aria", id, "err", err)
 		return false
 	}
 	return true

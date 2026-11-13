@@ -61,18 +61,18 @@ func (s joinSite) endpoints(o joinOpts) (endpoint, listen string, err error) {
 		return "", "", err
 	}
 	if ok && existing.Cert != "" {
-		return "", "", errors.New("[door.tls] names certificate files; a troupe member serves on troupe keys, so remove cert, key and client_ca first")
+		return "", "", errors.New("[endpoint.tls] names certificate files; a troupe member serves on troupe keys, so remove cert, key and client_ca first")
 	}
 	endpoint, listen = o.Endpoint, o.Listen
 	if endpoint == "" && ok {
 		endpoint = existing.Advertise
 	}
 	if endpoint == "" {
-		return "", "", errors.New("--door host:port is required: the address other nodes dial to reach this one")
+		return "", "", errors.New("--endpoint host:port is required: the address other nodes dial to reach this one")
 	}
 	host, _, err := net.SplitHostPort(endpoint)
 	if err != nil || host == "" || net.ParseIP(host).IsUnspecified() {
-		return "", "", fmt.Errorf("--door %q is not a host:port another node can dial", endpoint)
+		return "", "", fmt.Errorf("--endpoint %q is not a host:port another node can dial", endpoint)
 	}
 	if listen == "" && ok {
 		listen = existing.Listen
@@ -107,7 +107,7 @@ func trustRoot(id *rpc.TroupeIdentityResponse, held []byte, o joinOpts) (string,
 	sum := sha256.Sum256(id.Root)
 	hexSum := hex.EncodeToString(sum[:])
 	if !strings.EqualFold(id.RootSHA256, hexSum) {
-		return "", errors.New("the door's root does not match the hash it sent with it")
+		return "", errors.New("the endpoint's root does not match the hash it sent with it")
 	}
 	if held != nil && string(held) != string(id.Root) {
 		return "", errors.New("this node already holds a different root for that troupe")
@@ -145,7 +145,7 @@ func troupeJoin(ctx context.Context, d joinEndpoint, site joinSite, name string,
 		return err
 	}
 	if id.Node == site.node {
-		return errors.New("that door is this node's own: join through another member")
+		return errors.New("that endpoint is this node's own: join through another member")
 	}
 	fmt.Fprintf(o.Out, "troupe %s, through node %s\n  you are   %s\n  root      sha256 %s\n  signers   %s\n",
 		id.Troupe, id.Node, principalOrNobody(id.Principal), id.RootSHA256, strings.Join(id.Signers, ", "))
@@ -191,10 +191,10 @@ func troupeJoin(ctx context.Context, d joinEndpoint, site joinSite, name string,
 		return err
 	}
 	if string(root.Raw) != string(id.Root) {
-		return errors.New("the door signed under another root than the one it showed")
+		return errors.New("the endpoint signed under another root than the one it showed")
 	}
 	if err := troupe.CheckLeaf(leaf, issuer, root, name, site.node, pub, time.Now()); err != nil {
-		return fmt.Errorf("the certificate the door returned: %w", err)
+		return fmt.Errorf("the certificate the endpoint returned: %w", err)
 	}
 	es, err := troupe.Decode(resp.Entries)
 	if err != nil {
@@ -206,7 +206,7 @@ func troupeJoin(ctx context.Context, d joinEndpoint, site joinSite, name string,
 	}
 	me, ok := l.View().Members[site.node]
 	if !ok {
-		return errors.New("the door signed a certificate but its entries do not record this node's join")
+		return errors.New("the endpoint signed a certificate but its entries do not record this node's join")
 	}
 
 	if err := dir.WriteRoot(root); err != nil {
@@ -256,7 +256,7 @@ func peercredFor(uid int, p rpc.Principal) string {
 
 func joinConfig(path, name, listen, endpoint string, uid int, p rpc.Principal) (string, error) {
 	var b strings.Builder
-	fmt.Fprintf(&b, "[troupe]\nname = %q\nprovider = %q\n\n[door.tls]\nlisten = %q\n", name, config.ProviderFigaro, listen)
+	fmt.Fprintf(&b, "[troupe]\nname = %q\nprovider = %q\n\n[endpoint.tls]\nlisten = %q\n", name, config.ProviderFigaro, listen)
 	if endpoint != listen {
 		fmt.Fprintf(&b, "advertise = %q\n", endpoint)
 	}
@@ -277,7 +277,7 @@ func joinConfig(path, name, listen, endpoint string, uid int, p rpc.Principal) (
 	tr := table(raw, "troupe")
 	tr["name"], tr["provider"] = name, config.ProviderFigaro
 	delete(tr, "version")
-	tlsEndpoint := table(table(raw, "door"), "tls")
+	tlsEndpoint := table(table(raw, "endpoint"), "tls")
 	tlsEndpoint["listen"] = listen
 	delete(tlsEndpoint, "advertise")
 	if endpoint != listen {

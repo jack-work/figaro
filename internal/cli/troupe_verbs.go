@@ -237,7 +237,7 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 		runTroupeLogin(loaded, rest[0])
 	case "join":
 		if len(rest) != 1 {
-			dieUsage("troupe join takes one troupe (troupes/<name>.toml names a member's door)")
+			dieUsage("troupe join takes one troupe (troupes/<name>.toml names a member's endpoint)")
 		}
 		runTroupeJoin(loaded, rest[0], o)
 	case "leave":
@@ -259,7 +259,7 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 		}
 	case "leaf":
 		if len(rest) != 1 {
-			dieUsage("troupe leaf takes one troupe: hush troupe-root leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir> [--ttl <days>]")
+			dieUsage("troupe leaf takes one troupe: hush troupe-root leaf <name> --for <node-id> --public-key <hex> --endpoint <host:port> --out <dir> [--ttl <days>]")
 		}
 		runTroupeLeaf(loaded, rest[0], k.TTL, leafOpts{For: iss.For, PublicKey: iss.PublicKey, Endpoint: o.Endpoint, Out: iss.Out})
 	case "renewer":

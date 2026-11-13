@@ -59,7 +59,7 @@ pkgs.testers.runNixOSTest {
       settings = {
         listen-address = [ "127.0.0.1" "10.233.1.1" ];
         bind-dynamic = true;
-        address = [ "/door.figaro.test/10.233.1.1" ];
+        address = [ "/endpoint.figaro.test/10.233.1.1" ];
       };
     };
     systemd.services.stub-model = {
@@ -75,7 +75,7 @@ pkgs.testers.runNixOSTest {
     host.wait_for_unit("container@figaro.service")
     host.wait_for_unit("stub-model.service")
     host.wait_until_succeeds("nixos-container run figaro -- systemctl is-active figaro.service", timeout=120)
-    host.wait_until_succeeds("test -S /run/figaro-door/angelus.sock", timeout=60)
+    host.wait_until_succeeds("test -S /run/figaro-endpoint/angelus.sock", timeout=60)
 
     def inside(cmd):
         return host.succeed(f"nixos-container run figaro -- {cmd}")
@@ -97,10 +97,10 @@ pkgs.testers.runNixOSTest {
         inside("sh -c 'test ! -e /run/secrets/host-only'")
         inside("sh -c 'test ! -e /var/lib/host-only'")
 
-    with subtest("the door answers on the host side of the bind mount"):
-        out = host.succeed("${pkgs.util-linux}/bin/setpriv --reuid=526289 --regid=526289 --clear-groups env HOME=/tmp FIGARO_RUNTIME_DIR=/run/figaro-door FIGARO_NO_SELF_SPAWN=1 figaro list -j")
+    with subtest("the endpoint answers on the host side of the bind mount"):
+        out = host.succeed("${pkgs.util-linux}/bin/setpriv --reuid=526289 --regid=526289 --clear-groups env HOME=/tmp FIGARO_RUNTIME_DIR=/run/figaro-endpoint FIGARO_NO_SELF_SPAWN=1 figaro list -j")
         print(out)
-        host.fail("env FIGARO_RUNTIME_DIR=/run/figaro-door FIGARO_NO_SELF_SPAWN=1 HOME=/tmp figaro list -j")
+        host.fail("env FIGARO_RUNTIME_DIR=/run/figaro-endpoint FIGARO_NO_SELF_SPAWN=1 HOME=/tmp figaro list -j")
 
     with subtest("nspawn neither waits on the guest's readiness nor links its journal into the host's"):
         argv = host.succeed("tr '\\0' '\\n' < /proc/$(systemctl show container@figaro -p MainPID --value)/cmdline").split("\n")
@@ -182,7 +182,7 @@ pkgs.testers.runNixOSTest {
     # container lost DNS.
     with subtest("the container keeps its own resolver across a restart"):
         def resolves():
-            out = inside("getent hosts door.figaro.test")
+            out = inside("getent hosts endpoint.figaro.test")
             assert out.split()[0] == "10.233.1.1", out
             assert "127.0.0.1" not in inside("cat /etc/resolv.conf")
             assert inside("systemctl --failed --no-legend").strip() == "", inside("systemctl --failed --no-legend")
@@ -192,7 +192,7 @@ pkgs.testers.runNixOSTest {
         host.wait_until_succeeds("nixos-container run figaro -- systemctl is-active figaro.service", timeout=120)
         host.wait_until_succeeds("nixos-container run figaro -- systemctl is-active resolvconf.service || "
                                  "nixos-container run figaro -- systemctl is-failed resolvconf.service", timeout=60)
-        host.wait_until_succeeds("nixos-container run figaro -- getent hosts door.figaro.test", timeout=60)
+        host.wait_until_succeeds("nixos-container run figaro -- getent hosts endpoint.figaro.test", timeout=60)
         resolves()
 
     # The host forwards IPv6, as spain does, and the container's root can
@@ -233,7 +233,7 @@ pkgs.testers.runNixOSTest {
         assert not reaches("10.233.1.1", 8081), "the container reached a host port the firewall does not open to it"
         assert not forwards_v6(word), "the container forwarded IPv6 through the host"
         assert reaches("10.233.1.1", 8099), "the guard closed a port the firewall opens to the container"
-        inside("getent hosts door.figaro.test")
+        inside("getent hosts endpoint.figaro.test")
 
     families = ("iptables -w -t mangle", "ip6tables -w -t mangle")
 
@@ -243,7 +243,7 @@ pkgs.testers.runNixOSTest {
 
     def figaro_up():
         host.wait_until_succeeds("nixos-container run figaro -- systemctl is-active figaro.service", timeout=120)
-        host.wait_until_succeeds("nixos-container run figaro -- getent hosts door.figaro.test", timeout=60)
+        host.wait_until_succeeds("nixos-container run figaro -- getent hosts endpoint.figaro.test", timeout=60)
 
     def state(unit):
         return host.succeed(f"systemctl show {unit} -p ActiveState --value").strip()

@@ -58,7 +58,7 @@ func TestAReadStampsTheAccessTheKeepaliveCounts(t *testing.T) {
 	_, err = a.Backend.(interface {
 		ApplyForm(string, form.Patch) (uint64, error)
 	}).ApplyForm(id, setKeys(t, map[string]string{"system.ttl": "1h"}).Patch)
-	require.NoError(t, err, "set through the store, not the door: a door set is itself an access")
+	require.NoError(t, err, "set through the store, not the endpoint: an endpoint set is itself an access")
 
 	before := time.Now().UnixMilli()
 	var page json.RawMessage

@@ -270,7 +270,7 @@ func TestConsentIsAskedOnlyOfAForeignReceivingParent(t *testing.T) {
 	}
 	boxed := guardCaller(jkauthz.KindUser, "mallory", EndpointBox)
 	if v, err := g.Check(context.Background(), boxed, hierarchy.Plan{Op: hierarchy.Arrange, Moves: []hierarchy.Move{move("theirs", func(m *hierarchy.Move) { m.ToOwner = "user:mallory" })}}); err != nil || v.Park != "theirs" {
-		t.Fatalf("on the box door, minting the parent = %+v, %v; want parked: a box consents through adopt alone", v, err)
+		t.Fatalf("on the box endpoint, minting the parent = %+v, %v; want parked: a box consents through adopt alone", v, err)
 	}
 	if _, err := check(move("q", nil), move("r", func(m *hierarchy.Move) { m.Node = "b" })); !errors.Is(err, hierarchy.ErrManyParents) {
 		t.Fatalf("two foreign receiving parents = %v, want ErrManyParents", err)
@@ -327,7 +327,7 @@ func TestATopologyCallerCarriesItsAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c := by.Subject.(TopologyCaller); !c.Until.Equal(endpoint) || c.Readmit == nil {
-		t.Fatalf("the caller is admitted until %s (readmit %v), want the door's %s, the earlier", c.Until, c.Readmit != nil, endpoint)
+		t.Fatalf("the caller is admitted until %s (readmit %v), want the endpoint's %s, the earlier", c.Until, c.Readmit != nil, endpoint)
 	}
 	g := topologyGuard(t, keyMoverPolicy)
 	move := hierarchy.Move{Node: "a", From: "s", To: "q", Tree: hierarchy.Drawn, ToOwner: guardOwner.String(), ToReceiver: true}

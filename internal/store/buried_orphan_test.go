@@ -64,7 +64,7 @@ func TestTheEndpointDoesNotScanHistoryForOrphans(t *testing.T) {
 	// The endpoint sees the last round, which is well formed, and closes nothing.
 	n, err := be.CloseOpenToolCalls(aria)
 	require.NoError(t, err)
-	require.Zero(t, n, "the door scanned past the current round")
+	require.Zero(t, n, "the endpoint scanned past the current round")
 	require.Equal(t, []string{"toolu_buried"}, unmatchedInvokes(raw.Read()))
 
 	// The explicit repair is what heals damage, and it reports what it did.

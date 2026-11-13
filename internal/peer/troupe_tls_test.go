@@ -122,5 +122,5 @@ func TestARenewedCertificateIsServedLiveAndAnExpiredOneIsNot(t *testing.T) {
 	c.t = c.t.Add(6 * 24 * time.Hour)
 	require.Error(t, ks["node-b"].Ensure())
 	_, err = dialTroupe(t, m, "node-b")
-	require.Error(t, err, "a node whose intermediate lapsed still served its door")
+	require.Error(t, err, "a node whose intermediate lapsed still served its endpoint")
 }

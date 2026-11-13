@@ -147,14 +147,14 @@ func TestForgedAndTamperedEntriesAreRefused(t *testing.T) {
 	byInterRevoke.Sig = ed25519.Sign(s.ikey["a"], byInterRevoke.message())
 
 	cases := map[string]Entry{
-		"door changed":           func() Entry { e := good; e.Endpoint = "evil:1"; return e }(),
+		"endpoint changed":       func() Entry { e := good; e.Endpoint = "evil:1"; return e }(),
 		"node changed":           func() Entry { e := good; e.Node = "c"; return e }(),
 		"time changed":           func() Entry { e := good; e.At++; return e }(),
 		"another troupe's root":  other.join("a", "b", 0),
 		"signed by a leaf":       byLeaf,
 		"revoke not by the root": byInterRevoke,
 		"leave for another node": s.leaveAs("b", "c", "a", 0),
-		"join without a door": func() Entry {
+		"join without an endpoint": func() Entry {
 			e, _ := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c", "", "user:owner", s.now)
 			return e
 		}(),
@@ -166,10 +166,10 @@ func TestForgedAndTamperedEntriesAreRefused(t *testing.T) {
 			e, _ := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c/d", "c:1", "user:owner", s.now)
 			return e
 		}(),
-		"leave carrying a door": func() Entry { e := s.leave("b", "a", 0); e.Endpoint = "x:1"; return e }(),
-		"unknown kind":          func() Entry { e := good; e.Kind = "promote"; return e }(),
-		"owner changed":         func() Entry { e := good; e.Owner = "user:mallory"; return e }(),
-		"join without an owner": func() Entry { e, _ := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c", "c:1", "", s.now); return e }(),
+		"leave carrying an endpoint": func() Entry { e := s.leave("b", "a", 0); e.Endpoint = "x:1"; return e }(),
+		"unknown kind":               func() Entry { e := good; e.Kind = "promote"; return e }(),
+		"owner changed":              func() Entry { e := good; e.Owner = "user:mallory"; return e }(),
+		"join without an owner":      func() Entry { e, _ := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c", "c:1", "", s.now); return e }(),
 		"owner that is no principal": func() Entry {
 			e, _ := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c", "c:1", "jack", s.now)
 			return e

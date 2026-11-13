@@ -117,21 +117,21 @@ func TestWithNoPolicyOnlyTheOwnerPassesOffTheLocalEndpoint(t *testing.T) {
 		ctx  context.Context
 		pass bool
 	}{
-		"a stranger in process":      {at(EndpointInProcess, other), true},
-		"a stranger, door unstamped": {WithSubject(context.Background(), subject(other)), false},
-		"a stranger at the local":    {at(EndpointLocal, other), true},
-		"the owner at the web door":  {at(EndpointWeb, me), true},
-		"a stranger at the web":      {at(EndpointWeb, other), false},
-		"a stranger at a node door":  {at(EndpointNode, other), false},
-		"a stranger at a new door":   {at(EndpointWeb+1, other), false},
-		"nobody at the web door":     {at(EndpointWeb, jkauthz.Principal{}), false},
+		"a stranger in process":          {at(EndpointInProcess, other), true},
+		"a stranger, endpoint unstamped": {WithSubject(context.Background(), subject(other)), false},
+		"a stranger at the local":        {at(EndpointLocal, other), true},
+		"the owner at the web endpoint":  {at(EndpointWeb, me), true},
+		"a stranger at the web":          {at(EndpointWeb, other), false},
+		"a stranger at a node endpoint":  {at(EndpointNode, other), false},
+		"a stranger at a new endpoint":   {at(EndpointWeb+1, other), false},
+		"nobody at the web endpoint":     {at(EndpointWeb, jkauthz.Principal{}), false},
 	} {
 		if err := call(t, h, c.ctx, rpc.MethodGC, ""); (err == nil) != c.pass {
 			t.Errorf("%s: err = %v, want pass %v", name, err, c.pass)
 		}
 	}
 	if err := call(t, Guard(map[string]jkrpc.HandlerFunc{rpc.MethodGC: ok}, AriaHeader{}, LocalOrOwner(jkauthz.Principal{})), at(EndpointWeb, jkauthz.Principal{}), rpc.MethodGC, ""); err == nil {
-		t.Fatal("with no owner known, the zero subject passed the web door")
+		t.Fatal("with no owner known, the zero subject passed the web endpoint")
 	}
 }
 

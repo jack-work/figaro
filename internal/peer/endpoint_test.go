@@ -275,7 +275,7 @@ func TestHandshakesAreBounded(t *testing.T) {
 	case err := <-b.admitted:
 		require.ErrorContains(t, err, "handshake")
 	case <-time.After(5 * time.Second):
-		t.Fatal("the door waited on a silent dialler")
+		t.Fatal("the endpoint waited on a silent dialler")
 	}
 }
 
@@ -348,7 +348,7 @@ func TestPassageIsBoundedAndParsed(t *testing.T) {
 		case err := <-b.admitted:
 			require.ErrorContains(t, err, c.refusal, name)
 		case <-time.After(5 * time.Second):
-			t.Fatalf("%s: the door kept reading", name)
+			t.Fatalf("%s: the endpoint kept reading", name)
 		}
 		conn.Close()
 	}

@@ -83,7 +83,7 @@ func (k *Keeper) Intermediate() (*x509.Certificate, ed25519.PrivateKey, error) {
 
 func (k *Keeper) rejoin() string {
 	if k.NodeKey != "" {
-		return fmt.Sprintf("hush troupe-root leaf %s --for %s --public-key <its key> --door <its door> --out <dir> on a node that holds an intermediate, then deliver node.crt into %s", k.Troupe, k.Node, k.Dir)
+		return fmt.Sprintf("hush troupe-root leaf %s --for %s --public-key <its key> --endpoint <its endpoint> --out <dir> on a node that holds an intermediate, then deliver node.crt into %s", k.Troupe, k.Node, k.Dir)
 	}
 	return fmt.Sprintf("figaro troupe join %s", k.Troupe)
 }
@@ -158,7 +158,7 @@ func (k *Keeper) ensure(now time.Time) error {
 	k.status.IntermediateExpires = inter.NotAfter
 	k.mu.Unlock()
 	if !now.Before(inter.NotAfter) {
-		return fmt.Errorf("troupe %s: %w at %s; the node door refuses peers until you run: %s",
+		return fmt.Errorf("troupe %s: %w at %s; the node endpoint refuses peers until you run: %s",
 			k.Troupe, ErrIntermediateExpired, inter.NotAfter.Format(time.RFC3339), k.remedy())
 	}
 	held, err := k.node()

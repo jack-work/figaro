@@ -29,5 +29,5 @@ func TestTheEndpointCutsOffAFrameOverTheCap(t *testing.T) {
 	require.False(t, strings.Contains(err.Error(), "timeout"), "the connection was left open: %v", err)
 
 	_, err = acli.List(ctx)
-	require.NoError(t, err, "one peer's oversize frame took the door down for others")
+	require.NoError(t, err, "one peer's oversize frame took the endpoint down for others")
 }

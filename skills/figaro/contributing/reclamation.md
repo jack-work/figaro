@@ -55,7 +55,7 @@ Hibernation is not a separate memory feature; it is the unlock.
 
 The inversion everything else rests on. The **angelus** owns each figaro's hub:
 the router for its methods and the set of connections following it; the agent
-is a producer the hub binds. See `angelus/hub.go` and `angelus/door.go`.
+is a producer the hub binds. See `angelus/hub.go` and `angelus/endpoint.go`.
 
 - Creating a hub is a map entry, on the first call naming the figaro. It
   constructs **no agent**.
@@ -63,7 +63,7 @@ is a producer the hub binds. See `angelus/hub.go` and `angelus/door.go`.
   always ≤1 and lifetime-independent of any client. `Agent.OnTeardown` carries
   the unbind, because the endpoint must survive the agent and therefore cannot
   be owned by it.
-- Following is per-(conn, figaro): one connection on the door may follow many
+- Following is per-(conn, figaro): one connection on the endpoint may follow many
   figaros, and every push names its figaro.
 
 Requests route on liveness. `rpc.MethodNeedsAgent` classifies the surface:

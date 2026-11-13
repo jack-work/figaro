@@ -16,13 +16,13 @@ func TestTheIREndpointKeepsTheTreeLogsFastReaders(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, ok := lg.(tailAfterLog[message.Message]); !ok {
-		t.Error("the IR door hides TailAfter")
+		t.Error("the IR endpoint hides TailAfter")
 	}
 	if _, ok := lg.(tailSnapshotLog[message.Message]); !ok {
-		t.Error("the IR door hides TailSnapshot")
+		t.Error("the IR endpoint hides TailSnapshot")
 	}
 	if _, ok := lg.(rangeScanner[message.Message]); !ok {
-		t.Error("the IR door hides ScanRange")
+		t.Error("the IR endpoint hides ScanRange")
 	}
 }
 

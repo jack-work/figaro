@@ -5,7 +5,7 @@ source named here and trust it over this file.
 
 ## Three roles, one binary
 
-- **CLI** (`internal/cli`): what the user runs. Connects to the daemon's door
+- **CLI** (`internal/cli`): what the user runs. Connects to the daemon's endpoint
   and renders the stream.
 - **Angelus** (`internal/angelus`): the long-running supervisor (single
   instance via flock). Owns the registry of figaros, the **endpoint** each figaro is
@@ -180,7 +180,7 @@ goes through
 `sdk.Angelus.IRAll`, which walks `next_from` to the end; a single call there
 is issue #23 again.
 
-The transport is NDJSON-framed JSON-RPC 2.0 over one door per daemon. A figaro
+The transport is NDJSON-framed JSON-RPC 2.0 over one endpoint per daemon. A figaro
 method names its figaro in `params.figaro_id`. A connection follows a figaro
 after `figaro.follow` or a prompt there; reads never subscribe. Follow, call
 `figaro.read` for initial state, then keep reading notifications, each of which
@@ -257,7 +257,7 @@ of it can produce `duke: true`. The guarantee is a type, not a reserved word.
 Only an **interactive** process presents the duke: the same TTY signal that
 decides the binding policy: so a figaro's shell-out cannot speak as its master
 by accident. A figaro that deliberately allocates itself a terminal still can,
-which is why authorization reads the door's principal and never the duke.
+which is why authorization reads the endpoint's principal and never the duke.
 
 `aria ` is a **reserved prefix**: `SanitizeLabel` strips it, so
 `FIGARO_CALLER="aria 999"` renders `999` and cannot impersonate proof.
@@ -279,10 +279,10 @@ listener's authenticator stamped, and nothing in params can change it:
 
 | listener | authenticator | principal |
 |---|---|---|
-| CLI door (`angelus.sock`) | `Peercred.Admit`: `SO_PEERCRED` on the unix socket | `user:<uid>`; another uid only through `[authz.peercred] uids`. Off linux, any unix peer is the daemon's uid. A non-unix peer is refused. |
-| web door (`[door.web]`) | per upgrade request, `authn = "upstream"` or `"bearer"`; any other value and the door does not start | upstream: the edge's `Remote-User` / `Remote-Groups`, scoped by `[authz.upstream] issuer`, trusted only on that socket and never on the CLI door's path. They are read once, at the upgrade, so the connection ends at `[door] edge_follow_max_age` (default 1h) with a `door.lapsed` notice and the reason in the close frame; the pager dials the edge again and follows on, judged on the groups the edge names then. `[door.web] max_conn_age` (default 8h) ends any web connection the same way. bearer: a session bound at the upgrade, refused once the token expires; the client reconnects. A bearer starting `fgk_` is an api key (Troupe api keys, below) and goes only to the key table; anything else goes only to the issuers. |
-| box door (`[sandbox.boxes.<name>] door`) | `authz.BoxAdmit`: every caller is the box, whatever its uid; seated only if the policy binds it | `sandbox:<name>@local:box`. `local:box` is not a host, so no issuer or api key can mint it. |
-| node door (`[door.tls]`) | `peer.Door.Admit`: mTLS against `[peers.<node>]` | `node:<id>`; a forwarded caller is its bearer, verified again against `[[authz.issuers]]` or, for an api key, this node's key table, and refused when neither applies |
+| CLI endpoint (`angelus.sock`) | `Peercred.Admit`: `SO_PEERCRED` on the unix socket | `user:<uid>`; another uid only through `[authz.peercred] uids`. Off linux, any unix peer is the daemon's uid. A non-unix peer is refused. |
+| web endpoint (`[endpoint.web]`) | per upgrade request, `authn = "upstream"` or `"bearer"`; any other value and the endpoint does not start | upstream: the edge's `Remote-User` / `Remote-Groups`, scoped by `[authz.upstream] issuer`, trusted only on that socket and never on the CLI endpoint's path. They are read once, at the upgrade, so the connection ends at `[endpoint] edge_follow_max_age` (default 1h) with a `endpoint.lapsed` notice and the reason in the close frame; the pager dials the edge again and follows on, judged on the groups the edge names then. `[endpoint.web] max_conn_age` (default 8h) ends any web connection the same way. bearer: a session bound at the upgrade, refused once the token expires; the client reconnects. A bearer starting `fgk_` is an api key (Troupe api keys, below) and goes only to the key table; anything else goes only to the issuers. |
+| box endpoint (`[sandbox.boxes.<name>] endpoint`) | `authz.BoxAdmit`: every caller is the box, whatever its uid; seated only if the policy binds it | `sandbox:<name>@local:box`. `local:box` is not a host, so no issuer or api key can mint it. |
+| node endpoint (`[endpoint.tls]`) | `peer.Endpoint.Admit`: mTLS against `[peers.<node>]` | `node:<id>`; a forwarded caller is its bearer, verified again against `[[authz.issuers]]` or, for an api key, this node's key table, and refused when neither applies |
 
 **Issuers.** `[[authz.issuers]]` lists the identity issuers this node
 trusts (`issuer`, `jwks`, `userinfo`, `audience`, `types`, `users`,
@@ -311,7 +311,7 @@ parent's consent (`adopt`), and never waits for it. A prompt or
 `figaro.follow` subscribes the connection only where the caller holds
 `listen`. Denials are JSON-RPC **-32020** with the reason verbatim. A request
 for a figaro another node holds is forwarded before this node's policy runs,
-and the owner decides it (the node door, under "JSON-RPC surface" in
+and the owner decides it (the node endpoint, under "JSON-RPC surface" in
 `ARCHITECTURE.md`).
 
 Ids are resolved before the policy sees them, and a prefix resolves only
@@ -344,7 +344,7 @@ troupe's reach off the node's boxes.
 **Moves and consent.** Promote, demote, `@topology` and placement are plans
 the topology guard checks: `kill` on every node whose position changes, and
 `adopt` on every aria or form that receives a node, unless the caller owns
-it (never through a box door), or the node goes back under its history
+it (never through a box endpoint), or the node goes back under its history
 parent. Without `adopt` the move parks on that parent as a proposal.
 `figaro adopt <parent>` lists them to its adopt holders, and to a proposer
 its own, showing only ids the caller may read: a side of a move the caller
@@ -354,7 +354,7 @@ accepts or refuses it. Accept admits the proposer again (a revoked key, an
 expired token or a peer that left refuses it) and checks the move as the
 proposer, with the grants it holds then. A move that needs two parents'
 consent is refused. Proposals live in memory: they lapse after a day, or
-sooner with the proposer's admission (the door's connection age, its token
+sooner with the proposer's admission (the endpoint's connection age, its token
 or key's expiry), a restart drops them, each parent holds 16, and one
 proposer holds 4 on a parent and 64 in all. `adopt` must stay out of a troupe policy until every member runs
 a release that knows the verb.
@@ -366,7 +366,7 @@ patch that names a sandbox the caller holds no `use` on is refused, so a box
 cannot move or mint anything out of its box. `form.create` and `form.bind` with a
 parent need `read` on it, since the new form starts as its copy.
 
-**Box principals.** With no policy file, each box that has a door is bound
+**Box principals.** With no policy file, each box that has an endpoint is bound
 to `create`, `use` on `sandbox:self` (its own box) and every figaro verb but
 `admin` on `sandboxed:self`: the figaros and forms whose `system.sandbox` is that box.
 Figaros in one box share its files and processes, so the box is the unit a
@@ -397,7 +397,7 @@ the caller names is a host path and needs `use` on `sandbox:local`.
 `system.ttl`, `system.reap_if_empty`, `system.keepalive`,
 `system.retired` and `system.retirement` (when the sweep deletes a node and its subtree)
 (`api/form/owner_held.go`) are set or removed only by the
-owner: the local door, an in-process call, or the owner's principal. Every
+owner: the local endpoint, an in-process call, or the owner's principal. Every
 other caller, a box included, is refused at set, prompt, cast, create, fork
 and form.create/bind. The one exception is `system.retired` for a box, on
 the figaros in that box, so `figaro retire` works inside one. `system.tools` lists the tools a figaro may use; `[]` is
@@ -405,11 +405,11 @@ none, unset is all, and a value that is not a list is none. It is enforced
 where tools are offered to the model and again where a call runs, so a
 forged call to an unlisted tool is refused. Owner-held does not bind an
 unboxed figaro whose tools include bash or process: those tools reach the
-local door as the owner (issue #57).
+local endpoint as the owner (issue #57).
 
 **Figaro scopes.** `system.scopes` narrows what one figaro may do. It is a
 protected key: the owner writes it, or an ancestor figaro through its box
-door, and a figaro gives only what its own effective set covers. Its value
+endpoint, and a figaro gives only what its own effective set covers. Its value
 is a list of `verb:selector` entries in the policy syntax. A figaro's effective set is the
 policy's `[figaros]` ceiling, intersected with `system.scopes` of each aria on
 its lineage, top first. An aria that sets none narrows nothing for figaro's
@@ -447,12 +447,12 @@ permissions = ["read:*", "send:*", "*:lineage:self", "egress:*"]
 ```
 
 The claim is the CLI's stamp (`FIGARO_ARIA`), so a tool can drop it and be
-judged by its principal alone: the owner on the local door, the box in a box.
-A claim only ever narrows, so a forged one gains nothing. On the box door a
+judged by its principal alone: the owner on the local endpoint, the box in a box.
+A claim only ever narrows, so a forged one gains nothing. On the box endpoint a
 claim counts only for a figaro that runs in that box; any other (an unknown
 id, another box's figaro, an unboxed one) is dropped and the call is judged
 as the box. `[sandbox.boxes.<name>] figaro_claim = "required"` refuses those
-calls instead, and any call through that box's door that names no figaro.
+calls instead, and any call through that box's endpoint that names no figaro.
 
 A refused read hides the aria as one the caller cannot read (not found, and
 dropped from `ls` and prefix resolution); other refusals are -32020 naming the
@@ -475,7 +475,7 @@ owner too
 **Box providers.** `[sandbox.boxes.<name>] providers = [...]` names the
 providers a figaro in that box may run on. Anything else is refused where the
 provider is resolved: at birth, at wake, on a rebind, and for a decision
-asked by the box or for a figaro in it. A box with a door must set it; see
+asked by the box or for a figaro in it. A box with an endpoint must set it; see
 below.
 
 **Box outfits.** `[sandbox.boxes.<name>] outfits = [...]` names the outfits
@@ -485,21 +485,21 @@ names a listed outfit, or is refused with the list: create and form.bind
 always, and a fork unless it is a head fork of a conversation, which carries
 its parent's dress. No implicit default. The owner is never limited by it.
 
-**A door needs both lists.** A box with a `door` and no `outfits` or no
-`providers` list gets no door: the daemon logs "box door refused" naming the
-box and the missing list, and opens the other doors. A list of exactly
-`["*"]` allows any outfit or any provider, logged when the door opens; `"*"`
-beside names is a config error. A box without a door needs neither.
+**An endpoint needs both lists.** A box with a `endpoint` and no `outfits` or no
+`providers` list gets no endpoint: the daemon logs "box endpoint refused" naming the
+box and the missing list, and opens the other endpoints. A list of exactly
+`["*"]` allows any outfit or any provider, logged when the endpoint opens; `"*"`
+beside names is a config error. A box without an endpoint needs neither.
 
-**Host doors.** `[sandbox.boxes.<name>] host_door = "<path>"` opens a second
-socket for a doored box, for services on the host (a chat backend, a receipt
+**Host endpoints.** `[sandbox.boxes.<name>] host_endpoint = "<path>"` opens a second
+socket for a box with an endpoint, for services on the host (a chat backend, a receipt
 worker) rather than processes in the box. The daemon tells the two apart by
 the socket a connection came through, never by what the caller says. A
-host-door caller is the box's principal, `sandbox:<name>@local:box`, so it is
+host-endpoint caller is the box's principal, `sandbox:<name>@local:box`, so it is
 exactly as strong as the box: every grant the box holds, it holds. The box's
-`figaro_claim = "required"` binds only its in-box door; host-door calls are
+`figaro_claim = "required"` binds only its in-box endpoint; host-endpoint calls are
 answered without a claim, and a claim on one counts by the same rule as in
-the box. The host door must sit outside every box's door directory, since a
+the box. The host endpoint must sit outside every box's endpoint directory, since a
 box reaches its own; the daemon refuses one inside any of them.
 
 **Box purge grace.** `[sandbox.boxes.<name>] purge_grace = "1h"` is how long
@@ -541,7 +541,7 @@ issuer and api key. A troupe policy may not bind `user:*`, `service:*` or
 `sandbox:*`; a node's own policy may, and each is logged at load. `node:*`
 is allowed in both: node principals come only from mTLS peers and from a
 node's own issuers. A version adopted from the ledger passes the same rules
-as one set at a door; one that breaks them (the root may sign anything)
+as one set at an endpoint; one that breaks them (the root may sign anything)
 grants nothing on the node and its issuers are not taken up. The real fix
 is in jkauthz: a scoped wildcard (`user:*@auth.kelliher.info`) that a troupe
 policy could bind, after which the bare forms can be refused everywhere.
@@ -819,7 +819,7 @@ sha256. It reads no config and writes no state.
 ```toml
 [sandbox.boxes.judge]
 exec    = "/run/figaro/boxes/judge/exec.sock"   # box serve --socket
-door    = "/run/figaro/boxes/judge/door.sock"   # optional: the box's way back
+endpoint    = "/run/figaro/boxes/judge/endpoint.sock"   # optional: the box's way back
 profile = "build"                                # carried, not yet read
 ```
 
@@ -839,7 +839,7 @@ sessions are found again. A dropped connection kills its execs in the box,
 not its sessions; `figaro kill` kills those. Isolation is what the box
 server claims, `local`'s, named `box`: the server cannot vouch for the unit.
 
-The daemon listens on each `door` (0660) at start; `box serve --door
+The daemon listens on each `endpoint` (0660) at start; `box serve --endpoint
 <path>` gives every command `FIGARO_TROUPE=unix://<path>` and
 `FIGARO_RUNTIME_DIR`, so `figaro` in the box calls back as the box and
 never starts a daemon there.
@@ -880,13 +880,13 @@ intermediate_key_credential = "<id>"` reads it from
 `$CREDENTIALS_DIRECTORY/<id>` (systemd `LoadCredential=`) and never from
 the troupe dir, while `root.crt` and `intermediate.crt` stay there. A
 missing credential, or one that is not the key the certificate names, is an
-error that closes the node door; a key still at rest beside it is logged.
+error that closes the node endpoint; a key still at rest beside it is logged.
 
 A node can hold no intermediate and keep even its node key off the disk.
 `figaro troupe keygen --out <tmpfs dir>` makes the key there and prints its
 public key; it is delivered as a credential and named by `[troupe]
 node_key_credential`. On a node that holds an intermediate, `hush troupe-root
-leaf <name> --for <node id> --public-key <hex> --door
+leaf <name> --for <node id> --public-key <hex> --endpoint
 <host:port> --out <dir>` issues that node a leaf for the key, signs its join
 (owner: the caller), has the root name this node its renewer, has the
 daemon spread both, and writes `root.crt`, `node.crt` and `joined.json` for
@@ -903,10 +903,10 @@ the intermediate's end; a leaf-only node sends its `leaf_ttl` to its
 renewer, which grants the same way, and a 30-day leaf renews from day 20.
 A longer leaf trades revocation lag for fewer renewals: it matters only for
 a stolen node key nobody revokes, since a revoked node or intermediate is
-refused whatever its leaf says; the node door and the dialer take each new one on the next
-handshake. With `[troupe] name` set, `[door.tls]` and `[peers.<id>]` may
+refused whatever its leaf says; the node endpoint and the dialer take each new one on the next
+handshake. With `[troupe] name` set, `[endpoint.tls]` and `[peers.<id>]` may
 omit their certificate files and the peer `identity`. An expired or missing
-intermediate keeps local callers served, closes the node door and the
+intermediate keeps local callers served, closes the node endpoint and the
 dialer, and logs the command to run; `troupe ls` shows both expiries.
 
 ### Troupe membership
@@ -914,18 +914,18 @@ dialer, and logs the command to run; `troupe ls` shows both expiries.
 `[troupe] provider = "static"` (the default) takes the members from
 `[peers]`. `provider = "figaro"` takes them from signed entries instead, and
 `[peers]` must be empty: a join (signed by the admitting node's
-intermediate, naming the node's door and its owner, the principal that
+intermediate, naming the node's endpoint and its owner, the principal that
 joined it), a leave (signed by the node's own key) or a revoke (signed by
 the root). Each is verified at the time it was signed. A leave or revoke
 beats every join of its node, and a root revoke also voids the joins its
 node's intermediates signed. A node holding an intermediate signs its own
-join at start with `[door.tls] advertise` (default `listen`; required when
+join at start with `[endpoint.tls] advertise` (default `listen`; required when
 `listen` is a wildcard), which marks it as able to sign others in.
 
 The entries live in an unbound form the daemon writes (its id in
 `<state>/troupe/<name>/ledger.form`); the signatures, not the form, are what
 protect them. Nodes trade the whole set over `troupe.entries` on the node
-door: on a handshake whose digest differs, when a member first appears, and
+endpoint: on a handshake whose digest differs, when a member first appears, and
 hourly. Both TLS verifiers refuse a node outside the set and a chain through
 a revoked node's intermediate; a revoke that arrives while links are open
 closes them.
@@ -937,7 +937,7 @@ or by the node's own intermediate. Both TLS verifiers apply this, and so do
 a leave (a leave under a leaf from any other intermediate does not count)
 and the old-key proof of a rejoin, and so does a join: once a node has a
 join from its own intermediate or a renewer, a join from any other
-intermediate no longer sets its door, owner or admitter. So an intermediate
+intermediate no longer sets its endpoint, owner or admitter. So an intermediate
 cannot act as, or move, a member that is not its own or its renewee. A node joined through another member
 holds a leaf from that member, which the rest of the troupe takes once the
 root names the member its renewer; `troupe join` says so. A revoked
@@ -947,7 +947,7 @@ rogue intermediate could forge the same statement for any member. That
 needs node ids bound to a long-term node key, which UUID ids are not.
 
 `troupe.sign` admits a node: a caller holding `join` on `troupe:<name>`
-sends a node id, an Ed25519 public key and a door, and a node holding an
+sends a node id, an Ed25519 public key and an endpoint, and a node holding an
 intermediate returns a leaf (the `ttl_ms` asked, seven days if none, at
 least a day, under its `max_leaf_ttl`; an ask past that is granted the most
 and logged at Warn once a day per node, and `ttl_ms` in the reply says what
@@ -957,9 +957,9 @@ and names the members that can sign. A node id that is already a member is
 signed again only when the request is signed by that node's old key (its
 leaf may have expired), so holding `join` does not let anyone act as an
 existing node. A joined node renews its leaf the same
-way over the node door, as a node principal asking only for itself and only
+way over the node endpoint, as a node principal asking only for itself and only
 of its renewers, which needs its current leaf, unexpired and unrevoked; a
-member that is not its renewer refuses. A renewal from a new door signs a
+member that is not its renewer refuses. A renewal from a new endpoint signs a
 join carrying the owner from the node's vouched joins (its own
 intermediate's or a renewer's), and is refused when it has none, so a
 renewer never repeats an owner another intermediate wrote. Once the leaf
@@ -1005,7 +1005,7 @@ holding admin on the troupe. Either is spread to every member before the
 call returns, which says who heard. A member that already holds the leave,
 having learned it by gossip, lets the leaving node through the handshake
 only to answer that it holds the leave (no ledger version, no call), and
-the leaving node counts it as heard. A door gives an evicted node's open
+the leaving node counts it as heard. An endpoint gives an evicted node's open
 connections a second to finish the reply in flight, then closes them.
 
 ### Troupe api keys
@@ -1056,7 +1056,7 @@ gossip cannot bring them back.
 - Every RPC re-reads the key from the current set, so an expired or revoked
   key stops at the next call.
 - A node never forwards a key's call to a node outside its audience
-  (`authz.ForwardableTo`, checked where a peer link opens), and a node door
+  (`authz.ForwardableTo`, checked where a peer link opens), and a node endpoint
   refuses a forwarded key that does not name it. A key never reaches a node
   it was not minted for.
 - A revoke cancels every connection the key holds, forwarded ones on other
@@ -1079,11 +1079,11 @@ for this reason, well under the 365-day ceiling.
 A troupe file with `[auth] scheme = "api-key"` sends the key as the bearer,
 over wss only. It comes from `key_file`, which must be 0600 or tighter and
 owned by the caller, or from `troupes/<name>.key`, sealed by hush, which
-`troupe login` writes after the door accepts the key. Keys are taken on
-`authn = "bearer"` web doors and on the node door. An upstream door does not
+`troupe login` writes after the endpoint accepts the key. Keys are taken on
+`authn = "bearer"` web endpoints and on the node endpoint. An upstream endpoint does not
 take them yet: the edge would have to pass them through.
 
-The web door listens on a unix socket, so it cannot see a caller's source,
+The web endpoint listens on a unix socket, so it cannot see a caller's source,
 and failed presentations are not rate-limited there. Guessing a 256-bit
 secret is out of reach; a limit for hygiene belongs at the edge.
 

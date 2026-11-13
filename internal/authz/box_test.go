@@ -83,7 +83,7 @@ func TestTheDefaultPolicyHoldsABoxToItsOwnBox(t *testing.T) {
 	unconfigured := subject(BoxPrincipal("ghost"))
 	f.boxed["dddd0003"] = "ghost"
 	if p.Allow(unconfigured, rpc.VerbRead, Aria("dddd0003")).Allowed {
-		t.Error("a box with no door is bound")
+		t.Error("a box with no endpoint is bound")
 	}
 }
 
@@ -95,6 +95,6 @@ func TestNoBoxesLeaveTheDefaultAsItWas(t *testing.T) {
 
 func TestTheBoxEndpointIsSeatedByPolicyAndNeverTrusted(t *testing.T) {
 	if EndpointBox.String() != "box" || !EndpointBox.SeatsOnlyPolicySubjects() || EndpointBox.Trusted() {
-		t.Fatalf("door %s: seats-only %v, trusted %v", EndpointBox, EndpointBox.SeatsOnlyPolicySubjects(), EndpointBox.Trusted())
+		t.Fatalf("endpoint %s: seats-only %v, trusted %v", EndpointBox, EndpointBox.SeatsOnlyPolicySubjects(), EndpointBox.Trusted())
 	}
 }

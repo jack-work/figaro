@@ -9,8 +9,8 @@ func registerTroupe(r *cmdkit.Router) {
 	r.Register(&cmdkit.Command{
 		Name:  "troupe",
 		Group: "System",
-		Short: "Sign in to a troupe's door, list troupes, and hold this node's troupe keys",
-		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | renewer <name> <node> <renewer> | keygen --out <dir> | leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir> [--ttl <days>] | policy show <name> | policy set <name> <file|-> | apikey mint|ls|revoke <name> ... | create <name> | intermediate <name> [--for <node-id> --out <dir>]> [-j]",
+		Short: "Sign in to a troupe's endpoint, list troupes, and hold this node's troupe keys",
+		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | renewer <name> <node> <renewer> | keygen --out <dir> | leaf <name> --for <node-id> --public-key <hex> --endpoint <host:port> --out <dir> [--ttl <days>] | policy show <name> | policy set <name> <file|-> | apikey mint|ls|revoke <name> ... | create <name> | intermediate <name> [--for <node-id> --out <dir>]> [-j]",
 		Long: `A troupe is a set of figaro nodes; troupes/<name>.toml is one as this
 CLI reaches it: its url (unix:// or wss://), an optional audience, and
 an [auth] table naming how a human signs in.
@@ -18,10 +18,10 @@ an [auth] table naming how a human signs in.
 Status: in development. Solid: keys, membership, the cross-node
 listing. Not yet settled: moves, cross-node answers, policy v2.
 
-  login <name>   sign in to the troupe's door. scheme = "oidc-device":
+  login <name>   sign in to the troupe's endpoint. scheme = "oidc-device":
                  hush holds the token as troupe:<name>. scheme =
                  "api-key": reads the key without echo (or one line of
-                 stdin), checks it at the door, and hush seals it in
+                 stdin), checks it at the endpoint, and hush seals it in
                  troupes/<name>.key; with key_file set, only checks it
   ls             each troupe, its url, and whether you are signed in;
                  ● marks the one FIGARO_TROUPE or [cli] troupe selects.
@@ -42,7 +42,7 @@ listing. Not yet settled: moves, cross-node answers, policy v2.
                  troupes/<name>.toml reaches, which needs join on
                  troupe:<name>. Shows the root's sha256 and asks before
                  trusting it; writes this node's certificate and the
-                 [troupe], [door.tls] and peercred config, then restart.
+                 [troupe], [endpoint.tls] and peercred config, then restart.
                  --delegate all binds troupe:<name> to an all-granting
                  role in policy.toml, so the troupe's permissions apply here;
                  --delegate none lends nothing. Asked when not given
@@ -55,7 +55,7 @@ listing. Not yet settled: moves, cross-node answers, policy v2.
   keygen --out <dir>   a node key, node.key (0600) in <dir> (a tmpfs unless
                        --allow-disk), and its public key printed: for a
                        node whose key is a credential
-  leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir>
+  leaf <name> --for <node-id> --public-key <hex> --endpoint <host:port> --out <dir>
                        with the root on stdin, issue that node a leaf from
                        this node's intermediate for the key it generated,
                        sign its join and name this node its renewer (both
@@ -97,8 +97,8 @@ listing. Not yet settled: moves, cross-node answers, policy v2.
 		Flags: []cmdkit.FlagDef{
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON for ls and policy show"},
 			{Long: "delegate", Description: "join: all or none, what this node lends the troupe policy (required unless asked)"},
-			{Long: "door", Description: "join: host:port other nodes dial (default [door.tls] advertise)"},
-			{Long: "listen", Description: "join: host:port the node door listens on (default the door)"},
+			{Long: "endpoint", Description: "join: host:port other nodes dial (default [endpoint.tls] advertise)"},
+			{Long: "listen", Description: "join: host:port the node endpoint listens on (default the endpoint)"},
 			{Long: "root-sha256", Description: "join: trust the troupe root only if its sha256 is this"},
 			{Long: "yes", Short: "y", IsBool: true, Description: "join: trust the root shown without asking; leave: do not ask"},
 			{Long: "for", Description: "intermediate: the node id to issue for, instead of this node"},
@@ -114,11 +114,11 @@ listing. Not yet settled: moves, cross-node answers, policy v2.
 		ArgsMax: 4,
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runTroupeVerb(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"), joinOpts{
-				Delegate: ctx.Flag("delegate"), Endpoint: ctx.Flag("door"), Listen: ctx.Flag("listen"), RootSHA256: ctx.Flag("root-sha256"), Yes: ctx.BoolFlag("yes"),
+				Delegate: ctx.Flag("delegate"), Endpoint: ctx.Flag("endpoint"), Listen: ctx.Flag("listen"), RootSHA256: ctx.Flag("root-sha256"), Yes: ctx.BoolFlag("yes"),
 			}, keyOpts{For: ctx.Flag("for"), Out: ctx.Flag("out"), AllowDisk: ctx.BoolFlag("allow-disk"), Root: ctx.BoolFlag("root"), PublicKey: ctx.Flag("public-key")}, apiKeyOpts{TTL: ctx.Flag("ttl"), Nodes: ctx.Flag("nodes"), Static: ctx.BoolFlag("static")})
 		},
 		CompleteArgs: completeWords([][2]string{
-			{"login", "sign in to a troupe's door"},
+			{"login", "sign in to a troupe's endpoint"},
 			{"ls", "the troupes this CLI knows"},
 			{"join", "sign this node into a troupe"},
 			{"leave", "sign this node out of its troupe for good"},
