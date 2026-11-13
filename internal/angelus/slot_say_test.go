@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -92,6 +95,61 @@ func TestALeasedFigaroSaysToBrokerWithItsLeasesBearer(t *testing.T) {
 	var body map[string]any
 	if err := json.Unmarshal([]byte(broker.bodies[0]), &body); err != nil || len(body) != 3 || body["key"] != "chat:10" || body["generation"] != float64(1) || body["text"] != "hello group" {
 		t.Errorf("broker was sent %s", broker.bodies[0])
+	}
+}
+
+// A pool whose say_url names a unix socket posts there, to the path after
+// the socket, with the lease's bearer; nothing goes over the network.
+func TestALeasedFigaroSaysOverTheUnixSocketItsPoolNames(t *testing.T) {
+	dir, err := os.MkdirTemp("", "say")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "pool.sock")
+	l, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type said struct{ method, path, bearer, body string }
+	got := make(chan said, 4)
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		got <- said{r.Method, r.URL.RequestURI(), r.Header.Get("Authorization"), string(body)}
+	})}
+	go srv.Serve(l)
+	t.Cleanup(func() { srv.Close() })
+
+	r := leasingRigUnder(t, leasingPolicy)
+	cfgPath := filepath.Join(filepath.Dir(r.policy), "config.toml")
+	text, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	swapped := strings.Replace(string(text), "https://broker.example/groups/say", "unix:"+socket+":/v1/groups/say", 1)
+	if swapped == string(text) {
+		t.Fatal("the rig's config names no groups say_url")
+	}
+	if err := os.WriteFile(cfgPath, []byte(swapped), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.h[rpc.MethodConfigure](asOwner(), json.RawMessage(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.hs.SayAs(context.Background(), lease.Box, lease.Aria, "hello group"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case s := <-got:
+		if s.method != http.MethodPost || s.path != "/v1/groups/say" || s.bearer != "Bearer "+lease.SayBearer || !strings.Contains(s.body, `"hello group"`) {
+			t.Errorf("the socket was sent %+v", s)
+		}
+	default:
+		t.Fatal("the say reached no socket")
 	}
 }
 

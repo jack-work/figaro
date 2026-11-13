@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -25,6 +26,20 @@ const sayTimeout = 10 * time.Second
 var sayClient = &http.Client{
 	Timeout:       sayTimeout,
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+func sayClientOver(socket string) *http.Client {
+	var dialer net.Dialer
+	return &http.Client{
+		Timeout:       sayTimeout,
+		CheckRedirect: sayClient.CheckRedirect,
+		Transport: &http.Transport{
+			DisableKeepAlives: true,
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return dialer.DialContext(ctx, "unix", socket)
+			},
+		},
+	}
 }
 
 func (h *handlers) toolsIn(sandboxName, figaroID string, otherwise func() *tool.Registry) *tool.Registry {
@@ -98,16 +113,19 @@ func (h *handlers) slotSay(ctx context.Context, params json.RawMessage) (any, er
 		return nil, fmt.Errorf("%s: %w", rpc.MethodSlotSay, err)
 	}
 	body, _ := json.Marshal(map[string]any{"key": row.Key, "generation": row.Generation, "text": req.Text})
-	post, err := http.NewRequestWithContext(ctx, http.MethodPost, pool.SayURL, bytes.NewReader(body))
+	target, client := pool.SayURL, sayClient
+	if socket, path, ok := config.SayOverUnix(pool.SayURL); ok {
+		target, client = "http://localhost"+path, sayClientOver(socket)
+	}
+	if slots.SayClient != nil {
+		client = slots.SayClient
+	}
+	post, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", rpc.MethodSlotSay, err)
 	}
 	post.Header.Set("Content-Type", "application/json")
 	post.Header.Set("Authorization", "Bearer "+row.SayBearer)
-	client := slots.SayClient
-	if client == nil {
-		client = sayClient
-	}
 	resp, err := client.Do(post)
 	if err != nil {
 		return nil, fmt.Errorf("%s: the broker was not reached", rpc.MethodSlotSay)

@@ -114,6 +114,22 @@ func nameHasSeparator(name string) bool {
 
 const bearerURLWant = "want https, or http to a loopback host (127.0.0.0/8, ::1, localhost), with a host and no credentials in the URL: a bearer goes with every call"
 
+func SayOverUnix(raw string) (socket, path string, ok bool) {
+	rest, found := strings.CutPrefix(raw, "unix:")
+	if !found {
+		return "", "", false
+	}
+	socket, path, _ = strings.Cut(rest, ":")
+	if path == "" {
+		path = "/"
+	}
+	u, err := url.ParseRequestURI(path)
+	if !filepath.IsAbs(socket) || filepath.Clean(socket) != socket || err != nil || u.Scheme != "" || u.Host != "" || !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return "", "", false
+	}
+	return socket, path, true
+}
+
 func carriesABearerSafely(raw string) bool {
 	u, err := url.Parse(raw)
 	switch {
@@ -179,8 +195,8 @@ func (c Config) validateSlot() error {
 		if u, err := url.Parse(p.Rou2URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
 			return fmt.Errorf("%s.rou2_url %q: want rou2's root, an http or https URL with a host and nothing after it; leases are opened at <root>/v1/leases", where, p.Rou2URL)
 		}
-		if !carriesABearerSafely(p.SayURL) {
-			return fmt.Errorf("%s.say_url %q: %s", where, p.SayURL, bearerURLWant)
+		if _, _, overUnix := SayOverUnix(p.SayURL); !overUnix && !carriesABearerSafely(p.SayURL) {
+			return fmt.Errorf("%s.say_url %q: %s, or unix:<absolute socket path>[:<request path>]", where, p.SayURL, bearerURLWant)
 		}
 		if p.SearchURL != "" && !carriesABearerSafely(p.SearchURL) {
 			return fmt.Errorf("%s.search_url %q: %s", where, p.SearchURL, bearerURLWant)
