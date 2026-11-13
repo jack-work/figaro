@@ -420,10 +420,13 @@ type Verdict struct {
 	jkauthz.Decision
 	undelegated string
 	narrowed    string
+	unreadable  bool
 	computed    string
 }
 
 func (v Verdict) Narrowed() bool { return v.narrowed != "" }
+
+func (v Verdict) Unreadable() bool { return v.unreadable }
 
 func (v Verdict) Reason() string {
 	if v.narrowed != "" {

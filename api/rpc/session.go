@@ -92,6 +92,9 @@ type ListResponse struct {
 	Unreachable []NodeUnreachable    `json:"unreachable,omitempty"`
 
 	PeersUnasked int `json:"peers_unasked,omitempty"`
+
+	Refused    int    `json:"refused,omitempty"`
+	RefusedWhy string `json:"refused_why,omitempty"`
 }
 
 type BindRequest struct {

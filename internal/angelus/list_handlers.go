@@ -137,7 +137,8 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
-	if filtered := h.readable(ctx, result); len(filtered) != len(result) {
+	filtered, refused := h.readable(ctx, result)
+	if len(filtered) != len(result) {
 		result = filtered
 		enrichments = pageEnrichments(result, enrichments)
 	}
@@ -168,7 +169,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 	}
 	h.fillNames(result)
 
-	return rpc.ListResponse{Figaros: result, NextBefore: nextBefore}, nil
+	return rpc.ListResponse{Figaros: result, NextBefore: nextBefore, Refused: refused.count, RefusedWhy: refused.why}, nil
 }
 
 type ttlLister interface {

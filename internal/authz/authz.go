@@ -339,6 +339,9 @@ func allowedOn(view FigaroView, r Request, figaro string, verb rpc.Verb, res Res
 	if d.Narrowed() {
 		slog.Info("authz: figaro refused", "figaro", figaro, "method", r.Method, "verb", verb, "on", res.String(), "reason", d.Reason())
 	}
+	if d.Unreadable() {
+		return Deny("%s: %s", r.Method, d.Reason())
+	}
 	if res.Kind == ResourceAria && (verb == rpc.VerbRead || !view.Allow(r.Subject, rpc.VerbRead, res).Allowed) {
 		return Decision{Hidden: true}
 	}

@@ -481,7 +481,7 @@ func (v FigaroView) Allow(s jkauthz.Subject, verb rpc.Verb, r Resource) Verdict 
 		return d
 	}
 	if why := v.refuses(s, verb, r); why != "" {
-		return Verdict{narrowed: why}
+		return Verdict{narrowed: why, unreadable: v.err != nil}
 	}
 	return d
 }

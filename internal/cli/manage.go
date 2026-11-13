@@ -152,6 +152,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 				die("list: %s", err)
 			}
 			printUnreachable(resp.Unreachable)
+			printRefused(resp.Refused, resp.RefusedWhy)
 			figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
 			renderFormScope(figs, boundID, o.limit)
 			printExpiredNote(hidden, withheldReaped(resp.Figaros, figs))
@@ -165,6 +166,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 				die("list: %s", err)
 			}
 			printUnreachable(resp.Unreachable)
+			printRefused(resp.Refused, resp.RefusedWhy)
 			figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
 			renderGlobal(figs, boundID, o.limit)
 			printExpiredNote(hidden, withheldReaped(resp.Figaros, figs))
@@ -178,6 +180,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			die("list: %s", err)
 		}
 		printUnreachable(resp.Unreachable)
+		printRefused(resp.Refused, resp.RefusedWhy)
 		figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
 		reapedHidden := withheldReaped(resp.Figaros, figs)
 
@@ -245,6 +248,12 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		printPeersUnasked(loaded, resp.PeersUnasked)
 		return nil
 	})
+}
+
+func printRefused(n int, why string) {
+	if n > 0 {
+		fmt.Fprintf(stderrw, "%d figaro(s) not listed: %s\n", n, why)
+	}
 }
 
 func printPeersUnasked(loaded *config.Loaded, n int) {
