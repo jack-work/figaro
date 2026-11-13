@@ -307,6 +307,32 @@ func (r *stopRig) waitStragglers(t *testing.T, want ...string) {
 
 type dialed struct{ network, addr string }
 
+// waitRegistered waits until exactly n listeners are in the in-flight table.
+// A dial proves less: a bound listener completes it into the kernel backlog
+// before its Serve has registered, and a Serve that registers after the seal
+// is refused, as it must be.
+func (r *stopRig) waitRegistered(t *testing.T, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		r.a.inflight.mu.Lock()
+		got := 0
+		for _, f := range r.a.inflight.out {
+			if f.listener != nil {
+				got++
+			}
+		}
+		r.a.inflight.mu.Unlock()
+		if got == n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d listeners registered with the stop, want %d", got, n)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func waitAccepting(t *testing.T, name string, d dialed) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -383,8 +409,12 @@ func TestTheSealClosesEveryDoorServedOnAContextNobodyCancels(t *testing.T) {
 	for name, d := range doors {
 		waitAccepting(t, name, d)
 	}
+	r.waitRegistered(t, len(doors))
 
 	stopped, letGo := r.holdTheJoin(t)
+	// The seal is visible before it has closed the listeners it holds; once
+	// none is left in the table, every one is closed and its loop gone.
+	r.waitRegistered(t, 0)
 	for name, d := range doors {
 		requireRefused(t, name, d)
 	}
