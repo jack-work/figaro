@@ -13,7 +13,8 @@ X; spain facts from edge (failsafe-effects).
 
 ## Revision, 11-13 afternoon: phase 1 is a provider keyed on the figaro id
 
-Status: proposed, for El Inspector, then Gluck. **This section supersedes
+Status: APPROVED by El Inspector XVI at 499afa21, with P1 to P4 (end of
+this section); Gluck's OK pending. **This section supersedes
 the phase 1 design below** (node agent protocol, figaro lessor, holders),
 which stays as the record of what was approved and what phase 2 may
 need. Figaro code for it is parked at keel `scratch/sandbox-shell-20261113`
@@ -127,6 +128,32 @@ and Sandbox-Figaro are now the exact figaro, not the lineage's leaser.
 None blocks phase 1. Phase 1 is spain-flake work: the provider, the class
 containers, the proxy, the box entries in figaro's rendered config, kfin's
 service client.
+
+### El Inspector XVI's conditions for the provider's read
+
+- **P1, no history for a liveness bit.** A box door would make the
+  provider a figaro principal with `read` on every figaro of the class,
+  their history included. Phase 1 drops the backstop poll: `killscope` at
+  every kill (since 0.67.1), and cordon or the operator for a missed one.
+  If a poll comes back, the door's role grants an existence or status verb
+  only, never `read` or `listen`; the door socket is the provider's alone,
+  never bound into a class container, SO_PEERCRED the provider's uid.
+- **P2, allocation.** An id gets a container only after a reset and probe
+  it passed since its last holder; never one another id held without
+  that. A `box.open` whose next call is `killscope` holds no container.
+  The pool-full refusal lands at birth. Rows: a kill-first connection
+  leaves the free count unchanged; N+1 births, the last refused at create.
+- **P3, restart.** The id to container map is journaled and survives a
+  provider restart. If it is lost, every container is reset and probed
+  before reuse, and held figaros get fresh ones on their next `box.open`;
+  never a guess.
+- **P4.** SO_PEERCRED = the daemon's host uid on every class socket. The
+  provider logs `box.open`, lease, `killscope`, reset and cordon with the
+  figaro id; the proxy logs Sandbox-Figaro. S1 (ephemeral, a `find
+  -writable` canary), S5, S6 and S8 rows carry over unchanged.
+
+U1 stands as the accepted residual for a forged scope on spain. The four
+items above are figaro lines, each its own read later.
 
 Terms: a **sandbox** is one nspawn container that runs tools for the
 figaros bound to it. A **class** is a named kind of sandbox (`kfin-read`)
