@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"text/template"
@@ -41,6 +42,7 @@ type fedNode struct {
 	bearer  *authz.Issuers
 	keys    *authz.APIKeys
 	keysAt  atomic.Int32
+	admits  sync.Map
 	issuer  *peertest.Issuer
 	ctx     context.Context
 	stop    context.CancelFunc
@@ -75,6 +77,13 @@ permissions = ["*:owner:self"]
 [[bind]]
 role = "self"
 principals = ["user:stranger@issuer.test.figaro"]
+
+[roles.decider]
+permissions = ["decide:outfit:mock"]
+
+[[bind]]
+role = "decider"
+principals = ["user:decider@issuer.test.figaro"]
 `
 
 func extraPrincipals(ps []string) string {
@@ -140,7 +149,7 @@ func (n *fedNode) start() {
 	require.NoError(t, os.WriteFile(n.dir+"/policy.toml", []byte(fmt.Sprintf(fedPolicy, pc.Self().String(), extraPrincipals(n.alsoOwners))), 0o600))
 	n.a.Policies = authz.NewPolicies(pc.Self(), angelus.StoreFacts(n.a.Backend))
 	require.NoError(t, n.a.Policies.Reload(loaded.PolicyPath()))
-	n.bearer, err = authz.NewIssuers(n.issuer.Config("probe", "intruder", "reader", "stranger"), nil, nil)
+	n.bearer, err = authz.NewIssuers(n.issuer.Config("probe", "intruder", "reader", "stranger", "decider"), nil, nil)
 	require.NoError(t, err)
 	n.keys, err = authz.NewAPIKeys("fed", n.id, nil, nil)
 	require.NoError(t, err)
@@ -169,6 +178,8 @@ func (n *fedNode) start() {
 		if apikey.Is(token) {
 			n.keysAt.Add(1)
 		}
+		seen, _ := n.admits.LoadOrStore(token, new(atomic.Int32))
+		seen.(*atomic.Int32).Add(1)
 		return bearers.Verify(ctx, token)
 	}}
 	go n.a.Serve(n.ctx, tls.NewListener(n.doorLn, n.tlsCfg), authz.DoorNode, door.Admit)
@@ -208,11 +219,25 @@ func (n *fedNode) keyDoor(wire string) transport.Endpoint {
 }
 
 func (n *fedNode) as(client string) *sdk.Angelus {
+	c, _ := n.asHolding(client)
+	return c
+}
+
+func (n *fedNode) asHolding(client string) (*sdk.Angelus, string) {
 	t := n.t
-	c, err := sdk.DialAngelus(n.callerDoor(n.issuer.Mint(client, time.Hour)))
+	token := n.issuer.Mint(client, time.Hour)
+	c, err := sdk.DialAngelus(n.callerDoor(token))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
-	return c
+	return c, token
+}
+
+func (n *fedNode) admitted(token string) int32 {
+	seen, ok := n.admits.Load(token)
+	if !ok {
+		return 0
+	}
+	return seen.(*atomic.Int32).Load()
 }
 
 func (n *fedNode) ariaAs(client, id string, onNotify sdk.NotifyHandler) *sdk.Aria {

@@ -27,6 +27,9 @@ var secondaryIDKeys = []string{"form_id", "role_id", "against", "prefer"}
 
 func (h *handlers) resolvingIDs(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
+		if err := h.refuseIDsFromWhoNamesNoFigaro(ctx, method, params); err != nil {
+			return nil, err
+		}
 		params, node, ref, err := h.placeParams(ctx, method, params)
 		if err != nil {
 			return nil, err
@@ -41,6 +44,38 @@ func (h *handlers) resolvingIDs(method string, next jkrpc.HandlerFunc) jkrpc.Han
 		}
 		return res, err
 	}
+}
+
+func (h *handlers) refuseIDsFromWhoNamesNoFigaro(ctx context.Context, method string, params json.RawMessage) error {
+	p := h.angelus.Policies
+	if verb, _ := rpc.VerbOf(method); p == nil || verb == rpc.VerbNone || forwarded(ctx) || !namesAnID(params) {
+		return nil
+	}
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil || p.NamesFigaros(sub) {
+		return nil
+	}
+	return &jkrpc.Error{Code: authz.ErrCode, Message: fmt.Sprintf("%s: %s holds no grant that names a figaro", method, sub.Principal)}
+}
+
+func namesAnID(params json.RawMessage) bool {
+	if rpc.AriaOf(params) != "" {
+		return true
+	}
+	if !mayCarrySecondaryID(params) {
+		return false
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(params, &fields) != nil {
+		return false
+	}
+	for _, k := range secondaryIDKeys {
+		var ref string
+		if json.Unmarshal(fields[k], &ref) == nil && ref != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *handlers) placeParams(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, string, string, error) {
