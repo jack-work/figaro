@@ -200,7 +200,7 @@ principals = ["user:1001"]
 }
 
 func TestSelectorsFigaroDoesNotKnowAreRefusedAtLoad(t *testing.T) {
-	for _, sel := range []string{"owner:me", "role:herald", "aria:", "lineage:", "sandbox:", "troupe:", "path:/srv"} {
+	for _, sel := range []string{"owner:me", "role:svc", "aria:", "lineage:", "sandbox:", "troupe:", "path:/srv"} {
 		p := NewPolicies(me, facts())
 		err := p.Reload(writePolicy(t, `
 [roles.r]
@@ -287,7 +287,7 @@ func TestReloadingWithNoPathRestoresTheDefault(t *testing.T) {
 // A role selector matches the role form by its id; a role name matched
 // nothing in silence, so it is refused at load.
 func TestARoleSelectorTakesTheRoleFormsIDNotItsName(t *testing.T) {
-	for _, sel := range []string{"role:@w29-parent", "role:@herald", "role:@53c6b", "role:@4E0A1D5C", "role:@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5"} {
+	for _, sel := range []string{"role:@w29-parent", "role:@svc", "role:@53c6b", "role:@4E0A1D5C", "role:@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5"} {
 		p := NewPolicies(me, facts())
 		err := p.Reload(writePolicy(t, `
 [roles.r]

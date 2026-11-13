@@ -18,23 +18,23 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-const heraldPolicy = `
+const svcPolicy = `
 [roles.owner]
 permissions = ["*:*"]
 
-[roles.herald-decide]
-permissions = [HERALD]
+[roles.narrow-decide]
+permissions = [PERMS]
 
 [[bind]]
 role = "owner"
-principals = ["user:UID", "user:admin@auth.kelliher.info"]
+principals = ["user:UID", "user:admin@auth.example.com"]
 
 [[bind]]
-role = "herald-decide"
-principals = ["service:herald-server@auth.kelliher.info"]
+role = "narrow-decide"
+principals = ["service:client@auth.example.com"]
 `
 
-type heraldRig struct {
+type svcRig struct {
 	t      *testing.T
 	a      *angelus.Angelus
 	path   string
@@ -44,31 +44,31 @@ type heraldRig struct {
 	served []string
 }
 
-// heraldDoor is spain's web door with herald's service principal bound to
+// svcDoor is a web door with the client's service principal bound to
 // the given permissions, a decision model that counts what reaches it, and
 // one aria the owner made.
-func heraldDoor(t *testing.T, permissions ...string) *heraldRig {
+func svcDoor(t *testing.T, permissions ...string) *svcRig {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
 	decides := "[system.decide]\nprovider = \"mock\"\nmodel = \"decision-1\"\n"
 	for name, body := range map[string]string{
 		"mock":          "[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\n" + decides,
-		"herald-decide": decides,
-		"herald-group":  decides,
-		"herald":        decides,
+		"narrow-decide": decides,
+		"narrow-group":  decides,
+		"narrow":        decides,
 	} {
 		require.NoError(t, os.WriteFile(dir+"/outfits/"+name+".toml", []byte(body), 0o600))
 	}
-	r := &heraldRig{t: t, policy: filepath.Join(dir, "policy.toml"), host: newCountingHost(t)}
+	r := &svcRig{t: t, policy: filepath.Join(dir, "policy.toml"), host: newCountingHost(t)}
 	r.grant(permissions...)
 	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte(`default_outfit = "mock"
 [authz]
 policy = "`+r.policy+`"
 [authz.upstream]
-issuer = "https://auth.kelliher.info"
+issuer = "https://auth.example.com"
 [authz.upstream.services]
-herald-server = "service"
+client = "service"
 `), 0o600))
 	a, acli, ctx, hs := daemonWithProvider(t, dir, nil, func() provider.Provider { return &mockProviderForIntegration{} }, decideThrough(r.host))
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
@@ -90,29 +90,29 @@ herald-server = "service"
 	return r
 }
 
-func (r *heraldRig) grant(permissions ...string) {
+func (r *svcRig) grant(permissions ...string) {
 	r.t.Helper()
 	quoted := make([]string, len(permissions))
 	for i, p := range permissions {
 		quoted[i] = strconv.Quote(p)
 	}
-	text := strings.NewReplacer("UID", strconv.Itoa(os.Getuid()), "HERALD", strings.Join(quoted, ", ")).Replace(heraldPolicy)
+	text := strings.NewReplacer("UID", strconv.Itoa(os.Getuid()), "PERMS", strings.Join(quoted, ", ")).Replace(svcPolicy)
 	require.NoError(r.t, os.WriteFile(r.policy, []byte(text), 0o600))
 	if r.a != nil {
 		require.NoError(r.t, r.a.Policies.Reload(r.policy))
 	}
 }
 
-func (r *heraldRig) herald() *edgeClient {
+func (r *svcRig) client() *edgeClient {
 	r.t.Helper()
-	c, _, err := forge(r.t, r.path, http.Header{"Remote-User": {"herald-server"}, "Remote-Principal": {"service"}, "Remote-Client": {"herald-server"}})
+	c, _, err := forge(r.t, r.path, http.Header{"Remote-User": {"client"}, "Remote-Principal": {"service"}, "Remote-Client": {"client"}})
 	require.NoError(r.t, err)
 	return c
 }
 
 // reached reports whether a decide call got past the policy to the
 // decision model.
-func (r *heraldRig) reached(c *edgeClient, params map[string]any) (bool, rpcReply) {
+func (r *svcRig) reached(c *edgeClient, params map[string]any) (bool, rpcReply) {
 	r.t.Helper()
 	before := r.host.hits.Load()
 	reply := c.call(rpc.MethodDecide, params)
@@ -127,28 +127,28 @@ func ask(extra map[string]any) map[string]any {
 	return params
 }
 
-// Herald's service principal holds decide:outfit:herald-decide and nothing else:
+// The client's service principal holds decide:outfit:narrow-decide and nothing else:
 // it decides in that outfit, and every other outfit, the default, an
 // override of the decision model, and an aria are refused before the model
 // is asked.
 func TestDecideOnOneOutfitReachesThatOutfitAndNoOther(t *testing.T) {
-	r := heraldDoor(t, "decide:outfit:herald-decide")
-	c := r.herald()
+	r := svcDoor(t, "decide:outfit:narrow-decide")
+	c := r.client()
 
-	ok, reply := r.reached(c, ask(map[string]any{"outfit": "herald-decide"}))
-	require.True(t, ok, "herald's own outfit did not reach the model: %+v", reply.Error)
+	ok, reply := r.reached(c, ask(map[string]any{"outfit": "narrow-decide"}))
+	require.True(t, ok, "the client's own outfit did not reach the model: %+v", reply.Error)
 
 	for name, params := range map[string]map[string]any{
-		"the group outfit":       {"outfit": "herald-group"},
+		"the group outfit":       {"outfit": "narrow-group"},
 		"the default outfit":     {},
 		"the default, by name":   {"outfit": "default"},
-		"a provider override":    {"outfit": "herald-decide", "provider": "mock"},
-		"a model override":       {"outfit": "herald-decide", "model": "decision-2"},
-		"an api override":        {"outfit": "herald-decide", "api": "chat"},
+		"a provider override":    {"outfit": "narrow-decide", "provider": "mock"},
+		"a model override":       {"outfit": "narrow-decide", "model": "decision-2"},
+		"an api override":        {"outfit": "narrow-decide", "api": "chat"},
 		"an aria":                {rpc.AriaKey: r.owned},
-		"an aria and the outfit": {rpc.AriaKey: r.owned, "outfit": "herald-decide"},
-		"a near-miss name":       {"outfit": "herald-decide "},
-		"a prefix of the name":   {"outfit": "herald"},
+		"an aria and the outfit": {rpc.AriaKey: r.owned, "outfit": "narrow-decide"},
+		"a near-miss name":       {"outfit": "narrow-decide "},
+		"a prefix of the name":   {"outfit": "narrow"},
 	} {
 		ok, reply := r.reached(c, ask(params))
 		require.False(t, ok, "%s reached the model", name)
@@ -156,19 +156,19 @@ func TestDecideOnOneOutfitReachesThatOutfitAndNoOther(t *testing.T) {
 	}
 }
 
-// Every route the door serves, called by herald with an aria the owner
-// holds: hello answers, the row-filtered listings (and herald's own api
+// Every route the door serves, called by the client with an aria the owner
+// holds: hello answers, the row-filtered listings (and the client's own api
 // keys, of which it has none) answer with nothing of anyone else's, and
 // everything else is refused. The canary widens the grant
 // with read:* and the same calls start answering, so the refusals above
 // come from the grant and not from calls that could never succeed.
 func TestDecideOnOneOutfitIsRefusedOnEveryOtherRoute(t *testing.T) {
-	r := heraldDoor(t, "decide:outfit:herald-decide")
-	c := r.herald()
+	r := svcDoor(t, "decide:outfit:narrow-decide")
+	c := r.client()
 	require.Greater(t, len(r.served), 60, "the door serves %d routes; the sweep is broken", len(r.served))
 
 	answered := func(m string) rpcReply {
-		return c.call(m, onAria(r.owned, map[string]any{"text": "witness-herald", "question": "go?", "version": rpc.ProtocolVersion}))
+		return c.call(m, onAria(r.owned, map[string]any{"text": "witness-svc", "question": "go?", "version": rpc.ProtocolVersion}))
 	}
 	rows := map[string]bool{rpc.MethodList: true, rpc.MethodNodeResolve: true, rpc.MethodTroupeAPIKeyList: true}
 	for _, m := range r.served {
@@ -184,11 +184,11 @@ func TestDecideOnOneOutfitIsRefusedOnEveryOtherRoute(t *testing.T) {
 			require.Nil(t, reply.Error, m)
 		case rows[m]:
 			if reply.Error == nil {
-				require.NotContains(t, string(reply.Result), r.owned, "%s showed herald the owner's aria", m)
-				require.NotContains(t, string(reply.Result), "user:", "%s showed herald another principal's rows", m)
+				require.NotContains(t, string(reply.Result), r.owned, "%s showed the client the owner's aria", m)
+				require.NotContains(t, string(reply.Result), "user:", "%s showed the client another principal's rows", m)
 			}
 		default:
-			require.NotNil(t, reply.Error, "%s answered herald: %s", m, reply.Result)
+			require.NotNil(t, reply.Error, "%s answered the client: %s", m, reply.Result)
 		}
 	}
 	require.Zero(t, r.host.hits.Load(), "the sweep reached the decision model")
@@ -197,7 +197,7 @@ func TestDecideOnOneOutfitIsRefusedOnEveryOtherRoute(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, owner.call(rpc.MethodContext, onAria(r.owned, nil)).Error, "the owner's aria did not survive the sweep")
 
-	r.grant("decide:outfit:herald-decide", "read:*")
+	r.grant("decide:outfit:narrow-decide", "read:*")
 	for _, m := range []string{rpc.MethodContext, rpc.MethodForm, rpc.MethodIR, rpc.MethodLineage, rpc.MethodRead} {
 		require.Nil(t, answered(m).Error, "canary: %s with read:* still refused", m)
 	}
@@ -208,12 +208,12 @@ func TestDecideOnOneOutfitIsRefusedOnEveryOtherRoute(t *testing.T) {
 // decide needed before the decide verb) still does.
 func TestAWiderDecideGrantReachesWhatTheNarrowOneDoesNot(t *testing.T) {
 	for _, wide := range []string{"decide:*", "send:*"} {
-		r := heraldDoor(t, wide)
-		c := r.herald()
+		r := svcDoor(t, wide)
+		c := r.client()
 		for name, params := range map[string]map[string]any{
-			"the group outfit":   {"outfit": "herald-group"},
+			"the group outfit":   {"outfit": "narrow-group"},
 			"the default outfit": {},
-			"a model override":   {"outfit": "herald-decide", "model": "decision-2"},
+			"a model override":   {"outfit": "narrow-decide", "model": "decision-2"},
 		} {
 			ok, reply := r.reached(c, ask(params))
 			require.True(t, ok, "%s: %s did not reach the model: %+v", wide, name, reply.Error)
@@ -225,8 +225,8 @@ func TestAWiderDecideGrantReachesWhatTheNarrowOneDoesNot(t *testing.T) {
 // on the aria as well as send: send alone is not found, send and read
 // decide on it as send did before the decide verb.
 func TestAnAriaBoundDecideNeedsReadAndSend(t *testing.T) {
-	r := heraldDoor(t, "decide:outfit:herald-decide")
-	c := r.herald()
+	r := svcDoor(t, "decide:outfit:narrow-decide")
+	c := r.client()
 	r.grant("send:aria:" + r.owned)
 	ok, reply := r.reached(c, ask(map[string]any{rpc.AriaKey: r.owned}))
 	require.False(t, ok, "send without read decided on the aria")
@@ -249,8 +249,8 @@ func TestAnOverrideOnAnAriaBoundDecideNeedsTheDaemon(t *testing.T) {
 		"a model override":    {"model": "decision-2"},
 		"an api override":     {"api": "openai"},
 	}
-	r := heraldDoor(t, "decide:outfit:herald-decide")
-	c := r.herald()
+	r := svcDoor(t, "decide:outfit:narrow-decide")
+	c := r.client()
 	r.grant("send:aria:"+r.owned, "read:aria:"+r.owned)
 	ok, reply := r.reached(c, ask(map[string]any{rpc.AriaKey: r.owned}))
 	require.True(t, ok, "control: send and read on the aria, no override: %+v", reply.Error)

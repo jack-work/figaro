@@ -15,10 +15,10 @@ func TestADecideIsCheckedOnWhatItNamesAndAnOverrideOnTheDaemon(t *testing.T) {
 		want         []Resource
 	}{
 		{"", `{}`, []Resource{Outfit("default")}},
-		{"", `{"outfit":"herald-decide"}`, []Resource{Outfit("herald-decide")}},
-		{"", `{"outfit":"herald-decide","context":"long"}`, []Resource{Outfit("herald-decide")}},
-		{"", `{"outfit":"herald-decide","provider":"x"}`, []Resource{Daemon}},
-		{"", `{"outfit":"herald-decide","model":"x"}`, []Resource{Daemon}},
+		{"", `{"outfit":"narrow-decide"}`, []Resource{Outfit("narrow-decide")}},
+		{"", `{"outfit":"narrow-decide","context":"long"}`, []Resource{Outfit("narrow-decide")}},
+		{"", `{"outfit":"narrow-decide","provider":"x"}`, []Resource{Daemon}},
+		{"", `{"outfit":"narrow-decide","model":"x"}`, []Resource{Daemon}},
 		{"", `{"api":"openai"}`, []Resource{Daemon}},
 		{"x", `{"figaro_id":"x"}`, []Resource{Aria("x")}},
 		{"x", `{"figaro_id":"x","provider":"p"}`, []Resource{Aria("x"), Daemon}},
@@ -38,32 +38,32 @@ func TestADecideIsCheckedOnWhatItNamesAndAnOverrideOnTheDaemon(t *testing.T) {
 
 func TestAnOutfitGrantMatchesOnlyThatOutfit(t *testing.T) {
 	p := loaded(t, `
-[roles.herald]
-permissions = ["decide:outfit:herald-decide"]
+[roles.narrow]
+permissions = ["decide:outfit:narrow-decide"]
 
 [[bind]]
-role = "herald"
-principals = ["user:herald"]
+role = "narrow"
+principals = ["user:svc"]
 `)
-	s := subject(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "herald"})
+	s := subject(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "svc"})
 	for r, want := range map[Resource]bool{
-		Outfit("herald-decide"): true,
-		Outfit("herald-group"):  false,
+		Outfit("narrow-decide"): true,
+		Outfit("narrow-group"):  false,
 		Outfit("default"):       false,
 		Daemon:                  false,
-		Aria("herald"):          false,
+		Aria("narrow"):          false,
 	} {
 		if got := p.Allow(s, rpc.VerbDecide, r).Allowed; got != want {
 			t.Errorf("decide on %v: %v, want %v", r, got, want)
 		}
 	}
-	if p.Allow(s, rpc.VerbSend, Outfit("herald-decide")).Allowed {
-		t.Error("decide:outfit:herald-decide granted send")
+	if p.Allow(s, rpc.VerbSend, Outfit("narrow-decide")).Allowed {
+		t.Error("decide:outfit:narrow-decide granted send")
 	}
 }
 
 func TestAnOutfitSelectorNamesOneOutfit(t *testing.T) {
-	for sel, ok := range map[string]bool{"outfit:herald-decide": true, "outfit:": false, "outfit:her*": false} {
+	for sel, ok := range map[string]bool{"outfit:narrow-decide": true, "outfit:": false, "outfit:her*": false} {
 		if err := (selectors{}).Validate(sel); (err == nil) != ok {
 			t.Errorf("%s: %v", sel, err)
 		}

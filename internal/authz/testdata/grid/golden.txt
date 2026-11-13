@@ -9,7 +9,7 @@ decide spain user:2001 aria:a-box0 AAAAAAAAAAAA
 decide spain user:2001 aria:a-child AAAAAAAAAAAA
 decide spain user:2001 aria:a-grandchild AAAAAAAAAAAA
 decide spain user:2001 aria:a-chat AAAAAAAAAAAA
-decide spain user:2001 aria:a-herald AAAAAAAAAAAA
+decide spain user:2001 aria:a-svc AAAAAAAAAAAA
 decide spain user:2001 aria:a-bwrap AAAAAAAAAAAA
 decide spain user:2001 aria:a-gone AAAAAAAAAAAA
 decide spain user:2001 aria:a-unknown AAAAAAAAAAAA
@@ -31,7 +31,7 @@ decide spain user:1000 aria:a-box0 HHHHHHHHHHHH
 decide spain user:1000 aria:a-child HHHHHHHHHHHH
 decide spain user:1000 aria:a-grandchild HHHHHHHHHHHH
 decide spain user:1000 aria:a-chat HHHHHHHHHHHH
-decide spain user:1000 aria:a-herald HHHHHHHHHHHH
+decide spain user:1000 aria:a-svc HHHHHHHHHHHH
 decide spain user:1000 aria:a-bwrap HHHHHHHHHHHH
 decide spain user:1000 aria:a-gone HHHHHHHHHHHH
 decide spain user:1000 aria:a-unknown HHHHHHHHHHHH
@@ -53,7 +53,7 @@ decide spain user:0 aria:a-box0 HHHHHHHHHHHH
 decide spain user:0 aria:a-child HHHHHHHHHHHH
 decide spain user:0 aria:a-grandchild HHHHHHHHHHHH
 decide spain user:0 aria:a-chat HHHHHHHHHHHH
-decide spain user:0 aria:a-herald HHHHHHHHHHHH
+decide spain user:0 aria:a-svc HHHHHHHHHHHH
 decide spain user:0 aria:a-bwrap HHHHHHHHHHHH
 decide spain user:0 aria:a-gone HHHHHHHHHHHH
 decide spain user:0 aria:a-unknown HHHHHHHHHHHH
@@ -75,7 +75,7 @@ decide spain user:admin@auth.kelliher.info aria:a-box0 AAAAAAAAAAAA
 decide spain user:admin@auth.kelliher.info aria:a-child AAAAAAAAAAAA
 decide spain user:admin@auth.kelliher.info aria:a-grandchild AAAAAAAAAAAA
 decide spain user:admin@auth.kelliher.info aria:a-chat AAAAAAAAAAAA
-decide spain user:admin@auth.kelliher.info aria:a-herald AAAAAAAAAAAA
+decide spain user:admin@auth.kelliher.info aria:a-svc AAAAAAAAAAAA
 decide spain user:admin@auth.kelliher.info aria:a-bwrap AAAAAAAAAAAA
 decide spain user:admin@auth.kelliher.info aria:a-gone AAAAAAAAAAAA
 decide spain user:admin@auth.kelliher.info aria:a-unknown AAAAAAAAAAAA
@@ -97,7 +97,7 @@ decide spain user:guest@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide spain user:guest@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide spain user:guest@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide spain user:guest@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide spain user:guest@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide spain user:guest@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide spain user:guest@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide spain user:guest@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide spain user:guest@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -119,7 +119,7 @@ decide spain user:bob@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide spain user:bob@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide spain user:bob@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide spain user:bob@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide spain user:bob@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide spain user:bob@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide spain user:bob@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide spain user:bob@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide spain user:bob@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -141,7 +141,7 @@ decide spain user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-box0 HH
 decide spain user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide spain user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide spain user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide spain user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide spain user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide spain user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide spain user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide spain user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -163,7 +163,7 @@ decide spain sandbox:box0@local:box aria:a-box0 AAAAAAADDDDD
 decide spain sandbox:box0@local:box aria:a-child AAAAAAADDDDD
 decide spain sandbox:box0@local:box aria:a-grandchild AAAAAAADDDDD
 decide spain sandbox:box0@local:box aria:a-chat HHHHHAHHHHHH
-decide spain sandbox:box0@local:box aria:a-herald HHHHHAHHHHHH
+decide spain sandbox:box0@local:box aria:a-svc HHHHHAHHHHHH
 decide spain sandbox:box0@local:box aria:a-bwrap HHHHHAHHHHHH
 decide spain sandbox:box0@local:box aria:a-gone HHHHHAHHHHHH
 decide spain sandbox:box0@local:box aria:a-unknown HHHHHAHHHHHH
@@ -185,7 +185,7 @@ decide spain sandbox:chat@local:box aria:a-box0 HHHHHAHHHHHH
 decide spain sandbox:chat@local:box aria:a-child HHHHHAHHHHHH
 decide spain sandbox:chat@local:box aria:a-grandchild HHHHHAHHHHHH
 decide spain sandbox:chat@local:box aria:a-chat AAAAAAADDDDD
-decide spain sandbox:chat@local:box aria:a-herald HHHHHAHHHHHH
+decide spain sandbox:chat@local:box aria:a-svc HHHHHAHHHHHH
 decide spain sandbox:chat@local:box aria:a-bwrap HHHHHAHHHHHH
 decide spain sandbox:chat@local:box aria:a-gone HHHHHAHHHHHH
 decide spain sandbox:chat@local:box aria:a-unknown HHHHHAHHHHHH
@@ -207,7 +207,7 @@ decide spain sandbox:receipt@local:box aria:a-box0 HHHHHAHHHHHH
 decide spain sandbox:receipt@local:box aria:a-child HHHHHAHHHHHH
 decide spain sandbox:receipt@local:box aria:a-grandchild HHHHHAHHHHHH
 decide spain sandbox:receipt@local:box aria:a-chat HHHHHAHHHHHH
-decide spain sandbox:receipt@local:box aria:a-herald HHHHHAHHHHHH
+decide spain sandbox:receipt@local:box aria:a-svc HHHHHAHHHHHH
 decide spain sandbox:receipt@local:box aria:a-bwrap HHHHHAHHHHHH
 decide spain sandbox:receipt@local:box aria:a-gone HHHHHAHHHHHH
 decide spain sandbox:receipt@local:box aria:a-unknown HHHHHAHHHHHH
@@ -229,7 +229,7 @@ decide spain sandbox:stranger@local:box aria:a-box0 HHHHHHHHHHHH
 decide spain sandbox:stranger@local:box aria:a-child HHHHHHHHHHHH
 decide spain sandbox:stranger@local:box aria:a-grandchild HHHHHHHHHHHH
 decide spain sandbox:stranger@local:box aria:a-chat HHHHHHHHHHHH
-decide spain sandbox:stranger@local:box aria:a-herald HHHHHHHHHHHH
+decide spain sandbox:stranger@local:box aria:a-svc HHHHHHHHHHHH
 decide spain sandbox:stranger@local:box aria:a-bwrap HHHHHHHHHHHH
 decide spain sandbox:stranger@local:box aria:a-gone HHHHHHHHHHHH
 decide spain sandbox:stranger@local:box aria:a-unknown HHHHHHHHHHHH
@@ -251,7 +251,7 @@ decide spain sandbox:box0 aria:a-box0 HHHHHHHHHHHH
 decide spain sandbox:box0 aria:a-child HHHHHHHHHHHH
 decide spain sandbox:box0 aria:a-grandchild HHHHHHHHHHHH
 decide spain sandbox:box0 aria:a-chat HHHHHHHHHHHH
-decide spain sandbox:box0 aria:a-herald HHHHHHHHHHHH
+decide spain sandbox:box0 aria:a-svc HHHHHHHHHHHH
 decide spain sandbox:box0 aria:a-bwrap HHHHHHHHHHHH
 decide spain sandbox:box0 aria:a-gone HHHHHHHHHHHH
 decide spain sandbox:box0 aria:a-unknown HHHHHHHHHHHH
@@ -273,7 +273,7 @@ decide spain troupe:kelliher aria:a-box0 HHHHHAHHHHHH
 decide spain troupe:kelliher aria:a-child HHHHHAHHHHHH
 decide spain troupe:kelliher aria:a-grandchild HHHHHAHHHHHH
 decide spain troupe:kelliher aria:a-chat HHHHHAHHHHHH
-decide spain troupe:kelliher aria:a-herald AAAAAAADDDDD
+decide spain troupe:kelliher aria:a-svc AAAAAAADDDDD
 decide spain troupe:kelliher aria:a-bwrap HHHHHAHHHHHH
 decide spain troupe:kelliher aria:a-gone HHHHHAHHHHHH
 decide spain troupe:kelliher aria:a-unknown AAAAAAADDDDD
@@ -295,7 +295,7 @@ decide spain node:peer1 aria:a-box0 HHHHHHHHHHHH
 decide spain node:peer1 aria:a-child HHHHHHHHHHHH
 decide spain node:peer1 aria:a-grandchild HHHHHHHHHHHH
 decide spain node:peer1 aria:a-chat HHHHHHHHHHHH
-decide spain node:peer1 aria:a-herald HHHHHHHHHHHH
+decide spain node:peer1 aria:a-svc HHHHHHHHHHHH
 decide spain node:peer1 aria:a-bwrap HHHHHHHHHHHH
 decide spain node:peer1 aria:a-gone HHHHHHHHHHHH
 decide spain node:peer1 aria:a-unknown HHHHHHHHHHHH
@@ -317,7 +317,7 @@ decide spain peer1/user:2001 aria:a-box0 HHHHHHHHHHHH
 decide spain peer1/user:2001 aria:a-child HHHHHHHHHHHH
 decide spain peer1/user:2001 aria:a-grandchild HHHHHHHHHHHH
 decide spain peer1/user:2001 aria:a-chat HHHHHHHHHHHH
-decide spain peer1/user:2001 aria:a-herald HHHHHHHHHHHH
+decide spain peer1/user:2001 aria:a-svc HHHHHHHHHHHH
 decide spain peer1/user:2001 aria:a-bwrap HHHHHHHHHHHH
 decide spain peer1/user:2001 aria:a-gone HHHHHHHHHHHH
 decide spain peer1/user:2001 aria:a-unknown HHHHHHHHHHHH
@@ -339,7 +339,7 @@ decide spain-troupe-test user:2001 aria:a-box0 AAAAAAAAAAAA
 decide spain-troupe-test user:2001 aria:a-child AAAAAAAAAAAA
 decide spain-troupe-test user:2001 aria:a-grandchild AAAAAAAAAAAA
 decide spain-troupe-test user:2001 aria:a-chat AAAAAAAAAAAA
-decide spain-troupe-test user:2001 aria:a-herald AAAAAAAAAAAA
+decide spain-troupe-test user:2001 aria:a-svc AAAAAAAAAAAA
 decide spain-troupe-test user:2001 aria:a-bwrap AAAAAAAAAAAA
 decide spain-troupe-test user:2001 aria:a-gone AAAAAAAAAAAA
 decide spain-troupe-test user:2001 aria:a-unknown AAAAAAAAAAAA
@@ -361,7 +361,7 @@ decide spain-troupe-test user:1000 aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-test user:1000 aria:a-child HHHHHHHHHHHH
 decide spain-troupe-test user:1000 aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-test user:1000 aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-test user:1000 aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-test user:1000 aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-test user:1000 aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-test user:1000 aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-test user:1000 aria:a-unknown HHHHHHHHHHHH
@@ -383,7 +383,7 @@ decide spain-troupe-test user:0 aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-test user:0 aria:a-child HHHHHHHHHHHH
 decide spain-troupe-test user:0 aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-test user:0 aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-test user:0 aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-test user:0 aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-test user:0 aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-test user:0 aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-test user:0 aria:a-unknown HHHHHHHHHHHH
@@ -405,7 +405,7 @@ decide spain-troupe-test user:admin@auth.kelliher.info aria:a-box0 AAAAAAAAAAAA
 decide spain-troupe-test user:admin@auth.kelliher.info aria:a-child AAAAAAAAAAAA
 decide spain-troupe-test user:admin@auth.kelliher.info aria:a-grandchild AAAAAAAAAAAA
 decide spain-troupe-test user:admin@auth.kelliher.info aria:a-chat AAAAAAAAAAAA
-decide spain-troupe-test user:admin@auth.kelliher.info aria:a-herald AAAAAAAAAAAA
+decide spain-troupe-test user:admin@auth.kelliher.info aria:a-svc AAAAAAAAAAAA
 decide spain-troupe-test user:admin@auth.kelliher.info aria:a-bwrap AAAAAAAAAAAA
 decide spain-troupe-test user:admin@auth.kelliher.info aria:a-gone AAAAAAAAAAAA
 decide spain-troupe-test user:admin@auth.kelliher.info aria:a-unknown AAAAAAAAAAAA
@@ -427,7 +427,7 @@ decide spain-troupe-test user:guest@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-test user:guest@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide spain-troupe-test user:guest@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-test user:guest@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-test user:guest@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-test user:guest@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-test user:guest@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-test user:guest@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-test user:guest@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -449,7 +449,7 @@ decide spain-troupe-test user:bob@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-test user:bob@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide spain-troupe-test user:bob@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-test user:bob@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-test user:bob@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-test user:bob@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-test user:bob@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-test user:bob@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-test user:bob@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -471,7 +471,7 @@ decide spain-troupe-test user:carol@auth.kelliher.info+ops@auth.kelliher.info ar
 decide spain-troupe-test user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide spain-troupe-test user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-test user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-test user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-test user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-test user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-test user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-test user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -493,7 +493,7 @@ decide spain-troupe-test sandbox:box0@local:box aria:a-box0 AAAAAAADDDDD
 decide spain-troupe-test sandbox:box0@local:box aria:a-child AAAAAAADDDDD
 decide spain-troupe-test sandbox:box0@local:box aria:a-grandchild AAAAAAADDDDD
 decide spain-troupe-test sandbox:box0@local:box aria:a-chat HHHHHAHHHHHH
-decide spain-troupe-test sandbox:box0@local:box aria:a-herald HHHHHAHHHHHH
+decide spain-troupe-test sandbox:box0@local:box aria:a-svc HHHHHAHHHHHH
 decide spain-troupe-test sandbox:box0@local:box aria:a-bwrap HHHHHAHHHHHH
 decide spain-troupe-test sandbox:box0@local:box aria:a-gone HHHHHAHHHHHH
 decide spain-troupe-test sandbox:box0@local:box aria:a-unknown HHHHHAHHHHHH
@@ -515,7 +515,7 @@ decide spain-troupe-test sandbox:chat@local:box aria:a-box0 HHHHHAHHHHHH
 decide spain-troupe-test sandbox:chat@local:box aria:a-child HHHHHAHHHHHH
 decide spain-troupe-test sandbox:chat@local:box aria:a-grandchild HHHHHAHHHHHH
 decide spain-troupe-test sandbox:chat@local:box aria:a-chat AAAAAAADDDDD
-decide spain-troupe-test sandbox:chat@local:box aria:a-herald HHHHHAHHHHHH
+decide spain-troupe-test sandbox:chat@local:box aria:a-svc HHHHHAHHHHHH
 decide spain-troupe-test sandbox:chat@local:box aria:a-bwrap HHHHHAHHHHHH
 decide spain-troupe-test sandbox:chat@local:box aria:a-gone HHHHHAHHHHHH
 decide spain-troupe-test sandbox:chat@local:box aria:a-unknown HHHHHAHHHHHH
@@ -537,7 +537,7 @@ decide spain-troupe-test sandbox:receipt@local:box aria:a-box0 HHHHHAHHHHHH
 decide spain-troupe-test sandbox:receipt@local:box aria:a-child HHHHHAHHHHHH
 decide spain-troupe-test sandbox:receipt@local:box aria:a-grandchild HHHHHAHHHHHH
 decide spain-troupe-test sandbox:receipt@local:box aria:a-chat HHHHHAHHHHHH
-decide spain-troupe-test sandbox:receipt@local:box aria:a-herald HHHHHAHHHHHH
+decide spain-troupe-test sandbox:receipt@local:box aria:a-svc HHHHHAHHHHHH
 decide spain-troupe-test sandbox:receipt@local:box aria:a-bwrap HHHHHAHHHHHH
 decide spain-troupe-test sandbox:receipt@local:box aria:a-gone HHHHHAHHHHHH
 decide spain-troupe-test sandbox:receipt@local:box aria:a-unknown HHHHHAHHHHHH
@@ -559,7 +559,7 @@ decide spain-troupe-test sandbox:stranger@local:box aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-test sandbox:stranger@local:box aria:a-child HHHHHHHHHHHH
 decide spain-troupe-test sandbox:stranger@local:box aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-test sandbox:stranger@local:box aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-test sandbox:stranger@local:box aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-test sandbox:stranger@local:box aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-test sandbox:stranger@local:box aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-test sandbox:stranger@local:box aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-test sandbox:stranger@local:box aria:a-unknown HHHHHHHHHHHH
@@ -581,7 +581,7 @@ decide spain-troupe-test sandbox:box0 aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-test sandbox:box0 aria:a-child HHHHHHHHHHHH
 decide spain-troupe-test sandbox:box0 aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-test sandbox:box0 aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-test sandbox:box0 aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-test sandbox:box0 aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-test sandbox:box0 aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-test sandbox:box0 aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-test sandbox:box0 aria:a-unknown HHHHHHHHHHHH
@@ -603,7 +603,7 @@ decide spain-troupe-test troupe:kelliher aria:a-box0 HHHHHAHHHHHH
 decide spain-troupe-test troupe:kelliher aria:a-child HHHHHAHHHHHH
 decide spain-troupe-test troupe:kelliher aria:a-grandchild HHHHHAHHHHHH
 decide spain-troupe-test troupe:kelliher aria:a-chat HHHHHAHHHHHH
-decide spain-troupe-test troupe:kelliher aria:a-herald AAAAAAADDDDD
+decide spain-troupe-test troupe:kelliher aria:a-svc AAAAAAADDDDD
 decide spain-troupe-test troupe:kelliher aria:a-bwrap HHHHHAHHHHHH
 decide spain-troupe-test troupe:kelliher aria:a-gone HHHHHAHHHHHH
 decide spain-troupe-test troupe:kelliher aria:a-unknown AAAAAAADDDDD
@@ -625,7 +625,7 @@ decide spain-troupe-test node:peer1 aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-test node:peer1 aria:a-child HHHHHHHHHHHH
 decide spain-troupe-test node:peer1 aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-test node:peer1 aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-test node:peer1 aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-test node:peer1 aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-test node:peer1 aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-test node:peer1 aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-test node:peer1 aria:a-unknown HHHHHHHHHHHH
@@ -647,7 +647,7 @@ decide spain-troupe-test peer1/user:2001 aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-test peer1/user:2001 aria:a-child HHHHHHHHHHHH
 decide spain-troupe-test peer1/user:2001 aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-test peer1/user:2001 aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-test peer1/user:2001 aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-test peer1/user:2001 aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-test peer1/user:2001 aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-test peer1/user:2001 aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-test peer1/user:2001 aria:a-unknown HHHHHHHHHHHH
@@ -669,7 +669,7 @@ decide spain-troupe-wide user:2001 aria:a-box0 AAAAAAAAAAAA
 decide spain-troupe-wide user:2001 aria:a-child AAAAAAAAAAAA
 decide spain-troupe-wide user:2001 aria:a-grandchild AAAAAAAAAAAA
 decide spain-troupe-wide user:2001 aria:a-chat AAAAAAAAAAAA
-decide spain-troupe-wide user:2001 aria:a-herald AAAAAAAAAAAA
+decide spain-troupe-wide user:2001 aria:a-svc AAAAAAAAAAAA
 decide spain-troupe-wide user:2001 aria:a-bwrap AAAAAAAAAAAA
 decide spain-troupe-wide user:2001 aria:a-gone AAAAAAAAAAAA
 decide spain-troupe-wide user:2001 aria:a-unknown AAAAAAAAAAAA
@@ -691,7 +691,7 @@ decide spain-troupe-wide user:1000 aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-wide user:1000 aria:a-child HHHHHHHHHHHH
 decide spain-troupe-wide user:1000 aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-wide user:1000 aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-wide user:1000 aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-wide user:1000 aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-wide user:1000 aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-wide user:1000 aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-wide user:1000 aria:a-unknown HHHHHHHHHHHH
@@ -713,7 +713,7 @@ decide spain-troupe-wide user:0 aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-wide user:0 aria:a-child HHHHHHHHHHHH
 decide spain-troupe-wide user:0 aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-wide user:0 aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-wide user:0 aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-wide user:0 aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-wide user:0 aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-wide user:0 aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-wide user:0 aria:a-unknown HHHHHHHHHHHH
@@ -735,7 +735,7 @@ decide spain-troupe-wide user:admin@auth.kelliher.info aria:a-box0 AAAAAAAAAAAA
 decide spain-troupe-wide user:admin@auth.kelliher.info aria:a-child AAAAAAAAAAAA
 decide spain-troupe-wide user:admin@auth.kelliher.info aria:a-grandchild AAAAAAAAAAAA
 decide spain-troupe-wide user:admin@auth.kelliher.info aria:a-chat AAAAAAAAAAAA
-decide spain-troupe-wide user:admin@auth.kelliher.info aria:a-herald AAAAAAAAAAAA
+decide spain-troupe-wide user:admin@auth.kelliher.info aria:a-svc AAAAAAAAAAAA
 decide spain-troupe-wide user:admin@auth.kelliher.info aria:a-bwrap AAAAAAAAAAAA
 decide spain-troupe-wide user:admin@auth.kelliher.info aria:a-gone AAAAAAAAAAAA
 decide spain-troupe-wide user:admin@auth.kelliher.info aria:a-unknown AAAAAAAAAAAA
@@ -757,7 +757,7 @@ decide spain-troupe-wide user:guest@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-wide user:guest@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide spain-troupe-wide user:guest@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-wide user:guest@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-wide user:guest@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-wide user:guest@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-wide user:guest@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-wide user:guest@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-wide user:guest@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -779,7 +779,7 @@ decide spain-troupe-wide user:bob@auth.kelliher.info aria:a-box0 HHHHHAHHHHHH
 decide spain-troupe-wide user:bob@auth.kelliher.info aria:a-child HHHHHAHHHHHH
 decide spain-troupe-wide user:bob@auth.kelliher.info aria:a-grandchild HHHHHAHHHHHH
 decide spain-troupe-wide user:bob@auth.kelliher.info aria:a-chat HHHHHAHHHHHH
-decide spain-troupe-wide user:bob@auth.kelliher.info aria:a-herald AAADDADDDDDD
+decide spain-troupe-wide user:bob@auth.kelliher.info aria:a-svc AAADDADDDDDD
 decide spain-troupe-wide user:bob@auth.kelliher.info aria:a-bwrap HHHHHAHHHHHH
 decide spain-troupe-wide user:bob@auth.kelliher.info aria:a-gone HHHHHAHHHHHH
 decide spain-troupe-wide user:bob@auth.kelliher.info aria:a-unknown AAADDADDDDDD
@@ -801,7 +801,7 @@ decide spain-troupe-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info ar
 decide spain-troupe-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-child HHHHHAHHHHHH
 decide spain-troupe-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-grandchild HHHHHAHHHHHH
 decide spain-troupe-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-chat HHHHHAHHHHHH
-decide spain-troupe-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-herald AAADDADDDDDD
+decide spain-troupe-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-svc AAADDADDDDDD
 decide spain-troupe-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-bwrap HHHHHAHHHHHH
 decide spain-troupe-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-gone HHHHHAHHHHHH
 decide spain-troupe-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-unknown AAADDADDDDDD
@@ -823,7 +823,7 @@ decide spain-troupe-wide sandbox:box0@local:box aria:a-box0 AAAAAAADDDDD
 decide spain-troupe-wide sandbox:box0@local:box aria:a-child AAAAAAADDDDD
 decide spain-troupe-wide sandbox:box0@local:box aria:a-grandchild AAAAAAADDDDD
 decide spain-troupe-wide sandbox:box0@local:box aria:a-chat HHHHHAHHHHHH
-decide spain-troupe-wide sandbox:box0@local:box aria:a-herald HHHHHAHHHHHH
+decide spain-troupe-wide sandbox:box0@local:box aria:a-svc HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:box0@local:box aria:a-bwrap HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:box0@local:box aria:a-gone HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:box0@local:box aria:a-unknown HHHHHAHHHHHH
@@ -845,7 +845,7 @@ decide spain-troupe-wide sandbox:chat@local:box aria:a-box0 HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:chat@local:box aria:a-child HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:chat@local:box aria:a-grandchild HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:chat@local:box aria:a-chat AAAAAAADDDDD
-decide spain-troupe-wide sandbox:chat@local:box aria:a-herald HHHHHAHHHHHH
+decide spain-troupe-wide sandbox:chat@local:box aria:a-svc HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:chat@local:box aria:a-bwrap HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:chat@local:box aria:a-gone HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:chat@local:box aria:a-unknown HHHHHAHHHHHH
@@ -867,7 +867,7 @@ decide spain-troupe-wide sandbox:receipt@local:box aria:a-box0 HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:receipt@local:box aria:a-child HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:receipt@local:box aria:a-grandchild HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:receipt@local:box aria:a-chat HHHHHAHHHHHH
-decide spain-troupe-wide sandbox:receipt@local:box aria:a-herald HHHHHAHHHHHH
+decide spain-troupe-wide sandbox:receipt@local:box aria:a-svc HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:receipt@local:box aria:a-bwrap HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:receipt@local:box aria:a-gone HHHHHAHHHHHH
 decide spain-troupe-wide sandbox:receipt@local:box aria:a-unknown HHHHHAHHHHHH
@@ -889,7 +889,7 @@ decide spain-troupe-wide sandbox:stranger@local:box aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-wide sandbox:stranger@local:box aria:a-child HHHHHHHHHHHH
 decide spain-troupe-wide sandbox:stranger@local:box aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-wide sandbox:stranger@local:box aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-wide sandbox:stranger@local:box aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-wide sandbox:stranger@local:box aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-wide sandbox:stranger@local:box aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-wide sandbox:stranger@local:box aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-wide sandbox:stranger@local:box aria:a-unknown HHHHHHHHHHHH
@@ -911,7 +911,7 @@ decide spain-troupe-wide sandbox:box0 aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-wide sandbox:box0 aria:a-child HHHHHHHHHHHH
 decide spain-troupe-wide sandbox:box0 aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-wide sandbox:box0 aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-wide sandbox:box0 aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-wide sandbox:box0 aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-wide sandbox:box0 aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-wide sandbox:box0 aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-wide sandbox:box0 aria:a-unknown HHHHHHHHHHHH
@@ -933,7 +933,7 @@ decide spain-troupe-wide troupe:kelliher aria:a-box0 HHHHHAHHHHHH
 decide spain-troupe-wide troupe:kelliher aria:a-child HHHHHAHHHHHH
 decide spain-troupe-wide troupe:kelliher aria:a-grandchild HHHHHAHHHHHH
 decide spain-troupe-wide troupe:kelliher aria:a-chat HHHHHAHHHHHH
-decide spain-troupe-wide troupe:kelliher aria:a-herald AAAAAAADDDDD
+decide spain-troupe-wide troupe:kelliher aria:a-svc AAAAAAADDDDD
 decide spain-troupe-wide troupe:kelliher aria:a-bwrap HHHHHAHHHHHH
 decide spain-troupe-wide troupe:kelliher aria:a-gone HHHHHAHHHHHH
 decide spain-troupe-wide troupe:kelliher aria:a-unknown AAAAAAADDDDD
@@ -955,7 +955,7 @@ decide spain-troupe-wide node:peer1 aria:a-box0 HHHHHHHHHHHH
 decide spain-troupe-wide node:peer1 aria:a-child HHHHHHHHHHHH
 decide spain-troupe-wide node:peer1 aria:a-grandchild HHHHHHHHHHHH
 decide spain-troupe-wide node:peer1 aria:a-chat HHHHHHHHHHHH
-decide spain-troupe-wide node:peer1 aria:a-herald HHHHHHHHHHHH
+decide spain-troupe-wide node:peer1 aria:a-svc HHHHHHHHHHHH
 decide spain-troupe-wide node:peer1 aria:a-bwrap HHHHHHHHHHHH
 decide spain-troupe-wide node:peer1 aria:a-gone HHHHHHHHHHHH
 decide spain-troupe-wide node:peer1 aria:a-unknown HHHHHHHHHHHH
@@ -977,7 +977,7 @@ decide spain-troupe-wide peer1/user:2001 aria:a-box0 HHHHHAHHHHHH
 decide spain-troupe-wide peer1/user:2001 aria:a-child HHHHHAHHHHHH
 decide spain-troupe-wide peer1/user:2001 aria:a-grandchild HHHHHAHHHHHH
 decide spain-troupe-wide peer1/user:2001 aria:a-chat HHHHHAHHHHHH
-decide spain-troupe-wide peer1/user:2001 aria:a-herald AAADDADDDDDD
+decide spain-troupe-wide peer1/user:2001 aria:a-svc AAADDADDDDDD
 decide spain-troupe-wide peer1/user:2001 aria:a-bwrap HHHHHAHHHHHH
 decide spain-troupe-wide peer1/user:2001 aria:a-gone HHHHHAHHHHHH
 decide spain-troupe-wide peer1/user:2001 aria:a-unknown AAADDADDDDDD
@@ -999,7 +999,7 @@ decide spain-alone user:2001 aria:a-box0 AAAAAAAAAAAA
 decide spain-alone user:2001 aria:a-child AAAAAAAAAAAA
 decide spain-alone user:2001 aria:a-grandchild AAAAAAAAAAAA
 decide spain-alone user:2001 aria:a-chat AAAAAAAAAAAA
-decide spain-alone user:2001 aria:a-herald AAAAAAAAAAAA
+decide spain-alone user:2001 aria:a-svc AAAAAAAAAAAA
 decide spain-alone user:2001 aria:a-bwrap AAAAAAAAAAAA
 decide spain-alone user:2001 aria:a-gone AAAAAAAAAAAA
 decide spain-alone user:2001 aria:a-unknown AAAAAAAAAAAA
@@ -1021,7 +1021,7 @@ decide spain-alone user:1000 aria:a-box0 HHHHHHHHHHHH
 decide spain-alone user:1000 aria:a-child HHHHHHHHHHHH
 decide spain-alone user:1000 aria:a-grandchild HHHHHHHHHHHH
 decide spain-alone user:1000 aria:a-chat HHHHHHHHHHHH
-decide spain-alone user:1000 aria:a-herald HHHHHHHHHHHH
+decide spain-alone user:1000 aria:a-svc HHHHHHHHHHHH
 decide spain-alone user:1000 aria:a-bwrap HHHHHHHHHHHH
 decide spain-alone user:1000 aria:a-gone HHHHHHHHHHHH
 decide spain-alone user:1000 aria:a-unknown HHHHHHHHHHHH
@@ -1043,7 +1043,7 @@ decide spain-alone user:0 aria:a-box0 HHHHHHHHHHHH
 decide spain-alone user:0 aria:a-child HHHHHHHHHHHH
 decide spain-alone user:0 aria:a-grandchild HHHHHHHHHHHH
 decide spain-alone user:0 aria:a-chat HHHHHHHHHHHH
-decide spain-alone user:0 aria:a-herald HHHHHHHHHHHH
+decide spain-alone user:0 aria:a-svc HHHHHHHHHHHH
 decide spain-alone user:0 aria:a-bwrap HHHHHHHHHHHH
 decide spain-alone user:0 aria:a-gone HHHHHHHHHHHH
 decide spain-alone user:0 aria:a-unknown HHHHHHHHHHHH
@@ -1065,7 +1065,7 @@ decide spain-alone user:admin@auth.kelliher.info aria:a-box0 AAAAAAAAAAAA
 decide spain-alone user:admin@auth.kelliher.info aria:a-child AAAAAAAAAAAA
 decide spain-alone user:admin@auth.kelliher.info aria:a-grandchild AAAAAAAAAAAA
 decide spain-alone user:admin@auth.kelliher.info aria:a-chat AAAAAAAAAAAA
-decide spain-alone user:admin@auth.kelliher.info aria:a-herald AAAAAAAAAAAA
+decide spain-alone user:admin@auth.kelliher.info aria:a-svc AAAAAAAAAAAA
 decide spain-alone user:admin@auth.kelliher.info aria:a-bwrap AAAAAAAAAAAA
 decide spain-alone user:admin@auth.kelliher.info aria:a-gone AAAAAAAAAAAA
 decide spain-alone user:admin@auth.kelliher.info aria:a-unknown AAAAAAAAAAAA
@@ -1087,7 +1087,7 @@ decide spain-alone user:guest@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide spain-alone user:guest@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide spain-alone user:guest@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide spain-alone user:guest@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide spain-alone user:guest@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide spain-alone user:guest@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide spain-alone user:guest@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide spain-alone user:guest@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide spain-alone user:guest@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -1109,7 +1109,7 @@ decide spain-alone user:bob@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide spain-alone user:bob@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide spain-alone user:bob@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide spain-alone user:bob@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide spain-alone user:bob@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide spain-alone user:bob@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide spain-alone user:bob@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide spain-alone user:bob@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide spain-alone user:bob@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -1131,7 +1131,7 @@ decide spain-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-b
 decide spain-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide spain-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide spain-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide spain-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide spain-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide spain-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide spain-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide spain-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -1153,7 +1153,7 @@ decide spain-alone sandbox:box0@local:box aria:a-box0 AAAAAAADDDDD
 decide spain-alone sandbox:box0@local:box aria:a-child AAAAAAADDDDD
 decide spain-alone sandbox:box0@local:box aria:a-grandchild AAAAAAADDDDD
 decide spain-alone sandbox:box0@local:box aria:a-chat HHHHHAHHHHHH
-decide spain-alone sandbox:box0@local:box aria:a-herald HHHHHAHHHHHH
+decide spain-alone sandbox:box0@local:box aria:a-svc HHHHHAHHHHHH
 decide spain-alone sandbox:box0@local:box aria:a-bwrap HHHHHAHHHHHH
 decide spain-alone sandbox:box0@local:box aria:a-gone HHHHHAHHHHHH
 decide spain-alone sandbox:box0@local:box aria:a-unknown HHHHHAHHHHHH
@@ -1175,7 +1175,7 @@ decide spain-alone sandbox:chat@local:box aria:a-box0 HHHHHAHHHHHH
 decide spain-alone sandbox:chat@local:box aria:a-child HHHHHAHHHHHH
 decide spain-alone sandbox:chat@local:box aria:a-grandchild HHHHHAHHHHHH
 decide spain-alone sandbox:chat@local:box aria:a-chat AAAAAAADDDDD
-decide spain-alone sandbox:chat@local:box aria:a-herald HHHHHAHHHHHH
+decide spain-alone sandbox:chat@local:box aria:a-svc HHHHHAHHHHHH
 decide spain-alone sandbox:chat@local:box aria:a-bwrap HHHHHAHHHHHH
 decide spain-alone sandbox:chat@local:box aria:a-gone HHHHHAHHHHHH
 decide spain-alone sandbox:chat@local:box aria:a-unknown HHHHHAHHHHHH
@@ -1197,7 +1197,7 @@ decide spain-alone sandbox:receipt@local:box aria:a-box0 HHHHHAHHHHHH
 decide spain-alone sandbox:receipt@local:box aria:a-child HHHHHAHHHHHH
 decide spain-alone sandbox:receipt@local:box aria:a-grandchild HHHHHAHHHHHH
 decide spain-alone sandbox:receipt@local:box aria:a-chat HHHHHAHHHHHH
-decide spain-alone sandbox:receipt@local:box aria:a-herald HHHHHAHHHHHH
+decide spain-alone sandbox:receipt@local:box aria:a-svc HHHHHAHHHHHH
 decide spain-alone sandbox:receipt@local:box aria:a-bwrap HHHHHAHHHHHH
 decide spain-alone sandbox:receipt@local:box aria:a-gone HHHHHAHHHHHH
 decide spain-alone sandbox:receipt@local:box aria:a-unknown HHHHHAHHHHHH
@@ -1219,7 +1219,7 @@ decide spain-alone sandbox:stranger@local:box aria:a-box0 HHHHHHHHHHHH
 decide spain-alone sandbox:stranger@local:box aria:a-child HHHHHHHHHHHH
 decide spain-alone sandbox:stranger@local:box aria:a-grandchild HHHHHHHHHHHH
 decide spain-alone sandbox:stranger@local:box aria:a-chat HHHHHHHHHHHH
-decide spain-alone sandbox:stranger@local:box aria:a-herald HHHHHHHHHHHH
+decide spain-alone sandbox:stranger@local:box aria:a-svc HHHHHHHHHHHH
 decide spain-alone sandbox:stranger@local:box aria:a-bwrap HHHHHHHHHHHH
 decide spain-alone sandbox:stranger@local:box aria:a-gone HHHHHHHHHHHH
 decide spain-alone sandbox:stranger@local:box aria:a-unknown HHHHHHHHHHHH
@@ -1241,7 +1241,7 @@ decide spain-alone sandbox:box0 aria:a-box0 HHHHHHHHHHHH
 decide spain-alone sandbox:box0 aria:a-child HHHHHHHHHHHH
 decide spain-alone sandbox:box0 aria:a-grandchild HHHHHHHHHHHH
 decide spain-alone sandbox:box0 aria:a-chat HHHHHHHHHHHH
-decide spain-alone sandbox:box0 aria:a-herald HHHHHHHHHHHH
+decide spain-alone sandbox:box0 aria:a-svc HHHHHHHHHHHH
 decide spain-alone sandbox:box0 aria:a-bwrap HHHHHHHHHHHH
 decide spain-alone sandbox:box0 aria:a-gone HHHHHHHHHHHH
 decide spain-alone sandbox:box0 aria:a-unknown HHHHHHHHHHHH
@@ -1263,7 +1263,7 @@ decide spain-alone troupe:kelliher aria:a-box0 HHHHHAHHHHHH
 decide spain-alone troupe:kelliher aria:a-child HHHHHAHHHHHH
 decide spain-alone troupe:kelliher aria:a-grandchild HHHHHAHHHHHH
 decide spain-alone troupe:kelliher aria:a-chat HHHHHAHHHHHH
-decide spain-alone troupe:kelliher aria:a-herald AAAAAAADDDDD
+decide spain-alone troupe:kelliher aria:a-svc AAAAAAADDDDD
 decide spain-alone troupe:kelliher aria:a-bwrap HHHHHAHHHHHH
 decide spain-alone troupe:kelliher aria:a-gone HHHHHAHHHHHH
 decide spain-alone troupe:kelliher aria:a-unknown AAAAAAADDDDD
@@ -1285,7 +1285,7 @@ decide spain-alone node:peer1 aria:a-box0 HHHHHHHHHHHH
 decide spain-alone node:peer1 aria:a-child HHHHHHHHHHHH
 decide spain-alone node:peer1 aria:a-grandchild HHHHHHHHHHHH
 decide spain-alone node:peer1 aria:a-chat HHHHHHHHHHHH
-decide spain-alone node:peer1 aria:a-herald HHHHHHHHHHHH
+decide spain-alone node:peer1 aria:a-svc HHHHHHHHHHHH
 decide spain-alone node:peer1 aria:a-bwrap HHHHHHHHHHHH
 decide spain-alone node:peer1 aria:a-gone HHHHHHHHHHHH
 decide spain-alone node:peer1 aria:a-unknown HHHHHHHHHHHH
@@ -1307,7 +1307,7 @@ decide spain-alone peer1/user:2001 aria:a-box0 HHHHHHHHHHHH
 decide spain-alone peer1/user:2001 aria:a-child HHHHHHHHHHHH
 decide spain-alone peer1/user:2001 aria:a-grandchild HHHHHHHHHHHH
 decide spain-alone peer1/user:2001 aria:a-chat HHHHHHHHHHHH
-decide spain-alone peer1/user:2001 aria:a-herald HHHHHHHHHHHH
+decide spain-alone peer1/user:2001 aria:a-svc HHHHHHHHHHHH
 decide spain-alone peer1/user:2001 aria:a-bwrap HHHHHHHHHHHH
 decide spain-alone peer1/user:2001 aria:a-gone HHHHHHHHHHHH
 decide spain-alone peer1/user:2001 aria:a-unknown HHHHHHHHHHHH
@@ -1329,7 +1329,7 @@ decide gluck-default user:2001 aria:a-box0 HHHHHHHHHHHH
 decide gluck-default user:2001 aria:a-child HHHHHHHHHHHH
 decide gluck-default user:2001 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default user:2001 aria:a-chat HHHHHHHHHHHH
-decide gluck-default user:2001 aria:a-herald HHHHHHHHHHHH
+decide gluck-default user:2001 aria:a-svc HHHHHHHHHHHH
 decide gluck-default user:2001 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default user:2001 aria:a-gone HHHHHHHHHHHH
 decide gluck-default user:2001 aria:a-unknown HHHHHHHHHHHH
@@ -1351,7 +1351,7 @@ decide gluck-default user:1000 aria:a-box0 AAAAAAAAAAAA
 decide gluck-default user:1000 aria:a-child AAAAAAAAAAAA
 decide gluck-default user:1000 aria:a-grandchild AAAAAAAAAAAA
 decide gluck-default user:1000 aria:a-chat AAAAAAAAAAAA
-decide gluck-default user:1000 aria:a-herald AAAAAAAAAAAA
+decide gluck-default user:1000 aria:a-svc AAAAAAAAAAAA
 decide gluck-default user:1000 aria:a-bwrap AAAAAAAAAAAA
 decide gluck-default user:1000 aria:a-gone AAAAAAAAAAAA
 decide gluck-default user:1000 aria:a-unknown AAAAAAAAAAAA
@@ -1373,7 +1373,7 @@ decide gluck-default user:0 aria:a-box0 HHHHHHHHHHHH
 decide gluck-default user:0 aria:a-child HHHHHHHHHHHH
 decide gluck-default user:0 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default user:0 aria:a-chat HHHHHHHHHHHH
-decide gluck-default user:0 aria:a-herald HHHHHHHHHHHH
+decide gluck-default user:0 aria:a-svc HHHHHHHHHHHH
 decide gluck-default user:0 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default user:0 aria:a-gone HHHHHHHHHHHH
 decide gluck-default user:0 aria:a-unknown HHHHHHHHHHHH
@@ -1395,7 +1395,7 @@ decide gluck-default user:admin@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide gluck-default user:admin@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide gluck-default user:admin@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default user:admin@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide gluck-default user:admin@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide gluck-default user:admin@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide gluck-default user:admin@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default user:admin@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide gluck-default user:admin@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -1417,7 +1417,7 @@ decide gluck-default user:guest@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide gluck-default user:guest@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide gluck-default user:guest@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default user:guest@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide gluck-default user:guest@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide gluck-default user:guest@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide gluck-default user:guest@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default user:guest@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide gluck-default user:guest@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -1439,7 +1439,7 @@ decide gluck-default user:bob@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide gluck-default user:bob@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide gluck-default user:bob@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default user:bob@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide gluck-default user:bob@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide gluck-default user:bob@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide gluck-default user:bob@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default user:bob@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide gluck-default user:bob@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -1461,7 +1461,7 @@ decide gluck-default user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a
 decide gluck-default user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide gluck-default user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide gluck-default user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide gluck-default user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide gluck-default user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide gluck-default user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -1483,7 +1483,7 @@ decide gluck-default sandbox:box0@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-default sandbox:box0@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-default sandbox:box0@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default sandbox:box0@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-default sandbox:box0@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-default sandbox:box0@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-default sandbox:box0@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default sandbox:box0@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-default sandbox:box0@local:box aria:a-unknown HHHHHHHHHHHH
@@ -1505,7 +1505,7 @@ decide gluck-default sandbox:chat@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-default sandbox:chat@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-default sandbox:chat@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default sandbox:chat@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-default sandbox:chat@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-default sandbox:chat@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-default sandbox:chat@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default sandbox:chat@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-default sandbox:chat@local:box aria:a-unknown HHHHHHHHHHHH
@@ -1527,7 +1527,7 @@ decide gluck-default sandbox:receipt@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-default sandbox:receipt@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-default sandbox:receipt@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default sandbox:receipt@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-default sandbox:receipt@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-default sandbox:receipt@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-default sandbox:receipt@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default sandbox:receipt@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-default sandbox:receipt@local:box aria:a-unknown HHHHHHHHHHHH
@@ -1549,7 +1549,7 @@ decide gluck-default sandbox:stranger@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-default sandbox:stranger@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-default sandbox:stranger@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default sandbox:stranger@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-default sandbox:stranger@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-default sandbox:stranger@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-default sandbox:stranger@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default sandbox:stranger@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-default sandbox:stranger@local:box aria:a-unknown HHHHHHHHHHHH
@@ -1571,7 +1571,7 @@ decide gluck-default sandbox:box0 aria:a-box0 HHHHHHHHHHHH
 decide gluck-default sandbox:box0 aria:a-child HHHHHHHHHHHH
 decide gluck-default sandbox:box0 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default sandbox:box0 aria:a-chat HHHHHHHHHHHH
-decide gluck-default sandbox:box0 aria:a-herald HHHHHHHHHHHH
+decide gluck-default sandbox:box0 aria:a-svc HHHHHHHHHHHH
 decide gluck-default sandbox:box0 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default sandbox:box0 aria:a-gone HHHHHHHHHHHH
 decide gluck-default sandbox:box0 aria:a-unknown HHHHHHHHHHHH
@@ -1593,7 +1593,7 @@ decide gluck-default troupe:kelliher aria:a-box0 HHHHHHHHHHHH
 decide gluck-default troupe:kelliher aria:a-child HHHHHHHHHHHH
 decide gluck-default troupe:kelliher aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default troupe:kelliher aria:a-chat HHHHHHHHHHHH
-decide gluck-default troupe:kelliher aria:a-herald HHHHHHHHHHHH
+decide gluck-default troupe:kelliher aria:a-svc HHHHHHHHHHHH
 decide gluck-default troupe:kelliher aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default troupe:kelliher aria:a-gone HHHHHHHHHHHH
 decide gluck-default troupe:kelliher aria:a-unknown HHHHHHHHHHHH
@@ -1615,7 +1615,7 @@ decide gluck-default node:peer1 aria:a-box0 HHHHHHHHHHHH
 decide gluck-default node:peer1 aria:a-child HHHHHHHHHHHH
 decide gluck-default node:peer1 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default node:peer1 aria:a-chat HHHHHHHHHHHH
-decide gluck-default node:peer1 aria:a-herald HHHHHHHHHHHH
+decide gluck-default node:peer1 aria:a-svc HHHHHHHHHHHH
 decide gluck-default node:peer1 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default node:peer1 aria:a-gone HHHHHHHHHHHH
 decide gluck-default node:peer1 aria:a-unknown HHHHHHHHHHHH
@@ -1637,7 +1637,7 @@ decide gluck-default peer1/user:2001 aria:a-box0 HHHHHHHHHHHH
 decide gluck-default peer1/user:2001 aria:a-child HHHHHHHHHHHH
 decide gluck-default peer1/user:2001 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default peer1/user:2001 aria:a-chat HHHHHHHHHHHH
-decide gluck-default peer1/user:2001 aria:a-herald HHHHHHHHHHHH
+decide gluck-default peer1/user:2001 aria:a-svc HHHHHHHHHHHH
 decide gluck-default peer1/user:2001 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default peer1/user:2001 aria:a-gone HHHHHHHHHHHH
 decide gluck-default peer1/user:2001 aria:a-unknown HHHHHHHHHHHH
@@ -1659,7 +1659,7 @@ decide gluck-default-boxes user:2001 aria:a-box0 HHHHHHHHHHHH
 decide gluck-default-boxes user:2001 aria:a-child HHHHHHHHHHHH
 decide gluck-default-boxes user:2001 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default-boxes user:2001 aria:a-chat HHHHHHHHHHHH
-decide gluck-default-boxes user:2001 aria:a-herald HHHHHHHHHHHH
+decide gluck-default-boxes user:2001 aria:a-svc HHHHHHHHHHHH
 decide gluck-default-boxes user:2001 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default-boxes user:2001 aria:a-gone HHHHHHHHHHHH
 decide gluck-default-boxes user:2001 aria:a-unknown HHHHHHHHHHHH
@@ -1681,7 +1681,7 @@ decide gluck-default-boxes user:1000 aria:a-box0 AAAAAAAAAAAA
 decide gluck-default-boxes user:1000 aria:a-child AAAAAAAAAAAA
 decide gluck-default-boxes user:1000 aria:a-grandchild AAAAAAAAAAAA
 decide gluck-default-boxes user:1000 aria:a-chat AAAAAAAAAAAA
-decide gluck-default-boxes user:1000 aria:a-herald AAAAAAAAAAAA
+decide gluck-default-boxes user:1000 aria:a-svc AAAAAAAAAAAA
 decide gluck-default-boxes user:1000 aria:a-bwrap AAAAAAAAAAAA
 decide gluck-default-boxes user:1000 aria:a-gone AAAAAAAAAAAA
 decide gluck-default-boxes user:1000 aria:a-unknown AAAAAAAAAAAA
@@ -1703,7 +1703,7 @@ decide gluck-default-boxes user:0 aria:a-box0 HHHHHHHHHHHH
 decide gluck-default-boxes user:0 aria:a-child HHHHHHHHHHHH
 decide gluck-default-boxes user:0 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default-boxes user:0 aria:a-chat HHHHHHHHHHHH
-decide gluck-default-boxes user:0 aria:a-herald HHHHHHHHHHHH
+decide gluck-default-boxes user:0 aria:a-svc HHHHHHHHHHHH
 decide gluck-default-boxes user:0 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default-boxes user:0 aria:a-gone HHHHHHHHHHHH
 decide gluck-default-boxes user:0 aria:a-unknown HHHHHHHHHHHH
@@ -1725,7 +1725,7 @@ decide gluck-default-boxes user:admin@auth.kelliher.info aria:a-box0 HHHHHHHHHHH
 decide gluck-default-boxes user:admin@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide gluck-default-boxes user:admin@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default-boxes user:admin@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide gluck-default-boxes user:admin@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide gluck-default-boxes user:admin@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide gluck-default-boxes user:admin@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default-boxes user:admin@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide gluck-default-boxes user:admin@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -1747,7 +1747,7 @@ decide gluck-default-boxes user:guest@auth.kelliher.info aria:a-box0 HHHHHHHHHHH
 decide gluck-default-boxes user:guest@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide gluck-default-boxes user:guest@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default-boxes user:guest@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide gluck-default-boxes user:guest@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide gluck-default-boxes user:guest@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide gluck-default-boxes user:guest@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default-boxes user:guest@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide gluck-default-boxes user:guest@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -1769,7 +1769,7 @@ decide gluck-default-boxes user:bob@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide gluck-default-boxes user:bob@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide gluck-default-boxes user:bob@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default-boxes user:bob@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide gluck-default-boxes user:bob@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide gluck-default-boxes user:bob@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide gluck-default-boxes user:bob@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default-boxes user:bob@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide gluck-default-boxes user:bob@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -1791,7 +1791,7 @@ decide gluck-default-boxes user:carol@auth.kelliher.info+ops@auth.kelliher.info 
 decide gluck-default-boxes user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide gluck-default-boxes user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default-boxes user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide gluck-default-boxes user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide gluck-default-boxes user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide gluck-default-boxes user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default-boxes user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide gluck-default-boxes user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -1813,7 +1813,7 @@ decide gluck-default-boxes sandbox:box0@local:box aria:a-box0 AAAAAAADDDDA
 decide gluck-default-boxes sandbox:box0@local:box aria:a-child AAAAAAADDDDA
 decide gluck-default-boxes sandbox:box0@local:box aria:a-grandchild AAAAAAADDDDA
 decide gluck-default-boxes sandbox:box0@local:box aria:a-chat HHHHHAHHHHHH
-decide gluck-default-boxes sandbox:box0@local:box aria:a-herald HHHHHAHHHHHH
+decide gluck-default-boxes sandbox:box0@local:box aria:a-svc HHHHHAHHHHHH
 decide gluck-default-boxes sandbox:box0@local:box aria:a-bwrap HHHHHAHHHHHH
 decide gluck-default-boxes sandbox:box0@local:box aria:a-gone HHHHHAHHHHHH
 decide gluck-default-boxes sandbox:box0@local:box aria:a-unknown HHHHHAHHHHHH
@@ -1835,7 +1835,7 @@ decide gluck-default-boxes sandbox:chat@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:chat@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:chat@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:chat@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-default-boxes sandbox:chat@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-default-boxes sandbox:chat@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:chat@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:chat@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:chat@local:box aria:a-unknown HHHHHHHHHHHH
@@ -1857,7 +1857,7 @@ decide gluck-default-boxes sandbox:receipt@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:receipt@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:receipt@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:receipt@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-default-boxes sandbox:receipt@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-default-boxes sandbox:receipt@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:receipt@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:receipt@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:receipt@local:box aria:a-unknown HHHHHHHHHHHH
@@ -1879,7 +1879,7 @@ decide gluck-default-boxes sandbox:stranger@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:stranger@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:stranger@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:stranger@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-default-boxes sandbox:stranger@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-default-boxes sandbox:stranger@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:stranger@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:stranger@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:stranger@local:box aria:a-unknown HHHHHHHHHHHH
@@ -1901,7 +1901,7 @@ decide gluck-default-boxes sandbox:box0 aria:a-box0 HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:box0 aria:a-child HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:box0 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:box0 aria:a-chat HHHHHHHHHHHH
-decide gluck-default-boxes sandbox:box0 aria:a-herald HHHHHHHHHHHH
+decide gluck-default-boxes sandbox:box0 aria:a-svc HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:box0 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:box0 aria:a-gone HHHHHHHHHHHH
 decide gluck-default-boxes sandbox:box0 aria:a-unknown HHHHHHHHHHHH
@@ -1923,7 +1923,7 @@ decide gluck-default-boxes troupe:kelliher aria:a-box0 HHHHHHHHHHHH
 decide gluck-default-boxes troupe:kelliher aria:a-child HHHHHHHHHHHH
 decide gluck-default-boxes troupe:kelliher aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default-boxes troupe:kelliher aria:a-chat HHHHHHHHHHHH
-decide gluck-default-boxes troupe:kelliher aria:a-herald HHHHHHHHHHHH
+decide gluck-default-boxes troupe:kelliher aria:a-svc HHHHHHHHHHHH
 decide gluck-default-boxes troupe:kelliher aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default-boxes troupe:kelliher aria:a-gone HHHHHHHHHHHH
 decide gluck-default-boxes troupe:kelliher aria:a-unknown HHHHHHHHHHHH
@@ -1945,7 +1945,7 @@ decide gluck-default-boxes node:peer1 aria:a-box0 HHHHHHHHHHHH
 decide gluck-default-boxes node:peer1 aria:a-child HHHHHHHHHHHH
 decide gluck-default-boxes node:peer1 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default-boxes node:peer1 aria:a-chat HHHHHHHHHHHH
-decide gluck-default-boxes node:peer1 aria:a-herald HHHHHHHHHHHH
+decide gluck-default-boxes node:peer1 aria:a-svc HHHHHHHHHHHH
 decide gluck-default-boxes node:peer1 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default-boxes node:peer1 aria:a-gone HHHHHHHHHHHH
 decide gluck-default-boxes node:peer1 aria:a-unknown HHHHHHHHHHHH
@@ -1967,7 +1967,7 @@ decide gluck-default-boxes peer1/user:2001 aria:a-box0 HHHHHHHHHHHH
 decide gluck-default-boxes peer1/user:2001 aria:a-child HHHHHHHHHHHH
 decide gluck-default-boxes peer1/user:2001 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-default-boxes peer1/user:2001 aria:a-chat HHHHHHHHHHHH
-decide gluck-default-boxes peer1/user:2001 aria:a-herald HHHHHHHHHHHH
+decide gluck-default-boxes peer1/user:2001 aria:a-svc HHHHHHHHHHHH
 decide gluck-default-boxes peer1/user:2001 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-default-boxes peer1/user:2001 aria:a-gone HHHHHHHHHHHH
 decide gluck-default-boxes peer1/user:2001 aria:a-unknown HHHHHHHHHHHH
@@ -1989,7 +1989,7 @@ decide gluck-delegated user:2001 aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated user:2001 aria:a-child HHHHHHHHHHHH
 decide gluck-delegated user:2001 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated user:2001 aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated user:2001 aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated user:2001 aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated user:2001 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated user:2001 aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated user:2001 aria:a-unknown HHHHHHHHHHHH
@@ -2011,7 +2011,7 @@ decide gluck-delegated user:1000 aria:a-box0 AAAAAAAAAAAA
 decide gluck-delegated user:1000 aria:a-child AAAAAAAAAAAA
 decide gluck-delegated user:1000 aria:a-grandchild AAAAAAAAAAAA
 decide gluck-delegated user:1000 aria:a-chat AAAAAAAAAAAA
-decide gluck-delegated user:1000 aria:a-herald AAAAAAAAAAAA
+decide gluck-delegated user:1000 aria:a-svc AAAAAAAAAAAA
 decide gluck-delegated user:1000 aria:a-bwrap AAAAAAAAAAAA
 decide gluck-delegated user:1000 aria:a-gone AAAAAAAAAAAA
 decide gluck-delegated user:1000 aria:a-unknown AAAAAAAAAAAA
@@ -2033,7 +2033,7 @@ decide gluck-delegated user:0 aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated user:0 aria:a-child HHHHHHHHHHHH
 decide gluck-delegated user:0 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated user:0 aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated user:0 aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated user:0 aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated user:0 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated user:0 aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated user:0 aria:a-unknown HHHHHHHHHHHH
@@ -2055,7 +2055,7 @@ decide gluck-delegated user:admin@auth.kelliher.info aria:a-box0 AAAAAAAAAAAA
 decide gluck-delegated user:admin@auth.kelliher.info aria:a-child AAAAAAAAAAAA
 decide gluck-delegated user:admin@auth.kelliher.info aria:a-grandchild AAAAAAAAAAAA
 decide gluck-delegated user:admin@auth.kelliher.info aria:a-chat AAAAAAAAAAAA
-decide gluck-delegated user:admin@auth.kelliher.info aria:a-herald AAAAAAAAAAAA
+decide gluck-delegated user:admin@auth.kelliher.info aria:a-svc AAAAAAAAAAAA
 decide gluck-delegated user:admin@auth.kelliher.info aria:a-bwrap AAAAAAAAAAAA
 decide gluck-delegated user:admin@auth.kelliher.info aria:a-gone AAAAAAAAAAAA
 decide gluck-delegated user:admin@auth.kelliher.info aria:a-unknown AAAAAAAAAAAA
@@ -2077,7 +2077,7 @@ decide gluck-delegated user:guest@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated user:guest@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide gluck-delegated user:guest@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated user:guest@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated user:guest@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated user:guest@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated user:guest@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated user:guest@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated user:guest@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -2099,7 +2099,7 @@ decide gluck-delegated user:bob@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated user:bob@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide gluck-delegated user:bob@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated user:bob@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated user:bob@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated user:bob@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated user:bob@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated user:bob@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated user:bob@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -2121,7 +2121,7 @@ decide gluck-delegated user:carol@auth.kelliher.info+ops@auth.kelliher.info aria
 decide gluck-delegated user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide gluck-delegated user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -2143,7 +2143,7 @@ decide gluck-delegated sandbox:box0@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated sandbox:box0@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-delegated sandbox:box0@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated sandbox:box0@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated sandbox:box0@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated sandbox:box0@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated sandbox:box0@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated sandbox:box0@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated sandbox:box0@local:box aria:a-unknown HHHHHHHHHHHH
@@ -2165,7 +2165,7 @@ decide gluck-delegated sandbox:chat@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated sandbox:chat@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-delegated sandbox:chat@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated sandbox:chat@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated sandbox:chat@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated sandbox:chat@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated sandbox:chat@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated sandbox:chat@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated sandbox:chat@local:box aria:a-unknown HHHHHHHHHHHH
@@ -2187,7 +2187,7 @@ decide gluck-delegated sandbox:receipt@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated sandbox:receipt@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-delegated sandbox:receipt@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated sandbox:receipt@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated sandbox:receipt@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated sandbox:receipt@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated sandbox:receipt@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated sandbox:receipt@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated sandbox:receipt@local:box aria:a-unknown HHHHHHHHHHHH
@@ -2209,7 +2209,7 @@ decide gluck-delegated sandbox:stranger@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated sandbox:stranger@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-delegated sandbox:stranger@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated sandbox:stranger@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated sandbox:stranger@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated sandbox:stranger@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated sandbox:stranger@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated sandbox:stranger@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated sandbox:stranger@local:box aria:a-unknown HHHHHHHHHHHH
@@ -2231,7 +2231,7 @@ decide gluck-delegated sandbox:box0 aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated sandbox:box0 aria:a-child HHHHHHHHHHHH
 decide gluck-delegated sandbox:box0 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated sandbox:box0 aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated sandbox:box0 aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated sandbox:box0 aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated sandbox:box0 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated sandbox:box0 aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated sandbox:box0 aria:a-unknown HHHHHHHHHHHH
@@ -2253,7 +2253,7 @@ decide gluck-delegated troupe:kelliher aria:a-box0 AAAAAAAAAAAA
 decide gluck-delegated troupe:kelliher aria:a-child AAAAAAAAAAAA
 decide gluck-delegated troupe:kelliher aria:a-grandchild AAAAAAAAAAAA
 decide gluck-delegated troupe:kelliher aria:a-chat AAAAAAAAAAAA
-decide gluck-delegated troupe:kelliher aria:a-herald AAAAAAAAAAAA
+decide gluck-delegated troupe:kelliher aria:a-svc AAAAAAAAAAAA
 decide gluck-delegated troupe:kelliher aria:a-bwrap AAAAAAAAAAAA
 decide gluck-delegated troupe:kelliher aria:a-gone AAAAAAAAAAAA
 decide gluck-delegated troupe:kelliher aria:a-unknown AAAAAAAAAAAA
@@ -2275,7 +2275,7 @@ decide gluck-delegated node:peer1 aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated node:peer1 aria:a-child HHHHHHHHHHHH
 decide gluck-delegated node:peer1 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated node:peer1 aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated node:peer1 aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated node:peer1 aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated node:peer1 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated node:peer1 aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated node:peer1 aria:a-unknown HHHHHHHHHHHH
@@ -2297,7 +2297,7 @@ decide gluck-delegated peer1/user:2001 aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated peer1/user:2001 aria:a-child HHHHHHHHHHHH
 decide gluck-delegated peer1/user:2001 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated peer1/user:2001 aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated peer1/user:2001 aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated peer1/user:2001 aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated peer1/user:2001 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated peer1/user:2001 aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated peer1/user:2001 aria:a-unknown HHHHHHHHHHHH
@@ -2319,7 +2319,7 @@ decide gluck-delegated-wide user:2001 aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated-wide user:2001 aria:a-child HHHHHHHHHHHH
 decide gluck-delegated-wide user:2001 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated-wide user:2001 aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated-wide user:2001 aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated-wide user:2001 aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated-wide user:2001 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated-wide user:2001 aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated-wide user:2001 aria:a-unknown HHHHHHHHHHHH
@@ -2341,7 +2341,7 @@ decide gluck-delegated-wide user:1000 aria:a-box0 AAAAAAAAAAAA
 decide gluck-delegated-wide user:1000 aria:a-child AAAAAAAAAAAA
 decide gluck-delegated-wide user:1000 aria:a-grandchild AAAAAAAAAAAA
 decide gluck-delegated-wide user:1000 aria:a-chat AAAAAAAAAAAA
-decide gluck-delegated-wide user:1000 aria:a-herald AAAAAAAAAAAA
+decide gluck-delegated-wide user:1000 aria:a-svc AAAAAAAAAAAA
 decide gluck-delegated-wide user:1000 aria:a-bwrap AAAAAAAAAAAA
 decide gluck-delegated-wide user:1000 aria:a-gone AAAAAAAAAAAA
 decide gluck-delegated-wide user:1000 aria:a-unknown AAAAAAAAAAAA
@@ -2363,7 +2363,7 @@ decide gluck-delegated-wide user:0 aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated-wide user:0 aria:a-child HHHHHHHHHHHH
 decide gluck-delegated-wide user:0 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated-wide user:0 aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated-wide user:0 aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated-wide user:0 aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated-wide user:0 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated-wide user:0 aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated-wide user:0 aria:a-unknown HHHHHHHHHHHH
@@ -2385,7 +2385,7 @@ decide gluck-delegated-wide user:admin@auth.kelliher.info aria:a-box0 HHHHHHHHHH
 decide gluck-delegated-wide user:admin@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide gluck-delegated-wide user:admin@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated-wide user:admin@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated-wide user:admin@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated-wide user:admin@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated-wide user:admin@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated-wide user:admin@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated-wide user:admin@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -2407,7 +2407,7 @@ decide gluck-delegated-wide user:guest@auth.kelliher.info aria:a-box0 HHHHHHHHHH
 decide gluck-delegated-wide user:guest@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide gluck-delegated-wide user:guest@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated-wide user:guest@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated-wide user:guest@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated-wide user:guest@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated-wide user:guest@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated-wide user:guest@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated-wide user:guest@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -2429,7 +2429,7 @@ decide gluck-delegated-wide user:bob@auth.kelliher.info aria:a-box0 HHHHAAAAHAHH
 decide gluck-delegated-wide user:bob@auth.kelliher.info aria:a-child HHHHAAAAHAHH
 decide gluck-delegated-wide user:bob@auth.kelliher.info aria:a-grandchild HHHHAAAAHAHH
 decide gluck-delegated-wide user:bob@auth.kelliher.info aria:a-chat HHHHHAHAHAHH
-decide gluck-delegated-wide user:bob@auth.kelliher.info aria:a-herald AAADDADADADD
+decide gluck-delegated-wide user:bob@auth.kelliher.info aria:a-svc AAADDADADADD
 decide gluck-delegated-wide user:bob@auth.kelliher.info aria:a-bwrap HHHHHAHAHAHH
 decide gluck-delegated-wide user:bob@auth.kelliher.info aria:a-gone HHHHHAHAHAHH
 decide gluck-delegated-wide user:bob@auth.kelliher.info aria:a-unknown AAADDADADADD
@@ -2451,7 +2451,7 @@ decide gluck-delegated-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info
 decide gluck-delegated-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-child HHHHAAAAHAHH
 decide gluck-delegated-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-grandchild HHHHAAAAHAHH
 decide gluck-delegated-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-chat HHHHHAHAHAHH
-decide gluck-delegated-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-herald AAADDADADADD
+decide gluck-delegated-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-svc AAADDADADADD
 decide gluck-delegated-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-bwrap HHHHHAHAHAHH
 decide gluck-delegated-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-gone HHHHHAHAHAHH
 decide gluck-delegated-wide user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-unknown AAADDADADADD
@@ -2473,7 +2473,7 @@ decide gluck-delegated-wide sandbox:box0@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:box0@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:box0@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:box0@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated-wide sandbox:box0@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated-wide sandbox:box0@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:box0@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:box0@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:box0@local:box aria:a-unknown HHHHHHHHHHHH
@@ -2495,7 +2495,7 @@ decide gluck-delegated-wide sandbox:chat@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:chat@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:chat@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:chat@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated-wide sandbox:chat@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated-wide sandbox:chat@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:chat@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:chat@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:chat@local:box aria:a-unknown HHHHHHHHHHHH
@@ -2517,7 +2517,7 @@ decide gluck-delegated-wide sandbox:receipt@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:receipt@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:receipt@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:receipt@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated-wide sandbox:receipt@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated-wide sandbox:receipt@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:receipt@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:receipt@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:receipt@local:box aria:a-unknown HHHHHHHHHHHH
@@ -2539,7 +2539,7 @@ decide gluck-delegated-wide sandbox:stranger@local:box aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:stranger@local:box aria:a-child HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:stranger@local:box aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:stranger@local:box aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated-wide sandbox:stranger@local:box aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated-wide sandbox:stranger@local:box aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:stranger@local:box aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:stranger@local:box aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:stranger@local:box aria:a-unknown HHHHHHHHHHHH
@@ -2561,7 +2561,7 @@ decide gluck-delegated-wide sandbox:box0 aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:box0 aria:a-child HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:box0 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:box0 aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated-wide sandbox:box0 aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated-wide sandbox:box0 aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:box0 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:box0 aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated-wide sandbox:box0 aria:a-unknown HHHHHHHHHHHH
@@ -2583,7 +2583,7 @@ decide gluck-delegated-wide troupe:kelliher aria:a-box0 AAAAAAAAAAAA
 decide gluck-delegated-wide troupe:kelliher aria:a-child AAAAAAAAAAAA
 decide gluck-delegated-wide troupe:kelliher aria:a-grandchild AAAAAAAAAAAA
 decide gluck-delegated-wide troupe:kelliher aria:a-chat AAAAAAAAAAAA
-decide gluck-delegated-wide troupe:kelliher aria:a-herald AAAAAAAAAAAA
+decide gluck-delegated-wide troupe:kelliher aria:a-svc AAAAAAAAAAAA
 decide gluck-delegated-wide troupe:kelliher aria:a-bwrap AAAAAAAAAAAA
 decide gluck-delegated-wide troupe:kelliher aria:a-gone AAAAAAAAAAAA
 decide gluck-delegated-wide troupe:kelliher aria:a-unknown AAAAAAAAAAAA
@@ -2605,7 +2605,7 @@ decide gluck-delegated-wide node:peer1 aria:a-box0 HHHHHHHHHHHH
 decide gluck-delegated-wide node:peer1 aria:a-child HHHHHHHHHHHH
 decide gluck-delegated-wide node:peer1 aria:a-grandchild HHHHHHHHHHHH
 decide gluck-delegated-wide node:peer1 aria:a-chat HHHHHHHHHHHH
-decide gluck-delegated-wide node:peer1 aria:a-herald HHHHHHHHHHHH
+decide gluck-delegated-wide node:peer1 aria:a-svc HHHHHHHHHHHH
 decide gluck-delegated-wide node:peer1 aria:a-bwrap HHHHHHHHHHHH
 decide gluck-delegated-wide node:peer1 aria:a-gone HHHHHHHHHHHH
 decide gluck-delegated-wide node:peer1 aria:a-unknown HHHHHHHHHHHH
@@ -2627,7 +2627,7 @@ decide gluck-delegated-wide peer1/user:2001 aria:a-box0 HHHHAAAAHAHH
 decide gluck-delegated-wide peer1/user:2001 aria:a-child HHHHAAAAHAHH
 decide gluck-delegated-wide peer1/user:2001 aria:a-grandchild HHHHAAAAHAHH
 decide gluck-delegated-wide peer1/user:2001 aria:a-chat HHHHHAHAHAHH
-decide gluck-delegated-wide peer1/user:2001 aria:a-herald AAADDADADADD
+decide gluck-delegated-wide peer1/user:2001 aria:a-svc AAADDADADADD
 decide gluck-delegated-wide peer1/user:2001 aria:a-bwrap HHHHHAHAHAHH
 decide gluck-delegated-wide peer1/user:2001 aria:a-gone HHHHHAHAHAHH
 decide gluck-delegated-wide peer1/user:2001 aria:a-unknown AAADDADADADD
@@ -2649,7 +2649,7 @@ decide selectors user:2001 aria:a-box0 HHHHHHHHHHHH
 decide selectors user:2001 aria:a-child HHHHHHHHHHHH
 decide selectors user:2001 aria:a-grandchild HHHHHHHHHHHH
 decide selectors user:2001 aria:a-chat HHHHHHHHHHHH
-decide selectors user:2001 aria:a-herald HHHHHHHHHHHH
+decide selectors user:2001 aria:a-svc HHHHHHHHHHHH
 decide selectors user:2001 aria:a-bwrap HHHHHHHHHHHH
 decide selectors user:2001 aria:a-gone HHHHHHHHHHHH
 decide selectors user:2001 aria:a-unknown HHHHHHHHHHHH
@@ -2671,7 +2671,7 @@ decide selectors user:1000 aria:a-box0 AAAAAAAAAAAA
 decide selectors user:1000 aria:a-child AAAAAAAAAAAA
 decide selectors user:1000 aria:a-grandchild AAAAAAAAAAAA
 decide selectors user:1000 aria:a-chat AAAAAAAAAAAA
-decide selectors user:1000 aria:a-herald AAAAAAAAAAAA
+decide selectors user:1000 aria:a-svc AAAAAAAAAAAA
 decide selectors user:1000 aria:a-bwrap AAAAAAAAAAAA
 decide selectors user:1000 aria:a-gone AAAAAAAAAAAA
 decide selectors user:1000 aria:a-unknown AAAAAAAAAAAA
@@ -2693,7 +2693,7 @@ decide selectors user:0 aria:a-box0 HHHHHHHHHHHH
 decide selectors user:0 aria:a-child HHHHHHHHHHHH
 decide selectors user:0 aria:a-grandchild HHHHHHHHHHHH
 decide selectors user:0 aria:a-chat HHHHHHHHHHHH
-decide selectors user:0 aria:a-herald HHHHHHHHHHHH
+decide selectors user:0 aria:a-svc HHHHHHHHHHHH
 decide selectors user:0 aria:a-bwrap HHHHHHHHHHHH
 decide selectors user:0 aria:a-gone HHHHHHHHHHHH
 decide selectors user:0 aria:a-unknown HHHHHHHHHHHH
@@ -2715,7 +2715,7 @@ decide selectors user:admin@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide selectors user:admin@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide selectors user:admin@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide selectors user:admin@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide selectors user:admin@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide selectors user:admin@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide selectors user:admin@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide selectors user:admin@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide selectors user:admin@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -2737,7 +2737,7 @@ decide selectors user:guest@auth.kelliher.info aria:a-box0 AAAADDDDDDDD
 decide selectors user:guest@auth.kelliher.info aria:a-child AAAADDDDDDDD
 decide selectors user:guest@auth.kelliher.info aria:a-grandchild AAAADDDDDDDD
 decide selectors user:guest@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide selectors user:guest@auth.kelliher.info aria:a-herald AAAADDDDDDDD
+decide selectors user:guest@auth.kelliher.info aria:a-svc AAAADDDDDDDD
 decide selectors user:guest@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide selectors user:guest@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide selectors user:guest@auth.kelliher.info aria:a-unknown AAAADDDDDDDD
@@ -2759,7 +2759,7 @@ decide selectors user:bob@auth.kelliher.info aria:a-box0 ADDDDDAADDDD
 decide selectors user:bob@auth.kelliher.info aria:a-child ADDDDDAADDDD
 decide selectors user:bob@auth.kelliher.info aria:a-grandchild ADDDDDAADDDD
 decide selectors user:bob@auth.kelliher.info aria:a-chat HHHHHHHAHHHH
-decide selectors user:bob@auth.kelliher.info aria:a-herald HHHHHHHAHHHH
+decide selectors user:bob@auth.kelliher.info aria:a-svc HHHHHHHAHHHH
 decide selectors user:bob@auth.kelliher.info aria:a-bwrap HHHHHHHAHHHH
 decide selectors user:bob@auth.kelliher.info aria:a-gone HHHHHHHAHHHH
 decide selectors user:bob@auth.kelliher.info aria:a-unknown HHHHHHHAHHHH
@@ -2781,7 +2781,7 @@ decide selectors user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-box
 decide selectors user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-child AAAADDAADDDD
 decide selectors user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-grandchild AAAADDAADDDD
 decide selectors user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-chat HHHHHHHAHHHH
-decide selectors user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-herald AAAADDDADDDD
+decide selectors user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-svc AAAADDDADDDD
 decide selectors user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-bwrap HHHHHHHAHHHH
 decide selectors user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-gone HHHHHHHAHHHH
 decide selectors user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-unknown AAAADDDADDDD
@@ -2803,7 +2803,7 @@ decide selectors sandbox:box0@local:box aria:a-box0 ADDDDADDADDD
 decide selectors sandbox:box0@local:box aria:a-child ADDDDADDADDD
 decide selectors sandbox:box0@local:box aria:a-grandchild ADDDDADDADDD
 decide selectors sandbox:box0@local:box aria:a-chat HHHHHHHHHHHH
-decide selectors sandbox:box0@local:box aria:a-herald HHHHHHHHHHHH
+decide selectors sandbox:box0@local:box aria:a-svc HHHHHHHHHHHH
 decide selectors sandbox:box0@local:box aria:a-bwrap HHHHHHHHHHHH
 decide selectors sandbox:box0@local:box aria:a-gone HHHHHHHHHHHH
 decide selectors sandbox:box0@local:box aria:a-unknown HHHHHHHHHHHH
@@ -2825,7 +2825,7 @@ decide selectors sandbox:chat@local:box aria:a-box0 HHHHHHHHHHHH
 decide selectors sandbox:chat@local:box aria:a-child HHHHHHHHHHHH
 decide selectors sandbox:chat@local:box aria:a-grandchild HHHHHHHHHHHH
 decide selectors sandbox:chat@local:box aria:a-chat ADDDDADDADDD
-decide selectors sandbox:chat@local:box aria:a-herald HHHHHHHHHHHH
+decide selectors sandbox:chat@local:box aria:a-svc HHHHHHHHHHHH
 decide selectors sandbox:chat@local:box aria:a-bwrap HHHHHHHHHHHH
 decide selectors sandbox:chat@local:box aria:a-gone HHHHHHHHHHHH
 decide selectors sandbox:chat@local:box aria:a-unknown HHHHHHHHHHHH
@@ -2847,7 +2847,7 @@ decide selectors sandbox:receipt@local:box aria:a-box0 HHHHHHHHHHHH
 decide selectors sandbox:receipt@local:box aria:a-child HHHHHHHHHHHH
 decide selectors sandbox:receipt@local:box aria:a-grandchild HHHHHHHHHHHH
 decide selectors sandbox:receipt@local:box aria:a-chat HHHHHHHHHHHH
-decide selectors sandbox:receipt@local:box aria:a-herald HHHHHHHHHHHH
+decide selectors sandbox:receipt@local:box aria:a-svc HHHHHHHHHHHH
 decide selectors sandbox:receipt@local:box aria:a-bwrap HHHHHHHHHHHH
 decide selectors sandbox:receipt@local:box aria:a-gone HHHHHHHHHHHH
 decide selectors sandbox:receipt@local:box aria:a-unknown HHHHHHHHHHHH
@@ -2869,7 +2869,7 @@ decide selectors sandbox:stranger@local:box aria:a-box0 HHHHHHHHHHHH
 decide selectors sandbox:stranger@local:box aria:a-child HHHHHHHHHHHH
 decide selectors sandbox:stranger@local:box aria:a-grandchild HHHHHHHHHHHH
 decide selectors sandbox:stranger@local:box aria:a-chat HHHHHHHHHHHH
-decide selectors sandbox:stranger@local:box aria:a-herald HHHHHHHHHHHH
+decide selectors sandbox:stranger@local:box aria:a-svc HHHHHHHHHHHH
 decide selectors sandbox:stranger@local:box aria:a-bwrap HHHHHHHHHHHH
 decide selectors sandbox:stranger@local:box aria:a-gone HHHHHHHHHHHH
 decide selectors sandbox:stranger@local:box aria:a-unknown HHHHHHHHHHHH
@@ -2891,7 +2891,7 @@ decide selectors sandbox:box0 aria:a-box0 HHHHHHHHHHHH
 decide selectors sandbox:box0 aria:a-child HHHHHHHHHHHH
 decide selectors sandbox:box0 aria:a-grandchild HHHHHHHHHHHH
 decide selectors sandbox:box0 aria:a-chat HHHHHHHHHHHH
-decide selectors sandbox:box0 aria:a-herald HHHHHHHHHHHH
+decide selectors sandbox:box0 aria:a-svc HHHHHHHHHHHH
 decide selectors sandbox:box0 aria:a-bwrap HHHHHHHHHHHH
 decide selectors sandbox:box0 aria:a-gone HHHHHHHHHHHH
 decide selectors sandbox:box0 aria:a-unknown HHHHHHHHHHHH
@@ -2913,7 +2913,7 @@ decide selectors troupe:kelliher aria:a-box0 ADDDDDAADDDD
 decide selectors troupe:kelliher aria:a-child ADDDDDAADDDD
 decide selectors troupe:kelliher aria:a-grandchild ADDDDDAADDDD
 decide selectors troupe:kelliher aria:a-chat HHHHHHHAHHHH
-decide selectors troupe:kelliher aria:a-herald HHHHHHHAHHHH
+decide selectors troupe:kelliher aria:a-svc HHHHHHHAHHHH
 decide selectors troupe:kelliher aria:a-bwrap HHHHHHHAHHHH
 decide selectors troupe:kelliher aria:a-gone HHHHHHHAHHHH
 decide selectors troupe:kelliher aria:a-unknown HHHHHHHAHHHH
@@ -2935,7 +2935,7 @@ decide selectors node:peer1 aria:a-box0 HHHHHHHHHHHH
 decide selectors node:peer1 aria:a-child HHHHHHHHHHHH
 decide selectors node:peer1 aria:a-grandchild HHHHHHHHHHHH
 decide selectors node:peer1 aria:a-chat HHHHHHHHHHHH
-decide selectors node:peer1 aria:a-herald HHHHHHHHHHHH
+decide selectors node:peer1 aria:a-svc HHHHHHHHHHHH
 decide selectors node:peer1 aria:a-bwrap HHHHHHHHHHHH
 decide selectors node:peer1 aria:a-gone HHHHHHHHHHHH
 decide selectors node:peer1 aria:a-unknown HHHHHHHHHHHH
@@ -2957,7 +2957,7 @@ decide selectors peer1/user:2001 aria:a-box0 AAAADDAADDDD
 decide selectors peer1/user:2001 aria:a-child AAAADDAADDDD
 decide selectors peer1/user:2001 aria:a-grandchild AAAADDAADDDD
 decide selectors peer1/user:2001 aria:a-chat HHHHHHHAHHHH
-decide selectors peer1/user:2001 aria:a-herald AAAADDDADDDD
+decide selectors peer1/user:2001 aria:a-svc AAAADDDADDDD
 decide selectors peer1/user:2001 aria:a-bwrap HHHHHHHAHHHH
 decide selectors peer1/user:2001 aria:a-gone HHHHHHHAHHHH
 decide selectors peer1/user:2001 aria:a-unknown AAAADDDADDDD
@@ -2979,7 +2979,7 @@ decide selectors-alone user:2001 aria:a-box0 HHHHHHHHHHHH
 decide selectors-alone user:2001 aria:a-child HHHHHHHHHHHH
 decide selectors-alone user:2001 aria:a-grandchild HHHHHHHHHHHH
 decide selectors-alone user:2001 aria:a-chat HHHHHHHHHHHH
-decide selectors-alone user:2001 aria:a-herald HHHHHHHHHHHH
+decide selectors-alone user:2001 aria:a-svc HHHHHHHHHHHH
 decide selectors-alone user:2001 aria:a-bwrap HHHHHHHHHHHH
 decide selectors-alone user:2001 aria:a-gone HHHHHHHHHHHH
 decide selectors-alone user:2001 aria:a-unknown HHHHHHHHHHHH
@@ -3001,7 +3001,7 @@ decide selectors-alone user:1000 aria:a-box0 AAAAAAAAAAAA
 decide selectors-alone user:1000 aria:a-child AAAAAAAAAAAA
 decide selectors-alone user:1000 aria:a-grandchild AAAAAAAAAAAA
 decide selectors-alone user:1000 aria:a-chat AAAAAAAAAAAA
-decide selectors-alone user:1000 aria:a-herald AAAAAAAAAAAA
+decide selectors-alone user:1000 aria:a-svc AAAAAAAAAAAA
 decide selectors-alone user:1000 aria:a-bwrap AAAAAAAAAAAA
 decide selectors-alone user:1000 aria:a-gone AAAAAAAAAAAA
 decide selectors-alone user:1000 aria:a-unknown AAAAAAAAAAAA
@@ -3023,7 +3023,7 @@ decide selectors-alone user:0 aria:a-box0 HHHHHHHHHHHH
 decide selectors-alone user:0 aria:a-child HHHHHHHHHHHH
 decide selectors-alone user:0 aria:a-grandchild HHHHHHHHHHHH
 decide selectors-alone user:0 aria:a-chat HHHHHHHHHHHH
-decide selectors-alone user:0 aria:a-herald HHHHHHHHHHHH
+decide selectors-alone user:0 aria:a-svc HHHHHHHHHHHH
 decide selectors-alone user:0 aria:a-bwrap HHHHHHHHHHHH
 decide selectors-alone user:0 aria:a-gone HHHHHHHHHHHH
 decide selectors-alone user:0 aria:a-unknown HHHHHHHHHHHH
@@ -3045,7 +3045,7 @@ decide selectors-alone user:admin@auth.kelliher.info aria:a-box0 HHHHHHHHHHHH
 decide selectors-alone user:admin@auth.kelliher.info aria:a-child HHHHHHHHHHHH
 decide selectors-alone user:admin@auth.kelliher.info aria:a-grandchild HHHHHHHHHHHH
 decide selectors-alone user:admin@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide selectors-alone user:admin@auth.kelliher.info aria:a-herald HHHHHHHHHHHH
+decide selectors-alone user:admin@auth.kelliher.info aria:a-svc HHHHHHHHHHHH
 decide selectors-alone user:admin@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide selectors-alone user:admin@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide selectors-alone user:admin@auth.kelliher.info aria:a-unknown HHHHHHHHHHHH
@@ -3067,7 +3067,7 @@ decide selectors-alone user:guest@auth.kelliher.info aria:a-box0 AAAADDDDDDDD
 decide selectors-alone user:guest@auth.kelliher.info aria:a-child AAAADDDDDDDD
 decide selectors-alone user:guest@auth.kelliher.info aria:a-grandchild AAAADDDDDDDD
 decide selectors-alone user:guest@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide selectors-alone user:guest@auth.kelliher.info aria:a-herald AAAADDDDDDDD
+decide selectors-alone user:guest@auth.kelliher.info aria:a-svc AAAADDDDDDDD
 decide selectors-alone user:guest@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide selectors-alone user:guest@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide selectors-alone user:guest@auth.kelliher.info aria:a-unknown AAAADDDDDDDD
@@ -3089,7 +3089,7 @@ decide selectors-alone user:bob@auth.kelliher.info aria:a-box0 ADDDDDAADDDD
 decide selectors-alone user:bob@auth.kelliher.info aria:a-child ADDDDDAADDDD
 decide selectors-alone user:bob@auth.kelliher.info aria:a-grandchild ADDDDDAADDDD
 decide selectors-alone user:bob@auth.kelliher.info aria:a-chat HHHHHHHAHHHH
-decide selectors-alone user:bob@auth.kelliher.info aria:a-herald HHHHHHHAHHHH
+decide selectors-alone user:bob@auth.kelliher.info aria:a-svc HHHHHHHAHHHH
 decide selectors-alone user:bob@auth.kelliher.info aria:a-bwrap HHHHHHHAHHHH
 decide selectors-alone user:bob@auth.kelliher.info aria:a-gone HHHHHHHAHHHH
 decide selectors-alone user:bob@auth.kelliher.info aria:a-unknown HHHHHHHAHHHH
@@ -3111,7 +3111,7 @@ decide selectors-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria
 decide selectors-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-child AAAADDDDDDDD
 decide selectors-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-grandchild AAAADDDDDDDD
 decide selectors-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-chat HHHHHHHHHHHH
-decide selectors-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-herald AAAADDDDDDDD
+decide selectors-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-svc AAAADDDDDDDD
 decide selectors-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-bwrap HHHHHHHHHHHH
 decide selectors-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-gone HHHHHHHHHHHH
 decide selectors-alone user:carol@auth.kelliher.info+ops@auth.kelliher.info aria:a-unknown AAAADDDDDDDD
@@ -3133,7 +3133,7 @@ decide selectors-alone sandbox:box0@local:box aria:a-box0 ADDDDADDADDD
 decide selectors-alone sandbox:box0@local:box aria:a-child ADDDDADDADDD
 decide selectors-alone sandbox:box0@local:box aria:a-grandchild ADDDDADDADDD
 decide selectors-alone sandbox:box0@local:box aria:a-chat HHHHHHHHHHHH
-decide selectors-alone sandbox:box0@local:box aria:a-herald HHHHHHHHHHHH
+decide selectors-alone sandbox:box0@local:box aria:a-svc HHHHHHHHHHHH
 decide selectors-alone sandbox:box0@local:box aria:a-bwrap HHHHHHHHHHHH
 decide selectors-alone sandbox:box0@local:box aria:a-gone HHHHHHHHHHHH
 decide selectors-alone sandbox:box0@local:box aria:a-unknown HHHHHHHHHHHH
@@ -3155,7 +3155,7 @@ decide selectors-alone sandbox:chat@local:box aria:a-box0 HHHHHHHHHHHH
 decide selectors-alone sandbox:chat@local:box aria:a-child HHHHHHHHHHHH
 decide selectors-alone sandbox:chat@local:box aria:a-grandchild HHHHHHHHHHHH
 decide selectors-alone sandbox:chat@local:box aria:a-chat ADDDDADDADDD
-decide selectors-alone sandbox:chat@local:box aria:a-herald HHHHHHHHHHHH
+decide selectors-alone sandbox:chat@local:box aria:a-svc HHHHHHHHHHHH
 decide selectors-alone sandbox:chat@local:box aria:a-bwrap HHHHHHHHHHHH
 decide selectors-alone sandbox:chat@local:box aria:a-gone HHHHHHHHHHHH
 decide selectors-alone sandbox:chat@local:box aria:a-unknown HHHHHHHHHHHH
@@ -3177,7 +3177,7 @@ decide selectors-alone sandbox:receipt@local:box aria:a-box0 HHHHHHHHHHHH
 decide selectors-alone sandbox:receipt@local:box aria:a-child HHHHHHHHHHHH
 decide selectors-alone sandbox:receipt@local:box aria:a-grandchild HHHHHHHHHHHH
 decide selectors-alone sandbox:receipt@local:box aria:a-chat HHHHHHHHHHHH
-decide selectors-alone sandbox:receipt@local:box aria:a-herald HHHHHHHHHHHH
+decide selectors-alone sandbox:receipt@local:box aria:a-svc HHHHHHHHHHHH
 decide selectors-alone sandbox:receipt@local:box aria:a-bwrap HHHHHHHHHHHH
 decide selectors-alone sandbox:receipt@local:box aria:a-gone HHHHHHHHHHHH
 decide selectors-alone sandbox:receipt@local:box aria:a-unknown HHHHHHHHHHHH
@@ -3199,7 +3199,7 @@ decide selectors-alone sandbox:stranger@local:box aria:a-box0 HHHHHHHHHHHH
 decide selectors-alone sandbox:stranger@local:box aria:a-child HHHHHHHHHHHH
 decide selectors-alone sandbox:stranger@local:box aria:a-grandchild HHHHHHHHHHHH
 decide selectors-alone sandbox:stranger@local:box aria:a-chat HHHHHHHHHHHH
-decide selectors-alone sandbox:stranger@local:box aria:a-herald HHHHHHHHHHHH
+decide selectors-alone sandbox:stranger@local:box aria:a-svc HHHHHHHHHHHH
 decide selectors-alone sandbox:stranger@local:box aria:a-bwrap HHHHHHHHHHHH
 decide selectors-alone sandbox:stranger@local:box aria:a-gone HHHHHHHHHHHH
 decide selectors-alone sandbox:stranger@local:box aria:a-unknown HHHHHHHHHHHH
@@ -3221,7 +3221,7 @@ decide selectors-alone sandbox:box0 aria:a-box0 HHHHHHHHHHHH
 decide selectors-alone sandbox:box0 aria:a-child HHHHHHHHHHHH
 decide selectors-alone sandbox:box0 aria:a-grandchild HHHHHHHHHHHH
 decide selectors-alone sandbox:box0 aria:a-chat HHHHHHHHHHHH
-decide selectors-alone sandbox:box0 aria:a-herald HHHHHHHHHHHH
+decide selectors-alone sandbox:box0 aria:a-svc HHHHHHHHHHHH
 decide selectors-alone sandbox:box0 aria:a-bwrap HHHHHHHHHHHH
 decide selectors-alone sandbox:box0 aria:a-gone HHHHHHHHHHHH
 decide selectors-alone sandbox:box0 aria:a-unknown HHHHHHHHHHHH
@@ -3243,7 +3243,7 @@ decide selectors-alone troupe:kelliher aria:a-box0 ADDDDDAADDDD
 decide selectors-alone troupe:kelliher aria:a-child ADDDDDAADDDD
 decide selectors-alone troupe:kelliher aria:a-grandchild ADDDDDAADDDD
 decide selectors-alone troupe:kelliher aria:a-chat HHHHHHHAHHHH
-decide selectors-alone troupe:kelliher aria:a-herald HHHHHHHAHHHH
+decide selectors-alone troupe:kelliher aria:a-svc HHHHHHHAHHHH
 decide selectors-alone troupe:kelliher aria:a-bwrap HHHHHHHAHHHH
 decide selectors-alone troupe:kelliher aria:a-gone HHHHHHHAHHHH
 decide selectors-alone troupe:kelliher aria:a-unknown HHHHHHHAHHHH
@@ -3265,7 +3265,7 @@ decide selectors-alone node:peer1 aria:a-box0 HHHHHHHHHHHH
 decide selectors-alone node:peer1 aria:a-child HHHHHHHHHHHH
 decide selectors-alone node:peer1 aria:a-grandchild HHHHHHHHHHHH
 decide selectors-alone node:peer1 aria:a-chat HHHHHHHHHHHH
-decide selectors-alone node:peer1 aria:a-herald HHHHHHHHHHHH
+decide selectors-alone node:peer1 aria:a-svc HHHHHHHHHHHH
 decide selectors-alone node:peer1 aria:a-bwrap HHHHHHHHHHHH
 decide selectors-alone node:peer1 aria:a-gone HHHHHHHHHHHH
 decide selectors-alone node:peer1 aria:a-unknown HHHHHHHHHHHH
@@ -3287,7 +3287,7 @@ decide selectors-alone peer1/user:2001 aria:a-box0 AAAADDDDDDDD
 decide selectors-alone peer1/user:2001 aria:a-child AAAADDDDDDDD
 decide selectors-alone peer1/user:2001 aria:a-grandchild AAAADDDDDDDD
 decide selectors-alone peer1/user:2001 aria:a-chat HHHHHHHHHHHH
-decide selectors-alone peer1/user:2001 aria:a-herald AAAADDDDDDDD
+decide selectors-alone peer1/user:2001 aria:a-svc AAAADDDDDDDD
 decide selectors-alone peer1/user:2001 aria:a-bwrap HHHHHHHHHHHH
 decide selectors-alone peer1/user:2001 aria:a-gone HHHHHHHHHHHH
 decide selectors-alone peer1/user:2001 aria:a-unknown AAAADDDDDDDD
@@ -3320,7 +3320,7 @@ claim spain user:2001 a-box0 aria:a-box0 AAADDDADDDDD
 claim spain user:2001 a-box0 aria:a-child AAADDDDDDDDD
 claim spain user:2001 a-box0 aria:a-grandchild AAADDDDDDDDD
 claim spain user:2001 a-box0 aria:a-chat AADDDDDDDDDD
-claim spain user:2001 a-box0 aria:a-herald AADDDDDDDDDD
+claim spain user:2001 a-box0 aria:a-svc AADDDDDDDDDD
 claim spain user:2001 a-box0 aria:a-bwrap AADDDDDDDDDD
 claim spain user:2001 a-box0 aria:a-gone AADDDDDDDDDD
 claim spain user:2001 a-box0 aria:a-unknown AADDDDDDDDDD
@@ -3341,7 +3341,7 @@ claim spain user:2001 a-child aria:a-box0 AAADDDADDDDD
 claim spain user:2001 a-child aria:a-child AAADDDDDDDDD
 claim spain user:2001 a-child aria:a-grandchild AAADDDDDDDDD
 claim spain user:2001 a-child aria:a-chat AADDDDDDDDDD
-claim spain user:2001 a-child aria:a-herald AADDDDDDDDDD
+claim spain user:2001 a-child aria:a-svc AADDDDDDDDDD
 claim spain user:2001 a-child aria:a-bwrap AADDDDDDDDDD
 claim spain user:2001 a-child aria:a-gone AADDDDDDDDDD
 claim spain user:2001 a-child aria:a-unknown AADDDDDDDDDD
@@ -3362,7 +3362,7 @@ claim spain user:2001 a-grandchild aria:a-box0 AAADDDADDDDD
 claim spain user:2001 a-grandchild aria:a-child AAADDDDDDDDD
 claim spain user:2001 a-grandchild aria:a-grandchild AAADDDDDDDDD
 claim spain user:2001 a-grandchild aria:a-chat AADDDDDDDDDD
-claim spain user:2001 a-grandchild aria:a-herald AADDDDDDDDDD
+claim spain user:2001 a-grandchild aria:a-svc AADDDDDDDDDD
 claim spain user:2001 a-grandchild aria:a-bwrap AADDDDDDDDDD
 claim spain user:2001 a-grandchild aria:a-gone AADDDDDDDDDD
 claim spain user:2001 a-grandchild aria:a-unknown AADDDDDDDDDD
@@ -3383,7 +3383,7 @@ claim spain user:2001 a-2001 aria:a-box0 AAAAAAAAAAAA
 claim spain user:2001 a-2001 aria:a-child AAAAAAAAAAAA
 claim spain user:2001 a-2001 aria:a-grandchild AAAAAAAAAAAA
 claim spain user:2001 a-2001 aria:a-chat AAAAAAAAAAAA
-claim spain user:2001 a-2001 aria:a-herald AAAAAAAAAAAA
+claim spain user:2001 a-2001 aria:a-svc AAAAAAAAAAAA
 claim spain user:2001 a-2001 aria:a-bwrap AAAAAAAAAAAA
 claim spain user:2001 a-2001 aria:a-gone AAAAAAAAAAAA
 claim spain user:2001 a-2001 aria:a-unknown AAAAAAAAAAAA
@@ -3404,7 +3404,7 @@ claim spain user:2001 a-guest aria:a-box0 HHHHHHHHHHHH
 claim spain user:2001 a-guest aria:a-child HHHHHHHHHHHH
 claim spain user:2001 a-guest aria:a-grandchild HHHHHHHHHHHH
 claim spain user:2001 a-guest aria:a-chat HHHHHHHHHHHH
-claim spain user:2001 a-guest aria:a-herald HHHHHHHHHHHH
+claim spain user:2001 a-guest aria:a-svc HHHHHHHHHHHH
 claim spain user:2001 a-guest aria:a-bwrap HHHHHHHHHHHH
 claim spain user:2001 a-guest aria:a-gone HHHHHHHHHHHH
 claim spain user:2001 a-guest aria:a-unknown HHHHHHHHHHHH
@@ -3425,7 +3425,7 @@ claim spain user:1000 a-box0 aria:a-box0 HHHHHHHHHHHH
 claim spain user:1000 a-box0 aria:a-child HHHHHHHHHHHH
 claim spain user:1000 a-box0 aria:a-grandchild HHHHHHHHHHHH
 claim spain user:1000 a-box0 aria:a-chat HHHHHHHHHHHH
-claim spain user:1000 a-box0 aria:a-herald HHHHHHHHHHHH
+claim spain user:1000 a-box0 aria:a-svc HHHHHHHHHHHH
 claim spain user:1000 a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim spain user:1000 a-box0 aria:a-gone HHHHHHHHHHHH
 claim spain user:1000 a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -3446,7 +3446,7 @@ claim spain user:1000 a-child aria:a-box0 HHHHHHHHHHHH
 claim spain user:1000 a-child aria:a-child HHHHHHHHHHHH
 claim spain user:1000 a-child aria:a-grandchild HHHHHHHHHHHH
 claim spain user:1000 a-child aria:a-chat HHHHHHHHHHHH
-claim spain user:1000 a-child aria:a-herald HHHHHHHHHHHH
+claim spain user:1000 a-child aria:a-svc HHHHHHHHHHHH
 claim spain user:1000 a-child aria:a-bwrap HHHHHHHHHHHH
 claim spain user:1000 a-child aria:a-gone HHHHHHHHHHHH
 claim spain user:1000 a-child aria:a-unknown HHHHHHHHHHHH
@@ -3467,7 +3467,7 @@ claim spain user:1000 a-grandchild aria:a-box0 HHHHHHHHHHHH
 claim spain user:1000 a-grandchild aria:a-child HHHHHHHHHHHH
 claim spain user:1000 a-grandchild aria:a-grandchild HHHHHHHHHHHH
 claim spain user:1000 a-grandchild aria:a-chat HHHHHHHHHHHH
-claim spain user:1000 a-grandchild aria:a-herald HHHHHHHHHHHH
+claim spain user:1000 a-grandchild aria:a-svc HHHHHHHHHHHH
 claim spain user:1000 a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim spain user:1000 a-grandchild aria:a-gone HHHHHHHHHHHH
 claim spain user:1000 a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -3488,7 +3488,7 @@ claim spain user:1000 a-2001 aria:a-box0 HHHHHHHHHHHH
 claim spain user:1000 a-2001 aria:a-child HHHHHHHHHHHH
 claim spain user:1000 a-2001 aria:a-grandchild HHHHHHHHHHHH
 claim spain user:1000 a-2001 aria:a-chat HHHHHHHHHHHH
-claim spain user:1000 a-2001 aria:a-herald HHHHHHHHHHHH
+claim spain user:1000 a-2001 aria:a-svc HHHHHHHHHHHH
 claim spain user:1000 a-2001 aria:a-bwrap HHHHHHHHHHHH
 claim spain user:1000 a-2001 aria:a-gone HHHHHHHHHHHH
 claim spain user:1000 a-2001 aria:a-unknown HHHHHHHHHHHH
@@ -3509,7 +3509,7 @@ claim spain user:1000 a-guest aria:a-box0 HHHHHHHHHHHH
 claim spain user:1000 a-guest aria:a-child HHHHHHHHHHHH
 claim spain user:1000 a-guest aria:a-grandchild HHHHHHHHHHHH
 claim spain user:1000 a-guest aria:a-chat HHHHHHHHHHHH
-claim spain user:1000 a-guest aria:a-herald HHHHHHHHHHHH
+claim spain user:1000 a-guest aria:a-svc HHHHHHHHHHHH
 claim spain user:1000 a-guest aria:a-bwrap HHHHHHHHHHHH
 claim spain user:1000 a-guest aria:a-gone HHHHHHHHHHHH
 claim spain user:1000 a-guest aria:a-unknown HHHHHHHHHHHH
@@ -3530,7 +3530,7 @@ claim spain user:admin@auth.kelliher.info a-box0 aria:a-box0 AAADDDADDDDD
 claim spain user:admin@auth.kelliher.info a-box0 aria:a-child AAADDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-box0 aria:a-grandchild AAADDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-box0 aria:a-chat AADDDDDDDDDD
-claim spain user:admin@auth.kelliher.info a-box0 aria:a-herald AADDDDDDDDDD
+claim spain user:admin@auth.kelliher.info a-box0 aria:a-svc AADDDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-box0 aria:a-bwrap AADDDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-box0 aria:a-gone AADDDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-box0 aria:a-unknown AADDDDDDDDDD
@@ -3551,7 +3551,7 @@ claim spain user:admin@auth.kelliher.info a-child aria:a-box0 AAADDDADDDDD
 claim spain user:admin@auth.kelliher.info a-child aria:a-child AAADDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-child aria:a-grandchild AAADDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-child aria:a-chat AADDDDDDDDDD
-claim spain user:admin@auth.kelliher.info a-child aria:a-herald AADDDDDDDDDD
+claim spain user:admin@auth.kelliher.info a-child aria:a-svc AADDDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-child aria:a-bwrap AADDDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-child aria:a-gone AADDDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-child aria:a-unknown AADDDDDDDDDD
@@ -3572,7 +3572,7 @@ claim spain user:admin@auth.kelliher.info a-grandchild aria:a-box0 AAADDDADDDDD
 claim spain user:admin@auth.kelliher.info a-grandchild aria:a-child AAADDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-grandchild aria:a-grandchild AAADDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-grandchild aria:a-chat AADDDDDDDDDD
-claim spain user:admin@auth.kelliher.info a-grandchild aria:a-herald AADDDDDDDDDD
+claim spain user:admin@auth.kelliher.info a-grandchild aria:a-svc AADDDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-grandchild aria:a-bwrap AADDDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-grandchild aria:a-gone AADDDDDDDDDD
 claim spain user:admin@auth.kelliher.info a-grandchild aria:a-unknown AADDDDDDDDDD
@@ -3593,7 +3593,7 @@ claim spain user:admin@auth.kelliher.info a-2001 aria:a-box0 AAAAAAAAAAAA
 claim spain user:admin@auth.kelliher.info a-2001 aria:a-child AAAAAAAAAAAA
 claim spain user:admin@auth.kelliher.info a-2001 aria:a-grandchild AAAAAAAAAAAA
 claim spain user:admin@auth.kelliher.info a-2001 aria:a-chat AAAAAAAAAAAA
-claim spain user:admin@auth.kelliher.info a-2001 aria:a-herald AAAAAAAAAAAA
+claim spain user:admin@auth.kelliher.info a-2001 aria:a-svc AAAAAAAAAAAA
 claim spain user:admin@auth.kelliher.info a-2001 aria:a-bwrap AAAAAAAAAAAA
 claim spain user:admin@auth.kelliher.info a-2001 aria:a-gone AAAAAAAAAAAA
 claim spain user:admin@auth.kelliher.info a-2001 aria:a-unknown AAAAAAAAAAAA
@@ -3614,7 +3614,7 @@ claim spain user:admin@auth.kelliher.info a-guest aria:a-box0 HHHHHHHHHHHH
 claim spain user:admin@auth.kelliher.info a-guest aria:a-child HHHHHHHHHHHH
 claim spain user:admin@auth.kelliher.info a-guest aria:a-grandchild HHHHHHHHHHHH
 claim spain user:admin@auth.kelliher.info a-guest aria:a-chat HHHHHHHHHHHH
-claim spain user:admin@auth.kelliher.info a-guest aria:a-herald HHHHHHHHHHHH
+claim spain user:admin@auth.kelliher.info a-guest aria:a-svc HHHHHHHHHHHH
 claim spain user:admin@auth.kelliher.info a-guest aria:a-bwrap HHHHHHHHHHHH
 claim spain user:admin@auth.kelliher.info a-guest aria:a-gone HHHHHHHHHHHH
 claim spain user:admin@auth.kelliher.info a-guest aria:a-unknown HHHHHHHHHHHH
@@ -3635,7 +3635,7 @@ claim spain user:bob@auth.kelliher.info a-box0 aria:a-box0 HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-box0 aria:a-child HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-box0 aria:a-grandchild HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-box0 aria:a-chat HHHHHHHHHHHH
-claim spain user:bob@auth.kelliher.info a-box0 aria:a-herald HHHHHHHHHHHH
+claim spain user:bob@auth.kelliher.info a-box0 aria:a-svc HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-box0 aria:a-gone HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -3656,7 +3656,7 @@ claim spain user:bob@auth.kelliher.info a-child aria:a-box0 HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-child aria:a-child HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-child aria:a-grandchild HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-child aria:a-chat HHHHHHHHHHHH
-claim spain user:bob@auth.kelliher.info a-child aria:a-herald HHHHHHHHHHHH
+claim spain user:bob@auth.kelliher.info a-child aria:a-svc HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-child aria:a-bwrap HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-child aria:a-gone HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-child aria:a-unknown HHHHHHHHHHHH
@@ -3677,7 +3677,7 @@ claim spain user:bob@auth.kelliher.info a-grandchild aria:a-box0 HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-grandchild aria:a-child HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-grandchild aria:a-grandchild HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-grandchild aria:a-chat HHHHHHHHHHHH
-claim spain user:bob@auth.kelliher.info a-grandchild aria:a-herald HHHHHHHHHHHH
+claim spain user:bob@auth.kelliher.info a-grandchild aria:a-svc HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-grandchild aria:a-gone HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -3698,7 +3698,7 @@ claim spain user:bob@auth.kelliher.info a-2001 aria:a-box0 HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-2001 aria:a-child HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-2001 aria:a-grandchild HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-2001 aria:a-chat HHHHHHHHHHHH
-claim spain user:bob@auth.kelliher.info a-2001 aria:a-herald HHHHHHHHHHHH
+claim spain user:bob@auth.kelliher.info a-2001 aria:a-svc HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-2001 aria:a-bwrap HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-2001 aria:a-gone HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-2001 aria:a-unknown HHHHHHHHHHHH
@@ -3719,7 +3719,7 @@ claim spain user:bob@auth.kelliher.info a-guest aria:a-box0 HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-guest aria:a-child HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-guest aria:a-grandchild HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-guest aria:a-chat HHHHHHHHHHHH
-claim spain user:bob@auth.kelliher.info a-guest aria:a-herald HHHHHHHHHHHH
+claim spain user:bob@auth.kelliher.info a-guest aria:a-svc HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-guest aria:a-bwrap HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-guest aria:a-gone HHHHHHHHHHHH
 claim spain user:bob@auth.kelliher.info a-guest aria:a-unknown HHHHHHHHHHHH
@@ -3740,7 +3740,7 @@ claim spain sandbox:box0@local:box a-box0 aria:a-box0 AAADDDADDDDD
 claim spain sandbox:box0@local:box a-box0 aria:a-child AAADDDDDDDDD
 claim spain sandbox:box0@local:box a-box0 aria:a-grandchild AAADDDDDDDDD
 claim spain sandbox:box0@local:box a-box0 aria:a-chat HHHHHHHHHHHH
-claim spain sandbox:box0@local:box a-box0 aria:a-herald HHHHHHHHHHHH
+claim spain sandbox:box0@local:box a-box0 aria:a-svc HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-box0 aria:a-gone HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -3761,7 +3761,7 @@ claim spain sandbox:box0@local:box a-child aria:a-box0 AAADDDADDDDD
 claim spain sandbox:box0@local:box a-child aria:a-child AAADDDDDDDDD
 claim spain sandbox:box0@local:box a-child aria:a-grandchild AAADDDDDDDDD
 claim spain sandbox:box0@local:box a-child aria:a-chat HHHHHHHHHHHH
-claim spain sandbox:box0@local:box a-child aria:a-herald HHHHHHHHHHHH
+claim spain sandbox:box0@local:box a-child aria:a-svc HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-child aria:a-bwrap HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-child aria:a-gone HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-child aria:a-unknown HHHHHHHHHHHH
@@ -3782,7 +3782,7 @@ claim spain sandbox:box0@local:box a-grandchild aria:a-box0 AAADDDADDDDD
 claim spain sandbox:box0@local:box a-grandchild aria:a-child AAADDDDDDDDD
 claim spain sandbox:box0@local:box a-grandchild aria:a-grandchild AAADDDDDDDDD
 claim spain sandbox:box0@local:box a-grandchild aria:a-chat HHHHHHHHHHHH
-claim spain sandbox:box0@local:box a-grandchild aria:a-herald HHHHHHHHHHHH
+claim spain sandbox:box0@local:box a-grandchild aria:a-svc HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-grandchild aria:a-gone HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -3803,7 +3803,7 @@ claim spain sandbox:box0@local:box a-2001 aria:a-box0 AAAAAAADDDDD
 claim spain sandbox:box0@local:box a-2001 aria:a-child AAAAAAADDDDD
 claim spain sandbox:box0@local:box a-2001 aria:a-grandchild AAAAAAADDDDD
 claim spain sandbox:box0@local:box a-2001 aria:a-chat HHHHHAHHHHHH
-claim spain sandbox:box0@local:box a-2001 aria:a-herald HHHHHAHHHHHH
+claim spain sandbox:box0@local:box a-2001 aria:a-svc HHHHHAHHHHHH
 claim spain sandbox:box0@local:box a-2001 aria:a-bwrap HHHHHAHHHHHH
 claim spain sandbox:box0@local:box a-2001 aria:a-gone HHHHHAHHHHHH
 claim spain sandbox:box0@local:box a-2001 aria:a-unknown HHHHHAHHHHHH
@@ -3824,7 +3824,7 @@ claim spain sandbox:box0@local:box a-guest aria:a-box0 HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-guest aria:a-child HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-guest aria:a-grandchild HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-guest aria:a-chat HHHHHHHHHHHH
-claim spain sandbox:box0@local:box a-guest aria:a-herald HHHHHHHHHHHH
+claim spain sandbox:box0@local:box a-guest aria:a-svc HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-guest aria:a-bwrap HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-guest aria:a-gone HHHHHHHHHHHH
 claim spain sandbox:box0@local:box a-guest aria:a-unknown HHHHHHHHHHHH
@@ -3845,7 +3845,7 @@ claim spain-ceiling user:2001 a-box0 aria:a-box0 AAADDDADDDDD
 claim spain-ceiling user:2001 a-box0 aria:a-child AAADDDDDDDDD
 claim spain-ceiling user:2001 a-box0 aria:a-grandchild AAADDDDDDDDD
 claim spain-ceiling user:2001 a-box0 aria:a-chat AADDDDDDDDDD
-claim spain-ceiling user:2001 a-box0 aria:a-herald AADDDDDDDDDD
+claim spain-ceiling user:2001 a-box0 aria:a-svc AADDDDDDDDDD
 claim spain-ceiling user:2001 a-box0 aria:a-bwrap AADDDDDDDDDD
 claim spain-ceiling user:2001 a-box0 aria:a-gone AADDDDDDDDDD
 claim spain-ceiling user:2001 a-box0 aria:a-unknown AADDDDDDDDDD
@@ -3866,7 +3866,7 @@ claim spain-ceiling user:2001 a-child aria:a-box0 AAADDDADDDDD
 claim spain-ceiling user:2001 a-child aria:a-child AAADDDDDDDDD
 claim spain-ceiling user:2001 a-child aria:a-grandchild AAADDDDDDDDD
 claim spain-ceiling user:2001 a-child aria:a-chat AADDDDDDDDDD
-claim spain-ceiling user:2001 a-child aria:a-herald AADDDDDDDDDD
+claim spain-ceiling user:2001 a-child aria:a-svc AADDDDDDDDDD
 claim spain-ceiling user:2001 a-child aria:a-bwrap AADDDDDDDDDD
 claim spain-ceiling user:2001 a-child aria:a-gone AADDDDDDDDDD
 claim spain-ceiling user:2001 a-child aria:a-unknown AADDDDDDDDDD
@@ -3887,7 +3887,7 @@ claim spain-ceiling user:2001 a-grandchild aria:a-box0 AAADDDADDDDD
 claim spain-ceiling user:2001 a-grandchild aria:a-child AAADDDDDDDDD
 claim spain-ceiling user:2001 a-grandchild aria:a-grandchild AAADDDDDDDDD
 claim spain-ceiling user:2001 a-grandchild aria:a-chat AADDDDDDDDDD
-claim spain-ceiling user:2001 a-grandchild aria:a-herald AADDDDDDDDDD
+claim spain-ceiling user:2001 a-grandchild aria:a-svc AADDDDDDDDDD
 claim spain-ceiling user:2001 a-grandchild aria:a-bwrap AADDDDDDDDDD
 claim spain-ceiling user:2001 a-grandchild aria:a-gone AADDDDDDDDDD
 claim spain-ceiling user:2001 a-grandchild aria:a-unknown AADDDDDDDDDD
@@ -3908,7 +3908,7 @@ claim spain-ceiling user:2001 a-2001 aria:a-box0 AADDDDDDDDDD
 claim spain-ceiling user:2001 a-2001 aria:a-child AADDDDDDDDDD
 claim spain-ceiling user:2001 a-2001 aria:a-grandchild AADDDDDDDDDD
 claim spain-ceiling user:2001 a-2001 aria:a-chat AADDDDDDDDDD
-claim spain-ceiling user:2001 a-2001 aria:a-herald AADDDDDDDDDD
+claim spain-ceiling user:2001 a-2001 aria:a-svc AADDDDDDDDDD
 claim spain-ceiling user:2001 a-2001 aria:a-bwrap AADDDDDDDDDD
 claim spain-ceiling user:2001 a-2001 aria:a-gone AADDDDDDDDDD
 claim spain-ceiling user:2001 a-2001 aria:a-unknown AADDDDDDDDDD
@@ -3929,7 +3929,7 @@ claim spain-ceiling user:2001 a-guest aria:a-box0 HHHHHHHHHHHH
 claim spain-ceiling user:2001 a-guest aria:a-child HHHHHHHHHHHH
 claim spain-ceiling user:2001 a-guest aria:a-grandchild HHHHHHHHHHHH
 claim spain-ceiling user:2001 a-guest aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling user:2001 a-guest aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling user:2001 a-guest aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling user:2001 a-guest aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling user:2001 a-guest aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling user:2001 a-guest aria:a-unknown HHHHHHHHHHHH
@@ -3950,7 +3950,7 @@ claim spain-ceiling user:1000 a-box0 aria:a-box0 HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-box0 aria:a-child HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-box0 aria:a-grandchild HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-box0 aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling user:1000 a-box0 aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling user:1000 a-box0 aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-box0 aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -3971,7 +3971,7 @@ claim spain-ceiling user:1000 a-child aria:a-box0 HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-child aria:a-child HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-child aria:a-grandchild HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-child aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling user:1000 a-child aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling user:1000 a-child aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-child aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-child aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-child aria:a-unknown HHHHHHHHHHHH
@@ -3992,7 +3992,7 @@ claim spain-ceiling user:1000 a-grandchild aria:a-box0 HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-grandchild aria:a-child HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-grandchild aria:a-grandchild HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-grandchild aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling user:1000 a-grandchild aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling user:1000 a-grandchild aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-grandchild aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -4013,7 +4013,7 @@ claim spain-ceiling user:1000 a-2001 aria:a-box0 HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-2001 aria:a-child HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-2001 aria:a-grandchild HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-2001 aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling user:1000 a-2001 aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling user:1000 a-2001 aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-2001 aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-2001 aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-2001 aria:a-unknown HHHHHHHHHHHH
@@ -4034,7 +4034,7 @@ claim spain-ceiling user:1000 a-guest aria:a-box0 HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-guest aria:a-child HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-guest aria:a-grandchild HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-guest aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling user:1000 a-guest aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling user:1000 a-guest aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-guest aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-guest aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling user:1000 a-guest aria:a-unknown HHHHHHHHHHHH
@@ -4055,7 +4055,7 @@ claim spain-ceiling user:admin@auth.kelliher.info a-box0 aria:a-box0 AAADDDADDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-box0 aria:a-child AAADDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-box0 aria:a-grandchild AAADDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-box0 aria:a-chat AADDDDDDDDDD
-claim spain-ceiling user:admin@auth.kelliher.info a-box0 aria:a-herald AADDDDDDDDDD
+claim spain-ceiling user:admin@auth.kelliher.info a-box0 aria:a-svc AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-box0 aria:a-bwrap AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-box0 aria:a-gone AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-box0 aria:a-unknown AADDDDDDDDDD
@@ -4076,7 +4076,7 @@ claim spain-ceiling user:admin@auth.kelliher.info a-child aria:a-box0 AAADDDADDD
 claim spain-ceiling user:admin@auth.kelliher.info a-child aria:a-child AAADDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-child aria:a-grandchild AAADDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-child aria:a-chat AADDDDDDDDDD
-claim spain-ceiling user:admin@auth.kelliher.info a-child aria:a-herald AADDDDDDDDDD
+claim spain-ceiling user:admin@auth.kelliher.info a-child aria:a-svc AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-child aria:a-bwrap AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-child aria:a-gone AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-child aria:a-unknown AADDDDDDDDDD
@@ -4097,7 +4097,7 @@ claim spain-ceiling user:admin@auth.kelliher.info a-grandchild aria:a-box0 AAADD
 claim spain-ceiling user:admin@auth.kelliher.info a-grandchild aria:a-child AAADDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-grandchild aria:a-grandchild AAADDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-grandchild aria:a-chat AADDDDDDDDDD
-claim spain-ceiling user:admin@auth.kelliher.info a-grandchild aria:a-herald AADDDDDDDDDD
+claim spain-ceiling user:admin@auth.kelliher.info a-grandchild aria:a-svc AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-grandchild aria:a-bwrap AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-grandchild aria:a-gone AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-grandchild aria:a-unknown AADDDDDDDDDD
@@ -4118,7 +4118,7 @@ claim spain-ceiling user:admin@auth.kelliher.info a-2001 aria:a-box0 AADDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-2001 aria:a-child AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-2001 aria:a-grandchild AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-2001 aria:a-chat AADDDDDDDDDD
-claim spain-ceiling user:admin@auth.kelliher.info a-2001 aria:a-herald AADDDDDDDDDD
+claim spain-ceiling user:admin@auth.kelliher.info a-2001 aria:a-svc AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-2001 aria:a-bwrap AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-2001 aria:a-gone AADDDDDDDDDD
 claim spain-ceiling user:admin@auth.kelliher.info a-2001 aria:a-unknown AADDDDDDDDDD
@@ -4139,7 +4139,7 @@ claim spain-ceiling user:admin@auth.kelliher.info a-guest aria:a-box0 HHHHHHHHHH
 claim spain-ceiling user:admin@auth.kelliher.info a-guest aria:a-child HHHHHHHHHHHH
 claim spain-ceiling user:admin@auth.kelliher.info a-guest aria:a-grandchild HHHHHHHHHHHH
 claim spain-ceiling user:admin@auth.kelliher.info a-guest aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling user:admin@auth.kelliher.info a-guest aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling user:admin@auth.kelliher.info a-guest aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling user:admin@auth.kelliher.info a-guest aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling user:admin@auth.kelliher.info a-guest aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling user:admin@auth.kelliher.info a-guest aria:a-unknown HHHHHHHHHHHH
@@ -4160,7 +4160,7 @@ claim spain-ceiling user:bob@auth.kelliher.info a-box0 aria:a-box0 HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-box0 aria:a-child HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-box0 aria:a-grandchild HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-box0 aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling user:bob@auth.kelliher.info a-box0 aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling user:bob@auth.kelliher.info a-box0 aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-box0 aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -4181,7 +4181,7 @@ claim spain-ceiling user:bob@auth.kelliher.info a-child aria:a-box0 HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-child aria:a-child HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-child aria:a-grandchild HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-child aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling user:bob@auth.kelliher.info a-child aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling user:bob@auth.kelliher.info a-child aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-child aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-child aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-child aria:a-unknown HHHHHHHHHHHH
@@ -4202,7 +4202,7 @@ claim spain-ceiling user:bob@auth.kelliher.info a-grandchild aria:a-box0 HHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-grandchild aria:a-child HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-grandchild aria:a-grandchild HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-grandchild aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling user:bob@auth.kelliher.info a-grandchild aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling user:bob@auth.kelliher.info a-grandchild aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-grandchild aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -4223,7 +4223,7 @@ claim spain-ceiling user:bob@auth.kelliher.info a-2001 aria:a-box0 HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-2001 aria:a-child HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-2001 aria:a-grandchild HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-2001 aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling user:bob@auth.kelliher.info a-2001 aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling user:bob@auth.kelliher.info a-2001 aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-2001 aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-2001 aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-2001 aria:a-unknown HHHHHHHHHHHH
@@ -4244,7 +4244,7 @@ claim spain-ceiling user:bob@auth.kelliher.info a-guest aria:a-box0 HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-guest aria:a-child HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-guest aria:a-grandchild HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-guest aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling user:bob@auth.kelliher.info a-guest aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling user:bob@auth.kelliher.info a-guest aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-guest aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-guest aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling user:bob@auth.kelliher.info a-guest aria:a-unknown HHHHHHHHHHHH
@@ -4265,7 +4265,7 @@ claim spain-ceiling sandbox:box0@local:box a-box0 aria:a-box0 AAADDDADDDDD
 claim spain-ceiling sandbox:box0@local:box a-box0 aria:a-child AAADDDDDDDDD
 claim spain-ceiling sandbox:box0@local:box a-box0 aria:a-grandchild AAADDDDDDDDD
 claim spain-ceiling sandbox:box0@local:box a-box0 aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling sandbox:box0@local:box a-box0 aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling sandbox:box0@local:box a-box0 aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-box0 aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -4286,7 +4286,7 @@ claim spain-ceiling sandbox:box0@local:box a-child aria:a-box0 AAADDDADDDDD
 claim spain-ceiling sandbox:box0@local:box a-child aria:a-child AAADDDDDDDDD
 claim spain-ceiling sandbox:box0@local:box a-child aria:a-grandchild AAADDDDDDDDD
 claim spain-ceiling sandbox:box0@local:box a-child aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling sandbox:box0@local:box a-child aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling sandbox:box0@local:box a-child aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-child aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-child aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-child aria:a-unknown HHHHHHHHHHHH
@@ -4307,7 +4307,7 @@ claim spain-ceiling sandbox:box0@local:box a-grandchild aria:a-box0 AAADDDADDDDD
 claim spain-ceiling sandbox:box0@local:box a-grandchild aria:a-child AAADDDDDDDDD
 claim spain-ceiling sandbox:box0@local:box a-grandchild aria:a-grandchild AAADDDDDDDDD
 claim spain-ceiling sandbox:box0@local:box a-grandchild aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling sandbox:box0@local:box a-grandchild aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling sandbox:box0@local:box a-grandchild aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-grandchild aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -4328,7 +4328,7 @@ claim spain-ceiling sandbox:box0@local:box a-2001 aria:a-box0 AADDDDDDDDDD
 claim spain-ceiling sandbox:box0@local:box a-2001 aria:a-child AADDDDDDDDDD
 claim spain-ceiling sandbox:box0@local:box a-2001 aria:a-grandchild AADDDDDDDDDD
 claim spain-ceiling sandbox:box0@local:box a-2001 aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling sandbox:box0@local:box a-2001 aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling sandbox:box0@local:box a-2001 aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-2001 aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-2001 aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-2001 aria:a-unknown HHHHHHHHHHHH
@@ -4349,7 +4349,7 @@ claim spain-ceiling sandbox:box0@local:box a-guest aria:a-box0 HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-guest aria:a-child HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-guest aria:a-grandchild HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-guest aria:a-chat HHHHHHHHHHHH
-claim spain-ceiling sandbox:box0@local:box a-guest aria:a-herald HHHHHHHHHHHH
+claim spain-ceiling sandbox:box0@local:box a-guest aria:a-svc HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-guest aria:a-bwrap HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-guest aria:a-gone HHHHHHHHHHHH
 claim spain-ceiling sandbox:box0@local:box a-guest aria:a-unknown HHHHHHHHHHHH
@@ -4370,7 +4370,7 @@ claim gluck-default-boxes user:2001 a-box0 aria:a-box0 HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-box0 aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-box0 aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-box0 aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:2001 a-box0 aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:2001 a-box0 aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-box0 aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -4391,7 +4391,7 @@ claim gluck-default-boxes user:2001 a-child aria:a-box0 HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-child aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-child aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-child aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:2001 a-child aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:2001 a-child aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-child aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-child aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-child aria:a-unknown HHHHHHHHHHHH
@@ -4412,7 +4412,7 @@ claim gluck-default-boxes user:2001 a-grandchild aria:a-box0 HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-grandchild aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-grandchild aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-grandchild aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:2001 a-grandchild aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:2001 a-grandchild aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-grandchild aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -4433,7 +4433,7 @@ claim gluck-default-boxes user:2001 a-2001 aria:a-box0 HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-2001 aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-2001 aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-2001 aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:2001 a-2001 aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:2001 a-2001 aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-2001 aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-2001 aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-2001 aria:a-unknown HHHHHHHHHHHH
@@ -4454,7 +4454,7 @@ claim gluck-default-boxes user:2001 a-guest aria:a-box0 HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-guest aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-guest aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-guest aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:2001 a-guest aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:2001 a-guest aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-guest aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-guest aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:2001 a-guest aria:a-unknown HHHHHHHHHHHH
@@ -4475,7 +4475,7 @@ claim gluck-default-boxes user:1000 a-box0 aria:a-box0 AAADDDADDDDD
 claim gluck-default-boxes user:1000 a-box0 aria:a-child AAADDDDDDDDD
 claim gluck-default-boxes user:1000 a-box0 aria:a-grandchild AAADDDDDDDDD
 claim gluck-default-boxes user:1000 a-box0 aria:a-chat AADDDDDDDDDD
-claim gluck-default-boxes user:1000 a-box0 aria:a-herald AADDDDDDDDDD
+claim gluck-default-boxes user:1000 a-box0 aria:a-svc AADDDDDDDDDD
 claim gluck-default-boxes user:1000 a-box0 aria:a-bwrap AADDDDDDDDDD
 claim gluck-default-boxes user:1000 a-box0 aria:a-gone AADDDDDDDDDD
 claim gluck-default-boxes user:1000 a-box0 aria:a-unknown AADDDDDDDDDD
@@ -4496,7 +4496,7 @@ claim gluck-default-boxes user:1000 a-child aria:a-box0 AAADDDADDDDD
 claim gluck-default-boxes user:1000 a-child aria:a-child AAADDDDDDDDD
 claim gluck-default-boxes user:1000 a-child aria:a-grandchild AAADDDDDDDDD
 claim gluck-default-boxes user:1000 a-child aria:a-chat AADDDDDDDDDD
-claim gluck-default-boxes user:1000 a-child aria:a-herald AADDDDDDDDDD
+claim gluck-default-boxes user:1000 a-child aria:a-svc AADDDDDDDDDD
 claim gluck-default-boxes user:1000 a-child aria:a-bwrap AADDDDDDDDDD
 claim gluck-default-boxes user:1000 a-child aria:a-gone AADDDDDDDDDD
 claim gluck-default-boxes user:1000 a-child aria:a-unknown AADDDDDDDDDD
@@ -4517,7 +4517,7 @@ claim gluck-default-boxes user:1000 a-grandchild aria:a-box0 AAADDDADDDDD
 claim gluck-default-boxes user:1000 a-grandchild aria:a-child AAADDDDDDDDD
 claim gluck-default-boxes user:1000 a-grandchild aria:a-grandchild AAADDDDDDDDD
 claim gluck-default-boxes user:1000 a-grandchild aria:a-chat AADDDDDDDDDD
-claim gluck-default-boxes user:1000 a-grandchild aria:a-herald AADDDDDDDDDD
+claim gluck-default-boxes user:1000 a-grandchild aria:a-svc AADDDDDDDDDD
 claim gluck-default-boxes user:1000 a-grandchild aria:a-bwrap AADDDDDDDDDD
 claim gluck-default-boxes user:1000 a-grandchild aria:a-gone AADDDDDDDDDD
 claim gluck-default-boxes user:1000 a-grandchild aria:a-unknown AADDDDDDDDDD
@@ -4538,7 +4538,7 @@ claim gluck-default-boxes user:1000 a-2001 aria:a-box0 AAAAAAAAAAAA
 claim gluck-default-boxes user:1000 a-2001 aria:a-child AAAAAAAAAAAA
 claim gluck-default-boxes user:1000 a-2001 aria:a-grandchild AAAAAAAAAAAA
 claim gluck-default-boxes user:1000 a-2001 aria:a-chat AAAAAAAAAAAA
-claim gluck-default-boxes user:1000 a-2001 aria:a-herald AAAAAAAAAAAA
+claim gluck-default-boxes user:1000 a-2001 aria:a-svc AAAAAAAAAAAA
 claim gluck-default-boxes user:1000 a-2001 aria:a-bwrap AAAAAAAAAAAA
 claim gluck-default-boxes user:1000 a-2001 aria:a-gone AAAAAAAAAAAA
 claim gluck-default-boxes user:1000 a-2001 aria:a-unknown AAAAAAAAAAAA
@@ -4559,7 +4559,7 @@ claim gluck-default-boxes user:1000 a-guest aria:a-box0 HHHHHHHHHHHH
 claim gluck-default-boxes user:1000 a-guest aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:1000 a-guest aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:1000 a-guest aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:1000 a-guest aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:1000 a-guest aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:1000 a-guest aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:1000 a-guest aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:1000 a-guest aria:a-unknown HHHHHHHHHHHH
@@ -4580,7 +4580,7 @@ claim gluck-default-boxes user:admin@auth.kelliher.info a-box0 aria:a-box0 HHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-box0 aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-box0 aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-box0 aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:admin@auth.kelliher.info a-box0 aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:admin@auth.kelliher.info a-box0 aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-box0 aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -4601,7 +4601,7 @@ claim gluck-default-boxes user:admin@auth.kelliher.info a-child aria:a-box0 HHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-child aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-child aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-child aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:admin@auth.kelliher.info a-child aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:admin@auth.kelliher.info a-child aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-child aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-child aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-child aria:a-unknown HHHHHHHHHHHH
@@ -4622,7 +4622,7 @@ claim gluck-default-boxes user:admin@auth.kelliher.info a-grandchild aria:a-box0
 claim gluck-default-boxes user:admin@auth.kelliher.info a-grandchild aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-grandchild aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-grandchild aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:admin@auth.kelliher.info a-grandchild aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:admin@auth.kelliher.info a-grandchild aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-grandchild aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -4643,7 +4643,7 @@ claim gluck-default-boxes user:admin@auth.kelliher.info a-2001 aria:a-box0 HHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-2001 aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-2001 aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-2001 aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:admin@auth.kelliher.info a-2001 aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:admin@auth.kelliher.info a-2001 aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-2001 aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-2001 aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-2001 aria:a-unknown HHHHHHHHHHHH
@@ -4664,7 +4664,7 @@ claim gluck-default-boxes user:admin@auth.kelliher.info a-guest aria:a-box0 HHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-guest aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-guest aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-guest aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:admin@auth.kelliher.info a-guest aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:admin@auth.kelliher.info a-guest aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-guest aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-guest aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:admin@auth.kelliher.info a-guest aria:a-unknown HHHHHHHHHHHH
@@ -4685,7 +4685,7 @@ claim gluck-default-boxes user:bob@auth.kelliher.info a-box0 aria:a-box0 HHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-box0 aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-box0 aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-box0 aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:bob@auth.kelliher.info a-box0 aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:bob@auth.kelliher.info a-box0 aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-box0 aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -4706,7 +4706,7 @@ claim gluck-default-boxes user:bob@auth.kelliher.info a-child aria:a-box0 HHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-child aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-child aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-child aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:bob@auth.kelliher.info a-child aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:bob@auth.kelliher.info a-child aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-child aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-child aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-child aria:a-unknown HHHHHHHHHHHH
@@ -4727,7 +4727,7 @@ claim gluck-default-boxes user:bob@auth.kelliher.info a-grandchild aria:a-box0 H
 claim gluck-default-boxes user:bob@auth.kelliher.info a-grandchild aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-grandchild aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-grandchild aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:bob@auth.kelliher.info a-grandchild aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:bob@auth.kelliher.info a-grandchild aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-grandchild aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -4748,7 +4748,7 @@ claim gluck-default-boxes user:bob@auth.kelliher.info a-2001 aria:a-box0 HHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-2001 aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-2001 aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-2001 aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:bob@auth.kelliher.info a-2001 aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:bob@auth.kelliher.info a-2001 aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-2001 aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-2001 aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-2001 aria:a-unknown HHHHHHHHHHHH
@@ -4769,7 +4769,7 @@ claim gluck-default-boxes user:bob@auth.kelliher.info a-guest aria:a-box0 HHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-guest aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-guest aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-guest aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes user:bob@auth.kelliher.info a-guest aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes user:bob@auth.kelliher.info a-guest aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-guest aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-guest aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes user:bob@auth.kelliher.info a-guest aria:a-unknown HHHHHHHHHHHH
@@ -4790,7 +4790,7 @@ claim gluck-default-boxes sandbox:box0@local:box a-box0 aria:a-box0 AAADDDADDDDD
 claim gluck-default-boxes sandbox:box0@local:box a-box0 aria:a-child AAADDDDDDDDD
 claim gluck-default-boxes sandbox:box0@local:box a-box0 aria:a-grandchild AAADDDDDDDDD
 claim gluck-default-boxes sandbox:box0@local:box a-box0 aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes sandbox:box0@local:box a-box0 aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes sandbox:box0@local:box a-box0 aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-box0 aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -4811,7 +4811,7 @@ claim gluck-default-boxes sandbox:box0@local:box a-child aria:a-box0 AAADDDADDDD
 claim gluck-default-boxes sandbox:box0@local:box a-child aria:a-child AAADDDDDDDDD
 claim gluck-default-boxes sandbox:box0@local:box a-child aria:a-grandchild AAADDDDDDDDD
 claim gluck-default-boxes sandbox:box0@local:box a-child aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes sandbox:box0@local:box a-child aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes sandbox:box0@local:box a-child aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-child aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-child aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-child aria:a-unknown HHHHHHHHHHHH
@@ -4832,7 +4832,7 @@ claim gluck-default-boxes sandbox:box0@local:box a-grandchild aria:a-box0 AAADDD
 claim gluck-default-boxes sandbox:box0@local:box a-grandchild aria:a-child AAADDDDDDDDD
 claim gluck-default-boxes sandbox:box0@local:box a-grandchild aria:a-grandchild AAADDDDDDDDD
 claim gluck-default-boxes sandbox:box0@local:box a-grandchild aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes sandbox:box0@local:box a-grandchild aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes sandbox:box0@local:box a-grandchild aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-grandchild aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -4853,7 +4853,7 @@ claim gluck-default-boxes sandbox:box0@local:box a-2001 aria:a-box0 AAAAAAADDDDA
 claim gluck-default-boxes sandbox:box0@local:box a-2001 aria:a-child AAAAAAADDDDA
 claim gluck-default-boxes sandbox:box0@local:box a-2001 aria:a-grandchild AAAAAAADDDDA
 claim gluck-default-boxes sandbox:box0@local:box a-2001 aria:a-chat HHHHHAHHHHHH
-claim gluck-default-boxes sandbox:box0@local:box a-2001 aria:a-herald HHHHHAHHHHHH
+claim gluck-default-boxes sandbox:box0@local:box a-2001 aria:a-svc HHHHHAHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-2001 aria:a-bwrap HHHHHAHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-2001 aria:a-gone HHHHHAHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-2001 aria:a-unknown HHHHHAHHHHHH
@@ -4874,7 +4874,7 @@ claim gluck-default-boxes sandbox:box0@local:box a-guest aria:a-box0 HHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-guest aria:a-child HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-guest aria:a-grandchild HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-guest aria:a-chat HHHHHHHHHHHH
-claim gluck-default-boxes sandbox:box0@local:box a-guest aria:a-herald HHHHHHHHHHHH
+claim gluck-default-boxes sandbox:box0@local:box a-guest aria:a-svc HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-guest aria:a-bwrap HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-guest aria:a-gone HHHHHHHHHHHH
 claim gluck-default-boxes sandbox:box0@local:box a-guest aria:a-unknown HHHHHHHHHHHH
@@ -4895,7 +4895,7 @@ claim selectors user:2001 a-box0 aria:a-box0 HHHHHHHHHHHH
 claim selectors user:2001 a-box0 aria:a-child HHHHHHHHHHHH
 claim selectors user:2001 a-box0 aria:a-grandchild HHHHHHHHHHHH
 claim selectors user:2001 a-box0 aria:a-chat HHHHHHHHHHHH
-claim selectors user:2001 a-box0 aria:a-herald HHHHHHHHHHHH
+claim selectors user:2001 a-box0 aria:a-svc HHHHHHHHHHHH
 claim selectors user:2001 a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:2001 a-box0 aria:a-gone HHHHHHHHHHHH
 claim selectors user:2001 a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -4916,7 +4916,7 @@ claim selectors user:2001 a-child aria:a-box0 HHHHHHHHHHHH
 claim selectors user:2001 a-child aria:a-child HHHHHHHHHHHH
 claim selectors user:2001 a-child aria:a-grandchild HHHHHHHHHHHH
 claim selectors user:2001 a-child aria:a-chat HHHHHHHHHHHH
-claim selectors user:2001 a-child aria:a-herald HHHHHHHHHHHH
+claim selectors user:2001 a-child aria:a-svc HHHHHHHHHHHH
 claim selectors user:2001 a-child aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:2001 a-child aria:a-gone HHHHHHHHHHHH
 claim selectors user:2001 a-child aria:a-unknown HHHHHHHHHHHH
@@ -4937,7 +4937,7 @@ claim selectors user:2001 a-grandchild aria:a-box0 HHHHHHHHHHHH
 claim selectors user:2001 a-grandchild aria:a-child HHHHHHHHHHHH
 claim selectors user:2001 a-grandchild aria:a-grandchild HHHHHHHHHHHH
 claim selectors user:2001 a-grandchild aria:a-chat HHHHHHHHHHHH
-claim selectors user:2001 a-grandchild aria:a-herald HHHHHHHHHHHH
+claim selectors user:2001 a-grandchild aria:a-svc HHHHHHHHHHHH
 claim selectors user:2001 a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:2001 a-grandchild aria:a-gone HHHHHHHHHHHH
 claim selectors user:2001 a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -4958,7 +4958,7 @@ claim selectors user:2001 a-2001 aria:a-box0 HHHHHHHHHHHH
 claim selectors user:2001 a-2001 aria:a-child HHHHHHHHHHHH
 claim selectors user:2001 a-2001 aria:a-grandchild HHHHHHHHHHHH
 claim selectors user:2001 a-2001 aria:a-chat HHHHHHHHHHHH
-claim selectors user:2001 a-2001 aria:a-herald HHHHHHHHHHHH
+claim selectors user:2001 a-2001 aria:a-svc HHHHHHHHHHHH
 claim selectors user:2001 a-2001 aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:2001 a-2001 aria:a-gone HHHHHHHHHHHH
 claim selectors user:2001 a-2001 aria:a-unknown HHHHHHHHHHHH
@@ -4979,7 +4979,7 @@ claim selectors user:2001 a-guest aria:a-box0 HHHHHHHHHHHH
 claim selectors user:2001 a-guest aria:a-child HHHHHHHHHHHH
 claim selectors user:2001 a-guest aria:a-grandchild HHHHHHHHHHHH
 claim selectors user:2001 a-guest aria:a-chat HHHHHHHHHHHH
-claim selectors user:2001 a-guest aria:a-herald HHHHHHHHHHHH
+claim selectors user:2001 a-guest aria:a-svc HHHHHHHHHHHH
 claim selectors user:2001 a-guest aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:2001 a-guest aria:a-gone HHHHHHHHHHHH
 claim selectors user:2001 a-guest aria:a-unknown HHHHHHHHHHHH
@@ -5000,7 +5000,7 @@ claim selectors user:1000 a-box0 aria:a-box0 AAADDDADDDDD
 claim selectors user:1000 a-box0 aria:a-child AAADDDDDDDDD
 claim selectors user:1000 a-box0 aria:a-grandchild AAADDDDDDDDD
 claim selectors user:1000 a-box0 aria:a-chat AADDDDDDDDDD
-claim selectors user:1000 a-box0 aria:a-herald AADDDDDDDDDD
+claim selectors user:1000 a-box0 aria:a-svc AADDDDDDDDDD
 claim selectors user:1000 a-box0 aria:a-bwrap AADDDDDDDDDD
 claim selectors user:1000 a-box0 aria:a-gone AADDDDDDDDDD
 claim selectors user:1000 a-box0 aria:a-unknown AADDDDDDDDDD
@@ -5021,7 +5021,7 @@ claim selectors user:1000 a-child aria:a-box0 AAADDDADDDDD
 claim selectors user:1000 a-child aria:a-child AAADDDDDDDDD
 claim selectors user:1000 a-child aria:a-grandchild AAADDDDDDDDD
 claim selectors user:1000 a-child aria:a-chat AADDDDDDDDDD
-claim selectors user:1000 a-child aria:a-herald AADDDDDDDDDD
+claim selectors user:1000 a-child aria:a-svc AADDDDDDDDDD
 claim selectors user:1000 a-child aria:a-bwrap AADDDDDDDDDD
 claim selectors user:1000 a-child aria:a-gone AADDDDDDDDDD
 claim selectors user:1000 a-child aria:a-unknown AADDDDDDDDDD
@@ -5042,7 +5042,7 @@ claim selectors user:1000 a-grandchild aria:a-box0 AAADDDADDDDD
 claim selectors user:1000 a-grandchild aria:a-child AAADDDDDDDDD
 claim selectors user:1000 a-grandchild aria:a-grandchild AAADDDDDDDDD
 claim selectors user:1000 a-grandchild aria:a-chat AADDDDDDDDDD
-claim selectors user:1000 a-grandchild aria:a-herald AADDDDDDDDDD
+claim selectors user:1000 a-grandchild aria:a-svc AADDDDDDDDDD
 claim selectors user:1000 a-grandchild aria:a-bwrap AADDDDDDDDDD
 claim selectors user:1000 a-grandchild aria:a-gone AADDDDDDDDDD
 claim selectors user:1000 a-grandchild aria:a-unknown AADDDDDDDDDD
@@ -5063,7 +5063,7 @@ claim selectors user:1000 a-2001 aria:a-box0 AAAAAAAAAAAA
 claim selectors user:1000 a-2001 aria:a-child AAAAAAAAAAAA
 claim selectors user:1000 a-2001 aria:a-grandchild AAAAAAAAAAAA
 claim selectors user:1000 a-2001 aria:a-chat AAAAAAAAAAAA
-claim selectors user:1000 a-2001 aria:a-herald AAAAAAAAAAAA
+claim selectors user:1000 a-2001 aria:a-svc AAAAAAAAAAAA
 claim selectors user:1000 a-2001 aria:a-bwrap AAAAAAAAAAAA
 claim selectors user:1000 a-2001 aria:a-gone AAAAAAAAAAAA
 claim selectors user:1000 a-2001 aria:a-unknown AAAAAAAAAAAA
@@ -5084,7 +5084,7 @@ claim selectors user:1000 a-guest aria:a-box0 HHHHHHHHHHHH
 claim selectors user:1000 a-guest aria:a-child HHHHHHHHHHHH
 claim selectors user:1000 a-guest aria:a-grandchild HHHHHHHHHHHH
 claim selectors user:1000 a-guest aria:a-chat HHHHHHHHHHHH
-claim selectors user:1000 a-guest aria:a-herald HHHHHHHHHHHH
+claim selectors user:1000 a-guest aria:a-svc HHHHHHHHHHHH
 claim selectors user:1000 a-guest aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:1000 a-guest aria:a-gone HHHHHHHHHHHH
 claim selectors user:1000 a-guest aria:a-unknown HHHHHHHHHHHH
@@ -5105,7 +5105,7 @@ claim selectors user:admin@auth.kelliher.info a-box0 aria:a-box0 HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-box0 aria:a-child HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-box0 aria:a-grandchild HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-box0 aria:a-chat HHHHHHHHHHHH
-claim selectors user:admin@auth.kelliher.info a-box0 aria:a-herald HHHHHHHHHHHH
+claim selectors user:admin@auth.kelliher.info a-box0 aria:a-svc HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-box0 aria:a-gone HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -5126,7 +5126,7 @@ claim selectors user:admin@auth.kelliher.info a-child aria:a-box0 HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-child aria:a-child HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-child aria:a-grandchild HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-child aria:a-chat HHHHHHHHHHHH
-claim selectors user:admin@auth.kelliher.info a-child aria:a-herald HHHHHHHHHHHH
+claim selectors user:admin@auth.kelliher.info a-child aria:a-svc HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-child aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-child aria:a-gone HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-child aria:a-unknown HHHHHHHHHHHH
@@ -5147,7 +5147,7 @@ claim selectors user:admin@auth.kelliher.info a-grandchild aria:a-box0 HHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-grandchild aria:a-child HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-grandchild aria:a-grandchild HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-grandchild aria:a-chat HHHHHHHHHHHH
-claim selectors user:admin@auth.kelliher.info a-grandchild aria:a-herald HHHHHHHHHHHH
+claim selectors user:admin@auth.kelliher.info a-grandchild aria:a-svc HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-grandchild aria:a-gone HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -5168,7 +5168,7 @@ claim selectors user:admin@auth.kelliher.info a-2001 aria:a-box0 HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-2001 aria:a-child HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-2001 aria:a-grandchild HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-2001 aria:a-chat HHHHHHHHHHHH
-claim selectors user:admin@auth.kelliher.info a-2001 aria:a-herald HHHHHHHHHHHH
+claim selectors user:admin@auth.kelliher.info a-2001 aria:a-svc HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-2001 aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-2001 aria:a-gone HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-2001 aria:a-unknown HHHHHHHHHHHH
@@ -5189,7 +5189,7 @@ claim selectors user:admin@auth.kelliher.info a-guest aria:a-box0 HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-guest aria:a-child HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-guest aria:a-grandchild HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-guest aria:a-chat HHHHHHHHHHHH
-claim selectors user:admin@auth.kelliher.info a-guest aria:a-herald HHHHHHHHHHHH
+claim selectors user:admin@auth.kelliher.info a-guest aria:a-svc HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-guest aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-guest aria:a-gone HHHHHHHHHHHH
 claim selectors user:admin@auth.kelliher.info a-guest aria:a-unknown HHHHHHHHHHHH
@@ -5210,7 +5210,7 @@ claim selectors user:bob@auth.kelliher.info a-box0 aria:a-box0 ADDDDDADDDDD
 claim selectors user:bob@auth.kelliher.info a-box0 aria:a-child ADDDDDDDDDDD
 claim selectors user:bob@auth.kelliher.info a-box0 aria:a-grandchild ADDDDDDDDDDD
 claim selectors user:bob@auth.kelliher.info a-box0 aria:a-chat HHHHHHHHHHHH
-claim selectors user:bob@auth.kelliher.info a-box0 aria:a-herald HHHHHHHHHHHH
+claim selectors user:bob@auth.kelliher.info a-box0 aria:a-svc HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-box0 aria:a-gone HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -5231,7 +5231,7 @@ claim selectors user:bob@auth.kelliher.info a-child aria:a-box0 ADDDDDADDDDD
 claim selectors user:bob@auth.kelliher.info a-child aria:a-child ADDDDDDDDDDD
 claim selectors user:bob@auth.kelliher.info a-child aria:a-grandchild ADDDDDDDDDDD
 claim selectors user:bob@auth.kelliher.info a-child aria:a-chat HHHHHHHHHHHH
-claim selectors user:bob@auth.kelliher.info a-child aria:a-herald HHHHHHHHHHHH
+claim selectors user:bob@auth.kelliher.info a-child aria:a-svc HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-child aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-child aria:a-gone HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-child aria:a-unknown HHHHHHHHHHHH
@@ -5252,7 +5252,7 @@ claim selectors user:bob@auth.kelliher.info a-grandchild aria:a-box0 ADDDDDADDDD
 claim selectors user:bob@auth.kelliher.info a-grandchild aria:a-child ADDDDDDDDDDD
 claim selectors user:bob@auth.kelliher.info a-grandchild aria:a-grandchild ADDDDDDDDDDD
 claim selectors user:bob@auth.kelliher.info a-grandchild aria:a-chat HHHHHHHHHHHH
-claim selectors user:bob@auth.kelliher.info a-grandchild aria:a-herald HHHHHHHHHHHH
+claim selectors user:bob@auth.kelliher.info a-grandchild aria:a-svc HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-grandchild aria:a-gone HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -5273,7 +5273,7 @@ claim selectors user:bob@auth.kelliher.info a-2001 aria:a-box0 ADDDDDAADDDD
 claim selectors user:bob@auth.kelliher.info a-2001 aria:a-child ADDDDDAADDDD
 claim selectors user:bob@auth.kelliher.info a-2001 aria:a-grandchild ADDDDDAADDDD
 claim selectors user:bob@auth.kelliher.info a-2001 aria:a-chat HHHHHHHAHHHH
-claim selectors user:bob@auth.kelliher.info a-2001 aria:a-herald HHHHHHHAHHHH
+claim selectors user:bob@auth.kelliher.info a-2001 aria:a-svc HHHHHHHAHHHH
 claim selectors user:bob@auth.kelliher.info a-2001 aria:a-bwrap HHHHHHHAHHHH
 claim selectors user:bob@auth.kelliher.info a-2001 aria:a-gone HHHHHHHAHHHH
 claim selectors user:bob@auth.kelliher.info a-2001 aria:a-unknown HHHHHHHAHHHH
@@ -5294,7 +5294,7 @@ claim selectors user:bob@auth.kelliher.info a-guest aria:a-box0 HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-guest aria:a-child HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-guest aria:a-grandchild HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-guest aria:a-chat HHHHHHHHHHHH
-claim selectors user:bob@auth.kelliher.info a-guest aria:a-herald HHHHHHHHHHHH
+claim selectors user:bob@auth.kelliher.info a-guest aria:a-svc HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-guest aria:a-bwrap HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-guest aria:a-gone HHHHHHHHHHHH
 claim selectors user:bob@auth.kelliher.info a-guest aria:a-unknown HHHHHHHHHHHH
@@ -5315,7 +5315,7 @@ claim selectors sandbox:box0@local:box a-box0 aria:a-box0 ADDDDDDDDDDD
 claim selectors sandbox:box0@local:box a-box0 aria:a-child ADDDDDDDDDDD
 claim selectors sandbox:box0@local:box a-box0 aria:a-grandchild ADDDDDDDDDDD
 claim selectors sandbox:box0@local:box a-box0 aria:a-chat HHHHHHHHHHHH
-claim selectors sandbox:box0@local:box a-box0 aria:a-herald HHHHHHHHHHHH
+claim selectors sandbox:box0@local:box a-box0 aria:a-svc HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-box0 aria:a-bwrap HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-box0 aria:a-gone HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-box0 aria:a-unknown HHHHHHHHHHHH
@@ -5336,7 +5336,7 @@ claim selectors sandbox:box0@local:box a-child aria:a-box0 ADDDDDDDDDDD
 claim selectors sandbox:box0@local:box a-child aria:a-child ADDDDDDDDDDD
 claim selectors sandbox:box0@local:box a-child aria:a-grandchild ADDDDDDDDDDD
 claim selectors sandbox:box0@local:box a-child aria:a-chat HHHHHHHHHHHH
-claim selectors sandbox:box0@local:box a-child aria:a-herald HHHHHHHHHHHH
+claim selectors sandbox:box0@local:box a-child aria:a-svc HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-child aria:a-bwrap HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-child aria:a-gone HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-child aria:a-unknown HHHHHHHHHHHH
@@ -5357,7 +5357,7 @@ claim selectors sandbox:box0@local:box a-grandchild aria:a-box0 ADDDDDDDDDDD
 claim selectors sandbox:box0@local:box a-grandchild aria:a-child ADDDDDDDDDDD
 claim selectors sandbox:box0@local:box a-grandchild aria:a-grandchild ADDDDDDDDDDD
 claim selectors sandbox:box0@local:box a-grandchild aria:a-chat HHHHHHHHHHHH
-claim selectors sandbox:box0@local:box a-grandchild aria:a-herald HHHHHHHHHHHH
+claim selectors sandbox:box0@local:box a-grandchild aria:a-svc HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-grandchild aria:a-bwrap HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-grandchild aria:a-gone HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-grandchild aria:a-unknown HHHHHHHHHHHH
@@ -5378,7 +5378,7 @@ claim selectors sandbox:box0@local:box a-2001 aria:a-box0 ADDDDADDADDD
 claim selectors sandbox:box0@local:box a-2001 aria:a-child ADDDDADDADDD
 claim selectors sandbox:box0@local:box a-2001 aria:a-grandchild ADDDDADDADDD
 claim selectors sandbox:box0@local:box a-2001 aria:a-chat HHHHHHHHHHHH
-claim selectors sandbox:box0@local:box a-2001 aria:a-herald HHHHHHHHHHHH
+claim selectors sandbox:box0@local:box a-2001 aria:a-svc HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-2001 aria:a-bwrap HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-2001 aria:a-gone HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-2001 aria:a-unknown HHHHHHHHHHHH
@@ -5399,7 +5399,7 @@ claim selectors sandbox:box0@local:box a-guest aria:a-box0 HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-guest aria:a-child HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-guest aria:a-grandchild HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-guest aria:a-chat HHHHHHHHHHHH
-claim selectors sandbox:box0@local:box a-guest aria:a-herald HHHHHHHHHHHH
+claim selectors sandbox:box0@local:box a-guest aria:a-svc HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-guest aria:a-bwrap HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-guest aria:a-gone HHHHHHHHHHHH
 claim selectors sandbox:box0@local:box a-guest aria:a-unknown HHHHHHHHHHHH

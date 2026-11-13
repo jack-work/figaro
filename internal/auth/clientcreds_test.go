@@ -69,7 +69,7 @@ func TestClientCredentialsBasicAuthAudienceAndCache(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
 	c := &ClientCredentials{
 		TokenURL: srv.URL + "/token", ClientID: "figaro", Secret: secretFile(t),
-		Audience: []string{"https://herald.kelliher.info"},
+		Audience: []string{"https://svc.example.com"},
 		Now:      func() time.Time { return now },
 	}
 
@@ -82,7 +82,7 @@ func TestClientCredentialsBasicAuthAudienceAndCache(t *testing.T) {
 	assert.Equal(t, ccSecret, sec)
 	form := *srv.form.Load()
 	assert.Equal(t, "client_credentials", form["grant_type"])
-	assert.Equal(t, "https://herald.kelliher.info", form["audience"])
+	assert.Equal(t, "https://svc.example.com", form["audience"])
 	assert.NotContains(t, form, "client_secret", "basic auth must not also post the secret")
 
 	tok, _ = c.Resolve()

@@ -62,17 +62,17 @@ func gridFacts() fakeFacts {
 	box0 := jkauthz.Principal{Kind: jkauthz.KindSandbox, ID: "box0@local:box"}
 	return fakeFacts{
 		owners: map[string]jkauthz.Principal{
-			"a-2001":   {Kind: jkauthz.KindUser, ID: "2001"},
-			"a-1000":   {Kind: jkauthz.KindUser, ID: "1000"},
-			"a-admin":  {Kind: jkauthz.KindUser, ID: "admin@auth.kelliher.info"},
-			"a-guest":  {Kind: jkauthz.KindUser, ID: "guest@auth.kelliher.info"},
-			"a-box0":   box0,
-			"a-child":  box0,
-			"a-chat":   {Kind: jkauthz.KindSandbox, ID: "chat@local:box"},
-			"a-herald": {Kind: jkauthz.KindUser, ID: "1000"},
+			"a-2001":  {Kind: jkauthz.KindUser, ID: "2001"},
+			"a-1000":  {Kind: jkauthz.KindUser, ID: "1000"},
+			"a-admin": {Kind: jkauthz.KindUser, ID: "admin@auth.kelliher.info"},
+			"a-guest": {Kind: jkauthz.KindUser, ID: "guest@auth.kelliher.info"},
+			"a-box0":  box0,
+			"a-child": box0,
+			"a-chat":  {Kind: jkauthz.KindSandbox, ID: "chat@local:box"},
+			"a-svc":   {Kind: jkauthz.KindUser, ID: "1000"},
 		},
 		parents: map[string]string{"a-child": "a-box0", "a-grandchild": "a-child"},
-		roles:   map[string]string{"@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5c": "a-herald"},
+		roles:   map[string]string{"@4e0a1d5c8b7f2e3a9c6d0b1f2a3e4d5c": "a-svc"},
 		boxed: map[string]string{
 			"a-admin": "local", "a-box0": "box0", "a-child": "box0", "a-grandchild": "box0",
 			"a-chat": "chat", "a-bwrap": "bwrap", "a-gone": "box0",
@@ -83,7 +83,7 @@ func gridFacts() fakeFacts {
 
 func gridResources() []Resource {
 	out := []Resource{Daemon}
-	for _, id := range []string{"a-2001", "a-1000", "a-admin", "a-guest", "a-box0", "a-child", "a-grandchild", "a-chat", "a-herald", "a-bwrap", "a-gone", "a-unknown"} {
+	for _, id := range []string{"a-2001", "a-1000", "a-admin", "a-guest", "a-box0", "a-child", "a-grandchild", "a-chat", "a-svc", "a-bwrap", "a-gone", "a-unknown"} {
 		out = append(out, Aria(id))
 	}
 	for _, name := range []string{"local", "box0", "chat", "receipt", "bwrap", "other"} {
