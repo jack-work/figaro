@@ -50,14 +50,8 @@ func (t *Trunks) forkFlat(parentKey, kind string, mintTrunk bool) (string, error
 	if err != nil {
 		return "", err
 	}
-	for name, base := range bases {
-		dir := filepath.Join(t.root, name, fsName(child))
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return "", err
-		}
-		if err := writeForkMarker(dir, base); err != nil {
-			return "", err
-		}
+	if err := t.writeChannelForks(child, bases); err != nil {
+		return "", err
 	}
 	// One marker, written last: it is the commit point. Writing lineage and
 	// trunk id as a pair left a node with one and not the other after a crash.
@@ -83,8 +77,22 @@ func (t *Trunks) forkFlatNamed(parentKey, name, kind string) error {
 	if err != nil {
 		return err
 	}
-	for chName, base := range bases {
-		dir := filepath.Join(t.root, chName, fsName(name))
+	if err := t.writeChannelForks(name, bases); err != nil {
+		return err
+	}
+	if err := writeNodeMarker(t.irDir(name), nodeMarker{from: parentKey, kind: kind}); err != nil {
+		return err
+	}
+	t.idx.SpawnFlat(parentKey, name, "", kind)
+	return nil
+}
+
+func (t *Trunks) writeChannelForks(node string, bases map[string]uint64) error {
+	for name, base := range bases {
+		if name != t.main && base <= 1 {
+			continue
+		}
+		dir := filepath.Join(t.root, name, fsName(node))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
@@ -92,10 +100,6 @@ func (t *Trunks) forkFlatNamed(parentKey, name, kind string) error {
 			return err
 		}
 	}
-	if err := writeNodeMarker(t.irDir(name), nodeMarker{from: parentKey, kind: kind}); err != nil {
-		return err
-	}
-	t.idx.SpawnFlat(parentKey, name, "", kind)
 	return nil
 }
 
@@ -216,14 +220,8 @@ func (t *Trunks) forkFlatAt(parentKey string, atMainLT uint64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for name, base := range bases {
-		dir := filepath.Join(t.root, name, fsName(child))
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return "", err
-		}
-		if err := writeForkMarker(dir, base); err != nil {
-			return "", err
-		}
+	if err := t.writeChannelForks(child, bases); err != nil {
+		return "", err
 	}
 	if err := writeNodeMarker(t.irDir(child), nodeMarker{from: parentKey, kind: "conversation", trunk: trunk}); err != nil {
 		return "", err
