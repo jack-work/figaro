@@ -153,6 +153,7 @@ SlotPagesRequest.Wait
 SlotReleaseRequest.Generation
 SlotReleaseRequest.Key
 SlotReleaseRequest.Pool
+SlotSayRequest.Text
 StatusRequest.SkipMem
 StudyRequest.FormID
 TroupeAPIKeyListRequest.Troupe

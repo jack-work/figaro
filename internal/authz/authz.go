@@ -307,6 +307,10 @@ func Enforce(p *Policies) Policy {
 			}
 			res = Pool(pool)
 		}
+		if verb == rpc.VerbSay {
+			box, _ := BoxOf(r.Subject.Principal)
+			res = Lease(box)
+		}
 		on := []Resource{res}
 		if r.Method == rpc.MethodDecide {
 			var err error

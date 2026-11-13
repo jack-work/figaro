@@ -4,10 +4,13 @@ import (
 	"context"
 	"time"
 
+	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/tool"
 )
 
 func (a *Angelus) SweepLifetimesNow() {
@@ -152,4 +155,24 @@ func (s *SlotPools) ForgetDeliveries(box string) { s.forgetDeliveries(box) }
 
 func (hs *Handlers) ProviderIn(box, name string) (provider.Provider, error) {
 	return hs.h.factoryIn(box)(name, provider.Knobs{})
+}
+
+func (hs *Handlers) ToolsAtWake(box, figaroID string) []string {
+	return hs.h.toolsIn(box, figaroID, func() *tool.Registry {
+		r := tool.NewRegistry()
+		r.MustRegister(&tool.ReadTool{}, &tool.WriteTool{})
+		return r
+	}).Names()
+}
+
+func (hs *Handlers) SayAs(ctx context.Context, box, figaroID, text string) error {
+	return hs.h.sayAs(ctx, box, figaroID, text)
+}
+
+func AsLeasedBox(box string) context.Context {
+	return authz.WithSubject(inProcess(context.Background()), jkauthz.Subject{Principal: authz.BoxPrincipal(box)})
+}
+
+func AsLeasedBoxThrough(box string, door authz.Door) context.Context {
+	return authz.WithSubject(authz.WithDoor(context.Background(), door), jkauthz.Subject{Principal: authz.BoxPrincipal(box)})
 }

@@ -134,8 +134,9 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 	if err != nil {
 		return nil, fmt.Errorf("restore %s: sandbox: %w", ariaID, err)
 	}
-	reg := tool.DefaultRegistry(box, cwdFromForm(cb, box),
-		tool.WithImageBudget(loaded.InlineImageBudget()))
+	reg := h.toolsIn(cbStr("system.sandbox"), ariaID, func() *tool.Registry {
+		return tool.DefaultRegistry(box, cwdFromForm(cb, box), tool.WithImageBudget(loaded.InlineImageBudget()))
+	})
 	agent := figaro.NewAgent(figaro.Config{
 		ID:              ariaID,
 		Provider:        prov,

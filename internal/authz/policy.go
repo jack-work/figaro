@@ -313,6 +313,9 @@ func bound(pol *jkauthz.Policy[Resource], s jkauthz.Subject) bool {
 }
 
 func (p *Policies) HoldsRole(s jkauthz.Subject) bool {
+	if _, leased := p.leasedBox(s.Principal); leased {
+		return false
+	}
 	local := p.store.Policy()
 	if bound(local, s) {
 		return true
@@ -438,6 +441,9 @@ func (v Verdict) Reason() string {
 func (p *Policies) Allow(s jkauthz.Subject, verb rpc.Verb, r Resource) Verdict {
 	if IsProvisioner(s.Principal) {
 		return p.allowProvisioner(s, verb, r)
+	}
+	if box, ok := p.leasedBox(s.Principal); ok {
+		return p.allowLeased(s, box, verb, r)
 	}
 	local := p.store.Allow(s, string(verb), r)
 	if local.Allowed {

@@ -2,6 +2,7 @@ package authz
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/jack-work/jkauthz"
@@ -48,6 +49,40 @@ func provisionerGrants(box string) jkauthz.Grants {
 		{Verb: string(rpc.VerbSet), Object: selBoxedIn + box},
 		{Verb: string(rpc.VerbKill), Object: selBoxedIn + box},
 	}
+}
+
+var leaseName = regexp.MustCompile(`-g[0-9]+$`)
+
+func (p *Policies) leasedBox(principal jkauthz.Principal) (string, bool) {
+	if !p.pool.Load() {
+		return "", false
+	}
+	box, ok := BoxOf(principal)
+	if !ok || !leaseName.MatchString(box) {
+		return "", false
+	}
+	return box, true
+}
+
+func leasedGrants() jkauthz.Grants {
+	return jkauthz.Grants{{Verb: string(rpc.VerbSay), Object: selLease}}
+}
+
+func (p *Policies) allowLeased(s jkauthz.Subject, box string, verb rpc.Verb, r Resource) Verdict {
+	leases := p.leases.Load()
+	if leases == nil || !(*leases).InForce(box) {
+		return Verdict{computed: fmt.Sprintf("%s holds nothing: lease %s is not in force", s.Principal, box)}
+	}
+	m, _ := p.schema.Selectors.(selectors)
+	for _, g := range leasedGrants() {
+		if g.Verb == string(verb) && m.Match(g.Object, s, r) {
+			return Verdict{
+				Decision: jkauthz.Decision{Allowed: true, Role: "lease", Selector: g.Object},
+				computed: fmt.Sprintf("%s holds lease %s: %s on %s", s.Principal, box, verb, g.Object),
+			}
+		}
+	}
+	return Verdict{computed: fmt.Sprintf("%s may not %s on %s: a lease's grant is %s", s.Principal, verb, r, leasedGrants())}
 }
 
 func (p *Policies) allowProvisioner(s jkauthz.Subject, verb rpc.Verb, r Resource) Verdict {

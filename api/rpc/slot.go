@@ -5,6 +5,7 @@ const (
 	MethodSlotLease   = "figaro.slot.lease"
 	MethodSlotRelease = "figaro.slot.release"
 	MethodSlotDeliver = "figaro.slot.deliver"
+	MethodSlotSay     = "figaro.slot.say"
 )
 
 const ErrCodeSlot = -32021
@@ -62,6 +63,14 @@ type SlotDeliverRequest struct {
 
 type SlotDeliverResponse struct {
 	Queued bool `json:"queued"`
+}
+
+type SlotSayRequest struct {
+	Text string `json:"text"`
+}
+
+type SlotSayResponse struct {
+	Said bool `json:"said"`
 }
 
 type SlotPagesRequest struct {

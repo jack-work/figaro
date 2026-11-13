@@ -3,6 +3,7 @@ package angelus
 import (
 	"fmt"
 	"log/slog"
+	"net/http"
 	"path/filepath"
 	"sync"
 
@@ -14,6 +15,7 @@ type SlotPools struct {
 	Ledger      *slotpool.Ledger
 	Generations *slotpool.Generations
 	Caller      func(provider string) (slotpool.Caller, error)
+	SayClient   *http.Client
 
 	leasing sync.Mutex
 

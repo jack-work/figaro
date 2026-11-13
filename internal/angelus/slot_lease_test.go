@@ -65,7 +65,12 @@ principals = ["user:broker", "user:rival"]
 
 func leasingRig(t *testing.T) grantRig {
 	t.Helper()
-	r := newRigProviding(t, leasingPolicy, leasingConfig, func(_ string, knobs provider.Knobs) (provider.Provider, error) {
+	return leasingRigUnder(t, leasingPolicy)
+}
+
+func leasingRigUnder(t *testing.T, policy string) grantRig {
+	t.Helper()
+	r := newRigProviding(t, policy, leasingConfig, func(_ string, knobs provider.Knobs) (provider.Provider, error) {
 		return &leasedMock{lease: knobs.Lease}, nil
 	}, thatWakesFigaros)
 	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
@@ -78,6 +83,7 @@ func leasingRig(t *testing.T) grantRig {
 	}
 	r.a.Slots = slots
 	r.a.Policies.SetLeases(slots)
+	r.a.Policies.SetPoolDaemon(true)
 	installRou2(r)
 	return r
 }
