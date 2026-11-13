@@ -4,6 +4,7 @@ package store
 // fork/trunk mechanics on disk.
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -403,7 +404,7 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 }
 
 // ForkWith forks a node and lands a patch on the child in one critical section.
-func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch, opts ...BirthOption) (child string, version uint64, err error) {
+func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch, opts ...BirthOption) (child string, version uint64, stamped message.Patch, err error) {
 	return s.forkWithKind(parent, atMainLT, patch, string(kindConversation), births(opts))
 }
 
@@ -411,14 +412,14 @@ func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch
 // state into a fresh @id. No atMainLT: a form's timeline is one ceremonial
 // record. A conversation parent is refused; a bound form's fork is the aria's
 // fork, through ForkWith.
-func (s *XwalStore) CreateForm(parent string, patch message.Patch, opts ...BirthOption) (id string, version uint64, err error) {
+func (s *XwalStore) CreateForm(parent string, patch message.Patch, opts ...BirthOption) (id string, version uint64, stamped message.Patch, err error) {
 	if parent != "" {
 		s.mu.Lock()
 		kind, known := s.trunks.Kind(parent)
 		legacyStump := s.isStumpLocked(parent)
 		s.mu.Unlock()
 		if !legacyStump && (!known || kind != string(kindForm)) {
-			return "", 0, fmt.Errorf("xwal store: create form: parent %s is not an unbound form", parent)
+			return "", 0, message.Patch{}, fmt.Errorf("xwal store: create form: parent %s is not an unbound form", parent)
 		}
 	}
 	return s.forkWithKind(parent, 0, patch, string(kindForm), births(opts))
@@ -426,9 +427,9 @@ func (s *XwalStore) CreateForm(parent string, patch message.Patch, opts ...Birth
 
 // forkWithKind picks the spawn shape from the parent's species, then lands
 // the birth patch and its cursor-stamped record in order.
-func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.Patch, kind string, b birthSpec) (child string, version uint64, err error) {
+func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.Patch, kind string, b birthSpec) (child string, version uint64, stamped message.Patch, err error) {
 	if patch.IsIdentity() {
-		return "", 0, fmt.Errorf("xwal store: fork-with: a fork must carry a patch")
+		return "", 0, message.Patch{}, fmt.Errorf("xwal store: fork-with: a fork must carry a patch")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -450,13 +451,14 @@ func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.P
 		child, err = s.forkAtLocked(parent, atMainLT)
 	}
 	if err != nil {
-		return "", 0, err
+		return "", 0, message.Patch{}, err
 	}
-	version, err = s.writeBirth(child, patch, b)
+	version, stamped, err = s.writeBirth(child, patch, b)
 	if err != nil {
-		return "", 0, err
+		return "", 0, message.Patch{}, err
 	}
-	return child, version, nil
+	s.trunks.Touch(child)
+	return child, version, stamped, nil
 }
 
 // Caller holds s.mu.
@@ -467,33 +469,79 @@ func (s *XwalStore) isFormLocked(id string) bool {
 
 // writeBirth appends a node's birth patch and the renderable record that carries
 // its cursor stamp. Caller holds s.mu.
-func (s *XwalStore) writeBirth(node string, patch message.Patch, b birthSpec) (uint64, error) {
+func (s *XwalStore) writeBirth(node string, patch message.Patch, b birthSpec) (uint64, message.Patch, error) {
 	x, err := s.trunks.Head(node)
 	if err != nil {
-		return 0, err
+		return 0, message.Patch{}, err
 	}
 	defer x.Close()
 	pb, err := json.Marshal(patch)
 	if err != nil {
-		return 0, err
+		return 0, message.Patch{}, err
 	}
 	next := mainTailOf(x) + 1
 	version, err := x.Append(chanForm, next, pb, nil)
 	if err != nil {
-		return 0, err
+		return 0, message.Patch{}, err
 	}
 	gen, _ := json.Marshal(message.Message{Role: message.RoleInput, Timestamp: s.now(), Principal: b.mintedBy})
 	glt, err := x.AppendMain(gen, nil)
 	if err != nil {
-		return 0, err
+		return 0, message.Patch{}, err
 	}
 	if glt != next {
-		return 0, fmt.Errorf("xwal store: %s birth record landed at %d, form patch keyed to %d",
+		return 0, message.Patch{}, fmt.Errorf("xwal store: %s birth record landed at %d, form patch keyed to %d",
 			node, glt, next)
+	}
+	version, stamped, err := stampBirth(x, node, patch, version, b.stamp)
+	if err != nil {
+		return 0, message.Patch{}, fmt.Errorf("xwal store: %s stamp: %w", node, err)
 	}
 	// Durable before anything spawns beneath it: a crash between here and the
 	// next flush would orphan a child's fork base.
-	return version, x.SyncCoherent()
+	return version, stamped, x.SyncCoherent()
+}
+
+func stampBirth(x *xwal.XWAL, child string, birth message.Patch, version uint64, fill func(string) message.Patch) (uint64, message.Patch, error) {
+	if fill == nil {
+		return version, message.Patch{}, nil
+	}
+	stamp := fill(child)
+	if touchesWatermarkKeys(stamp) {
+		return 0, message.Patch{}, ErrReservedFormKey
+	}
+	applied := beyondBirth(birth, stamp)
+	if applied.IsIdentity() {
+		return version, applied, nil
+	}
+	payload, err := json.Marshal(formRecord{Patch: applied})
+	if err != nil {
+		return 0, message.Patch{}, err
+	}
+	v, err := x.Append(chanForm, 0, payload, nil)
+	if err != nil {
+		return 0, message.Patch{}, err
+	}
+	return v, applied, nil
+}
+
+func beyondBirth(birth, stamp message.Patch) message.Patch {
+	set := map[string]json.RawMessage{}
+	var drop []string
+	for _, e := range stamp.Entries() {
+		if e.IsRemoval() {
+			drop = append(drop, e.Key)
+			continue
+		}
+		if b, ok := birth.Entry(e.Key); ok && !b.IsRemoval() && bytes.Equal(b.New, e.New) {
+			continue
+		}
+		set[e.Key] = e.New
+	}
+	if len(set) == 0 && len(drop) == 0 {
+		return message.Patch{}
+	}
+	return form.Build(form.Snapshot{}, set, drop)
 }
 
 // isStumpLocked reports whether an id names a stump. Caller holds s.mu.

@@ -572,13 +572,9 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		return nil, err
 	}
 	cwd := birthCwd(req.Cwd)
-	id, _, err := h.angelus.Backend.ForkWith(parent, 0, childBirthPatch(dress, cwd), mintedBy(ctx))
+	id, _, err := h.angelus.Backend.ForkWith(parent, 0, childBirthPatch(dress, cwd), mintedBy(ctx), bootStamp(cwd))
 	if err != nil {
 		return nil, fmt.Errorf("form.bind: mint figaro: %w", err)
-	}
-	if _, err := h.angelus.Backend.ApplyFormPrivileged(id, convBootPatch(id, cwd)); err != nil {
-		h.discardBirth(id)
-		return nil, fmt.Errorf("form.bind: stamp aria id: %w", err)
 	}
 	if err := h.grantSandboxOn(ctx, id); err != nil {
 		h.discardBirth(id)
