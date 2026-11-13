@@ -545,3 +545,48 @@ rou2 is untouched.
   one change, his read.
 - The callback socket for classes whose figaro needs the `figaro` CLI,
   with `figaro_claim`.
+
+## Addendum, 11-13 12:xx: phase 1 with zero figaro lines
+
+Gluck: "I think we need 0 figaro lines." Proposed: N static boxes in
+figaro's `[sandbox.boxes]` (exec only, no door), rendered by spain-flake;
+a lessor outside figaro (a spain-flake unit) that picks a free box,
+resets and probes it, runs `figaro new -S system.sandbox=boxN`, and on
+release kills that figaro and resets the box; the credential proxy by uid
+and the egress allowlist in spain-flake. Node agent, cross-node exec and
+the workload check wait for a second node. The figaro lessor built so far
+is parked at keel `scratch/sandbox-shell-20261113` (f0658350; its lease
+tests pass) and nothing is on `lane/sandbox-shell`.
+
+What each guard of the approved design becomes, from v0.68.0's code:
+
+| guard | approved (daemon) | zero lines (v0.68.0 + lessor) | loses |
+|---|---|---|---|
+| who binds a figaro to a box (S4, U1) | `use:sandbox:<class>` | `system.sandbox` is a protected key (owner or an ancestor figaro) and `use:sandbox:boxN` is held by spain's `owner` role alone | nothing |
+| who may lease | the same grant | the lessor's socket, bound into container@figaro, admitting the daemon's uid: owner authority, as U1 | nothing |
+| reset before bind, receipt, probe (S1, S2, S7) | daemon asks the agent, probes over exec | the lessor resets, probes (`figaro box exec --socket`), then runs `figaro new`; nonce and receipt never leave spain-flake | nothing; S2 gets simpler |
+| a leased figaro leaving its box (S3) | below-owner unset refused | protected key: only the owner or an ancestor (one of the owner's figaros) changes it; the box has no door to call from | the approved rule also stopped an ancestor figaro; here that is owner-lineage authority |
+| one lineage per box (exclusivity) | a direct box name refused to all; only holders run tools | nothing in figaro knows a box is leased: any owner-authority caller can `figaro new -S system.sandbox=box1` into a leased box | **yes**: owner authority only (U1) |
+| a figaro outliving its lease (strays) | the holder check at agent start fails closed | forks and successors inherit `system.sandbox`; a killed figaro is restorable for the grace. The lessor must release with `figaro kill -r --now`, and before the reset and again before the next lease find every figaro whose `system.sandbox` is boxN (no list filter exists: `figaro list -j` then `figaro state <id> system.sandbox` each) and kill it | **yes**: a fork or restore between the last scan and the next lease runs tools in the next lessee's box |
+| release trigger | kill of the last holder | the lessor polls for the leased figaro's death (or the figaro carries `system.ttl`) | latency only |
+| exec socket reachable by the daemon only (U2) | agent relay plus `box serve` on a passed listener | relay unchanged; `box serve` binds its own socket as the sandbox uid, so El Cerco's fallback: a root `ExecStartPost` in the container takes the socket and its dir | the LISTEN_FDS change (about 15 lines) is not made |
+| lease to call chain (U3) | agent and proxy logs | lessor and proxy logs, keyed by box and figaro id | breaks only for a stray |
+| workload kind, second node | built | deferred | deferred |
+
+**Does any of it force a figaro line?** No. The one guard only the daemon
+can hold exactly is the holder check: a figaro runs tools in a leased box
+only while the lease names it. Without it, a stray (a fork or restore
+made in the window between the lessor's last scan and the next lease, or
+a direct `figaro new` into a leased box) runs in the next lessee's box.
+Every way to make one needs owner authority, which U1 already accepts on
+spain, and a box keeps one class for good, so a stray gains no right its
+own lease lacked. What it can do: read the next lease's `/work`, and make
+calls the proxy attributes to the next lease. Both leases are Gluck's.
+
+So zero lines holds if El Inspector accepts that residual, with these
+lessor duties as rows: release by `kill -r --now`; the stray scan before
+the reset and before the next lease, a stray killed and logged; reset and
+probe before every bind; leases only through its socket. The parked
+figaro work becomes phase 2's starting point (the holder check, the
+agent client, the passed listener) when a second node or a guest shell
+arrives.
