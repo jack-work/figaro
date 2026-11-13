@@ -24,7 +24,7 @@ func TestStatusAndHelloReportProtocolReleaseAndCapabilities(t *testing.T) {
 	if !slices.Contains(st.Capabilities, rpc.CapQuaImages) {
 		t.Fatalf("status capabilities %v lack %q", st.Capabilities, rpc.CapQuaImages)
 	}
-	hello, err := hs.Map[rpc.MethodHello](inProcess(context.Background()), []byte(`{"version":1}`))
+	hello, err := hs.Map[rpc.MethodHello](inProcess(context.Background()), []byte(`{"version":2}`))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,7 +3,7 @@ package rpc
 // The node door: the handshake every connection makes first.
 
 // ProtocolVersion mismatch in a Hello is refused.
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 
 type Capability string
 

@@ -35,7 +35,7 @@ func TestHelloStampsTheConnectionPrincipal(t *testing.T) {
 	if _, err := hs.Map[rpc.MethodHello](inProcess(context.Background()), []byte(`{"version":99}`)); err == nil {
 		t.Fatal("version 99 accepted")
 	}
-	out, err := hs.Map[rpc.MethodHello](inProcess(context.Background()), []byte(`{"version":1}`))
+	out, err := hs.Map[rpc.MethodHello](inProcess(context.Background()), []byte(`{"version":2}`))
 	if err != nil {
 		t.Fatal(err)
 	}

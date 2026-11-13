@@ -41,7 +41,7 @@ var keySyntax = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 
 type Lease struct {
 	Pool       string   `json:"pool"`
-	Worker     string   `json:"slot"`
+	Worker     string   `json:"worker"`
 	Key        string   `json:"key"`
 	Generation uint64   `json:"generation"`
 	State      State    `json:"state"`
