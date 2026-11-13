@@ -155,6 +155,8 @@ func (s *Store) markDirty(trunk string) {
 	s.mu.Unlock()
 }
 
+func (s *Store) Touch(trunk string) { s.markTouched(trunk) }
+
 func (s *Store) markTouched(trunk string) {
 	now := time.Now()
 	s.mu.Lock()

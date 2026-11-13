@@ -105,7 +105,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 			return nil, serr
 		}
 		var cerr error
-		id, _, cerr = backend.ForkWith(formID, 0, childBirthPatch(dress, cwd), mintedBy(ctx))
+		id, _, cerr = backend.ForkWith(formID, 0, childBirthPatch(dress, cwd), mintedBy(ctx), bootStamp(cwd))
 		if cerr != nil {
 			return nil, fmt.Errorf("mint aria: %w", cerr)
 		}
@@ -117,11 +117,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		}
 	}()
 	{
-		// aria_id rides a second patch so the birth patch stays a pure
-		// function of what was asked for.
-		if _, aerr := backend.ApplyFormPrivileged(id, convBootPatch(id, cwd)); aerr != nil {
-			return nil, fmt.Errorf("stamp aria id: %w", aerr)
-		}
 		if err := h.grantSandboxOn(ctx, id); err != nil {
 			return nil, err
 		}
@@ -304,7 +299,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			at = atMainLT
 		}
 		var ferr error
-		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID), mintedBy(ctx))
+		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID), mintedBy(ctx), ariaIDStamp())
 		if ferr != nil {
 			return ferr
 		}
@@ -320,10 +315,6 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		}
 		cont = req.FigaroID
 		h.seedForkMeta(parentMeta, req.FigaroID, alt, atMainLT, interior, forkOwner)
-		// The child inherited its parent's aria_id; re-stamp it.
-		if _, aerr := h.angelus.Backend.ApplyForm(alt, withAriaID(form.Patch{}, alt)); aerr != nil {
-			slog.Warn("fork: stamp child aria id", "alt", alt, "err", aerr)
-		}
 		return nil
 	}
 
