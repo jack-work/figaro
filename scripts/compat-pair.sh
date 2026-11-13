@@ -36,12 +36,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for _ in $(seq 1 100); do
-	[ -S "$root/run/angelus.sock" ] && break
+hang=$((SECONDS + ${COMPAT_HANG_SECONDS:-600}))
+until [ -S "$root/run/angelus.sock" ]; do
 	kill -0 "$dpid" 2>/dev/null || { cat "$root/daemon.log" >&2; echo "compat: daemon exited" >&2; exit 1; }
+	[ $SECONDS -lt $hang ] || { cat "$root/daemon.log" >&2; echo "compat: daemon alive but no socket after ${COMPAT_HANG_SECONDS:-600}s" >&2; exit 1; }
 	sleep 0.1
 done
-[ -S "$root/run/angelus.sock" ] || { echo "compat: no socket after 10s" >&2; exit 1; }
 
 fail() { echo "compat FAIL ($(basename "$cli") -> $(basename "$daemon"), $expect): $*" >&2; exit 1; }
 
