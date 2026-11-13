@@ -1,6 +1,6 @@
 # Sandbox shell, phase 1: leased sandboxes on spain
 
-Status: approved by El Inspector XVI (04119478) with U1 to U3, folded in
+Status: approved by El Inspector XVI (3a507b5d), U1 to U3 folded in
 below ("Unbound figaros on spain"). The first draft (67d80435) had his
 approval of its shape with conditions S1 to S8; the second folded those in and Gluck's
 direction of 11-13 (via 48e285da), which moved three things: the exec
@@ -330,7 +330,7 @@ Two things this does not cover, for El Inspector:
 | kfin side effects (S5, S8) | read-only in kfin for the service caller; side-effect GETs refused | each named endpoint as `kfin-read-box`: refused; the token at every other kweb site: refused; a token with no audience: refused |
 | the sandbox reaches figaro | no callback socket; the exec socket is dialed by the daemon | no figaro socket in the sandbox; sandbox root cannot connect to the daemon's |
 | a non-owner makes an unbound figaro (U1) | `use:sandbox:local` is owner-only and local-only | a troupe peer, herald-server, a box principal (box0, chat, receipt), a pool principal and a scopes-narrowed figaro each create, fork, bind, import or set a figaro to no sandbox: refused, or pinned into its own box (box principals); spain's rendered policy grants `use:sandbox:local` to the `owner` role alone |
-| the troupe drives an unbound figaro (U1) | owner authority while the troupe is Gluck's machines | at the window, `figaro troupe ls` on spain lists spain and gluck only |
+| the troupe drives an unbound figaro (U1) | owner authority while the troupe is Gluck's machines | at the window, `figaro troupe policy show kelliher` lists exactly spain and Gluck's desktop. Standing rule (El Inspector XVI): adding a troupe member, or any grant that reaches `unboxed`, reopens this read before it lands |
 | decide runs tools unboxed (U1) | decide-narrow's figaro is bound or has no executing tool | for the decide-narrow lane, before it lands |
 | another uid reaches the agent or a sandbox (U2) | SO_PEERCRED on the host side admits the daemon's host uid alone | a second host uid and host root connecting to `agent.sock` and to an `exec.sock`: refused and logged; from inside a sandbox neither socket exists; a sandbox uid connecting to its own `box serve` socket: not reachable (dir is the agent's) |
 | the chain cannot be read back (U3) | agent logs lease, reset, exec and `box.open`; proxy logs each call | after the acceptance run, from the logs alone: for `kfin0-g1`, the lease (peer uid, figaro), each exec connection and open, each kfin call, and the reset |
