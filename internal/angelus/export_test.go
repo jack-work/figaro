@@ -95,3 +95,5 @@ func (hs *Handlers) WaitSuccessionsForTest() {
 	hs.h.succ.run.Lock()
 	defer hs.h.succ.run.Unlock()
 }
+
+func (a *Angelus) LeaveHubForTest(id string) { a.Hubs.putIfAbsent(id, newAriaHub(id)) }
