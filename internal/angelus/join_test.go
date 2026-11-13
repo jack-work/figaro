@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -243,5 +244,49 @@ func TestARequestAfterTheSealIsRefusedUnrun(t *testing.T) {
 	}
 	if ran {
 		t.Fatal("the handler ran after the stop sealed the join")
+	}
+}
+
+// A door served on a context its caller never cancels still stops accepting
+// when the stop begins: the seal closes the listener, the accept loop
+// returns, and the join has nothing to wait for (S1).
+func TestAStopClosesADoorServedOnAContextNobodyCancels(t *testing.T) {
+	r := newJoinRig(t)
+	r.a.SetJoinBoundForTest(2 * time.Second)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	served := make(chan error, 1)
+	go func() { served <- r.a.Serve(context.Background(), ln, authz.DoorNode, nil) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c, err := net.Dial("tcp", ln.Addr().String())
+		if err == nil {
+			c.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the door never accepted: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	start := time.Now()
+	r.a.Shutdown(time.Second)
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("Shutdown took %v: the join waited on an accept loop the stop should have closed", took)
+	}
+	select {
+	case <-served:
+	case <-time.After(time.Second):
+		t.Fatal("the accept loop was still running after Shutdown returned")
+	}
+	if c, err := net.Dial("tcp", ln.Addr().String()); err == nil {
+		c.Close()
+		t.Fatal("the door still accepted a connection after the stop")
+	}
+	if r.unclean(t) {
+		t.Fatal(".unclean survived a stop whose only open door was an accept loop")
 	}
 }

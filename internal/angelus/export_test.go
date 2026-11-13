@@ -101,6 +101,12 @@ func (a *Angelus) SetJoinBoundForTest(d time.Duration) { a.joinFor = d }
 
 func (a *Angelus) StoppingForTest() bool { return a.inflight.sealed.Load() }
 
+func (a *Angelus) OutForTest() []string {
+	a.inflight.mu.Lock()
+	defer a.inflight.mu.Unlock()
+	return a.inflight.names()
+}
+
 var ErrStoppingForTest = errStopping
 
 func (a *Angelus) JoinedForTest(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {

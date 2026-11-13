@@ -147,12 +147,11 @@ func (a *Angelus) Serve(ctx context.Context, ln net.Listener, door authz.Door, a
 	if admit == nil {
 		admit = authz.Admit
 	}
-	id, ok := a.inflight.enter(flight{name: "door " + door.String()})
+	leave, ok := a.enterDoor("door "+door.String(), ln)
 	if !ok {
-		ln.Close()
 		return errStopping
 	}
-	defer a.inflight.leave(id)
+	defer leave()
 	go func() {
 		<-ctx.Done()
 		ln.Close()

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -19,10 +21,11 @@ const shutdownJoinBound = 5 * time.Second
 var errStopping = errors.New("daemon stopping")
 
 type flight struct {
-	name   string
-	call   bool
-	door   authz.Door
-	params json.RawMessage
+	name     string
+	call     bool
+	door     authz.Door
+	params   json.RawMessage
+	listener io.Closer
 }
 
 func (f flight) describe() string {
@@ -72,7 +75,16 @@ func (i *inflight) leave(id uint64) {
 func (i *inflight) seal() {
 	i.mu.Lock()
 	i.sealed.Store(true)
+	var listeners []io.Closer
+	for _, f := range i.out {
+		if f.listener != nil {
+			listeners = append(listeners, f.listener)
+		}
+	}
 	i.mu.Unlock()
+	for _, l := range listeners {
+		_ = l.Close()
+	}
 }
 
 func (i *inflight) names() []string {
@@ -119,6 +131,17 @@ func (a *Angelus) Go(name string, fn func()) bool {
 	}()
 	return true
 }
+
+func (a *Angelus) enterDoor(name string, ln net.Listener) (leave func(), ok bool) {
+	id, ok := a.inflight.enter(flight{name: name, listener: ln})
+	if !ok {
+		ln.Close()
+		return nil, false
+	}
+	return func() { a.inflight.leave(id) }, true
+}
+
+func (a *Angelus) stopping() bool { return a.inflight.sealed.Load() }
 
 func (a *Angelus) refusingWhenStopping(next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {

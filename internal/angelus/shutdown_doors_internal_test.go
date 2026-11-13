@@ -2,10 +2,15 @@ package angelus
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,6 +19,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
@@ -58,7 +64,9 @@ func (g *gatedFacts) SandboxOf(aria string) (string, bool) {
 type stopRig struct {
 	a       *Angelus
 	backend *store.XwalBackend
+	dir     string
 	door    string
+	host    string
 	aria    string
 	facts   *gatedFacts
 	cancel  context.CancelFunc
@@ -67,9 +75,26 @@ type stopRig struct {
 
 func newStopRig(t *testing.T) *stopRig {
 	t.Helper()
+	return newStopRigHosted(t, false)
+}
+
+func newStopRigHosted(t *testing.T, hosted bool) *stopRig {
+	t.Helper()
 	dir := t.TempDir()
 	door := filepath.Join(dir, "slot.sock")
+	host := filepath.Join(t.TempDir(), "host.sock")
 	loaded := loadBoxes(t, dir, map[string]string{"slot1": door})
+	if hosted {
+		f, err := os.OpenFile(filepath.Join(dir, "config.toml"), os.O_APPEND|os.O_WRONLY, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(f, "host_door = %q\n", host)
+		f.Close()
+		if loaded, err = config.Load(dir); err != nil {
+			t.Fatal(err)
+		}
+	}
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +119,7 @@ func newStopRig(t *testing.T) *stopRig {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	r := &stopRig{a: a, backend: backend, door: door, aria: aria, facts: facts, cancel: cancel, decided: make(chan error, 4)}
+	r := &stopRig{a: a, backend: backend, dir: dir, door: door, host: host, aria: aria, facts: facts, cancel: cancel, decided: make(chan error, 4)}
 	a.Handlers = NewHandlers(ServerConfig{Angelus: a, Config: loaded, Ctx: ctx}).Map
 	set := a.Handlers[rpc.MethodSet]
 	a.Handlers[rpc.MethodSet] = func(ctx context.Context, params json.RawMessage) (any, error) {
@@ -239,4 +264,248 @@ func TestAStopLapsesHeldBoxConnectionsAndRemovesTheSocket(t *testing.T) {
 	if out := r.stragglers(); len(out) != 0 {
 		t.Fatalf("the stop returned with %v still out", out)
 	}
+}
+
+func (r *stopRig) holdTheJoin(t *testing.T) (stopped <-chan struct{}, letGo func()) {
+	t.Helper()
+	release := make(chan struct{})
+	if !r.a.Go("held open by the test", func() { <-release }) {
+		t.Fatal("the test's goroutine was refused before the stop")
+	}
+	done := make(chan struct{})
+	go func() { r.a.Shutdown(time.Second); close(done) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for !r.a.stopping() {
+		if time.Now().After(deadline) {
+			t.Fatal("the stop never sealed")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	var once sync.Once
+	letGo = func() { once.Do(func() { close(release) }) }
+	t.Cleanup(letGo)
+	return done, letGo
+}
+
+func (r *stopRig) waitStragglers(t *testing.T, want ...string) {
+	t.Helper()
+	sort.Strings(want)
+	deadline := time.Now().Add(time.Second)
+	for {
+		got := r.stragglers()
+		if strings.Join(got, "|") == strings.Join(want, "|") {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the join is waiting on %v, want only %v", got, want)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+type dialed struct{ network, addr string }
+
+func waitAccepting(t *testing.T, name string, d dialed) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c, err := net.DialTimeout(d.network, d.addr, time.Second)
+		if err == nil {
+			c.Close()
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("canary: the %s door never accepted: %v", name, err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func requireRefused(t *testing.T, name string, d dialed) {
+	t.Helper()
+	start := time.Now()
+	c, err := net.DialTimeout(d.network, d.addr, time.Second)
+	took := time.Since(start)
+	if err == nil {
+		c.Close()
+		t.Errorf("the %s door accepted a connection after the seal", name)
+		return
+	}
+	if took > 250*time.Millisecond {
+		t.Errorf("the %s door hung %v on a connect after the seal instead of refusing it: %v", name, took, err)
+		return
+	}
+	t.Logf("%s door: a connect right after the seal is refused in %v: %v", name, took, err)
+}
+
+// El Inspector XV (1): every listener the daemon serves registers with the
+// stop: CLI, web, node, and the box and host doors. Each is served here on a
+// context nobody cancels. Right after the seal each refuses a new connect
+// (refused, not hung), and every accept loop has returned while the join is
+// still held, so the join waits on none of them.
+func TestTheSealClosesEveryDoorServedOnAContextNobodyCancels(t *testing.T) {
+	r := newStopRigHosted(t, true)
+	never := context.Background()
+	cli := shortSocketPath(t)
+	cliLn, err := net.Listen("unix", cli)
+	if err != nil {
+		t.Fatal(err)
+	}
+	web := shortSocketPath(t)
+	webLn, err := ListenUnix(web, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	served := map[string]chan error{}
+	serve := func(name string, fn func() error) {
+		ch := make(chan error, 1)
+		served[name] = ch
+		go func() { ch <- fn() }()
+	}
+	serve("cli", func() error { return r.a.Serve(never, cliLn, authz.DoorLocal, nil) })
+	serve("web", func() error { return r.a.ServeWeb(never, webLn, Web{}) })
+	serve("node", func() error {
+		return r.a.Serve(never, tls.NewListener(nodeLn, &tls.Config{}), authz.DoorNode, nil)
+	})
+	doors := map[string]dialed{
+		"cli":  {"unix", cli},
+		"web":  {"unix", web},
+		"node": {"tcp", nodeLn.Addr().String()},
+		"box":  {"unix", r.door},
+		"host": {"unix", r.host},
+	}
+	for name, d := range doors {
+		waitAccepting(t, name, d)
+	}
+
+	stopped, letGo := r.holdTheJoin(t)
+	for name, d := range doors {
+		requireRefused(t, name, d)
+	}
+	for name, ch := range served {
+		select {
+		case err := <-ch:
+			if err != nil {
+				t.Errorf("the %s accept loop ended with %v", name, err)
+			}
+		case <-time.After(time.Second):
+			t.Errorf("the %s accept loop was still running after the seal", name)
+		}
+	}
+	r.waitStragglers(t, "held open by the test")
+	letGo()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Shutdown did not return once the test let the join go")
+	}
+}
+
+// El Inspector XV (2): a config refresh that opens a box door while the stop
+// is under way gets a door that closes its own listener at once: its Serve
+// registers after the seal, is refused, and leaves no socket behind.
+func TestABoxDoorOpenedByARefreshDuringTheStopClosesAtOnce(t *testing.T) {
+	r := newStopRig(t)
+	stopped, letGo := r.holdTheJoin(t)
+	late := filepath.Join(r.dir, "late.sock")
+	if err := r.a.ReloadBoxDoors(loadBoxes(t, r.dir, map[string]string{"slot1": r.door, "slot2": late})); err != nil {
+		t.Fatalf("the refresh during the stop: %v", err)
+	}
+	r.a.boxDoorsMu.Lock()
+	o := r.a.boxDoors.open["slot2.door"]
+	r.a.boxDoorsMu.Unlock()
+	if o == nil {
+		t.Fatal("canary: the refresh opened no door for slot2")
+	}
+	select {
+	case <-o.done:
+	case <-time.After(time.Second):
+		t.Fatal("the door opened after the seal is still serving")
+	}
+	requireRefused(t, "late box", dialed{"unix", late})
+	if _, err := os.Stat(late); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the late door's socket outlived its refused Serve: %v", err)
+	}
+	r.waitStragglers(t, "held open by the test")
+	letGo()
+	<-stopped
+}
+
+// El Inspector XV (3): closing the listeners at the seal leaves the approved
+// S6 order as it was. The log of this test is the record: the seal; the
+// listener closed, its socket unlinked by the close itself (Go's order); a
+// request on a held connection refused with "daemon stopping" before
+// authentication; on the daemon context's end, door.lapsed "daemon stopping"
+// flushed within the 250 ms stop grace; then the join and the close.
+func TestTheStopKeepsTheApprovedDoorOrder(t *testing.T) {
+	r := newStopRig(t)
+	held := holdDoor(t, r.door)
+	if err := held.list(); err != nil {
+		t.Fatalf("canary: the box door never served: %v", err)
+	}
+	start := time.Now()
+	var step int
+	logStep := func(format string, args ...any) {
+		step++
+		t.Logf("%d. %7.2f ms  %s", step, float64(time.Since(start).Microseconds())/1000, fmt.Sprintf(format, args...))
+	}
+	stopped, letGo := r.holdTheJoin(t)
+	logStep("sealed: the in-flight table refuses new entries")
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		if _, err := os.Stat(r.door); errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the box door's socket outlived the seal")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	logStep("listener closed; the socket path went with the close (unlink, then close, in one call)")
+
+	r.facts.armed.Store(true)
+	err := r.setFromTheBox(held.c)
+	if err == nil || !strings.Contains(err.Error(), stoppingReason) {
+		t.Fatalf("a request after the seal: got %v, want %q", err, stoppingReason)
+	}
+	select {
+	case <-r.facts.entered:
+		t.Fatal("a request after the seal reached the policy: it was authenticated or guarded")
+	default:
+	}
+	if got := r.decision(t); !errors.Is(got, errStopping) {
+		t.Fatalf("the door chain answered a request after the seal with %v, want the stop's own refusal", got)
+	}
+	logStep("a request on the held connection refused before authentication: %v", err)
+
+	r.cancel()
+	select {
+	case reason := <-held.lapsed:
+		if reason != stoppingReason {
+			t.Fatalf("lapse reason %q, want %q", reason, stoppingReason)
+		}
+		shut := doorShut(r.a.boxDoors.ctx)
+		if shut == nil || shut.noticeGrace() != stopNoticeGrace || stopNoticeGrace != 250*time.Millisecond {
+			t.Fatalf("the stop notice is not bounded by the 250 ms grace: %+v", shut)
+		}
+		logStep("daemon context ended: held connection got door.lapsed %q, flush bounded by %v", reason, shut.noticeGrace())
+	case <-time.After(5 * time.Second):
+		t.Fatal("the held box connection got no door.lapsed")
+	}
+
+	letGo()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Shutdown did not return once the test let the join go")
+	}
+	if out := r.stragglers(); len(out) != 0 {
+		t.Fatalf("the stop returned with %v still out", out)
+	}
+	logStep("joined; the store closed after the join")
 }

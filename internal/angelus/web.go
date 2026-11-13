@@ -67,6 +67,11 @@ func ListenUnix(path string, mode os.FileMode) (net.Listener, error) {
 }
 
 func (a *Angelus) ServeWeb(ctx context.Context, ln net.Listener, w Web) error {
+	leave, ok := a.enterDoor("door "+authz.DoorWeb.String(), ln)
+	if !ok {
+		return errStopping
+	}
+	defer leave()
 	srv := &http.Server{
 		Handler:           a.webDoor(ctx, w),
 		ReadHeaderTimeout: webReadHeaderTimeout,
@@ -76,7 +81,7 @@ func (a *Angelus) ServeWeb(ctx context.Context, ln net.Listener, w Web) error {
 		<-ctx.Done()
 		srv.Close()
 	}()
-	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
 		return err
 	}
 	return nil

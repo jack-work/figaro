@@ -522,7 +522,7 @@ func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded
 		return err
 	}
 	slog.Info("web door listening", "path", web.Path, "authn", web.Authn, "max_conn_age", web.MaxConnAge.String(), "edge_follow_max_age", door.FollowMaxAge.String(), "admits", admit != nil)
-	a.Go("door web", func() {
+	a.Go("web door socket", func() {
 		defer os.Remove(web.Path)
 		if err := a.ServeWeb(ctx, ln, door); err != nil {
 			slog.Error("web door", "err", err)
