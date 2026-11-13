@@ -478,8 +478,11 @@ func (v FigaroView) Allow(s jkauthz.Subject, verb rpc.Verb, r Resource) Verdict 
 }
 
 func (v FigaroView) refuses(s jkauthz.Subject, verb rpc.Verb, r Resource) string {
-	if !v.held {
+	if v.figaro == "" {
 		return ""
+	}
+	if !v.held {
+		return fmt.Sprintf("%s%s is not held here", figaroPrefix, v.figaro)
 	}
 	m, _ := v.p.schema.Selectors.(selectors)
 	for _, g := range v.eff {

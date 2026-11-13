@@ -41,7 +41,7 @@ func TestAFigaroCallIsTheCallersGrantsIntersectedWithTheFigaros(t *testing.T) {
 		{"kill outside it", "kid", rpc.VerbKill, Aria("aaaa0001"), false},
 		{"admin the daemon", "kid", rpc.VerbAdmin, Daemon, false},
 		{"no claim: the principal alone", "", rpc.VerbAdmin, Daemon, true},
-		{"a figaro not held here: the principal alone", "elsewhere", rpc.VerbAdmin, Daemon, true},
+		{"a figaro not held here", "elsewhere", rpc.VerbRead, Aria("aaaa0001"), false},
 	} {
 		d := p.AllowFigaro(subject(me), c.figaro, c.verb, c.on)
 		if d.Allowed != c.want {
@@ -255,17 +255,17 @@ func TestTheGuardNamesTheFigaroWhenItMayStillRead(t *testing.T) {
 }
 
 func TestTheStampReachesTheHandlerContext(t *testing.T) {
-	p := loaded(t, sandboxPolicy)
+	p := narrowed(t, sandboxPolicy, nil)
 	var inner context.Context
 	h := Guard(map[string]jkrpc.HandlerFunc{
 		rpc.MethodQua: func(ctx context.Context, _ json.RawMessage) (any, error) { inner = ctx; return "ok", nil },
 	}, AriaHeader{}, Enforce(p))
 	ctx := WithSubject(context.Background(), subject(me))
-	if _, err := Authenticated(AriaHeader{}, h[rpc.MethodQua])(ctx, stamped(t, "aaaa0002", "dddd0001")); err != nil {
+	if _, err := Authenticated(AriaHeader{}, h[rpc.MethodQua])(ctx, stamped(t, "aaaa0002", "kid")); err != nil {
 		t.Fatal(err)
 	}
-	if got := FigaroOf(inner); got != "dddd0001" {
-		t.Fatalf("handler saw %q, want dddd0001", got)
+	if got := FigaroOf(inner); got != "kid" {
+		t.Fatalf("handler saw %q, want kid", got)
 	}
 	if got := FigaroOf(WithSubject(inner, subject(other))); got != "" {
 		t.Fatalf("another principal inherited the stamp %q", got)
@@ -277,5 +277,42 @@ func TestAPolicyWithFencesIsRefusedNamingTheReplacement(t *testing.T) {
 	err := p.load([]byte(sandboxPolicy + "\n[[fence]]\ngrants = [\"kill:*\"]\ndeny = [\"figaro:*\"]\n"))
 	if err == nil || !strings.Contains(err.Error(), "system.scopes") || !strings.Contains(err.Error(), "[figaros]") {
 		t.Fatalf("%v", err)
+	}
+}
+
+// El Inspector XV: a door drops a claim for a figaro it does not hold, and
+// says so once with the door and the id, so a process outliving its killed
+// aria shows up rather than silently going wider. The params stay out.
+func TestADoorDroppingAClaimNotHeldLogsTheDoorAndTheID(t *testing.T) {
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	p := narrowed(t, sandboxPolicy, nil)
+	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodQua: func(context.Context, json.RawMessage) (any, error) { return "ok", nil }}, AriaHeader{}, Enforce(p))
+	params, err := rpc.WithCaller(map[string]string{"figaro_id": "aaaa0002", "text": "PARAMS-STAY-OUT"}, "elsewhere", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []Door{DoorLocal, DoorNode, DoorWeb} {
+		logs.Reset()
+		if _, err := h[rpc.MethodQua](WithDoor(WithSubject(context.Background(), subject(me)), d), params); err != nil {
+			t.Fatalf("%s: %v", d, err)
+		}
+		line := logs.String()
+		if strings.Count(line, "claim for a figaro not held here dropped") != 1 || !strings.Contains(line, "door="+d.String()) || !strings.Contains(line, "figaro=elsewhere") {
+			t.Errorf("%s: want one drop line naming the door and the id:\n%s", d, line)
+		}
+		if strings.Contains(line, "PARAMS-STAY-OUT") {
+			t.Errorf("%s: the drop line carries the params:\n%s", d, line)
+		}
+	}
+	logs.Reset()
+	if _, err := h[rpc.MethodQua](WithDoor(WithSubject(context.Background(), subject(me)), DoorInProcess), params); err == nil {
+		t.Fatal("in-process: a claim not held here ran")
+	}
+	if strings.Contains(logs.String(), "dropped") {
+		t.Errorf("in-process: a refused claim logged as dropped:\n%s", logs.String())
 	}
 }

@@ -43,6 +43,10 @@ func (d Door) SeatsOnlyPolicySubjects() bool {
 	return d != DoorInProcess && d != DoorLocal && d != DoorNode
 }
 
+func (d Door) dropsClaimsNotHeld() bool {
+	return d != DoorInProcess && d != DoorUnknown
+}
+
 func (d Door) Trusted() bool {
 	return d == DoorInProcess || d == DoorLocal
 }

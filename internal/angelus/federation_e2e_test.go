@@ -469,6 +469,41 @@ func TestFederationTheOwnerDecides(t *testing.T) {
 	require.ErrorContains(t, err, "nodes never vouch")
 }
 
+// El Inspector XV: a figaro on A calling through A to B's aria carries A's
+// figaro id, which B does not hold. B drops the claim and decides on the
+// troupe caller's own grants, exactly as for the same caller with no claim.
+func TestFederationDropsTheSendersClaim(t *testing.T) {
+	a, b := newFedPair(t)
+	id, sender := b.mint(), a.mint()
+	ctx := callCtx(t)
+	_, held := b.a.Backend.Node(sender)
+	require.False(t, held, "control: B holds A's figaro")
+
+	type answer struct{ read, byPrefix, set string }
+	ask := func(claim string) answer {
+		t.Setenv("FIGARO_ARIA", claim)
+		c := a.ariaAs("reader", id, nil)
+		var out answer
+		if _, err := c.Form(ctx); err != nil {
+			out.read = err.Error()
+		}
+		if _, err := a.ariaAs("reader", b.id[:8]+"/"+id[:8], nil).Form(ctx); err != nil {
+			out.byPrefix = err.Error()
+		}
+		if _, err := c.Set(ctx, *rawPatch(map[string]string{"mantra": `"by a reader"`}), 0); err != nil {
+			out.set = err.Error()
+		}
+		return out
+	}
+	claimed, bare := ask(sender), ask("")
+	require.Empty(t, claimed.read, "B refused a read its reader may make")
+	require.Empty(t, claimed.byPrefix, "B resolved the prefix under the claim it drops")
+	require.Contains(t, claimed.set, "user:reader@issuer.test.figaro", "B did not decide the set on the reader's own grants")
+	require.NotContains(t, claimed.set, "not held here")
+	require.Equal(t, bare, claimed, "A's figaro id changed what B decided")
+	require.NotContains(t, mantraOf(t, b, id), "by a reader")
+}
+
 // A forwarded request is served at the node it reached or refused there:
 // B never sends A's caller on to a third hop, even back to A.
 func TestFederationForwardsOnce(t *testing.T) {
