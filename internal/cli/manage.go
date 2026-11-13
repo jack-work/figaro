@@ -874,14 +874,21 @@ func runKillRequest(loaded *config.Loaded, req rpc.KillRequest) {
 		for _, kid := range resp.Lifted {
 			fmt.Fprintf(stderrw, "lifted %s\n", ariaName(kid))
 		}
-		if resp.PurgeAt == 0 {
-			fmt.Fprintf(stderrw, "killed %s\n", name)
-			return nil
-		}
-		left := shortDuration(time.Until(time.UnixMilli(resp.PurgeAt)))
-		fmt.Fprintf(stderrw, "killed %s; purged in %s (figaro reaped restore %s, or kill --now)\n", name, left, name)
+		fmt.Fprintln(stderrw, killedLine(name, *resp, time.Now()))
 		return nil
 	})
+}
+
+func killedLine(name string, resp rpc.KillResponse, now time.Time) string {
+	taken := name
+	if n := max(len(resp.Removed), len(resp.Reaped)) - 1; n > 0 {
+		taken = fmt.Sprintf("%s and %d under it", name, n)
+	}
+	if resp.PurgeAt == 0 {
+		return "killed " + taken
+	}
+	left := shortDuration(time.UnixMilli(resp.PurgeAt).Sub(now))
+	return fmt.Sprintf("killed %s; purged in %s (figaro reaped restore %s, or kill --now)", taken, left, name)
 }
 
 func runMove(loaded *config.Loaded, idFlag string, args []string, to string, asJSON bool) {
