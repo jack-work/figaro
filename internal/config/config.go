@@ -805,6 +805,14 @@ func (l *Loaded) ListOutfits() []string {
 	return outfitNames(files)
 }
 
+func (l *Loaded) serviceTokenOf(provider string) string {
+	var pa ProviderAuth
+	if err := l.LoadProviderAuth(provider, &pa); err != nil {
+		return ""
+	}
+	return pa.ServiceToken
+}
+
 // LoadProviderAuth returns nil, nil when the file is absent.
 func (l *Loaded) LoadProviderAuth(name string, target interface{}) error {
 	path := l.ProviderAuthPath(name)
@@ -936,7 +944,7 @@ func load(configDir string) (*Loaded, error) {
 		return nil, fmt.Errorf("%s: %w", configPath, err)
 	}
 	l := &Loaded{Config: cfg, ConfigDir: configDir, ConfigPath: configPath}
-	if err := cfg.refuseWhatAPoolDaemonCannotHold(md, l.ListProviders()); err != nil {
+	if err := cfg.refuseWhatAPoolDaemonCannotHold(md, l.ListProviders(), l.serviceTokenOf); err != nil {
 		return nil, fmt.Errorf("%s: %w", configPath, err)
 	}
 

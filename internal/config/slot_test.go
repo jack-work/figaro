@@ -184,6 +184,40 @@ func TestAPoolSendsItsBearersInClearOnlyOnLoopback(t *testing.T) {
 	}
 }
 
+// A pool daemon takes the outbound token its pool's provider names, and
+// no other: a second entry, or one when the provider names none, does not
+// load.
+func TestAPoolDaemonHoldsOnlyTheServiceTokenOfItsPoolsProvider(t *testing.T) {
+	const token = "[service_tokens.rou2]\nissuer = \"https://auth.example\"\nclient_id = \"figaro-pool\"\nsecret_credential = \"rou2-pool\"\n"
+	load := func(body, provider string) error {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "providers"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "providers", "rou2.toml"), []byte(provider), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load(dir)
+		return err
+	}
+	if err := load(poolBody+token, "service_token = \"rou2\"\n"); err != nil {
+		t.Errorf("the token the pool's provider names: %v", err)
+	}
+	for name, c := range map[string]struct{ body, provider, want string }{
+		"a token the provider does not name": {poolBody + token, "service_token = \"other\"\n", "[service_tokens.rou2]"},
+		"a token and a provider with none":   {poolBody + token, "", "[service_tokens.rou2]"},
+		"a second token":                     {poolBody + token + "[service_tokens.edge]\nissuer = \"https://auth.example\"\n", "service_token = \"rou2\"\n", "[service_tokens.edge]"},
+	} {
+		if err := load(c.body, c.provider); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want a refusal naming %s", name, err, c.want)
+		}
+	}
+}
+
 // Each thing alone, beside an otherwise good pool. The reason is checked so a
 // snippet that fails some other validation cannot pass for the fence.
 func TestAPoolDaemonRefusesWhatItCannotHold(t *testing.T) {
@@ -197,7 +231,7 @@ func TestAPoolDaemonRefusesWhatItCannotHold(t *testing.T) {
 		"a peer":            {poolBody + "[peers.gluck]\ndoor = \"gluck:7777\"\n", nil, "[peers] " + beside},
 		"a node door":       {poolBody + "[door.tls]\nlisten = \":7777\"\n", nil, "[door.tls] " + beside},
 		"a static box":      {poolBody + "[sandbox.boxes.judge]\nexec = \"/run/box/judge.sock\"\n", nil, "[sandbox.boxes] " + beside},
-		"a service token":   {poolBody + "[service_tokens.edge]\nissuer = \"https://auth.example\"\n", nil, "[service_tokens] " + beside},
+		"a service token":   {poolBody + "[service_tokens.edge]\nissuer = \"https://auth.example\"\n", nil, "[service_tokens.edge] " + beside},
 		"an api key":        {strings.Replace(poolBody, "policy = \"policy.toml\"\n", "policy = \"policy.toml\"\n[[authz.api_keys]]\nid = \"k1\"\n", 1), nil, "[authz.api_keys] " + beside},
 		"a uid map":         {strings.Replace(poolBody, "policy = \"policy.toml\"\n", "policy = \"policy.toml\"\n[authz.peercred.uids]\n1001 = \"user:guest\"\n", 1), nil, "[authz.peercred] " + beside},
 		"no trunks":         {"trunks = false\n" + poolBody, nil, "trunks = false " + beside},

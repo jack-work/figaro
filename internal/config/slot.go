@@ -199,13 +199,24 @@ func (c Config) validateSlot() error {
 	return nil
 }
 
-func (c Config) refuseWhatAPoolDaemonCannotHold(md toml.MetaData, providerFiles []string) error {
+func (c Config) refuseWhatAPoolDaemonCannotHold(md toml.MetaData, providerFiles []string, serviceTokenOf func(provider string) string) error {
 	if len(c.Slot.Pools) == 0 {
 		return nil
 	}
-	for _, table := range [][]string{{"troupe"}, {"peers"}, {"door", "tls"}, {"sandbox", "boxes"}, {"service_tokens"}, {"authz", "api_keys"}} {
+	for _, table := range [][]string{{"troupe"}, {"peers"}, {"door", "tls"}, {"sandbox", "boxes"}, {"authz", "api_keys"}} {
 		if md.IsDefined(table...) {
-			return fmt.Errorf("[%s] beside [slot.pools]: a daemon that leases slots holds no troupe, peer, node door, static box, service token or api key", strings.Join(table, "."))
+			return fmt.Errorf("[%s] beside [slot.pools]: a daemon that leases slots holds no troupe, peer, node door, static box or api key", strings.Join(table, "."))
+		}
+	}
+	named := map[string]bool{}
+	for _, p := range c.Slot.Pools {
+		if token := serviceTokenOf(p.Provider); token != "" {
+			named[token] = true
+		}
+	}
+	for _, name := range sortedKeys(c.ServiceTokens) {
+		if !named[name] {
+			return fmt.Errorf("[service_tokens.%s] beside [slot.pools]: no pool's provider names it, and a daemon that leases slots holds no outbound credential but its pools' providers'", name)
 		}
 	}
 	if c.Trunks != nil && !*c.Trunks {
