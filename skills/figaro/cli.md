@@ -216,9 +216,8 @@ time until you type; typed hex completes to full ids instead.
 instead of the handle wherever a person reads a name: the pager, the bar,
 every CLI line. `-j` keeps `id`, `short` and `handle` as they are and adds
 `display`, the name the setting shows, for scripts that print one, and
-`figaro name [<id>] [-m]` prints it alone (`-m` adds the other spelling): sign
-a herald footer with `--sender-id "$(figaro name)"`. In the
-pager `y` copies the name shown (the attended figaro's, or a listing row's; in
+`figaro name [<id>] [-m]` prints it alone (`-m` adds the other spelling). In
+the pager `y` copies the name shown (the attended figaro's, or a listing row's; in
 `l` and `M-l` a figaro row's handle, node-qualified on a peer's row) and `M-y`
 the full id.
 
