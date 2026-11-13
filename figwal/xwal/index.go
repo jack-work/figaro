@@ -24,7 +24,16 @@ type Index struct {
 	rebuilds atomic.Uint64
 	mintID   func(kind string, taken func(prefix string) bool) string
 	onSpawn  func(key string)
+	spawned  []spawnEntry
+	floor    uint64
 }
+
+type spawnEntry struct {
+	version uint64
+	trunk   string
+}
+
+const spawnJournal = 1024
 
 func newIndex(mintTrunkID func(kind string, taken func(prefix string) bool) string) *Index {
 	return &Index{nodes: map[string]*NodeInfo{}, heads: map[string]string{}, mintID: mintTrunkID}
@@ -76,6 +85,17 @@ func (x *Index) LiveTrunks() []string {
 	return ids
 }
 
+func (x *Index) compareTrunks(a, b string) int {
+	if x.mintID == nil {
+		na, ea := strconv.Atoi(strings.TrimPrefix(a, "t"))
+		nb, eb := strconv.Atoi(strings.TrimPrefix(b, "t"))
+		if ea == nil && eb == nil {
+			return na - nb
+		}
+	}
+	return strings.Compare(a, b)
+}
+
 // Version increases on every change and on every rebuild: Refresh means "I
 // re-read the disk" and must invalidate even when the tree came back identical.
 func (x *Index) Version() uint64 { return x.version.Load() }
@@ -84,12 +104,19 @@ func (x *Index) Version() uint64 { return x.version.Load() }
 // not touched: no child list, no freeze, no continuation.
 func (x *Index) SpawnFlat(parent, child, trunk, kind string) {
 	x.mu.Lock()
+	_, headMoved := x.heads[trunk]
+	_, replaced := x.nodes[child]
 	x.nodes[child] = &NodeInfo{Trunk: trunk, From: parent, Kind: kind}
 	if trunk != "" {
 		x.heads[trunk] = child
 	}
 	x.bumpSeqsLocked(child, trunk)
-	x.version.Add(1)
+	v := x.version.Add(1)
+	if replaced || (trunk != "" && headMoved) {
+		x.barrierLocked(v)
+	} else {
+		x.journalLocked(spawnEntry{version: v, trunk: trunk})
+	}
 	onSpawn := x.onSpawn
 	x.mu.Unlock()
 	if onSpawn != nil {
@@ -105,7 +132,7 @@ func (x *Index) Reparent(node, under string) {
 		moved.From = under
 		x.nodes[node] = &moved
 	}
-	x.version.Add(1)
+	x.barrierLocked(x.version.Add(1))
 }
 
 func (x *Index) Drop(keys []string) {
@@ -121,7 +148,39 @@ func (x *Index) Drop(keys []string) {
 		}
 		delete(x.nodes, k)
 	}
-	x.version.Add(1)
+	x.barrierLocked(x.version.Add(1))
+}
+
+func (x *Index) barrierLocked(v uint64) {
+	x.spawned = x.spawned[:0]
+	x.floor = v
+}
+
+func (x *Index) journalLocked(e spawnEntry) {
+	if len(x.spawned) == spawnJournal {
+		x.floor = x.spawned[0].version
+		x.spawned = append(x.spawned[:0], x.spawned[1:]...)
+	}
+	x.spawned = append(x.spawned, e)
+}
+
+// SpawnedSince names the trunks born after version since and the version the
+// answer is exact at. It refuses (ok false) when anything other than the
+// spawn of a new trunk moved the index after since, or the journal no longer
+// reaches back that far.
+func (x *Index) SpawnedSince(since uint64) (trunks []string, at uint64, ok bool) {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	at = x.version.Load()
+	if since < x.floor || since > at {
+		return nil, at, false
+	}
+	for _, e := range x.spawned {
+		if e.version > since && e.trunk != "" {
+			trunks = append(trunks, e.trunk)
+		}
+	}
+	return trunks, at, true
 }
 
 // ChildrenOf is every node forked from key. Derived, not stored: a flat
@@ -210,6 +269,7 @@ func (x *Index) RebuildFrom(mainDir string) error {
 	x.rebuilds.Add(1)
 	x.mu.Lock()
 	defer x.mu.Unlock()
+	defer func() { x.barrierLocked(x.version.Add(1)) }()
 	x.nodes, x.heads = map[string]*NodeInfo{}, map[string]string{}
 	x.nodeSeq, x.trunkSeq = 0, 0
 	if err := x.addLocked(mainDir, "", true); err != nil {
@@ -230,7 +290,6 @@ func (x *Index) RebuildFrom(mainDir string) error {
 			return err
 		}
 	}
-	x.version.Add(1)
 	return nil
 }
 
