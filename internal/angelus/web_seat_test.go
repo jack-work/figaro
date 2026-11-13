@@ -119,9 +119,9 @@ func TestWithNoPolicyTheHandlersRefuseAStrangerOffTheLocalDoor(t *testing.T) {
 	local := authz.WithDoor(authz.WithPrincipal(context.Background(), stranger), authz.DoorLocal)
 	ownerWeb := authz.WithDoor(authz.WithPrincipal(context.Background(), owner), authz.DoorWeb)
 
-	require.Empty(t, h.readable(web, append([]rpc.FigaroInfoResponse(nil), rows...)))
-	require.Len(t, h.readable(local, append([]rpc.FigaroInfoResponse(nil), rows...)), 1)
-	require.Len(t, h.readable(ownerWeb, append([]rpc.FigaroInfoResponse(nil), rows...)), 1)
+	require.Empty(t, readableRows(h, web, append([]rpc.FigaroInfoResponse(nil), rows...)))
+	require.Len(t, readableRows(h, local, append([]rpc.FigaroInfoResponse(nil), rows...)), 1)
+	require.Len(t, readableRows(h, ownerWeb, append([]rpc.FigaroInfoResponse(nil), rows...)), 1)
 
 	err := h.allowed(web, rpc.VerbRead, authz.Aria("abcd1234"))
 	require.Error(t, err)
@@ -149,18 +149,18 @@ func TestAnUnstampedContextIsNotTrusted(t *testing.T) {
 	h, _ := unpolicedWeb(t, owner, nil)
 	_, err := h.angelus.Handlers[rpc.MethodHello](unstamped, hello)
 	require.ErrorContains(t, err, "the unknown door passes only the owner")
-	require.Empty(t, h.readable(unstamped, rows()))
+	require.Empty(t, readableRows(h, unstamped, rows()))
 	require.Error(t, h.allowed(unstamped, rpc.VerbRead, authz.Aria("abcd1234")))
 	inproc := authz.WithDoor(unstamped, authz.DoorInProcess)
 	_, err = h.angelus.Handlers[rpc.MethodHello](inproc, hello)
 	require.NoError(t, err, "the control: the same stranger stamped in process")
-	require.Len(t, h.readable(inproc, rows()), 1)
+	require.Len(t, readableRows(h, inproc, rows()), 1)
 
 	policed := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, authz.PrincipalText(webPrincipal))}}
 	policed.angelus.Handlers = policed.door(map[string]jkrpc.HandlerFunc{rpc.MethodHello: policed.hello}, policed.policy())
 	_, err = policed.angelus.Handlers[rpc.MethodHello](unstamped, hello)
 	require.ErrorContains(t, err, "holds no role")
-	require.Empty(t, policed.readable(unstamped, rows()))
+	require.Empty(t, readableRows(policed, unstamped, rows()))
 	_, err = policed.angelus.Handlers[rpc.MethodHello](inproc, hello)
 	require.NoError(t, err, "the control: the same stranger stamped in process")
 }
@@ -169,4 +169,9 @@ func TestAnUnstampedContextIsNotTrusted(t *testing.T) {
 func TestTheHandlersOwnContextIsInProcess(t *testing.T) {
 	hs := NewHandlers(ServerConfig{Angelus: &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t)}, Config: &config.Loaded{}, Ctx: context.Background()})
 	require.Equal(t, authz.DoorInProcess, authz.DoorOf(hs.h.ctx))
+}
+
+func readableRows(h *handlers, ctx context.Context, rows []rpc.FigaroInfoResponse) []rpc.FigaroInfoResponse {
+	out, _ := h.readable(ctx, rows)
+	return out
 }

@@ -245,25 +245,36 @@ func (h *handlers) refuseUnheldSandbox(ctx context.Context, patch *form.Patch) e
 	return nil
 }
 
-func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) []rpc.FigaroInfoResponse {
+type unreadableRows struct {
+	count int
+	why   string
+}
+
+func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) ([]rpc.FigaroInfoResponse, unreadableRows) {
 	sub, err := authz.SubjectOf(ctx)
 	if err != nil {
-		return nil
+		return nil, unreadableRows{}
 	}
 	if h.angelus.Policies == nil {
 		if h.passesUnpoliced(ctx, sub) {
-			return rows
+			return rows, unreadableRows{}
 		}
-		return nil
+		return nil, unreadableRows{}
 	}
 	view := h.angelus.Policies.Figaro(authz.FigaroOf(ctx))
 	out := rows[:0]
+	var refused unreadableRows
 	for _, r := range rows {
-		if view.Allow(sub, rpc.VerbRead, authz.Aria(r.ID)).Allowed {
+		d := view.Allow(sub, rpc.VerbRead, authz.Aria(r.ID))
+		switch {
+		case d.Allowed:
 			out = append(out, r)
+		case d.Unreadable():
+			refused.count++
+			refused.why = d.Reason()
 		}
 	}
-	return out
+	return out, refused
 }
 
 func (h *handlers) takenWith(id string) []string {
