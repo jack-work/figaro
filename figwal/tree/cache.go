@@ -203,11 +203,13 @@ func (c *Cache[U]) Put(coord Coord, units []U, pinned bool) {
 
 	c.mu.Lock()
 	n := c.nodeLocked(coord.Node)
-	old := n.load()
-	if prev := at(old, coord); prev != nil && prev.resident {
-		delta -= prev.bytes
+	if !n.publishAppended(r) {
+		old := n.load()
+		if prev := at(old, coord); prev != nil && prev.resident {
+			delta -= prev.bytes
+		}
+		n.publish(replace(old, r))
 	}
-	n.publish(replace(old, r))
 	c.mu.Unlock()
 
 	c.budget.charge(delta)
@@ -566,7 +568,9 @@ func (c *Cache[U]) fill(coord Coord) ([]U, error) {
 				c.mu.Unlock()
 				continue
 			}
-			nn.publish(replace(nr, part))
+			if !nn.publishAppended(part) {
+				nn.publish(replace(nr, part))
+			}
 			c.mu.Unlock()
 			c.budget.charge(part.bytes)
 		}
@@ -693,6 +697,19 @@ func (n *node[U]) publish(runs []*run[U]) {
 		tos[i] = r.coord.To
 	}
 	n.idx.Store(&runIndex[U]{runs: runs, tos: tos})
+}
+
+func (n *node[U]) publishAppended(r *run[U]) bool {
+	ix := n.idx.Load()
+	if ix == nil {
+		n.publish([]*run[U]{r})
+		return true
+	}
+	if k := len(ix.runs); k > 0 && r.coord.From <= ix.runs[k-1].coord.From {
+		return false
+	}
+	n.idx.Store(&runIndex[U]{runs: append(ix.runs, r), tos: append(ix.tos, r.coord.To)})
+	return true
 }
 
 // runs is the lock-free read of one node's index.
