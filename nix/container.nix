@@ -43,7 +43,7 @@ in
       description = ''
         The container's private user range starts here (a multiple of 65536,
         above every host uid). figaro's pinned uid inside maps to
-        uidBase + uid on the host, which owns the state and door directories.
+        uidBase + uid on the host, which owns the state and endpoint directories.
       '';
     };
 
@@ -64,9 +64,9 @@ in
       description = "Host directory bind-mounted as the container's store.";
     };
 
-    doorDir = mkOption {
+    endpointDir = mkOption {
       type = types.str;
-      default = "/run/figaro-door";
+      default = "/run/figaro-endpoint";
       description = "Host directory bind-mounted as the angelus' runtime directory, where its sockets appear.";
     };
 
@@ -145,7 +145,7 @@ in
 
     systemd.tmpfiles.rules = [
       "d ${cfg.stateDir} 0700 ${toString hostUid} ${toString hostGid} -"
-      "d ${cfg.doorDir} 0750 ${toString hostUid} ${toString hostGid} -"
+      "d ${cfg.endpointDir} 0750 ${toString hostUid} ${toString hostGid} -"
     ];
 
     systemd.slices.figaro = {
@@ -226,7 +226,7 @@ in
           isReadOnly = false;
         };
         "/run/figaro" = {
-          hostPath = cfg.doorDir;
+          hostPath = cfg.endpointDir;
           isReadOnly = false;
         };
       };

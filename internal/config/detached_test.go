@@ -15,16 +15,16 @@ troupe = "kelliher"
 [troupe]
 name = "kelliher"
 provider = "figaro"
-[door.tls]
+[endpoint.tls]
 listen = "100.64.0.1:7443"
-[door.web]
+[endpoint.web]
 path = "/run/figaro/web.sock"
 authn = "upstream"
 [authz.upstream]
 issuer = "https://auth.test"
 [sandbox.boxes.judge]
 exec = "/run/figaro/judge.sock"
-door = "/run/figaro/judge-door.sock"
+endpoint = "/run/figaro/judge-endpoint.sock"
 [peers.b2c1d7a0-0000-4000-8000-000000000002]
 endpoint = "tls://10.77.0.2:7443"
 identity = "spiffe://kelliher/node/b2c1d7a0-0000-4000-8000-000000000002"
@@ -49,11 +49,11 @@ func TestADetachedConfigIsNotTheNode(t *testing.T) {
 	require.Empty(t, l.Config.CLI.Troupe)
 	_, tls, err := l.TLSEndpoint()
 	require.NoError(t, err)
-	require.False(t, tls, "the node door")
+	require.False(t, tls, "the node endpoint")
 	_, web, err := l.WebEndpoint()
 	require.NoError(t, err)
-	require.False(t, web, "the web door")
-	require.Empty(t, l.BoxEndpoints(), "a box door")
+	require.False(t, web, "the web endpoint")
+	require.Empty(t, l.BoxEndpoints(), "a box endpoint")
 	box, ok := l.Box("judge")
 	require.True(t, ok, "the box itself stays: an outfit may still run in it")
 	require.Equal(t, "/run/figaro/judge.sock", box.Exec)

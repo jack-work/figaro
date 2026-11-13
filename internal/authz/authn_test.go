@@ -359,7 +359,7 @@ func TestUpstreamIsNeverBoundToTheCLIEndpoint(t *testing.T) {
 	}{
 		"relative":                {"figaro/web.sock", config.UpstreamConfig{}},
 		"empty":                   {"", config.UpstreamConfig{}},
-		"the cli door":            {"/run/figaro/../figaro/angelus.sock", config.UpstreamConfig{}},
+		"the cli endpoint":        {"/run/figaro/../figaro/angelus.sock", config.UpstreamConfig{}},
 		"reverify without bearer": {webEndpoint, config.UpstreamConfig{Issuer: kelliher, Reverify: true}},
 		"no issuer":               {webEndpoint, config.UpstreamConfig{}},
 	} {
@@ -445,7 +445,7 @@ func TestOnlyAVerifiedTokenIsForwardable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got, ok := BearerOf(bctx); !ok || got != tok {
-		t.Fatalf("bearer door: %q %v", got, ok)
+		t.Fatalf("bearer endpoint: %q %v", got, ok)
 	}
 
 	u := reverifying(t, is)

@@ -202,7 +202,7 @@ func TestManyConnectionsThatStopReadingStayWithinTheEndpointBudget(t *testing.T)
 		}
 	}
 	require.Equal(t, int64(frames), healthy.Load())
-	require.LessOrEqual(t, most, budget+(32<<10), "the door queues held %d bytes against a budget of %d", most, budget)
+	require.LessOrEqual(t, most, budget+(32<<10), "the endpoint queues held %d bytes against a budget of %d", most, budget)
 	require.Eventually(t, func() bool { return hb.Attached() == 1 }, 5*time.Second, 10*time.Millisecond,
 		"connections that never read were left following")
 }

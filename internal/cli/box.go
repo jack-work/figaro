@@ -17,7 +17,7 @@ var boxVerb = &cmdkit.Command{
 	Name:  "box",
 	Group: "System",
 	Short: "Serve a sandbox over a unix socket, or run one command through it",
-	Usage: "box serve --socket <path> --workspace <dir> [--door <path>] | box exec --socket <path> [--cwd <dir>] [--scope <s>] -- <command>",
+	Usage: "box serve --socket <path> --workspace <dir> [--endpoint <path>] | box exec --socket <path> [--cwd <dir>] [--scope <s>] -- <command>",
 	Long: `A box is a sandbox a daemon reaches over a unix socket: the daemon names
 it in [sandbox.boxes.<name>] and an aria picks it with system.sandbox.
 
@@ -25,17 +25,17 @@ it in [sandbox.boxes.<name>] and an aria picks it with system.sandbox.
           It holds no figaro state and needs no daemon or config. The
           socket takes the process umask; a stale socket is replaced, a
           live one refused. SIGINT or SIGTERM kills every session it holds.
-          --door names the daemon's door for this box as seen inside it:
-          every command run here gets FIGARO_TROUPE=unix://<door> and
+          --endpoint names the daemon's endpoint for this box as seen inside it:
+          every command run here gets FIGARO_TROUPE=unix://<endpoint> and
           FIGARO_RUNTIME_DIR=<its dir>, so figaro in the box calls back
-          through the door and never starts a daemon of its own
+          through the endpoint and never starts a daemon of its own
   exec    run one shell command through a served box, stream its output
           and exit with its code (130 cancelled, 124 timed out). stdin
           is not forwarded`,
 	Flags: []cmdkit.FlagDef{
 		{Long: "socket", Short: "s", Description: "the box's unix socket"},
 		{Long: "workspace", Short: "w", Description: "serve: the directory every relative path and cwd resolves against"},
-		{Long: "door", Description: "serve: the daemon's door socket for this box, as a path inside it"},
+		{Long: "endpoint", Description: "serve: the daemon's endpoint socket for this box, as a path inside it"},
 		{Long: "cwd", Description: "exec: working directory, relative to the workspace"},
 		{Long: "scope", Description: "exec: session scope (default: this pid)"},
 	},
@@ -50,7 +50,7 @@ it in [sandbox.boxes.<name>] and an aria picks it with system.sandbox.
 			if len(ctx.Args) > 1 {
 				return fmt.Errorf("box serve takes no arguments")
 			}
-			return runBoxServe(sock, ctx.Flag("workspace"), ctx.Flag("door"))
+			return runBoxServe(sock, ctx.Flag("workspace"), ctx.Flag("endpoint"))
 		case "exec":
 			if len(ctx.Args) < 2 {
 				return fmt.Errorf("box exec: name a command after --")

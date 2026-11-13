@@ -36,9 +36,9 @@ func (r *reloadRig) write(boxes ...rigBox) {
 	var b strings.Builder
 	b.WriteString(r.extra)
 	for _, x := range boxes {
-		fmt.Fprintf(&b, "[sandbox.boxes.%s]\nexec = %q\ndoor = %q\noutfits = [\"*\"]\nproviders = [\"*\"]\n", x.name, filepath.Join(r.dir, x.name+"-exec.sock"), x.endpoint)
+		fmt.Fprintf(&b, "[sandbox.boxes.%s]\nexec = %q\nendpoint = %q\noutfits = [\"*\"]\nproviders = [\"*\"]\n", x.name, filepath.Join(r.dir, x.name+"-exec.sock"), x.endpoint)
 		if x.host != "" {
-			fmt.Fprintf(&b, "host_door = %q\n", x.host)
+			fmt.Fprintf(&b, "host_endpoint = %q\n", x.host)
 		}
 	}
 	if err := os.WriteFile(filepath.Join(r.dir, "config.toml"), []byte(b.String()), 0o600); err != nil {
@@ -123,7 +123,7 @@ func (b *boxCaller) lapseReason(t *testing.T) string {
 	case r := <-b.lapsed:
 		return r
 	case <-time.After(5 * time.Second):
-		t.Fatal("the held connection got no door.lapsed")
+		t.Fatal("the held connection got no endpoint.lapsed")
 		return ""
 	}
 }
@@ -140,9 +140,9 @@ func reaches(t *testing.T, path string) error {
 
 func TestABoxAddedAtRuntimeOpensItsEndpointOnRefresh(t *testing.T) {
 	r := newReloadRig(t)
-	endpoint := r.path("chat", "door", "door.sock")
+	endpoint := r.path("chat", "ep", "ep.sock")
 	if reaches(t, endpoint) == nil {
-		t.Fatal("canary: the door answers before the box exists")
+		t.Fatal("canary: the endpoint answers before the box exists")
 	}
 	r.write(rigBox{name: "chat", endpoint: endpoint})
 	if err := r.refresh(); err != nil {
@@ -155,7 +155,7 @@ func TestABoxAddedAtRuntimeOpensItsEndpointOnRefresh(t *testing.T) {
 
 func TestABoxRemovedAtRuntimeShutsItsEndpointWithAReason(t *testing.T) {
 	r := newReloadRig(t)
-	endpoint := r.path("chat", "door", "door.sock")
+	endpoint := r.path("chat", "ep", "ep.sock")
 	r.write(rigBox{name: "chat", endpoint: endpoint})
 	if err := r.refresh(); err != nil {
 		t.Fatal(err)
@@ -172,39 +172,39 @@ func TestABoxRemovedAtRuntimeShutsItsEndpointWithAReason(t *testing.T) {
 	if err := r.refresh(); err != nil {
 		t.Fatal(err)
 	}
-	if got := held.lapseReason(t); !strings.Contains(got, "box chat's door left the config") {
+	if got := held.lapseReason(t); !strings.Contains(got, "box chat's endpoint left the config") {
 		t.Fatalf("lapse reason %q", got)
 	}
 	if err := held.list(); err == nil {
 		t.Fatal("the held connection still serves after its box left")
 	}
 	if err := reaches(t, endpoint); err == nil {
-		t.Fatal("a new call through the removed box's door still reaches the daemon")
+		t.Fatal("a new call through the removed box's endpoint still reaches the daemon")
 	}
 	if _, err := os.Stat(endpoint); !os.IsNotExist(err) {
-		t.Fatalf("the removed door's socket stays: %v", err)
+		t.Fatalf("the removed endpoint's socket stays: %v", err)
 	}
 }
 
 func TestABoxWrittenWithoutARefreshHasNoEndpoint(t *testing.T) {
 	r := newReloadRig(t)
-	endpoint := r.path("chat", "door", "door.sock")
+	endpoint := r.path("chat", "ep", "ep.sock")
 	r.write(rigBox{name: "chat", endpoint: endpoint})
 	if err := reaches(t, endpoint); err == nil {
-		t.Fatal("a door opened with no refresh")
+		t.Fatal("an endpoint opened with no refresh")
 	}
 	if err := r.refresh(); err != nil {
 		t.Fatal(err)
 	}
 	if err := reaches(t, endpoint); err != nil {
-		t.Fatalf("canary: the written config never opens a door: %v", err)
+		t.Fatalf("canary: the written config never opens an endpoint: %v", err)
 	}
 }
 
 func TestABoxEndpointMovedAtRuntimeReopensAtItsNewPath(t *testing.T) {
 	r := newReloadRig(t)
-	old := r.path("chat", "door", "door.sock")
-	moved := r.path("chat", "door2", "door.sock")
+	old := r.path("chat", "ep", "ep.sock")
+	moved := r.path("chat", "ep2", "ep.sock")
 	r.write(rigBox{name: "chat", endpoint: old})
 	if err := r.refresh(); err != nil {
 		t.Fatal(err)
@@ -215,7 +215,7 @@ func TestABoxEndpointMovedAtRuntimeReopensAtItsNewPath(t *testing.T) {
 	}
 	defer held.c.Close()
 	if err := held.list(); err != nil {
-		t.Fatalf("canary: the old door never worked: %v", err)
+		t.Fatalf("canary: the old endpoint never worked: %v", err)
 	}
 	r.write(rigBox{name: "chat", endpoint: moved})
 	if err := r.refresh(); err != nil {
@@ -225,7 +225,7 @@ func TestABoxEndpointMovedAtRuntimeReopensAtItsNewPath(t *testing.T) {
 		t.Fatalf("lapse reason %q", got)
 	}
 	if err := reaches(t, moved); err != nil {
-		t.Fatalf("the moved door does not serve: %v", err)
+		t.Fatalf("the moved endpoint does not serve: %v", err)
 	}
 	if err := reaches(t, old); err == nil {
 		t.Fatal("the old path still serves after the move")
@@ -234,7 +234,7 @@ func TestABoxEndpointMovedAtRuntimeReopensAtItsNewPath(t *testing.T) {
 
 func TestABoxRenamedOnTheSamePathServesTheNewBox(t *testing.T) {
 	r := newReloadRig(t)
-	endpoint := r.path("slot", "door", "door.sock")
+	endpoint := r.path("slot", "ep", "ep.sock")
 	r.write(rigBox{name: "slot1", endpoint: endpoint})
 	if err := r.refresh(); err != nil {
 		t.Fatal(err)
@@ -245,13 +245,13 @@ func TestABoxRenamedOnTheSamePathServesTheNewBox(t *testing.T) {
 	}
 	defer held.c.Close()
 	if err := held.list(); err != nil {
-		t.Fatalf("canary: slot1's door never worked: %v", err)
+		t.Fatalf("canary: slot1's endpoint never worked: %v", err)
 	}
 	r.write(rigBox{name: "slot2", endpoint: endpoint})
 	if err := r.refresh(); err != nil {
 		t.Fatal(err)
 	}
-	if got := held.lapseReason(t); !strings.Contains(got, "box slot1's door left the config") {
+	if got := held.lapseReason(t); !strings.Contains(got, "box slot1's endpoint left the config") {
 		t.Fatalf("a connection admitted as slot1 lapsed with %q", got)
 	}
 	if err := reaches(t, endpoint); err != nil {
@@ -261,23 +261,23 @@ func TestABoxRenamedOnTheSamePathServesTheNewBox(t *testing.T) {
 
 func TestAReloadThatBreaksAHostEndpointRuleKeepsTheOldEndpoints(t *testing.T) {
 	r := newReloadRig(t)
-	endpoint := r.path("chat", "door", "door.sock")
+	endpoint := r.path("chat", "ep", "ep.sock")
 	r.write(rigBox{name: "chat", endpoint: endpoint})
 	if err := r.refresh(); err != nil {
 		t.Fatal(err)
 	}
 	if err := reaches(t, endpoint); err != nil {
-		t.Fatalf("canary: the first door never worked: %v", err)
+		t.Fatalf("canary: the first endpoint never worked: %v", err)
 	}
-	other := r.path("other", "door", "door.sock")
+	other := r.path("other", "ep", "ep.sock")
 	inside := filepath.Join(filepath.Dir(endpoint), "host.sock")
 	r.write(rigBox{name: "chat", endpoint: endpoint}, rigBox{name: "other", endpoint: other, host: inside})
 	err := r.refresh()
-	if err == nil || !strings.Contains(err.Error(), "a host door lives where no box does") {
-		t.Fatalf("a host door inside a box's door directory was accepted on reload: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "a host endpoint lives where no box does") {
+		t.Fatalf("a host endpoint inside a box's endpoint directory was accepted on reload: %v", err)
 	}
 	if err := reaches(t, endpoint); err != nil {
-		t.Fatalf("the old door stopped serving after a refused reload: %v", err)
+		t.Fatalf("the old endpoint stopped serving after a refused reload: %v", err)
 	}
 	for _, p := range []string{other, inside} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
@@ -288,23 +288,23 @@ func TestAReloadThatBreaksAHostEndpointRuleKeepsTheOldEndpoints(t *testing.T) {
 
 func TestAReloadWhoseEndpointCannotOpenNeverHalfApplies(t *testing.T) {
 	r := newReloadRig(t)
-	endpoint := r.path("chat", "door", "door.sock")
+	endpoint := r.path("chat", "ep", "ep.sock")
 	r.write(rigBox{name: "chat", endpoint: endpoint})
 	if err := r.refresh(); err != nil {
 		t.Fatal(err)
 	}
-	added := r.path("added", "door", "door.sock")
-	missing := filepath.Join(r.dir, "nowhere", "door.sock")
+	added := r.path("added", "ep", "ep.sock")
+	missing := filepath.Join(r.dir, "nowhere", "ep.sock")
 	r.write(rigBox{name: "added", endpoint: added}, rigBox{name: "chat", endpoint: endpoint}, rigBox{name: "zbroken", endpoint: missing})
 	err := r.refresh()
-	if err == nil || !strings.Contains(err.Error(), "sandbox.boxes.zbroken.door") {
-		t.Fatalf("a door that cannot listen was accepted: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "sandbox.boxes.zbroken.endpoint") {
+		t.Fatalf("an endpoint that cannot listen was accepted: %v", err)
 	}
 	if _, err := os.Stat(added); !os.IsNotExist(err) {
-		t.Fatalf("a refused reload half-applied: the added box's door opened: %v", err)
+		t.Fatalf("a refused reload half-applied: the added box's endpoint opened: %v", err)
 	}
 	if err := reaches(t, endpoint); err != nil {
-		t.Fatalf("the old door stopped serving after a refused reload: %v", err)
+		t.Fatalf("the old endpoint stopped serving after a refused reload: %v", err)
 	}
 	r.write(rigBox{name: "added", endpoint: added}, rigBox{name: "chat", endpoint: endpoint})
 	if err := r.refresh(); err != nil {
@@ -317,37 +317,37 @@ func TestAReloadWhoseEndpointCannotOpenNeverHalfApplies(t *testing.T) {
 
 func TestAHostEndpointAddedAtRuntimeOpens(t *testing.T) {
 	r := newReloadRig(t)
-	endpoint := r.path("chat", "door", "door.sock")
+	endpoint := r.path("chat", "ep", "ep.sock")
 	host := r.path("chat", "host", "host.sock")
 	r.write(rigBox{name: "chat", endpoint: endpoint})
 	if err := r.refresh(); err != nil {
 		t.Fatal(err)
 	}
 	if reaches(t, host) == nil {
-		t.Fatal("canary: the host door answers before it is configured")
+		t.Fatal("canary: the host endpoint answers before it is configured")
 	}
 	r.write(rigBox{name: "chat", endpoint: endpoint, host: host})
 	if err := r.refresh(); err != nil {
 		t.Fatal(err)
 	}
 	if err := reaches(t, host); err != nil {
-		t.Fatalf("a host door added at runtime does not serve: %v", err)
+		t.Fatalf("a host endpoint added at runtime does not serve: %v", err)
 	}
 	r.write(rigBox{name: "chat", endpoint: endpoint})
 	if err := r.refresh(); err != nil {
 		t.Fatal(err)
 	}
 	if err := reaches(t, host); err == nil {
-		t.Fatal("a host door removed at runtime still serves")
+		t.Fatal("a host endpoint removed at runtime still serves")
 	}
 	if err := reaches(t, endpoint); err != nil {
-		t.Fatalf("dropping the host door took the box door with it: %v", err)
+		t.Fatalf("dropping the host endpoint took the box endpoint with it: %v", err)
 	}
 }
 
 func TestAEndpointMovedToAPathThatCannotListenKeepsTheOldEndpointAndItsConnections(t *testing.T) {
 	r := newReloadRig(t)
-	endpoint := r.path("chat", "door", "door.sock")
+	endpoint := r.path("chat", "ep", "ep.sock")
 	r.write(rigBox{name: "chat", endpoint: endpoint})
 	if err := r.refresh(); err != nil {
 		t.Fatal(err)
@@ -358,41 +358,41 @@ func TestAEndpointMovedToAPathThatCannotListenKeepsTheOldEndpointAndItsConnectio
 	}
 	defer held.c.Close()
 	if err := held.list(); err != nil {
-		t.Fatalf("canary: the old door never served: %v", err)
+		t.Fatalf("canary: the old endpoint never served: %v", err)
 	}
-	r.write(rigBox{name: "chat", endpoint: filepath.Join(r.dir, "nowhere", "door.sock")})
-	if err := r.refresh(); err == nil || !strings.Contains(err.Error(), "sandbox.boxes.chat.door") {
+	r.write(rigBox{name: "chat", endpoint: filepath.Join(r.dir, "nowhere", "ep.sock")})
+	if err := r.refresh(); err == nil || !strings.Contains(err.Error(), "sandbox.boxes.chat.endpoint") {
 		t.Fatalf("a move to a path that cannot listen was accepted: %v", err)
 	}
 	select {
 	case reason := <-held.lapsed:
-		t.Fatalf("a refused move lapsed the old door's connection: %q", reason)
+		t.Fatalf("a refused move lapsed the old endpoint's connection: %q", reason)
 	default:
 	}
 	if err := held.list(); err != nil {
 		t.Fatalf("the held connection stopped serving after a refused move: %v", err)
 	}
 	if err := reaches(t, endpoint); err != nil {
-		t.Fatalf("the old door stopped answering after a refused move: %v", err)
+		t.Fatalf("the old endpoint stopped answering after a refused move: %v", err)
 	}
 }
 
 func TestABoxEndpointOnTheCLIOrWebEndpointIsRefusedByName(t *testing.T) {
 	web := filepath.Join(t.TempDir(), "web.sock")
 	for _, tc := range []struct{ name, path, want string }{
-		{"cli", "", "is the CLI door"},
-		{"web", web, "is the web door"},
+		{"cli", "", "is the CLI endpoint"},
+		{"web", web, "is the web endpoint"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newReloadRig(t)
-			endpoint := r.path("chat", "door", "door.sock")
-			r.extra = fmt.Sprintf("[door.web]\npath = %q\n", web)
+			endpoint := r.path("chat", "ep", "ep.sock")
+			r.extra = fmt.Sprintf("[endpoint.web]\npath = %q\n", web)
 			r.write(rigBox{name: "chat", endpoint: endpoint})
 			if err := r.refresh(); err != nil {
 				t.Fatal(err)
 			}
 			if err := reaches(t, endpoint); err != nil {
-				t.Fatalf("canary: the first door never served: %v", err)
+				t.Fatalf("canary: the first endpoint never served: %v", err)
 			}
 			clash := tc.path
 			if clash == "" {
@@ -400,11 +400,11 @@ func TestABoxEndpointOnTheCLIOrWebEndpointIsRefusedByName(t *testing.T) {
 			}
 			r.write(rigBox{name: "chat", endpoint: endpoint}, rigBox{name: "intruder", endpoint: clash})
 			err := r.refresh()
-			if err == nil || !strings.Contains(err.Error(), "sandbox.boxes.intruder.door: "+clash+" "+tc.want) {
-				t.Fatalf("a box door on the %s door was not refused by name: %v", tc.name, err)
+			if err == nil || !strings.Contains(err.Error(), "sandbox.boxes.intruder.endpoint: "+clash+" "+tc.want) {
+				t.Fatalf("a box endpoint on the %s endpoint was not refused by name: %v", tc.name, err)
 			}
 			if err := reaches(t, endpoint); err != nil {
-				t.Fatalf("the old door stopped serving after the refusal: %v", err)
+				t.Fatalf("the old endpoint stopped serving after the refusal: %v", err)
 			}
 			if _, err := os.Stat(clash); !os.IsNotExist(err) {
 				t.Fatalf("the refused box listened on %s: %v", clash, err)
@@ -415,14 +415,14 @@ func TestABoxEndpointOnTheCLIOrWebEndpointIsRefusedByName(t *testing.T) {
 
 func TestARefreshWhosePolicyFailsSaysTheEndpointsAlreadyChanged(t *testing.T) {
 	r := newReloadRig(t)
-	endpoint := r.path("chat", "door", "door.sock")
+	endpoint := r.path("chat", "ep", "ep.sock")
 	r.extra = fmt.Sprintf("[authz]\npolicy = %q\n", filepath.Join(r.dir, "missing-policy.toml"))
 	r.write(rigBox{name: "chat", endpoint: endpoint})
 	err := r.refresh()
-	if err == nil || !strings.Contains(err.Error(), "the new config and its box doors are in force") {
-		t.Fatalf("a policy failure after the doors applied did not say so: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "the new config and its box endpoints are in force") {
+		t.Fatalf("a policy failure after the endpoints applied did not say so: %v", err)
 	}
 	if _, serr := os.Stat(endpoint); serr != nil {
-		t.Fatalf("canary: the doors were not in force when the policy failed: %v", serr)
+		t.Fatalf("canary: the endpoints were not in force when the policy failed: %v", serr)
 	}
 }

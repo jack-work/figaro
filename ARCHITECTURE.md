@@ -1,6 +1,6 @@
 # Figaro, Architecture
 
-Single Go binary, three roles selected by invocation: CLI, supervisor (*angelus*), agent (*figaro*). All IPC is JSON-RPC 2.0 through one door per daemon: a Unix socket, or any listener `Angelus.Serve` is handed.
+Single Go binary, three roles selected by invocation: CLI, supervisor (*angelus*), agent (*figaro*). All IPC is JSON-RPC 2.0 through one endpoint per daemon: a Unix socket, or any listener `Angelus.Serve` is handed.
 
 ```
 ┌────────┐  unix   ┌──────────┐  spawns  ┌────────────┐
@@ -14,9 +14,9 @@ ephemeral          1 per user            N per user
 
 | Tier | Lifetime | Socket |
 |------|----------|--------|
-| **CLI**: stateless translator, stdio ↔ JSON-RPC | one prompt | dials the door |
-| **Angelus**: supervisor: registry, PID monitor, lifecycle | per user | `$XDG_RUNTIME_DIR/figaro/angelus.sock`, the door |
-| **Figaro**, actor: one inbox, one drain loop | per conversation | none: addressed through the door by `figaro_id` |
+| **CLI**: stateless translator, stdio ↔ JSON-RPC | one prompt | dials the endpoint |
+| **Angelus**: supervisor: registry, PID monitor, lifecycle | per user | `$XDG_RUNTIME_DIR/figaro/angelus.sock`, the endpoint |
+| **Figaro**, actor: one inbox, one drain loop | per conversation | none: addressed through the endpoint by `figaro_id` |
 
 The append-only log under a figaro is still called an aria in code, on disk and on the wire (`arias/`, `api/aria`, `aria_id`, `FIGARO_ARIA`, `target-aria`); a later release renames the parts users see.
 
@@ -41,7 +41,7 @@ internal/actor/            single-writer runtime: FIFO queue, one drain goroutin
 internal/angelus/          supervisor, PID monitor, JSON-RPC handlers
 internal/auth/             provider credentials; OAuth + PKCE, hush-encrypted tokens
 internal/authz/            authn/authz seam for the RPC surface
-internal/peer/             node door, peer links, directory of remote owners
+internal/peer/             node endpoint, peer links, directory of remote owners
 internal/cli/              the CLI: commands, transcript pager, line editor, keymap; figtree/ tree tables
 internal/cmdkit/           CLI command routing
 internal/compose/          IR turn -> live-render unit of typed nodes
@@ -139,7 +139,7 @@ gets per-message appends (assistant at seal, tool-result tics at completion);
 interrupt/SIGTERM/panic seal the in-memory partial as an interrupted turn, and
 open-time `repairInterruptedTail` (`repair.go`) appends honest interrupted
 tool results when the IR tail has unresolved tool calls. There is no turn
-journal and no checkpoint record. `journal.go` is the agent's one append door
+journal and no checkpoint record. `journal.go` is the agent's one way to append
 to the IR (append, then announce), not a recovery log. Recovery never resumes
 a remote stream and never calls the provider. After panic or seal failure, the
 live figaro server is rebuilt from canonical IR so it neither commits a
@@ -211,7 +211,7 @@ The `system.*` namespace is harness-reserved. Clients write under any other key.
 
 All IPC is JSON-RPC 2.0 framed as one JSON object per line (NDJSON).
 
-One door serves every method, and every request passes `authz.Guard` once.
+One endpoint serves every method, and every request passes `authz.Guard` once.
 
 **Daemon methods:** `figaro.create`, `form.create`, `form.bind`,
 `figaro.fork`, `figaro.promote`, `figaro.import`, `figaro.normalize`,
@@ -238,12 +238,12 @@ Pushes carry `figaro_id`, so one connection may follow several figaros. When an
 figaro's endpoint closes (kill, drain) its followers get `figaro.closed` and
 their connections stay up.
 
-A second, web door is configured by `[door.web]` (`path`, `mode`, default
+A second, web endpoint is configured by `[endpoint.web]` (`path`, `mode`, default
 0660; `max_conn_age`, default 8h; `authn`): a unix socket accepting an HTTP
 upgrade to WebSocket, then the same JSON-RPC, one frame per text message. Its
 authenticator (`upstream` or `bearer`) admits at the upgrade and belongs to
 that listener alone; a credential it refuses gets 401, on which the wss client
-invalidates and retries once. Any other `authn` and the door does not start.
+invalidates and retries once. Any other `authn` and the endpoint does not start.
 Admission and the policy are in the Authorization section of
 `skills/figaro/reference/architecture.md`. A connection
 reaching its age is closed with 1008 and must upgrade again, because a
@@ -255,7 +255,7 @@ moves across nodes, what one node answers about a figaro held on another
 (moving, moved, owner down), and troupe policy v2 (binding principals other
 than the owner).
 
-A third, node door is configured by `[door.tls]` (`listen`, `cert`, `key`,
+A third, node endpoint is configured by `[endpoint.tls]` (`listen`, `cert`, `key`,
 `client_ca`) and serves the same methods to peers over mutual TLS. Peers are
 static, `[peers.<node id>]` (`endpoint = "tls://host:port"`, `identity`, the
 URI their certificate must carry, and the `ca`, `cert`, `key` this node dials
@@ -264,7 +264,7 @@ troupe's keys stand in, see Troupe keys in `skills/figaro/reference/architecture
 and `[troupe] version` names the revision of that list. A peer's
 first line is a passage: the dialer's troupe version, and, when it forwards a
 caller, `forwarded` with the caller's bearer, which the owner verifies against
-`[[authz.issuers]]`; nodes never vouch for a caller. The door answers with its
+`[[authz.issuers]]`; nodes never vouch for a caller. The endpoint answers with its
 own version. Each side logs once when the other's differs and refuses
 nothing for it; `figaro troupe ls` shows what each peer last showed.
 
@@ -276,7 +276,7 @@ requires a bearer to forward. A forwarded request is served where it lands or
 refused. A caller that may not read a figaro is told it is not found, in the
 words a missing figaro gets, wherever it asked from; only a caller that may
 read it hears which verb the policy withholds. `internal/peer` holds the
-door, the links and the directory of remote owners, which learns from forks,
+endpoint, the links and the directory of remote owners, which learns from forks,
 listings and `node.resolve` lookups and keeps the most recently used
 `[federation] directory_size` of them (default 32768). `figaro.list` returns
 this node's rows and every peer's, marked with their `node`, plus an
@@ -380,7 +380,7 @@ spinners animate on the consumer, producing no timer traffic on the wire.
 | `figaro show <id> -j` | Dump materialized UI turns as a `Page` |
 | `figaro models` | List provider models |
 | `figaro provider login\|logout\|ls <name>` | Model credentials: sign in, remove figaro's copy, list each source |
-| `figaro troupe login <name>` / `troupe ls` | Sign in to a troupe's door; list `troupes/` |
+| `figaro troupe login <name>` / `troupe ls` | Sign in to a troupe's endpoint; list `troupes/` |
 | `figaro listen <id>` | Follow a figaro without sending a prompt |
 | `figaro stop` | Shut down the angelus |
 

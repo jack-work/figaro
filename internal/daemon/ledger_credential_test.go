@@ -91,7 +91,7 @@ func newCredentialLeafNode(t *testing.T, root estateRoot, signer *ledgerNode, is
 	t.Helper()
 	n := &ledgerNode{t: t, root: root, storeDir: t.TempDir(), stateDir: t.TempDir(), cfgDir: t.TempDir()}
 	n.moveEndpoint()
-	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\nnode_key_credential = \"troupe-node\"\n[door.tls]\nlisten = %q\n", n.addr)
+	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\nnode_key_credential = \"troupe-node\"\n[endpoint.tls]\nlisten = %q\n", n.addr)
 	require.NoError(t, os.WriteFile(filepath.Join(n.cfgDir, "config.toml"), []byte(body), 0o600))
 	creds := t.TempDir()
 	t.Setenv("CREDENTIALS_DIRECTORY", creds)

@@ -56,7 +56,7 @@ func troupeLeafFor(ctx context.Context, d leafEndpoint, in io.Reader, out io.Wri
 		return fmt.Errorf("--ttl %s is longer than this node issues: [troupe] max_leaf_ttl is %s", troupe.FormatNodeTTL(o.TTL), troupe.FormatNodeTTL(ttl))
 	}
 	if host, _, err := net.SplitHostPort(o.Endpoint); err != nil || host == "" || net.ParseIP(host).IsUnspecified() {
-		return fmt.Errorf("--door %q is not a host:port the troupe can dial", o.Endpoint)
+		return fmt.Errorf("--endpoint %q is not a host:port the troupe can dial", o.Endpoint)
 	}
 	dir, err := leafDir(o.Out)
 	if err != nil {
@@ -195,7 +195,7 @@ func troupeKeygen(out io.Writer, o keyOpts) error {
 
 func runTroupeLeaf(loaded *config.Loaded, name, ttl string, o leafOpts) {
 	if term.IsTerminal(int(os.Stdin.Fd())) {
-		dieUsage("troupe leaf reads the root key on stdin: hush troupe-root leaf %s --for <node-id> --public-key <hex> --door <host:port> --out <dir> [--ttl <days>]", name)
+		dieUsage("troupe leaf reads the root key on stdin: hush troupe-root leaf %s --for <node-id> --public-key <hex> --endpoint <host:port> --out <dir> [--ttl <days>]", name)
 	}
 	var err error
 	if o.MaxTTL, err = loaded.TroupeMaxLeafTTL(); err != nil {

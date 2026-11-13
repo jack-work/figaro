@@ -36,7 +36,7 @@ func (f flight) describe() string {
 	if aria == "" || rpc.ValidateAriaID(aria) != nil {
 		aria = "-"
 	}
-	return f.name + " aria=" + aria + " door=" + f.endpoint.String()
+	return f.name + " aria=" + aria + " endpoint=" + f.endpoint.String()
 }
 
 type inflight struct {

@@ -32,7 +32,7 @@ func TestAEndpointClosesAConnectionWhenItsPeerHangsUp(t *testing.T) {
 	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 
 	r := newGrantRig(t)
-	sock := filepath.Join(t.TempDir(), "door.sock")
+	sock := filepath.Join(t.TempDir(), "ep.sock")
 	ln, err := angelus.ListenUnix(sock, 0o600)
 	if err != nil {
 		t.Fatal(err)
@@ -70,6 +70,6 @@ func TestAEndpointClosesAConnectionWhenItsPeerHangsUp(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if now > base+4 {
-		t.Fatalf("after %d connections ended the process holds %d fds, %d before: the door kept its end of each", n, now, base)
+		t.Fatalf("after %d connections ended the process holds %d fds, %d before: the endpoint kept its end of each", n, now, base)
 	}
 }

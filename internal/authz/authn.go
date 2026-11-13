@@ -107,7 +107,7 @@ func NewUpstream(cfg config.UpstreamConfig, listen, cliEndpoint string, reverify
 	}
 	listen = filepath.Clean(listen)
 	if cliEndpoint != "" && listen == filepath.Clean(cliEndpoint) {
-		return nil, fmt.Errorf("authz.upstream: %s is the CLI door; trusted headers there would let any local caller name itself", listen)
+		return nil, fmt.Errorf("authz.upstream: %s is the CLI endpoint; trusted headers there would let any local caller name itself", listen)
 	}
 	if cfg.Issuer == "" {
 		return nil, fmt.Errorf("authz.upstream.issuer: name the issuer the edge vouches for")

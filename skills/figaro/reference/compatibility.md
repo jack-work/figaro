@@ -2,7 +2,7 @@
 
 A CLI and a daemon do not have to be the same build. What decides whether
 they can talk is what the daemon reports on `status` (local socket) and
-`hello` (node door): its build, its release, its protocol, and a list of
+`hello` (node endpoint): its build, its release, its protocol, and a list of
 capabilities.
 
 ## The contract
@@ -59,9 +59,9 @@ capabilities.
 - **`figaro.list` takes `except_nodes`** (0.56.1): nodes whose rows the
   caller already has, so the serving node does not ask them. It only
   narrows that node's fan-out to its peers; its own rows, and any node not
-  named exactly by full id, are listed as before. `ls` through a troupe door
+  named exactly by full id, are listed as before. `ls` through a troupe endpoint
   names its local node there and adds the local daemon's rows itself; a
-  node the door could not reach is reported as the door saw it, and the
+  node the endpoint could not reach is reported as the endpoint saw it, and the
   local daemon does not try it. An
   older daemon ignores the field and still asks the caller's node; the CLI
   then drops whatever that daemon says about its node, refusal included,

@@ -245,7 +245,7 @@ type fixedBearer string
 func (b fixedBearer) Resolve() (string, error) { return string(b), nil }
 
 func (fixedBearer) Invalidate(string) error {
-	return fmt.Errorf("the door refused this api key: it may be mistyped, revoked or expired")
+	return fmt.Errorf("the endpoint refused this api key: it may be mistyped, revoked or expired")
 }
 
 func readAPIKey(in *os.File, prompt io.Writer, name string) (string, error) {
@@ -294,7 +294,7 @@ func runAPIKeyLogin(loaded *config.Loaded, tr boot.Troupe) {
 		if err != nil {
 			die("troupe %s: %s", tr.Name, err)
 		}
-		fmt.Fprintf(stderrw, "  %s troupe %s reads its key from %s; the door knows it as %s\n", green("\u2713"), tr.Name, tr.Auth.KeyFile, who)
+		fmt.Fprintf(stderrw, "  %s troupe %s reads its key from %s; the endpoint knows it as %s\n", green("\u2713"), tr.Name, tr.Auth.KeyFile, who)
 		return
 	}
 	key, err := readAPIKey(os.Stdin, stderrw, tr.Name)

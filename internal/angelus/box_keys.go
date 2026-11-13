@@ -130,7 +130,7 @@ func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line linea
 		key = "a protected key"
 	}
 	if !c.boxed {
-		return fmt.Errorf("%s is protected: only the owner or an ancestor figaro sets it, and a figaro is known only through its box door", key)
+		return fmt.Errorf("%s is protected: only the owner or an ancestor figaro sets it, and a figaro is known only through its box endpoint", key)
 	}
 	f := authz.FigaroOf(ctx)
 	if f == "" {

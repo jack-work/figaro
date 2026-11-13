@@ -165,7 +165,7 @@ func TestDecideOnOneOutfitReachesThatOutfitAndNoOther(t *testing.T) {
 func TestDecideOnOneOutfitIsRefusedOnEveryOtherRoute(t *testing.T) {
 	r := svcEndpoint(t, "decide:outfit:narrow-decide")
 	c := r.client()
-	require.Greater(t, len(r.served), 60, "the door serves %d routes; the sweep is broken", len(r.served))
+	require.Greater(t, len(r.served), 60, "the endpoint serves %d routes; the sweep is broken", len(r.served))
 
 	answered := func(m string) rpcReply {
 		return c.call(m, onAria(r.owned, map[string]any{"text": "witness-svc", "question": "go?", "version": rpc.ProtocolVersion}))

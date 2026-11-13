@@ -38,7 +38,7 @@ rm -rf "$ROOT/config/troupes" "$ROOT/config/outfits" "$ROOT/config/loadouts"
 mkdir -p "$ROOT/config/outfits"
 {
   echo 'default_outfit = "m1"'
-  awk '/^\[/{skip=($0 ~ /^\[(door|troupe)/)} !skip' "${HOME}/.config/figaro/config.toml" | grep -v '^default_outfit'
+  awk '/^\[/{skip=($0 ~ /^\[(endpoint|troupe)/)} !skip' "${HOME}/.config/figaro/config.toml" | grep -v '^default_outfit'
 } >"$ROOT/config/config.toml"
 printf 'You are a terse test agent. Never call a tool. Answer in one line.\n' >"$ROOT/config/credo.md"
 export FIGARO_STATE_DIR="$ROOT/state" FIGARO_RUNTIME_DIR="$ROOT/rt" FIGARO_CONFIG_DIR="$ROOT/config"

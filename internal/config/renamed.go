@@ -16,6 +16,9 @@ type renamedKey struct {
 var renamedKeys = []renamedKey{
 	{old: []string{"slot"}, new: []string{"worker"}, release: "0.69"},
 	{old: []string{"worker", "pools", "*", "slots"}, new: []string{"worker", "pools", "*", "workers"}, release: "0.69"},
+	{old: []string{"door"}, new: []string{"endpoint"}, release: "0.69"},
+	{old: []string{"sandbox", "boxes", "*", "door"}, new: []string{"sandbox", "boxes", "*", "endpoint"}, release: "0.69"},
+	{old: []string{"sandbox", "boxes", "*", "host_door"}, new: []string{"sandbox", "boxes", "*", "host_endpoint"}, release: "0.69"},
 }
 
 func (r renamedKey) match(k toml.Key) (oldName, newName string, ok bool) {

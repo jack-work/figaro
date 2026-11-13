@@ -203,7 +203,7 @@ func (l *Loaded) TLSEndpoint() (TLSEndpoint, bool, error) {
 		return TLSEndpoint{}, false, nil
 	}
 	if _, _, err := net.SplitHostPort(c.Listen); err != nil {
-		return TLSEndpoint{}, false, fmt.Errorf("door.tls: listen %q is not host:port", c.Listen)
+		return TLSEndpoint{}, false, fmt.Errorf("endpoint.tls: listen %q is not host:port", c.Listen)
 	}
 	out := TLSEndpoint{Listen: c.Listen, Advertise: c.Advertise, Cert: l.credPath(c.Cert), Key: l.credPath(c.Key), ClientCA: l.credPath(c.ClientCA)}
 	if out.Advertise == "" {
@@ -213,10 +213,10 @@ func (l *Loaded) TLSEndpoint() (TLSEndpoint, bool, error) {
 		out.Advertise = ""
 	}
 	if c.Advertise != "" && out.Advertise == "" {
-		return TLSEndpoint{}, false, fmt.Errorf("door.tls: advertise %q is not a host:port another node can dial", c.Advertise)
+		return TLSEndpoint{}, false, fmt.Errorf("endpoint.tls: advertise %q is not a host:port another node can dial", c.Advertise)
 	}
 	if _, err := l.troupeKeyed(map[string]string{"cert": out.Cert, "key": out.Key, "client_ca": out.ClientCA}); err != nil {
-		return TLSEndpoint{}, false, fmt.Errorf("door.tls: %w", err)
+		return TLSEndpoint{}, false, fmt.Errorf("endpoint.tls: %w", err)
 	}
 	return out, true, nil
 }
@@ -249,7 +249,7 @@ func (l *Loaded) peer(node string, c PeerConfig) (Peer, error) {
 	}
 	addr, ok := strings.CutPrefix(c.Endpoint, peerScheme)
 	if !ok {
-		return Peer{}, fmt.Errorf("endpoint %q: a peer is a %shost:port door", c.Endpoint, peerScheme)
+		return Peer{}, fmt.Errorf("endpoint %q: a peer is a %shost:port endpoint", c.Endpoint, peerScheme)
 	}
 	if _, _, err := net.SplitHostPort(addr); err != nil {
 		return Peer{}, fmt.Errorf("endpoint %q: %w", c.Endpoint, err)

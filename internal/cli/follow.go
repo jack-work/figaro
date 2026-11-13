@@ -44,7 +44,7 @@ func (f *followed) watch(a *sdk.Aria) {
 		}
 		next, err := sdk.DialAria(f.ep, f.handle)
 		if err != nil {
-			slog.Warn("the door ended the follow at its age limit and following again failed", "aria", f.ep.ID, "err", err)
+			slog.Warn("the endpoint ended the follow at its age limit and following again failed", "aria", f.ep.ID, "err", err)
 			return
 		}
 		if f.ctx.Err() != nil {

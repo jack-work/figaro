@@ -46,7 +46,7 @@ explicit ms boundaries.
 | `figaro.translator.catchup`, `.visited`, `.encoded` | provider | `provider/catchup.go` |
 | `figaro.tokens` | kind, provider, model | usage fold, `figaro/agent.go` |
 | `figaro.provider.request_bytes` | host | counting body reader, `wirelog` |
-| `figaro.rpc.duration` | method, status | handler dispatch, both doors |
+| `figaro.rpc.duration` | method, status | handler dispatch, both endpoints |
 | `figaro.store.open` | | cold open miss path, `store/xwal_backend.go` |
 | `figaro.sweep.duration`, `figaro.sweep.evicted` | phase | evict tick, `angelus/angelus.go` |
 | `figaro.mem.rss`, `.heap_inuse`, `.heap_released`, `.resident_arias`, `.goroutines` | | observable gauges, 30 s |

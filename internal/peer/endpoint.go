@@ -80,7 +80,7 @@ func Via(ctx context.Context) (string, bool) {
 func (d *Endpoint) Admit(ctx context.Context, conn net.Conn) (context.Context, error) {
 	tc, ok := conn.(*tls.Conn)
 	if !ok {
-		return nil, fmt.Errorf("node door: %s did not arrive over TLS", conn.RemoteAddr())
+		return nil, fmt.Errorf("node endpoint: %s did not arrive over TLS", conn.RemoteAddr())
 	}
 	wait := d.Handshake
 	if wait <= 0 {
@@ -93,14 +93,14 @@ func (d *Endpoint) Admit(ctx context.Context, conn net.Conn) (context.Context, e
 	hctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	if err := tc.HandshakeContext(hctx); err != nil {
-		return nil, fmt.Errorf("node door: handshake with %s: %w", conn.RemoteAddr(), err)
+		return nil, fmt.Errorf("node endpoint: handshake with %s: %w", conn.RemoteAddr(), err)
 	}
 	ctx, err := d.enter(ctx, tc)
 	if aerr := answer(tc, d.Members, err); aerr != nil && err == nil {
 		err = aerr
 	}
 	if err != nil {
-		return nil, fmt.Errorf("node door: %s: %w", conn.RemoteAddr(), err)
+		return nil, fmt.Errorf("node endpoint: %s: %w", conn.RemoteAddr(), err)
 	}
 	node, _ := Via(ctx)
 	return d.track(ctx, node), tc.SetDeadline(time.Time{})
@@ -150,7 +150,7 @@ func (d *Endpoint) enter(ctx context.Context, tc *tls.Conn) (context.Context, er
 	}
 	ctx, err := d.Verify(ctx, p.Bearer)
 	if err != nil {
-		slog.Warn("node door: forwarded caller refused", "node", node, "err", err)
+		slog.Warn("node endpoint: forwarded caller refused", "node", node, "err", err)
 		return nil, fmt.Errorf("forwarded caller: %w", err)
 	}
 	return ctx, nil

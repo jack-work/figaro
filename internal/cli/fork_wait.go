@@ -13,7 +13,7 @@ type forkCallResult struct {
 	err      error
 }
 
-// waitForFork is the one endpoint every fork goes through, so the node coordinate
+// waitForFork is the one path every fork goes through, so the node coordinate
 // is resolved here; `:19`, `.326` and the head go to the wire as typed.
 func waitForFork(
 	ctx context.Context,

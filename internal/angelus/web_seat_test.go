@@ -64,7 +64,7 @@ func TestWebEndpointRefusesASubjectThatHoldsNoRoleAtTheUpgrade(t *testing.T) {
 	require.NotNil(t, resp)
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
 	require.Empty(t, resp.Header.Get("WWW-Authenticate"), "a 403 is not an invitation to retry with a fresh token")
-	require.Contains(t, tap.String(), "door refused upgrade")
+	require.Contains(t, tap.String(), "endpoint refused upgrade")
 	require.Contains(t, tap.String(), authz.PrincipalText(stranger))
 
 	_, _, err = dialWeb(t, path, http.Header{"Remote-User": {"gluck"}})
@@ -148,7 +148,7 @@ func TestAnUnstampedContextIsNotTrusted(t *testing.T) {
 
 	h, _ := unpolicedWeb(t, owner, nil)
 	_, err := h.angelus.Handlers[rpc.MethodHello](unstamped, hello)
-	require.ErrorContains(t, err, "the unknown door passes only the owner")
+	require.ErrorContains(t, err, "the unknown endpoint passes only the owner")
 	require.Empty(t, h.readable(unstamped, rows()))
 	require.Error(t, h.allowed(unstamped, rpc.VerbRead, authz.Aria("abcd1234")))
 	inproc := authz.WithEndpoint(unstamped, authz.EndpointInProcess)

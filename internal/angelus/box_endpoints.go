@@ -57,10 +57,10 @@ func wantedBoxEndpoints(loaded *config.Loaded) (map[string]boxEndpointSpec, map[
 			refused[name] = err
 			continue
 		}
-		d := boxEndpointSpec{box: name, field: "door", path: endpoints[name], endpoint: authz.EndpointBox}
+		d := boxEndpointSpec{box: name, field: "endpoint", path: endpoints[name], endpoint: authz.EndpointBox}
 		want[d.key()] = d
 		if host, ok := hosts[name]; ok {
-			h := boxEndpointSpec{box: name, field: "host_door", path: host, endpoint: authz.EndpointHost}
+			h := boxEndpointSpec{box: name, field: "host_endpoint", path: host, endpoint: authz.EndpointHost}
 			want[h.key()] = h
 		}
 	}
@@ -89,10 +89,10 @@ func (a *Angelus) ReloadBoxEndpoints(loaded *config.Loaded) error {
 
 func (a *Angelus) checkBoxEndpointPath(loaded *config.Loaded, s boxEndpointSpec) error {
 	if s.path == filepath.Clean(a.SocketPath) {
-		return fmt.Errorf("sandbox.boxes.%s.%s: %s is the CLI door", s.box, s.field, s.path)
+		return fmt.Errorf("sandbox.boxes.%s.%s: %s is the CLI endpoint", s.box, s.field, s.path)
 	}
 	if web, ok, _ := loaded.WebEndpoint(); ok && filepath.Clean(web.Path) == s.path {
-		return fmt.Errorf("sandbox.boxes.%s.%s: %s is the web door", s.box, s.field, s.path)
+		return fmt.Errorf("sandbox.boxes.%s.%s: %s is the web endpoint", s.box, s.field, s.path)
 	}
 	return nil
 }
@@ -138,8 +138,8 @@ func (d *boxEndpoints) apply(a *Angelus, loaded *config.Loaded) error {
 		}
 	}
 	for name, err := range refused {
-		if _, was := d.open[name+".door"]; !was {
-			slog.Error("box door refused", "box", name, "err", err)
+		if _, was := d.open[name+".endpoint"]; !was {
+			slog.Error("box endpoint refused", "box", name, "err", err)
 		}
 	}
 
@@ -157,13 +157,13 @@ func (d *boxEndpoints) apply(a *Angelus, loaded *config.Loaded) error {
 		for _, o := range closing {
 			back, rerr := listenBoxEndpoints([]boxEndpointSpec{o.spec})
 			if rerr != nil {
-				slog.Error("box door not restored after a refused reload", "box", o.spec.box, "field", o.spec.field, "path", o.spec.path, "err", rerr)
+				slog.Error("box endpoint not restored after a refused reload", "box", o.spec.box, "field", o.spec.field, "path", o.spec.path, "err", rerr)
 				continue
 			}
 			d.serve(a, loaded, back[0], "restored")
 			restored = append(restored, o.spec.key())
 		}
-		return fmt.Errorf("%w; the doors it closed reopened: %v", err, restored)
+		return fmt.Errorf("%w; the endpoints it closed reopened: %v", err, restored)
 	}
 	for _, l := range append(opened, more...) {
 		verb := "opened"
@@ -204,16 +204,16 @@ func closeListeners(ls []boxListener) {
 func (d *boxEndpoints) serve(a *Angelus, loaded *config.Loaded, l boxListener, verb string) {
 	s := l.spec
 	if b, _ := loaded.Box(s.box); s.endpoint == authz.EndpointBox && (b.AnyOutfit() || b.AnyProvider()) {
-		slog.Info("box door opens with an open list", "box", s.box, "any_outfit", b.AnyOutfit(), "any_provider", b.AnyProvider())
+		slog.Info("box endpoint opens with an open list", "box", s.box, "any_outfit", b.AnyOutfit(), "any_provider", b.AnyProvider())
 	}
 	ctx, shut := context.WithCancelCause(d.ctx)
 	o := &openBoxEndpoint{spec: s, shut: shut, done: make(chan struct{})}
 	d.open[s.key()] = o
-	slog.Info("box door "+verb, "box", s.box, "door", s.endpoint.String(), "path", s.path, "principal", authz.BoxPrincipal(s.box).String())
+	slog.Info("box endpoint "+verb, "box", s.box, "endpoint", s.endpoint.String(), "path", s.path, "principal", authz.BoxPrincipal(s.box).String())
 	go func() {
 		defer close(o.done)
 		if err := a.Serve(ctx, l.ln, s.endpoint, authz.BoxAdmit(s.box)); err != nil {
-			slog.Error("box door", "box", s.box, "door", s.endpoint.String(), "err", err)
+			slog.Error("box endpoint", "box", s.box, "endpoint", s.endpoint.String(), "err", err)
 		}
 	}()
 }
@@ -222,7 +222,7 @@ func (d *boxEndpoints) shut(o *openBoxEndpoint, reason string) {
 	o.shut(&EndpointShut{Reason: reason})
 	<-o.done
 	delete(d.open, o.spec.key())
-	slog.Info("box door closed", "box", o.spec.box, "door", o.spec.endpoint.String(), "path", o.spec.path, "reason", reason)
+	slog.Info("box endpoint closed", "box", o.spec.box, "endpoint", o.spec.endpoint.String(), "path", o.spec.path, "reason", reason)
 }
 
 func endpointShut(ctx context.Context) *EndpointShut {

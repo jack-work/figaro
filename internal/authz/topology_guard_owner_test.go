@@ -40,6 +40,6 @@ func TestTheBoxEndpointIsNeverTheOwner(t *testing.T) {
 	move := hierarchy.Move{Node: "a", From: "s", To: "b", Tree: hierarchy.Storage, NodeOwner: guardOwner.String()}
 	_, err := g.Check(context.Background(), onBox, hierarchy.Plan{Op: hierarchy.Arrange, Moves: []hierarchy.Move{move}})
 	if !errors.Is(err, hierarchy.ErrDrawnOnly) {
-		t.Fatalf("the owner's principal on the box door moving storage = %v, want ErrDrawnOnly", err)
+		t.Fatalf("the owner's principal on the box endpoint moving storage = %v, want ErrDrawnOnly", err)
 	}
 }

@@ -86,7 +86,7 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 	}
 	view := m.View()
 	if req.Node == m.Self() {
-		return nil, errors.New("a node does not sign itself in through its own door")
+		return nil, errors.New("a node does not sign itself in through its own endpoint")
 	}
 	if gone := view.Gone[req.Node]; gone != "" {
 		return nil, fmt.Errorf("node %s is out of troupe %s (%s); a node id that left does not return", req.Node, m.Troupe(), gone)
@@ -143,7 +143,7 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 	if renewal {
 		slog.Info("troupe: renewed a node certificate", "node", req.Node, "asked_ms", req.TTLMillis, "until", leaf.NotAfter.Format(time.RFC3339))
 	} else {
-		slog.Info("troupe: signed a node in", "node", req.Node, "door", req.Endpoint, "by", authz.PrincipalText(authz.PrincipalOf(ctx)), "asked_ms", req.TTLMillis, "until", leaf.NotAfter.Format(time.RFC3339))
+		slog.Info("troupe: signed a node in", "node", req.Node, "endpoint", req.Endpoint, "by", authz.PrincipalText(authz.PrincipalOf(ctx)), "asked_ms", req.TTLMillis, "until", leaf.NotAfter.Format(time.RFC3339))
 	}
 	return rpc.TroupeSignResponse{Chain: [][]byte{leaf.Raw, inter.Raw}, Root: root.Raw, Entries: troupe.Encode(m.Entries()), TTLMillis: leaf.NotAfter.Sub(now).Milliseconds()}, nil
 }
@@ -160,7 +160,7 @@ func checkSignRequest(req rpc.TroupeSignRequest) (ed25519.PublicKey, error) {
 	}
 	host, _, err := net.SplitHostPort(req.Endpoint)
 	if err != nil || host == "" || net.ParseIP(host).IsUnspecified() {
-		return nil, fmt.Errorf("door %q is not a host:port another node can dial", req.Endpoint)
+		return nil, fmt.Errorf("endpoint %q is not a host:port another node can dial", req.Endpoint)
 	}
 	return ed25519.PublicKey(req.PublicKey), nil
 }

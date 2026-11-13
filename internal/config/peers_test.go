@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const twoPeers = `[door.tls]
+const twoPeers = `[endpoint.tls]
 listen = "10.77.0.1:7443"
 cert = "node.crt"
 key = "/run/credentials/figaro/node.key"
@@ -36,10 +36,10 @@ func TestPeersConfig(t *testing.T) {
 	l := loadToml(t, twoPeers)
 	endpoint, ok, err := l.TLSEndpoint()
 	if err != nil || !ok {
-		t.Fatalf("door.tls: ok=%v err=%v", ok, err)
+		t.Fatalf("endpoint.tls: ok=%v err=%v", ok, err)
 	}
 	if endpoint.Cert != filepath.Join(l.ConfigDir, "node.crt") || endpoint.Key != "/run/credentials/figaro/node.key" {
-		t.Fatalf("door.tls paths: %+v", endpoint)
+		t.Fatalf("endpoint.tls paths: %+v", endpoint)
 	}
 	peers, err := l.Peers()
 	if err != nil {
@@ -57,7 +57,7 @@ func TestPeersConfig(t *testing.T) {
 func TestPeersOffByDefault(t *testing.T) {
 	l := loadToml(t, "")
 	if _, ok, err := l.TLSEndpoint(); ok || err != nil {
-		t.Fatalf("door.tls: ok=%v err=%v", ok, err)
+		t.Fatalf("endpoint.tls: ok=%v err=%v", ok, err)
 	}
 	if p, err := l.Peers(); err != nil || len(p) != 0 {
 		t.Fatalf("peers: %v %v", p, err)
@@ -75,8 +75,8 @@ func TestPeersConfigRefusesWhatItCannotHonour(t *testing.T) {
 		"[peers.a]\n" + strings.Replace(good, "key = \"k\"\n", "", 1),
 		"[peers.\"a/b\"]\n" + good,
 		"[peers.a]\n" + good + "[peers.b]\n" + good,
-		"[door.tls]\nlisten = \"h\"\ncert = \"c\"\nkey = \"k\"\nclient_ca = \"c\"\n",
-		"[door.tls]\nlisten = \"h:1\"\ncert = \"c\"\nkey = \"k\"\n",
+		"[endpoint.tls]\nlisten = \"h\"\ncert = \"c\"\nkey = \"k\"\nclient_ca = \"c\"\n",
+		"[endpoint.tls]\nlisten = \"h:1\"\ncert = \"c\"\nkey = \"k\"\n",
 	} {
 		l, err := loadWith(t, body)
 		if err != nil {
@@ -121,7 +121,7 @@ func TestTroupeVersion(t *testing.T) {
 // certificate files out: the troupe's keys stand in, and a peer's identity
 // defaults to its spiffe id in the troupe. Half a set of files is refused.
 func TestATroupeNameLetsPeersAndTheEndpointUseTroupeKeys(t *testing.T) {
-	body := "[troupe]\nname = \"estate\"\n[door.tls]\nlisten = \"127.0.0.1:7443\"\n[peers.b1]\nendpoint = \"tls://127.0.0.1:7444\"\n"
+	body := "[troupe]\nname = \"estate\"\n[endpoint.tls]\nlisten = \"127.0.0.1:7443\"\n[peers.b1]\nendpoint = \"tls://127.0.0.1:7444\"\n"
 	l := loadToml(t, body)
 	name, err := l.TroupeName()
 	require.NoError(t, err)
@@ -136,7 +136,7 @@ func TestATroupeNameLetsPeersAndTheEndpointUseTroupeKeys(t *testing.T) {
 	require.Empty(t, peers[0].Cert)
 
 	for _, bad := range []string{
-		"[door.tls]\nlisten = \"127.0.0.1:7443\"\n",
+		"[endpoint.tls]\nlisten = \"127.0.0.1:7443\"\n",
 		"[peers.b1]\nendpoint = \"tls://127.0.0.1:7444\"\n",
 		"[troupe]\nname = \"estate\"\n[peers.b1]\nendpoint = \"tls://127.0.0.1:7444\"\ncert = \"c\"\n",
 		"[troupe]\nname = \"Not A Name\"\n",
@@ -176,7 +176,7 @@ func TestTroupeProvider(t *testing.T) {
 // unless that is a wildcard, in which case advertise must name it.
 func TestTheAdvertisedEndpoint(t *testing.T) {
 	endpoint := func(body string) (TLSEndpoint, error) {
-		d, _, err := loadToml(t, "[troupe]\nname = \"estate\"\n[door.tls]\n"+body).TLSEndpoint()
+		d, _, err := loadToml(t, "[troupe]\nname = \"estate\"\n[endpoint.tls]\n"+body).TLSEndpoint()
 		return d, err
 	}
 	d, err := endpoint("listen = \"10.0.0.2:7443\"\n")

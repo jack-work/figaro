@@ -216,7 +216,7 @@ func TestStragglerLogNamesMethodAriaAndEndpointNeverParams(t *testing.T) {
 	r.a.Shutdown(time.Second)
 
 	out := logs.String()
-	for _, want := range []string{"troupe.sign aria=" + r.aria + " door=" + authz.EndpointBox.String(), "apikey.mint aria=- door=" + authz.EndpointBox.String()} {
+	for _, want := range []string{"troupe.sign aria=" + r.aria + " endpoint=" + authz.EndpointBox.String(), "apikey.mint aria=- endpoint=" + authz.EndpointBox.String()} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the timeout log lacks %q:\n%s", want, out)
 		}
@@ -267,7 +267,7 @@ func TestAStopClosesAEndpointServedOnAContextNobodyCancels(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("the door never accepted: %v", err)
+			t.Fatalf("the endpoint never accepted: %v", err)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -284,9 +284,9 @@ func TestAStopClosesAEndpointServedOnAContextNobodyCancels(t *testing.T) {
 	}
 	if c, err := net.Dial("tcp", ln.Addr().String()); err == nil {
 		c.Close()
-		t.Fatal("the door still accepted a connection after the stop")
+		t.Fatal("the endpoint still accepted a connection after the stop")
 	}
 	if r.unclean(t) {
-		t.Fatal(".unclean survived a stop whose only open door was an accept loop")
+		t.Fatal(".unclean survived a stop whose only open endpoint was an accept loop")
 	}
 }

@@ -91,7 +91,7 @@ func newStopRigHosted(t *testing.T, hosted bool) *stopRig {
 		if err != nil {
 			t.Fatal(err)
 		}
-		fmt.Fprintf(f, "host_door = %q\n", host)
+		fmt.Fprintf(f, "host_endpoint = %q\n", host)
 		f.Close()
 		if loaded, err = config.Load(dir); err != nil {
 			t.Fatal(err)
@@ -247,7 +247,7 @@ func TestAStopLapsesHeldBoxConnectionsAndRemovesTheSocket(t *testing.T) {
 	r := newStopRig(t)
 	held := holdEndpoint(t, r.endpoint)
 	if err := held.list(); err != nil {
-		t.Fatalf("canary: the box door never served: %v", err)
+		t.Fatalf("canary: the box endpoint never served: %v", err)
 	}
 	r.cancel()
 	r.a.Shutdown(time.Second)
@@ -258,10 +258,10 @@ func TestAStopLapsesHeldBoxConnectionsAndRemovesTheSocket(t *testing.T) {
 			t.Fatalf("lapse reason %q, want %q", reason, stoppingReason)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("the held box connection got no door.lapsed")
+		t.Fatal("the held box connection got no endpoint.lapsed")
 	}
 	if _, err := os.Stat(r.endpoint); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("the box door socket outlived the stop: %v", err)
+		t.Fatalf("the box endpoint socket outlived the stop: %v", err)
 	}
 	if out := r.stragglers(); len(out) != 0 {
 		t.Fatalf("the stop returned with %v still out", out)
@@ -343,7 +343,7 @@ func waitAccepting(t *testing.T, name string, d dialed) {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("canary: the %s door never accepted: %v", name, err)
+			t.Fatalf("canary: the %s endpoint never accepted: %v", name, err)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -356,14 +356,14 @@ func requireRefused(t *testing.T, name string, d dialed) {
 	took := time.Since(start)
 	if err == nil {
 		c.Close()
-		t.Errorf("the %s door accepted a connection after the seal", name)
+		t.Errorf("the %s endpoint accepted a connection after the seal", name)
 		return
 	}
 	if took > 250*time.Millisecond {
-		t.Errorf("the %s door hung %v on a connect after the seal instead of refusing it: %v", name, took, err)
+		t.Errorf("the %s endpoint hung %v on a connect after the seal instead of refusing it: %v", name, took, err)
 		return
 	}
-	t.Logf("%s door: a connect right after the seal is refused in %v: %v", name, took, err)
+	t.Logf("%s endpoint: a connect right after the seal is refused in %v: %v", name, took, err)
 }
 
 // El Inspector XV (1): every listener the daemon serves registers with the
@@ -448,19 +448,19 @@ func TestABoxEndpointOpenedByARefreshDuringTheStopClosesAtOnce(t *testing.T) {
 		t.Fatalf("the refresh during the stop: %v", err)
 	}
 	r.a.boxEndpointsMu.Lock()
-	o := r.a.boxEndpoints.open["slot2.door"]
+	o := r.a.boxEndpoints.open["slot2.endpoint"]
 	r.a.boxEndpointsMu.Unlock()
 	if o == nil {
-		t.Fatal("canary: the refresh opened no door for slot2")
+		t.Fatal("canary: the refresh opened no endpoint for slot2")
 	}
 	select {
 	case <-o.done:
 	case <-time.After(time.Second):
-		t.Fatal("the door opened after the seal is still serving")
+		t.Fatal("the endpoint opened after the seal is still serving")
 	}
 	requireRefused(t, "late box", dialed{"unix", late})
 	if _, err := os.Stat(late); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("the late door's socket outlived its refused Serve: %v", err)
+		t.Fatalf("the late endpoint's socket outlived its refused Serve: %v", err)
 	}
 	r.waitStragglers(t, "held open by the test")
 	letGo()
@@ -477,7 +477,7 @@ func TestTheStopKeepsTheApprovedEndpointOrder(t *testing.T) {
 	r := newStopRig(t)
 	held := holdEndpoint(t, r.endpoint)
 	if err := held.list(); err != nil {
-		t.Fatalf("canary: the box door never served: %v", err)
+		t.Fatalf("canary: the box endpoint never served: %v", err)
 	}
 	start := time.Now()
 	var step int
@@ -494,7 +494,7 @@ func TestTheStopKeepsTheApprovedEndpointOrder(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("the box door's socket outlived the seal")
+			t.Fatal("the box endpoint's socket outlived the seal")
 		}
 		time.Sleep(time.Millisecond)
 	}
@@ -511,7 +511,7 @@ func TestTheStopKeepsTheApprovedEndpointOrder(t *testing.T) {
 	default:
 	}
 	if got := r.decision(t); !errors.Is(got, errStopping) {
-		t.Fatalf("the door chain answered a request after the seal with %v, want the stop's own refusal", got)
+		t.Fatalf("the endpoint chain answered a request after the seal with %v, want the stop's own refusal", got)
 	}
 	logStep("a request on the held connection refused before authentication: %v", err)
 
@@ -525,9 +525,9 @@ func TestTheStopKeepsTheApprovedEndpointOrder(t *testing.T) {
 		if shut == nil || shut.noticeGrace() != stopNoticeGrace || stopNoticeGrace != 250*time.Millisecond {
 			t.Fatalf("the stop notice is not bounded by the 250 ms grace: %+v", shut)
 		}
-		logStep("daemon context ended: held connection got door.lapsed %q, flush bounded by %v", reason, shut.noticeGrace())
+		logStep("daemon context ended: held connection got endpoint.lapsed %q, flush bounded by %v", reason, shut.noticeGrace())
 	case <-time.After(5 * time.Second):
-		t.Fatal("the held box connection got no door.lapsed")
+		t.Fatal("the held box connection got no endpoint.lapsed")
 	}
 
 	letGo()
@@ -553,7 +553,7 @@ func TestEveryEndpointMethodIsRefusedBeforeItIsAuthenticated(t *testing.T) {
 	defer cancel()
 	methods := NewHandlers(ServerConfig{Angelus: r.a, Config: r.a.Settings, Ctx: ctx}).Map
 	if len(methods) == 0 {
-		t.Fatal("canary: the door serves no methods")
+		t.Fatal("canary: the endpoint serves no methods")
 	}
 	want := "(*Angelus).refusingWhenStopping.func"
 	for name, fn := range methods {

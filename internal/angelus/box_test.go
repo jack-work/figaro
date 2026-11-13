@@ -46,7 +46,7 @@ func serveBoxEndpoint(t *testing.T, endpoint bool) servedBox {
 		t.Fatal(err)
 	}
 	if endpoint {
-		if err := srv.CallBackThrough(filepath.Join(dir, "door.sock")); err != nil {
+		if err := srv.CallBackThrough(filepath.Join(dir, "ep.sock")); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -197,9 +197,9 @@ func boxEndpointRigWith(t *testing.T, policy, command string, opts ...func(*ange
 func boxEndpointRigConfigured(t *testing.T, policy, command, boxExtra string, opts ...func(*angelus.ServerConfig)) endpointRig {
 	t.Helper()
 	sb := serveBoxEndpoint(t, true)
-	endpoint := filepath.Join(filepath.Dir(sb.sock), "door.sock")
+	endpoint := filepath.Join(filepath.Dir(sb.sock), "ep.sock")
 	p := &bashProvider{command: command, turns: make(chan string, 4)}
-	r := newRigProviding(t, policy, fmt.Sprintf("[sandbox.boxes.judge]\nexec = %q\ndoor = %q\n%s", sb.sock, endpoint, boxExtra),
+	r := newRigProviding(t, policy, fmt.Sprintf("[sandbox.boxes.judge]\nexec = %q\nendpoint = %q\n%s", sb.sock, endpoint, boxExtra),
 		func(string, provider.Knobs) (provider.Provider, error) { return p, nil }, opts...)
 	ln, err := angelus.ListenUnix(endpoint, 0o660)
 	if err != nil {
@@ -251,7 +251,7 @@ func TestTheBoxEndpointReachesOnlyAriasInItsBox(t *testing.T) {
 	select {
 	case out := <-d.p.turns:
 		if !strings.Contains(out, "unix://"+d.endpoint) {
-			t.Fatalf("bash in the box sees FIGARO_TROUPE %q, want the door", out)
+			t.Fatalf("bash in the box sees FIGARO_TROUPE %q, want the endpoint", out)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the turn did not finish")
@@ -263,7 +263,7 @@ func TestTheBoxEndpointReachesOnlyAriasInItsBox(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := authz.PrincipalText(hello.Principal); got != "sandbox:judge@local:box" {
-		t.Fatalf("the door stamped %q", got)
+		t.Fatalf("the endpoint stamped %q", got)
 	}
 
 	if err := boxOnAria(t, c, rpc.MethodContext, inBox.FigaroID, struct{}{}, nil); err != nil {

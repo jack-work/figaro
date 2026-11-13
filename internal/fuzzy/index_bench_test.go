@@ -11,7 +11,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-var benchWords = strings.Fields("aria form outfit skill credo system tools model provider thinking effort budget cache marker reminder renderer tags mantra cwd keepalive ttl sandbox chat receipt troupe policy door study comment thread passage figaro bridge hush keyring session turn reaped topology models catalog gateway anthropic copilot responses openai deepseek rou2 version watermark segment xwal replica seq origin capability")
+var benchWords = strings.Fields("aria form outfit skill credo system tools model provider thinking effort budget cache marker reminder renderer tags mantra cwd keepalive ttl sandbox chat receipt troupe policy endpoint study comment thread passage figaro bridge hush keyring session turn reaped topology models catalog gateway anthropic copilot responses openai deepseek rou2 version watermark segment xwal replica seq origin capability")
 
 func benchForm(n int) form.Snapshot {
 	r := rand.New(rand.NewPCG(1, 2))

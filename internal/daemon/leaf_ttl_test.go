@@ -19,7 +19,7 @@ import (
 const day = 24 * time.Hour
 
 func (n *ledgerNode) troupeLines(lines string) {
-	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n%s\n[door.tls]\nlisten = %q\n", lines, n.addr)
+	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n%s\n[endpoint.tls]\nlisten = %q\n", lines, n.addr)
 	require.NoError(n.t, os.WriteFile(filepath.Join(n.cfgDir, "config.toml"), []byte(body), 0o600))
 }
 
@@ -130,7 +130,7 @@ func TestTroupeMembersCarriesTheLeafEachMemberPresented(t *testing.T) {
 	defer l.Close()
 
 	skew := 10 * time.Minute
-	require.InDelta(t, float64(30*day), float64(leafLifeOf(t, membersOf(t, na), nb.id())), float64(skew), "the door did not record the dialer's leaf")
-	require.InDelta(t, float64(14*day), float64(leafLifeOf(t, membersOf(t, nb), na.id())), float64(skew), "the dialer did not record the door's leaf")
+	require.InDelta(t, float64(30*day), float64(leafLifeOf(t, membersOf(t, na), nb.id())), float64(skew), "the endpoint did not record the dialer's leaf")
+	require.InDelta(t, float64(14*day), float64(leafLifeOf(t, membersOf(t, nb), na.id())), float64(skew), "the dialer did not record the endpoint's leaf")
 	require.Equal(t, (30 * day).Milliseconds(), membersOf(t, nb).MaxLeafMS, "the default max_leaf_ttl")
 }

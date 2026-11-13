@@ -67,7 +67,7 @@ func ListenUnix(path string, mode os.FileMode) (net.Listener, error) {
 }
 
 func (a *Angelus) ServeWeb(ctx context.Context, ln net.Listener, w Web) error {
-	leave, ok := a.enterEndpoint("door "+authz.EndpointWeb.String(), ln)
+	leave, ok := a.enterEndpoint("endpoint "+authz.EndpointWeb.String(), ln)
 	if !ok {
 		return errStopping
 	}
@@ -100,12 +100,12 @@ func (a *Angelus) webEndpoint(ctx context.Context, w Web) http.Handler {
 			err = a.seat(cctx, authz.EndpointWeb)
 		}
 		if unseated := (*unseated)(nil); errors.As(err, &unseated) {
-			slog.Warn("door refused upgrade", "door", authz.EndpointWeb.String(), "err", err)
+			slog.Warn("endpoint refused upgrade", "endpoint", authz.EndpointWeb.String(), "err", err)
 			http.Error(rw, "forbidden", http.StatusForbidden)
 			return
 		}
 		if err != nil {
-			slog.Warn("door refused upgrade", "door", authz.EndpointWeb.String(), "err", err)
+			slog.Warn("endpoint refused upgrade", "endpoint", authz.EndpointWeb.String(), "err", err)
 			rw.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(rw, "unauthorized", http.StatusUnauthorized)
 			return
@@ -157,7 +157,7 @@ func (w *webConn) Read(p []byte) (int, error) {
 			return 0, err
 		}
 		if typ != websocket.MessageText {
-			return 0, fmt.Errorf("door: a frame is a text message, got %v", typ)
+			return 0, fmt.Errorf("endpoint: a frame is a text message, got %v", typ)
 		}
 		w.rbuf = append(data, '\n')
 	}

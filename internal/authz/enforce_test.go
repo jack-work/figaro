@@ -105,11 +105,11 @@ func TestTheRowFilteredMethodsNeedARole(t *testing.T) {
 	for _, m := range []string{rpc.MethodList, rpc.MethodNodeResolve} {
 		for _, d := range []Endpoint{EndpointInProcess, EndpointLocal, EndpointWeb} {
 			if err := call(t, h, WithEndpoint(WithSubject(context.Background(), subject(box)), d), m, ""); err != nil {
-				t.Errorf("%s at the %s door, for a role with no read on the daemon: %v", m, d, err)
+				t.Errorf("%s at the %s endpoint, for a role with no read on the daemon: %v", m, d, err)
 			}
 			err := call(t, h, WithEndpoint(WithSubject(context.Background(), subject(other)), d), m, "")
 			if err == nil || !strings.Contains(err.Error(), "holds no role") {
-				t.Errorf("%s at the %s door, for a subject with no role: %v", m, d, err)
+				t.Errorf("%s at the %s endpoint, for a subject with no role: %v", m, d, err)
 			}
 		}
 	}
@@ -126,13 +126,13 @@ func TestHelloOffTheLocalEndpointNeedsARole(t *testing.T) {
 		ctx  context.Context
 		pass bool
 	}{
-		"a stranger in process":         {at(EndpointInProcess, other), true},
-		"a stranger, door unstamped":    {WithSubject(context.Background(), subject(other)), false},
-		"a stranger at the local door":  {at(EndpointLocal, other), true},
-		"a role holder at the web door": {at(EndpointWeb, box), true},
-		"a stranger at the web door":    {at(EndpointWeb, other), false},
-		"a stranger at a node door":     {at(EndpointNode, other), false},
-		"a stranger at a new door":      {at(EndpointWeb+1, other), false},
+		"a stranger in process":             {at(EndpointInProcess, other), true},
+		"a stranger, endpoint unstamped":    {WithSubject(context.Background(), subject(other)), false},
+		"a stranger at the local endpoint":  {at(EndpointLocal, other), true},
+		"a role holder at the web endpoint": {at(EndpointWeb, box), true},
+		"a stranger at the web endpoint":    {at(EndpointWeb, other), false},
+		"a stranger at a node endpoint":     {at(EndpointNode, other), false},
+		"a stranger at a new endpoint":      {at(EndpointWeb+1, other), false},
 	} {
 		if err := call(t, h, c.ctx, rpc.MethodHello, ""); (err == nil) != c.pass {
 			t.Errorf("%s: err = %v, want pass %v", name, err, c.pass)

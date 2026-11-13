@@ -475,7 +475,7 @@
               fi
             done
             ${if detached then ''
-            echo "[figaro-dev:${name}] detached: this daemon is not the node (no [troupe], [door.tls], [door.web], box doors, [peers], troupes/ or [telemetry]); OTLP export off" >&2
+            echo "[figaro-dev:${name}] detached: this daemon is not the node (no [troupe], [endpoint.tls], [endpoint.web], box endpoints, [peers], troupes/ or [telemetry]); OTLP export off" >&2
             '' else ""}
           '';
         };

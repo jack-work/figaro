@@ -12,13 +12,13 @@ func TestBoxesLoadAndRefuseWhatTheyCannotBe(t *testing.T) {
 		body string
 		ok   bool
 	}{
-		{"[sandbox.boxes.judge]\nexec = \"/run/box/judge.sock\"\ndoor = \"/run/door/judge.sock\"\nprofile = \"build\"\n", true},
+		{"[sandbox.boxes.judge]\nexec = \"/run/box/judge.sock\"\nendpoint = \"/run/endpoint/judge.sock\"\nprofile = \"build\"\n", true},
 		{"[sandbox.boxes.judge]\nexec = \"/run/box/judge.sock\"\n", true},
 		{"[sandbox.boxes.local]\nexec = \"/x\"\n", false},
 		{"[sandbox.boxes.\"a@b\"]\nexec = \"/x\"\n", false},
 		{"[sandbox.boxes.judge]\nexec = \"judge.sock\"\n", false},
-		{"[sandbox.boxes.judge]\nexec = \"/x\"\ndoor = \"door.sock\"\n", false},
-		{"[sandbox.boxes.a]\nexec = \"/x\"\ndoor = \"/d\"\n[sandbox.boxes.b]\nexec = \"/y\"\ndoor = \"/d/\"\n", false},
+		{"[sandbox.boxes.judge]\nexec = \"/x\"\nendpoint = \"endpoint.sock\"\n", false},
+		{"[sandbox.boxes.a]\nexec = \"/x\"\nendpoint = \"/d\"\n[sandbox.boxes.b]\nexec = \"/y\"\nendpoint = \"/d/\"\n", false},
 		{"[sandbox.boxes.judge]\nexec = \"/run/box/judge.sock\"\npurge_grace = \"1h\"\n", true},
 		{"[sandbox.boxes.judge]\nexec = \"/x\"\npurge_grace = \"an hour\"\n", false},
 		{"[sandbox.boxes.judge]\nexec = \"/x\"\npurge_grace = \"-1h\"\n", false},
@@ -73,7 +73,7 @@ func TestABoxEndpointNeedsBothLists(t *testing.T) {
 	} {
 		body := "[sandbox.boxes.judge]\nexec = \"/run/box/judge.sock\"\n" + c.extra
 		if c.endpoint {
-			body += "door = \"/run/door/judge.sock\"\n"
+			body += "endpoint = \"/run/endpoint/judge.sock\"\n"
 		}
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o600); err != nil {
@@ -88,27 +88,27 @@ func TestABoxEndpointNeedsBothLists(t *testing.T) {
 		case c.refused == "" && err != nil:
 			t.Errorf("%q: refused: %v", body, err)
 		case c.refused != "" && (err == nil || !strings.Contains(err.Error(), "no "+c.refused+" list")):
-			t.Errorf("%q: want the door refused for want of %s, got %v", body, c.refused, err)
+			t.Errorf("%q: want the endpoint refused for want of %s, got %v", body, c.refused, err)
 		}
 	}
 }
 
 func TestAHostEndpointLivesWhereNoBoxCanReach(t *testing.T) {
-	const chat = "[sandbox.boxes.chat]\nexec = \"/run/sb/chat/exec/exec.sock\"\ndoor = \"/run/sb/chat/door/door.sock\"\n"
-	const receipt = "[sandbox.boxes.receipt]\nexec = \"/run/sb/receipt/exec/exec.sock\"\ndoor = \"/run/sb/receipt/door/door.sock\"\n"
+	const chat = "[sandbox.boxes.chat]\nexec = \"/run/sb/chat/exec/exec.sock\"\nendpoint = \"/run/sb/chat/endpoint/endpoint.sock\"\n"
+	const receipt = "[sandbox.boxes.receipt]\nexec = \"/run/sb/receipt/exec/exec.sock\"\nendpoint = \"/run/sb/receipt/endpoint/endpoint.sock\"\n"
 	for _, c := range []struct {
 		name, body string
 		refusal    string
 	}{
-		{"its own directory", chat + "host_door = \"/run/sb/chat/host-door/host.sock\"\nfigaro_claim = \"required\"\n", ""},
-		{"no door", "[sandbox.boxes.chat]\nexec = \"/x\"\nhost_door = \"/run/sb/chat/host-door/host.sock\"\n", "has none"},
-		{"relative", chat + "host_door = \"host.sock\"\n", "absolute"},
-		{"its own door directory", chat + "host_door = \"/run/sb/chat/door/host.sock\"\n", "door directory"},
-		{"below its own door directory", chat + "host_door = \"/run/sb/chat/door/h/host.sock\"\n", "door directory"},
-		{"another box's door directory", chat + "host_door = \"/run/sb/receipt/door/host.sock\"\n" + receipt, "box receipt's door directory"},
-		{"the door itself", chat + "host_door = \"/run/sb/chat/door/door.sock\"\n", "also"},
-		{"another box's host door", chat + "host_door = \"/run/sb/h/host.sock\"\n" + receipt + "host_door = \"/run/sb/h/host.sock\"\n", "also"},
-		{"a claim without a door", "[sandbox.boxes.chat]\nexec = \"/x\"\nfigaro_claim = \"required\"\n", "no door"},
+		{"its own directory", chat + "host_endpoint = \"/run/sb/chat/host-endpoint/host.sock\"\nfigaro_claim = \"required\"\n", ""},
+		{"no endpoint", "[sandbox.boxes.chat]\nexec = \"/x\"\nhost_endpoint = \"/run/sb/chat/host-endpoint/host.sock\"\n", "has none"},
+		{"relative", chat + "host_endpoint = \"host.sock\"\n", "absolute"},
+		{"its own endpoint directory", chat + "host_endpoint = \"/run/sb/chat/endpoint/host.sock\"\n", "endpoint directory"},
+		{"below its own endpoint directory", chat + "host_endpoint = \"/run/sb/chat/endpoint/h/host.sock\"\n", "endpoint directory"},
+		{"another box's endpoint directory", chat + "host_endpoint = \"/run/sb/receipt/endpoint/host.sock\"\n" + receipt, "box receipt's endpoint directory"},
+		{"the endpoint itself", chat + "host_endpoint = \"/run/sb/chat/endpoint/endpoint.sock\"\n", "also"},
+		{"another box's host endpoint", chat + "host_endpoint = \"/run/sb/h/host.sock\"\n" + receipt + "host_endpoint = \"/run/sb/h/host.sock\"\n", "also"},
+		{"a claim without an endpoint", "[sandbox.boxes.chat]\nexec = \"/x\"\nfigaro_claim = \"required\"\n", "no endpoint"},
 		{"an unknown claim", chat + "figaro_claim = \"optional\"\n", "want \"required\""},
 		{"the retired node-wide claim", "[authz]\nfigaro_claim = \"required\"\n", "per box"},
 	} {
@@ -123,8 +123,8 @@ func TestAHostEndpointLivesWhereNoBoxCanReach(t *testing.T) {
 		case c.refusal != "" && (err == nil || !strings.Contains(err.Error(), c.refusal)):
 			t.Errorf("%s: %v, want a refusal naming %q", c.name, err, c.refusal)
 		case c.refusal == "":
-			if got := l.HostEndpoints()["chat"]; got != "/run/sb/chat/host-door/host.sock" {
-				t.Errorf("%s: host door %q", c.name, got)
+			if got := l.HostEndpoints()["chat"]; got != "/run/sb/chat/host-endpoint/host.sock" {
+				t.Errorf("%s: host endpoint %q", c.name, got)
 			}
 			if got := l.BoxesRequiringClaim(); len(got) != 1 || got[0] != "chat" {
 				t.Errorf("%s: required %v", c.name, got)

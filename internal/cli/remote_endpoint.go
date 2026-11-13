@@ -246,14 +246,14 @@ func (r *nodeRouter) probe(endpoints []troupeEndpoint) {
 	}
 	if changed {
 		if err := writeEndpointCache(r.cache); err != nil {
-			fmt.Fprintf(stderrw, "figaro: troupe door cache: %s\n", err)
+			fmt.Fprintf(stderrw, "figaro: troupe endpoint cache: %s\n", err)
 		}
 	}
 }
 
 func (r *nodeRouter) endpoint(node string) (transport.Endpoint, error) {
 	if len(r.endpoints) == 0 {
-		return transport.Endpoint{}, fmt.Errorf("no troupe profile reaches node %s (troupes/*.toml has no wss door)", node)
+		return transport.Endpoint{}, fmt.Errorf("no troupe profile reaches node %s (troupes/*.toml has no wss endpoint)", node)
 	}
 	found := r.claims(node)
 	if len(found) != 1 {
@@ -276,7 +276,7 @@ func (r *nodeRouter) endpoint(node string) (transport.Endpoint, error) {
 	for i, d := range found {
 		urls[i] = d.url
 	}
-	return transport.Endpoint{}, fmt.Errorf("node %s answers at %d doors (%s): refused", node, len(found), strings.Join(urls, ", "))
+	return transport.Endpoint{}, fmt.Errorf("node %s answers at %d endpoints (%s): refused", node, len(found), strings.Join(urls, ", "))
 }
 
 func isLoginLine(err error) bool { return strings.HasPrefix(err.Error(), "figaro troupe login ") }
@@ -322,7 +322,7 @@ func nodeEndpoint(node string) (transport.Endpoint, error) {
 func (r *nodeRouter) learned(url, node string) {
 	r.cache[url] = endpointRecord{Node: node, ProbedMS: time.Now().UnixMilli()}
 	if err := writeEndpointCache(r.cache); err != nil {
-		fmt.Fprintf(stderrw, "figaro: troupe door cache: %s\n", err)
+		fmt.Fprintf(stderrw, "figaro: troupe endpoint cache: %s\n", err)
 	}
 }
 
