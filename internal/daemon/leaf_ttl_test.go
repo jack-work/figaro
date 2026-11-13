@@ -28,7 +28,7 @@ type preTTLSignRequest struct {
 	Troupe    string            `json:"troupe"`
 	Node      string            `json:"node"`
 	PublicKey []byte            `json:"public_key"`
-	Endpoint  string            `json:"door"`
+	Endpoint  string            `json:"endpoint"`
 	Rejoin    *rpc.TroupeRejoin `json:"rejoin,omitempty"`
 }
 
