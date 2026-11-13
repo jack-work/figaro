@@ -10,6 +10,30 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
+// El Inspector XVI, D7: a principal whose grants read no figaro is refused
+// figaro.list before the fan-out, so its bearer never reaches a peer and no
+// peer's node id or link error comes back to it.
+func TestAListByWhoReadsNoFigaroAsksNoPeer(t *testing.T) {
+	a, b := newFedPair(t)
+	here, there := a.mint(), b.mint()
+	ctx := callCtx(t)
+
+	decider, token := a.asHolding("decider")
+	resp, err := decider.List(ctx)
+	require.ErrorContains(t, err, "holds no grant that reads a figaro", "listed: %+v", resp)
+	require.Zero(t, b.admitted(token), "the decider's bearer reached the peer")
+
+	probe, probeToken := a.asHolding("probe")
+	resp, err = probe.List(ctx)
+	require.NoError(t, err)
+	ids := map[string]bool{}
+	for _, r := range resp.Figaros {
+		ids[r.ID] = true
+	}
+	require.True(t, ids[here] && ids[there], "the owner's list lost a row: %v", ids)
+	require.NotZero(t, b.admitted(probeToken), "the owner's list never asked the peer, so the count above proves nothing")
+}
+
 // El Inspector XVI, D6: a principal whose grants name no figaro is refused by
 // policy before an id is resolved: the same code and words for an id this
 // node holds, one a peer holds and one nobody holds, and no peer is asked
