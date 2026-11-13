@@ -123,6 +123,15 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 		"a say url with no scheme":    {swap("https://broker.example/groups/say", "broker.example/groups/say"), "say_url"},
 		"a say url with a password":   {swap("https://broker.example", "https://u:p@broker.example"), "say_url"},
 		"a say url on a file":         {swap("https://broker.example/groups/say", "file:///etc/passwd"), "say_url"},
+		"a say url in clear":          {swap("https://broker.example/groups/say", "http://broker.example/groups/say"), "say_url"},
+		"a say url in clear by ip":    {swap("https://broker.example/groups/say", "http://10.0.0.7/groups/say"), "say_url"},
+		"a say url in clear, 0.0.0.0": {swap("https://broker.example/groups/say", "http://0.0.0.0:4380/say"), "say_url"},
+		"a say url, localhost.evil":   {swap("https://broker.example/groups/say", "http://localhost.example/say"), "say_url"},
+		"a say url, ws on loopback":   {swap("https://broker.example/groups/say", "ws://127.0.0.1:4380/say"), "say_url"},
+		"a search url, ftp on lo":     {poolBody + "search_url = \"ftp://localhost/search\"\n", "search_url"},
+		"a search url in clear":       {poolBody + "search_url = \"http://search.example/search\"\n", "search_url"},
+		"a search url, 128.0.0.1":     {poolBody + "search_url = \"http://128.0.0.1/search\"\n", "search_url"},
+		"a search url, ::2":           {poolBody + "search_url = \"http://[::2]:9/search\"\n", "search_url"},
 		"a slot named like a lease":   {swap(`"slot1"`, `"slot1-g7"`), "ends like a lease"},
 		"a slot with a colon":         {swap(`"slot1"`, `"slot:1"`), "slot name"},
 		"an empty slot name":          {swap(`"slot1"`, `""`), "slot name"},
@@ -161,6 +170,17 @@ func TestAPoolTakesTheKeysItKnows(t *testing.T) {
 	}
 	if m, d := p.SearchBounds(); m != 2 || d != 0 {
 		t.Fatalf("search bounds %d a minute, %d a day", m, d)
+	}
+}
+
+// A bearer goes with every say and search, so a URL in clear is taken
+// only for a loopback host.
+func TestAPoolSendsItsBearersInClearOnlyOnLoopback(t *testing.T) {
+	for _, u := range []string{"https://broker.example/say", "http://127.0.0.1:4380/say", "http://127.8.9.10/say", "http://[::1]:4380/say", "http://localhost:4380/say", "http://LOCALHOST/say"} {
+		body := strings.Replace(poolBody, "https://broker.example/groups/say", u, 1) + "search_url = \"" + u + "\"\n"
+		if _, err := loadBody(t, body, "rou2"); err != nil {
+			t.Errorf("%s: %v", u, err)
+		}
 	}
 }
 

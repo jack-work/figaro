@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -110,6 +111,26 @@ func nameHasSeparator(name string) bool {
 	return name == "" || strings.ContainsAny(name, ":/@* \t")
 }
 
+const bearerURLWant = "want https, or http to a loopback host (127.0.0.0/8, ::1, localhost), with a host and no credentials in the URL: a bearer goes with every call"
+
+func carriesABearerSafely(raw string) bool {
+	u, err := url.Parse(raw)
+	switch {
+	case err != nil || u.Host == "" || u.User != nil:
+		return false
+	case u.Scheme == "https":
+		return true
+	case u.Scheme != "http":
+		return false
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func refuseUnknownSlotKeys(md toml.MetaData) error {
 	for _, k := range md.Undecoded() {
 		if len(k) > 0 && k[0] == "slot" {
@@ -154,11 +175,11 @@ func (c Config) validateSlot() error {
 		case len(p.Slots) == 0:
 			return fmt.Errorf("%s.slots: a pool with no slot can lease nothing", where)
 		}
-		if u, err := url.Parse(p.SayURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
-			return fmt.Errorf("%s.say_url %q: want an http or https URL with a host and no credentials", where, p.SayURL)
+		if !carriesABearerSafely(p.SayURL) {
+			return fmt.Errorf("%s.say_url %q: %s", where, p.SayURL, bearerURLWant)
 		}
-		if u, err := url.Parse(p.SearchURL); p.SearchURL != "" && (err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil) {
-			return fmt.Errorf("%s.search_url %q: want an http or https URL with a host and no credentials", where, p.SearchURL)
+		if p.SearchURL != "" && !carriesABearerSafely(p.SearchURL) {
+			return fmt.Errorf("%s.search_url %q: %s", where, p.SearchURL, bearerURLWant)
 		}
 		for _, slot := range p.SlotNames() {
 			switch {
