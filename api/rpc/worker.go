@@ -1,11 +1,11 @@
 package rpc
 
 const (
-	MethodWorkerPages   = "figaro.slot.pages"
-	MethodWorkerLease   = "figaro.slot.lease"
-	MethodWorkerRelease = "figaro.slot.release"
-	MethodWorkerDeliver = "figaro.slot.deliver"
-	MethodWorkerSay     = "figaro.slot.say"
+	MethodWorkerPages   = "figaro.worker.pages"
+	MethodWorkerLease   = "figaro.worker.lease"
+	MethodWorkerRelease = "figaro.worker.release"
+	MethodWorkerDeliver = "figaro.worker.deliver"
+	MethodWorkerSay     = "figaro.worker.say"
 )
 
 const ErrCodeWorker = -32021
@@ -22,7 +22,7 @@ const (
 type WorkerRefusal struct {
 	Reason     string `json:"reason"`
 	Pool       string `json:"pool"`
-	Workers    int    `json:"slots,omitempty"`
+	Workers    int    `json:"workers,omitempty"`
 	Leased     int    `json:"leased,omitempty"`
 	Releasing  int    `json:"releasing,omitempty"`
 	RetryAfter int    `json:"retry_after,omitempty"`

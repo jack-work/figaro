@@ -412,7 +412,7 @@ func Run() {
 		fmt.Fprintf(os.Stderr, "angelus: %v; every call that needs a policy is refused until it loads\n", err)
 	}
 	if loaded.PoolDaemon() {
-		if a.Workers, err = angelus.OpenWorkerPools(filepath.Join(boot.StateDir(), "slot-pool"), loaded); err != nil {
+		if a.Workers, err = angelus.OpenWorkerPools(filepath.Join(boot.StateDir(), "worker-pool"), loaded); err != nil {
 			fmt.Fprintf(os.Stderr, "angelus: %v; a daemon that leases slots does not start without its ledger\n", err)
 			os.Exit(1)
 		}

@@ -18,7 +18,7 @@ import (
 	"github.com/jack-work/jkauthz"
 )
 
-const poolNodeKey = "slot.pool"
+const poolNodeKey = "worker.pool"
 
 type leasedMint struct {
 	Figaro string
