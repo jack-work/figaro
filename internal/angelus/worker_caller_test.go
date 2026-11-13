@@ -108,7 +108,7 @@ func TestALeaseOpensItsRou2LeaseBeforeItMintsAndItsReleaseClosesIt(t *testing.T)
 		if row.Rou2Lease != id || row.State != workerpool.Minting {
 			t.Errorf("rou2 was asked for %s while the ledger row is %s naming %q", id, row.State, row.Rou2Lease)
 		}
-		if slices.Contains(r.a.Settings.LeasedBoxes(), "slot0-g1") || boxNodes(r.a, "slot0-g1") != 0 {
+		if slices.Contains(r.a.Settings.LeasedBoxes(), "worker0-g1") || boxNodes(r.a, "worker0-g1") != 0 {
 			t.Error("rou2 was asked after the box was leased or a node minted in it")
 		}
 	}
@@ -116,8 +116,8 @@ func TestALeaseOpensItsRou2LeaseBeforeItMintsAndItsReleaseClosesIt(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(rou2.opened, []string{"groups/slot0-g1"}) || rou2.classes["groups/slot0-g1"] != "group" || !slices.Equal(rou2.provider, []string{"mock"}) {
-		t.Errorf("the lease opened %v under %v through %v, want groups/slot0-g1 under the pool's class through its provider", rou2.opened, rou2.classes, rou2.provider)
+	if !slices.Equal(rou2.opened, []string{"groups/worker0-g1"}) || rou2.classes["groups/worker0-g1"] != "group" || !slices.Equal(rou2.provider, []string{"mock"}) {
+		t.Errorf("the lease opened %v under %v through %v, want groups/worker0-g1 under the pool's class through its provider", rou2.opened, rou2.classes, rou2.provider)
 	}
 	if _, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err != nil || len(rou2.opened) != 1 {
 		t.Errorf("the lease answered again opened another: %v (%v)", rou2.opened, err)
@@ -128,8 +128,8 @@ func TestALeaseOpensItsRou2LeaseBeforeItMintsAndItsReleaseClosesIt(t *testing.T)
 	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(rou2.closed, []string{"groups/slot0-g1"}) {
-		t.Errorf("the release closed %v, want groups/slot0-g1", rou2.closed)
+	if !slices.Equal(rou2.closed, []string{"groups/worker0-g1"}) {
+		t.Errorf("the release closed %v, want groups/worker0-g1", rou2.closed)
 	}
 	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err != nil || len(rou2.closed) != 1 {
 		t.Errorf("a release answered again closed again: %v (%v)", rou2.closed, err)
@@ -149,21 +149,21 @@ func TestALeaseRou2DoesNotOpenMintsNothingAndIsReleased(t *testing.T) {
 	if _, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err == nil {
 		t.Fatal("a lease rou2 did not open was answered")
 	}
-	if n := boxNodes(r.a, "slot0-g1"); n != 0 {
+	if n := boxNodes(r.a, "worker0-g1"); n != 0 {
 		t.Errorf("%d nodes were minted for a lease rou2 did not open", n)
 	}
-	if slices.Contains(r.a.Settings.LeasedBoxes(), "slot0-g1") {
+	if slices.Contains(r.a.Settings.LeasedBoxes(), "worker0-g1") {
 		t.Error("the box of a lease rou2 did not open is in the table")
 	}
 	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Released {
 		t.Errorf("the row is %s, want released", row.State)
 	}
-	if !slices.Equal(rou2.closed, []string{"groups/slot0-g1"}) {
+	if !slices.Equal(rou2.closed, []string{"groups/worker0-g1"}) {
 		t.Errorf("the failed lease closed %v, want the id its row named", rou2.closed)
 	}
 	rou2.failOpen = nil
-	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err != nil || next.Box != "slot0-g2" {
-		t.Errorf("after the failure the key leases %+v (%v), want slot0 at generation 2", next, err)
+	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err != nil || next.Box != "worker0-g2" {
+		t.Errorf("after the failure the key leases %+v (%v), want worker0 at generation 2", next, err)
 	}
 }
 
@@ -187,17 +187,17 @@ func TestAReleaseRou2DoesNotCloseStillPurgesAndKeepsTheWorker(t *testing.T) {
 	if slices.Contains(r.a.Settings.LeasedBoxes(), lease.Box) {
 		t.Error("the box is still in the table")
 	}
-	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Releasing || row.Rou2Lease != "groups/slot0-g1" {
+	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Releasing || row.Rou2Lease != "groups/worker0-g1" {
 		t.Errorf("the row is %s naming %q, want releasing and still naming its rou2 lease", row.State, row.Rou2Lease)
 	}
-	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:11"}`); err != nil || next.Box != "slot1-g1" {
-		t.Errorf("with slot0 unclosed the next lease is %+v (%v), want slot1", next, err)
+	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:11"}`); err != nil || next.Box != "worker1-g1" {
+		t.Errorf("with worker0 unclosed the next lease is %+v (%v), want worker1", next, err)
 	}
 	rou2.failClose = nil
 	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err != nil {
 		t.Fatal(err)
 	}
-	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Released || !slices.Equal(rou2.closed, []string{"groups/slot0-g1"}) {
+	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Released || !slices.Equal(rou2.closed, []string{"groups/worker0-g1"}) {
 		t.Errorf("after the second release the row is %s and rou2 closed %v", row.State, rou2.closed)
 	}
 }
@@ -210,7 +210,7 @@ func TestWithNoRou2NothingIsLeased(t *testing.T) {
 	if _, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err == nil {
 		t.Fatal("a daemon with no rou2 answered a lease")
 	}
-	if n := boxNodes(r.a, "slot0-g1"); n != 0 {
+	if n := boxNodes(r.a, "worker0-g1"); n != 0 {
 		t.Errorf("%d nodes were minted with no rou2", n)
 	}
 	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Released || row.Rou2Lease != "" {
@@ -258,7 +258,7 @@ func TestAReleasingLeaseIsFinishedOnATimerOnceItCanBe(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the timer outlived its context")
 	}
-	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err != nil || next.Box != "slot0-g2" {
-		t.Errorf("after the timer's release the key leases %+v (%v), want slot0 at generation 2", next, err)
+	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err != nil || next.Box != "worker0-g2" {
+		t.Errorf("after the timer's release the key leases %+v (%v), want worker0 at generation 2", next, err)
 	}
 }

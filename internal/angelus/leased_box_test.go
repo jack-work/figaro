@@ -19,13 +19,13 @@ provider = "mock"
 rou2_lease_class = "group"
 rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/groups/say"
-workers = ["slot0"]
+workers = ["worker0"]
 `
 
 func leasedRig(t *testing.T) (grantRig, string) {
 	t.Helper()
 	r := newRigConfigured(t, grantPolicy, mockPoolConfig)
-	box, err := r.a.Settings.LeaseBox("groups", "slot0", 1)
+	box, err := r.a.Settings.LeaseBox("groups", "worker0", 1)
 	if err != nil {
 		t.Fatal(err)
 	}

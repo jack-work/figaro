@@ -30,7 +30,7 @@ func decodeExactly(params json.RawMessage, into any) error {
 func (h *handlers) workerPool(method, pool string) (*WorkerPools, error) {
 	workers := h.angelus.Workers
 	if workers == nil {
-		return nil, fmt.Errorf("%s: this daemon leases no slots", method)
+		return nil, fmt.Errorf("%s: this daemon leases no workers", method)
 	}
 	loaded, _ := h.settings()
 	if _, ok := loaded.Pool(pool); !ok {
@@ -144,8 +144,8 @@ func (h *handlers) workerLease(ctx context.Context, params json.RawMessage) (any
 		if releasing > 0 {
 			refusal.RetryAfter = leaseRetryAfter
 		}
-		slog.Warn("slot pool: empty, a lease was refused", "pool", req.Pool, "slots", refusal.Workers, "leased", leased, "releasing", releasing)
-		return nil, workerRefused(refusal, "%s: pool %s has no free slot", rpc.MethodWorkerLease, req.Pool)
+		slog.Warn("worker pool: empty, a lease was refused", "pool", req.Pool, "workers", refusal.Workers, "leased", leased, "releasing", releasing)
+		return nil, workerRefused(refusal, "%s: pool %s has no free worker", rpc.MethodWorkerLease, req.Pool)
 	}
 	generation, err := workers.Generations.Next(worker, workers.Ledger.Floor(worker))
 	if err != nil {
@@ -157,7 +157,7 @@ func (h *handlers) workerLease(ctx context.Context, params json.RawMessage) (any
 	live, err := h.bringLeaseLive(ctx, loaded, req.Pool, worker, req.Key, generation)
 	if err != nil {
 		if rerr := h.releaseLease(ctx, req.Pool, req.Key, generation); rerr != nil {
-			slog.Error("slot pool: a lease that failed to mint is not yet released, and its slot is not offered", "pool", req.Pool, "slot", worker, "generation", generation, "err", rerr)
+			slog.Error("worker pool: a lease that failed to mint is not yet released, and its worker is not offered", "pool", req.Pool, "worker", worker, "generation", generation, "err", rerr)
 		}
 		return nil, fmt.Errorf("%s: %w", rpc.MethodWorkerLease, err)
 	}

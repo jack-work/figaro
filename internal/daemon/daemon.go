@@ -346,7 +346,7 @@ func Run() {
 
 	figOtel.SetConfiguredLevel(loaded.TelemetryLevel())
 	if loaded.PoolDaemon() && figOtel.LogsAtDebug() {
-		fmt.Fprintln(os.Stderr, "angelus: FIGARO_LOG_LEVEL asks for debug logs, which carry prompt text; a daemon that leases slots does not start at that level")
+		fmt.Fprintln(os.Stderr, "angelus: FIGARO_LOG_LEVEL asks for debug logs, which carry prompt text; a daemon that leases workers does not start at that level")
 		os.Exit(1)
 	}
 	figOtel.SetOTLPEndpoint(loaded.TelemetryOTLPEndpoint())
@@ -405,7 +405,7 @@ func Run() {
 	}
 	if err := a.Policies.Reload(loaded.PolicyPath()); err != nil {
 		if loaded.PoolDaemon() {
-			fmt.Fprintf(os.Stderr, "angelus: %v; a daemon that leases slots does not start without its policy\n", err)
+			fmt.Fprintf(os.Stderr, "angelus: %v; a daemon that leases workers does not start without its policy\n", err)
 			os.Exit(1)
 		}
 		slog.Error("authz: no policy in force; every call that needs one is refused", "err", err)
@@ -413,7 +413,7 @@ func Run() {
 	}
 	if loaded.PoolDaemon() {
 		if a.Workers, err = angelus.OpenWorkerPools(filepath.Join(boot.StateDir(), "worker-pool"), loaded); err != nil {
-			fmt.Fprintf(os.Stderr, "angelus: %v; a daemon that leases slots does not start without its ledger\n", err)
+			fmt.Fprintf(os.Stderr, "angelus: %v; a daemon that leases workers does not start without its ledger\n", err)
 			os.Exit(1)
 		}
 		a.Policies.SetLeases(a.Workers)

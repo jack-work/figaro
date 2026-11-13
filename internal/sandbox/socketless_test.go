@@ -24,7 +24,7 @@ provider = "rou2"
 rou2_lease_class = "group"
 rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/say"
-workers = ["slot0"]
+workers = ["worker0"]
 `
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -33,7 +33,7 @@ workers = ["slot0"]
 	if err != nil {
 		t.Fatal(err)
 	}
-	name, err := loaded.LeaseBox("groups", "slot0", 1)
+	name, err := loaded.LeaseBox("groups", "worker0", 1)
 	if err != nil {
 		t.Fatal(err)
 	}

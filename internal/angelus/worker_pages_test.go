@@ -22,7 +22,7 @@ provider = "mock"
 rou2_lease_class = "group"
 rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/groups/say"
-workers = ["slot0"]
+workers = ["worker0"]
 
 [worker.pools.others]
 enabled = true
@@ -31,7 +31,7 @@ provider = "mock"
 rou2_lease_class = "group"
 rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/others/say"
-workers = ["slot5"]
+workers = ["worker5"]
 `
 
 const brokerPoolPolicy = `
@@ -185,7 +185,7 @@ func TestPagesRefusesEveryCallItWasNotBuiltFor(t *testing.T) {
 func TestADaemonThatLeasesNothingRefusesPagesForItsOwner(t *testing.T) {
 	r := newGrantRig(t)
 	_, err := r.pages(t, asOwner(), `{"pool":"groups"}`)
-	if err == nil || !strings.Contains(err.Error(), "leases no slots") {
+	if err == nil || !strings.Contains(err.Error(), "leases no workers") {
 		t.Fatalf("pages on a daemon without pools: %v", err)
 	}
 }

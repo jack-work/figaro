@@ -115,14 +115,14 @@ func rou2Rig(t *testing.T) (*fakeRou2, *fakeBearer, Rou2) {
 func TestARou2LeaseOpensOnceClosesForGoodAndNeverReopens(t *testing.T) {
 	fake, _, rou2 := rou2Rig(t)
 	ctx := context.Background()
-	id := CallerID("chat-groups", "slot3-g7")
-	if id != "chat-groups/slot3-g7" {
+	id := CallerID("chat-groups", "worker3-g7")
+	if id != "chat-groups/worker3-g7" {
 		t.Fatalf("the lease id is %q", id)
 	}
 	if err := rou2.Open(ctx, id, "chat-group"); err != nil {
 		t.Fatal(err)
 	}
-	if first := fake.calls[0]; first.method != "POST" || first.path != "/v1/leases" || first.auth != "Bearer good" || first.body != `{"class":"chat-group","id":"chat-groups/slot3-g7"}` {
+	if first := fake.calls[0]; first.method != "POST" || first.path != "/v1/leases" || first.auth != "Bearer good" || first.body != `{"class":"chat-group","id":"chat-groups/worker3-g7"}` {
 		t.Errorf("the open was sent as %+v", first)
 	}
 	if err := rou2.Open(ctx, id, "chat-group"); err != nil {
@@ -134,7 +134,7 @@ func TestARou2LeaseOpensOnceClosesForGoodAndNeverReopens(t *testing.T) {
 	if err := rou2.Close(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	if last := fake.calls[len(fake.calls)-1]; last.method != "DELETE" || last.path != "/v1/leases/chat-groups/slot3-g7" {
+	if last := fake.calls[len(fake.calls)-1]; last.method != "DELETE" || last.path != "/v1/leases/chat-groups/worker3-g7" {
 		t.Errorf("the close was sent as %+v", last)
 	}
 	if len(fake.open) != 0 || !fake.closed[id] {
@@ -143,7 +143,7 @@ func TestARou2LeaseOpensOnceClosesForGoodAndNeverReopens(t *testing.T) {
 	if err := rou2.Close(ctx, id); err != nil {
 		t.Errorf("a close of a closed lease is done, and it answered %v", err)
 	}
-	if err := rou2.Close(ctx, CallerID("chat-groups", "slot3-g8")); err != nil {
+	if err := rou2.Close(ctx, CallerID("chat-groups", "worker3-g8")); err != nil {
 		t.Errorf("a close of a lease rou2 never opened is done, and it answered %v", err)
 	}
 	if err := rou2.Open(ctx, id, "chat-group"); !errors.Is(err, ErrCallerClosed) {
@@ -157,7 +157,7 @@ func TestARou2LeaseOpensOnceClosesForGoodAndNeverReopens(t *testing.T) {
 func TestARou2AnswerThatIsNoLeaseAnswerIsAFailure(t *testing.T) {
 	fake, _, rou2 := rou2Rig(t)
 	ctx := context.Background()
-	id := CallerID("groups", "slot0-g1")
+	id := CallerID("groups", "worker0-g1")
 	for _, status := range []int{http.StatusNotFound, http.StatusInternalServerError, http.StatusBadGateway, http.StatusForbidden} {
 		fake.broken = status
 		if err := rou2.Open(ctx, id, "group"); err == nil {
@@ -168,7 +168,7 @@ func TestARou2AnswerThatIsNoLeaseAnswerIsAFailure(t *testing.T) {
 		}
 	}
 	fake.broken = 0
-	wrong := Rou2{Base: rou2.Base, Bearer: rou2.Bearer, HTTP: &http.Client{Transport: answering(`{"id":"groups/slot0-g2","class":"group"}`)}}
+	wrong := Rou2{Base: rou2.Base, Bearer: rou2.Bearer, HTTP: &http.Client{Transport: answering(`{"id":"groups/worker0-g2","class":"group"}`)}}
 	if err := wrong.Open(ctx, id, "group"); err == nil {
 		t.Error("an open answered for another lease passed")
 	}
@@ -186,14 +186,14 @@ func (a answering) RoundTrip(*http.Request) (*http.Response, error) {
 func TestARefusedRou2TokenIsInvalidatedAndTheCallMadeOnceMore(t *testing.T) {
 	fake, bearer, rou2 := rou2Rig(t)
 	bearer.tokens = []string{"stale", "good"}
-	if err := rou2.Open(context.Background(), "groups/slot0-g1", "group"); err != nil {
+	if err := rou2.Open(context.Background(), "groups/worker0-g1", "group"); err != nil {
 		t.Fatal(err)
 	}
 	if len(fake.calls) != 2 || len(bearer.invalidated) != 1 || bearer.invalidated[0] != "stale" {
 		t.Errorf("%d calls, invalidated %v", len(fake.calls), bearer.invalidated)
 	}
 	bearer.tokens = []string{"stale"}
-	if err := rou2.Open(context.Background(), "groups/slot0-g2", "group"); err == nil {
+	if err := rou2.Open(context.Background(), "groups/worker0-g2", "group"); err == nil {
 		t.Error("an open with a refused token and no better one passed")
 	}
 }

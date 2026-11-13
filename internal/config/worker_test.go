@@ -17,7 +17,7 @@ provider = "rou2"
 rou2_lease_class = "chat-group"
 rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/groups/say"
-workers = ["slot0", "slot1"]
+workers = ["worker0", "worker1"]
 `
 
 func loadBody(t *testing.T, body string, providerFiles ...string) (*Loaded, error) {
@@ -52,8 +52,8 @@ func TestAPoolLoadsWithItsDefaults(t *testing.T) {
 	if !ok || !p.Enabled || p.Outfit != "broker-group" || p.Provider != "rou2" {
 		t.Fatalf("pool %+v %v", p, ok)
 	}
-	if got := p.WorkerNames(); len(got) != 2 || got[0] != "slot0" || got[1] != "slot1" {
-		t.Fatalf("slots %v", got)
+	if got := p.WorkerNames(); len(got) != 2 || got[0] != "worker0" || got[1] != "worker1" {
+		t.Fatalf("workers %v", got)
 	}
 	if p.Rou2URL != "http://127.0.0.1:9110" {
 		t.Fatalf("rou2_url %q", p.Rou2URL)
@@ -69,7 +69,7 @@ func TestAPoolLoadsWithItsDefaults(t *testing.T) {
 // A config with no pool is every daemon there was before pools: it must load
 // as it did, and it is not a pool daemon.
 func TestAConfigWithoutAPoolIsNotAPoolDaemons(t *testing.T) {
-	l, err := loadBody(t, "[sandbox.boxes.slot3-g7]\nexec = \"/run/box/a.sock\"\n[telemetry]\nlevel = \"debug\"\n", "anthropic")
+	l, err := loadBody(t, "[sandbox.boxes.worker3-g7]\nexec = \"/run/box/a.sock\"\n[telemetry]\nlevel = \"debug\"\n", "anthropic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,17 +105,17 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 		}
 		return strings.Replace(poolBody, old, new, 1)
 	}
-	workers := `workers = ["slot0", "slot1"]` + "\n"
+	workers := `workers = ["worker0", "worker1"]` + "\n"
 	for name, c := range map[string]struct{ body, want string }{
-		"a slot with an exec path":    {swap(workers, `workers = ["slot0", {name = "slot1", exec = "/run/box/slot1.sock"}]`+"\n"), "carrying exec"},
-		"a slot with a door":          {swap(workers, `workers = [{name = "slot0", door = "/run/door/slot0.sock"}]`+"\n"), "carrying door"},
-		"a slot with a reset":         {swap(workers, `workers = [{name = "slot0", reset = "/run/reset/slot0"}]`+"\n"), "carrying name, reset"},
-		"slots as tables":             {swap(workers, "[worker.pools.chat-groups.workers.slot0]\nexec = \"/run/box/slot0.sock\"\n"), "incompatible types"},
-		"a slot that is a number":     {swap(workers, "workers = [3]\n"), "a slot is a name"},
-		"no slots":                    {swap(workers, ""), "can lease nothing"},
+		"a worker with an exec path":  {swap(workers, `workers = ["worker0", {name = "worker1", exec = "/run/box/worker1.sock"}]`+"\n"), "carrying exec"},
+		"a worker with a door":        {swap(workers, `workers = [{name = "worker0", door = "/run/door/worker0.sock"}]`+"\n"), "carrying door"},
+		"a worker with a reset":       {swap(workers, `workers = [{name = "worker0", reset = "/run/reset/worker0"}]`+"\n"), "carrying name, reset"},
+		"workers as tables":           {swap(workers, "[worker.pools.chat-groups.workers.worker0]\nexec = \"/run/box/worker0.sock\"\n"), "incompatible types"},
+		"a worker that is a number":   {swap(workers, "workers = [3]\n"), "a worker is a name"},
+		"no workers":                  {swap(workers, ""), "can lease nothing"},
 		"an exec path on the pool":    {poolBody + "exec = \"/run/box/pool.sock\"\n", "worker.pools.chat-groups.exec"},
 		"a misspelt enabled":          {swap("enabled = true", "enabeld = false"), "worker.pools.chat-groups.enabeld"},
-		"an unknown key under slot":   {poolBody + "[worker.reset]\ncommand = \"/bin/reset\"\n", "worker.reset"},
+		"an unknown key under worker": {poolBody + "[worker.reset]\ncommand = \"/bin/reset\"\n", "worker.reset"},
 		"no outfit":                   {swap("outfit = \"broker-group\"\n", ""), "outfit"},
 		"the outfit named default":    {swap(`"broker-group"`, `"default"`), "daemon's own figaros"},
 		"the config's default outfit": {"default_outfit = \"house\"\n" + swap(`"broker-group"`, `"house"`), "daemon's own figaros"},
@@ -148,12 +148,12 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 		"a search url in clear":       {poolBody + "search_url = \"http://search.example/search\"\n", "search_url"},
 		"a search url, 128.0.0.1":     {poolBody + "search_url = \"http://128.0.0.1/search\"\n", "search_url"},
 		"a search url, ::2":           {poolBody + "search_url = \"http://[::2]:9/search\"\n", "search_url"},
-		"a slot named like a lease":   {swap(`"slot1"`, `"slot1-g7"`), "ends like a lease"},
-		"a slot with a colon":         {swap(`"slot1"`, `"slot:1"`), "slot name"},
-		"an empty slot name":          {swap(`"slot1"`, `""`), "slot name"},
-		"a slot named self":           {swap(`"slot1"`, `"self"`), "reserved"},
-		"one slot twice":              {swap(`"slot1"`, `"slot0"`), "also a slot of"},
-		"one slot in two pools":       {poolBody + strings.Replace(poolBody[strings.Index(poolBody, "[worker.pools"):], "chat-groups", "other", 1), "also a slot of"},
+		"a worker named like a lease": {swap(`"worker1"`, `"worker1-g7"`), "ends like a lease"},
+		"a worker with a colon":       {swap(`"worker1"`, `"worker:1"`), "worker name"},
+		"an empty worker name":        {swap(`"worker1"`, `""`), "worker name"},
+		"a worker named self":         {swap(`"worker1"`, `"self"`), "reserved"},
+		"one worker twice":            {swap(`"worker1"`, `"worker0"`), "also a worker of"},
+		"one worker in two pools":     {poolBody + strings.Replace(poolBody[strings.Index(poolBody, "[worker.pools"):], "chat-groups", "other", 1), "also a worker of"},
 		"a pool name with a slash":    {swap("[worker.pools.chat-groups]", `[worker.pools."chat/groups"]`), "pool name"},
 		"negative successions":        {poolBody + "successions_per_day = -1\n", "successions_per_day"},
 		"a negative deliver cap":      {poolBody + "deliver_max_bytes = -1\n", "deliver_max_bytes"},

@@ -94,7 +94,7 @@ func (h *handlers) awaitUnlinked(ctx context.Context, ids []string) error {
 func (h *handlers) releaseLease(ctx context.Context, pool, key string, generation uint64) error {
 	workers := h.angelus.Workers
 	if workers == nil || h.angelus.Backend == nil {
-		return errors.New("release: this daemon leases no slots")
+		return errors.New("release: this daemon leases no workers")
 	}
 	refused := func(err error) error {
 		return fmt.Errorf("release of %s/%s g%d: %w", pool, key, generation, err)
@@ -132,7 +132,7 @@ func (h *handlers) releaseLease(ctx context.Context, pool, key string, generatio
 	if err := workers.Ledger.Released(pool, key, generation); err != nil {
 		return refused(err)
 	}
-	slog.Info("slot pool: released", "pool", pool, "slot", row.Worker, "generation", generation, "purged", len(purged))
+	slog.Info("worker pool: released", "pool", pool, "worker", row.Worker, "generation", generation, "purged", len(purged))
 	return nil
 }
 
@@ -251,7 +251,7 @@ func (h *handlers) releaseUnfinishedLeases(ctx context.Context) {
 			continue
 		}
 		if err := h.releaseLease(ctx, l.Pool, l.Key, l.Generation); err != nil {
-			slog.Error("slot pool: an unfinished lease is not yet released, and its slot is not offered", "pool", l.Pool, "slot", l.Worker, "generation", l.Generation, "err", err)
+			slog.Error("worker pool: an unfinished lease is not yet released, and its worker is not offered", "pool", l.Pool, "worker", l.Worker, "generation", l.Generation, "err", err)
 		}
 	}
 }
@@ -272,13 +272,13 @@ func (h *handlers) recoverWorkerPools(ctx context.Context) {
 			continue
 		}
 		if err := h.purgeTakingOnly(owner, id, orphans); err != nil {
-			slog.Error("slot pool: a node in a leased box that no lease holds is left in place", "node", id, "err", err)
+			slog.Error("worker pool: a node in a leased box that no lease holds is left in place", "node", id, "err", err)
 			continue
 		}
 		purged++
 	}
 	if purged > 0 {
-		slog.Warn("slot pool: purged nodes in leased boxes that no lease holds", "nodes", purged)
+		slog.Warn("worker pool: purged nodes in leased boxes that no lease holds", "nodes", purged)
 	}
 }
 

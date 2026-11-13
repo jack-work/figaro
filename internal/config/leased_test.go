@@ -24,18 +24,18 @@ func loadedPool(t *testing.T) *Loaded {
 // could be opened on.
 func TestALeasedBoxIsABoxWithNoSocketAndNoGrace(t *testing.T) {
 	l := loadedPool(t)
-	if _, ok := l.Box("slot0-g7"); ok {
+	if _, ok := l.Box("worker0-g7"); ok {
 		t.Fatal("a box nobody leased was found")
 	}
 	if _, any := l.ShortestBoxPurgeGrace(); any {
 		t.Fatal("a pool with no lease has a box purge grace")
 	}
-	name, err := l.LeaseBox(pool, "slot0", 7)
+	name, err := l.LeaseBox(pool, "worker0", 7)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if name != "slot0-g7" {
-		t.Fatalf("leased %q, want slot0-g7", name)
+	if name != "worker0-g7" {
+		t.Fatalf("leased %q, want worker0-g7", name)
 	}
 	b, ok := l.Box(name)
 	if !ok {
@@ -68,7 +68,7 @@ func TestALeasedBoxIsABoxWithNoSocketAndNoGrace(t *testing.T) {
 // would sit in the store that long.
 func TestALeasedBoxIsPurgedWithNoGrace(t *testing.T) {
 	l := loadedPool(t)
-	name, err := l.LeaseBox(pool, "slot1", 1)
+	name, err := l.LeaseBox(pool, "worker1", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestALeasedBoxIsPurgedWithNoGrace(t *testing.T) {
 // or a reload would turn every live lease into an unknown box.
 func TestALeaseOutlivesAReload(t *testing.T) {
 	l := loadedPool(t)
-	before, err := l.LeaseBox(pool, "slot0", 3)
+	before, err := l.LeaseBox(pool, "worker0", 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestALeaseOutlivesAReload(t *testing.T) {
 	if _, ok := fresh.Box(before); !ok {
 		t.Fatal("the reloaded config lost a live lease")
 	}
-	after, err := fresh.LeaseBox(pool, "slot1", 1)
+	after, err := fresh.LeaseBox(pool, "worker1", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,19 +130,19 @@ func TestAWorkerHoldsOneLeaseAndNeverTheSameGenerationTwice(t *testing.T) {
 			t.Fatalf("%s generation %d refused for another reason than %q: %v", worker, generation, want, err)
 		}
 	}
-	first, err := l.LeaseBox(pool, "slot0", 7)
+	first, err := l.LeaseBox(pool, "worker0", 7)
 	if err != nil {
 		t.Fatal(err)
 	}
-	refused("slot0", 8, "still holds slot0-g7")
+	refused("worker0", 8, "still holds worker0-g7")
 	l.ReleaseBox(first)
-	refused("slot0", 7, "never used twice")
-	refused("slot0", 6, "never used twice")
-	if _, err := l.LeaseBox(pool, "slot0", 8); err != nil {
+	refused("worker0", 7, "never used twice")
+	refused("worker0", 6, "never used twice")
+	if _, err := l.LeaseBox(pool, "worker0", 8); err != nil {
 		t.Fatalf("the next generation after a release: %v", err)
 	}
-	if _, err := l.LeaseBox(pool, "slot1", 7); err != nil {
-		t.Fatalf("another slot at a generation the first slot used: %v", err)
+	if _, err := l.LeaseBox(pool, "worker1", 7); err != nil {
+		t.Fatalf("another worker at a generation the first worker used: %v", err)
 	}
 }
 
@@ -153,10 +153,10 @@ func TestOnlyAPoolsOwnWorkerIsLeased(t *testing.T) {
 		generation   uint64
 		want         string
 	}{
-		"a pool the config lacks": {"other", "slot0", 1, "no pool"},
-		"a slot the pool lacks":   {pool, "slot9", 1, "not a slot of pool"},
-		"a lease-shaped slot":     {pool, "slot0-g1", 1, "not a slot of pool"},
-		"generation zero":         {pool, "slot0", 0, "starts at 1"},
+		"a pool the config lacks": {"other", "worker0", 1, "no pool"},
+		"a worker the pool lacks": {pool, "worker9", 1, "not a worker of pool"},
+		"a lease-shaped worker":   {pool, "worker0-g1", 1, "not a worker of pool"},
+		"generation zero":         {pool, "worker0", 0, "starts at 1"},
 	} {
 		if _, err := l.LeaseBox(c.pool, c.worker, c.generation); err == nil {
 			t.Errorf("%s: leased", name)
@@ -176,11 +176,11 @@ func TestADaemonWithoutAPoolLeasesNoBox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := plain.LeaseBox(pool, "slot0", 1); err == nil {
+	if _, err := plain.LeaseBox(pool, "worker0", 1); err == nil {
 		t.Error("a config with no pool leased a box")
 	}
 	built := &Loaded{Config: loadedPool(t).Config}
-	if _, err := built.LeaseBox(pool, "slot0", 1); err == nil || !strings.Contains(err.Error(), "no leased-box table") {
+	if _, err := built.LeaseBox(pool, "worker0", 1); err == nil || !strings.Contains(err.Error(), "no leased-box table") {
 		t.Errorf("a config that was never loaded leased a box: %v", err)
 	}
 }
