@@ -112,3 +112,5 @@ var ErrStoppingForTest = errStopping
 func (a *Angelus) JoinedForTest(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return a.refusingWhenStopping(a.joined(method, next))
 }
+
+func (a *Angelus) LeaveHubForTest(id string) { a.Hubs.putIfAbsent(id, newAriaHub(id)) }

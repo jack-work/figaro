@@ -3,14 +3,19 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/modelcat"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/sdk"
 )
@@ -76,12 +81,60 @@ func requireNoResidents(t *testing.T, a *angelus.Angelus, acli *sdk.Angelus, ctx
 // Edge, spain W29: after kill -r --now P, status and list still served C, a
 // child the delete took, because only the root's agent and endpoint went.
 func TestKillRNowLeavesNoTakenChildServed(t *testing.T) {
-	a, acli, ctx := daemonFixture(t)
+	a, acli, ctx, dir := daemonFixtureDir(t)
 	root, kids := wokenSubtree(t, a, acli, ctx)
 	resp, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: root, Recursive: true, Now: true})
 	require.NoError(t, err)
 	require.Len(t, resp.Removed, 3)
-	requireTaken(t, a, acli, ctx, append([]string{root}, kids...))
+	taken := append([]string{root}, kids...)
+	requireTaken(t, a, acli, ctx, taken)
+	requireNoTrace(t, dir, taken)
+}
+
+// requireNoTrace: nothing under the store names an id, so asking residents
+// about a gone id (FormState on it) opened no channel and wrote no sidecar.
+func requireNoTrace(t *testing.T, dir string, ids []string) {
+	t.Helper()
+	require.NoError(t, filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			require.NotContains(t, filepath.Base(path), id, "%s left %s", id, path)
+		}
+		return nil
+	}))
+}
+
+// Engineer VII on gluck after 0.67.1: residents listed @models, a followed
+// built-in form, because it asked the store for a node alone. A resident is
+// an id the store holds neither as a node nor as a form, with no list of
+// names: a form the store no longer holds still counts.
+func TestResidentsAreIDsTheStoreHoldsAsNeitherNodeNorForm(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
+	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\n"), 0o600))
+	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte("default_outfit = \"mock\"\n"), 0o600))
+	a, acli, ctx := daemonOnStore(t, dir, func(a *angelus.Angelus, be *store.XwalBackend) {
+		mf, err := be.ModelsForm()
+		require.NoError(t, err)
+		a.Models = modelcat.New(modelcat.Config{Form: mf})
+	})
+	f, _, err := backend(t, a).CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"brief": json.RawMessage(`"x"`)}, nil))
+	require.NoError(t, err)
+	for _, id := range []string{models.FormID, f} {
+		var out rpc.FormResponse
+		require.NoError(t, dialAria(t, a, id, nil).Call(ctx, rpc.MethodForm, rpc.FormRequest{}, &out), "following %s", id)
+	}
+	requireNoResidents(t, a, acli, ctx)
+
+	_, err = acli.Kill(ctx, rpc.KillRequest{FigaroID: f, Now: true})
+	require.NoError(t, err)
+	a.LeaveHubForTest(f)
+	resp, err := acli.Residents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []rpc.Resident{{ID: f, Endpoint: true}}, resp.Residents, "a killed form's lingering endpoint, and nothing the store holds")
+	requireNoTrace(t, dir, []string{f})
 }
 
 // The purge of a reaped group goes through the same delete as --now.

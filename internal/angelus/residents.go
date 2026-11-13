@@ -17,8 +17,8 @@ func (r *Registry) ids() []string {
 	return out
 }
 
-// Residents are the live agents and open endpoints whose figaro the store
-// does not hold: what a delete should have taken with it.
+// Residents are the live agents and open endpoints whose id the store holds
+// neither as a node nor as a form: what a delete should have taken with it.
 func (a *Angelus) Residents() []rpc.Resident {
 	if a.Backend == nil {
 		return []rpc.Resident{}
@@ -29,6 +29,9 @@ func (a *Angelus) Residents() []rpc.Resident {
 			return r
 		}
 		if _, held := a.Backend.Node(id); held {
+			return nil
+		}
+		if _, err := a.Backend.FormState(id); err == nil {
 			return nil
 		}
 		byID[id] = &rpc.Resident{ID: id}
