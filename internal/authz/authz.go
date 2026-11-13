@@ -289,6 +289,9 @@ func Enforce(p *Policies) Policy {
 			if !p.HoldsRole(r.Subject) {
 				return Deny("%s: %s holds no role here", r.Method, r.Subject.Principal)
 			}
+			if r.Method == rpc.MethodList && !p.NamesFigaros(r.Subject, rpc.VerbRead) {
+				return Deny("%s: %s holds no grant that reads a figaro", r.Method, r.Subject.Principal)
+			}
 			return decided(Allow())
 		}
 		res := Daemon

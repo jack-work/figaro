@@ -59,7 +59,8 @@ func filteredReads() []filteredRead {
 // pool daemon, so that rule would hand it an open stream (@recent) and
 // an answer shaped by what exists. A daemon that leases slots decides
 // those reads like any other call, which refuses broker and still
-// serves the admin; hello is all broker keeps.
+// serves the admin; hello is all broker keeps. figaro.list has no control
+// row: every daemon refuses it to a principal that reads no figaro (D7).
 func TestAPoolDaemonRefusesBrokerTheReadsOtherDaemonsFilter(t *testing.T) {
 	pool, plain := guardedDaemon(t, true), guardedDaemon(t, false)
 	broker, admin := throughTheWebDoor(brokerClient), throughTheWebDoor(poolAdmin)
@@ -69,6 +70,9 @@ func TestAPoolDaemonRefusesBrokerTheReadsOtherDaemonsFilter(t *testing.T) {
 		}
 		if err := call(t, pool, admin, c.method, c.form); err != nil {
 			t.Errorf("a pool daemon refused its admin %s %s: %v", c.method, c.form, err)
+		}
+		if c.method == rpc.MethodList {
+			continue
 		}
 		if err := call(t, plain, broker, c.method, c.form); err != nil {
 			t.Errorf("%s %s was refused to a role holder on a daemon that leases nothing, so the rows above do not show the pool refusing it: %v", c.method, c.form, err)
