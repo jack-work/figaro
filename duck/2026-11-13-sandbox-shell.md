@@ -73,14 +73,8 @@ lives in the main daemon. The pool stays as shipped.
 
 A small host service, its own uid, holding the class declarations
 rendered by nix. figaro speaks one protocol to it and names no node
-technology. Methods, newline JSON-RPC on `agent.sock`:
-
-| method | answer |
-|---|---|
-| `classes` | each class: name, workload kind, sandbox count, free count |
-| `lease {class, generation, figaro}` | `{sandbox, exec}`: the sandbox picked and the exec endpoint, after the agent records who holds it |
-| `reset {sandbox, generation, nonce}` | after the reset ran: `{sandbox, generation, nonce, at}`; an error if any step failed |
-| `held` | the agent's lease table, for restart recovery |
+technology: "Node agent protocol, v1" below, the contract between figaro
+and edge's agent.
 
 The reset receipt is the reply on the daemon's own connection, so nothing
 else can forge it (S2, below). The agent runs the reset itself: stop the
@@ -190,6 +184,130 @@ class lists, with no network to send the answers anywhere else.
   writing the change. `Sandbox-Id` and `Sandbox-Figaro` go in kfin's access
   log.
 
+## Node agent protocol, v1
+
+Status: proposed by the figaro lane, 11-13; becomes the contract when edge
+writes "agreed" here. Neither side codes against it before that. A change
+after that is a new version, agreed here first.
+
+**Transport.** A unix stream socket (phase 1). JSON-RPC 2.0, one JSON
+object per line in each direction, UTF-8 (figaro's `jkrpc`, as the exec
+wire). The daemon is the only client; it may hold one connection or open
+one per call, and the agent serves calls on a connection concurrently or
+in order, its choice. On accept the agent reads SO_PEERCRED and closes any
+connection whose uid is not the daemon's host uid, before reading a byte
+(U2). No call carries a credential.
+
+**Names.** A class name and a sandbox name match `[a-z][a-z0-9-]{0,31}`,
+are unique on the node, and a sandbox name does not end in `-g<digits>`.
+A generation is a positive integer. A nonce is 64 lowercase hex
+characters. Times are RFC 3339 UTC.
+
+**Methods.**
+
+`agent.hello {}` →
+`{"protocol": 1, "node": "spain"}`. The daemon calls it on every new
+connection and refuses any other `protocol`.
+
+`agent.classes {}` →
+
+```json
+{"classes": [{
+  "name": "shell",
+  "workload": "job",
+  "sandboxes": ["shell0", "shell1"],
+  "writable": ["/work", "/tmp"],
+  "egress": ["kfin"]
+}]}
+```
+
+`workload` is `job` or `conversation`. `writable` is every path the
+sandbox uid can write after a reset; each is empty then (the probe checks
+both). `egress` names the class's egress entries, for the daemon's log and
+`figaro sandbox classes`; it carries no upstream or credential.
+
+`agent.sandboxes {}` →
+
+```json
+{"sandboxes": [{
+  "name": "shell0", "class": "shell",
+  "state": "leased", "generation": 7, "figaro": "<id>",
+  "exec": "unix:///run/sandboxes/shell0/exec.sock"
+}]}
+```
+
+`state` is `free`, `leased`, `resetting` or `cordoned`. `generation`,
+`figaro` and `exec` are present when `leased`; `generation` also when
+`resetting` or `cordoned`, naming the last lease.
+
+`agent.lease {"class", "generation", "figaro"}` →
+`{"sandbox", "generation", "exec"}`. The agent picks a `free` sandbox of
+the class, records it `leased` to that generation and figaro, and answers.
+`generation` is chosen by the daemon and rises per class; the agent keeps
+the highest it has seen per class across its own restarts and refuses
+one not above it, so it is the daemon's second floor. A repeat of a call
+already answered (same class, generation, figaro) gets the same answer,
+so a lost reply is safe to retry. `exec` is a URL; v1 has `unix://` and an
+absolute path only.
+
+`agent.reset {"sandbox", "generation", "nonce"}` → after the reset has
+run: `{"sandbox", "generation", "nonce", "at"}`. Allowed from `leased`
+at that generation, from `resetting` at that generation (a retry), and
+from `cordoned` (reinstate: always a full reset). The agent sets
+`resetting`, stops the container, starts it fresh, waits until the
+sandbox's `figaro box serve` accepts on the exec endpoint, sets `free`,
+and answers. A repeat with the same nonce after success answers the same
+receipt without resetting again; a new nonce resets again. A step that
+fails sets `cordoned` and answers `reset_failed`. The daemon waits up to
+120 s.
+
+`agent.cordon {"sandbox", "generation", "reason"}` → `{}`. Sets
+`cordoned` from `free`, `leased` or `resetting`: the daemon's probe
+failed, or the daemon gave up waiting. Only `agent.reset` leaves
+`cordoned`. `reason` is at most 200 characters, for the log.
+
+**Errors.** JSON-RPC error code `-32060`, `data.reason` one of:
+
+| reason | when | `data` also has |
+|---|---|---|
+| `unknown_class` | lease of a class the node does not have | |
+| `no_free_sandbox` | lease with none `free` | `class`, `sandboxes`, `leased`, `resetting`, `cordoned` |
+| `generation_used` | lease at or below the class's floor | `floor` |
+| `unknown_sandbox` | reset or cordon of a name the node does not have | |
+| `wrong_state` | reset or cordon not allowed from the sandbox's state | `state`, `generation` |
+| `reset_failed` | a reset step failed; the sandbox is now `cordoned` | `step` |
+
+Any other error is the agent's fault: the daemon logs it and treats the
+call as failed.
+
+**What the daemon does with it.**
+
+- Lease: ledger row `leasing` at the next generation (fsync), then
+  `agent.lease`, then the probe over `exec`, then row `leased` (fsync).
+  A failed probe: `agent.cordon`, the lease fails, the row closes.
+- Release: row `releasing` with a fresh nonce (fsync), `agent.reset`, the
+  receipt checked field by field, then the probe; pass: row `released`.
+  Probe failure or no receipt in 120 s: `agent.cordon`, row
+  `cordoned`, an ERROR line. `figaro sandbox reinstate <name>` (owner)
+  runs the release again with a new nonce.
+- Start: `agent.hello`, `agent.classes`, `agent.sandboxes`, then
+  reconcile against the ledger before any create (a sandbox the agent
+  holds for a generation the ledger does not hold as `leased` gets a
+  release; a ledger row the agent does not hold closes).
+
+**Probe** (the daemon's, over exec, as the sandbox uid): one `sh -c` that
+prints the output of `find <each writable> / -xdev -writable` and the
+pids, uids and command names under `/proc`. Pass when every writable path
+found is in `writable`, each `writable` dir is empty, and no process of the
+sandbox uid runs besides `figaro box serve` and the probe's own. So every
+class has `sh`, `find` and `figaro` on its path.
+
+**Sandbox side, for edge.** The exec socket the agent serves speaks the
+existing exec wire (`internal/sandbox/box/wire.go`) unchanged; the agent
+splices bytes and reads only the first line of each connection, for the
+`box.open` scope it logs (U3). Each container runs `figaro box serve` as
+the sandbox uid at boot, listening on the path the agent splices to.
+
 ## What figaro owns
 
 **1. Nodes in the config.**
@@ -252,7 +370,7 @@ kill of the last one; a leased sandbox's purge grace is `0`):
    a new nonce, and never marks `free` by itself (S7).
 6. The probe runs again at lease, before the row goes `leased`.
 
-Restart recovery reads the ledger and the agent's `held` before any
+Restart recovery reads the ledger and the agent's `agent.sandboxes` before any
 create: a leased row with no figaro naming it goes to release;
 `releasing` restarts at step 2 with a new nonce; a sandbox the agent holds
 that the ledger does not goes to release; a lost ledger resets every
@@ -362,7 +480,7 @@ lease does not hold a sandbox forever.
 | step | who | repo | size |
 |---|---|---|---|
 | 1. class module: ephemeral loopback-only containers, packages, egress socket bind; VM test | edge | spain-flake (`keel.nixosModules.sandboxes`) | 2 days |
-| 2. node agent (lease, reset, held, classes, the peer-checked exec relay, logs) and egress proxy (peer cred, allowlist, header rules, log) | edge | spain-flake, or a small repo of its own (edge's call) | 4 to 5 days; two small programs, not a reverse proxy's config, because of the peer-credential checks |
+| 2. node agent (the v1 protocol, the peer-checked exec relay, logs) and egress proxy (peer cred, allowlist, header rules, log) | edge | spain-flake, or a small repo of its own (edge's call) | 4 to 5 days; two small programs, not a reverse proxy's config, because of the peer-credential checks |
 | 3. Authelia client, kweb `bearerServices`, kfin's read-only service caller | edge, kfin's owner | spain-flake, kfin | 1 day |
 | 4. figaro: nodes, lessor, ledger (slotpool's counter and floor), agent client, probe, S3 and S4 fences, tests | one figaro lane | figaro | 800 to 1100 lines with tests; 4 to 5 days |
 | 5. El Inspector reads 1 to 4 | | | a day of turns |
