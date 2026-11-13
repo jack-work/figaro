@@ -9,7 +9,7 @@ import (
 )
 
 // A CLI of another build decides by what the daemon reports here: protocol,
-// release and capabilities, on the local socket's status and on the door's hello.
+// release and capabilities, on the local socket's status and on the endpoint's hello.
 func TestStatusAndHelloReportProtocolReleaseAndCapabilities(t *testing.T) {
 	hs := authzHandlers(t)
 	hs.h.angelus.Release = "0.52.4"

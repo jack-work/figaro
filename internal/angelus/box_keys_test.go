@@ -78,7 +78,7 @@ func keyOn(t *testing.T, r grantRig, id, key string) (json.RawMessage, bool) {
 // are the keys whose values must come from the owner or the outfits.
 func TestABoxCannotSetKeysTheDaemonDereferencesOnTheHost(t *testing.T) {
 	canary := filepath.Join(t.TempDir(), "canary")
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestABoxCannotSetKeysTheDaemonDereferencesOnTheHost(t *testing.T) {
 // box's never does.
 func TestABoxCannotPointADecisionAtAHostOfItsChoosing(t *testing.T) {
 	legit, canary := newCountingHost(t), newCountingHost(t)
-	d := boxDoorRigWith(t, defaultPolicy, "true", decideThrough(legit))
+	d := boxEndpointRigWith(t, defaultPolicy, "true", decideThrough(legit))
 	owned, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +195,7 @@ func TestABoxCannotPointADecisionAtAHostOfItsChoosing(t *testing.T) {
 // A box aria's system.cwd is a path in the box: a host path the box sends
 // at birth is dropped, and the box may set its own afterwards.
 func TestAHostCwdABoxSendsNeverBecomesSystemCwd(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	host := t.TempDir()
 	c := d.dial(t)
 	var made rpc.CreateResponse
@@ -213,7 +213,7 @@ func TestAHostCwdABoxSendsNeverBecomesSystemCwd(t *testing.T) {
 // The rule is an allowlist: a system key no one has classified yet is the
 // owner's until someone lists it, and the open keys a box writes stay its own.
 func TestABoxWritesOnlyListedSystemKeys(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

@@ -36,7 +36,7 @@ func (e *fellBehind) Error() string {
 
 func (a *Angelus) outboxBudget() *outboxBudget {
 	a.outboxOnce.Do(func() {
-		n, err := a.Settings.DoorOutboxBudget()
+		n, err := a.Settings.EndpointOutboxBudget()
 		if err != nil {
 			slog.Warn("door outbox budget", "err", err, "using_mib", config.DefaultOutboxBudgetMiB)
 			n = config.DefaultOutboxBudgetMiB << 20

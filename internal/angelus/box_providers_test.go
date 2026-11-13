@@ -13,7 +13,7 @@ const judgeAllowsMock = "providers = [\"mock\"]\n"
 // where the provider is resolved, however the aria is dressed and whoever
 // mints it.
 func TestABoxAriaRunsOnlyOnTheProvidersItsBoxNames(t *testing.T) {
-	d := boxDoorRigConfigured(t, defaultPolicy, "true", judgeAllowsMock)
+	d := boxEndpointRigConfigured(t, defaultPolicy, "true", judgeAllowsMock)
 	if _, err := d.create(asOwner(), "judged"); err != nil {
 		t.Fatalf("canary: the listed provider was refused, so the refusal below proves nothing: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestABoxAriaRunsOnlyOnTheProvidersItsBoxNames(t *testing.T) {
 }
 
 func TestABoxWithNoProviderListKeepsEveryProvider(t *testing.T) {
-	d := boxDoorRigConfigured(t, defaultPolicy, "true", "")
+	d := boxEndpointRigConfigured(t, defaultPolicy, "true", "")
 	if _, err := d.create(asOwner(), "judged-elsewhere"); err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestABoxWithNoProviderListKeepsEveryProvider(t *testing.T) {
 
 func TestABoxCannotDecideThroughAnUnlistedProvider(t *testing.T) {
 	legit := newCountingHost(t)
-	d := boxDoorRigConfigured(t, defaultPolicy, "true", judgeAllowsMock, decideThrough(legit))
+	d := boxEndpointRigConfigured(t, defaultPolicy, "true", judgeAllowsMock, decideThrough(legit))
 	boxed, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

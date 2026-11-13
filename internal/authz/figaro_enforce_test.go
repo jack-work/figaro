@@ -102,7 +102,7 @@ func TestTheCeilingTableIsChecked(t *testing.T) {
 	}
 }
 
-func boxClaimRig(t *testing.T, door Door) (func(figaro string, method string, on string) (string, error), *Policies) {
+func boxClaimRig(t *testing.T, endpoint Endpoint) (func(figaro string, method string, on string) (string, error), *Policies) {
 	t.Helper()
 	f := lineageFakes(map[string]string{"in-judge": `["read:*"]`})
 	f.boxed = map[string]string{"in-judge": "judge", "in-other": "other", "local-one": "local"}
@@ -116,7 +116,7 @@ func boxClaimRig(t *testing.T, door Door) (func(figaro string, method string, on
 	var seen string
 	ok := func(ctx context.Context, _ json.RawMessage) (any, error) { seen = FigaroOf(ctx); return nil, nil }
 	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodIR: ok, rpc.MethodKill: ok}, AriaHeader{}, Enforce(p))
-	ctx := WithDoor(WithSubject(context.Background(), jkauthz.Subject{Principal: BoxPrincipal("judge")}), door)
+	ctx := WithEndpoint(WithSubject(context.Background(), jkauthz.Subject{Principal: BoxPrincipal("judge")}), endpoint)
 	return func(figaro, method, on string) (string, error) {
 		seen = "unreached"
 		params, _ := json.Marshal(map[string]any{"figaro_id": on})
@@ -129,7 +129,7 @@ func boxClaimRig(t *testing.T, door Door) (func(figaro string, method string, on
 }
 
 func TestABoxClaimCountsOnlyForAFigaroInThatBox(t *testing.T) {
-	call, p := boxClaimRig(t, DoorBox)
+	call, p := boxClaimRig(t, EndpointBox)
 	if seen, err := call("made-up", rpc.MethodKill, "in-judge"); err != nil || seen != "" {
 		t.Fatalf("a made-up claim must fall back to the box: seen %q, %v", seen, err)
 	}
@@ -161,8 +161,8 @@ func TestABoxClaimCountsOnlyForAFigaroInThatBox(t *testing.T) {
 	}
 }
 
-func TestAHostDoorIsAnsweredAsTheBoxWhateverTheBoxRequires(t *testing.T) {
-	call, p := boxClaimRig(t, DoorHost)
+func TestAHostEndpointIsAnsweredAsTheBoxWhateverTheBoxRequires(t *testing.T) {
+	call, p := boxClaimRig(t, EndpointHost)
 	p.SetBoxesRequiringClaim([]string{"judge"})
 	if seen, err := call("", rpc.MethodKill, "in-judge"); err != nil || seen != "" {
 		t.Fatalf("an unclaimed host-door call to a required box: seen %q, %v", seen, err)
@@ -173,14 +173,14 @@ func TestAHostDoorIsAnsweredAsTheBoxWhateverTheBoxRequires(t *testing.T) {
 	if _, err := call("in-judge", rpc.MethodKill, "in-judge"); err == nil || !strings.Contains(err.Error(), "figaro:in-judge") {
 		t.Fatalf("a claim of the box's own figaro on the host door is narrowed: %v", err)
 	}
-	inBox, q := boxClaimRig(t, DoorBox)
+	inBox, q := boxClaimRig(t, EndpointBox)
 	q.SetBoxesRequiringClaim([]string{"judge"})
 	if _, err := inBox("", rpc.MethodKill, "in-judge"); err == nil || !strings.Contains(err.Error(), "figaro_claim") {
 		t.Fatalf("the same unclaimed call in the box: %v", err)
 	}
 }
 
-func TestTheClaimRequirementStaysOnTheBoxDoor(t *testing.T) {
+func TestTheClaimRequirementStaysOnTheBoxEndpoint(t *testing.T) {
 	p := NewPolicies(me, facts())
 	if err := p.load([]byte(sandboxPolicy)); err != nil {
 		t.Fatal(err)
@@ -280,10 +280,10 @@ func TestAPolicyWithFencesIsRefusedNamingTheReplacement(t *testing.T) {
 	}
 }
 
-// El Inspector XV: a door drops a claim for a figaro it does not hold, and
-// says so once with the door and the id, so a process outliving its killed
+// El Inspector XV: an endpoint drops a claim for a figaro it does not hold, and
+// says so once with the endpoint and the id, so a process outliving its killed
 // aria shows up rather than silently going wider. The params stay out.
-func TestADoorDroppingAClaimNotHeldLogsTheDoorAndTheID(t *testing.T) {
+func TestAEndpointDroppingAClaimNotHeldLogsTheEndpointAndTheID(t *testing.T) {
 	var logs bytes.Buffer
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
@@ -295,9 +295,9 @@ func TestADoorDroppingAClaimNotHeldLogsTheDoorAndTheID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, d := range []Door{DoorLocal, DoorNode, DoorWeb} {
+	for _, d := range []Endpoint{EndpointLocal, EndpointNode, EndpointWeb} {
 		logs.Reset()
-		if _, err := h[rpc.MethodQua](WithDoor(WithSubject(context.Background(), subject(me)), d), params); err != nil {
+		if _, err := h[rpc.MethodQua](WithEndpoint(WithSubject(context.Background(), subject(me)), d), params); err != nil {
 			t.Fatalf("%s: %v", d, err)
 		}
 		line := logs.String()
@@ -309,7 +309,7 @@ func TestADoorDroppingAClaimNotHeldLogsTheDoorAndTheID(t *testing.T) {
 		}
 	}
 	logs.Reset()
-	if _, err := h[rpc.MethodQua](WithDoor(WithSubject(context.Background(), subject(me)), DoorInProcess), params); err == nil {
+	if _, err := h[rpc.MethodQua](WithEndpoint(WithSubject(context.Background(), subject(me)), EndpointInProcess), params); err == nil {
 		t.Fatal("in-process: a claim not held here ran")
 	}
 	if strings.Contains(logs.String(), "dropped") {

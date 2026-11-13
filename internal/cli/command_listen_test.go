@@ -39,7 +39,7 @@ func TestOverlay_ListenAttendAndNoOpen(t *testing.T) {
 	}
 }
 
-// Both doors call prepareFork; only the surface differs.
+// Both endpoints call prepareFork; only the surface differs.
 func TestForkPreparationDiffersOnlyByTheSurface(t *testing.T) {
 	for _, line := range []string{
 		"fork -- what about this?",

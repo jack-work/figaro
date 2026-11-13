@@ -27,12 +27,12 @@ func boxArrange(t *testing.T, c *jkrpc.Client, set map[string]string, unset ...s
 	return boxOnAria(t, c, rpc.MethodSet, rpc.TopologyFormID, req, nil)
 }
 
-// A box arranges @topology through its own door with the box's grants: it
+// A box arranges @topology through its own endpoint with the box's grants: it
 // moves only arias in the box, under arias in the box, and an id outside the
 // box that resolves through knownID is answered exactly as an id that names
 // no aria. Its @topology holds no key for an aria outside it.
 func TestABoxArrangesOnlyItsOwnArias(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	if err := wire.Install(d.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestABoxArrangesOnlyItsOwnArias(t *testing.T) {
 // parent and its narrowed effective grants, and F does not become its
 // ancestor.
 func TestABoxMoveIsDrawnOnlyAndLeavesGrantsAlone(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	if err := wire.Install(d.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)
 	}

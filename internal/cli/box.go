@@ -72,7 +72,7 @@ func runBoxStandalone(progName string, args []string) int {
 	return r.Run(args)
 }
 
-func runBoxServe(sock, workspace, door string) error {
+func runBoxServe(sock, workspace, endpoint string) error {
 	if workspace == "" {
 		return fmt.Errorf("box serve: --workspace is required")
 	}
@@ -80,8 +80,8 @@ func runBoxServe(sock, workspace, door string) error {
 	if err != nil {
 		return err
 	}
-	if door != "" {
-		if err := srv.CallBackThrough(door); err != nil {
+	if endpoint != "" {
+		if err := srv.CallBackThrough(endpoint); err != nil {
 			return err
 		}
 	}

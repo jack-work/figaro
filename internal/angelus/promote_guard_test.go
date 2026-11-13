@@ -163,7 +163,7 @@ func TestAStorageMoveUnderAParentAnotherMintedIsDrawnOnly(t *testing.T) {
 }
 
 // S1 parity: the owner over the unix socket re-parents; an admin holding
-// every grant on the web door only draws.
+// every grant on the web endpoint only draws.
 func TestTheWebAdminOnlyDrawsWhereTheOwnerReparents(t *testing.T) {
 	r := newRigWith(t, guardPolicy)
 	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
@@ -179,7 +179,7 @@ func TestTheWebAdminOnlyDrawsWhereTheOwnerReparents(t *testing.T) {
 	}
 	a, b, c := mint(), mint(), mint()
 	grantTo(t, r, "user:admin", "*:*")
-	admin := authz.WithDoor(as("user", "admin"), authz.DoorWeb)
+	admin := authz.WithEndpoint(as("user", "admin"), authz.EndpointWeb)
 	before, _ := r.backend.Node(a)
 	if err := setTopology(t, r, admin, map[string]string{a: b}); err != nil {
 		t.Fatalf("the web admin drawing A under B: %v", err)
@@ -190,7 +190,7 @@ func TestTheWebAdminOnlyDrawsWhereTheOwnerReparents(t *testing.T) {
 	if up := presentedUnder(t, r, a); up != b {
 		t.Fatalf("A is drawn under %q, want B %s", up, b)
 	}
-	owner := authz.WithDoor(asOwner(), authz.DoorLocal)
+	owner := authz.WithEndpoint(asOwner(), authz.EndpointLocal)
 	if err := setTopology(t, r, owner, map[string]string{a: c}); err != nil {
 		t.Fatal(err)
 	}

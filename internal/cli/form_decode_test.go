@@ -43,7 +43,7 @@ func TestAnOlderDaemonsFormNamesBothBuildsAndFigaroStop(t *testing.T) {
 	})
 	recordDaemon("the running angelus", daemonIdentity{build: "0ld0ld0ld0ld0ld0", release: "0.54.0"}, boot.BuildRevision())
 
-	fcli, err := sdk.DialAria(sdk.Addr{Door: transport.UnixEndpoint(sock), ID: "fake-aria"}, nil)
+	fcli, err := sdk.DialAria(sdk.Addr{Endpoint: transport.UnixEndpoint(sock), ID: "fake-aria"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

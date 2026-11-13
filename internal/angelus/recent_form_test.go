@@ -50,7 +50,7 @@ func TestRecentListsEveryFigaroFlat(t *testing.T) {
 // Like @arias, @recent is computed for each caller from what that caller may
 // read.
 func TestEachCallerReadsTheirOwnRecent(t *testing.T) {
-	r := newRigWith(t, doorPolicy)
+	r := newRigWith(t, endpointPolicy)
 	owned, err := r.create(asOwner(), "mock")
 	if err != nil {
 		t.Fatal(err)

@@ -13,11 +13,11 @@ import (
 )
 
 type TopologyCaller struct {
-	Subject jkauthz.Subject
-	Figaro  string
-	Door    Door
-	Until   time.Time
-	Readmit func(context.Context) (jkauthz.Subject, error)
+	Subject  jkauthz.Subject
+	Figaro   string
+	Endpoint Endpoint
+	Until    time.Time
+	Readmit  func(context.Context) (jkauthz.Subject, error)
 }
 
 func TopologyPrincipal(ctx context.Context) (hierarchy.Principal, error) {
@@ -25,7 +25,7 @@ func TopologyPrincipal(ctx context.Context) (hierarchy.Principal, error) {
 	if err != nil {
 		return hierarchy.Principal{}, err
 	}
-	c := TopologyCaller{Subject: sub, Figaro: FigaroOf(ctx), Door: DoorOf(ctx)}
+	c := TopologyCaller{Subject: sub, Figaro: FigaroOf(ctx), Endpoint: EndpointOf(ctx)}
 	c.Until, c.Readmit = admission(ctx)
 	return hierarchy.Principal{Name: PrincipalText(PrincipalOf(ctx)), Subject: c}, nil
 }
@@ -201,7 +201,7 @@ func (g TopologyGuard) ownsParent(by hierarchy.Principal, c TopologyCaller, mint
 	if g.ownerish(minter) {
 		return g.isOwner(c)
 	}
-	return c.Door != DoorBox && by.Name == minter
+	return c.Endpoint != EndpointBox && by.Name == minter
 }
 
 func (g TopologyGuard) system(ctx context.Context, p hierarchy.Plan) error {
@@ -381,7 +381,7 @@ func (g TopologyGuard) owner() jkauthz.Principal {
 }
 
 func (g TopologyGuard) isOwner(c TopologyCaller) bool {
-	return c.Door != DoorBox && IsOwner(g.owner(), c.Subject)
+	return c.Endpoint != EndpointBox && IsOwner(g.owner(), c.Subject)
 }
 
 func (g TopologyGuard) ownerish(minter string) bool {
@@ -406,10 +406,10 @@ func (g TopologyGuard) allow(c TopologyCaller, verb rpc.Verb, id string) error {
 		pol = g.Policies()
 	}
 	if pol == nil {
-		if PassesUnpoliced(c.Door, g.owner(), c.Subject) {
+		if PassesUnpoliced(c.Endpoint, g.owner(), c.Subject) {
 			return nil
 		}
-		return fmt.Errorf("%s on %s: no policy is loaded, so the %s door passes only the owner", verb, Aria(id), c.Door)
+		return fmt.Errorf("%s on %s: no policy is loaded, so the %s door passes only the owner", verb, Aria(id), c.Endpoint)
 	}
 	if d := pol.AllowFigaro(c.Subject, c.Figaro, verb, Aria(id)); !d.Allowed {
 		return fmt.Errorf("%s on %s: %s", verb, Aria(id), d.Reason())

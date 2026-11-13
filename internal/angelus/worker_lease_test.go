@@ -327,7 +327,7 @@ func (r grantRig) formIn(t *testing.T, box string) string {
 	return out.(rpc.FormCreateResponse).FormID
 }
 
-// What a start does before any door serves (El Inspector XV, C4). A lease
+// What a start does before any endpoint serves (El Inspector XV, C4). A lease
 // the last run left minting is released, with what it had minted. A node
 // that carries a leased box's name and that no lease holds, which is what
 // a crash between a birth and its ledger write leaves, is purged. A live

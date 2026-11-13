@@ -47,7 +47,7 @@ func leaves(t *testing.T, c *jkrpc.Client, method, id string, req any) error {
 // mints a role form. Each is refused, not quietly pinned back, and a fork
 // or cast that names the box's own sandbox, or none, still goes through.
 func TestABoxCannotLeaveItsBox(t *testing.T) {
-	d := boxDoorRigWith(t, boxLeavePolicy, "true")
+	d := boxEndpointRigWith(t, boxLeavePolicy, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

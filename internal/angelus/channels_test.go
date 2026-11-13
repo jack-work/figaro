@@ -31,11 +31,11 @@ func TestAFollowReceivesOnlyTheChannelsItNames(t *testing.T) {
 	hb := testHub(t)
 	agent := newFakeAgent()
 	defer hb.bind(agent)()
-	path := hubDoor(t, hb, authz.AllowAll())
+	path := hubEndpoint(t, hb, authz.AllowAll())
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	follow := func(channels ...string) chan frame {
-		c, frames := dialDoor(t, path, hb.id)
+		c, frames := dialEndpoint(t, path, hb.id)
 		var out rpc.FollowResponse
 		require.NoError(t, c.Call(ctx, rpc.MethodFollow, rpc.FollowRequest{Channels: channels}, &out))
 		return frames
@@ -62,8 +62,8 @@ func TestAFollowReceivesOnlyTheChannelsItNames(t *testing.T) {
 // still learn its figaro closed.
 func TestAFormsOnlyFollowerHearsTheFigaroClose(t *testing.T) {
 	hb := testHub(t)
-	path := hubDoor(t, hb, authz.AllowAll())
-	c, frames := dialDoor(t, path, hb.id)
+	path := hubEndpoint(t, hb, authz.AllowAll())
+	c, frames := dialEndpoint(t, path, hb.id)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var out rpc.FollowResponse
@@ -84,8 +84,8 @@ func TestARefollowReplacesTheChannelsAndAPromptKeepsThem(t *testing.T) {
 	hb := testHub(t)
 	agent := newFakeAgent()
 	defer hb.bind(agent)()
-	path := hubDoor(t, hb, authz.AllowAll())
-	c, frames := dialDoor(t, path, hb.id)
+	path := hubEndpoint(t, hb, authz.AllowAll())
+	c, frames := dialEndpoint(t, path, hb.id)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var out rpc.FollowResponse
@@ -102,8 +102,8 @@ func TestARefollowReplacesTheChannelsAndAPromptKeepsThem(t *testing.T) {
 
 func TestAFollowNamingAnUnknownChannelIsRefused(t *testing.T) {
 	hb := testHub(t)
-	path := hubDoor(t, hb, authz.AllowAll())
-	c, _ := dialDoor(t, path, hb.id)
+	path := hubEndpoint(t, hb, authz.AllowAll())
+	c, _ := dialEndpoint(t, path, hb.id)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var out rpc.FollowResponse

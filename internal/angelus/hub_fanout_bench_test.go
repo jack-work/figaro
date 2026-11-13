@@ -10,7 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 )
 
-// One transcript frame through a hub to N followers on the unix door, until
+// One transcript frame through a hub to N followers on the unix endpoint, until
 // every follower has read it. ns/op is the agent's cost and the delivery
 // together.
 func BenchmarkHubFanOut(b *testing.B) {
@@ -20,7 +20,7 @@ func BenchmarkHubFanOut(b *testing.B) {
 			hb := newAriaHub("abcd1234")
 			agent := newFakeAgent()
 			defer hb.bind(agent)()
-			path := hubDoor(b, hb, authz.AllowAll())
+			path := hubEndpoint(b, hb, authz.AllowAll())
 			var counts []func() int64
 			for range n {
 				c := countingFollower(b, path, hb)

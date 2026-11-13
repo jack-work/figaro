@@ -91,7 +91,7 @@ func runReaped(loaded *config.Loaded, args []string, keep, asJSON bool) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if target != "" {
-			if id, derr := doorID(ctx, acli, target); derr == nil {
+			if id, derr := endpointID(ctx, acli, target); derr == nil {
 				target = id
 			}
 		}

@@ -185,7 +185,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		reapedHidden := withheldReaped(resp.Figaros, figs)
 
 		if o.rootID != "" && o.rootID != "/" && !strings.HasPrefix(o.rootID, "^") {
-			if id, aerr := doorID(ctx, acli, o.rootID); aerr == nil {
+			if id, aerr := endpointID(ctx, acli, o.rootID); aerr == nil {
 				o.rootID = id
 			}
 		}
@@ -260,7 +260,7 @@ func printPeersUnasked(loaded *config.Loaded, n int) {
 	if n == 0 {
 		return
 	}
-	if resolveDoor().configured {
+	if resolveEndpoint().configured {
 		fmt.Fprintf(stderrw, "\n%d peer(s) of this node not listed\n", n)
 		return
 	}

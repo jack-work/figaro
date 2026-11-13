@@ -177,10 +177,10 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	if h.holdDepartures() {
 		h.ensureSettling()
 	}
-	return &Handlers{Map: h.door(methods, h.policy()), h: h}
+	return &Handlers{Map: h.endpoint(methods, h.policy()), h: h}
 }
 
-func (h *handlers) door(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy) map[string]jkrpc.HandlerFunc {
+func (h *handlers) endpoint(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy) map[string]jkrpc.HandlerFunc {
 	methods := make(map[string]jkrpc.HandlerFunc, len(daemon)+len(figaro.AgentMethods()))
 	for m, fn := range daemon {
 		methods[m] = fn
@@ -603,5 +603,5 @@ func inProcess(ctx context.Context) context.Context {
 	if ctx == nil {
 		return nil
 	}
-	return authz.WithDoor(ctx, authz.DoorInProcess)
+	return authz.WithEndpoint(ctx, authz.EndpointInProcess)
 }

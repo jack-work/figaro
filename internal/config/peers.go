@@ -14,7 +14,7 @@ import (
 	"github.com/jack-work/figaro/internal/troupe"
 )
 
-type TLSDoorConfig struct {
+type TLSEndpointConfig struct {
 	Listen    string `toml:"listen"`
 	Advertise string `toml:"advertise"`
 	Cert      string `toml:"cert"`
@@ -178,7 +178,7 @@ func (l *Loaded) DirectorySize() int {
 	return *n
 }
 
-type TLSDoor struct {
+type TLSEndpoint struct {
 	Listen    string
 	Advertise string
 	Cert      string
@@ -197,15 +197,15 @@ type Peer struct {
 
 const peerScheme = "tls://"
 
-func (l *Loaded) TLSDoor() (TLSDoor, bool, error) {
-	c := l.cfg().Door.TLS
+func (l *Loaded) TLSEndpoint() (TLSEndpoint, bool, error) {
+	c := l.cfg().Endpoint.TLS
 	if c == nil {
-		return TLSDoor{}, false, nil
+		return TLSEndpoint{}, false, nil
 	}
 	if _, _, err := net.SplitHostPort(c.Listen); err != nil {
-		return TLSDoor{}, false, fmt.Errorf("door.tls: listen %q is not host:port", c.Listen)
+		return TLSEndpoint{}, false, fmt.Errorf("door.tls: listen %q is not host:port", c.Listen)
 	}
-	out := TLSDoor{Listen: c.Listen, Advertise: c.Advertise, Cert: l.credPath(c.Cert), Key: l.credPath(c.Key), ClientCA: l.credPath(c.ClientCA)}
+	out := TLSEndpoint{Listen: c.Listen, Advertise: c.Advertise, Cert: l.credPath(c.Cert), Key: l.credPath(c.Key), ClientCA: l.credPath(c.ClientCA)}
 	if out.Advertise == "" {
 		out.Advertise = out.Listen
 	}
@@ -213,10 +213,10 @@ func (l *Loaded) TLSDoor() (TLSDoor, bool, error) {
 		out.Advertise = ""
 	}
 	if c.Advertise != "" && out.Advertise == "" {
-		return TLSDoor{}, false, fmt.Errorf("door.tls: advertise %q is not a host:port another node can dial", c.Advertise)
+		return TLSEndpoint{}, false, fmt.Errorf("door.tls: advertise %q is not a host:port another node can dial", c.Advertise)
 	}
 	if _, err := l.troupeKeyed(map[string]string{"cert": out.Cert, "key": out.Key, "client_ca": out.ClientCA}); err != nil {
-		return TLSDoor{}, false, fmt.Errorf("door.tls: %w", err)
+		return TLSEndpoint{}, false, fmt.Errorf("door.tls: %w", err)
 	}
 	return out, true, nil
 }

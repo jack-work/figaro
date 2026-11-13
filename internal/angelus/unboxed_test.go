@@ -41,7 +41,7 @@ principals = ["troupe:kelliher"]
 // in a box at all, so it cannot set its system.sandbox either, while an
 // aria outside every box takes the same write.
 func TestTheTroupeCannotSetTheSandboxOfABoxAria(t *testing.T) {
-	d := boxDoorRigWith(t, unboxedCeilingPolicy, "true")
+	d := boxEndpointRigWith(t, unboxedCeilingPolicy, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

@@ -17,7 +17,7 @@ import (
 
 // A peered daemon serves a local aria exactly as a lone one does: the
 // configured peer here is unreachable, so any trip to it would show.
-func BenchmarkDoorCallUnixFederated(b *testing.B) {
+func BenchmarkEndpointCallUnixFederated(b *testing.B) {
 	quiet(b)
 	pki := peertest.NewPKI(b, "fed")
 	members, err := peer.NewStatic(0, []config.Peer{pki.Peer("self", "elsewhere", "127.0.0.1:1")}, nil)
@@ -29,7 +29,7 @@ func BenchmarkDoorCallUnixFederated(b *testing.B) {
 	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Peers: members}}
 	h.angelus.Hubs.putIfAbsent(hb.id, hb)
 	h.federate()
-	client, _ := dialDoor(b, serveDoor(b, h, authz.AllowAll()), hb.id)
+	client, _ := dialEndpoint(b, serveEndpoint(b, h, authz.AllowAll()), hb.id)
 	ctx := context.Background()
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -43,7 +43,7 @@ func BenchmarkDoorCallUnixFederated(b *testing.B) {
 
 // The same local call when the members come from the troupe ledger, with a
 // member that is not running: the local path must not consult it either.
-func BenchmarkDoorCallUnixLedger(b *testing.B) {
+func BenchmarkEndpointCallUnixLedger(b *testing.B) {
 	quiet(b)
 	_, rk, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -75,7 +75,7 @@ func BenchmarkDoorCallUnixLedger(b *testing.B) {
 	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Peers: members}}
 	h.angelus.Hubs.putIfAbsent(hb.id, hb)
 	h.federate()
-	client, _ := dialDoor(b, serveDoor(b, h, authz.AllowAll()), hb.id)
+	client, _ := dialEndpoint(b, serveEndpoint(b, h, authz.AllowAll()), hb.id)
 	ctx := context.Background()
 	b.ReportAllocs()
 	b.ResetTimer()

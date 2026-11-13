@@ -266,7 +266,7 @@ func TestParkedProposalsShowOnlyToTheirHoldersAndProposers(t *testing.T) {
 }
 
 // El Inspector XIV, P2: a troupe key parks a move, lasting no longer than
-// the door would have kept its connection; the key is revoked, and the
+// the endpoint would have kept its connection; the key is revoked, and the
 // owner's accept is refused with nothing moved.
 func TestARevokedKeysProposalIsRefusedAtAccept(t *testing.T) {
 	r, q, _ := adoptRig(t)
@@ -292,15 +292,15 @@ func TestARevokedKeysProposalIsRefusedAtAccept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	door := time.Now().Add(time.Hour)
-	ctx = authz.WithAdmittedUntil(ctx, door)
+	endpoint := time.Now().Add(time.Hour)
+	ctx = authz.WithAdmittedUntil(ctx, endpoint)
 
 	if err := setTopology(t, r, ctx, map[string]string{a.FigaroID: q}); err == nil || !strings.Contains(err.Error(), "waits on "+q) {
 		t.Fatalf("the key drawing A under Q = %v, want it parked on Q", err)
 	}
 	props := parkedOn(t, r, q)
-	if len(props) != 1 || props[0].By != ci || props[0].ExpiresMS != door.UnixMilli() {
-		t.Fatalf("parked on Q: %+v, want the key's move, lapsing with its door at %d", props, door.UnixMilli())
+	if len(props) != 1 || props[0].By != ci || props[0].ExpiresMS != endpoint.UnixMilli() {
+		t.Fatalf("parked on Q: %+v, want the key's move, lapsing with its door at %d", props, endpoint.UnixMilli())
 	}
 
 	grant.Void = "revoked"

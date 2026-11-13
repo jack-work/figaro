@@ -85,7 +85,7 @@ func SignAPIKeyRevoke(key crypto.Signer, leaf, inter *x509.Certificate, troupe, 
 
 func verifyAPIKey(v verified, root *x509.Certificate, at time.Time) (crypto.PublicKey, error) {
 	e := v.Entry
-	if e.Door != "" || e.Owner != "" || e.Version != 0 || e.Body != "" {
+	if e.Endpoint != "" || e.Owner != "" || e.Version != 0 || e.Body != "" {
 		return nil, fmt.Errorf("a %s has no door, owner, version or body", e.Kind)
 	}
 	if err := apikey.ValidID(e.Key); err != nil {

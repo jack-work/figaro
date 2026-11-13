@@ -73,9 +73,9 @@ func TestARevokedRenewerIsDropped(t *testing.T) {
 	require.Equal(t, []string{"d"}, l.View().Renewers["c"])
 }
 
-// The attack on a member's door: q, an intermediate that is neither b's nor
-// b's renewer, signs a newer join for b naming its own door and owner, and a
-// backdated one to claim b's admission. Neither counts; b keeps the door,
+// The attack on a member's endpoint: q, an intermediate that is neither b's nor
+// b's renewer, signs a newer join for b naming its own endpoint and owner, and a
+// backdated one to claim b's admission. Neither counts; b keeps the endpoint,
 // owner and admitter its renewer gave it. A newer join from the renewer
 // still moves b, and a self-joined member is as safe.
 func TestAJoinFromAnotherIntermediateDoesNotRewriteAMember(t *testing.T) {
@@ -93,7 +93,7 @@ func TestAJoinFromAnotherIntermediateDoesNotRewriteAMember(t *testing.T) {
 		_, err = l.Merge(later, earlier)
 		require.NoError(t, err)
 		m := l.View().Members[node]
-		require.Equal(t, node+".lan:7444", m.Door, node)
+		require.Equal(t, node+".lan:7444", m.Endpoint, node)
 		require.Equal(t, "user:owner", m.Owner, node)
 		require.Equal(t, "a", m.AdmittedBy, node)
 	}
@@ -103,12 +103,12 @@ func TestAJoinFromAnotherIntermediateDoesNotRewriteAMember(t *testing.T) {
 	require.NoError(t, err)
 	_, err = l.Merge(moved)
 	require.NoError(t, err)
-	require.Equal(t, "b.tail:7444", l.View().Members["b"].Door)
+	require.Equal(t, "b.tail:7444", l.View().Members["b"].Endpoint)
 }
 
 // A guest joined through a member is listed before the root names that
 // member its renewer, so troupe join can report it. Until then no join for
-// it is vouched for and the newest names its door, which costs nothing: no
+// it is vouched for and the newest names its endpoint, which costs nothing: no
 // peer takes the guest's certificate yet. Naming the renewer sets aside every
 // join its renewer did not sign.
 func TestAGuestIsAMemberBeforeItsRenewerIsNamed(t *testing.T) {
@@ -123,14 +123,14 @@ func TestAGuestIsAMemberBeforeItsRenewerIsNamed(t *testing.T) {
 	require.NoError(t, err)
 	_, err = l.Merge(rogue)
 	require.NoError(t, err)
-	require.Equal(t, "evil.lan:7444", l.View().Members["b"].Door)
+	require.Equal(t, "evil.lan:7444", l.View().Members["b"].Endpoint)
 	require.False(t, l.View().Members["b"].Vouched)
 
 	_, err = l.Merge(s.renewer("b", "a"))
 	require.NoError(t, err)
 	m := l.View().Members["b"]
 	require.True(t, m.Vouched)
-	require.Equal(t, "b.lan:7444", m.Door)
+	require.Equal(t, "b.lan:7444", m.Endpoint)
 	require.Equal(t, "user:owner", m.Owner)
 	require.Equal(t, "a", m.AdmittedBy)
 }

@@ -71,7 +71,7 @@ func loaded(t *testing.T, src string) *Policies {
 
 // The default is what a desktop runs with no policy file: the daemon's own
 // uid may do everything, including use:local, and nobody else may do
-// anything. That is today's behaviour with the door closed to strangers.
+// anything. That is today's behaviour with the endpoint closed to strangers.
 func TestTheDefaultPolicyIsTheDaemonsOwnUidAndNobodyElse(t *testing.T) {
 	p := NewPolicies(me, facts())
 	if err := p.Reload(""); err != nil {

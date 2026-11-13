@@ -13,16 +13,16 @@ import (
 )
 
 // The listeners that are not the pager (form listen, a plain or verbatim
-// send, the models feed) hold their follow through follow: the door ends it
+// send, the models feed) hold their follow through follow: the endpoint ends it
 // at the edge's age, it dials the edge and follows the same aria again with
 // no user action, tells the caller so it can catch up, and only a real end
 // or Close ends it.
-func TestAFollowOutlivesTheDoorsLapses(t *testing.T) {
+func TestAFollowOutlivesTheEndpointsLapses(t *testing.T) {
 	const maxAge = 250 * time.Millisecond
 	_, ep, stub, id := edgeServed(t, maxAge)
 
 	var notified, again atomic.Int32
-	f, err := follow(context.Background(), sdk.Addr{Door: ep, ID: id}, func(string, json.RawMessage) { notified.Add(1) }, func(*sdk.Aria) { again.Add(1) })
+	f, err := follow(context.Background(), sdk.Addr{Endpoint: ep, ID: id}, func(string, json.RawMessage) { notified.Add(1) }, func(*sdk.Aria) { again.Add(1) })
 	require.NoError(t, err)
 	first := f.aria()
 
@@ -51,7 +51,7 @@ func TestAFollowOutlivesTheDoorsLapses(t *testing.T) {
 // A follow that ends for any reason but a lapse is over: no dial, Done closes.
 func TestAFollowEndedByTheClientIsNotFollowedAgain(t *testing.T) {
 	_, ep, stub, id := edgeServed(t, time.Hour)
-	f, err := follow(context.Background(), sdk.Addr{Door: ep, ID: id}, func(string, json.RawMessage) {}, nil)
+	f, err := follow(context.Background(), sdk.Addr{Endpoint: ep, ID: id}, func(string, json.RawMessage) {}, nil)
 	require.NoError(t, err)
 	f.aria().Close()
 	select {

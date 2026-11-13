@@ -64,12 +64,12 @@ func TestPeercredConfigErrors(t *testing.T) {
 }
 
 const (
-	webDoor  = "/run/figaro/web.sock"
-	kelliher = "https://auth.kelliher.info"
+	webEndpoint = "/run/figaro/web.sock"
+	kelliher    = "https://auth.kelliher.info"
 )
 
 func TestUpstreamReadsTheEdgesHeaders(t *testing.T) {
-	u, err := NewUpstream(config.UpstreamConfig{Issuer: kelliher, Services: map[string]string{"sandbox-dev-3": "sandbox"}}, webDoor, "/run/figaro/angelus.sock", nil)
+	u, err := NewUpstream(config.UpstreamConfig{Issuer: kelliher, Services: map[string]string{"sandbox-dev-3": "sandbox"}}, webEndpoint, "/run/figaro/angelus.sock", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestUpstreamReadsTheEdgesHeaders(t *testing.T) {
 }
 
 func TestUpstreamRefuses(t *testing.T) {
-	u, _ := NewUpstream(config.UpstreamConfig{Issuer: kelliher, Services: map[string]string{"sandbox-dev-3": "sandbox"}}, webDoor, "", nil)
+	u, _ := NewUpstream(config.UpstreamConfig{Issuer: kelliher, Services: map[string]string{"sandbox-dev-3": "sandbox"}}, webEndpoint, "", nil)
 	for name, set := range map[string]map[string]string{
 		"no user":              {},
 		"an unlisted service":  {"Remote-User": "kcal-notify", "Remote-Principal": "service", "Remote-Client": "kcal-notify"},
@@ -349,9 +349,9 @@ func BenchmarkBearerOpen(b *testing.B) {
 }
 
 // Headers are only as honest as the socket they arrive on. The upstream
-// authenticator takes the web door's own path and refuses the CLI door,
+// authenticator takes the web endpoint's own path and refuses the CLI endpoint,
 // where any local caller could set them.
-func TestUpstreamIsNeverBoundToTheCLIDoor(t *testing.T) {
+func TestUpstreamIsNeverBoundToTheCLIEndpoint(t *testing.T) {
 	cli := "/run/figaro/angelus.sock"
 	for name, c := range map[string]struct {
 		listen string
@@ -360,22 +360,22 @@ func TestUpstreamIsNeverBoundToTheCLIDoor(t *testing.T) {
 		"relative":                {"figaro/web.sock", config.UpstreamConfig{}},
 		"empty":                   {"", config.UpstreamConfig{}},
 		"the cli door":            {"/run/figaro/../figaro/angelus.sock", config.UpstreamConfig{}},
-		"reverify without bearer": {webDoor, config.UpstreamConfig{Issuer: kelliher, Reverify: true}},
-		"no issuer":               {webDoor, config.UpstreamConfig{}},
+		"reverify without bearer": {webEndpoint, config.UpstreamConfig{Issuer: kelliher, Reverify: true}},
+		"no issuer":               {webEndpoint, config.UpstreamConfig{}},
 	} {
 		if _, err := NewUpstream(c.cfg, c.listen, cli, nil); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
-	u, err := NewUpstream(config.UpstreamConfig{Issuer: kelliher}, webDoor, cli, nil)
-	if err != nil || u.Listener() != webDoor {
+	u, err := NewUpstream(config.UpstreamConfig{Issuer: kelliher}, webEndpoint, cli, nil)
+	if err != nil || u.Listener() != webEndpoint {
 		t.Fatalf("%v %v", u, err)
 	}
 }
 
 func reverifying(t *testing.T, is *testIssuer) *Upstream {
 	t.Helper()
-	u, err := NewUpstream(config.UpstreamConfig{Issuer: is.url, Reverify: true, Services: map[string]string{"sandbox-dev-3": "sandbox"}}, webDoor, "", is.bearer(t))
+	u, err := NewUpstream(config.UpstreamConfig{Issuer: is.url, Reverify: true, Services: map[string]string{"sandbox-dev-3": "sandbox"}}, webEndpoint, "", is.bearer(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,7 +601,7 @@ func TestTwoIssuersWithOneScopeAreRefused(t *testing.T) {
 
 func TestReverifyingRefusesTheSameNameFromAnotherIssuer(t *testing.T) {
 	a, b, is := twoIssuers(t)
-	u, err := NewUpstream(config.UpstreamConfig{Issuer: a.url, Reverify: true}, webDoor, "", is)
+	u, err := NewUpstream(config.UpstreamConfig{Issuer: a.url, Reverify: true}, webEndpoint, "", is)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -609,7 +609,7 @@ func TestReverifyingRefusesTheSameNameFromAnotherIssuer(t *testing.T) {
 	if _, err := u.Subject(context.Background(), edge("gluck", "human", "figaro-cli", tok)); !errors.Is(err, ErrUnadmitted) {
 		t.Fatalf("%v", err)
 	}
-	if _, err := NewUpstream(config.UpstreamConfig{Issuer: "https://elsewhere", Reverify: true}, webDoor, "", is); err == nil {
+	if _, err := NewUpstream(config.UpstreamConfig{Issuer: "https://elsewhere", Reverify: true}, webEndpoint, "", is); err == nil {
 		t.Fatal("reverify against an issuer this node does not trust")
 	}
 }

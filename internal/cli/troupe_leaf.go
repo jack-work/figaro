@@ -27,7 +27,7 @@ import (
 	"github.com/jack-work/figaro/internal/troupe"
 )
 
-type leafDoor interface {
+type leafEndpoint interface {
 	TroupeIdentity(ctx context.Context, troupe string) (*rpc.TroupeIdentityResponse, error)
 	TroupeEntries(ctx context.Context, req rpc.TroupeEntriesRequest) (*rpc.TroupeEntriesResponse, error)
 }
@@ -35,7 +35,7 @@ type leafDoor interface {
 type leafOpts struct {
 	For       string
 	PublicKey string
-	Door      string
+	Endpoint  string
 	Out       string
 	TTL       time.Duration
 	MaxTTL    time.Duration
@@ -43,7 +43,7 @@ type leafOpts struct {
 
 var leafFiles = []string{"root.crt", "node.crt", "joined.json"}
 
-func troupeLeafFor(ctx context.Context, d leafDoor, in io.Reader, out io.Writer, stateDir, interKey, name string, o leafOpts, now time.Time) error {
+func troupeLeafFor(ctx context.Context, d leafEndpoint, in io.Reader, out io.Writer, stateDir, interKey, name string, o leafOpts, now time.Time) error {
 	if u, err := uuid.Parse(o.For); err != nil || u.String() != o.For {
 		return fmt.Errorf("--for %q is not a node id (a lowercase uuid, as figaro troupe ls shows)", o.For)
 	}
@@ -55,8 +55,8 @@ func troupeLeafFor(ctx context.Context, d leafDoor, in io.Reader, out io.Writer,
 	if o.TTL > ttl {
 		return fmt.Errorf("--ttl %s is longer than this node issues: [troupe] max_leaf_ttl is %s", troupe.FormatNodeTTL(o.TTL), troupe.FormatNodeTTL(ttl))
 	}
-	if host, _, err := net.SplitHostPort(o.Door); err != nil || host == "" || net.ParseIP(host).IsUnspecified() {
-		return fmt.Errorf("--door %q is not a host:port the troupe can dial", o.Door)
+	if host, _, err := net.SplitHostPort(o.Endpoint); err != nil || host == "" || net.ParseIP(host).IsUnspecified() {
+		return fmt.Errorf("--door %q is not a host:port the troupe can dial", o.Endpoint)
 	}
 	dir, err := leafDir(o.Out)
 	if err != nil {
@@ -102,7 +102,7 @@ func troupeLeafFor(ctx context.Context, d leafDoor, in io.Reader, out io.Writer,
 	if err != nil {
 		return err
 	}
-	join, err := troupe.SignJoin(ikey, inter, name, o.For, o.Door, owner, now)
+	join, err := troupe.SignJoin(ikey, inter, name, o.For, o.Endpoint, owner, now)
 	if err != nil {
 		return err
 	}

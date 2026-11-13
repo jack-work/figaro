@@ -20,9 +20,9 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 )
 
-// A key admitted on the web door is the principal hello reports; when the
-// key is revoked the door closes the connection and says why.
-func TestWebDoorClosesAKeysConnectionOnRevoke(t *testing.T) {
+// A key admitted on the web endpoint is the principal hello reports; when the
+// key is revoked the endpoint closes the connection and says why.
+func TestWebEndpointClosesAKeysConnectionOnRevoke(t *testing.T) {
 	keys, err := authz.NewAPIKeys("estate", "node-a", nil, nil)
 	require.NoError(t, err)
 	wire, k, err := apikey.New(rand.Reader)
@@ -53,7 +53,7 @@ func TestWebDoorClosesAKeysConnectionOnRevoke(t *testing.T) {
 	require.Contains(t, ce.Reason, "revoked")
 }
 
-// The revoke test flaked with "failed to read frame header: EOF": the door's
+// The revoke test flaked with "failed to read frame header: EOF": the endpoint's
 // writes ran under the connection's life, and the websocket library closes
 // the socket outright when a write's context ends. A revoke that landed while
 // a write was in flight (or before the library had cleared its write timer)

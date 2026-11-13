@@ -56,7 +56,7 @@ func newRemotePair(t *testing.T) *remotePair {
 		}
 		return h.Node, nil
 	}
-	checkRoutedDoor = r.realCheck
+	checkRoutedEndpoint = r.realCheck
 	old := troupeHTTPClient
 	troupeHTTPClient = edge.HTTPClient
 	t.Cleanup(func() { troupeHTTPClient = old })
@@ -100,7 +100,7 @@ func newRemotePair(t *testing.T) *remotePair {
 		return err == nil
 	}, 3*time.Second, 10*time.Millisecond, "local angelus did not come up")
 	t.Cleanup(func() { local.Close() })
-	forgetDoors()
+	forgetEndpoints()
 	return &remotePair{local: local, loaded: loaded, far: farNode, farAria: farAria, edge: stub, localDir: runtime}
 }
 
@@ -116,9 +116,9 @@ func nodeOfEdge(t *testing.T, ep transport.Endpoint) string {
 }
 
 // attend binds this shell to an aria on another node through that node's
-// own door, and every later read of the binding (plain figaro, listen, a
+// own endpoint, and every later read of the binding (plain figaro, listen, a
 // bare prompt) reaches the aria there; ls stays on this node.
-func TestAttendAnAriaOnAnotherNodeAndReachItThroughItsDoor(t *testing.T) {
+func TestAttendAnAriaOnAnotherNodeAndReachItThroughItsEndpoint(t *testing.T) {
 	p := newRemotePair(t)
 	ctx := callCtxCLI(t)
 	pid := os.Getpid()
@@ -130,7 +130,7 @@ func TestAttendAnAriaOnAnotherNodeAndReachItThroughItsDoor(t *testing.T) {
 	out, err := attendVerb(ctx, env, p.far[:8]+"/"+p.farAria[:8])
 	require.NoError(t, err)
 	require.Equal(t, p.far[:8]+"/"+p.farAria, out.ID)
-	require.Equal(t, "wss://fig.test/", out.EP.Door.Address)
+	require.Equal(t, "wss://fig.test/", out.EP.Endpoint.Address)
 
 	r, err := p.local.Resolve(ctx, pid)
 	require.NoError(t, err)
@@ -140,7 +140,7 @@ func TestAttendAnAriaOnAnotherNodeAndReachItThroughItsDoor(t *testing.T) {
 	id, addr, err := resolveFigaroTargetEndpoint(ctx, p.loaded, p.local, "", false, dressing{})
 	require.NoError(t, err)
 	require.Equal(t, p.far+"/"+p.farAria, id)
-	require.Equal(t, "wss://fig.test/", addr.Door.Address)
+	require.Equal(t, "wss://fig.test/", addr.Endpoint.Address)
 	before := p.edge.upgrades.Load()
 	fcli, err := sdk.DialAria(addr, nil)
 	require.NoError(t, err)

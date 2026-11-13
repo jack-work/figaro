@@ -38,7 +38,7 @@ func admitAs(p rpc.Principal) WebAdmit {
 	}
 }
 
-// serveWeb stands the web door up over hb on a unix socket, the way the
+// serveWeb stands the web endpoint up over hb on a unix socket, the way the
 // daemon does, and returns its path.
 func serveWeb(t testing.TB, hb *ariaHub, w Web) string {
 	t.Helper()
@@ -49,7 +49,7 @@ func serveWebOn(t testing.TB, path string, hb *ariaHub, w Web) string {
 	t.Helper()
 	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, authz.PrincipalText(webPrincipal), "service:ci@troupe:estate")}}
 	h.angelus.Hubs.putIfAbsent(hb.id, hb)
-	h.angelus.Handlers = h.door(map[string]jkrpc.HandlerFunc{rpc.MethodHello: h.hello}, authz.AllowAll())
+	h.angelus.Handlers = h.endpoint(map[string]jkrpc.HandlerFunc{rpc.MethodHello: h.hello}, authz.AllowAll())
 	ln, err := ListenUnix(path, 0o660)
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -58,7 +58,7 @@ func serveWebOn(t testing.TB, path string, hb *ariaHub, w Web) string {
 	return path
 }
 
-// seats is a policy binding each principal to a role, so the web door
+// seats is a policy binding each principal to a role, so the web endpoint
 // seats it.
 func seats(t testing.TB, principals ...string) *authz.Policies {
 	t.Helper()
@@ -123,8 +123,8 @@ func wsCall(t *testing.T, c *websocket.Conn, id int, method string, params any) 
 	}
 }
 
-// Without an authenticator the web door upgrades nobody, whatever is presented.
-func TestWebDoorWithoutAuthenticatorRefusesEveryUpgrade(t *testing.T) {
+// Without an authenticator the web endpoint upgrades nobody, whatever is presented.
+func TestWebEndpointWithoutAuthenticatorRefusesEveryUpgrade(t *testing.T) {
 	path := serveWeb(t, newAriaHub("abcd1234"), Web{})
 	_, resp, err := dialWeb(t, path, http.Header{"Remote-User": {"gluck"}})
 	require.Error(t, err)
@@ -134,7 +134,7 @@ func TestWebDoorWithoutAuthenticatorRefusesEveryUpgrade(t *testing.T) {
 
 // A refused credential is a 401, which a client answers by invalidating its
 // token and trying once more; no authenticator at all is a 403.
-func TestWebDoorRefusesWhatItsAuthenticatorRefuses(t *testing.T) {
+func TestWebEndpointRefusesWhatItsAuthenticatorRefuses(t *testing.T) {
 	path := serveWeb(t, newAriaHub("abcd1234"), Web{Admit: admitAs(webPrincipal)})
 	_, resp, err := dialWeb(t, path, nil)
 	require.Error(t, err)
@@ -142,8 +142,8 @@ func TestWebDoorRefusesWhatItsAuthenticatorRefuses(t *testing.T) {
 }
 
 // The principal comes from the listener's authenticator, an aria method
-// routes and follows as on the unix door, and every frame is one message.
-func TestWebDoorServesTheDoorOneFramePerMessage(t *testing.T) {
+// routes and follows as on the unix endpoint, and every frame is one message.
+func TestWebEndpointServesTheEndpointOneFramePerMessage(t *testing.T) {
 	hb := newAriaHub("abcd1234")
 	agent := newFakeAgent()
 	defer hb.bind(agent)()
@@ -181,10 +181,10 @@ func TestWebDoorServesTheDoorOneFramePerMessage(t *testing.T) {
 	}
 }
 
-// The daemon's upstream authenticator on the web door: the edge's
+// The daemon's upstream authenticator on the web endpoint: the edge's
 // Remote-User is the principal hello reports, and an upgrade without it is
 // refused before any frame.
-func TestWebDoorAdmitsByTheEdgesHeaders(t *testing.T) {
+func TestWebEndpointAdmitsByTheEdgesHeaders(t *testing.T) {
 	path := shortSocketPath(t)
 	u, err := authz.NewUpstream(config.UpstreamConfig{Issuer: "https://auth.kelliher.info"}, path, "/run/figaro/angelus.sock", nil)
 	require.NoError(t, err)
@@ -203,7 +203,7 @@ func TestWebDoorAdmitsByTheEdgesHeaders(t *testing.T) {
 
 // Caddy authorizes the upgrade alone, so a connection lives no longer than
 // its listener allows and is told why.
-func TestWebDoorClosesAConnectionAtItsMaxAge(t *testing.T) {
+func TestWebEndpointClosesAConnectionAtItsMaxAge(t *testing.T) {
 	path := serveWeb(t, newAriaHub("abcd1234"), Web{Admit: admitAs(webPrincipal), MaxConnAge: 200 * time.Millisecond})
 	c, _, err := dialWeb(t, path, http.Header{"Remote-User": {"gluck"}})
 	require.NoError(t, err)
@@ -214,11 +214,11 @@ func TestWebDoorClosesAConnectionAtItsMaxAge(t *testing.T) {
 	require.NoError(t, err, "the door closed without saying why")
 	require.GreaterOrEqual(t, time.Since(start), 150*time.Millisecond)
 	var lapsed struct {
-		Method string         `json:"method"`
-		Params rpc.DoorLapsed `json:"params"`
+		Method string             `json:"method"`
+		Params rpc.EndpointLapsed `json:"params"`
 	}
 	require.NoError(t, json.Unmarshal(notice, &lapsed))
-	require.Equal(t, rpc.MethodDoorLapsed, lapsed.Method)
+	require.Equal(t, rpc.MethodEndpointLapsed, lapsed.Method)
 	require.Equal(t, webAgeReason, lapsed.Params.Reason)
 	_, _, err = c.Read(ctx)
 	require.Error(t, err)
@@ -228,7 +228,7 @@ func TestWebDoorClosesAConnectionAtItsMaxAge(t *testing.T) {
 	require.Equal(t, webAgeReason, ce.Reason)
 }
 
-// An edge door's follow age is shorter than its connection age, so it is the
+// An edge endpoint's follow age is shorter than its connection age, so it is the
 // one that ends the connection, and the notice says which limit it was.
 func TestTheEdgeFollowAgeEndsAConnectionBeforeItsMaxAge(t *testing.T) {
 	require.Equal(t, time.Duration(0), func() time.Duration { d, _ := (Web{}).lapse(); return d }())
@@ -260,17 +260,17 @@ func (b *countingBearer) Invalidate(string) error {
 	return nil
 }
 
-// The client transport the CLI uses reaches the web door through TLS, the
+// The client transport the CLI uses reaches the web endpoint through TLS, the
 // way Caddy fronts it: a stale bearer is refused with 401, the client
 // retries once with a fresh one, and sdk calls and pushes flow over the
 // upgraded connection.
-func TestWebDoorServesTheWSSClient(t *testing.T) {
+func TestWebEndpointServesTheWSSClient(t *testing.T) {
 	hb := newAriaHub("abcd1234")
 	agent := newFakeAgent()
 	defer hb.bind(agent)()
 	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, authz.PrincipalText(webPrincipal))}}
 	h.angelus.Hubs.putIfAbsent(hb.id, hb)
-	h.angelus.Handlers = h.door(nil, authz.AllowAll())
+	h.angelus.Handlers = h.endpoint(nil, authz.AllowAll())
 	admit := func(ctx context.Context, r *http.Request) (context.Context, error) {
 		if r.Header.Get("Authorization") != "Bearer fresh" {
 			return nil, errors.New("stale bearer")
@@ -279,14 +279,14 @@ func TestWebDoorServesTheWSSClient(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	srv := httptest.NewTLSServer(h.angelus.webDoor(ctx, Web{Admit: admit}))
+	srv := httptest.NewTLSServer(h.angelus.webEndpoint(ctx, Web{Admit: admit}))
 	defer srv.Close()
 
 	bearer := &countingBearer{tokens: []string{"stale", "fresh"}}
 	ep := transport.WSSEndpoint("wss"+strings.TrimPrefix(srv.URL, "https"), bearer)
 	ep.HTTPClient = srv.Client()
 	frames := make(chan string, 8)
-	c, err := sdk.DialAria(sdk.Addr{Door: ep, ID: hb.id}, func(m string, _ json.RawMessage) { frames <- m })
+	c, err := sdk.DialAria(sdk.Addr{Endpoint: ep, ID: hb.id}, func(m string, _ json.RawMessage) { frames <- m })
 	require.NoError(t, err)
 	defer c.Close()
 	require.Equal(t, 1, bearer.invalidated)
@@ -305,8 +305,8 @@ func TestWebDoorServesTheWSSClient(t *testing.T) {
 }
 
 // The lapse must not wait on the client: one that follows and stops reading
-// backs a frame up inside the door's write, and the notice queues behind it.
-// The door still ends the connection and drops its follows by the age plus
+// backs a frame up inside the endpoint's write, and the notice queues behind it.
+// The endpoint still ends the connection and drops its follows by the age plus
 // the notice's grace, so the stalled client never resumes onto frames the
 // old subject's follow produced after the limit.
 func TestALapseEndsAConnectionWhoseClientStoppedReading(t *testing.T) {
@@ -364,7 +364,7 @@ func TestABearerConnectionEndsWhenItsTokenExpires(t *testing.T) {
 	}
 	path := shortSocketPath(t)
 	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, session.Principal().String())}}
-	h.angelus.Handlers = h.door(map[string]jkrpc.HandlerFunc{rpc.MethodHello: h.hello}, authz.AllowAll())
+	h.angelus.Handlers = h.endpoint(map[string]jkrpc.HandlerFunc{rpc.MethodHello: h.hello}, authz.AllowAll())
 	ln, err := ListenUnix(path, 0o660)
 	require.NoError(t, err)
 	sctx, stop := context.WithCancel(context.Background())
@@ -377,7 +377,7 @@ func TestABearerConnectionEndsWhenItsTokenExpires(t *testing.T) {
 	_, notice, err := c.Read(ctx)
 	require.NoError(t, err, "the door closed without saying why")
 	var lapsed struct {
-		Params rpc.DoorLapsed `json:"params"`
+		Params rpc.EndpointLapsed `json:"params"`
 	}
 	require.NoError(t, json.Unmarshal(notice, &lapsed))
 	require.Equal(t, webTokenReason, lapsed.Params.Reason)

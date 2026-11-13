@@ -17,11 +17,11 @@ type stubBearer struct {
 func (b stubBearer) Resolve() (string, error) { return b.token, b.err }
 func (b stubBearer) Invalidate(string) error  { return nil }
 
-// A peer's form is reached through the door of the profile that answers for
+// A peer's form is reached through the endpoint of the profile that answers for
 // the peer's node, with that profile's own token; with no login the mount
 // names the command that makes one, and a node no profile reaches is refused,
-// not sent to this node's own troupe door.
-func TestAPeerMountUsesTheDoorThatAnswersForItsNode(t *testing.T) {
+// not sent to this node's own troupe endpoint.
+func TestAPeerMountUsesTheEndpointThatAnswersForItsNode(t *testing.T) {
 	r := newRemoteRig(t, "[troupe]\nname = \"kelliher\"\n", map[string]string{"kelliher": "wss://fig.example"})
 	r.own(nodeGluck)
 	loaded, err := config.Load(r.cfg)
@@ -41,12 +41,12 @@ func TestAPeerMountUsesTheDoorThatAnswersForItsNode(t *testing.T) {
 
 	r.signed["kelliher"] = true
 	r.nodes["wss://fig.example"] = nodeSpain
-	forgetDoors()
+	forgetEndpoints()
 	_, _, _, _, err = in.mountForm(nodeThird + "/@arias")
 	require.EqualError(t, err, "no troupe profile reaches node "+nodeThird)
 
-	a, err := doorFor(nodeSpain + "/@arias")
+	a, err := endpointFor(nodeSpain + "/@arias")
 	require.NoError(t, err)
-	require.Equal(t, "wss://fig.example", a.Door.Address)
-	require.Equal(t, "kelliher", bearerOf(t, a.Door))
+	require.Equal(t, "wss://fig.example", a.Endpoint.Address)
+	require.Equal(t, "kelliher", bearerOf(t, a.Endpoint))
 }

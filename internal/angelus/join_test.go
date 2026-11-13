@@ -190,10 +190,10 @@ func TestNothingReopensTheStoreAfterACleanStop(t *testing.T) {
 	}
 }
 
-// The timeout log names a call by method, aria id and door. It never prints
+// The timeout log names a call by method, aria id and endpoint. It never prints
 // request params (troupe sign, api key mint and provider login carry
 // secrets), and an aria field that is not an id prints as "-".
-func TestStragglerLogNamesMethodAriaAndDoorNeverParams(t *testing.T) {
+func TestStragglerLogNamesMethodAriaAndEndpointNeverParams(t *testing.T) {
 	logs := captureLogs(t)
 	r := newJoinRig(t)
 	r.a.SetJoinBoundForTest(50 * time.Millisecond)
@@ -207,7 +207,7 @@ func TestStragglerLogNamesMethodAriaAndDoorNeverParams(t *testing.T) {
 			entered <- struct{}{}
 			return block(ctx, p)
 		})
-		go h(authz.WithDoor(context.Background(), authz.DoorBox), params)
+		go h(authz.WithEndpoint(context.Background(), authz.EndpointBox), params)
 	}
 	call("troupe.sign", r.aria)
 	call("apikey.mint", "../../etc/passwd\nforged=line")
@@ -216,7 +216,7 @@ func TestStragglerLogNamesMethodAriaAndDoorNeverParams(t *testing.T) {
 	r.a.Shutdown(time.Second)
 
 	out := logs.String()
-	for _, want := range []string{"troupe.sign aria=" + r.aria + " door=" + authz.DoorBox.String(), "apikey.mint aria=- door=" + authz.DoorBox.String()} {
+	for _, want := range []string{"troupe.sign aria=" + r.aria + " door=" + authz.EndpointBox.String(), "apikey.mint aria=- door=" + authz.EndpointBox.String()} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the timeout log lacks %q:\n%s", want, out)
 		}
@@ -247,10 +247,10 @@ func TestARequestAfterTheSealIsRefusedUnrun(t *testing.T) {
 	}
 }
 
-// A door served on a context its caller never cancels still stops accepting
+// An endpoint served on a context its caller never cancels still stops accepting
 // when the stop begins: the seal closes the listener, the accept loop
 // returns, and the join has nothing to wait for (S1).
-func TestAStopClosesADoorServedOnAContextNobodyCancels(t *testing.T) {
+func TestAStopClosesAEndpointServedOnAContextNobodyCancels(t *testing.T) {
 	r := newJoinRig(t)
 	r.a.SetJoinBoundForTest(2 * time.Second)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -258,7 +258,7 @@ func TestAStopClosesADoorServedOnAContextNobodyCancels(t *testing.T) {
 		t.Fatal(err)
 	}
 	served := make(chan error, 1)
-	go func() { served <- r.a.Serve(context.Background(), ln, authz.DoorNode, nil) }()
+	go func() { served <- r.a.Serve(context.Background(), ln, authz.EndpointNode, nil) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		c, err := net.Dial("tcp", ln.Addr().String())

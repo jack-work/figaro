@@ -34,8 +34,8 @@ key = "node.key"
 `
 
 // A dev shell that reads the live node's config must not start a second
-// copy of the node: detached, the daemon sees no troupe, no node door, no
-// web or box door socket of the live node's, no static peers, and no
+// copy of the node: detached, the daemon sees no troupe, no node endpoint, no
+// web or box endpoint socket of the live node's, no static peers, and no
 // troupes/ to dial through. Everything else in the config still applies.
 func TestADetachedConfigIsNotTheNode(t *testing.T) {
 	t.Setenv(DetachedEnv, "1")
@@ -47,13 +47,13 @@ func TestADetachedConfigIsNotTheNode(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, name)
 	require.Empty(t, l.Config.CLI.Troupe)
-	_, tls, err := l.TLSDoor()
+	_, tls, err := l.TLSEndpoint()
 	require.NoError(t, err)
 	require.False(t, tls, "the node door")
-	_, web, err := l.WebDoor()
+	_, web, err := l.WebEndpoint()
 	require.NoError(t, err)
 	require.False(t, web, "the web door")
-	require.Empty(t, l.BoxDoors(), "a box door")
+	require.Empty(t, l.BoxEndpoints(), "a box door")
 	box, ok := l.Box("judge")
 	require.True(t, ok, "the box itself stays: an outfit may still run in it")
 	require.Equal(t, "/run/figaro/judge.sock", box.Exec)
@@ -70,10 +70,10 @@ func TestWithoutTheEnvTheConfigIsTheNode(t *testing.T) {
 	require.False(t, l.Detached)
 	name, _ := l.TroupeName()
 	require.Equal(t, "kelliher", name)
-	_, tls, err := l.TLSDoor()
+	_, tls, err := l.TLSEndpoint()
 	require.NoError(t, err)
 	require.True(t, tls)
-	require.NotEmpty(t, l.BoxDoors())
+	require.NotEmpty(t, l.BoxEndpoints())
 	require.NotEmpty(t, l.TroupesDir())
 	require.Equal(t, "http://127.0.0.1:4380", l.TelemetryOTLPEndpoint())
 }

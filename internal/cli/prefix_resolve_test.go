@@ -13,7 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// A prefix is an id everywhere the door resolves one. status and an
+// A prefix is an id everywhere the endpoint resolves one. status and an
 // env-attended ls once matched the typed text against a listing, so they
 // refused a prefix that send, show and state accepted (telefono's /status and
 // /ls after /at <prefix>).

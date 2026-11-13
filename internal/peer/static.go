@@ -138,8 +138,8 @@ func (m *Static) NodeOf(cert *x509.Certificate) (string, bool) {
 
 func (m *Static) Left(*x509.Certificate) (string, bool) { return "", false }
 
-func ServerTLS(door config.TLSDoor, creds *Credentials) (*tls.Config, error) {
-	if door.Cert == "" {
+func ServerTLS(endpoint config.TLSEndpoint, creds *Credentials) (*tls.Config, error) {
+	if endpoint.Cert == "" {
 		if creds == nil {
 			return nil, errors.New("door.tls: no certificate files and no troupe keys")
 		}
@@ -166,11 +166,11 @@ func ServerTLS(door config.TLSDoor, creds *Credentials) (*tls.Config, error) {
 			},
 		}, nil
 	}
-	cert, err := tls.LoadX509KeyPair(door.Cert, door.Key)
+	cert, err := tls.LoadX509KeyPair(endpoint.Cert, endpoint.Key)
 	if err != nil {
 		return nil, fmt.Errorf("door.tls: %w", err)
 	}
-	cas, err := loadPool(door.ClientCA)
+	cas, err := loadPool(endpoint.ClientCA)
 	if err != nil {
 		return nil, fmt.Errorf("door.tls: %w", err)
 	}

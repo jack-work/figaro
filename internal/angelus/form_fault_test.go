@@ -50,7 +50,7 @@ func ReadsScopesThrough(f *FormFault) func(*ServerConfig) {
 		a := cfg.Angelus
 		f.XwalBackend = a.Backend.(*store.XwalBackend)
 		p := authz.NewPolicies(a.Peercred.Self(), StoreFacts(f))
-		p.SetBoxes(a.Settings.DooredBoxes())
+		p.SetBoxes(a.Settings.BoxesWithEndpoints())
 		p.SetBoxesRequiringClaim(a.Settings.BoxesRequiringClaim())
 		if err := p.Reload(a.Settings.PolicyPath()); err != nil {
 			panic(err)

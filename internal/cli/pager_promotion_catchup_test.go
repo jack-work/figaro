@@ -14,7 +14,7 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-// The pager's automatic doors (an overflowing open turn, a shrinking resize)
+// The pager's automatic endpoints (an overflowing open turn, a shrinking resize)
 // owe the same catch-up read Ctrl-T pays, or atAriaFloor calls the running
 // question the beginning of the aria.
 func promotionFixture(tb testing.TB, w, h int) *livelogTurn {

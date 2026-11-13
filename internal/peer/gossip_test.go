@@ -13,11 +13,11 @@ import (
 	"github.com/jack-work/figaro/internal/troupe"
 )
 
-func (lt *ledgerTroupe) admitByNode(by, node, door string) troupe.Entry {
+func (lt *ledgerTroupe) admitByNode(by, node, endpoint string) troupe.Entry {
 	lt.t.Helper()
 	inter, ik, err := lt.keep[by].Dir.Intermediate()
 	require.NoError(lt.t, err)
-	e, err := troupe.SignJoin(ik, inter, "estate", node, door, "user:owner", time.Now())
+	e, err := troupe.SignJoin(ik, inter, "estate", node, endpoint, "user:owner", time.Now())
 	require.NoError(lt.t, err)
 	return e
 }
@@ -37,7 +37,7 @@ func TestAnExchangeLeavesBothSidesEqual(t *testing.T) {
 	base := []troupe.Entry{lt.selfJoin("a"), lt.selfJoin("b")}
 	ma := lt.membership("a", append(base, lt.admitByNode("a", "c", "c:1"))...)
 	mb := lt.membership("b", append(base, lt.admitByNode("b", "d", "d:1"))...)
-	lt.serveLedgerDoor("b", mb)
+	lt.serveLedgerEndpoint("b", mb)
 	require.NotEqual(t, ma.Version(), mb.Version())
 
 	require.NoError(t, gossipFor(ma, &Versions{}).Exchange(context.Background(), "b"))
@@ -52,7 +52,7 @@ func TestAHandshakeWithADriftedPeerPullsItsEntries(t *testing.T) {
 	lt := newLedgerTroupe(t, "a", "b")
 	base := []troupe.Entry{lt.selfJoin("a"), lt.selfJoin("b")}
 	ma, mb := lt.membership("a", base...), lt.membership("b", base...)
-	lt.serveLedgerDoor("b", mb)
+	lt.serveLedgerEndpoint("b", mb)
 	_, err := mb.Merge(lt.admitByNode("b", "d", "d:1"))
 	require.NoError(t, err)
 
@@ -70,7 +70,7 @@ func TestTheRoundRunsOnItsOwn(t *testing.T) {
 	lt := newLedgerTroupe(t, "a", "b")
 	base := []troupe.Entry{lt.selfJoin("a"), lt.selfJoin("b")}
 	ma, mb := lt.membership("a", base...), lt.membership("b", base...)
-	lt.serveLedgerDoor("b", mb)
+	lt.serveLedgerEndpoint("b", mb)
 	g := gossipFor(ma, &Versions{})
 	g.Every = 20 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
@@ -83,13 +83,13 @@ func TestTheRoundRunsOnItsOwn(t *testing.T) {
 }
 
 // A node learning of a new member greets it at once rather than at the
-// next round. The new member's door admits only nodes it already knows, as
+// next round. The new member's endpoint admits only nodes it already knows, as
 // a joined node does: it took the signer's entries with its certificate.
 func TestANewMemberIsGreeted(t *testing.T) {
 	lt := newLedgerTroupe(t, "a", "b")
 	ma := lt.membership("a", lt.selfJoin("a"), lt.admitByNode("a", "c", "c:1"))
 	mb := lt.membership("b", lt.selfJoin("a"), lt.selfJoin("b"))
-	lt.serveLedgerDoor("b", mb)
+	lt.serveLedgerEndpoint("b", mb)
 	g := gossipFor(ma, &Versions{})
 	ma.OnAdmit(g.Greet(context.Background()))
 
@@ -106,7 +106,7 @@ func TestAnExchangeKeepsWhatVerifiesAndDropsTheRest(t *testing.T) {
 	other := newLedgerTroupe(t, "x")
 	base := []troupe.Entry{lt.selfJoin("a"), lt.selfJoin("b")}
 	ma, mb := lt.membership("a", base...), lt.membership("b", base...)
-	lt.serveLedgerDoor("b", mb)
+	lt.serveLedgerEndpoint("b", mb)
 
 	_, rk, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)

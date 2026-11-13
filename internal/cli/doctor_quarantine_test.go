@@ -9,15 +9,15 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-type fakeQuarantineDoor struct {
+type fakeQuarantineEndpoint struct {
 	confirmed []rpc.QuarantineReleaseRequest
 }
 
-func (f *fakeQuarantineDoor) QuarantineList(context.Context) (*rpc.QuarantineListResponse, error) {
+func (f *fakeQuarantineEndpoint) QuarantineList(context.Context) (*rpc.QuarantineListResponse, error) {
 	return &rpc.QuarantineListResponse{Entries: []rpc.QuarantineEntry{{Figaro: "abc", Channel: "ir", Segment: "/s/3.jsonl", Offset: 171}}}, nil
 }
 
-func (f *fakeQuarantineDoor) QuarantineRelease(_ context.Context, req rpc.QuarantineReleaseRequest) (*rpc.QuarantineReleaseResponse, error) {
+func (f *fakeQuarantineEndpoint) QuarantineRelease(_ context.Context, req rpc.QuarantineReleaseRequest) (*rpc.QuarantineReleaseResponse, error) {
 	resp := &rpc.QuarantineReleaseResponse{QuarantineEntry: rpc.QuarantineEntry{Figaro: req.Figaro, Channel: "ir", Segment: "/s/3.jsonl", Offset: req.At},
 		BytesCut: 400, Aside: "/q/abc-ir-3", Applied: req.Confirm}
 	if req.Confirm {
@@ -43,7 +43,7 @@ func TestAQuarantineReleaseCutsOnlyOnExplicitConfirmation(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			d := &fakeQuarantineDoor{}
+			d := &fakeQuarantineEndpoint{}
 			var out bytes.Buffer
 			err := doctorQuarantine(context.Background(), d, []string{"release", "abc"}, "171", "",
 				quarantineOpts{Yes: tc.yes, Interactive: tc.tty, In: strings.NewReader(tc.typed), Out: &out})
@@ -58,7 +58,7 @@ func TestAQuarantineReleaseCutsOnlyOnExplicitConfirmation(t *testing.T) {
 			}
 		})
 	}
-	if err := doctorQuarantine(context.Background(), &fakeQuarantineDoor{}, []string{"release", "abc"}, "", "", quarantineOpts{Yes: true, Out: &bytes.Buffer{}}); err == nil {
+	if err := doctorQuarantine(context.Background(), &fakeQuarantineEndpoint{}, []string{"release", "abc"}, "", "", quarantineOpts{Yes: true, Out: &bytes.Buffer{}}); err == nil {
 		t.Fatal("a release without --at was accepted")
 	}
 }

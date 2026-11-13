@@ -42,7 +42,7 @@ func adoptHandedAttendance() {
 	if rpc.ValidateAriaRef(id) != nil || bindingDisabled() || shellPID <= 0 {
 		return
 	}
-	acli, err := sdk.DialAngelus(doorEndpoint())
+	acli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		return
 	}
@@ -142,14 +142,14 @@ func resolveBinding(ctx context.Context, acli *sdk.Angelus, ppid int) (*rpc.Reso
 }
 
 func resolveEnvAria(ctx context.Context, acli *sdk.Angelus, ref string) (*rpc.ResolveResponse, error) {
-	id, err := doorID(ctx, acli, ref)
+	id, err := endpointID(ctx, acli, ref)
 	if err != nil {
 		return &rpc.ResolveResponse{Found: false}, nil
 	}
 	return &rpc.ResolveResponse{FigaroID: id, Found: true}, nil
 }
 
-func doorID(ctx context.Context, acli *sdk.Angelus, ref string) (string, error) {
+func endpointID(ctx context.Context, acli *sdk.Angelus, ref string) (string, error) {
 	resp, err := acli.Attach(ctx, ref)
 	if err != nil {
 		return "", err

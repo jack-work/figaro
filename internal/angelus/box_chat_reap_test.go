@@ -15,7 +15,7 @@ import (
 // either refused or carries the allowed outfit's lifetime unchanged, and the
 // sweep reaps it after its keepalive and purges it after the box's grace.
 func TestEveryAriaAChatBoxMintsIsReapedThenPurgedOnTheBoxsTerms(t *testing.T) {
-	d := boxDoorRigConfigured(t, defaultPolicy, "true", "outfits = [\"judged-chat\"]\npurge_grace = \"1h\"\n")
+	d := boxEndpointRigConfigured(t, defaultPolicy, "true", "outfits = [\"judged-chat\"]\npurge_grace = \"1h\"\n")
 	c := d.dial(t)
 	mint := func(req rpc.CreateRequest) (string, error) {
 		var out rpc.CreateResponse

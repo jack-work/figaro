@@ -9,7 +9,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-func killSoft(t *testing.T, d doorRig, id string) {
+func killSoft(t *testing.T, d endpointRig, id string) {
 	t.Helper()
 	if _, err := d.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: id}); err != nil {
 		t.Fatal(err)
@@ -20,7 +20,7 @@ func killSoft(t *testing.T, d doorRig, id string) {
 }
 
 func TestTheOwnerRestoresAReapedAriaInOneCall(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	made, err := d.create(asOwner(), "mock")
 	if err != nil {
 		t.Fatal(err)
@@ -48,9 +48,9 @@ func TestTheOwnerRestoresAReapedAriaInOneCall(t *testing.T) {
 }
 
 // A reaped group holding an aria outside the box: the box may set the root,
-// so the call passes the door, but restore checks every node it would touch.
+// so the call passes the endpoint, but restore checks every node it would touch.
 func TestABoxRestoreChecksEveryNodeOfTheGroup(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	root, fork := boxAriaWithForkOutside(t, d, true)
 	if _, err := d.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: root, Recursive: true}); err != nil {
 		t.Fatal(err)
@@ -70,7 +70,7 @@ func TestABoxRestoreChecksEveryNodeOfTheGroup(t *testing.T) {
 // system.reaped is held from boxes (kill writes it): a box may not undo the
 // reap of its own aria, whose purge is what the box's grace promises.
 func TestABoxCannotRestoreItsOwnReapedAria(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

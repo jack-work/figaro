@@ -172,7 +172,7 @@ TroupeLeaveRequest.Troupe
 TroupePolicyRequest.Troupe
 TroupePolicySetRequest.Body
 TroupePolicySetRequest.Troupe
-TroupeSignRequest.Door
+TroupeSignRequest.Endpoint
 TroupeSignRequest.Node
 TroupeSignRequest.PublicKey
 TroupeSignRequest.Rejoin

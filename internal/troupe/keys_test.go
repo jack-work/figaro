@@ -66,7 +66,7 @@ func TestTroupeNamesAreHostLabels(t *testing.T) {
 }
 
 // root -> intermediate -> node: a node certificate verifies against the
-// root alone, carries the node's identity, and serves both ends of the door.
+// root alone, carries the node's identity, and serves both ends of the endpoint.
 func TestANodeCertificateChainsToTheRoot(t *testing.T) {
 	now := time.Now()
 	rk, err := ParseRoot(rootPEM(t))

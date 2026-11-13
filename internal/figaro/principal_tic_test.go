@@ -10,7 +10,7 @@ import (
 )
 
 // The sender label is what a caller asserted; the principal is what the
-// door proved. A transcript keeps both, so it says who spoke as well as who
+// endpoint proved. A transcript keeps both, so it says who spoke as well as who
 // claimed to.
 func TestAUserTicCarriesTheStampedPrincipalBesideTheLabel(t *testing.T) {
 	a, _ := newQuoteAgent(t)

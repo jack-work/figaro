@@ -99,7 +99,7 @@ func fakeRPCServer(t *testing.T, sockPath string, handlers map[string]jkrpc.Hand
 }
 
 // fakeAngelusResolvingTo is strict about the pid, as the real daemon is: any
-// pid but wantPID is not-found. aria serves the aria methods on the same door.
+// pid but wantPID is not-found. aria serves the aria methods on the same endpoint.
 func fakeAngelusResolvingTo(t *testing.T, runtimeDir string, wantPID int, aria map[string]jkrpc.HandlerFunc) {
 	t.Helper()
 	methods := map[string]jkrpc.HandlerFunc{

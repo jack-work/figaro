@@ -14,7 +14,7 @@ import (
 // and an id nobody holds with the same code and words, and decide refuses
 // by policy before it looks the id up.
 func TestAPrincipalThatNamesNoFigaroCannotTellWhichIDsExist(t *testing.T) {
-	r := svcDoor(t, "decide:outfit:narrow-decide")
+	r := svcEndpoint(t, "decide:outfit:narrow-decide")
 	c := r.client()
 	missing := strings.Repeat("ab", 16)
 	refusal := func(m, id string) string {

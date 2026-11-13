@@ -24,7 +24,7 @@ func seekAttended(v *formView, open mountOpener) {
 }
 
 func (in *interactiveInput) mountForm(addr string) (*formView, actOn, func(), <-chan struct{}, error) {
-	a, err := doorFor(addr)
+	a, err := endpointFor(addr)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -34,7 +34,7 @@ func (in *interactiveInput) mountForm(addr string) (*formView, actOn, func(), <-
 		return view, in.actOnDaemon, closeView, done, err
 	}
 	send := func(ctx context.Context, method string, params json.RawMessage, target string) error {
-		acli, err := sdk.DialAngelus(a.Door)
+		acli, err := sdk.DialAngelus(a.Endpoint)
 		if err != nil {
 			return err
 		}

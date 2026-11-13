@@ -23,7 +23,7 @@ workers = ["worker0"]
 `
 
 // What a pool daemon refuses is decided when it starts: its log level, its
-// policy, the doors it never opened. A reload that adds the first pool would
+// policy, the endpoints it never opened. A reload that adds the first pool would
 // skip those checks, and one that drops the last would lift them while guest
 // figaros may still be in the store.
 func TestAReloadCannotMakeOrUnmakeAPoolDaemon(t *testing.T) {

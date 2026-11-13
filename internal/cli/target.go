@@ -61,11 +61,11 @@ func mintsWhenUnbound(autoCreate bool) bool { return autoCreate }
 
 func attachForeign(ctx context.Context, ref string) (string, sdk.Addr, rpc.AttachResponse, error) {
 	var none rpc.AttachResponse
-	a, err := doorFor(ref)
+	a, err := endpointFor(ref)
 	if err != nil {
 		return "", sdk.Addr{}, none, err
 	}
-	acli, err := sdk.DialAngelus(a.Door)
+	acli, err := sdk.DialAngelus(a.Endpoint)
 	if err != nil {
 		return "", sdk.Addr{}, none, err
 	}
@@ -80,7 +80,7 @@ func attachForeign(ctx context.Context, ref string) (string, sdk.Addr, rpc.Attac
 		return "", sdk.Addr{}, none, fmt.Errorf("attach %q: %w", ref, err)
 	}
 	id := onNodeOf(ref, resp.FigaroID)
-	return id, sdk.Addr{Door: a.Door, ID: id}, *resp, nil
+	return id, sdk.Addr{Endpoint: a.Endpoint, ID: id}, *resp, nil
 }
 
 func onNodeOf(ref, id string) string {

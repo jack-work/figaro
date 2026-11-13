@@ -31,25 +31,25 @@ import (
 )
 
 // fedNode is one daemon of a two-node federation on loopback: its own
-// store, a peercred unix door for its owner, a TLS node door, and doors
-// that admit a caller by bearer the way the web door does.
+// store, a peercred unix endpoint for its owner, a TLS node endpoint, and endpoints
+// that admit a caller by bearer the way the web endpoint does.
 type fedNode struct {
-	t       *testing.T
-	a       *angelus.Angelus
-	id      string
-	dir     string
-	owner   *sdk.Angelus
-	bearer  *authz.Issuers
-	keys    *authz.APIKeys
-	keysAt  atomic.Int32
-	admits  sync.Map
-	issuer  *peertest.Issuer
-	ctx     context.Context
-	stop    context.CancelFunc
-	doorLn  net.Listener
-	tlsCfg  *tls.Config
-	members *peer.Static
-	hs      *angelus.Handlers
+	t          *testing.T
+	a          *angelus.Angelus
+	id         string
+	dir        string
+	owner      *sdk.Angelus
+	bearer     *authz.Issuers
+	keys       *authz.APIKeys
+	keysAt     atomic.Int32
+	admits     sync.Map
+	issuer     *peertest.Issuer
+	ctx        context.Context
+	stop       context.CancelFunc
+	endpointLn net.Listener
+	tlsCfg     *tls.Config
+	members    *peer.Static
+	hs         *angelus.Handlers
 
 	pendingPeers []func() config.Peer
 	alsoOwners   []string
@@ -122,11 +122,11 @@ func (n *fedNode) serve(pki *peertest.PKI, others ...*fedNode) {
 	t := n.t
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	n.doorLn = ln
-	n.tlsCfg, err = peer.ServerTLS(pki.Door(n.id, ""), nil)
+	n.endpointLn = ln
+	n.tlsCfg, err = peer.ServerTLS(pki.Endpoint(n.id, ""), nil)
 	require.NoError(t, err)
 	for _, other := range others {
-		n.pendingPeers = append(n.pendingPeers, func() config.Peer { return pki.Peer(n.id, other.id, other.doorLn.Addr().String()) })
+		n.pendingPeers = append(n.pendingPeers, func() config.Peer { return pki.Peer(n.id, other.id, other.endpointLn.Addr().String()) })
 	}
 }
 
@@ -174,7 +174,7 @@ func (n *fedNode) start() {
 	waitForAngelus(t, n.a.SocketPath)
 
 	bearers := authz.Bearers{Issuers: n.bearer, Keys: n.keys}
-	door := &peer.Door{Members: members, Verify: func(ctx context.Context, token string) (context.Context, error) {
+	endpoint := &peer.Endpoint{Members: members, Verify: func(ctx context.Context, token string) (context.Context, error) {
 		if apikey.Is(token) {
 			n.keysAt.Add(1)
 		}
@@ -182,20 +182,20 @@ func (n *fedNode) start() {
 		seen.(*atomic.Int32).Add(1)
 		return bearers.Verify(ctx, token)
 	}}
-	go n.a.Serve(n.ctx, tls.NewListener(n.doorLn, n.tlsCfg), authz.DoorNode, door.Admit)
+	go n.a.Serve(n.ctx, tls.NewListener(n.endpointLn, n.tlsCfg), authz.EndpointNode, endpoint.Admit)
 
 	n.owner, err = sdk.DialAngelus(transport.UnixEndpoint(n.a.SocketPath))
 	require.NoError(t, err)
 	t.Cleanup(func() { n.owner.Close() })
 }
 
-// callerDoor is a unix door admitting every connection as the holder of token.
-func (n *fedNode) callerDoor(token string) transport.Endpoint {
+// callerEndpoint is a unix endpoint admitting every connection as the holder of token.
+func (n *fedNode) callerEndpoint(token string) transport.Endpoint {
 	t := n.t
 	path := filepath.Join(n.dir, fmt.Sprintf("caller-%d.sock", time.Now().UnixNano()))
 	ln, err := net.Listen("unix", path)
 	require.NoError(t, err)
-	go n.a.Serve(n.ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+	go n.a.Serve(n.ctx, ln, authz.EndpointLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		s, err := n.bearer.Open(ctx, token)
 		if err != nil {
 			return nil, err
@@ -205,14 +205,14 @@ func (n *fedNode) callerDoor(token string) transport.Endpoint {
 	return transport.UnixEndpoint(path)
 }
 
-// keyDoor is a unix door admitting every connection by an api key, the way
-// a bearer web door does.
-func (n *fedNode) keyDoor(wire string) transport.Endpoint {
+// keyEndpoint is a unix endpoint admitting every connection by an api key, the way
+// a bearer web endpoint does.
+func (n *fedNode) keyEndpoint(wire string) transport.Endpoint {
 	t := n.t
 	path := filepath.Join(n.dir, fmt.Sprintf("key-%d.sock", time.Now().UnixNano()))
 	ln, err := net.Listen("unix", path)
 	require.NoError(t, err)
-	go n.a.Serve(n.ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+	go n.a.Serve(n.ctx, ln, authz.EndpointLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		return n.keys.Admit(ctx, wire)
 	})
 	return transport.UnixEndpoint(path)
@@ -226,7 +226,7 @@ func (n *fedNode) as(client string) *sdk.Angelus {
 func (n *fedNode) asHolding(client string) (*sdk.Angelus, string) {
 	t := n.t
 	token := n.issuer.Mint(client, time.Hour)
-	c, err := sdk.DialAngelus(n.callerDoor(token))
+	c, err := sdk.DialAngelus(n.callerEndpoint(token))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 	return c, token
@@ -242,7 +242,7 @@ func (n *fedNode) admitted(token string) int32 {
 
 func (n *fedNode) ariaAs(client, id string, onNotify sdk.NotifyHandler) *sdk.Aria {
 	t := n.t
-	c, err := sdk.DialAria(sdk.Addr{Door: n.callerDoor(n.issuer.Mint(client, time.Hour)), ID: id}, onNotify)
+	c, err := sdk.DialAria(sdk.Addr{Endpoint: n.callerEndpoint(n.issuer.Mint(client, time.Hour)), ID: id}, onNotify)
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 	return c
@@ -304,7 +304,7 @@ func TestFederationCarriesTheListenStream(t *testing.T) {
 			deltas <- params
 		}
 	})
-	at := sdk.Addr{Door: transport.UnixEndpoint(b.a.SocketPath), ID: id}
+	at := sdk.Addr{Endpoint: transport.UnixEndpoint(b.a.SocketPath), ID: id}
 	local, err := sdk.DialAria(at, nil)
 	require.NoError(t, err)
 	defer local.Close()
@@ -324,7 +324,7 @@ func TestFederationCarriesTheListenStream(t *testing.T) {
 }
 
 // ls on A shows A's rows and B's, B's marked with their node; with B's
-// door down, A's rows still come back with a marker naming B.
+// endpoint down, A's rows still come back with a marker naming B.
 func TestFederationListsEveryNode(t *testing.T) {
 	a, b := newFedPair(t)
 	here, there := a.mint(), b.mint()
@@ -350,7 +350,7 @@ func TestFederationListsEveryNode(t *testing.T) {
 	require.Len(t, rest.Figaros, 1)
 	require.NotEqual(t, page.Figaros[0].ID, rest.Figaros[0].ID)
 
-	b.doorLn.Close()
+	b.endpointLn.Close()
 	resp, err = a.as("probe").List(ctx)
 	require.NoError(t, err)
 	require.Len(t, resp.Unreachable, 1)
@@ -370,7 +370,7 @@ func TestFederationListSkipsTheNodesTheCallerNames(t *testing.T) {
 	a, b := newFedPair(t)
 	here, there := a.mint(), b.mint()
 	ctx := callCtx(t)
-	b.doorLn.Close()
+	b.endpointLn.Close()
 
 	resp, err := a.as("probe").ListWith(ctx, rpc.ListRequest{})
 	require.NoError(t, err)
@@ -557,7 +557,7 @@ func TestFederationNamesAnUnreachableOwner(t *testing.T) {
 	id := b.mint()
 	ctx := callCtx(t)
 
-	b.doorLn.Close()
+	b.endpointLn.Close()
 	_, err := a.ariaAs("probe", id, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"lost"`}), 0)
 	require.ErrorContains(t, err, "node "+b.id+" is unreachable", "a cold miss hid the dead owner")
 }
@@ -569,7 +569,7 @@ func TestFederationNamesAKnownOwnerThatDied(t *testing.T) {
 
 	_, err := a.as("probe").List(ctx)
 	require.NoError(t, err)
-	b.doorLn.Close()
+	b.endpointLn.Close()
 	_, err = a.ariaAs("probe", id, nil).Set(ctx, *rawPatch(map[string]string{"mantra": `"lost"`}), 0)
 	require.ErrorContains(t, err, "node "+b.id+" is unreachable")
 }
@@ -584,7 +584,7 @@ func TestADeadOwnerIsNamedOnlyToACallerWhoMayReadItsAria(t *testing.T) {
 
 	_, err := a.as("probe").List(ctx)
 	require.NoError(t, err)
-	b.doorLn.Close()
+	b.endpointLn.Close()
 
 	never := "0123456789abcdef0123456789abcdef"
 	set := func(client, ref string) error {

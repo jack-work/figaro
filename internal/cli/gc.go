@@ -44,7 +44,7 @@ type gcOpts struct {
 	undo   string
 }
 
-type gcDoor interface {
+type gcEndpoint interface {
 	GCPlan(ctx context.Context, sel rpc.GCSelector) (*rpc.GCPlanResponse, error)
 	GCApply(ctx context.Context, run string) (*rpc.GCApplyResponse, error)
 	GCUndo(ctx context.Context, run string) (*rpc.GCUndoResponse, error)
@@ -102,7 +102,7 @@ func runGCCommand(loaded *config.Loaded, o gcOpts) {
 	})
 }
 
-func runGC(ctx context.Context, d gcDoor, o gcOpts, t gcTerm) error {
+func runGC(ctx context.Context, d gcEndpoint, o gcOpts, t gcTerm) error {
 	if o.undo != "" {
 		resp, err := d.GCUndo(ctx, o.undo)
 		if err != nil {

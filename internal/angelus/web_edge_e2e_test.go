@@ -40,10 +40,10 @@ role = "guest"
 principals = ["user:ana@auth.kelliher.info"]
 `
 
-// edgeDoor stands up a daemon whose web door trusts the edge's headers, as
+// edgeEndpoint stands up a daemon whose web endpoint trusts the edge's headers, as
 // spain's does, and returns the web socket path and one aria the owner
-// made through the local door.
-func edgeDoor(t *testing.T) (string, string) {
+// made through the local endpoint.
+func edgeEndpoint(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
@@ -77,7 +77,7 @@ type edgeClient struct {
 	n int
 }
 
-// forge dials the web door presenting whatever headers it is given, as a
+// forge dials the web endpoint presenting whatever headers it is given, as a
 // caller that reached the socket around the edge could.
 func forge(t *testing.T, path string, header http.Header) (*edgeClient, *http.Response, error) {
 	t.Helper()
@@ -135,13 +135,13 @@ func onAria(id string, params map[string]any) map[string]any {
 	return params
 }
 
-// The web door end to end, with the daemon's own handlers, store, policy
+// The web endpoint end to end, with the daemon's own handlers, store, policy
 // file and edge authenticator: a caller forging the edge's headers for a
 // name the policy does not bind is refused at the upgrade; one forging a
 // name bound to a narrow role gets in and learns nothing it may not read;
 // the owner's name sees the owner's aria.
-func TestTheWebDoorEndToEndAgainstForgedEdgeHeaders(t *testing.T) {
-	path, owned := edgeDoor(t)
+func TestTheWebEndpointEndToEndAgainstForgedEdgeHeaders(t *testing.T) {
+	path, owned := edgeEndpoint(t)
 
 	for name, h := range map[string]http.Header{
 		"no headers":                {},

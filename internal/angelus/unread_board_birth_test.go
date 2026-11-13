@@ -17,7 +17,7 @@ import (
 // it. A board that cannot be read refuses the birth.
 func TestABirthIsRefusedWhileTheBoardItInheritsCannotBeRead(t *testing.T) {
 	fault := angelus.NewFormFault(nil)
-	d := boxDoorRigWith(t, defaultPolicy, "true", angelus.ReadsFormsThrough(fault))
+	d := boxEndpointRigWith(t, defaultPolicy, "true", angelus.ReadsFormsThrough(fault))
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

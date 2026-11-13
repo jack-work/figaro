@@ -45,7 +45,7 @@ func TestAnIDFromWhoNamesNoFigaroIsRefusedFirst(t *testing.T) {
 	ctx := callCtx(t)
 
 	set := func(token, ref string) string {
-		c, err := sdk.DialAria(sdk.Addr{Door: a.callerDoor(token), ID: ref}, nil)
+		c, err := sdk.DialAria(sdk.Addr{Endpoint: a.callerEndpoint(token), ID: ref}, nil)
 		require.NoError(t, err)
 		defer c.Close()
 		_, err = c.Set(ctx, *rawPatch(map[string]string{"mantra": `"probe"`}), 0)

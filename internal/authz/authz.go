@@ -143,7 +143,7 @@ func PrincipalOf(ctx context.Context) rpc.Principal {
 type Request struct {
 	Identity Identity
 	Subject  jkauthz.Subject
-	Door     Door
+	Endpoint Endpoint
 	Method   string
 	Aria     string
 	Params   json.RawMessage
@@ -198,7 +198,7 @@ func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Po
 			req := Request{
 				Identity: id,
 				Subject:  subject,
-				Door:     DoorOf(ctx),
+				Endpoint: EndpointOf(ctx),
 				Method:   method,
 				Aria:     rpc.AriaOf(params),
 				Params:   params,
@@ -263,8 +263,8 @@ func Enforce(p *Policies) Policy {
 			return Deny("%s has no verb, so no policy can allow it", r.Method)
 		}
 		figaro, dropped := r.Identity.FigaroID, false
-		if (r.Door == DoorBox || r.Door == DoorHost) && !p.pinnedToBox(r.Subject, figaro) {
-			if box, _ := BoxOf(r.Subject.Principal); r.Door == DoorBox && verb != rpc.VerbNone && p.claimRequiredIn(box) {
+		if (r.Endpoint == EndpointBox || r.Endpoint == EndpointHost) && !p.pinnedToBox(r.Subject, figaro) {
+			if box, _ := BoxOf(r.Subject.Principal); r.Endpoint == EndpointBox && verb != rpc.VerbNone && p.claimRequiredIn(box) {
 				if figaro == "" {
 					return Deny("%s: box %s's door takes only calls that name their figaro (sandbox.boxes.%s.figaro_claim = \"required\")", r.Method, box, box)
 				}
@@ -272,7 +272,7 @@ func Enforce(p *Policies) Policy {
 			}
 			figaro, dropped = "", figaro != ""
 		}
-		if figaro != "" && p.dropsClaim(r.Door, figaro, r.Method) {
+		if figaro != "" && p.dropsClaim(r.Endpoint, figaro, r.Method) {
 			figaro, dropped = "", true
 		}
 		decided := func(d Decision) Decision {
@@ -282,7 +282,7 @@ func Enforce(p *Policies) Policy {
 		if checkedByHandler(r.Method) && !p.pool.Load() {
 			return decided(Allow())
 		}
-		if verb == rpc.VerbNone && r.Door.Trusted() {
+		if verb == rpc.VerbNone && r.Endpoint.Trusted() {
 			return Allow()
 		}
 		if verb == rpc.VerbNone || (filtersPerRow(r) && !p.pool.Load()) {
@@ -299,7 +299,7 @@ func Enforce(p *Policies) Policy {
 			res = Aria(r.Aria)
 		}
 		if verb == rpc.VerbLease || verb == rpc.VerbSay {
-			if r.Door == DoorNode {
+			if r.Endpoint == EndpointNode {
 				return Deny("%s: %s is asked of the daemon that holds the pool, never through a node door", r.Method, verb)
 			}
 		}
@@ -372,7 +372,7 @@ func decideResources(aria string, params json.RawMessage) ([]Resource, error) {
 	return on, nil
 }
 
-func (p *Policies) dropsClaim(d Door, figaro, method string) bool {
+func (p *Policies) dropsClaim(d Endpoint, figaro, method string) bool {
 	if !d.dropsClaimsNotHeld() || p.holdsFigaro(figaro) {
 		return false
 	}
@@ -382,7 +382,7 @@ func (p *Policies) dropsClaim(d Door, figaro, method string) bool {
 
 func (p *Policies) DroppingClaimsNotHeld(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
-		if id, ok := identityOf(ctx); ok && id.FigaroID != "" && p.dropsClaim(DoorOf(ctx), id.FigaroID, method) {
+		if id, ok := identityOf(ctx); ok && id.FigaroID != "" && p.dropsClaim(EndpointOf(ctx), id.FigaroID, method) {
 			id.FigaroID = ""
 			ctx = withIdentity(ctx, id)
 		}

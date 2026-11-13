@@ -74,7 +74,7 @@ func localMembers(loaded *config.Loaded) (*rpc.TroupeMembersResponse, error) {
 	if peers, err := loaded.Peers(); err != nil || (len(peers) == 0 && name == "") {
 		return nil, err
 	}
-	acli, err := sdk.DialAngelus(doorEndpoint())
+	acli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		return nil, fmt.Errorf("daemon not running, so no peer versions: %w", err)
 	}
@@ -261,7 +261,7 @@ func runTroupeVerb(loaded *config.Loaded, args []string, jsonOut bool, o joinOpt
 		if len(rest) != 1 {
 			dieUsage("troupe leaf takes one troupe: hush troupe-root leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir> [--ttl <days>]")
 		}
-		runTroupeLeaf(loaded, rest[0], k.TTL, leafOpts{For: iss.For, PublicKey: iss.PublicKey, Door: o.Door, Out: iss.Out})
+		runTroupeLeaf(loaded, rest[0], k.TTL, leafOpts{For: iss.For, PublicKey: iss.PublicKey, Endpoint: o.Endpoint, Out: iss.Out})
 	case "renewer":
 		if len(rest) != 3 {
 			dieUsage("troupe renewer takes a troupe, a node and the node whose intermediate renews it, and the root key on stdin")

@@ -46,9 +46,9 @@ func credsOf(k *troupe.Keeper) *Credentials {
 	return &Credentials{Certificate: k.Current, Roots: k.Roots}
 }
 
-func serveTroupeDoor(t *testing.T, k *troupe.Keeper) (string, chan *x509.Certificate) {
+func serveTroupeEndpoint(t *testing.T, k *troupe.Keeper) (string, chan *x509.Certificate) {
 	t.Helper()
-	cfg, err := ServerTLS(config.TLSDoor{}, credsOf(k))
+	cfg, err := ServerTLS(config.TLSEndpoint{}, credsOf(k))
 	require.NoError(t, err)
 	ln, err := tls.Listen("tcp", "127.0.0.1:0", cfg)
 	require.NoError(t, err)
@@ -86,10 +86,10 @@ func dialTroupe(t *testing.T, m *Static, node string) (*x509.Certificate, error)
 
 // With troupe keys a peer needs no certificate files: the dialer presents
 // its current node certificate, checks the other end against the troupe
-// root and the peer's default identity, and the door does the same.
+// root and the peer's default identity, and the endpoint does the same.
 func TestTroupeKeysDialAndServeWithoutCertificateFiles(t *testing.T) {
 	ks, _ := troupeNodes(t, time.Now(), troupe.IntermediateTTL, "node-a", "node-b")
-	addr, seenAtB := serveTroupeDoor(t, ks["node-b"])
+	addr, seenAtB := serveTroupeEndpoint(t, ks["node-b"])
 	m, err := NewStatic(0, []config.Peer{{Node: "node-b", Address: addr, Identity: troupe.Identity("estate", "node-b")}}, credsOf(ks["node-a"]))
 	require.NoError(t, err)
 
@@ -100,13 +100,13 @@ func TestTroupeKeysDialAndServeWithoutCertificateFiles(t *testing.T) {
 	require.Equal(t, troupe.Identity("estate", "node-a"), client.URIs[0].String())
 }
 
-// A renewal takes effect on the next handshake of a live door, without a
-// restart, and an expired intermediate closes the door to peers. The
+// A renewal takes effect on the next handshake of a live endpoint, without a
+// restart, and an expired intermediate closes the endpoint to peers. The
 // certificates are issued five days in the past so that renewing at the
 // real present is due and verifies against the real clock.
 func TestARenewedCertificateIsServedLiveAndAnExpiredOneIsNot(t *testing.T) {
 	ks, c := troupeNodes(t, time.Now().Add(-5*24*time.Hour), 10*24*time.Hour, "node-a", "node-b")
-	addr, _ := serveTroupeDoor(t, ks["node-b"])
+	addr, _ := serveTroupeEndpoint(t, ks["node-b"])
 	m, err := NewStatic(0, []config.Peer{{Node: "node-b", Address: addr, Identity: troupe.Identity("estate", "node-b")}}, credsOf(ks["node-a"]))
 	require.NoError(t, err)
 

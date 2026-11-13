@@ -102,7 +102,7 @@ func TestDrawingAFormNeedsKillOnIt(t *testing.T) {
 
 // A box draws the forms it minted, and no form it lacks kill on.
 func TestABoxDrawsOnlyItsOwnForms(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	if err := wire.Install(d.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)
 	}

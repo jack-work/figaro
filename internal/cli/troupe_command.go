@@ -114,7 +114,7 @@ listing. Not yet settled: moves, cross-node answers, policy v2.
 		ArgsMax: 4,
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runTroupeVerb(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"), joinOpts{
-				Delegate: ctx.Flag("delegate"), Door: ctx.Flag("door"), Listen: ctx.Flag("listen"), RootSHA256: ctx.Flag("root-sha256"), Yes: ctx.BoolFlag("yes"),
+				Delegate: ctx.Flag("delegate"), Endpoint: ctx.Flag("door"), Listen: ctx.Flag("listen"), RootSHA256: ctx.Flag("root-sha256"), Yes: ctx.BoolFlag("yes"),
 			}, keyOpts{For: ctx.Flag("for"), Out: ctx.Flag("out"), AllowDisk: ctx.BoolFlag("allow-disk"), Root: ctx.BoolFlag("root"), PublicKey: ctx.Flag("public-key")}, apiKeyOpts{TTL: ctx.Flag("ttl"), Nodes: ctx.Flag("nodes"), Static: ctx.BoolFlag("static")})
 		},
 		CompleteArgs: completeWords([][2]string{

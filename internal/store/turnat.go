@@ -7,9 +7,9 @@ import (
 // TurnAtLT is the turn owning lt: the turn of the record at lt or, past the
 // end, of the last record; exact reports which.
 //
-// The answer is local. The IR door stamps every record with its turn and
+// The answer is local. The IR endpoint stamps every record with its turn and
 // MigrateStampTurnIDs (channel v5) stamped the rest, so the only zero stamps
-// are records written around the door: a birth record at a fork base, the
+// are records written around the endpoint: a birth record at a fork base, the
 // records before the first question. Those belong to the nearest non-zero
 // stamp at or below, so the read is one record in the common case and a short
 // backward window otherwise. Positional reads only, never a walk from LT 1.

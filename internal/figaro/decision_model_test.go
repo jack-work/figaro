@@ -17,7 +17,7 @@ import (
 
 // A decision model answers typed questions and cannot hold a conversation, so
 // an aria pointed at one would fail every turn. The set is refused at the
-// door, with the verb that does work named in the refusal.
+// endpoint, with the verb that does work named in the refusal.
 func TestSetRefusesADecisionModelAsSystemModel(t *testing.T) {
 	cb, _ := form.Open("")
 	be, id := store.NewTestAria(t, "decide-refuse", message.Patch{})
