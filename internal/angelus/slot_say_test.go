@@ -55,16 +55,19 @@ func sayRigUnder(t *testing.T, policy string) (grantRig, *brokerSays, rpc.SlotLe
 	return r, broker, lease
 }
 
-// A figaro woken in a leased box has the pool's tool and no other: no
-// file or exec tool is registered for it. A figaro in no box keeps the
-// daemon's.
-func TestAFigaroInALeasedBoxWakesWithThePoolsToolAlone(t *testing.T) {
+// A figaro woken in a leased box has the pool's tools and no other: no
+// file or exec tool is registered for it, and search only where its pool
+// names a search endpoint. A figaro in no box keeps the daemon's.
+func TestAFigaroInALeasedBoxWakesWithThePoolsToolsAlone(t *testing.T) {
 	r, _, lease := sayRig(t)
-	if got := r.hs.ToolsAtWake(lease.Box, lease.Aria); !slices.Equal(got, []string{"say"}) {
-		t.Errorf("a leased figaro wakes with %v, want say alone", got)
+	if got := r.hs.ToolsAtWake(lease.Box, lease.Aria); !slices.Equal(got, []string{"say", "search"}) {
+		t.Errorf("a leased figaro wakes with %v, want say and search", got)
 	}
-	if got := r.hs.ToolsAtWake("slot1-g4", "x"); !slices.Equal(got, []string{"say"}) {
-		t.Errorf("a figaro in a slot's generation no lease holds wakes with %v, want say alone", got)
+	if got := r.hs.ToolsAtWake("slot1-g4", "x"); !slices.Equal(got, []string{"say", "search"}) {
+		t.Errorf("a figaro in a slot's generation no lease holds wakes with %v, want say and search", got)
+	}
+	if got := r.hs.ToolsAtWake("slot5-g1", "x"); !slices.Equal(got, []string{"say"}) {
+		t.Errorf("a figaro of a pool with no search endpoint wakes with %v, want say alone", got)
 	}
 	if got := r.hs.ToolsAtWake("", "x"); !slices.Equal(got, []string{"read", "write"}) {
 		t.Errorf("a figaro in no box wakes with %v, want the daemon's tools", got)

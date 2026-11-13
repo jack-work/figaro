@@ -2,6 +2,8 @@ package angelus
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jack-work/jkauthz"
@@ -163,6 +165,19 @@ func (hs *Handlers) ToolsAtWake(box, figaroID string) []string {
 		r.MustRegister(&tool.ReadTool{}, &tool.WriteTool{})
 		return r
 	}).Names()
+}
+
+func (hs *Handlers) RunToolAtWake(ctx context.Context, box, figaroID, name string, args map[string]any) (string, error) {
+	t, ok := hs.h.toolsIn(box, figaroID, tool.NewRegistry).Get(name)
+	if !ok {
+		return "", fmt.Errorf("no tool %s at wake in %s", name, box)
+	}
+	out, err := t.Execute(ctx, args, nil)
+	var text strings.Builder
+	for _, c := range out {
+		text.WriteString(c.Text)
+	}
+	return text.String(), err
 }
 
 func (hs *Handlers) SayAs(ctx context.Context, box, figaroID, text string) error {

@@ -18,6 +18,7 @@ type SlotPools struct {
 	Generations *slotpool.Generations
 	Caller      func(provider string) (slotpool.Caller, error)
 	SayClient   *http.Client
+	SearchWire  http.RoundTripper
 	Now         func() time.Time
 
 	leasing sync.Mutex

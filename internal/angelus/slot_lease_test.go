@@ -28,6 +28,8 @@ outfit = "leased"
 provider = "mock"
 rou2_lease_class = "group"
 say_url = "https://broker.example/groups/say"
+search_url = "http://127.0.0.1:4390/search"
+search_credential = "search-groups"
 slots = ["slot0", "slot1"]
 
 [slot.pools.others]

@@ -14,6 +14,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/slotpool"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
@@ -31,14 +32,20 @@ func (h *handlers) toolsIn(sandboxName, figaroID string, otherwise func() *tool.
 	if loaded == nil || !leasedBoxOfSlot(sandboxName, poolSlots(loaded)) {
 		return otherwise()
 	}
-	return h.poolTools(sandboxName, figaroID)
+	pool, _ := poolOfLeasedBox(loaded, sandboxName)
+	return h.poolTools(pool, sandboxName, figaroID)
 }
 
-func (h *handlers) poolTools(box, figaroID string) *tool.Registry {
+func (h *handlers) poolTools(pool config.PoolConfig, box, figaroID string) *tool.Registry {
 	reg := tool.NewRegistry()
 	reg.MustRegister(&tool.SayTool{Say: func(ctx context.Context, text string) error {
 		return h.sayAs(ctx, box, figaroID, text)
 	}})
+	if pool.SearchURL != "" {
+		reg.MustRegister(&tool.SearchTool{Search: func(ctx context.Context, query string, count int) ([]tool.SearchResult, error) {
+			return h.searchAs(ctx, box, figaroID, query, count)
+		}})
+	}
 	return reg
 }
 

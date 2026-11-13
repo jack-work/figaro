@@ -24,7 +24,10 @@ type PoolConfig struct {
 	SayURL            string     `toml:"say_url"`
 	SuccessionsPerDay *int       `toml:"successions_per_day"`
 	SayPerMinute      *int       `toml:"say_per_minute"`
+	SearchURL         string     `toml:"search_url"`
 	SearchCredential  string     `toml:"search_credential"`
+	SearchPerMinute   *int       `toml:"search_per_minute"`
+	SearchPerDay      *int       `toml:"search_per_day"`
 	DeliverMaxBytes   int        `toml:"deliver_max_bytes"`
 	Slots             []PoolSlot `toml:"slots"`
 }
@@ -46,6 +49,8 @@ const (
 	DefaultSuccessionsPerDay = 4
 	DefaultDeliverMaxBytes   = 16 << 10
 	DefaultSayPerMinute      = 20
+	DefaultSearchPerMinute   = 6
+	DefaultSearchPerDay      = 100
 
 	reservedOutfit = "default"
 )
@@ -62,6 +67,17 @@ func (p PoolConfig) SayBound() int {
 		return DefaultSayPerMinute
 	}
 	return *p.SayPerMinute
+}
+
+func (p PoolConfig) SearchBounds() (perMinute, perDay int) {
+	perMinute, perDay = DefaultSearchPerMinute, DefaultSearchPerDay
+	if p.SearchPerMinute != nil {
+		perMinute = *p.SearchPerMinute
+	}
+	if p.SearchPerDay != nil {
+		perDay = *p.SearchPerDay
+	}
+	return perMinute, perDay
 }
 
 func (p PoolConfig) DeliverCap() int {
@@ -129,11 +145,20 @@ func (c Config) validateSlot() error {
 			return fmt.Errorf("%s.search_credential %q: want the name of a file in the unit's credentials directory, not a path", where, p.SearchCredential)
 		case p.SearchCredential == "." || p.SearchCredential == "..":
 			return fmt.Errorf("%s.search_credential %q: want the name of a file", where, p.SearchCredential)
+		case p.SearchCredential != "" && p.SearchURL == "":
+			return fmt.Errorf("%s.search_credential with no search_url: a credential for a search the pool does not make", where)
+		case p.SearchPerMinute != nil && *p.SearchPerMinute < 0:
+			return fmt.Errorf("%s.search_per_minute %d is negative", where, *p.SearchPerMinute)
+		case p.SearchPerDay != nil && *p.SearchPerDay < 0:
+			return fmt.Errorf("%s.search_per_day %d is negative", where, *p.SearchPerDay)
 		case len(p.Slots) == 0:
 			return fmt.Errorf("%s.slots: a pool with no slot can lease nothing", where)
 		}
 		if u, err := url.Parse(p.SayURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
 			return fmt.Errorf("%s.say_url %q: want an http or https URL with a host and no credentials", where, p.SayURL)
+		}
+		if u, err := url.Parse(p.SearchURL); p.SearchURL != "" && (err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil) {
+			return fmt.Errorf("%s.search_url %q: want an http or https URL with a host and no credentials", where, p.SearchURL)
 		}
 		for _, slot := range p.SlotNames() {
 			switch {

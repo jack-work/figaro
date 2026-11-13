@@ -54,7 +54,7 @@ func TestAPoolLoadsWithItsDefaults(t *testing.T) {
 	if got := p.SlotNames(); len(got) != 2 || got[0] != "slot0" || got[1] != "slot1" {
 		t.Fatalf("slots %v", got)
 	}
-	if p.SuccessionBound() != 4 || p.DeliverCap() != 16<<10 || p.SayBound() != 20 {
+	if m, d := p.SearchBounds(); p.SuccessionBound() != 4 || p.DeliverCap() != 16<<10 || p.SayBound() != 20 || m != 6 || d != 100 || p.SearchURL != "" {
 		t.Fatalf("defaults: %d successions a day, %d bytes a deliver, %d says a minute", p.SuccessionBound(), p.DeliverCap(), p.SayBound())
 	}
 	if _, ok := l.Pool("other"); ok {
@@ -135,6 +135,11 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 		"a negative say bound":        {poolBody + "say_per_minute = -1\n", "say_per_minute"},
 		"a search credential by path": {poolBody + "search_credential = \"/etc/search.key\"\n", "search_credential"},
 		"a search credential of dots": {poolBody + "search_credential = \"..\"\n", "search_credential"},
+		"a search credential alone":   {poolBody + "search_credential = \"search-groups\"\n", "no search_url"},
+		"a search url on a file":      {poolBody + "search_url = \"file:///etc/passwd\"\n", "search_url"},
+		"a search url with a user":    {poolBody + "search_url = \"http://u:p@127.0.0.1:9/\"\n", "search_url"},
+		"negative searches a minute":  {poolBody + "search_url = \"http://127.0.0.1:9/\"\nsearch_per_minute = -1\n", "search_per_minute"},
+		"negative searches a day":     {poolBody + "search_url = \"http://127.0.0.1:9/\"\nsearch_per_day = -1\n", "search_per_day"},
 	} {
 		_, err := loadBody(t, c.body, "rou2")
 		if err == nil {
@@ -146,13 +151,16 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 }
 
 func TestAPoolTakesTheKeysItKnows(t *testing.T) {
-	l, err := loadBody(t, poolBody+"successions_per_day = 0\ndeliver_max_bytes = 4096\nsay_per_minute = 3\nsearch_credential = \"search-groups\"\n", "rou2")
+	l, err := loadBody(t, poolBody+"successions_per_day = 0\ndeliver_max_bytes = 4096\nsay_per_minute = 3\nsearch_url = \"http://127.0.0.1:4390/search\"\nsearch_credential = \"search-groups\"\nsearch_per_minute = 2\nsearch_per_day = 0\n", "rou2")
 	if err != nil {
 		t.Fatal(err)
 	}
 	p, _ := l.Pool("chat-groups")
-	if p.SuccessionBound() != 0 || p.DeliverCap() != 4096 || p.SayBound() != 3 || p.SearchCredential != "search-groups" {
+	if p.SuccessionBound() != 0 || p.DeliverCap() != 4096 || p.SayBound() != 3 || p.SearchURL != "http://127.0.0.1:4390/search" || p.SearchCredential != "search-groups" {
 		t.Fatalf("pool %+v", p)
+	}
+	if m, d := p.SearchBounds(); m != 2 || d != 0 {
+		t.Fatalf("search bounds %d a minute, %d a day", m, d)
 	}
 }
 
