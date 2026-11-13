@@ -1,4 +1,4 @@
-package slotpool
+package durable
 
 import (
 	"fmt"
@@ -8,14 +8,14 @@ import (
 	"github.com/jack-work/figaro/figwal/disk"
 )
 
-func privateDir(dir string) error {
+func PrivateDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	return disk.SyncDir(filepath.Dir(dir))
 }
 
-func writeDurably(path string, data []byte) error {
+func Write(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, tempPrefix(path))
 	if err != nil {
@@ -51,7 +51,7 @@ func writeDurably(path string, data []byte) error {
 
 func tempPrefix(path string) string { return "." + filepath.Base(path) + ".tmp" }
 
-func removeUnfinishedWrites(path string) error {
+func RemoveUnfinished(path string) error {
 	left, err := filepath.Glob(filepath.Join(filepath.Dir(path), tempPrefix(path)+"*"))
 	if err != nil {
 		return err

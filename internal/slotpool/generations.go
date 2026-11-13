@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/jack-work/figaro/internal/durable"
 )
 
 type Generations struct {
@@ -18,7 +20,7 @@ type Generations struct {
 }
 
 func OpenGenerations(dir string) (*Generations, error) {
-	if err := privateDir(dir); err != nil {
+	if err := durable.PrivateDir(dir); err != nil {
 		return nil, fmt.Errorf("generation counters: %w", err)
 	}
 	return &Generations{dir: dir}, nil
@@ -58,10 +60,10 @@ func (g *Generations) Next(slot string, floor uint64) (uint64, error) {
 	if highest == math.MaxUint64 {
 		return 0, fmt.Errorf("generation counter of %s is spent", slot)
 	}
-	if err := removeUnfinishedWrites(g.path(slot)); err != nil {
+	if err := durable.RemoveUnfinished(g.path(slot)); err != nil {
 		return 0, fmt.Errorf("generation counter of %s: %w", slot, err)
 	}
-	if err := writeDurably(g.path(slot), []byte(strconv.FormatUint(highest+1, 10)+"\n")); err != nil {
+	if err := durable.Write(g.path(slot), []byte(strconv.FormatUint(highest+1, 10)+"\n")); err != nil {
 		return 0, err
 	}
 	return highest + 1, nil

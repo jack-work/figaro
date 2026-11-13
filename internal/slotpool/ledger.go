@@ -13,6 +13,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/jack-work/figaro/internal/durable"
 )
 
 type State string
@@ -102,10 +104,10 @@ type Ledger struct {
 }
 
 func OpenLedger(path string) (*Ledger, error) {
-	if err := privateDir(filepath.Dir(path)); err != nil {
+	if err := durable.PrivateDir(filepath.Dir(path)); err != nil {
 		return nil, fmt.Errorf("ledger: %w", err)
 	}
-	if err := removeUnfinishedWrites(path); err != nil {
+	if err := durable.RemoveUnfinished(path); err != nil {
 		return nil, fmt.Errorf("ledger: %w", err)
 	}
 	l := &Ledger{path: path, now: time.Now, waiting: map[string]chan struct{}{}}
@@ -138,7 +140,7 @@ func (l *Ledger) commit(change func(*ledgerFile) error) error {
 	if err != nil {
 		return err
 	}
-	if err := writeDurably(l.path, append(raw, '\n')); err != nil {
+	if err := durable.Write(l.path, append(raw, '\n')); err != nil {
 		return err
 	}
 	l.file = next
