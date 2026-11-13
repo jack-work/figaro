@@ -58,6 +58,16 @@ func (hs *hubs) all() []*ariaHub {
 	return out
 }
 
+func (hs *hubs) ids() []string {
+	hs.mu.Lock()
+	defer hs.mu.Unlock()
+	out := make([]string, 0, len(hs.m))
+	for id := range hs.m {
+		out = append(out, id)
+	}
+	return out
+}
+
 // closeAll is for daemon shutdown only: a hub outliving its agent is the normal state.
 func (hs *hubs) closeAll() {
 	for _, hb := range hs.all() {

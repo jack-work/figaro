@@ -253,6 +253,18 @@ type PprofArmResponse struct {
 	Socket string `json:"socket,omitempty"`
 }
 
+// Resident is a live agent or an open endpoint whose figaro the store does
+// not hold.
+type Resident struct {
+	ID       string `json:"id"`
+	Agent    bool   `json:"agent,omitempty"`
+	Endpoint bool   `json:"endpoint,omitempty"`
+}
+
+type ResidentsResponse struct {
+	Residents []Resident `json:"residents"`
+}
+
 type QuarantineEntry struct {
 	Figaro  string   `json:"figaro"`
 	Node    string   `json:"node"`

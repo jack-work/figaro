@@ -68,6 +68,10 @@ func (h *handlers) pprofArm(ctx context.Context, params json.RawMessage) (interf
 	return rpc.PprofArmResponse{Socket: path}, nil
 }
 
+func (h *handlers) residents(context.Context, json.RawMessage) (interface{}, error) {
+	return rpc.ResidentsResponse{Residents: h.angelus.Residents()}, nil
+}
+
 func (h *handlers) providerLedger(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ProviderLedgerRequest
 	if len(params) > 0 {
