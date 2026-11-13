@@ -16,7 +16,7 @@ import (
 type SlotPools struct {
 	Ledger      *slotpool.Ledger
 	Generations *slotpool.Generations
-	Caller      func(provider string) (slotpool.Caller, error)
+	Caller      func(pool config.PoolConfig) (slotpool.Caller, error)
 	SayClient   *http.Client
 	SearchWire  http.RoundTripper
 	Now         func() time.Time

@@ -172,7 +172,7 @@ func (h *handlers) leaseCaller(loaded *config.Loaded, pool string) (slotpool.Cal
 	if h.angelus.Slots.Caller == nil {
 		return nil, "", fmt.Errorf("pool %s: this daemon reaches no rou2 to open or close a lease's caller", pool)
 	}
-	caller, err := h.angelus.Slots.Caller(p.Provider)
+	caller, err := h.angelus.Slots.Caller(p)
 	if err != nil {
 		return nil, "", fmt.Errorf("pool %s: its provider %s reaches no rou2: %w", pool, p.Provider, err)
 	}

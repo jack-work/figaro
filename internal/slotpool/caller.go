@@ -29,6 +29,21 @@ const (
 	leaseUnknown    = "lease_unknown"
 )
 
+func LeaseAPI(root, providerBase string) (string, error) {
+	r, err := url.Parse(root)
+	if err != nil {
+		return "", fmt.Errorf("rou2_url %q: %w", root, err)
+	}
+	b, err := url.Parse(providerBase)
+	if err != nil {
+		return "", fmt.Errorf("the pool's provider base %q: %w", providerBase, err)
+	}
+	if r.Scheme != b.Scheme || r.Host != b.Host {
+		return "", fmt.Errorf("rou2_url %s is not where the pool's provider sends its credential (%s://%s); the lease API is asked with that credential, so it goes nowhere else", root, b.Scheme, b.Host)
+	}
+	return strings.TrimRight(root, "/") + "/v1", nil
+}
+
 type Bearer interface {
 	Resolve() (string, error)
 	Invalidate(token string) error

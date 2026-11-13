@@ -105,7 +105,11 @@ func rou2Rig(t *testing.T) (*fakeRou2, *fakeBearer, Rou2) {
 	srv := httptest.NewServer(fake)
 	t.Cleanup(srv.Close)
 	bearer := &fakeBearer{tokens: []string{"good"}}
-	return fake, bearer, Rou2{Base: srv.URL + "/v1/", Bearer: bearer, HTTP: srv.Client()}
+	api, err := LeaseAPI(srv.URL, srv.URL+"/u/explabs/v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fake, bearer, Rou2{Base: api, Bearer: bearer, HTTP: srv.Client()}
 }
 
 func TestARou2LeaseOpensOnceClosesForGoodAndNeverReopens(t *testing.T) {

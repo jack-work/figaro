@@ -417,12 +417,16 @@ func Run() {
 			os.Exit(1)
 		}
 		a.Policies.SetLeases(a.Slots)
-		a.Slots.Caller = func(provider string) (slotpool.Caller, error) {
-			up, err := relay.Resolve(loaded, provider)
+		a.Slots.Caller = func(pool config.PoolConfig) (slotpool.Caller, error) {
+			up, err := relay.Resolve(loaded, pool.Provider)
 			if err != nil {
 				return nil, err
 			}
-			return slotpool.Rou2{Base: up.Base(), Bearer: up.Credential()}, nil
+			api, err := slotpool.LeaseAPI(pool.Rou2URL, up.Base())
+			if err != nil {
+				return nil, err
+			}
+			return slotpool.Rou2{Base: api, Bearer: up.Credential()}, nil
 		}
 	}
 	figOtel.SetMemProbe(func() figOtel.MemSample {

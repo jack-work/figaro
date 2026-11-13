@@ -17,6 +17,7 @@ enabled = true
 outfit = "leased"
 provider = "mock"
 rou2_lease_class = "group"
+rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/groups/say"
 slots = ["slot0"]
 `

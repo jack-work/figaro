@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/slotpool"
 )
 
@@ -68,10 +69,10 @@ var rigRou2s sync.Map
 
 func installRou2(r grantRig) *rigRou2 {
 	f := &rigRou2{classes: map[string]string{}}
-	r.a.Slots.Caller = func(provider string) (slotpool.Caller, error) {
+	r.a.Slots.Caller = func(pool config.PoolConfig) (slotpool.Caller, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		f.provider = append(f.provider, provider)
+		f.provider = append(f.provider, pool.Provider)
 		return f, nil
 	}
 	rigRou2s.Store(r.a, f)

@@ -22,6 +22,7 @@ policy = "policy.toml"
 outfit = "group"
 provider = "rou2"
 rou2_lease_class = "group"
+rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/say"
 slots = ["slot0"]
 `

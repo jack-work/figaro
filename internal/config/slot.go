@@ -22,6 +22,7 @@ type PoolConfig struct {
 	Outfit            string     `toml:"outfit"`
 	Provider          string     `toml:"provider"`
 	Rou2LeaseClass    string     `toml:"rou2_lease_class"`
+	Rou2URL           string     `toml:"rou2_url"`
 	SayURL            string     `toml:"say_url"`
 	SuccessionsPerDay *int       `toml:"successions_per_day"`
 	SayPerMinute      *int       `toml:"say_per_minute"`
@@ -174,6 +175,9 @@ func (c Config) validateSlot() error {
 			return fmt.Errorf("%s.search_per_day %d is negative", where, *p.SearchPerDay)
 		case len(p.Slots) == 0:
 			return fmt.Errorf("%s.slots: a pool with no slot can lease nothing", where)
+		}
+		if u, err := url.Parse(p.Rou2URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
+			return fmt.Errorf("%s.rou2_url %q: want rou2's root, an http or https URL with a host and nothing after it; leases are opened at <root>/v1/leases", where, p.Rou2URL)
 		}
 		if !carriesABearerSafely(p.SayURL) {
 			return fmt.Errorf("%s.say_url %q: %s", where, p.SayURL, bearerURLWant)

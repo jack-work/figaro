@@ -17,6 +17,7 @@ enabled = true
 outfit = "broker-group"
 provider = "rou2"
 rou2_lease_class = "chat-group"
+rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/groups/say"
 slots = ["slot0"]
 `

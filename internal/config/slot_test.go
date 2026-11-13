@@ -15,6 +15,7 @@ enabled = true
 outfit = "broker-group"
 provider = "rou2"
 rou2_lease_class = "chat-group"
+rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/groups/say"
 slots = ["slot0", "slot1"]
 `
@@ -53,6 +54,9 @@ func TestAPoolLoadsWithItsDefaults(t *testing.T) {
 	}
 	if got := p.SlotNames(); len(got) != 2 || got[0] != "slot0" || got[1] != "slot1" {
 		t.Fatalf("slots %v", got)
+	}
+	if p.Rou2URL != "http://127.0.0.1:9110" {
+		t.Fatalf("rou2_url %q", p.Rou2URL)
 	}
 	if m, d := p.SearchBounds(); p.SuccessionBound() != 4 || p.DeliverCap() != 16<<10 || p.SayBound() != 20 || m != 6 || d != 100 || p.SearchURL != "" {
 		t.Fatalf("defaults: %d successions a day, %d bytes a deliver, %d says a minute", p.SuccessionBound(), p.DeliverCap(), p.SayBound())
@@ -117,6 +121,10 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 		"the config's default outfit": {"default_outfit = \"house\"\n" + swap(`"broker-group"`, `"house"`), "daemon's own figaros"},
 		"no provider":                 {swap("provider = \"rou2\"\n", ""), "provider"},
 		"no lease class":              {swap("rou2_lease_class = \"chat-group\"\n", ""), "rou2_lease_class"},
+		"no rou2 url":                 {swap("rou2_url = \"http://127.0.0.1:9110\"\n", ""), "rou2_url"},
+		"a rou2 url with a path":      {swap("http://127.0.0.1:9110", "http://127.0.0.1:9110/u/explabs/v1"), "rou2_url"},
+		"a rou2 url with a user":      {swap("http://127.0.0.1:9110", "http://u:p@127.0.0.1:9110"), "rou2_url"},
+		"a rou2 url on a file":        {swap("http://127.0.0.1:9110", "file:///run/rou2"), "rou2_url"},
 		"a route of broker's":         {poolBody + "page_route = \"admin\"\n", "slot.pools.chat-groups.page_route: not a key figaro knows"},
 		"a figaro to page":            {poolBody + "page = \"@owner\"\n", "slot.pools.chat-groups.page: not a key figaro knows"},
 		"no say url":                  {swap("say_url = \"https://broker.example/groups/say\"\n", ""), "say_url"},
