@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/jack-work/figaro/api/handle"
@@ -151,38 +153,45 @@ type formNamer interface {
 }
 
 func (h *handlers) formNamed(ctx context.Context, name string) (string, bool, error) {
-	roles, forms := h.formsNamed(name)
+	roles, forms, unread := h.formsNamed(name)
 	box, _ := callerBox(ctx)
-	roles, forms = h.nameableFrom(box, roles), h.nameableFrom(box, forms)
+	roles, unreadRoles := h.nameableFrom(box, roles)
+	forms, unreadForms := h.nameableFrom(box, forms)
+	for _, id := range slices.Concat(unread, unreadRoles, unreadForms) {
+		if h.allowed(ctx, rpc.VerbRead, authz.Aria(id)) == nil {
+			slog.Warn("a form that may carry a name asked for cannot be read; the name is refused", "name", name, "form", id)
+			return "", false, fmt.Errorf("@%s: a form that may carry that name cannot be read, so the name is refused", name)
+		}
+	}
 	if id, found, err := h.oneReadable(ctx, name, "roles", roles); found || err != nil {
 		return id, found, err
 	}
 	return h.oneReadable(ctx, name, "forms", forms)
 }
 
-func (h *handlers) nameableFrom(box string, ids []string) []string {
-	var out []string
+func (h *handlers) nameableFrom(box string, ids []string) (nameable, unread []string) {
 	for _, id := range ids {
 		snap, err := h.angelus.Backend.FormState(id)
 		if err != nil {
+			unread = append(unread, id)
 			continue
 		}
 		if held := h.heldBox(snap); held == "" || held == box {
-			out = append(out, id)
+			nameable = append(nameable, id)
 		}
 	}
-	return out
+	return nameable, unread
 }
 
-func (h *handlers) formsNamed(name string) (roles, forms []string) {
+func (h *handlers) formsNamed(name string) (roles, forms, unread []string) {
 	if n, ok := h.angelus.Backend.(formNamer); ok {
 		roles, forms, ready := n.FormsNamed(name)
 		if ready {
-			return roles, forms
+			return roles, forms, nil
 		}
 	}
 	if h.angelus.Backend == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	return h.scanFormsNamed(name)
 }
@@ -207,10 +216,11 @@ func (h *handlers) oneReadable(ctx context.Context, name, species string, ids []
 	return "", false, fmt.Errorf("@%s names %d %s: %s; name one by its handle", name, len(readable), species, strings.Join(named, ", "))
 }
 
-func (h *handlers) scanFormsNamed(name string) (roles, forms []string) {
+func (h *handlers) scanFormsNamed(name string) (roles, forms, unread []string) {
 	for _, f := range h.angelus.Backend.Forms() {
 		snap, err := h.angelus.Backend.FormState(f.ID)
 		if err != nil {
+			unread = append(unread, f.ID)
 			continue
 		}
 		own := snap.Lookup("name")
@@ -223,7 +233,7 @@ func (h *handlers) scanFormsNamed(name string) (roles, forms []string) {
 			forms = append(forms, f.ID)
 		}
 	}
-	return roles, forms
+	return roles, forms, unread
 }
 
 func (h *handlers) placeRef(ctx context.Context, method, ref string, route bool) (string, string, error) {
