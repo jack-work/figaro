@@ -58,3 +58,10 @@ func ReadsScopesThrough(f *FormFault) func(*ServerConfig) {
 		a.Policies = p
 	}
 }
+
+func ReadsFormsThrough(f *FormFault) func(*ServerConfig) {
+	return func(cfg *ServerConfig) {
+		f.XwalBackend = cfg.Angelus.Backend.(*store.XwalBackend)
+		cfg.Angelus.Backend = f
+	}
+}

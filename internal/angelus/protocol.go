@@ -543,10 +543,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	if parent == "null" {
 		parent = ""
 	}
-	inherited, _ := h.angelus.Backend.FormState(parent)
-	if err := h.refuseCallerKeys(ctx, birthUnder(parent), inherited, req.Patch); err != nil {
-		return nil, err
-	}
+	var inherited form.Snapshot
 	if parent != "" {
 		var err error
 		if parent, err = h.canonicalID(ctx, parent); err != nil {
@@ -560,6 +557,12 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		if !ok || (n.Kind != store.KindForm && !isStump) {
 			return nil, fmt.Errorf("form.bind: %s is not an unbound form (bind forks forms; a figaro forks with `fig fork`)", req.Parent)
 		}
+		if inherited, err = h.angelus.Backend.FormState(parent); err != nil {
+			return nil, fmt.Errorf("form.bind: the board of %s cannot be read to check the patch against it: %w", parent, err)
+		}
+	}
+	if err := h.refuseCallerKeys(ctx, birthUnder(parent), inherited, req.Patch); err != nil {
+		return nil, err
 	}
 	if err := h.refuseBoxOutfits(ctx, req.Outfits, true); err != nil {
 		return nil, err
