@@ -47,7 +47,7 @@ func typeInto(tr *transcript, s string) {
 var ariaPool = map[string][]string{
 	"attend ": {
 		cmdkit.Candidate("3b7aff0a", "insert mode in the transcript: plan it"),
-		cmdkit.Candidate("3b9c14e2", "idle · deploy herald"),
+		cmdkit.Candidate("3b9c14e2", "idle · deploy gateway"),
 		cmdkit.Candidate("5ff47135", "pit review 3: queue pit"),
 	},
 }
@@ -175,10 +175,10 @@ func TestTabPit(t *testing.T) {
 
 	t.Run("nothing starts with it? offer what contains it, description included", func(t *testing.T) {
 		tr, _ := menuFixture(t, ariaPool)
-		typeInto(tr, "attend herald")
+		typeInto(tr, "attend gateway")
 		cmdComplete(tr)
 		if tr.cmdline.String() != "attend 3b9c14e2 " {
-			t.Fatalf("herald should find the aria whose mantra says it: %q", tr.cmdline.String())
+			t.Fatalf("gateway should find the aria whose mantra says it: %q", tr.cmdline.String())
 		}
 		tr2, _ := menuFixture(t, ariaPool)
 		typeInto(tr2, "attend de")

@@ -17,7 +17,7 @@ import (
 )
 
 func serviceLoaded(st config.ServiceToken) *config.Loaded {
-	return &config.Loaded{Config: config.Config{ServiceTokens: map[string]config.ServiceToken{"herald": st}}}
+	return &config.Loaded{Config: config.Config{ServiceTokens: map[string]config.ServiceToken{"svc": st}}}
 }
 
 // The secret must be a credential id under $CREDENTIALS_DIRECTORY; a path
@@ -25,13 +25,13 @@ func serviceLoaded(st config.ServiceToken) *config.Loaded {
 func TestServiceTokenSecretMustBeACredentialID(t *testing.T) {
 	serverEnv(t)
 	for _, id := range []string{"", "/etc/figaro/secret", "../secret", "sub/secret", ".."} {
-		_, err := ServiceToken(serviceLoaded(config.ServiceToken{TokenURL: "https://x/token", ClientID: "figaro", SecretCredential: id}), "herald")
+		_, err := ServiceToken(serviceLoaded(config.ServiceToken{TokenURL: "https://x/token", ClientID: "figaro", SecretCredential: id}), "svc")
 		if err == nil || !strings.Contains(err.Error(), "credential id") {
 			t.Errorf("secret_credential %q: err = %v", id, err)
 		}
 	}
 	t.Setenv("CREDENTIALS_DIRECTORY", "")
-	_, err := ServiceToken(serviceLoaded(config.ServiceToken{TokenURL: "https://x/token", ClientID: "figaro", SecretCredential: "authelia-client-secret"}), "herald")
+	_, err := ServiceToken(serviceLoaded(config.ServiceToken{TokenURL: "https://x/token", ClientID: "figaro", SecretCredential: "authelia-client-secret"}), "svc")
 	if err == nil || !strings.Contains(err.Error(), "CREDENTIALS_DIRECTORY") {
 		t.Errorf("unset directory: err = %v", err)
 	}
@@ -39,7 +39,7 @@ func TestServiceTokenSecretMustBeACredentialID(t *testing.T) {
 
 func TestServiceTokenUnconfigured(t *testing.T) {
 	serverEnv(t)
-	if _, err := ServiceToken(&config.Loaded{}, "herald"); err == nil {
+	if _, err := ServiceToken(&config.Loaded{}, "svc"); err == nil {
 		t.Fatal("an unconfigured service token resolved")
 	}
 }
@@ -61,8 +61,8 @@ func TestServiceTokenMintsAndStaysOutOfTheEnvironment(t *testing.T) {
 	before := strings.Join(os.Environ(), "\n")
 	r, err := ServiceToken(serviceLoaded(config.ServiceToken{
 		TokenURL: srv.URL, ClientID: "figaro", SecretCredential: "authelia-client-secret",
-		Audience: []string{"https://herald.kelliher.info"},
-	}), "herald")
+		Audience: []string{"https://svc.example.com"},
+	}), "svc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestCredentialSourcesNameTheServiceTokenFirst(t *testing.T) {
 func TestServiceTokenExchangeConfig(t *testing.T) {
 	serverEnv(t)
 	base := config.ServiceToken{Grant: "token-exchange", TokenURL: "https://x/token", ClientID: "rou2", SubjectCredential: "rou2-api-token"}
-	if _, err := ServiceToken(serviceLoaded(base), "herald"); err != nil {
+	if _, err := ServiceToken(serviceLoaded(base), "svc"); err != nil {
 		t.Fatalf("a well-formed token-exchange token: %v", err)
 	}
 	for name, mut := range map[string]func(*config.ServiceToken){
@@ -214,7 +214,7 @@ func TestServiceTokenExchangeConfig(t *testing.T) {
 	} {
 		st := base
 		mut(&st)
-		if _, err := ServiceToken(serviceLoaded(st), "herald"); err == nil {
+		if _, err := ServiceToken(serviceLoaded(st), "svc"); err == nil {
 			t.Errorf("%s was accepted", name)
 		}
 	}
@@ -241,7 +241,7 @@ func TestServiceTokenExchangeMints(t *testing.T) {
 	r, err := ServiceToken(serviceLoaded(config.ServiceToken{
 		Grant: "token-exchange", TokenURL: srv.URL, ClientID: "rou2", SubjectCredential: "rou2-api-token",
 		Scopes: []string{"openid", "groups", "profile"},
-	}), "herald")
+	}), "svc")
 	if err != nil {
 		t.Fatal(err)
 	}
