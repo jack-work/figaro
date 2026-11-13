@@ -105,8 +105,8 @@ type Angelus struct {
 	inflight inflight
 	joinFor  time.Duration
 
-	boxDoorsMu sync.Mutex
-	boxDoors   *boxDoors
+	boxEndpointsMu sync.Mutex
+	boxEndpoints   *boxEndpoints
 
 	outboxOnce sync.Once
 	outboxes   *outboxBudget
@@ -214,7 +214,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 	a.seedRoles(ctx)
 	a.migrateLibrettoRefs()
 
-	err = a.Serve(ctx, ln, authz.DoorLocal, a.cliAdmit())
+	err = a.Serve(ctx, ln, authz.EndpointLocal, a.cliAdmit())
 	slog.Info("angelus shutting down")
 	return err
 }

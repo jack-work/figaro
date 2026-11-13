@@ -55,23 +55,23 @@ func receiptJPEG(t *testing.T) string {
 	return base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
-// PAYUP's intake: a host app behind the box door prompts an aria that has no
+// PAYUP's intake: a host app behind the box endpoint prompts an aria that has no
 // tools at all, and the receipt must reach the model as a picture on the
 // user turn, not through any tool.
 func TestABoxSendsAPictureToAnAriaWithNoTools(t *testing.T) {
-	sb := serveBoxDoor(t, true)
-	door := filepath.Join(filepath.Dir(sb.sock), "door.sock")
+	sb := serveBoxEndpoint(t, true)
+	endpoint := filepath.Join(filepath.Dir(sb.sock), "door.sock")
 	p := &promptRecorder{seen: make(chan seenTurn, 1)}
 	r := newRigProviding(t, defaultPolicy,
-		fmt.Sprintf("[sandbox.boxes.judge]\nexec = %q\ndoor = %q\n", sb.sock, door),
+		fmt.Sprintf("[sandbox.boxes.judge]\nexec = %q\ndoor = %q\n", sb.sock, endpoint),
 		func(string, provider.Knobs) (provider.Provider, error) { return p, nil })
-	ln, err := angelus.ListenUnix(door, 0o660)
+	ln, err := angelus.ListenUnix(endpoint, 0o660)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { r.a.Serve(ctx, ln, authz.DoorBox, authz.BoxAdmit("judge")); close(done) }()
+	go func() { r.a.Serve(ctx, ln, authz.EndpointBox, authz.BoxAdmit("judge")); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
 
 	raw, _ := json.Marshal(rpc.CreateRequest{Outfits: []string{"judged"}, Patch: heldPatch(t, map[string]any{"system.tools": []string{}})})
@@ -80,7 +80,7 @@ func TestABoxSendsAPictureToAnAriaWithNoTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := out.(rpc.CreateResponse).FigaroID
-	c := doorRig{grantRig: r, sb: sb, door: door}.dial(t)
+	c := endpointRig{grantRig: r, sb: sb, endpoint: endpoint}.dial(t)
 
 	img := receiptJPEG(t)
 	refused := boxOnAria(t, c, rpc.MethodQua, id, rpc.QuaRequest{Text: "total?", Images: []rpc.QuaImage{{MimeType: "image/jpeg", Data: base64.StdEncoding.EncodeToString([]byte("<svg/>"))}}}, nil)

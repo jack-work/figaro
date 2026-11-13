@@ -13,7 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// troupe carries what exists today: signing a human in to a troupe's door,
+// troupe carries what exists today: signing a human in to a troupe's endpoint,
 // listing troupes, this node's keys and joining. No approvals or invites:
 // permission decides.
 func TestTroupeCarriesWhatExistsOnly(t *testing.T) {

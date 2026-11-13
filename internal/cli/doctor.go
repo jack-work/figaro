@@ -29,7 +29,7 @@ func deadChannel(name string) bool {
 }
 
 func runDoctorGC(dryRun bool) error {
-	if cli, err := sdk.DialAngelus(doorEndpoint()); err == nil {
+	if cli, err := sdk.DialAngelus(daemonEndpoint()); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}
@@ -162,7 +162,7 @@ func runDoctorSchema() error {
 
 // runDoctorMem reports the daemon's accounting, never this process's.
 func runDoctorMem(asJSON, collect bool) error {
-	cli, err := sdk.DialAngelus(doorEndpoint())
+	cli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		return fmt.Errorf("no angelus running: %w", err)
 	}
@@ -290,7 +290,7 @@ func runDoctorPprof(state string) error {
 	default:
 		return fmt.Errorf("usage: doctor pprof <on | off>")
 	}
-	cli, err := sdk.DialAngelus(doorEndpoint())
+	cli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		return fmt.Errorf("no angelus running: %w", err)
 	}
@@ -371,7 +371,7 @@ func runDoctorSkills(loaded *config.Loaded, asJSON bool) error {
 }
 
 func runDoctorLibrettos(dryRun bool) error {
-	if cli, err := sdk.DialAngelus(doorEndpoint()); err == nil {
+	if cli, err := sdk.DialAngelus(daemonEndpoint()); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}
@@ -410,9 +410,9 @@ func runDoctorLibrettos(dryRun bool) error {
 }
 
 // runDoctorToolCalls closes tool invokes no result answered: history from
-// before the door; providers refuse an aria carrying one.
+// before the endpoint; providers refuse an aria carrying one.
 func runDoctorToolCalls(dryRun bool) error {
-	if cli, err := sdk.DialAngelus(doorEndpoint()); err == nil {
+	if cli, err := sdk.DialAngelus(daemonEndpoint()); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}

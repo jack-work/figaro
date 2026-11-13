@@ -17,7 +17,7 @@ import (
 	"golang.org/x/term"
 )
 
-type quarantineDoor interface {
+type quarantineEndpoint interface {
 	QuarantineList(ctx context.Context) (*rpc.QuarantineListResponse, error)
 	QuarantineRelease(ctx context.Context, req rpc.QuarantineReleaseRequest) (*rpc.QuarantineReleaseResponse, error)
 }
@@ -31,7 +31,7 @@ type quarantineOpts struct {
 }
 
 func runDoctorQuarantine(args []string, at, channel string, asJSON, yes bool) error {
-	cli, err := sdk.DialAngelus(doorEndpoint())
+	cli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		return fmt.Errorf("no angelus running: %w", err)
 	}
@@ -41,7 +41,7 @@ func runDoctorQuarantine(args []string, at, channel string, asJSON, yes bool) er
 	return doctorQuarantine(context.Background(), cli, args, at, channel, o)
 }
 
-func doctorQuarantine(ctx context.Context, d quarantineDoor, args []string, at, channel string, o quarantineOpts) error {
+func doctorQuarantine(ctx context.Context, d quarantineEndpoint, args []string, at, channel string, o quarantineOpts) error {
 	switch {
 	case len(args) == 0 || (len(args) == 1 && args[0] == "ls"):
 		return quarantineList(ctx, d, o)
@@ -55,7 +55,7 @@ func doctorQuarantine(ctx context.Context, d quarantineDoor, args []string, at, 
 	return errors.New("usage: doctor quarantine [ls] | doctor quarantine release <figaro> --at <offset> [--channel <name>] [--yes]")
 }
 
-func quarantineList(ctx context.Context, d quarantineDoor, o quarantineOpts) error {
+func quarantineList(ctx context.Context, d quarantineEndpoint, o quarantineOpts) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	resp, err := d.QuarantineList(ctx)
@@ -78,7 +78,7 @@ func quarantineList(ctx context.Context, d quarantineDoor, o quarantineOpts) err
 	return nil
 }
 
-func quarantineRelease(ctx context.Context, d quarantineDoor, figaro, channel string, offset int64, o quarantineOpts) error {
+func quarantineRelease(ctx context.Context, d quarantineEndpoint, figaro, channel string, offset int64, o quarantineOpts) error {
 	req := rpc.QuarantineReleaseRequest{Figaro: figaro, Channel: channel, At: offset}
 	plan, err := d.QuarantineRelease(ctx, req)
 	if err != nil {

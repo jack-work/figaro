@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// GC must not take the door down: round trips while a retention pass drops
+// GC must not take the endpoint down: round trips while a retention pass drops
 // form history, compared with an idle daemon.
-func BenchmarkDoorRoundTripWhileRetaining(b *testing.B) {
+func BenchmarkEndpointRoundTripWhileRetaining(b *testing.B) {
 	for _, retaining := range []bool{false, true} {
 		name := "idle"
 		if retaining {

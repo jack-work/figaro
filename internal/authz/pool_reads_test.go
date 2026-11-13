@@ -38,8 +38,8 @@ func guardedDaemon(t *testing.T, pool bool) map[string]jkrpc.HandlerFunc {
 	return Guard(handlers, AriaHeader{}, Enforce(p))
 }
 
-func throughTheWebDoor(p jkauthz.Principal) context.Context {
-	return WithDoor(WithSubject(context.Background(), subject(p)), DoorWeb)
+func throughTheWebEndpoint(p jkauthz.Principal) context.Context {
+	return WithEndpoint(WithSubject(context.Background(), subject(p)), EndpointWeb)
 }
 
 type filteredRead struct{ method, form string }
@@ -62,7 +62,7 @@ func filteredReads() []filteredRead {
 // serves the admin; hello is all broker keeps.
 func TestAPoolDaemonRefusesBrokerTheReadsOtherDaemonsFilter(t *testing.T) {
 	pool, plain := guardedDaemon(t, true), guardedDaemon(t, false)
-	broker, admin := throughTheWebDoor(brokerClient), throughTheWebDoor(poolAdmin)
+	broker, admin := throughTheWebEndpoint(brokerClient), throughTheWebEndpoint(poolAdmin)
 	for _, c := range filteredReads() {
 		if err := call(t, pool, broker, c.method, c.form); err == nil {
 			t.Errorf("a pool daemon served broker %s %s", c.method, c.form)
@@ -85,7 +85,7 @@ func TestAPoolDaemonRefusesBrokerTheReadsOtherDaemonsFilter(t *testing.T) {
 // refused for another pool.
 func TestOnAPoolDaemonBrokerIsServedHelloAndItsOwnPoolsLeaseMethods(t *testing.T) {
 	h := guardedDaemon(t, true)
-	broker := throughTheWebDoor(brokerClient)
+	broker := throughTheWebEndpoint(brokerClient)
 	var served []string
 	for _, m := range rpc.GuardedMethods() {
 		verb, _ := rpc.VerbOf(m)
@@ -133,7 +133,7 @@ var leftToTheirHandlersElsewhere = []string{
 
 // Other daemons pass these methods at the guard and let the handler
 // decide, and one of them (troupe.apikey.ls) answers any caller. A pool
-// daemon is in no troupe and has no node door, so its guard decides
+// daemon is in no troupe and has no node endpoint, so its guard decides
 // each by its verb on the daemon: broker is refused and the admin
 // passes. A method newly left to its handler has no row here and fails
 // the test until someone shows what a pool daemon does with it.
@@ -149,7 +149,7 @@ func TestAPoolDaemonsGuardDecidesEachMethodOtherDaemonsLeaveToItsHandler(t *test
 		t.Fatalf("the guard leaves %v to their handlers and this table has rows for %v", left, rows)
 	}
 	pool, plain := guardedDaemon(t, true), guardedDaemon(t, false)
-	broker, admin := throughTheWebDoor(brokerClient), throughTheWebDoor(poolAdmin)
+	broker, admin := throughTheWebEndpoint(brokerClient), throughTheWebEndpoint(poolAdmin)
 	for _, m := range rows {
 		for _, aria := range []string{"", "in-a", rpc.AriasFormID} {
 			if err := call(t, pool, broker, m, aria); err == nil {

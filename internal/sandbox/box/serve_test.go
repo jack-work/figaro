@@ -87,7 +87,7 @@ func TestServeSpeaksPlainJSONRPC(t *testing.T) {
 	}
 }
 
-func TestCommandsInABoxCallBackThroughItsDoor(t *testing.T) {
+func TestCommandsInABoxCallBackThroughItsEndpoint(t *testing.T) {
 	dir := sockDir(t)
 	srv, err := NewServer(dir)
 	if err != nil {

@@ -15,7 +15,7 @@ import (
 // the chat design, must not set any of them on its own aria, by set, by a
 // prompt's form patch, at birth or at a fork.
 func TestABoxCannotSetOwnerHeldKeys(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +57,7 @@ func TestABoxCannotSetOwnerHeldKeys(t *testing.T) {
 }
 
 func TestTheOwnerSetsOwnerHeldKeys(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

@@ -14,13 +14,13 @@ import (
 const protectedOpen = "[authz]\nprotected_keys = \"open\"\n"
 
 type lineageRig struct {
-	doorRig
+	endpointRig
 	parent, child, sibling string
 }
 
 func newLineageRig(t *testing.T, boxExtra string) lineageRig {
 	t.Helper()
-	d := boxDoorRigConfigured(t, defaultPolicy, "true", boxExtra)
+	d := boxEndpointRigConfigured(t, defaultPolicy, "true", boxExtra)
 	p, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +32,7 @@ func newLineageRig(t *testing.T, boxExtra string) lineageRig {
 		}
 		return out.(rpc.ForkResponse).Alternative
 	}
-	r := lineageRig{doorRig: d, parent: p.FigaroID, child: fork(), sibling: fork()}
+	r := lineageRig{endpointRig: d, parent: p.FigaroID, child: fork(), sibling: fork()}
 	if _, err := d.h[rpc.MethodSet](asOwner(), withAria(t, r.parent, rpc.SetRequest{Patch: grantsPatch(t, []string{"*:*", "egress:a:1", "cred:x"})})); err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestAFigaroCannotSetItsOwnProtectedKeys(t *testing.T) {
 	}
 }
 
-func TestTheParentSetsItsChildsProtectedKeysThroughTheBoxDoor(t *testing.T) {
+func TestTheParentSetsItsChildsProtectedKeysThroughTheBoxEndpoint(t *testing.T) {
 	r := newLineageRig(t, "")
 	c := r.dial(t)
 	if err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"read:*"})); err != nil {
@@ -319,7 +319,7 @@ func TestAWriterGrantsWhatItsEffectiveSetCovers(t *testing.T) {
 }
 
 func TestAWriterWithNoGrantsHoldsEveryFigaroVerbAndNoForeignOne(t *testing.T) {
-	d := boxDoorRigConfigured(t, defaultPolicy, "true", "")
+	d := boxEndpointRigConfigured(t, defaultPolicy, "true", "")
 	p, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)
@@ -329,7 +329,7 @@ func TestAWriterWithNoGrantsHoldsEveryFigaroVerbAndNoForeignOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	child := out.(rpc.ForkResponse).Alternative
-	r := lineageRig{doorRig: d, parent: p.FigaroID, child: child}
+	r := lineageRig{endpointRig: d, parent: p.FigaroID, child: child}
 	c := r.dial(t)
 	if err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"read:*", "send:aria:" + r.parent})); err != nil {
 		t.Fatalf("figaro verbs: %v", err)

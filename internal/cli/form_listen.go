@@ -46,7 +46,7 @@ func openFormViewOn(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr,
 		aria: resolvedID, intrinsic: intrinsic}
 	view.openOverlay = func(id string, changed func()) (*formView, func(), <-chan struct{}, error) {
 		octx, ocancel := context.WithCancel(ctx)
-		return openFormViewOn(octx, ocancel, sdk.Addr{Door: ep.Door, ID: id}, id, "", changed, func() {})
+		return openFormViewOn(octx, ocancel, sdk.Addr{Endpoint: ep.Endpoint, ID: id}, id, "", changed, func() {})
 	}
 	kick := newFormKicker(onChange)
 	var rep atomic.Pointer[replica.Replica]

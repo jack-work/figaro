@@ -7,9 +7,9 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// A web door the daemon cannot verify callers on must not open: each of
+// A web endpoint the daemon cannot verify callers on must not open: each of
 // these fails the daemon's start rather than serving an upgrade.
-func TestAWebDoorWithoutTheConfigToVerifyCallersDoesNotStart(t *testing.T) {
+func TestAWebEndpointWithoutTheConfigToVerifyCallersDoesNotStart(t *testing.T) {
 	const listen, cli = "/run/figaro/web.sock", "/run/figaro/angelus.sock"
 	for name, c := range map[string]struct {
 		authn string

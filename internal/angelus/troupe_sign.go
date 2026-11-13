@@ -97,7 +97,7 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 			return nil, fmt.Errorf("node %s is already a member, so only its own key signs it in again: %w", req.Node, err)
 		}
 	}
-	join := !renewal || !member || mem.Door != req.Door
+	join := !renewal || !member || mem.Endpoint != req.Endpoint
 	owner := authz.PrincipalText(authz.PrincipalOf(ctx))
 	if renewal {
 		owner = mem.Owner
@@ -128,7 +128,7 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 		return nil, err
 	}
 	if join {
-		e, err := troupe.SignJoin(ikey, inter, m.Troupe(), req.Node, req.Door, owner, now)
+		e, err := troupe.SignJoin(ikey, inter, m.Troupe(), req.Node, req.Endpoint, owner, now)
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +143,7 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 	if renewal {
 		slog.Info("troupe: renewed a node certificate", "node", req.Node, "asked_ms", req.TTLMillis, "until", leaf.NotAfter.Format(time.RFC3339))
 	} else {
-		slog.Info("troupe: signed a node in", "node", req.Node, "door", req.Door, "by", authz.PrincipalText(authz.PrincipalOf(ctx)), "asked_ms", req.TTLMillis, "until", leaf.NotAfter.Format(time.RFC3339))
+		slog.Info("troupe: signed a node in", "node", req.Node, "door", req.Endpoint, "by", authz.PrincipalText(authz.PrincipalOf(ctx)), "asked_ms", req.TTLMillis, "until", leaf.NotAfter.Format(time.RFC3339))
 	}
 	return rpc.TroupeSignResponse{Chain: [][]byte{leaf.Raw, inter.Raw}, Root: root.Raw, Entries: troupe.Encode(m.Entries()), TTLMillis: leaf.NotAfter.Sub(now).Milliseconds()}, nil
 }
@@ -158,9 +158,9 @@ func checkSignRequest(req rpc.TroupeSignRequest) (ed25519.PublicKey, error) {
 	if len(req.PublicKey) != ed25519.PublicKeySize {
 		return nil, fmt.Errorf("public_key: want %d bytes of Ed25519, got %d", ed25519.PublicKeySize, len(req.PublicKey))
 	}
-	host, _, err := net.SplitHostPort(req.Door)
+	host, _, err := net.SplitHostPort(req.Endpoint)
 	if err != nil || host == "" || net.ParseIP(host).IsUnspecified() {
-		return nil, fmt.Errorf("door %q is not a host:port another node can dial", req.Door)
+		return nil, fmt.Errorf("door %q is not a host:port another node can dial", req.Endpoint)
 	}
 	return ed25519.PublicKey(req.PublicKey), nil
 }
@@ -197,7 +197,7 @@ func cannotSign(m *peer.Ledger, view troupe.View, now time.Time) error {
 	}
 	named := make([]string, len(signers))
 	for i, n := range signers {
-		named[i] = n + " (" + view.Members[n].Door + ")"
+		named[i] = n + " (" + view.Members[n].Endpoint + ")"
 	}
 	return fmt.Errorf("node %s holds no intermediate, so it cannot sign; ask one that can: %s", m.Self(), strings.Join(named, ", "))
 }
@@ -221,5 +221,5 @@ func (h *handlers) checkRejoin(req rpc.TroupeSignRequest, pub ed25519.PublicKey,
 	if !view.MayIssue(req.Node, by) && by != self {
 		return fmt.Errorf("its old certificate came from %s, which is neither its own intermediate, its renewer, nor this node", by)
 	}
-	return troupe.CheckRejoin(leaf, issuer, root, req.Rejoin.Sig, req.Troupe, req.Node, pub, req.Door)
+	return troupe.CheckRejoin(leaf, issuer, root, req.Rejoin.Sig, req.Troupe, req.Node, pub, req.Endpoint)
 }

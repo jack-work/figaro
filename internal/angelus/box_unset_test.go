@@ -14,7 +14,7 @@ import (
 // whole system branch: the write guard saw system.* change and refused the
 // box. The box's own unset must succeed and leave system.* byte for byte.
 func TestABoxUnsetLeavesTheSystemBranchWhole(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

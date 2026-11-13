@@ -35,7 +35,7 @@ type livelogTurn struct {
 	pending      *aria.Message
 	finished     bool
 	thinkingOpen bool // an OpenThinking placeholder is live and not yet adopted
-	failSealed   bool // the failed turn's bar has reached scrollback; two doors lead there
+	failSealed   bool // the failed turn's bar has reached scrollback; two endpoints lead there
 	pace         framePacer
 
 	lastFrozen  sliceCursor // highest slice frozen inline; zero means the pager was entered cold

@@ -12,7 +12,7 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// One guarded call on the owner's connection, as the angelus door serves
+// One guarded call on the owner's connection, as the angelus endpoint serves
 // it: a prompt-sized body, with and without the CLI's stamp, and stamped
 // by a figaro three deep, with and without grants on its lineage.
 func BenchmarkGuardedOwnerCall(b *testing.B) {

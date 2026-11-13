@@ -49,7 +49,7 @@ func TestTheTroupeIndexNamesEveryMember(t *testing.T) {
 // Reading the index needs a role on the node, as list does.
 func TestAStrangerCannotReadTheTroupeIndex(t *testing.T) {
 	_, b := newFedPair(t)
-	c, err := sdk.DialAria(sdk.Addr{Door: b.callerDoor(b.issuer.Mint("intruder", time.Hour)), ID: rpc.TroupeFormID}, nil)
+	c, err := sdk.DialAria(sdk.Addr{Endpoint: b.callerEndpoint(b.issuer.Mint("intruder", time.Hour)), ID: rpc.TroupeFormID}, nil)
 	if err == nil {
 		defer c.Close()
 		_, err = c.Form(callCtx(t))

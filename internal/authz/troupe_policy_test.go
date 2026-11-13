@@ -119,7 +119,7 @@ func TestATroupeDocumentThatDoesNotCompileGrantsNothing(t *testing.T) {
 	}
 }
 
-// A document arrives by the ledger without passing a door's set check; one
+// A document arrives by the ledger without passing an endpoint's set check; one
 // the set check would refuse loads as nothing.
 func TestATroupeDocumentThatBreaksASetRuleGrantsNothing(t *testing.T) {
 	p := localDelegating(t, `"*:*"`)
@@ -185,7 +185,7 @@ func TestNoCallerMayBeTheTroupe(t *testing.T) {
 	if _, err := NewIssuers([]config.IssuerConfig{{Issuer: "https://a", JWKS: "http://j", Clients: map[string]string{"x": "troupe"}}}, nil, nil); err == nil {
 		t.Error("a client resolved to the troupe")
 	}
-	if _, err := NewUpstream(config.UpstreamConfig{Issuer: kelliher, Services: map[string]string{"x": "troupe"}}, webDoor, "", nil); err == nil {
+	if _, err := NewUpstream(config.UpstreamConfig{Issuer: kelliher, Services: map[string]string{"x": "troupe"}}, webEndpoint, "", nil); err == nil {
 		t.Error("an edge service resolved to the troupe")
 	}
 }

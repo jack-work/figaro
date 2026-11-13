@@ -28,7 +28,7 @@ type preTTLSignRequest struct {
 	Troupe    string            `json:"troupe"`
 	Node      string            `json:"node"`
 	PublicKey []byte            `json:"public_key"`
-	Door      string            `json:"door"`
+	Endpoint  string            `json:"door"`
 	Rejoin    *rpc.TroupeRejoin `json:"rejoin,omitempty"`
 }
 
@@ -49,7 +49,7 @@ func beforeTTL(hs map[string]jkrpc.HandlerFunc) {
 	}
 }
 
-func renewedOverTheDoor(t *testing.T, signer func(*ledgerNode), leafLines, signerLines string) time.Duration {
+func renewedOverTheEndpoint(t *testing.T, signer func(*ledgerNode), leafLines, signerLines string) time.Duration {
 	t.Helper()
 	root := newEstateRoot(t)
 	na := newLedgerNode(t, root)
@@ -70,14 +70,14 @@ func renewedOverTheDoor(t *testing.T, signer func(*ledgerNode), leafLines, signe
 	return time.Until(cur.Leaf.NotAfter)
 }
 
-// A leaf-only node asks its renewer for its leaf_ttl over the node door and
+// A leaf-only node asks its renewer for its leaf_ttl over the node endpoint and
 // gets it, under the renewer's max_leaf_ttl.
 func TestALeafOnlyNodeIsRenewedForItsLeafTTL(t *testing.T) {
 	none := func(*ledgerNode) {}
-	got := renewedOverTheDoor(t, none, `leaf_ttl = "30d"`, "")
+	got := renewedOverTheEndpoint(t, none, `leaf_ttl = "30d"`, "")
 	require.InDelta(t, float64(30*day), float64(got), float64(time.Minute))
 
-	got = renewedOverTheDoor(t, none, `leaf_ttl = "30d"`, `max_leaf_ttl = "14d"`)
+	got = renewedOverTheEndpoint(t, none, `leaf_ttl = "30d"`, `max_leaf_ttl = "14d"`)
 	require.InDelta(t, float64(14*day), float64(got), float64(time.Minute), "the renewer granted past its max_leaf_ttl")
 }
 
@@ -85,7 +85,7 @@ func TestALeafOnlyNodeIsRenewedForItsLeafTTL(t *testing.T) {
 // leaf: the renewer ignores the field and grants its seven days.
 func TestANewRequesterRenewsFromARenewerThatPredatesTheField(t *testing.T) {
 	old := func(n *ledgerNode) { n.handlers = beforeTTL }
-	got := renewedOverTheDoor(t, old, `leaf_ttl = "30d"`, "")
+	got := renewedOverTheEndpoint(t, old, `leaf_ttl = "30d"`, "")
 	require.InDelta(t, float64(7*day), float64(got), float64(time.Minute))
 }
 
@@ -108,7 +108,7 @@ func leafLifeOf(t *testing.T, m rpc.TroupeMembersResponse, node string) time.Dur
 }
 
 // troupe ls judges a member lapsed by the leaf it last presented, so each
-// side of a handshake records the other's leaf life: the door for the node
+// side of a handshake records the other's leaf life: the endpoint for the node
 // that dialed, the dialer for the node it reached. Gossip may handshake
 // before the test dials, so only the values after the dial are asserted.
 func TestTroupeMembersCarriesTheLeafEachMemberPresented(t *testing.T) {

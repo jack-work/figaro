@@ -83,7 +83,7 @@ func statusRow(ctx context.Context, acli *sdk.Angelus, idFlag, nameArg string) (
 		return foreignStatusRow(ctx, ariaID)
 	}
 	if ariaID != "" {
-		if id, err := doorID(ctx, acli, ariaID); err == nil {
+		if id, err := endpointID(ctx, acli, ariaID); err == nil {
 			ariaID = id
 		} else {
 			resolveErr = err
@@ -123,7 +123,7 @@ func foreignStatusRow(ctx context.Context, ref string) (*rpc.ListResponse, *rpc.
 	if err != nil {
 		return nil, nil, err
 	}
-	acli, err := sdk.DialAngelus(a.Door)
+	acli, err := sdk.DialAngelus(a.Endpoint)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -227,7 +227,7 @@ func speciesOf(f *rpc.FigaroInfoResponse) string {
 
 func holderState(ctx context.Context, acli *sdk.Angelus, rows []rpc.FigaroInfoResponse, target string) string {
 	id := target
-	if resolved, err := doorID(ctx, acli, target); err == nil {
+	if resolved, err := endpointID(ctx, acli, target); err == nil {
 		id = resolved
 	}
 	for i := range rows {

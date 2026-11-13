@@ -46,7 +46,7 @@ type attendOutcome struct {
 	EP   sdk.Addr
 	At   forkPoint
 	Note string
-	// Home says the shell was unbound (`attend null`), so a door that shows an
+	// Home says the shell was unbound (`attend null`), so an endpoint that shows an
 	// aria keeps what it showed.
 	Home bool
 }
@@ -183,7 +183,7 @@ const (
 
 // forkVerb forks at the coordinate and moves the shell's binding when the plan
 // forked the shell's own aria and did not ask to stay. Submitting the prompt is
-// the door's.
+// the endpoint's.
 func forkVerb(ctx context.Context, env verbEnv, plan forkPlan, intent bindIntent) (forkOutcome, error) {
 	target, at, err := parseTarget(plan.spec)
 	if err != nil {

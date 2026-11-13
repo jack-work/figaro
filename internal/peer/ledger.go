@@ -146,11 +146,11 @@ func (m *Ledger) rebuild() {
 			continue
 		}
 		id := troupe.Identity(m.troupe, node)
-		if old, ok := m.members[node]; ok && old.Address == mem.Door {
+		if old, ok := m.members[node]; ok && old.Address == mem.Endpoint {
 			members[node] = old
 			continue
 		}
-		members[node] = &Member{Node: node, Address: mem.Door, Identity: id, tls: keyedTLS(id, m.creds)}
+		members[node] = &Member{Node: node, Address: mem.Endpoint, Identity: id, tls: keyedTLS(id, m.creds)}
 	}
 	m.members = members
 	m.nodes = slices.Sorted(maps.Keys(members))

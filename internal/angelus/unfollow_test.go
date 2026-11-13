@@ -26,9 +26,9 @@ func TestUnfollowReleasesOneFigaroAndKeepsTheOthers(t *testing.T) {
 	h := &handlers{angelus: &Angelus{Hubs: newHubs()}}
 	h.angelus.Hubs.putIfAbsent(a.id, a)
 	h.angelus.Hubs.putIfAbsent(b.id, b)
-	path := serveDoor(t, h, authz.AllowAll())
+	path := serveEndpoint(t, h, authz.AllowAll())
 
-	ca, frames := dialDoor(t, path, a.id)
+	ca, frames := dialEndpoint(t, path, a.id)
 	cb := ariaClient{c: ca.c, id: b.id}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

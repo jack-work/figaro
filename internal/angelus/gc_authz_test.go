@@ -81,7 +81,7 @@ func TestANonOwnerHoldingKillIsRefusedGC(t *testing.T) {
 }
 
 func TestAGuestIsRefusedGC(t *testing.T) {
-	r := newRigWith(t, doorPolicy)
+	r := newRigWith(t, endpointPolicy)
 	guest := as("user", "guest")
 	if _, err := r.create(guest, "mock"); err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestAPlanBelongsToItsCaller(t *testing.T) {
 // A boxed caller plans and applies only its own box's figaros; the owner
 // sees box figaros only by naming the box.
 func TestABoxGCsOnlyItsBox(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +170,7 @@ func TestABoxGCsOnlyItsBox(t *testing.T) {
 // El Inspector XI, condition 4: system.keep is owner-held, so neither a box
 // nor a guest can set it or take it away.
 func TestSystemKeepIsOwnerHeld(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +187,7 @@ func TestSystemKeepIsOwnerHeld(t *testing.T) {
 		t.Fatalf("the box removed system.keep: %v", err)
 	}
 
-	r := newRigWith(t, doorPolicy)
+	r := newRigWith(t, endpointPolicy)
 	guest := as("user", "guest")
 	mine, err := r.create(guest, "mock")
 	if err != nil {
@@ -216,7 +216,7 @@ func TestNoCallerSetsTheReapKeys(t *testing.T) {
 	if _, err := r.call(troupe, rpc.MethodSet, withAria(t, made.FigaroID, rpc.SetRequest{Patch: *mantraPatch("lent set works")})); err != nil {
 		t.Fatalf("the lent set grant does not reach set, so this test proves nothing: %v", err)
 	}
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

@@ -28,7 +28,7 @@ func provisionerGuard(t *testing.T, asked *[]placementAsked, answer error) Topol
 }
 
 func placing(s jkauthz.Subject) hierarchy.Principal {
-	return hierarchy.Principal{Name: s.Principal.String(), Subject: TopologyCaller{Subject: s, Door: DoorInProcess}}
+	return hierarchy.Principal{Name: s.Principal.String(), Subject: TopologyCaller{Subject: s, Endpoint: EndpointInProcess}}
 }
 
 func placeOf(node, under string) hierarchy.Plan {

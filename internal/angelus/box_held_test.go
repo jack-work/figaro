@@ -30,7 +30,7 @@ func unsetPatch(key string) form.Patch {
 	return form.Build(form.Snapshot{}, nil, []string{key})
 }
 
-func (d doorRig) keyOf(t *testing.T, id, key string) string {
+func (d endpointRig) keyOf(t *testing.T, id, key string) string {
 	t.Helper()
 	snap, err := d.backend.FormState(id)
 	if err != nil {
@@ -45,7 +45,7 @@ func (d doorRig) keyOf(t *testing.T, id, key string) string {
 // The VM test on spain saw `figaro form new` from box0 mint a form the box
 // could not then read; a form a box mints is held in that box.
 func TestAFormABoxMintsIsHeldInItsBox(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)
@@ -107,7 +107,7 @@ func TestAFormABoxMintsIsHeldInItsBox(t *testing.T) {
 // in a box must not become a seat for an aria outside it, and the box must not
 // dress one up to pull host traffic in unmarked.
 func TestARoleHeldInABoxPointsOnlyIntoIt(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +158,7 @@ func TestARoleHeldInABoxPointsOnlyIntoIt(t *testing.T) {
 }
 
 func TestABoxMintsAtMostItsShareOfForms(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	c := d.dial(t)
 	for i := 0; i < 256; i++ {
 		boxMintsForm(t, c, "f")
@@ -177,7 +177,7 @@ func TestABoxMintsAtMostItsShareOfForms(t *testing.T) {
 // box. Otherwise the owner's own `cast <aria> @X` would open a standing channel
 // from the box into an unboxed aria. The owner still reaches it by handle.
 func TestANameHeldInABoxAnswersOnlyInsideIt(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

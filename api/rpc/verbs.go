@@ -33,13 +33,13 @@ const VerbNone Verb = ""
 var methodVerbs = map[string]Verb{
 	MethodHello: VerbNone,
 
-	MethodAriaFrame:  VerbListen,
-	MethodTurnDone:   VerbListen,
-	MethodFormDelta:  VerbListen,
-	MethodFollow:     VerbListen,
-	MethodUnfollow:   VerbListen,
-	MethodAriaClosed: VerbListen,
-	MethodDoorLapsed: VerbListen,
+	MethodAriaFrame:      VerbListen,
+	MethodTurnDone:       VerbListen,
+	MethodFormDelta:      VerbListen,
+	MethodFollow:         VerbListen,
+	MethodUnfollow:       VerbListen,
+	MethodAriaClosed:     VerbListen,
+	MethodEndpointLapsed: VerbListen,
 
 	MethodQua:         VerbSend,
 	MethodInterrupt:   VerbSend,

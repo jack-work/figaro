@@ -25,7 +25,7 @@ func runVersion(asJSON bool) {
 }
 
 func reachableNode() string {
-	cli, err := sdk.DialAngelus(doorEndpoint())
+	cli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		return ""
 	}

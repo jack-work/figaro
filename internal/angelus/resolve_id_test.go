@@ -46,7 +46,7 @@ func TestNewIDsAre128Bits(t *testing.T) {
 	}
 }
 
-// A prefix the store can name once is that aria, at every door method.
+// A prefix the store can name once is that aria, at every endpoint method.
 func TestAPrefixResolvesToItsAria(t *testing.T) {
 	h, hs := resolveHandlers(t)
 	id := mintConversation(t, h)

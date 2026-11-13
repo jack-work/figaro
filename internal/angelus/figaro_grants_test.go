@@ -43,7 +43,7 @@ func TestNoGrantsAnywhereServesEveryFigaroVerbAndNoForeignOne(t *testing.T) {
 	}
 }
 
-func TestAFigarosGrantsNarrowItsCallsThroughTheBoxDoor(t *testing.T) {
+func TestAFigarosGrantsNarrowItsCallsThroughTheBoxEndpoint(t *testing.T) {
 	r := newLineageRig(t, "")
 	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: grantsPatch(t, []string{"read:*", "set:aria:self"})})); err != nil {
 		t.Fatal(err)
@@ -100,7 +100,7 @@ func TestPromoteKeepsTheNarrowingAFigaroHadUnderItsParent(t *testing.T) {
 	}
 }
 
-func TestTheBoxDoorRefusesAnUnclaimedCallWhenConfigured(t *testing.T) {
+func TestTheBoxEndpointRefusesAnUnclaimedCallWhenConfigured(t *testing.T) {
 	r := newLineageRig(t, "figaro_claim = \"required\"\n")
 	c := r.dial(t)
 	var out rpc.FormResponse

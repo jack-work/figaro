@@ -14,7 +14,7 @@ import (
 
 // The box owns the directory its exec socket lives in, so it decides what that
 // path is. A symlink there could point the daemon at any socket it can reach:
-// another box, its own door, hush.
+// another box, its own endpoint, hush.
 func TestTheProviderNeverFollowsALinkToAnotherSocket(t *testing.T) {
 	dir := sockDir(t)
 	canaryPath := filepath.Join(dir, "canary.sock")

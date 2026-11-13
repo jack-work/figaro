@@ -17,12 +17,12 @@ import (
 	"golang.org/x/term"
 )
 
-type policyDoor interface {
+type policyEndpoint interface {
 	TroupePolicy(ctx context.Context, troupe string) (*rpc.TroupePolicyResponse, error)
 	TroupePolicySet(ctx context.Context, troupe, body string) (*rpc.TroupePolicySetResponse, error)
 }
 
-func troupePolicyShow(ctx context.Context, d policyDoor, out io.Writer, name string, jsonOut bool) error {
+func troupePolicyShow(ctx context.Context, d policyEndpoint, out io.Writer, name string, jsonOut bool) error {
 	resp, err := d.TroupePolicy(ctx, name)
 	if err != nil {
 		return err
@@ -86,7 +86,7 @@ func troupePolicyShow(ctx context.Context, d policyDoor, out io.Writer, name str
 	return nil
 }
 
-func troupePolicySet(ctx context.Context, d policyDoor, in io.Reader, out io.Writer, name, file string) error {
+func troupePolicySet(ctx context.Context, d policyEndpoint, in io.Reader, out io.Writer, name, file string) error {
 	var body []byte
 	var err error
 	if file == "-" {
@@ -113,12 +113,12 @@ func policySigner(v rpc.TroupePolicyVersion) string {
 	return "node " + v.Signer
 }
 
-type rootPolicyDoor interface {
+type rootPolicyEndpoint interface {
 	TroupePolicy(ctx context.Context, troupe string) (*rpc.TroupePolicyResponse, error)
 	TroupeEntries(ctx context.Context, req rpc.TroupeEntriesRequest) (*rpc.TroupeEntriesResponse, error)
 }
 
-func troupeRootPolicySet(ctx context.Context, d rootPolicyDoor, in io.Reader, out io.Writer, stateDir, name, file string) error {
+func troupeRootPolicySet(ctx context.Context, d rootPolicyEndpoint, in io.Reader, out io.Writer, stateDir, name, file string) error {
 	if file == "-" {
 		return fmt.Errorf("with --root the root key is on stdin, so the policy is a file")
 	}

@@ -34,12 +34,12 @@ key = "node.key"
 // relative credential paths anchored to the config dir.
 func TestPeersConfig(t *testing.T) {
 	l := loadToml(t, twoPeers)
-	door, ok, err := l.TLSDoor()
+	endpoint, ok, err := l.TLSEndpoint()
 	if err != nil || !ok {
 		t.Fatalf("door.tls: ok=%v err=%v", ok, err)
 	}
-	if door.Cert != filepath.Join(l.ConfigDir, "node.crt") || door.Key != "/run/credentials/figaro/node.key" {
-		t.Fatalf("door.tls paths: %+v", door)
+	if endpoint.Cert != filepath.Join(l.ConfigDir, "node.crt") || endpoint.Key != "/run/credentials/figaro/node.key" {
+		t.Fatalf("door.tls paths: %+v", endpoint)
 	}
 	peers, err := l.Peers()
 	if err != nil {
@@ -56,7 +56,7 @@ func TestPeersConfig(t *testing.T) {
 // No federation unless configured.
 func TestPeersOffByDefault(t *testing.T) {
 	l := loadToml(t, "")
-	if _, ok, err := l.TLSDoor(); ok || err != nil {
+	if _, ok, err := l.TLSEndpoint(); ok || err != nil {
 		t.Fatalf("door.tls: ok=%v err=%v", ok, err)
 	}
 	if p, err := l.Peers(); err != nil || len(p) != 0 {
@@ -82,7 +82,7 @@ func TestPeersConfigRefusesWhatItCannotHonour(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		_, _, derr := l.TLSDoor()
+		_, _, derr := l.TLSEndpoint()
 		_, perr := l.Peers()
 		if derr == nil && perr == nil {
 			t.Errorf("accepted %q", body)
@@ -117,19 +117,19 @@ func TestTroupeVersion(t *testing.T) {
 	}
 }
 
-// With [troupe] name set, peers and the node door may leave their
+// With [troupe] name set, peers and the node endpoint may leave their
 // certificate files out: the troupe's keys stand in, and a peer's identity
 // defaults to its spiffe id in the troupe. Half a set of files is refused.
-func TestATroupeNameLetsPeersAndTheDoorUseTroupeKeys(t *testing.T) {
+func TestATroupeNameLetsPeersAndTheEndpointUseTroupeKeys(t *testing.T) {
 	body := "[troupe]\nname = \"estate\"\n[door.tls]\nlisten = \"127.0.0.1:7443\"\n[peers.b1]\nendpoint = \"tls://127.0.0.1:7444\"\n"
 	l := loadToml(t, body)
 	name, err := l.TroupeName()
 	require.NoError(t, err)
 	require.Equal(t, "estate", name)
-	door, ok, err := l.TLSDoor()
+	endpoint, ok, err := l.TLSEndpoint()
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Empty(t, door.Cert)
+	require.Empty(t, endpoint.Cert)
 	peers, err := l.Peers()
 	require.NoError(t, err)
 	require.Equal(t, "spiffe://estate/node/b1", peers[0].Identity)
@@ -145,7 +145,7 @@ func TestATroupeNameLetsPeersAndTheDoorUseTroupeKeys(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		_, _, derr := l.TLSDoor()
+		_, _, derr := l.TLSEndpoint()
 		_, perr := l.Peers()
 		_, nerr := l.TroupeName()
 		require.True(t, derr != nil || perr != nil || nerr != nil, "accepted %q", bad)
@@ -172,23 +172,23 @@ func TestTroupeProvider(t *testing.T) {
 	}
 }
 
-// A join records the door other nodes dial. It is the listen address
+// A join records the endpoint other nodes dial. It is the listen address
 // unless that is a wildcard, in which case advertise must name it.
-func TestTheAdvertisedDoor(t *testing.T) {
-	door := func(body string) (TLSDoor, error) {
-		d, _, err := loadToml(t, "[troupe]\nname = \"estate\"\n[door.tls]\n"+body).TLSDoor()
+func TestTheAdvertisedEndpoint(t *testing.T) {
+	endpoint := func(body string) (TLSEndpoint, error) {
+		d, _, err := loadToml(t, "[troupe]\nname = \"estate\"\n[door.tls]\n"+body).TLSEndpoint()
 		return d, err
 	}
-	d, err := door("listen = \"10.0.0.2:7443\"\n")
+	d, err := endpoint("listen = \"10.0.0.2:7443\"\n")
 	require.NoError(t, err)
 	require.Equal(t, "10.0.0.2:7443", d.Advertise)
-	d, err = door("listen = \"0.0.0.0:7443\"\n")
+	d, err = endpoint("listen = \"0.0.0.0:7443\"\n")
 	require.NoError(t, err)
 	require.Empty(t, d.Advertise, "a wildcard is no address to dial")
-	d, err = door("listen = \"[::]:7443\"\nadvertise = \"gluck.tail:7443\"\n")
+	d, err = endpoint("listen = \"[::]:7443\"\nadvertise = \"gluck.tail:7443\"\n")
 	require.NoError(t, err)
 	require.Equal(t, "gluck.tail:7443", d.Advertise)
-	_, err = door("listen = \"0.0.0.0:7443\"\nadvertise = \"0.0.0.0:7443\"\n")
+	_, err = endpoint("listen = \"0.0.0.0:7443\"\nadvertise = \"0.0.0.0:7443\"\n")
 	require.Error(t, err)
 }
 

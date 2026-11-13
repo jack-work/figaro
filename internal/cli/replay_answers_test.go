@@ -56,7 +56,7 @@ func TestAReplayAnswersAPollWithTheFiguresOfItsMomentOnTheTape(t *testing.T) {
 		t.Fatal(err)
 	}
 	passed := make(chan struct{}, 1)
-	cli, err := sdk.DialAria(sdk.Addr{Door: ep, ID: "a"}, func(method string, _ json.RawMessage) {
+	cli, err := sdk.DialAria(sdk.Addr{Endpoint: ep, ID: "a"}, func(method string, _ json.RawMessage) {
 		select {
 		case passed <- struct{}{}:
 		default:
@@ -111,7 +111,7 @@ func TestAReplayNeverAnswersAPollWithFiguresOlderThanItHasPushed(t *testing.T) {
 		t.Fatal(err)
 	}
 	sealed := make(chan struct{}, 1)
-	cli, err := sdk.DialAria(sdk.Addr{Door: ep, ID: "a"}, func(method string, _ json.RawMessage) {
+	cli, err := sdk.DialAria(sdk.Addr{Endpoint: ep, ID: "a"}, func(method string, _ json.RawMessage) {
 		if method == "turn.done" {
 			select {
 			case sealed <- struct{}{}:
@@ -160,13 +160,13 @@ func TestASecondConnectionToATapeIsAnsweredAndFollowsItsForm(t *testing.T) {
 	if err := srv.listen(ctx, ep); err != nil {
 		t.Fatal(err)
 	}
-	main, err := sdk.DialAria(sdk.Addr{Door: ep, ID: "a"}, func(string, json.RawMessage) {})
+	main, err := sdk.DialAria(sdk.Addr{Endpoint: ep, ID: "a"}, func(string, json.RawMessage) {})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer main.Close()
 	deltas := make(chan struct{}, 1)
-	side, err := sdk.DialAria(sdk.Addr{Door: ep, ID: "a"}, func(method string, _ json.RawMessage) {
+	side, err := sdk.DialAria(sdk.Addr{Endpoint: ep, ID: "a"}, func(method string, _ json.RawMessage) {
 		if method == "form.delta" {
 			select {
 			case deltas <- struct{}{}:
@@ -222,7 +222,7 @@ func TestAReplayAnswersWhoeverAsks(t *testing.T) {
 	if err := srv.listen(ctx, ep); err != nil {
 		t.Fatal(err)
 	}
-	cli, err := sdk.DialAria(sdk.Addr{Door: ep, ID: "a"}, func(string, json.RawMessage) {})
+	cli, err := sdk.DialAria(sdk.Addr{Endpoint: ep, ID: "a"}, func(string, json.RawMessage) {})
 	if err != nil {
 		t.Fatal(err)
 	}

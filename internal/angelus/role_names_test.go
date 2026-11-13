@@ -58,7 +58,7 @@ func (r *nameRig) role(name, target string) string {
 }
 
 // serve loads a policy in which the guest may read exactly the ids given, and
-// only then builds the handlers, so the door guard is the daemon's own.
+// only then builds the handlers, so the endpoint guard is the daemon's own.
 func (r *nameRig) serve(guestReads ...string) {
 	r.t.Helper()
 	r.a.Policies = authz.NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "owner"}, nil)

@@ -49,13 +49,13 @@ func staticAt(t *testing.T, version uint64, peers ...config.Peer) *peer.Static {
 	return m
 }
 
-// Each side of the node-door handshake learns the other's membership
+// Each side of the node-endpoint handshake learns the other's membership
 // version. A difference is logged once, not on every link.
 func TestTheHandshakeComparesMembershipVersions(t *testing.T) {
 	logs := captureLogs(t)
 	p := peertest.NewPKI(t, "fed")
 	atB, atA := &peer.Versions{}, &peer.Versions{}
-	b := serve(t, p.Door("b", ""), &peer.Door{Members: staticAt(t, 7, p.Peer("b", "a", "127.0.0.1:1")), Versions: atB})
+	b := serve(t, p.Endpoint("b", ""), &peer.Endpoint{Members: staticAt(t, 7, p.Peer("b", "a", "127.0.0.1:1")), Versions: atB})
 	a := &peer.Dialer{Members: staticAt(t, 5, p.Peer("a", "b", b.addr)), Versions: atA}
 
 	for range 3 {
@@ -79,7 +79,7 @@ func TestAgreeingVersionsLogNothing(t *testing.T) {
 	logs := captureLogs(t)
 	p := peertest.NewPKI(t, "fed")
 	atB, atA := &peer.Versions{}, &peer.Versions{}
-	b := serve(t, p.Door("b", ""), &peer.Door{Members: staticAt(t, 4, p.Peer("b", "a", "127.0.0.1:1")), Versions: atB})
+	b := serve(t, p.Endpoint("b", ""), &peer.Endpoint{Members: staticAt(t, 4, p.Peer("b", "a", "127.0.0.1:1")), Versions: atB})
 	a := &peer.Dialer{Members: staticAt(t, 4, p.Peer("a", "b", b.addr)), Versions: atA}
 
 	l, err := a.Open(context.Background(), "b", rpc.Passage{}, nil)

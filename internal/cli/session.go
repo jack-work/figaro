@@ -18,7 +18,7 @@ type Session struct {
 
 func WithAngelus(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
 	ensureAngelus()
-	acli, err := sdk.DialAngelus(doorEndpoint())
+	acli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		die("connect angelus: %s", err)
 	}
@@ -30,7 +30,7 @@ func WithAngelus(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
 
 // WithAngelusIfRunning starts no daemon and unlocks no vault.
 func WithAngelusIfRunning(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
-	acli, err := sdk.DialAngelus(doorEndpoint())
+	acli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		die("angelus is not running")
 	}

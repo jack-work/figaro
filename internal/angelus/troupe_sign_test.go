@@ -109,10 +109,10 @@ func as(id string) context.Context {
 	return authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: id})
 }
 
-func (r *signRig) sign(ctx context.Context, node, door string) (rpc.TroupeSignResponse, ed25519.PublicKey, error) {
+func (r *signRig) sign(ctx context.Context, node, endpoint string) (rpc.TroupeSignResponse, ed25519.PublicKey, error) {
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(r.t, err)
-	params, _ := json.Marshal(rpc.TroupeSignRequest{Troupe: "estate", Node: node, PublicKey: pub, Door: door})
+	params, _ := json.Marshal(rpc.TroupeSignRequest{Troupe: "estate", Node: node, PublicKey: pub, Endpoint: endpoint})
 	out, err := r.call[rpc.MethodTroupeSign](ctx, params)
 	if err != nil {
 		return rpc.TroupeSignResponse{}, pub, err
@@ -140,7 +140,7 @@ func TestTroupeSignAdmitsAPrincipalHoldingJoin(t *testing.T) {
 	require.NoError(t, err)
 	b, ok := l.View().Members["node-b"]
 	require.True(t, ok)
-	require.Equal(t, "b.lan:7443", b.Door)
+	require.Equal(t, "b.lan:7443", b.Endpoint)
 	require.Equal(t, r.a.Backend.NodeID(), b.AdmittedBy)
 }
 
@@ -152,11 +152,11 @@ func TestTroupeSignRefusals(t *testing.T) {
 	require.ErrorContains(t, err, "join")
 	_, _, err = r.sign(as("0"), r.a.Backend.NodeID(), "b.lan:7443")
 	require.ErrorContains(t, err, "itself")
-	for _, door := range []string{"", "b.lan", "0.0.0.0:7443", ":7443"} {
-		_, _, err = r.sign(as("0"), "node-b", door)
-		require.ErrorContains(t, err, "door", door)
+	for _, endpoint := range []string{"", "b.lan", "0.0.0.0:7443", ":7443"} {
+		_, _, err = r.sign(as("0"), "node-b", endpoint)
+		require.ErrorContains(t, err, "door", endpoint)
 	}
-	params, _ := json.Marshal(rpc.TroupeSignRequest{Troupe: "estate", Node: "node-b", PublicKey: []byte{1, 2, 3}, Door: "b:1"})
+	params, _ := json.Marshal(rpc.TroupeSignRequest{Troupe: "estate", Node: "node-b", PublicKey: []byte{1, 2, 3}, Endpoint: "b:1"})
 	_, err = r.call[rpc.MethodTroupeSign](as("0"), params)
 	require.ErrorContains(t, err, "public_key")
 
@@ -203,13 +203,13 @@ func TestAMembersIdIsSignedAgainOnlyWithItsOldKey(t *testing.T) {
 	r := newSignRig(t, true)
 	oldPub, oldKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	first, err := r.call[rpc.MethodTroupeSign](as("member"), signParams(t, rpc.TroupeSignRequest{Troupe: "estate", Node: "node-b", PublicKey: oldPub, Door: "b.lan:7443"}))
+	first, err := r.call[rpc.MethodTroupeSign](as("member"), signParams(t, rpc.TroupeSignRequest{Troupe: "estate", Node: "node-b", PublicKey: oldPub, Endpoint: "b.lan:7443"}))
 	require.NoError(t, err)
 	chain := first.(rpc.TroupeSignResponse).Chain
 
 	newPub, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	req := rpc.TroupeSignRequest{Troupe: "estate", Node: "node-b", PublicKey: newPub, Door: "b.lan:7443"}
+	req := rpc.TroupeSignRequest{Troupe: "estate", Node: "node-b", PublicKey: newPub, Endpoint: "b.lan:7443"}
 	_, err = r.call[rpc.MethodTroupeSign](as("member"), signParams(t, req))
 	require.ErrorContains(t, err, "already a member")
 
@@ -224,10 +224,10 @@ func TestAMembersIdIsSignedAgainOnlyWithItsOldKey(t *testing.T) {
 	sig, err = troupe.SignRejoin(oldKey, "estate", "node-b", newPub, "b.lan:7443")
 	require.NoError(t, err)
 	req.Rejoin = &rpc.TroupeRejoin{Chain: chain, Sig: sig}
-	req.Door = "b.tail:7443"
+	req.Endpoint = "b.tail:7443"
 	_, err = r.call[rpc.MethodTroupeSign](as("member"), signParams(t, req))
 	require.ErrorContains(t, err, "old certificate's key", "the proof covers the door")
-	req.Door = "b.lan:7443"
+	req.Endpoint = "b.lan:7443"
 	_, err = r.call[rpc.MethodTroupeSign](as("member"), signParams(t, req))
 	require.NoError(t, err)
 }
@@ -240,7 +240,7 @@ func signParams(t *testing.T, req rpc.TroupeSignRequest) json.RawMessage {
 }
 
 // The join troupe.sign records names the principal that asked as the
-// node's owner; a renewal from a new door keeps it.
+// node's owner; a renewal from a new endpoint keeps it.
 func TestTroupeSignRecordsTheCallerAsOwner(t *testing.T) {
 	r := newSignRig(t, true)
 	_, _, err := r.sign(as("member"), "node-b", "b.lan:7443")
@@ -270,7 +270,7 @@ func TestARejoinProofFromAnotherIntermediateIsRefused(t *testing.T) {
 	require.NoError(t, err)
 	sig, err := troupe.SignRejoin(forgedKey, "estate", "node-b", newPub, "evil.lan:7443")
 	require.NoError(t, err)
-	req := rpc.TroupeSignRequest{Troupe: "estate", Node: "node-b", PublicKey: newPub, Door: "evil.lan:7443",
+	req := rpc.TroupeSignRequest{Troupe: "estate", Node: "node-b", PublicKey: newPub, Endpoint: "evil.lan:7443",
 		Rejoin: &rpc.TroupeRejoin{Chain: [][]byte{leaf.Raw, qinter.Raw}, Sig: sig}}
 	_, err = r.call[rpc.MethodTroupeSign](as("member"), signParams(t, req))
 	require.ErrorContains(t, err, "came from node-q, which is neither")
@@ -284,7 +284,7 @@ func (r *signRig) signFor(ttlMillis int64) (*x509.Certificate, error) {
 func (r *signRig) signForNode(node string, ttlMillis int64) (*x509.Certificate, time.Duration, error) {
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(r.t, err)
-	params, _ := json.Marshal(rpc.TroupeSignRequest{Troupe: "estate", Node: node, PublicKey: pub, Door: node + ".lan:7443", TTLMillis: ttlMillis})
+	params, _ := json.Marshal(rpc.TroupeSignRequest{Troupe: "estate", Node: node, PublicKey: pub, Endpoint: node + ".lan:7443", TTLMillis: ttlMillis})
 	out, err := r.call[rpc.MethodTroupeSign](as("member"), params)
 	if err != nil {
 		return nil, 0, err

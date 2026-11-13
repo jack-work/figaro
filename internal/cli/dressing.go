@@ -108,7 +108,7 @@ func parseNames(text string) ([]string, error) {
 func softFetchOutfitNames() []string {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	acli, err := sdk.DialAngelus(doorEndpoint())
+	acli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		// No daemon is not no outfits: they are files in the config dir.
 		return outfitNamesOnDisk()

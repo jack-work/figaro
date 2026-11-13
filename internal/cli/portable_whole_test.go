@@ -44,7 +44,7 @@ func longAria(t *testing.T, n int) (*sdk.Angelus, string) {
 }
 
 // serveBackend runs a real angelus over backend and returns a client and the
-// runtime dir its door listens in.
+// runtime dir its endpoint listens in.
 func serveBackend(t *testing.T, backend store.Backend) (*sdk.Angelus, string) {
 	t.Helper()
 	// A unix socket path is length-capped, so the runtime dir is short.

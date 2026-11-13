@@ -223,7 +223,7 @@ func releaseOf(exe string) string {
 }
 
 func runningAngelus() (release string, up bool) {
-	cli, err := sdk.DialAngelus(doorEndpoint())
+	cli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		return "", false
 	}
@@ -241,7 +241,7 @@ func runningAngelus() (release string, up bool) {
 }
 
 func busyArias(ctx context.Context) ([]string, error) {
-	cli, err := sdk.DialAngelus(doorEndpoint())
+	cli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		return nil, nil
 	}
@@ -416,7 +416,7 @@ func recordReleases(clients []paneClient, release func(exe string) string) {
 }
 
 func recordAttendance(clients []paneClient) {
-	cli, err := sdk.DialAngelus(doorEndpoint())
+	cli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		return
 	}

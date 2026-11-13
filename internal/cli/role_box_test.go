@@ -42,8 +42,8 @@ func TestARoleHeldInABoxIsFollowedOnlyIntoIt(t *testing.T) {
 			return rpc.FormResponse{Snapshot: form.FromMap(states(rpc.AriaOf(p))), Version: 1}, nil
 		},
 	})
-	resetDoorCache(t)
-	acli, err := sdk.DialAngelus(doorEndpoint())
+	resetEndpointCache(t)
+	acli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,11 +59,11 @@ func TestARoleHeldInABoxIsFollowedOnlyIntoIt(t *testing.T) {
 	}
 }
 
-func resetDoorCache(t *testing.T) {
+func resetEndpointCache(t *testing.T) {
 	t.Helper()
-	doorMu.Lock()
-	prev := doorCached
-	doorCached = nil
-	doorMu.Unlock()
-	t.Cleanup(func() { doorMu.Lock(); doorCached = prev; doorMu.Unlock() })
+	endpointMu.Lock()
+	prev := endpointCached
+	endpointCached = nil
+	endpointMu.Unlock()
+	t.Cleanup(func() { endpointMu.Lock(); endpointCached = prev; endpointMu.Unlock() })
 }

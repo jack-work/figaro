@@ -53,9 +53,9 @@ func BenchmarkLifetimeSweepWith200Due(b *testing.B) {
 	}
 }
 
-// GC must not take the door down: round trips while 200 removals run against
+// GC must not take the endpoint down: round trips while 200 removals run against
 // the same store, compared with an idle daemon.
-func BenchmarkDoorRoundTripWhileReclaiming(b *testing.B) {
+func BenchmarkEndpointRoundTripWhileReclaiming(b *testing.B) {
 	modes := []struct {
 		name  string
 		batch int
