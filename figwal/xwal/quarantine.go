@@ -60,6 +60,9 @@ func (t *Trunks) ScanQuarantine() ([]Quarantined, error) {
 	sort.Strings(keys)
 	var out []Quarantined
 	for _, key := range keys {
+		if err := t.ensureRepaired(key); err != nil {
+			return nil, err
+		}
 		for _, mc := range man.Channels {
 			dir := t.channelDir(mc.Name, key)
 			if !pathExists(dir) {
