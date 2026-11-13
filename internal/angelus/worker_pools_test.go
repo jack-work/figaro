@@ -12,14 +12,14 @@ import (
 )
 
 const fourWorkerPoolConfig = `
-[slot.pools.groups]
+[worker.pools.groups]
 enabled = true
 outfit = "leased"
 provider = "mock"
 rou2_lease_class = "group"
 rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/groups/say"
-slots = ["slot0", "slot1", "slot2", "slot3"]
+workers = ["slot0", "slot1", "slot2", "slot3"]
 `
 
 const brokerHolder = "service:broker@auth.kelliher.info"

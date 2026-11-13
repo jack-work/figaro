@@ -45,7 +45,7 @@ type Config struct {
 	Quote   QuoteConfig   `toml:"quote"`
 	Authz   AuthzConfig   `toml:"authz"`
 	Sandbox SandboxConfig `toml:"sandbox"`
-	Worker  WorkerConfig  `toml:"slot"`
+	Worker  WorkerConfig  `toml:"worker"`
 	Angelus AngelusConfig `toml:"angelus"`
 
 	ServiceTokens map[string]ServiceToken `toml:"service_tokens"`
@@ -876,6 +876,9 @@ func load(configDir string) (*Loaded, error) {
 	}
 	if md.IsDefined("authz", "figaro_claim") {
 		return nil, fmt.Errorf("%s: [authz] figaro_claim is now per box: set figaro_claim = \"required\" under [sandbox.boxes.<name>], which binds that box's in-box door and never its host door", configPath)
+	}
+	if err := refuseRenamedKeys(md); err != nil {
+		return nil, fmt.Errorf("%s: %w", configPath, err)
 	}
 	if err := cfg.Authz.checkProtectedKeys(); err != nil {
 		return nil, fmt.Errorf("%s: %w", configPath, err)
