@@ -18,13 +18,13 @@ func leasedBox(t *testing.T) (*config.Loaded, string) {
 	body := `[authz]
 policy = "policy.toml"
 
-[slot.pools.groups]
+[worker.pools.groups]
 outfit = "group"
 provider = "rou2"
 rou2_lease_class = "group"
 rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/say"
-slots = ["slot0"]
+workers = ["slot0"]
 `
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)

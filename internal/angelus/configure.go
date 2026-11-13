@@ -130,9 +130,9 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 func keepsItsKind(running, fresh *config.Loaded) error {
 	switch {
 	case running.PoolDaemon() && !fresh.PoolDaemon():
-		return errors.New("the new config has no [slot.pools] and this daemon started with one: a pool daemon keeps its refusals until it stops; turn a pool off with enabled = false, or stop the daemon")
+		return errors.New("the new config has no [worker.pools] and this daemon started with one: a pool daemon keeps its refusals until it stops; turn a pool off with enabled = false, or stop the daemon")
 	case !running.PoolDaemon() && fresh.PoolDaemon():
-		return errors.New("the new config has [slot.pools] and this daemon started without one: a daemon becomes a pool daemon only at start")
+		return errors.New("the new config has [worker.pools] and this daemon started without one: a daemon becomes a pool daemon only at start")
 	}
 	return nil
 }

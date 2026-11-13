@@ -12,14 +12,14 @@ import (
 )
 
 const poolConfig = `
-[slot.pools.chat-groups]
+[worker.pools.chat-groups]
 enabled = true
 outfit = "broker-group"
 provider = "rou2"
 rou2_lease_class = "chat-group"
 rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/groups/say"
-slots = ["slot0"]
+workers = ["slot0"]
 `
 
 // What a pool daemon refuses is decided when it starts: its log level, its
