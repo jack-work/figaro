@@ -326,8 +326,8 @@ func TestAPendingMoveTheNewHomeCommittedSettlesForward(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		_, ok := a.a.Backend.Node(id)
-		return !ok
-	}, 10*time.Second, 50*time.Millisecond, "the old home kept its copy")
+		return !ok && !a.hs.MovingForTest(id)
+	}, 10*time.Second, 50*time.Millisecond, "the old home kept its copy or its hold on the move")
 	require.Equal(t, `"in flight"`, mantraOf(t, b, id))
 	require.NoError(t, setMantra(t, a, "probe", id, `"forwarded"`))
 	require.Equal(t, `"forwarded"`, mantraOf(t, b, id))
