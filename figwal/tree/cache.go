@@ -480,7 +480,8 @@ func (c *Cache[U]) rangeInNodeAt(nd *node[U], coord Coord) ([]U, error) {
 		return concat(pieces, total)
 	}
 	for pos := coord.From; pos < coord.To; {
-		r := overlapping(nd.index(), pos, coord.To)
+		ix := nd.index()
+		r := overlapping(ix, pos, coord.To)
 		if r == nil {
 			units, err := c.fill(Coord{coord.Node, pos, coord.To})
 			add(units)
@@ -496,19 +497,19 @@ func (c *Cache[U]) rangeInNodeAt(nd *node[U], coord Coord) ([]U, error) {
 			continue
 		}
 		if !r.resident {
-			units, err := c.refill(coord.Node, r)
+			units, end, err := c.refillStretch(coord.Node, ix, ix.firstReaching(pos), coord.To)
 			if err != nil {
 				return joined(), err
 			}
-			// Slice the LOCAL units rather than the run: the charge inside
-			// refill may have evicted this very run again (a run larger than
-			// the whole budget can never stay resident), and the caller must
-			// still get what was fetched.
 			add(sliceUnits(c.key, units, pos, coord.To))
-		} else {
-			r.touch(c)
-			add(c.slice(r, pos, coord.To))
+			if end <= pos {
+				break
+			}
+			pos = end
+			continue
 		}
+		r.touch(c)
+		add(c.slice(r, pos, coord.To))
 		if r.coord.To <= pos {
 			break // no progress; refuse to spin
 		}
@@ -565,6 +566,70 @@ func (c *Cache[U]) fill(coord Coord) ([]U, error) {
 		lo = hi
 	}
 	return all, nil
+}
+
+func (c *Cache[U]) refillStretch(name string, ix *runIndex[U], i int, limit uint64) ([]U, uint64, error) {
+	runs := ix.runs
+	j := i
+	for j+1 < len(runs) {
+		nx := runs[j+1]
+		if nx.resident || nx.pinned || nx.coord.From != runs[j].coord.To || nx.coord.To > limit || nx.coord.To-runs[i].coord.From > runChunk {
+			break
+		}
+		j++
+	}
+	if j == i || runs[i].pinned {
+		units, err := c.refill(name, runs[i])
+		return units, runs[i].coord.To, err
+	}
+	stretch := runs[i : j+1]
+	whole := Coord{Node: name, From: stretch[0].coord.From, To: stretch[len(stretch)-1].coord.To}
+	units, err := c.fetch(whole)
+	if err != nil {
+		return nil, whole.From, err
+	}
+	succ := make([]*run[U], len(stretch))
+	for k, old := range stretch {
+		r := &run[U]{coord: old.coord, units: sliceUnits(c.key, units, old.coord.From, old.coord.To), resident: true, pinned: old.pinned}
+		r.epoch.Store(c.bump())
+		c.measure(r)
+		succ[k] = r
+	}
+
+	c.mu.Lock()
+	n := c.nodeLocked(name)
+	cur := n.load()
+	var next []*run[U]
+	var charged int64
+	for k, old := range stretch {
+		at := indexOfRun(cur, old)
+		if at < 0 {
+			continue
+		}
+		if next == nil {
+			next = make([]*run[U], len(cur))
+			copy(next, cur)
+		}
+		next[at] = succ[k]
+		charged += succ[k].bytes
+	}
+	if next != nil {
+		n.publish(next)
+	}
+	c.mu.Unlock()
+
+	c.budget.charge(charged)
+	return units, whole.To, nil
+}
+
+func indexOfRun[U any](runs []*run[U], r *run[U]) int {
+	i := sort.Search(len(runs), func(i int) bool { return runs[i].coord.From >= r.coord.From })
+	for ; i < len(runs) && runs[i].coord.From == r.coord.From; i++ {
+		if runs[i] == r {
+			return i
+		}
+	}
+	return -1
 }
 
 // refill rebuilds a hollow run as a successor at the same coord.
