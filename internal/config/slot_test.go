@@ -136,6 +136,14 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 		"a say url in clear, 0.0.0.0": {swap("https://broker.example/groups/say", "http://0.0.0.0:4380/say"), "say_url"},
 		"a say url, localhost.evil":   {swap("https://broker.example/groups/say", "http://localhost.example/say"), "say_url"},
 		"a say url, ws on loopback":   {swap("https://broker.example/groups/say", "ws://127.0.0.1:4380/say"), "say_url"},
+		"a say socket not absolute":   {swap("https://broker.example/groups/say", "unix:run/pool.sock"), "say_url"},
+		"a say socket, no path":       {swap("https://broker.example/groups/say", "unix:"), "say_url"},
+		"a say socket not clean":      {swap("https://broker.example/groups/say", "unix:/run/../pool.sock"), "say_url"},
+		"a say socket with a host":    {swap("https://broker.example/groups/say", "unix://host/pool.sock"), "say_url"},
+		"a say socket, relative path": {swap("https://broker.example/groups/say", "unix:/run/pool.sock:say"), "say_url"},
+		"a say socket, url for path":  {swap("https://broker.example/groups/say", "unix:/run/pool.sock:http://broker.example/say"), "say_url"},
+		"a say socket, //host path":   {swap("https://broker.example/groups/say", "unix:/run/pool.sock://broker.example/say"), "say_url"},
+		"a search url on a socket":    {poolBody + "search_url = \"unix:/run/search.sock\"\n", "search_url"},
 		"a search url, ftp on lo":     {poolBody + "search_url = \"ftp://localhost/search\"\n", "search_url"},
 		"a search url in clear":       {poolBody + "search_url = \"http://search.example/search\"\n", "search_url"},
 		"a search url, 128.0.0.1":     {poolBody + "search_url = \"http://128.0.0.1/search\"\n", "search_url"},
@@ -189,6 +197,30 @@ func TestAPoolSendsItsBearersInClearOnlyOnLoopback(t *testing.T) {
 		if _, err := loadBody(t, body, "rou2"); err != nil {
 			t.Errorf("%s: %v", u, err)
 		}
+	}
+}
+
+// A say may go to a unix socket on the host instead: no network carries
+// its bearer, so it is taken like loopback. The request path follows the
+// socket after a colon, and is / when none is named.
+func TestAPoolSaysOverAUnixSocketOnTheHost(t *testing.T) {
+	for raw, want := range map[string][2]string{
+		"unix:/run/gluck-herald/pool.sock":                {"/run/gluck-herald/pool.sock", "/"},
+		"unix:/run/gluck-herald/pool.sock:/v1/groups/say": {"/run/gluck-herald/pool.sock", "/v1/groups/say"},
+	} {
+		l, err := loadBody(t, strings.Replace(poolBody, "https://broker.example/groups/say", raw, 1), "rou2")
+		if err != nil {
+			t.Errorf("%s: %v", raw, err)
+			continue
+		}
+		p, _ := l.Pool("chat-groups")
+		socket, path, ok := SayOverUnix(p.SayURL)
+		if !ok || socket != want[0] || path != want[1] {
+			t.Errorf("%s reads as socket %q path %q (%v), want %q %q", raw, socket, path, ok, want[0], want[1])
+		}
+	}
+	if _, _, ok := SayOverUnix("https://broker.example/say"); ok {
+		t.Error("an https say url read as a socket")
 	}
 }
 
