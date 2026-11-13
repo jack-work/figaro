@@ -304,8 +304,10 @@ class has `sh`, `find` and `figaro` on its path.
 
 **Sandbox side, for edge.** The exec socket the agent serves speaks the
 existing exec wire (`internal/sandbox/box/wire.go`) unchanged; the agent
-splices bytes and reads only the first line of each connection, for the
-`box.open` scope it logs (U3). Each container runs `figaro box serve` as
+splices bytes and reads only the first line of each connection, which
+the daemon always sends as `box.open` (its `scope` is the figaro id) or
+`box.session.killscope`; it logs that method and, for `box.open`, the
+scope (U3). Each container runs `figaro box serve` as
 the sandbox uid at boot, listening on the path the agent splices to.
 
 ## What figaro owns
