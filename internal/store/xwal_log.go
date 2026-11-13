@@ -360,26 +360,58 @@ func (l *xwalLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 // channel; without it the generic helper falls back to Read(), quadratic over
 // a conversation.
 func (l *xwalLog[T]) TailSnapshot(n int) []Entry[T] {
-	if n <= 0 {
-		return nil
-	}
-	var first, last uint64
+	var from uint64
 	var ok bool
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
-		first, last, ok = xw.ChannelBounds(l.channel)
+		from, _, ok = tailWindow(xw, l.channel, n)
 		return nil
 	})
-	if !ok || last == 0 {
+	if !ok {
 		return nil
+	}
+	return l.ReadFrom(from, n)
+}
+
+func tailWindow(xw *xwal.XWAL, channel string, n int) (from, last uint64, ok bool) {
+	if n <= 0 {
+		return 0, 0, false
+	}
+	first, last, ok := xw.ChannelBounds(channel)
+	if !ok || last == 0 {
+		return 0, 0, false
 	}
 	if first == 0 {
 		first = 1
 	}
-	from := last - uint64(n) + 1
+	from = last - uint64(n) + 1
 	if n >= int(last) || from < first {
 		from = first
 	}
-	return l.ReadFrom(from, n)
+	return from, last, true
+}
+
+func (l *xwalLog[T]) tailEnds(n int) (oldest, newest Entry[T], ok bool) {
+	_ = l.openOnce(func(xw *xwal.XWAL) error {
+		from, last, inWindow := tailWindow(xw, l.channel, n)
+		if !inWindow {
+			return nil
+		}
+		a, err := xw.ReadAt(l.channel, from)
+		if err != nil {
+			return nil
+		}
+		b, err := xw.ReadAt(l.channel, last)
+		if err != nil {
+			return nil
+		}
+		oldest, newest, ok = recordCoords[T](a), recordCoords[T](b), true
+		return nil
+	})
+	return oldest, newest, ok
+}
+
+func recordCoords[T any](r xwal.Record) Entry[T] {
+	return Entry[T]{LT: r.ChannelLT, FigaroLT: r.MainLT}
 }
 
 func (l *xwalLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
