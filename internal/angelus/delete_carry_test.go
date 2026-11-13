@@ -1,6 +1,7 @@
 package angelus_test
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/hierarchy"
 )
@@ -121,6 +123,17 @@ var deletePaths = []deletePath{
 		}
 		requireStillNarrow(t, r, f, "reaped by gc")
 		purgeDue(t, r, x)
+	}},
+	{"a start's purge of a node in a leased box no lease holds", leasingConfig, false, []hierarchy.Op{hierarchy.Kill}, func(t *testing.T, r grantRig, x, _ string) {
+		slots, err := angelus.OpenSlotPools(t.TempDir(), r.a.Settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.a.Slots = slots
+		if _, err := r.backend.ApplyForm(x, form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.sandbox": json.RawMessage(`"slot0-g9"`)}, nil)); err != nil {
+			t.Fatal(err)
+		}
+		r.hs.RecoverSlotPools(context.Background())
 	}},
 	{"an empty discard, which never strands a fork", "", true, []hierarchy.Op{hierarchy.Discard}, func(t *testing.T, r grantRig, x, _ string) {
 		if err := r.hs.RemoveAria(x, false); err == nil || !strings.Contains(err.Error(), "discard takes one leaf") {
