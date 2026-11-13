@@ -202,6 +202,14 @@ func convBootPatch(ariaID, cwd string) form.Patch {
 	return runtimeFillins(ariaID, cwd)
 }
 
+func bootStamp(cwd string) store.BirthOption {
+	return store.Stamped(func(id string) form.Patch { return convBootPatch(id, cwd) })
+}
+
+func ariaIDStamp() store.BirthOption {
+	return store.Stamped(func(id string) form.Patch { return withAriaID(form.Patch{}, id) })
+}
+
 func withAriaID(p form.Patch, ariaID string) form.Patch {
 	b, err := json.Marshal(ariaID)
 	if err != nil {

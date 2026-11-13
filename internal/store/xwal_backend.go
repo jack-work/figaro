@@ -407,18 +407,7 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 		return nil, err
 	}
 	// Registered where the form is opened, so every writer passes it.
-	opened.OnCommit(func(c Commit) {
-		patch := c.Patch
-		b.wroteTo(ariaID, time.Now().UnixMilli())
-		b.roleCommitted(ariaID, patch)
-		b.identityCommitted(ariaID, patch, opened)
-		if namesOutfit(patch) {
-			b.labelChanged(ariaID)
-			b.mirrorFormLifetime(ariaID, opened.Read().Snapshot)
-			return
-		}
-		b.ttlCommitted(ariaID, patch)
-	})
+	opened.OnCommit(func(c Commit) { b.formCommitted(ariaID, c.Patch, opened) })
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -432,6 +421,30 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	}
 	b.forms[ariaID] = opened
 	return opened, nil
+}
+
+func (b *XwalBackend) formCommitted(ariaID string, patch message.Patch, f *Form) {
+	b.wroteTo(ariaID, time.Now().UnixMilli())
+	b.roleCommitted(ariaID, patch)
+	b.identityCommitted(ariaID, patch, f)
+	if namesOutfit(patch) {
+		b.labelChanged(ariaID)
+		b.mirrorFormLifetime(ariaID, f.Read().Snapshot)
+		return
+	}
+	b.ttlCommitted(ariaID, patch)
+}
+
+func (b *XwalBackend) stampCommitted(ariaID string, stamped message.Patch) {
+	if stamped.IsIdentity() {
+		return
+	}
+	f, err := b.form(ariaID)
+	if err != nil {
+		slog.Warn("birth: stamp not mirrored", "aria", ariaID, "err", err)
+		return
+	}
+	b.formCommitted(ariaID, stamped, f)
 }
 
 func namesOutfit(patch message.Patch) bool {
@@ -543,7 +556,7 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	if pm, _ := b.Meta(parent); pm != nil && pm.ReapedAtMS > 0 {
 		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemReapedKey, SystemReapedUntilKey, SystemReapedByKey}))
 	}
-	child, version, err := b.store.ForkWith(parent, atMainLT, patch, opts...)
+	child, version, stamped, err := b.store.ForkWith(parent, atMainLT, patch, opts...)
 	if err != nil {
 		return "", 0, err
 	}
@@ -553,6 +566,7 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	// that was empty when someone opened it first. Close what is dropped: a
 	// Form holds a writer.
 	b.dropForm(child)
+	b.stampCommitted(child, stamped)
 	b.lifetimeAtBirth(child)
 	b.recordForkTurn(child)
 	return child, version, nil
@@ -586,13 +600,14 @@ func (b *XwalBackend) RecordBaseTurn(trunk string, baseLT, turn uint64, exact bo
 // CreateForm: `fig form new` spawns under the null root, `fig form fork` duplicates
 // a form. Same form-cache hygiene as ForkWith.
 func (b *XwalBackend) CreateForm(parent string, patch message.Patch, opts ...BirthOption) (string, uint64, error) {
-	id, version, err := b.store.CreateForm(parent, patch, opts...)
+	id, version, stamped, err := b.store.CreateForm(parent, patch, opts...)
 	if err != nil {
 		return "", 0, err
 	}
 	bt := births(opts)
 	b.mirrorMintedBy(id, bt)
 	b.dropForm(id)
+	b.stampCommitted(id, stamped)
 	if !bt.template {
 		b.lifetimeAtBirth(id)
 	}
