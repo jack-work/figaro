@@ -145,14 +145,20 @@ func SegmentFiles(dir string) (int, error) {
 		if e.IsDir() {
 			continue
 		}
-		for _, ext := range knownExts {
-			if strings.HasSuffix(e.Name(), ext) {
-				n++
-				break
-			}
+		if IsSegmentFile(e.Name()) {
+			n++
 		}
 	}
 	return n, nil
+}
+
+func IsSegmentFile(name string) bool {
+	for _, ext := range knownExts {
+		if strings.HasSuffix(name, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 func ForkBaseOf(dir string) (uint64, error) { return readForkMarker(dir) }
