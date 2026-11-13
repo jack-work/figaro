@@ -9,6 +9,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/figwal/segment"
 	fwtree "github.com/jack-work/figaro/figwal/tree"
 	"github.com/jack-work/figaro/figwal/xwal"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -87,6 +89,8 @@ type XwalBackend struct {
 	// transBudget: the payload is the provider's wire form, so the estimate is
 	// the bytes themselves.
 	transBudget int
+
+	refusedCorrupt sync.Map
 }
 
 // Residency defaults: decoded-estimate budgets. irWindow stays 0, so bytes
@@ -248,6 +252,21 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 }
 
 func (b *XwalBackend) refuseUnreadableChannel(node, channel string) error {
+	err := b.unreadableChannel(node, channel)
+	var cf *segment.CorruptFrameError
+	if !errors.As(err, &cf) {
+		return err
+	}
+	if _, seen := b.refusedCorrupt.LoadOrStore(node+"\x00"+channel, true); !seen {
+		slog.Error("store: figaro refused: a corrupt frame has valid records after it",
+			"figaro", node, "channel", channel, "offset", cf.Offset, "err", err,
+			"see", "figaro doctor quarantine ls")
+	}
+	return fmt.Errorf("%w; the figaro stays closed: `figaro doctor quarantine ls` lists it and says whether `figaro doctor quarantine release %s --at %d --channel %s` may cut it there",
+		err, node, cf.Offset, channel)
+}
+
+func (b *XwalBackend) unreadableChannel(node, channel string) error {
 	xw, err := b.store.openNode(node)
 	if err != nil {
 		return fmt.Errorf("%s: %w", node, err)
