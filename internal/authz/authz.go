@@ -271,6 +271,9 @@ func Enforce(p *Policies) Policy {
 			}
 			figaro, dropped = "", figaro != ""
 		}
+		if figaro != "" && p.dropsClaim(r.Door, figaro, r.Method) {
+			figaro, dropped = "", true
+		}
 		decided := func(d Decision) Decision {
 			d.DropClaim = dropped
 			return d
@@ -344,6 +347,33 @@ func decideResources(aria string, params json.RawMessage) ([]Resource, error) {
 		on = append(on, Daemon)
 	}
 	return on, nil
+}
+
+func (p *Policies) dropsClaim(d Door, figaro, method string) bool {
+	if !d.dropsClaimsNotHeld() || p.holdsFigaro(figaro) {
+		return false
+	}
+	slog.Info("authz: claim for a figaro not held here dropped", "door", d.String(), "figaro", figaro, "method", method)
+	return true
+}
+
+func (p *Policies) DroppingClaimsNotHeld(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
+	return func(ctx context.Context, params json.RawMessage) (any, error) {
+		if id, ok := identityOf(ctx); ok && id.FigaroID != "" && p.dropsClaim(DoorOf(ctx), id.FigaroID, method) {
+			id.FigaroID = ""
+			ctx = withIdentity(ctx, id)
+		}
+		return next(ctx, params)
+	}
+}
+
+func (p *Policies) holdsFigaro(figaro string) bool {
+	ff, _, ok := p.figaroFacts()
+	if !ok {
+		return false
+	}
+	_, held := ff.Ancestry(figaro)
+	return held
 }
 
 func (p *Policies) pinnedToBox(s jkauthz.Subject, figaro string) bool {
