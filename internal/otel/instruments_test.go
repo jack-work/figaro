@@ -166,3 +166,20 @@ func TestTheResourceNamesTheVersion(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"Key":"service.version","Value":{"Type":"STRING","Value":"9.9.9-test"}`)
 }
+
+// A second daemon on the same host (the slot pool's) tells its telemetry
+// apart by the standard OTEL_SERVICE_NAME; with none set it is figaro.
+func TestTheResourceNamesTheServiceFromTheStandardEnv(t *testing.T) {
+	ctx := context.Background()
+	for env, want := range map[string]string{"": "figaro", "figaro-pool": "figaro-pool"} {
+		t.Setenv("OTEL_SERVICE_NAME", env)
+		dir := t.TempDir()
+		shutdown, err := figOtel.Init(ctx, dir)
+		require.NoError(t, err)
+		figOtel.RecordRPC(ctx, time.Millisecond)
+		require.NoError(t, shutdown(ctx))
+		data, err := os.ReadFile(filepath.Join(dir, "metrics.jsonl"))
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"Key":"service.name","Value":{"Type":"STRING","Value":"`+want+`"}`, "OTEL_SERVICE_NAME=%q", env)
+	}
+}

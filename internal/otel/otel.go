@@ -189,6 +189,13 @@ func processRole() string {
 	return "cli"
 }
 
+func serviceName() string {
+	if name := strings.TrimSpace(os.Getenv("OTEL_SERVICE_NAME")); name != "" {
+		return name
+	}
+	return "figaro"
+}
+
 var serviceVersion = "unknown"
 
 func SetServiceVersion(v string) {
@@ -216,7 +223,7 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 	}
 
 	res, err := resource.New(ctx, resource.WithHost(), resource.WithAttributes(
-		semconv.ServiceNameKey.String("figaro"),
+		semconv.ServiceNameKey.String(serviceName()),
 		semconv.ServiceVersionKey.String(serviceVersion),
 		attribute.String("figaro.process", processRole()),
 	))
