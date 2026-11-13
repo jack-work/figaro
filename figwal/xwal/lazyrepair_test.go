@@ -421,7 +421,11 @@ func TestTheQuarantineReportBeforeThePassIsTheEagerOne(t *testing.T) {
 	src := buildTornStore(t)
 	want, _ := eagerOracle(t, src, narrowTestOptions().config())
 	w := quarantineReport(t, openHeld(t, copyOf(t, want)))
-	l := quarantineReport(t, openHeld(t, lazyCopy(t, src)))
+	ls := openHeld(t, lazyCopy(t, src))
+	l := quarantineReport(t, ls)
+	if n := ls.RepairsPending(); n != 0 {
+		t.Errorf("the scan left %d leaves unrepaired; a release after it would cut before the repair", n)
+	}
 	if w == "" {
 		t.Fatal("fixture: nothing quarantined")
 	}
@@ -678,6 +682,7 @@ func TestBorrowsRacingThePassRepairEachLeafOnce(t *testing.T) {
 		mu.Lock()
 		seen[key]++
 		mu.Unlock()
+		time.Sleep(5 * time.Millisecond)
 		return nil
 	}
 	trunks := conversationTrunks(s)
