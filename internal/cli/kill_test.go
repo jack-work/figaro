@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 func TestKillRequestFlags(t *testing.T) {
@@ -59,4 +61,12 @@ func TestPagerKillTakesKeepChildren(t *testing.T) {
 	require.True(t, req.KeepChildren)
 	_, _, err = parseKillArgs([]string{"-r", "--keep-children", "abc"})
 	require.ErrorContains(t, err, "--keep-children")
+}
+
+func TestKillSaysHowManyWentWithIt(t *testing.T) {
+	now := time.Now()
+	require.Equal(t, "killed P", killedLine("P", rpc.KillResponse{Removed: []string{"p"}}, now))
+	require.Equal(t, "killed P and 1 under it", killedLine("P", rpc.KillResponse{Removed: []string{"p", "c"}}, now))
+	require.Equal(t, "killed P and 2 under it; purged in 60m (figaro reaped restore P, or kill --now)",
+		killedLine("P", rpc.KillResponse{Reaped: []string{"p", "c", "g"}, PurgeAt: now.Add(time.Hour).UnixMilli()}, now))
 }
