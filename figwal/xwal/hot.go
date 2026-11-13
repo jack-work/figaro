@@ -109,7 +109,9 @@ func (t *Trunks) borrowHotUntracked(branch []string) (*XWAL, func() error, error
 	t.hotMu.Unlock()
 
 	if creator {
-		head.x, head.err = open(t.root, t.cfg, h.store, branch...)
+		if head.err = t.ensureRepaired(key); head.err == nil {
+			head.x, head.err = open(t.root, t.cfg, h.store, branch...)
+		}
 		t.hotMu.Lock()
 		if head.err != nil && h.heads[key] == head {
 			delete(h.heads, key)

@@ -51,8 +51,9 @@ type Store struct {
 	stop         chan struct{}
 	done         chan struct{}
 
-	closeOnce sync.Once
-	closeErr  error
+	closeOnce  sync.Once
+	closeErr   error
+	repairDone chan struct{}
 }
 
 const (
@@ -76,7 +77,7 @@ func OpenStore(root string, opts StoreOptions) (*Store, error) {
 		return nil, err
 	}
 	cfg := opts.config()
-	wasUnclean := pathExists(uncleanPath(root))
+	cause, wasUnclean := uncleanCause(root)
 	var t *Trunks
 	if pathExists(filepath.Join(root, manifestName)) {
 		t, err = openTrunks(root, cfg)
@@ -87,12 +88,12 @@ func OpenStore(root string, opts StoreOptions) (*Store, error) {
 		unlockRoot(lockFile)
 		return nil, err
 	}
+	var repairs *leafRepairs
 	if wasUnclean {
-		if err := repairCoherentCuts(t); err != nil {
-			t.Close()
-			unlockRoot(lockFile)
-			return nil, err
-		}
+		repairs = newLeafRepairs(t, cause)
+		t.repairs.Store(repairs)
+		slog.Warn("xwal: store was not closed clean; each leaf is repaired before its first use",
+			"cause", cause, "leaves", repairs.pending.Load())
 	}
 	if err := markUnclean(root); err != nil {
 		t.Close()
@@ -118,8 +119,17 @@ func OpenStore(root string, opts StoreOptions) (*Store, error) {
 		done:         make(chan struct{}),
 	}
 	go s.run()
+	if repairs != nil && repairs.pending.Load() > 0 {
+		s.repairDone = make(chan struct{})
+		go func() {
+			defer close(s.repairDone)
+			repairs.pass(s.stop, repairPassHold)
+		}()
+	}
 	return s, nil
 }
+
+var repairPassHold <-chan struct{}
 
 func (s *Store) run() {
 	defer close(s.done)
@@ -555,11 +565,14 @@ func (s *Store) close(clean bool) error {
 	s.closeOnce.Do(func() {
 		close(s.stop)
 		<-s.done
+		if s.repairDone != nil {
+			<-s.repairDone
+		}
 		s.syncDirty()
 		s.Trunks.seal()
 		s.closeErr = s.Trunks.Close()
 		if s.closeErr == nil && clean {
-			s.closeErr = clearUnclean(s.Trunks.root)
+			s.closeErr = s.markClosed()
 		}
 		if err := unlockRoot(s.lockFile); err != nil && s.closeErr == nil {
 			s.closeErr = err
@@ -581,3 +594,14 @@ func (s *Store) RemoveComponent(c Component, token string) ([]string, error) {
 	}
 	return removed, err
 }
+
+func (s *Store) markClosed() error {
+	left := s.Trunks.repairsPending()
+	if left == 0 {
+		return clearUnclean(s.Trunks.root)
+	}
+	slog.Warn("xwal: store closed with crash repairs pending; the next open repairs them", "leaves", left)
+	return markRepairsPending(s.Trunks.root, left)
+}
+
+func (s *Store) RepairsPending() int { return s.Trunks.repairsPending() }

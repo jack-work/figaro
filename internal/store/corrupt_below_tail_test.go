@@ -105,9 +105,6 @@ func TestACorruptFrameBelowTheRepairedTailRefusesTheFigaroAtFirstOpen(t *testing
 		t.Fatalf("a corrupt frame below the tail kept the store from opening: %v", err)
 	}
 	defer be2.Close()
-	if !strings.Contains(logged.String(), "trimmed incoherent channel tail") {
-		t.Fatalf("the repair did not trim the row past the keyed leaf's tail:\n%s", logged.String())
-	}
 	if strings.Contains(logged.String(), "figaro refused") {
 		t.Fatalf("boot already reported what only the first open should meet:\n%s", logged.String())
 	}
@@ -150,6 +147,9 @@ func TestACorruptFrameBelowTheRepairedTailRefusesTheFigaroAtFirstOpen(t *testing
 		if _, err := be2.ReleaseQuarantine(c.id, "ir", c.at, false); err != nil {
 			t.Fatalf("the release the refusal points at is refused: %v", err)
 		}
+	}
+	if !strings.Contains(logged.String(), "trimmed incoherent channel tail") {
+		t.Fatalf("the repair did not trim the row past the keyed leaf's tail before its first open:\n%s", logged.String())
 	}
 	if n := strings.Count(logged.String(), "figaro refused"); n != 2 {
 		t.Fatalf("want one refusal line per figaro, got %d:\n%s", n, logged.String())

@@ -347,6 +347,11 @@ func (t *Trunks) finishRemoval(c Component, plan string) error {
 	if err != nil {
 		return err
 	}
+	keys := make([]string, len(c.Nodes))
+	for i, n := range c.Nodes {
+		keys[i] = n.Key
+	}
+	t.forgetRepairs(keys)
 	for i := len(c.Nodes) - 1; i >= 0; i-- {
 		if err := os.Remove(filepath.Join(t.irDir(c.Nodes[i].Key), nodeMarkerName)); err != nil && !os.IsNotExist(err) {
 			return err

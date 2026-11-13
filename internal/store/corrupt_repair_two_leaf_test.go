@@ -14,11 +14,11 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// The crash repair walks every leaf with keyed rows. One leaf with a corrupt
-// frame must not stop the others from being repaired, nor the store from
-// opening: the corrupt leaf is left byte-for-byte as it was, refused and
+// The crash repair runs per leaf, before the leaf's first use. One leaf with a
+// corrupt frame must not stop the others from being repaired, nor the store
+// from opening: the corrupt leaf is left byte-for-byte as it was, refused and
 // logged when it is first opened, and a leaf with an ordinary incoherent tail
-// is trimmed as it always was.
+// is trimmed as it always was by the time anything reads it.
 func TestTheCrashRepairQuarantinesOneLeafAndRepairsTheOther(t *testing.T) {
 	var logged bytes.Buffer
 	prev := slog.Default()
@@ -109,13 +109,6 @@ func TestTheCrashRepairQuarantinesOneLeafAndRepairsTheOther(t *testing.T) {
 	}
 	defer be2.Close()
 
-	if after, _ := os.ReadFile(corruptForm); !bytes.Equal(raw, after) {
-		t.Fatalf("the corrupt leaf was touched: %d bytes before, %d after", len(raw), len(after))
-	}
-	after, _ := os.ReadFile(incoherentRows)
-	if got, want := bytes.Count(after, []byte("\n")), bytes.Count(rowsBefore, []byte("\n"))-2; got != want {
-		t.Fatalf("the incoherent leaf's translations were not trimmed to its history: %d rows after, want %d", got, want)
-	}
 	if _, err := be2.FormState(corrupt); err == nil {
 		t.Fatal("the corrupt leaf's form opened")
 	}
@@ -124,5 +117,12 @@ func TestTheCrashRepairQuarantinesOneLeafAndRepairsTheOther(t *testing.T) {
 	}
 	if _, err := be2.FormState(incoherent); err != nil {
 		t.Fatalf("the repaired leaf's form does not open: %v", err)
+	}
+	if after, _ := os.ReadFile(corruptForm); !bytes.Equal(raw, after) {
+		t.Fatalf("the corrupt leaf was touched: %d bytes before, %d after", len(raw), len(after))
+	}
+	after, _ := os.ReadFile(incoherentRows)
+	if got, want := bytes.Count(after, []byte("\n")), bytes.Count(rowsBefore, []byte("\n"))-2; got != want {
+		t.Fatalf("the incoherent leaf's translations were not trimmed to its history: %d rows after, want %d", got, want)
 	}
 }

@@ -48,6 +48,11 @@ func (t *Trunks) Reparent(node, under string) error {
 	if err := t.sameInheritance(node, path); err != nil {
 		return err
 	}
+	for _, key := range []string{under, node} {
+		if err := t.ensureRepaired(key); err != nil {
+			return err
+		}
+	}
 	if err := writeNodeMarker(t.irDir(node), nodeMarker{from: under, kind: n.Kind, trunk: n.Trunk}); err != nil {
 		return err
 	}
