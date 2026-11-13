@@ -55,6 +55,9 @@ func (s *Store) PruneEmptyChannelDirs(dryRun bool) (ChannelDirPrune, error) {
 		return out, nil
 	}
 	s.syncDirty()
+	if err := t.repairAllPending(); err != nil {
+		return out, err
+	}
 	t.retireRootHotPreservingValidation()
 	if n := t.openHeadRefs(); n != 0 {
 		out.Skipped = fmt.Sprintf("%d heads are open in this process", n)

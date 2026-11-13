@@ -133,6 +133,11 @@ func (t *Trunks) Export(trunk, token string) (*Export, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, n := range c.Nodes {
+		if err := t.ensureRepaired(n.Key); err != nil {
+			return nil, err
+		}
+	}
 	e := &Export{Component: c, scratch: filepath.Join(t.root, ".export-"+token)}
 	if err := os.RemoveAll(e.scratch); err != nil {
 		return nil, err

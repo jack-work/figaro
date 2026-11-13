@@ -71,6 +71,11 @@ func newRigConfigured(t *testing.T, policyText, extraConfig string) grantRig {
 
 func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(string, provider.Knobs) (provider.Provider, error), opts ...func(*angelus.ServerConfig)) grantRig {
 	t.Helper()
+	return newRigOnStore(t, t.TempDir(), policyText, extraConfig, factory, opts...)
+}
+
+func newRigOnStore(t *testing.T, storeDir, policyText, extraConfig string, factory func(string, provider.Knobs) (provider.Provider, error), opts ...func(*angelus.ServerConfig)) grantRig {
+	t.Helper()
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "outfits"), 0o700); err != nil {
 		t.Fatal(err)
@@ -100,7 +105,7 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 	if err != nil {
 		t.Fatal(err)
 	}
-	backend, err := store.NewXwalBackend(t.TempDir(), 0)
+	backend, err := store.NewXwalBackend(storeDir, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

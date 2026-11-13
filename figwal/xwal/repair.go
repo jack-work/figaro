@@ -20,10 +20,36 @@ const uncleanName = ".unclean"
 func uncleanPath(root string) string { return filepath.Join(root, uncleanName) }
 
 func markUnclean(root string) error {
-	if err := writeSyncedFile(uncleanPath(root), []byte("open\n")); err != nil {
+	if err := writeSyncedFile(uncleanPath(root), []byte(uncleanOpen+"\n")); err != nil {
 		return err
 	}
 	return disk.SyncDir(root)
+}
+
+const (
+	uncleanOpen    = "open"
+	repairsPending = "repairs-pending"
+
+	causeCrash      = "crash"
+	causeLeftByStop = "repairs left by a clean stop"
+)
+
+func markRepairsPending(root string, leaves int) error {
+	if err := writeSyncedFile(uncleanPath(root), []byte(fmt.Sprintf("%s %d\n", repairsPending, leaves))); err != nil {
+		return err
+	}
+	return disk.SyncDir(root)
+}
+
+func uncleanCause(root string) (string, bool) {
+	b, err := os.ReadFile(uncleanPath(root))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false
+	}
+	if err == nil && strings.HasPrefix(string(b), repairsPending+" ") {
+		return causeLeftByStop, true
+	}
+	return causeCrash, true
 }
 
 func clearUnclean(root string) error {

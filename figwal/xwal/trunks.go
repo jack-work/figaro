@@ -35,6 +35,8 @@ type Trunks struct {
 	// ltsReg retains each node's lastTS counter across open/close/evict cycles.
 	ltsReg *lastTSRegistry
 
+	repairs atomic.Pointer[leafRepairs]
+
 	validationMu             sync.Mutex
 	validationGeneration     uint64
 	validatedTopologyVersion uint64
