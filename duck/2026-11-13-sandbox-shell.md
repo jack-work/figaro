@@ -186,9 +186,8 @@ class lists, with no network to send the answers anywhere else.
 
 ## Node agent protocol, v1
 
-Status: proposed by the figaro lane, 11-13; becomes the contract when edge
-writes "agreed" here. Neither side codes against it before that. A change
-after that is a new version, agreed here first.
+Status: AGREED at b52e8f25 by the figaro lane and El Cerco (spain-flake),
+11-13. This is the contract; a change is a new version, agreed here first.
 
 **Transport.** A unix stream socket (phase 1). JSON-RPC 2.0, one JSON
 object per line in each direction, UTF-8 (figaro's `jkrpc`, as the exec
@@ -328,12 +327,14 @@ that. It reads only the first line of each connection: it must be
 logs `refused` and closes without forwarding a byte. It logs the method
 and, for `box.open`, the `scope` (the figaro id), never `env` or
 `workspace` (U3). Today's daemon sends `box.open` first on every
-connection, the scope kill's included.
+connection, the scope kill's included. Each container runs `figaro box
+serve` as the sandbox uid at boot on a listener passed by a socket unit
+(`LISTEN_FDS`), so the socket is root-owned, `0660` to the relay's group,
+in a directory the sandbox uid cannot enter (U2's last row).
 
 **Egress identity.** `Sandbox-Figaro` names the figaro that leased the
 sandbox, not the fork in its lineage that made a given call: the proxy
-cannot see past the sandbox. Each container runs `figaro box serve` as
-the sandbox uid at boot, listening on the path the agent splices to.
+cannot see past the sandbox.
 
 ## What figaro owns
 
