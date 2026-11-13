@@ -181,3 +181,23 @@ func TestKillRWithAGraceReapsEveryTakenChild(t *testing.T) {
 		require.ErrorContains(t, err, "reaped", "%s still takes prompts", id)
 	}
 }
+
+// El Inspector XV: a _meta sidecar whose id the store does not hold is a
+// resident; one carrying a lifetime makes the sweep retry a missing id
+// forever. A tombstone's sidecar is kept on purpose, and a live figaro's is
+// its own.
+func TestAStraySidecarIsAResidentAndATombstoneIsNot(t *testing.T) {
+	_, acli, ctx, dir := daemonFixtureDir(t)
+	live, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	stray, buried := "0123456789abcdef0123456789abcdef", "fedcba9876543210fedcba9876543210"
+	metaDir := filepath.Join(dir, "arias", "_meta")
+	_, err = os.Stat(filepath.Join(metaDir, live.FigaroID+".json"))
+	require.NoError(t, err, "control: a live figaro has a sidecar")
+	require.NoError(t, os.WriteFile(filepath.Join(metaDir, stray+".json"), []byte(`{"ttl_ms":3600000}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(metaDir, buried+".json"), []byte(`{"tombstoned_at_ms":1}`), 0o600))
+
+	resp, err := acli.Residents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []rpc.Resident{{ID: stray, Sidecar: true}}, resp.Residents)
+}
