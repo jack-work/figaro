@@ -11,20 +11,33 @@ import (
 
 // The memo gauge rises when an object Value decodes its members and falls back
 // once that Value is collected: it measures what stays resident, not what was
-// ever decoded.
+// ever decoded. The gauge is global, and cleanups for garbage left by earlier
+// tests run concurrently and only lower it, so the rise is measured exactly and
+// measured again whenever such a cleanup landed inside the window.
 func TestMemoBytesFollowsTheValueLifetime(t *testing.T) {
-	before, _ := MemoBytes()
-	v := NewValue(json.RawMessage(`{"a":"xxxxxxxxxxxxxxxxxxxxxxxx","b":{"c":1}}`))
-	if _, ok := v.members(); !ok {
-		t.Fatal("not an object")
-	}
-	during, _ := MemoBytes()
-	if during <= before {
-		t.Fatalf("memo gauge did not rise: before %d, during %d", before, during)
+	raw := json.RawMessage(`{"a":"xxxxxxxxxxxxxxxxxxxxxxxx","b":{"c":1}}`)
+	want := int64(len(raw) + 2*(entryOverhead+valueOverhead))
+	deadline := time.Now().Add(5 * time.Second)
+	var v Value
+	var before int64
+	for {
+		before, _ = MemoBytes()
+		v = NewValue(raw)
+		if _, ok := v.members(); !ok {
+			t.Fatal("not an object")
+		}
+		during, _ := MemoBytes()
+		rise := during - before
+		if rise == want {
+			break
+		}
+		if rise > want || time.Now().After(deadline) {
+			t.Fatalf("memo gauge rose by %d, want %d", rise, want)
+		}
 	}
 	runtime.KeepAlive(v)
 	v = Value{}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline = time.Now().Add(5 * time.Second)
 	for {
 		runtime.GC()
 		after, _ := MemoBytes()
