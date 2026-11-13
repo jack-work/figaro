@@ -11,6 +11,123 @@ workload kind for placement. No code. Base impresario 66cc14e1 (v0.67.3);
 slot pool facts from keel `lane/slot-pool` b5cfd301 (0.68.0) and slot-pool
 X; spain facts from edge (failsafe-effects).
 
+## Revision, 11-13 afternoon: phase 1 is a provider keyed on the figaro id
+
+Status: proposed, for El Inspector, then Gluck. **This section supersedes
+the phase 1 design below** (node agent protocol, figaro lessor, holders),
+which stays as the record of what was approved and what phase 2 may
+need. Figaro code for it is parked at keel `scratch/sandbox-shell-20261113`
+(f0658350); nothing is on `lane/sandbox-shell`.
+
+Gluck's direction: the sandbox is "as out of band from figaro as
+possible"; figaro 0 lines. His recorded design (comments f7efbd4b4e82 and
+b6bceed0ee48 on 11-10, the README's "bring your own sandbox", the
+captains-log note of 11-09): every call into a sandbox carries the figaro
+id, and the sandbox **provider** looks up or creates the sandbox and its
+permission set from that id, polling the figaro's form if it wants.
+
+### What figaro already sends (v0.68.0, read from the code)
+
+| | where | what the provider learns |
+|---|---|---|
+| a box is a static `[sandbox.boxes.<name>]` with an `exec` socket | `internal/config/sandbox.go` | the class: one box entry per class, `system.sandbox = kfin-read` |
+| every exec connection opens with `box.open {scope}`, scope = the figaro id | `internal/sandbox/box/provider.go` `dial` | which figaro this connection is for |
+| `box.open` happens at the figaro's birth, at every wake, and before each kill | `topology_handlers.go` create, `restore.go`, `workspace.go` `killSessions` | first sight of a figaro, and its return |
+| a failed `box.open` fails the birth, and the birth is discarded | `topology_handlers.go` create | a full pool refuses the create, with the provider's message |
+| every kill (and a move's departure) sends `box.session.killscope` for that figaro | `workspace.go` `killSessions`, `kill.go`, `move.go` | the end of the figaro: release |
+| `FIGARO_ARIA` in every command's environment | `internal/sandbox/open.go` | the same id, inside, as a label |
+| `system.sandbox` is protected (owner or an ancestor figaro sets it) and binding needs `use:sandbox:<name>` (spain: the owner role alone) | `sandbox_grant.go` | who can put a figaro in a class |
+| a box door gives its holder `read`, `listen` on `sandboxed:self` | the default box role | how the provider reads the forms of its figaros, if it wants their scopes |
+
+### The shape
+
+```
+container@figaro: the daemon
+  tools ── /run/sandbox-provider/kfin-read.sock ──▶ sandbox provider (spain-flake)
+           box.open {scope: <figaro id>}              │ SO_PEERCRED = daemon uid
+                                                      │ id → container (lease)
+                                                      ▼
+                                              container kfin3: box serve
+                                                      │ egress.sock
+                                                      ▼
+                                                egress proxy ──▶ kfin
+```
+
+The **provider** is one spain-flake service per node. Per class it serves
+one socket, named as that box's `exec` in figaro's config (rendered by
+spain-flake). On each connection it checks the peer is the daemon's uid,
+reads the first line (`box.open`, its `scope`), and:
+
+- a figaro id it holds a container for: splice to that container's `box
+  serve`;
+- a new id: take a free container of the class (already reset and
+  probed), record id → container, splice; none free: answer the
+  `box.open` with an error naming the pool, so the birth is refused;
+- `box.session.killscope` for an id it holds: kill the sessions, answer,
+  then release: reset the container (fresh ephemeral start), probe it,
+  return it to the pool. A container that fails stays cordoned until an
+  operator reinstates it.
+
+Optionally it polls each held figaro (through the class's box door,
+`read:sandboxed:self`) and releases any figaro the daemon no longer
+holds, which covers a deletion path that sends no `killscope`.
+
+Leases are per figaro, not per lineage: a fork or successor has a new id,
+so it gets its own container on its first `box.open`. A killed figaro
+restored within its grace comes back under the same id and gets a fresh
+container: its old one was reset at the kill. So the stray problem of
+the zero-line addendum (a figaro outliving its lease and landing in the
+next lessee's sandbox) does not arise: no two figaros ever map to one
+container at once, whatever they are named.
+
+The egress proxy (unchanged from the approved design) maps the peer uid
+to the container, and the provider's table names the figaro: Sandbox-Id
+and Sandbox-Figaro are now the exact figaro, not the lineage's leaser.
+
+### What each approved guard becomes
+
+| guard | where it lives now | figaro lines |
+|---|---|---|
+| who binds a figaro to a class (S4, U1) | protected `system.sandbox` + `use:sandbox:kfin-read`, owner-only on spain | 0 |
+| reset and probe before a figaro gets a container (S1, S2, S7) | the provider, before it hands a container to a new id; receipt and nonce stay inside spain-flake | 0 |
+| one figaro per container; no stray | the provider's id → container map | 0 |
+| a figaro leaving its sandbox (S3) | protected key: owner or an ancestor figaro (owner lineage) | 0 |
+| release | `killscope` at every kill; the provider's poll as a backstop | 0 |
+| sockets reach the daemon only (U2) | the provider's peer check; `box serve`'s own socket locked by a root `ExecStartPost` in the container | 0 (the LISTEN_FDS change is not needed) |
+| lease to call chain (U3) | provider log (open, lease, killscope, reset) and proxy log, both by figaro id | 0 |
+| egress grant per class (5) | spain-flake | 0 |
+
+### Things that look like they need a figaro line, for Gluck to rule
+
+1. **A sandbox on another node.** Figaro dials boxes over a local unix
+   socket only (`dial_linux.go`). A provider on a second machine needs a
+   remote transport for the exec wire (TLS, or HTTP with the `Figaro-Id`
+   header the sandbox API already defines). Not needed while spain is the
+   only node; it is the first figaro line of phase 2.
+2. **Placement by workload kind.** With one node, the class is the
+   placement. Choosing among nodes is the provider's job if nodes share
+   one provider endpoint, or figaro's if it must pick an endpoint: decided
+   with item 1.
+3. **Trusting the scope.** The provider believes `box.open`'s scope
+   because only the daemon's uid connects. On spain an unbound figaro's
+   tools run as that uid too and could claim any scope (U1: owner
+   authority, accepted). A signed scope would be a figaro line; not
+   proposed.
+4. **Per-figaro permission sets inside one class** (a parent narrowing its
+   child's kfin access). The provider can read `system.scopes` through the
+   box door today; acting on it is the provider's. If a grant vocabulary
+   for egress is wanted on the form (`egress:...`, `cred:...`, the 11-10
+   plan's `system.grants`), that is a figaro line, later.
+5. **The killscope's `box.open`.** The daemon's kill opens a connection
+   (with `box.open`) before `killscope`; the provider must not hand a fresh
+   container to an id whose first call is the kill. Provider-side: it can
+   delay taking a container until the first call that is not `killscope`.
+   No figaro line.
+
+None blocks phase 1. Phase 1 is spain-flake work: the provider, the class
+containers, the proxy, the box entries in figaro's rendered config, kfin's
+service client.
+
 Terms: a **sandbox** is one nspawn container that runs tools for the
 figaros bound to it. A **class** is a named kind of sandbox (`kfin-read`)
 with its packages, egress grant and workload kind. A **lease** binds one
