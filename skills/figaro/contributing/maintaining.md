@@ -444,6 +444,9 @@ outside contributors, which cannot come from keel.
 `origin` is deliberately not a name here. It means keel in this repo and GitHub
 in `cheroot-config`, one keystroke apart, so it means nothing.
 
+Keel URLs come from `kc link`, never built by hand: `kc link <path>` for a
+file, `kc link --commit` for a commit, `kc link --diff <span>` for a review.
+
 ## Releasing: `scripts/release.sh`, always
 
 **Do not cut a release by hand.** A tag is not a release here: nothing on any
