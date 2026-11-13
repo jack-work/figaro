@@ -30,12 +30,28 @@ import (
 // trunkScanCount counts figwal trunk-listing scans.
 var trunkScanCount atomic.Int64
 
+var trunkWalkCount atomic.Int64
+
 // Always go through these inside the store so every tree scan is counted.
 func (s *XwalStore) listTrunks() []xwal.TrunkInfo {
 	trunkScanCount.Add(1)
+	trunkWalkCount.Add(1)
 	// ListLight, not List: List opens every trunk's head (a segment scan) to
 	// compute Tip, which figaro never uses.
 	return s.trunks.ListLight()
+}
+
+func (s *XwalStore) listTrunksSince(prev *topologySnapshot) ([]xwal.TrunkInfo, uint64) {
+	if prev == nil {
+		v := s.trunks.Version()
+		return s.listTrunks(), v
+	}
+	infos, at, listed := s.trunks.ListLightSince(prev.infos, prev.version)
+	if listed {
+		trunkScanCount.Add(1)
+		trunkWalkCount.Add(1)
+	}
+	return infos, at
 }
 
 func (s *XwalStore) listStumps() []xwal.StumpInfo {
@@ -236,6 +252,7 @@ func (s *XwalStore) TopologyAdjacency() topo.Topology { return xwalTopology{s} }
 func (s *XwalStore) SetTree(t topo.Tree) { s.tree = t }
 
 type topologySnapshot struct {
+	infos           []xwal.TrunkInfo
 	version         uint64
 	rev             uint64
 	nodes           []NodeView
@@ -889,7 +906,7 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 		return snapshot
 	}
 
-	infos := s.listTrunks()
+	infos, version := s.listTrunksSince(s.topology.Load())
 	at := s.vectorsLocked(infos)
 	nodes := make([]NodeView, 0, len(infos)+1)
 	for _, t := range infos {
@@ -918,6 +935,7 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 		byID[node.ID] = node
 	}
 	snapshot := &topologySnapshot{
+		infos:           infos,
 		version:         version,
 		rev:             rev,
 		nodes:           nodes,
@@ -1174,6 +1192,15 @@ func (s *XwalStore) formTail(id string) (uint64, bool) {
 // HandleIdleForTest reads the variable the store consults, so a config test
 // can tell a wired knob from an unwired one.
 func HandleIdleForTest() time.Duration { return time.Duration(handleIdle.Load()) }
+
+func TrunkWalksForTest() int64 { return trunkWalkCount.Load() }
+
+func (s *XwalStore) WithFullTopologyForTest(read func()) {
+	kept := s.topology.Load()
+	s.topology.Store(nil)
+	read()
+	s.topology.Store(kept)
+}
 
 type SweepReport = xwal.SweepReport
 

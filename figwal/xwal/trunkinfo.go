@@ -2,6 +2,7 @@ package xwal
 
 import (
 	"fmt"
+	"slices"
 )
 
 // ownerOf is the nearest ancestor whose own range covers atMainLT. It climbs
@@ -161,17 +162,52 @@ func (t *Trunks) ListLight() []TrunkInfo {
 		return nil
 	}
 	defer endRead()
-	out := make([]TrunkInfo, 0, len(t.idx.LiveTrunks()))
-	for _, id := range t.idx.LiveTrunks() {
-		key := t.head(id)
-		ti := TrunkInfo{ID: id, Head: []string{key}}
-		if n := t.node(key); n != nil {
-			ti.Kind = n.Kind
-		}
-		ti.Parent, ti.Stump, ti.BranchedLT = t.lineage(id)
-		out = append(out, ti)
+	ids := t.idx.LiveTrunks()
+	out := make([]TrunkInfo, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, t.lightInfo(id, t.head(id)))
 	}
 	return out
+}
+
+func (t *Trunks) lightInfo(id, key string) TrunkInfo {
+	ti := TrunkInfo{ID: id, Head: []string{key}}
+	if n := t.node(key); n != nil {
+		ti.Kind = n.Kind
+	}
+	ti.Parent, ti.Stump, ti.BranchedLT = t.lineage(id)
+	return ti
+}
+
+func (t *Trunks) ListLightSince(prev []TrunkInfo, since uint64) (infos []TrunkInfo, exactAt uint64, walkedAll bool) {
+	born, exactAt, onlySpawns := t.idx.SpawnedSince(since)
+	if !onlySpawns {
+		v := t.idx.Version()
+		return t.ListLight(), v, true
+	}
+	if len(born) == 0 {
+		return prev, exactAt, false
+	}
+	endRead, err := t.beginTrackedRead()
+	if err != nil {
+		v := t.idx.Version()
+		return t.ListLight(), v, true
+	}
+	defer endRead()
+	have := make(map[string]bool, len(prev))
+	for _, ti := range prev {
+		have[ti.ID] = true
+	}
+	out := append(make([]TrunkInfo, 0, len(prev)+len(born)), prev...)
+	for _, id := range born {
+		key, live := t.idx.Head(id)
+		if have[id] || !live {
+			continue
+		}
+		out = append(out, t.lightInfo(id, key))
+	}
+	slices.SortFunc(out, func(a, b TrunkInfo) int { return t.idx.compareTrunks(a.ID, b.ID) })
+	return out, exactAt, false
 }
 
 // Nodes returns every node (debug).
