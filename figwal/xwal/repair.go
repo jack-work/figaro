@@ -64,7 +64,7 @@ func repairCoherentCuts(t *Trunks) error {
 			return fmt.Errorf("xwal: repair leaf %q: %w", key, err)
 		}
 		for _, s := range suspects {
-			trimmed, err := trimChannelNode(s.dir, codec, s.reducible, mainTail)
+			trimmed, err := s.trim(codec, mainTail)
 			if errors.Is(err, segment.ErrCorrupt) {
 				quarantine(key, err)
 				break
@@ -91,6 +91,14 @@ type suspectChannel struct {
 	channel   string
 	dir       string
 	reducible bool
+	bases     []uint64
+}
+
+func (s suspectChannel) trim(codec segment.SegmentCodec, mainTail uint64) (int, error) {
+	if s.bases == nil || !readsTailOnly(codec) {
+		return trimChannelNode(s.dir, codec, s.reducible, mainTail)
+	}
+	return trimChannelSegments(s.dir, s.bases, codec, s.reducible, mainTail)
 }
 
 func keyedChannelNodes(root string, man manifest) ([]keyedChannel, error) {
@@ -127,26 +135,27 @@ func leafSuspects(root string, keyed []keyedChannel, key string, codec segment.S
 		} else if !kc.nodes[name] {
 			continue
 		}
-		if !holdsFrames(dir, codec) {
+		bases, holds := framedSegments(dir, codec)
+		if !holds {
 			continue
 		}
-		out = append(out, suspectChannel{channel: kc.name, dir: dir, reducible: kc.reducible})
+		out = append(out, suspectChannel{channel: kc.name, dir: dir, reducible: kc.reducible, bases: bases})
 	}
 	return out
 }
 
-func holdsFrames(dir string, codec segment.SegmentCodec) bool {
+func framedSegments(dir string, codec segment.SegmentCodec) ([]uint64, bool) {
 	bases, err := segmentBases(dir, codec)
 	if err != nil {
-		return true
+		return nil, true
 	}
 	for _, base := range bases {
 		fi, err := os.Stat(filepath.Join(dir, segFileName(base, codec)))
 		if err != nil || fi.Size() > 0 {
-			return true
+			return bases, true
 		}
 	}
-	return false
+	return nil, false
 }
 
 func quarantine(leaf string, err error) {
@@ -253,12 +262,16 @@ func trimChannelNode(dir string, codec segment.SegmentCodec, headered bool, main
 	if !readsTailOnly(codec) {
 		return trimChannelNodeScan(dir, codec, headered, mainTail)
 	}
-	if headered {
-		mainTail++
-	}
 	bases, err := segmentBases(dir, codec)
 	if err != nil {
 		return 0, err
+	}
+	return trimChannelSegments(dir, bases, codec, headered, mainTail)
+}
+
+func trimChannelSegments(dir string, bases []uint64, codec segment.SegmentCodec, headered bool, mainTail uint64) (int, error) {
+	if headered {
+		mainTail++
 	}
 	trimmed := 0
 	for i := len(bases) - 1; i >= 0; i-- {
