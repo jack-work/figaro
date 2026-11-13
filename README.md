@@ -11,7 +11,7 @@
 
 *Largo al factotum della calcolatore.*
 
-figaro is a programmer's harness. Its agents, figaros, are durable: each one is a log on disk, served by a daemon called the angelus, after the bell that rings the hours. The angelus keeps well over a thousand of them in under 500 MB of memory and runs fast on a laptop from 2004. Works with Claude, GitHub Copilot, OpenRouter, Azure, and any provider that speaks Anthropic Messages, OpenAI Chat Completions or the Responses API.
+figaro is a programmer's harness. Its agents, figaros, are durable: each one is a log on disk, served by a daemon that keeps well over a thousand of them in under 500 MB of memory and runs fast on a laptop from 2004. Works with Claude, GitHub Copilot, OpenRouter, Azure, and any provider that speaks Anthropic Messages, OpenAI Chat Completions or the Responses API.
 
 <p align="center"><img src="docs/media/turn.gif" alt="a prompt typed in figaro's pager: the agent runs git log with its bash tool and summarizes the result" width="820"></p>
 
@@ -23,7 +23,7 @@ figaro is a programmer's harness. Its agents, figaros, are durable: each one is 
 - Jump between figaros fast and attend any subagent: `figaro attend <id>`, `figaro listen <id>`, `figaro show <id>` with every tool call it made.
 - `figaro fork <id>:12 -- <p>` branches at any turn, and `figaro promote <id>` raises a fork in the tree at once.
 - Compaction is forking: `figaro succeed @role -- <handoff>` forks, hands off and recasts the role, so you can read exactly what was carried over.
-- The angelus works like a tmux server. Drop the SSH connection and the turn keeps running, so a whole workflow built on figaro still works over SSH.
+- The daemon works like a tmux server. Drop the SSH connection and the turn keeps running, so a whole workflow built on figaro still works over SSH.
 
 ## The prompt cache stays warm
 
@@ -72,7 +72,7 @@ In practice a hierarchy doubles as an agent management structure: roles, outfits
 
 ## Scale and durability
 
-- About 1,700 figaros on my machine, and the angelus sits around 320 MB under a 512 MB soft limit (`[memory] soft_limit_mb`).
+- About 1,700 figaros on my machine, and the daemon sits around 320 MB under a 512 MB soft limit (`[memory] soft_limit_mb`).
 - Crash-safe: every log is append-only and synced before it's visible, and a prompt sent during a restart is spooled and delivered after.
 - `/` in `:ls` fuzzy-finds a figaro by handle or mantra, `:comment` pins a note to a passage, and `M-Enter` opens `file:line` in your editor.
 - I daily-drive it at my big tech employer: hundreds of hours of heavy use, and it cooks.
