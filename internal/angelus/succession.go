@@ -418,9 +418,12 @@ func copied(snap form.Snapshot, keys map[string]json.RawMessage, names ...string
 
 func (h *handlers) carriedScopes(old string, snap form.Snapshot) (json.RawMessage, bool, error) {
 	if p := h.angelus.Policies; p != nil {
-		scopes, narrowed, held := p.SuccessorScopes(old)
+		scopes, narrowed, held, err := p.SuccessorScopes(old)
 		if !held {
 			return nil, false, errors.New("its effective scopes are not held here")
+		}
+		if err != nil {
+			return nil, false, err
 		}
 		if narrowed {
 			raw, err := json.Marshal(scopes.Strings())

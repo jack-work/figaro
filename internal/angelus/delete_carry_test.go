@@ -12,14 +12,17 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/hierarchy"
+	"github.com/jack-work/figaro/internal/provider"
 )
 
 // El Inspector XV, caveat 2: F is a fork of X with no scopes of its own,
 // narrowed only through X, and drawn under P. Nothing is drawn under X, so
 // every delete of X is allowed and detaches F from X's history.
-func strandedFork(t *testing.T, extraConfig string) (r grantRig, p, x, f string) {
+func strandedFork(t *testing.T, extraConfig string, opts ...func(*angelus.ServerConfig)) (r grantRig, p, x, f string) {
 	t.Helper()
-	r = newRigConfigured(t, guardPolicy, extraConfig)
+	r = newRigProviding(t, guardPolicy, extraConfig, func(string, provider.Knobs) (provider.Provider, error) {
+		return &mockProviderForIntegration{}, nil
+	}, opts...)
 	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +47,7 @@ func strandedFork(t *testing.T, extraConfig string) (r grantRig, p, x, f string)
 }
 
 func effectiveOf(r grantRig, id string) string {
-	eff, _ := r.a.Policies.Effective(id)
+	eff, _, _ := r.a.Policies.Effective(id)
 	return eff.String()
 }
 

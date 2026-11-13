@@ -102,7 +102,7 @@ type successionRig struct {
 	stopped bool
 }
 
-func successionDaemon(t *testing.T) *successionRig {
+func successionDaemon(t *testing.T, opts ...func(*angelus.ServerConfig)) *successionRig {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
@@ -114,7 +114,7 @@ func successionDaemon(t *testing.T) *successionRig {
 	tree := t.TempDir()
 	a, acli, ctx, hs := daemonWithProvider(t, dir, func(_ *angelus.Angelus, b *store.XwalBackend) {
 		require.NoError(t, wire.Install(b.Store(), tree, wire.Capabilities{Trunks: true}))
-	}, func() provider.Provider { return p })
+	}, func() provider.Provider { return p }, opts...)
 	r := &successionRig{t: t, a: a, acli: acli, ctx: ctx, hs: hs, p: p}
 	t.Cleanup(func() {
 		p.set(func() {
@@ -368,12 +368,12 @@ func TestSuccessionKeepsInheritedNarrowing(t *testing.T) {
 	ownerSets(t, r.a, old, map[string]any{"system.retirement": succeeding(nil)})
 	ownerSets(t, r.a, parent, map[string]any{"system.scopes": []string{"send:*"}})
 	require.False(t, r.has(old, "system.scopes"), "the predecessor is narrowed by its own key, not its parent's")
-	before, held := r.a.Policies.Effective(old)
+	before, held, _ := r.a.Policies.Effective(old)
 	require.True(t, held)
 	require.Equal(t, []string{"send:*"}, before.Strings())
 
 	next := r.heldAtItsRamp(old)
-	after, held := r.a.Policies.Effective(next)
+	after, held, _ := r.a.Policies.Effective(next)
 	require.True(t, held)
 	require.Equal(t, []string{"send:*"}, after.Strings(), "the successor left its predecessor's ancestors and their narrowing behind")
 }

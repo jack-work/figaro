@@ -245,41 +245,46 @@ func (p *Policies) figaroFacts() (FigaroFacts, selectors, bool) {
 	return ff, m, ok
 }
 
-func (p *Policies) Effective(figaro string) (jkauthz.Grants, bool) {
+func (p *Policies) Effective(figaro string) (jkauthz.Grants, bool, error) {
 	ff, _, ok := p.figaroFacts()
 	if !ok || figaro == "" {
-		return nil, false
+		return nil, false, nil
 	}
 	chain, held := ff.Ancestry(figaro)
 	if !held || len(chain) == 0 {
-		return nil, false
+		return nil, false, nil
 	}
-	return p.effectiveDown(chain), true
+	eff, err := p.effectiveDown(chain)
+	return eff, true, err
 }
 
-func (p *Policies) EffectiveAlone(figaro string) (jkauthz.Grants, bool) {
+func (p *Policies) EffectiveAlone(figaro string) (jkauthz.Grants, error) {
 	ff, _, ok := p.figaroFacts()
 	if !ok || figaro == "" {
-		return nil, false
+		return nil, fmt.Errorf("%s%s is not held here", figaroPrefix, figaro)
 	}
 	if _, held := ff.Ancestry(figaro); !held {
-		return nil, false
+		return nil, fmt.Errorf("%s%s is not held here", figaroPrefix, figaro)
 	}
-	return p.effectiveDown([]string{figaro}), true
+	return p.effectiveDown([]string{figaro})
 }
 
-func (p *Policies) SuccessorScopes(figaro string) (scopes jkauthz.Grants, narrowed, held bool) {
-	eff, held := p.Effective(figaro)
-	if !held {
-		return nil, false, false
+func (p *Policies) SuccessorScopes(figaro string) (scopes jkauthz.Grants, narrowed, held bool, err error) {
+	eff, held, err := p.Effective(figaro)
+	if !held || err != nil {
+		return nil, false, held, err
 	}
-	if alone, _ := p.EffectiveAlone(figaro); p.Covers(eff, alone) {
-		return nil, false, true
+	alone, err := p.EffectiveAlone(figaro)
+	if err != nil {
+		return nil, false, true, err
 	}
-	return unresolveSelf(eff, figaro), true, true
+	if p.Covers(eff, alone) {
+		return nil, false, true, nil
+	}
+	return unresolveSelf(eff, figaro), true, true, nil
 }
 
-func (p *Policies) effectiveDown(chain []string) jkauthz.Grants {
+func (p *Policies) effectiveDown(chain []string) (jkauthz.Grants, error) {
 	ff, m, _ := p.figaroFacts()
 	var eff jkauthz.Grants
 	for i, id := range chain {
@@ -289,7 +294,7 @@ func (p *Policies) effectiveDown(chain []string) jkauthz.Grants {
 			own, err = p.parsed.get(raw)
 		}
 		if err != nil {
-			return nil
+			return nil, fmt.Errorf("the scopes of %s cannot be read: %w", id, err)
 		}
 		own = resolveSelf(own, id)
 		switch {
@@ -306,7 +311,7 @@ func (p *Policies) effectiveDown(chain []string) jkauthz.Grants {
 			}
 		}
 	}
-	return eff
+	return eff, nil
 }
 
 func (p *Policies) ExplainGrants(figaro string) (FigaroGrants, bool) {
@@ -332,7 +337,7 @@ func (p *Policies) ExplainGrants(figaro string) (FigaroGrants, bool) {
 			out.Unread = append(out.Unread, id)
 		}
 	}
-	out.Effective, _ = p.Effective(figaro)
+	out.Effective, _, _ = p.Effective(figaro)
 	return out, true
 }
 
@@ -456,12 +461,16 @@ type FigaroView struct {
 	figaro string
 	eff    jkauthz.Grants
 	held   bool
+	err    error
 }
 
 func (p *Policies) Figaro(figaro string) FigaroView {
 	v := FigaroView{p: p, figaro: figaro}
 	if figaro != "" {
-		v.eff, v.held = p.Effective(figaro)
+		v.eff, v.held, v.err = p.Effective(figaro)
+		if v.err != nil {
+			slog.Warn("authz: a figaro's scopes cannot be read, so it holds none", "figaro", figaro, "err", v.err)
+		}
 	}
 	return v
 }
@@ -484,6 +493,9 @@ func (v FigaroView) refuses(s jkauthz.Subject, verb rpc.Verb, r Resource) string
 	if !v.held {
 		return fmt.Sprintf("%s%s is not held here", figaroPrefix, v.figaro)
 	}
+	if v.err != nil {
+		return fmt.Sprintf("%s%s holds no scopes: %v", figaroPrefix, v.figaro, v.err)
+	}
 	m, _ := v.p.schema.Selectors.(selectors)
 	for _, g := range v.eff {
 		if verbCovers(g.Verb, string(verb)) && (g.Object == jkauthz.Any || m.Match(g.Object, s, r)) {
@@ -497,9 +509,12 @@ func (v FigaroView) refuses(s jkauthz.Subject, verb rpc.Verb, r Resource) string
 }
 
 func (p *Policies) HoldsGrants(figaro string, want jkauthz.Grants, target string) error {
-	held, ok := p.Effective(figaro)
+	held, ok, err := p.Effective(figaro)
 	if !ok {
 		return fmt.Errorf("figaro %s is not held here, so it holds no scopes to give", figaro)
+	}
+	if err != nil {
+		return fmt.Errorf("figaro %s gives nothing: %w", figaro, err)
 	}
 	_, m, _ := p.figaroFacts()
 	for _, g := range resolveSelf(want, target) {
