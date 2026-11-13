@@ -14,7 +14,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-const leasedOutfit = "[system]\nprovider = \"mock\"\nmodel = \"m\"\ntools = [\"say\"]\n"
+const leasedOutfit = "[system]\nprovider = \"mock\"\nmodel = \"m\"\ntools = [\"say\"]\nmax_tokens = 4096\n"
 
 type notInForce struct{}
 

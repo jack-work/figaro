@@ -220,7 +220,7 @@ func TestALeaseThatCannotMintLeavesNothingAndItsSlotFree(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	edit(leasedOutfit + "max_tokens = 9\n")
+	edit(strings.Replace(leasedOutfit, "max_tokens = 4096", "max_tokens = 9", 1))
 	before := r.nodeIDs()
 	if resp, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err == nil || !strings.Contains(err.Error(), "changed since its pool loaded") {
 		t.Fatalf("an outfit edited since the pool loaded was minted: %+v, %v", resp, err)

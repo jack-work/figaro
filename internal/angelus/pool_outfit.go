@@ -144,6 +144,9 @@ func refuseWhatAGuestOutfitCannotCarry(folded map[string]any, provider string) e
 			return fmt.Errorf("lists the tool %v: a pool figaro has %s and no other", t, strings.Join(poolTools, " and "))
 		}
 	}
+	if limit, ok := system["max_tokens"].(float64); !ok || limit < 1 || limit != float64(int64(limit)) {
+		return errors.New("has no positive whole system.max_tokens: rou2 refuses a lease's call that carries no output limit")
+	}
 	if got, _ := system["provider"].(string); got != provider {
 		return fmt.Errorf("sets system.provider = %q and its pool's provider is %q: the leased box allows the pool's alone, so no lease could mint", got, provider)
 	}

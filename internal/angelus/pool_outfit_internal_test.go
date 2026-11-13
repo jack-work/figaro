@@ -14,6 +14,7 @@ const guestOutfit = `[system]
 provider = "rou2"
 model = "explabs/gpt-6.1-sol"
 tools = ["say", "search"]
+max_tokens = 4096
 
 [system.retirement]
 context_threshold = "50%"
@@ -73,6 +74,9 @@ func TestAPoolOutfitIsRefusedForWhatAGuestMustNotReach(t *testing.T) {
 		"its own scopes":             {body: withSystem("scopes = [\"*:*\"]"), want: "carries system.scopes"},
 		"a tool that executes":       {body: strings.Replace(guestOutfit, `"search"]`, `"search", "bash"]`, 1), want: "lists the tool bash"},
 		"no tools list":              {body: strings.Replace(guestOutfit, "tools = [\"say\", \"search\"]\n", "", 1), want: "no system.tools list"},
+		"no output limit":            {body: strings.Replace(guestOutfit, "max_tokens = 4096\n", "", 1), want: "system.max_tokens"},
+		"an output limit of zero":    {body: strings.Replace(guestOutfit, "max_tokens = 4096", "max_tokens = 0", 1), want: "system.max_tokens"},
+		"an output limit as text":    {body: strings.Replace(guestOutfit, "max_tokens = 4096", `max_tokens = "4096"`, 1), want: "system.max_tokens"},
 		"a tools value of one name":  {body: strings.Replace(guestOutfit, `["say", "search"]`, `"say"`, 1), want: "no system.tools list"},
 		"another provider":           {body: strings.Replace(guestOutfit, `provider = "rou2"`, `provider = "anthropic"`, 1), want: "its pool's provider is"},
 	} {

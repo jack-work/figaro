@@ -28,7 +28,7 @@ func TestAPoolLoadsOnlyWithAnOutfitThatPasses(t *testing.T) {
 		}
 		return r.hs.PoolOutfitHash("groups")
 	}
-	const good = "[system]\nprovider = \"mock\"\nmodel = \"m\"\ntools = [\"say\"]\n"
+	const good = "[system]\nprovider = \"mock\"\nmodel = \"m\"\ntools = [\"say\"]\nmax_tokens = 4096\n"
 	first, err := reload(good)
 	if err != nil || first == "" {
 		t.Fatalf("a pool whose outfit passes did not load: %q, %v", first, err)
