@@ -1,7 +1,8 @@
 # Sandbox shell, phase 1: leased sandboxes on spain
 
-Status: second draft. The first (67d80435) had El Inspector XVI's approval
-of its shape with conditions S1 to S8; this one folds those in and Gluck's
+Status: approved by El Inspector XVI (04119478) with U1 to U3, folded in
+below ("Unbound figaros on spain"). The first draft (67d80435) had his
+approval of its shape with conditions S1 to S8; the second folded those in and Gluck's
 direction of 11-13 (via 48e285da), which moved three things: the exec
 channel and the lease go through a node agent that can later sit on
 another machine, the egress proxy knows a sandbox by peer credentials over
@@ -58,15 +59,14 @@ lives in the main daemon. The pool stays as shipped.
 ## The shape
 
 ```
- node: spain                                    upstream
- ┌───────────────────────────────────────────┐
- │ container@figaro: the daemon              │
- │   lessor ──agent.sock──▶ node agent        │
- │   tools  ──exec.sock───▶ sandbox kfin0     │
- │                          │ egress.sock     │
- │                          ▼                 │
- │                     egress proxy ──────────┼──▶ kfin (token + Sandbox-Id)
- └───────────────────────────────────────────┘
+ node: spain
+   container@figaro: the daemon
+     lessor ── agent.sock ──▶ node agent
+     tools  ── exec.sock  ──▶ node agent ──▶ sandbox kfin0
+                                                │ egress.sock
+                                                ▼
+                                           egress proxy ──▶ kfin
+                                           (token, Sandbox-Id, Sandbox-Figaro)
 ```
 
 ### The node agent (spain-flake, edge)
@@ -87,9 +87,30 @@ else can forge it (S2, below). The agent runs the reset itself: stop the
 container, start it fresh (the container is ephemeral, S1), wait for `figaro
 box serve`, answer.
 
-On spain, `agent.sock`, each sandbox's `exec.sock` and nothing else of
-the agent's are bound into container@figaro, read-only mounts of
-root-owned directories, as the exec dirs are today.
+The agent also serves each sandbox's exec endpoint (U2). It listens on
+`exec.sock` per sandbox on the host side, checks SO_PEERCRED on every
+connection, and splices an admitted one to the `figaro box serve` socket
+inside the sandbox, whose directory only the agent's uid can enter. The
+check cannot live in `box serve`: inside the sandbox's user namespace the
+kernel reports every host uid it does not map, the daemon's included, as
+the overflow uid, so the sandbox side cannot tell the daemon from anyone
+else. On the host the agent sees the real uid.
+
+Both `agent.sock` and every `exec.sock` admit exactly the daemon's host
+uid (on spain the figaro container's mapped figaro uid, from
+`fc.uidBase + fc.uid`, rendered by nix) and refuse every other uid, host
+root included, beyond what the file modes already do. On spain those
+sockets and nothing else of the agent's are bound into container@figaro,
+read-only mounts of root-owned directories, as the exec dirs are today;
+no sandbox has either bound in.
+
+The agent logs (U3), one line each: every `lease` and `reset` with the
+peer uid, sandbox, generation and the figaro id the daemon supplied; every
+exec connection with the peer uid, sandbox and generation, and every
+`box.open` with the figaro id it carries (the wire's `scope`). With the
+proxy's per-call line, the chain from lease to exec to upstream call reads
+after the fact by sandbox and generation. The figaro ids in it are what
+the daemon said, which is as good as U1 makes the daemon's uid.
 
 Later, on a second node, the same agent answers on a TLS endpoint
 authenticated by node certificates (troupe intermediates or a SPIFFE
@@ -245,22 +266,53 @@ A class that wants the `figaro` CLI inside brings the box door and
 Untouched: the pool daemon, other boxes and their doors, the provider
 path, the guard except the S3 and S4 refusals.
 
-## S2: who can reach the nonce and the reset
+## S2 and U1 to U3: unbound figaros on spain
 
 The ledger lives in the daemon's state dir, 0600, the daemon's uid. The
 nonce goes to the agent only on the daemon's connection, and the receipt
-comes back on it: there is no `reset/` file anyone could write, so knowing
+comes back on it: there is no reset file anyone could write, so knowing
 the nonce forges nothing.
 
-A bound figaro's bash runs in its sandbox and cannot see the ledger or
-the agent socket. But on spain, figaros with no sandbox (`local`) run
-their tools in container@figaro as the daemon's uid, and can read the
-ledger and connect to `agent.sock`. Such a process is already the owner:
-it can kill any figaro. What it gains here is the power to ask the agent
-to reset a sandbox mid-lease (the probe at the next lease catches nothing
-wrong; the live figaro loses its files). That is owner authority, not an
-escape. El Inspector to rule whether that stands, or whether phase 1
-needs every spain figaro bound to a sandbox first.
+A bound figaro's bash runs in its sandbox and reaches neither the ledger
+nor the agent. A figaro with no sandbox (`local`) on spain runs its tools
+in container@figaro as the daemon's uid. Such a process passes U2: it can
+ask the agent to reset a sandbox mid-lease, and it can dial a sandbox's
+exec endpoint and run `kfin` there, which the proxy attributes to that
+sandbox's lease. El Inspector accepted this as owner authority on one
+condition: on spain an unbound figaro is only ever the owner's (U1).
+
+What makes that true in the code and spain's policy today (impresario
+66cc14e1, spain-flake master ced503b `figaro-door.nix`):
+
+- Unbound means `system.sandbox` is empty or `local`, and binding a figaro
+  there needs `use` on `sandbox:local` (`authz.Sandbox("")` is
+  `sandbox:local`). `grantSandbox` asks it at create, fork, bind, import
+  and set. A caller without it is refused, or, if it is a sandbox
+  principal, pinned into its own sandbox (`homeSandbox`).
+- `use on sandbox:local` is local-only: no troupe policy can lend it
+  (`localOnlyRights`).
+- spain's policy grants it only through the `owner` role's `*:*`, bound to
+  the container's own uid and `user:admin@auth.kelliher.info` (Gluck's 2FA
+  session). The `box` role (box0, chat, receipt) holds `create:*` and
+  `use:sandbox:self`: its creations are pinned into its own box.
+  `lent-to-troupe` holds `create:*` and verbs on `unboxed`, but not `use`:
+  its creations and forks of an unbound figaro are refused.
+  `herald-server` is bound to no role on master.
+- A figaro narrowed by `system.scopes` is judged by its own set too
+  (`AllowFigaro`), so without `use:sandbox:local` it cannot make an
+  unbound figaro.
+
+Two things this does not cover, for El Inspector:
+
+- `lent-to-troupe` holds `send`, `set` and `fork` on `unboxed`. A troupe
+  peer cannot make an unbound figaro, but it can prompt the owner's
+  unbound figaros, and their tools then run unboxed. That stays owner
+  authority while troupe `kelliher` holds only Gluck's own machines (today
+  spain and his desktop); a row checks the member list at the window, and
+  any new member is a new read.
+- decide-narrow (herald's `decide:outfit:herald-decide`) is not on
+  master. Before it lands: the figaro a decide call runs is bound to a
+  sandbox or carries no executing tool. A row, for the decide-narrow lane.
 
 ## Threat rows
 
@@ -277,6 +329,11 @@ needs every spain figaro bound to a sandbox first.
 | one sandbox speaks as another (4) | identity from SO_PEERCRED, not from anything the sandbox sends | kfin1 connecting to kfin0's socket path is impossible (not bound in); a uid outside every range gets 403; the upstream fake sees kfin1's id on kfin1's calls |
 | kfin side effects (S5, S8) | read-only in kfin for the service caller; side-effect GETs refused | each named endpoint as `kfin-read-box`: refused; the token at every other kweb site: refused; a token with no audience: refused |
 | the sandbox reaches figaro | no callback socket; the exec socket is dialed by the daemon | no figaro socket in the sandbox; sandbox root cannot connect to the daemon's |
+| a non-owner makes an unbound figaro (U1) | `use:sandbox:local` is owner-only and local-only | a troupe peer, herald-server, a box principal (box0, chat, receipt), a pool principal and a scopes-narrowed figaro each create, fork, bind, import or set a figaro to no sandbox: refused, or pinned into its own box (box principals); spain's rendered policy grants `use:sandbox:local` to the `owner` role alone |
+| the troupe drives an unbound figaro (U1) | owner authority while the troupe is Gluck's machines | at the window, `figaro troupe ls` on spain lists spain and gluck only |
+| decide runs tools unboxed (U1) | decide-narrow's figaro is bound or has no executing tool | for the decide-narrow lane, before it lands |
+| another uid reaches the agent or a sandbox (U2) | SO_PEERCRED on the host side admits the daemon's host uid alone | a second host uid and host root connecting to `agent.sock` and to an `exec.sock`: refused and logged; from inside a sandbox neither socket exists; a sandbox uid connecting to its own `box serve` socket: not reachable (dir is the agent's) |
+| the chain cannot be read back (U3) | agent logs lease, reset, exec and `box.open`; proxy logs each call | after the acceptance run, from the logs alone: for `kfin0-g1`, the lease (peer uid, figaro), each exec connection and open, each kfin call, and the reset |
 | model credentials in the sandbox | provider calls run in the daemon | grep the sandbox for the rou2 client's canary |
 | placement (2) | workload kind checked against the node | a `job` class on a node without `job` fails to load |
 | exhaustion | count bounds concurrency; `sandboxes.slice` caps CPU and memory; tmpfs size | N+1 creates: last is `no_free_sandbox` |
@@ -305,14 +362,16 @@ lease does not hold a sandbox forever.
 | step | who | repo | size |
 |---|---|---|---|
 | 1. class module: ephemeral loopback-only containers, packages, egress socket bind; VM test | edge | spain-flake (`keel.nixosModules.sandboxes`) | 2 days |
-| 2. node agent (lease, reset, held, classes) and egress proxy (peer cred, allowlist, header rules, log) | edge | spain-flake, or a small repo of its own (edge's call) | 3 to 4 days; two small programs, not a reverse proxy's config, because of the peer-credential map |
+| 2. node agent (lease, reset, held, classes, the peer-checked exec relay, logs) and egress proxy (peer cred, allowlist, header rules, log) | edge | spain-flake, or a small repo of its own (edge's call) | 4 to 5 days; two small programs, not a reverse proxy's config, because of the peer-credential checks |
 | 3. Authelia client, kweb `bearerServices`, kfin's read-only service caller | edge, kfin's owner | spain-flake, kfin | 1 day |
 | 4. figaro: nodes, lessor, ledger (slotpool's counter and floor), agent client, probe, S3 and S4 fences, tests | one figaro lane | figaro | 800 to 1100 lines with tests; 4 to 5 days |
 | 5. El Inspector reads 1 to 4 | | | a day of turns |
 | 6. window: repin figaro, switch spain | edge; the King names it | spain-flake | one window |
 
-About two weeks of wall time with the two lanes in parallel, 10 to 12
-lane-days in all. Against the first draft: the agent and the peer-credential
+About two weeks of wall time with the two lanes in parallel, 11 to 13
+lane-days in all (the exec relay adds a day on spain's side; figaro is
+unchanged by U1 to U3, which are proofs of today's code and spain
+config). Against the first draft: the agent and the peer-credential
 proxy add two to three days on spain's side and about 300 lines in
 figaro, and buy the node boundary (1) and per-sandbox identity (4) now.
 rou2 is untouched.
