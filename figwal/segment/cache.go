@@ -168,22 +168,20 @@ func (s *Segment) readRange(from, to uint64) ([]unit, error) {
 	return units, nil
 }
 
-// extendTail keeps the writer's own tail resident via a Put at the tail coord.
 func (s *Segment) extendTail(payload []byte) {
 	if CacheBudget() <= 0 {
 		return
 	}
-	last := s.count - 1 // the record just appended, 0-based
-	lo := (last / chunkRecords) * chunkRecords
-	// ResidentAt, not Range: an append must extend what is resident and
-	// never fault it in.
-	units, ok := s.handle().ResidentAt(lo, last)
-	if !ok {
-		return // the tail chunk is not resident; nothing to extend
+	last := s.count - 1
+	if last%chunkRecords == 0 {
+		return
+	}
+	if _, ok := s.handle().At(last); !ok {
+		return
 	}
 	cp := make([]byte, len(payload))
 	copy(cp, payload)
-	s.handle().Put(lo, last+1, append(units, unit{idx: last + 1, b: cp}), false)
+	s.handle().Put(last, last+1, []unit{{idx: last + 1, b: cp}}, false)
 }
 
 // DropCache releases every resident range of this segment. The segment keeps
