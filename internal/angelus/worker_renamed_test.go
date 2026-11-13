@@ -62,11 +62,11 @@ func TestAnOldSlotMethodIsNeverDispatched(t *testing.T) {
 			t.Errorf("%s answered %v, want method not found", old, err)
 		}
 	}
-	if r.a.Workers.InForce("slot0-g1") {
+	if r.a.Workers.InForce("worker0-g1") {
 		t.Fatal("an old call leased a worker")
 	}
 	got, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:old"}`)
-	if err != nil || got.Box != "slot0-g1" {
-		t.Fatalf("after the old calls the first lease is %+v, %v; want slot0-g1", got, err)
+	if err != nil || got.Box != "worker0-g1" {
+		t.Fatalf("after the old calls the first lease is %+v, %v; want worker0-g1", got, err)
 	}
 }

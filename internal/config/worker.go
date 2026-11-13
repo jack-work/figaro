@@ -42,9 +42,9 @@ func (s *PoolWorker) UnmarshalTOML(v any) error {
 		*s = PoolWorker(v)
 		return nil
 	case map[string]any:
-		return fmt.Errorf("a slot is a name and nothing else: this one is a table carrying %s", strings.Join(sortedKeys(v), ", "))
+		return fmt.Errorf("a worker is a name and nothing else: this one is a table carrying %s", strings.Join(sortedKeys(v), ", "))
 	}
-	return fmt.Errorf("a slot is a name; this one is of type %T", v)
+	return fmt.Errorf("a worker is a name; this one is of type %T", v)
 }
 
 const (
@@ -190,7 +190,7 @@ func (c Config) validateWorker() error {
 		case p.SearchPerDay != nil && *p.SearchPerDay < 0:
 			return fmt.Errorf("%s.search_per_day %d is negative", where, *p.SearchPerDay)
 		case len(p.Workers) == 0:
-			return fmt.Errorf("%s.workers: a pool with no slot can lease nothing", where)
+			return fmt.Errorf("%s.workers: a pool with no worker can lease nothing", where)
 		}
 		if u, err := url.Parse(p.Rou2URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
 			return fmt.Errorf("%s.rou2_url %q: want rou2's root, an http or https URL with a host and nothing after it; leases are opened at <root>/v1/leases", where, p.Rou2URL)
@@ -204,14 +204,14 @@ func (c Config) validateWorker() error {
 		for _, worker := range p.WorkerNames() {
 			switch {
 			case nameHasSeparator(worker):
-				return fmt.Errorf("%s.workers: %q: a slot name has no : / @ * or space", where, worker)
+				return fmt.Errorf("%s.workers: %q: a worker name has no : / @ * or space", where, worker)
 			case worker == "local" || worker == "bwrap" || worker == "self":
 				return fmt.Errorf("%s.workers: %s is reserved", where, worker)
 			case leaseSuffix.MatchString(worker):
-				return fmt.Errorf("%s.workers: %q ends like a lease (<slot>-g<generation>); a slot name does not", where, worker)
+				return fmt.Errorf("%s.workers: %q ends like a lease (<worker>-g<generation>); a worker name does not", where, worker)
 			}
 			if other, taken := owner[worker]; taken {
-				return fmt.Errorf("%s.workers: %q is also a slot of %s; a lease is named after its slot alone", where, worker, other)
+				return fmt.Errorf("%s.workers: %q is also a worker of %s; a lease is named after its worker alone", where, worker, other)
 			}
 			owner[worker] = where
 		}
@@ -225,7 +225,7 @@ func (c Config) refuseWhatAPoolDaemonCannotHold(md toml.MetaData, providerFiles 
 	}
 	for _, table := range [][]string{{"troupe"}, {"peers"}, {"door", "tls"}, {"sandbox", "boxes"}, {"authz", "api_keys"}} {
 		if md.IsDefined(table...) {
-			return fmt.Errorf("[%s] beside [worker.pools]: a daemon that leases slots holds no troupe, peer, node door, static box or api key", strings.Join(table, "."))
+			return fmt.Errorf("[%s] beside [worker.pools]: a daemon that leases workers holds no troupe, peer, node door, static box or api key", strings.Join(table, "."))
 		}
 	}
 	named := map[string]bool{}
@@ -236,20 +236,20 @@ func (c Config) refuseWhatAPoolDaemonCannotHold(md toml.MetaData, providerFiles 
 	}
 	for _, name := range sortedKeys(c.ServiceTokens) {
 		if !named[name] {
-			return fmt.Errorf("[service_tokens.%s] beside [worker.pools]: no pool's provider names it, and a daemon that leases slots holds no outbound credential but its pools' providers'", name)
+			return fmt.Errorf("[service_tokens.%s] beside [worker.pools]: no pool's provider names it, and a daemon that leases workers holds no outbound credential but its pools' providers'", name)
 		}
 	}
 	if c.Trunks != nil && !*c.Trunks {
 		return fmt.Errorf("trunks = false beside [worker.pools]: a lease's figaro and role are placed under their pool's node, and a store without trunks has no tree to place them in")
 	}
 	if md.IsDefined("authz", "peercred") {
-		return fmt.Errorf("[authz.peercred] beside [worker.pools]: a daemon that leases slots maps no uid to a principal; its own uid is the owner and no other comes in by its socket")
+		return fmt.Errorf("[authz.peercred] beside [worker.pools]: a daemon that leases workers maps no uid to a principal; its own uid is the owner and no other comes in by its socket")
 	}
 	if strings.EqualFold(strings.TrimSpace(c.Telemetry.Level), "debug") {
 		return fmt.Errorf("[telemetry] level = %q beside [worker.pools]: debug logs carry prompt text, and a pool's logs carry ids, lengths and counts only", c.Telemetry.Level)
 	}
 	if c.Authz.Policy == "" {
-		return fmt.Errorf("[worker.pools] without [authz] policy: a daemon that leases slots names its policy file and never falls back to the default policy")
+		return fmt.Errorf("[worker.pools] without [authz] policy: a daemon that leases workers names its policy file and never falls back to the default policy")
 	}
 	var used []string
 	for _, p := range c.Worker.Pools {
@@ -258,7 +258,7 @@ func (c Config) refuseWhatAPoolDaemonCannotHold(md toml.MetaData, providerFiles 
 	sort.Strings(providerFiles)
 	for _, name := range providerFiles {
 		if !slices.Contains(used, name) {
-			return fmt.Errorf("providers/%s.toml beside [worker.pools]: no pool uses %s, and a daemon that leases slots holds no other provider's credential", name, name)
+			return fmt.Errorf("providers/%s.toml beside [worker.pools]: no pool uses %s, and a daemon that leases workers holds no other provider's credential", name, name)
 		}
 	}
 	return nil

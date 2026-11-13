@@ -131,7 +131,7 @@ func TestADeliveryIsRefusedForAnyLeaseButTheCallersLiveOne(t *testing.T) {
 				t.Errorf("a delivery %s was refused as %q, want %q", why, got, c.reason)
 			}
 		}
-		if strings.Contains(err.Error(), "slot0") || strings.Contains(err.Error(), lease.Aria) {
+		if strings.Contains(err.Error(), "worker0") || strings.Contains(err.Error(), lease.Aria) {
 			t.Errorf("the refusal %s names the lease's box or figaro: %v", why, err)
 		}
 	}
@@ -182,17 +182,17 @@ func TestALeasedFigarosProviderCarriesItsRou2LeaseOrIsNotBuilt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := p.(*leasedMock).Lease(); got != "groups/slot0-g1" {
-		t.Errorf("the leased figaro's provider was built with lease %q, want groups/slot0-g1", got)
+	if got := p.(*leasedMock).Lease(); got != "groups/worker0-g1" {
+		t.Errorf("the leased figaro's provider was built with lease %q, want groups/worker0-g1", got)
 	}
 	if p, err := r.hs.ProviderIn("", "mock"); err != nil || p.(*leasedMock).Lease() != "" {
 		t.Errorf("a figaro in no box got a provider with a lease: %v (%v)", p, err)
 	}
-	if _, err := r.hs.ProviderIn("slot0-g9", "mock"); err == nil {
-		t.Error("a provider was built for a generation of a slot that no lease holds")
+	if _, err := r.hs.ProviderIn("worker0-g9", "mock"); err == nil {
+		t.Error("a provider was built for a generation of a worker that no lease holds")
 	}
-	if _, err := r.hs.ProviderIn("slot5-g1", "mock"); err == nil {
-		t.Error("a provider was built for a slot with no lease")
+	if _, err := r.hs.ProviderIn("worker5-g1", "mock"); err == nil {
+		t.Error("a provider was built for a worker with no lease")
 	}
 	rou2Of(r).closeFails(errors.New("rou2 is away"))
 	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err == nil {

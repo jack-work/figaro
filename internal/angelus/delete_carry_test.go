@@ -130,7 +130,7 @@ var deletePaths = []deletePath{
 			t.Fatal(err)
 		}
 		r.a.Workers = workers
-		if _, err := r.backend.ApplyForm(x, form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.sandbox": json.RawMessage(`"slot0-g9"`)}, nil)); err != nil {
+		if _, err := r.backend.ApplyForm(x, form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.sandbox": json.RawMessage(`"worker0-g9"`)}, nil)); err != nil {
 			t.Fatal(err)
 		}
 		r.hs.RecoverWorkerPools(context.Background())

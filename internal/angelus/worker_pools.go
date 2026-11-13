@@ -43,13 +43,13 @@ func OpenWorkerPools(dir string, loaded *config.Loaded) (*WorkerPools, error) {
 			continue
 		}
 		if _, err := loaded.LeaseBox(l.Pool, l.Worker, l.Generation); err != nil {
-			slog.Error("slot pool: a live lease has no box under this config, so it is released", "pool", l.Pool, "slot", l.Worker, "key", l.Key, "generation", l.Generation, "err", err)
+			slog.Error("worker pool: a live lease has no box under this config, so it is released", "pool", l.Pool, "worker", l.Worker, "key", l.Key, "generation", l.Generation, "err", err)
 			if _, err := ledger.Release(l.Pool, l.Key, l.Generation); err != nil {
-				return nil, fmt.Errorf("slot pool: lease %s/%s g%d has no box under this config and could not be marked for release: %w", l.Pool, l.Key, l.Generation, err)
+				return nil, fmt.Errorf("worker pool: lease %s/%s g%d has no box under this config and could not be marked for release: %w", l.Pool, l.Key, l.Generation, err)
 			}
 		}
 	}
-	slog.Info("slot pool: ledger read", "found", ledger.Found(), "leases", len(ledger.Leases()), "boxes", len(loaded.LeasedBoxes()))
+	slog.Info("worker pool: ledger read", "found", ledger.Found(), "leases", len(ledger.Leases()), "boxes", len(loaded.LeasedBoxes()))
 	return &WorkerPools{Ledger: ledger, Generations: generations}, nil
 }
 

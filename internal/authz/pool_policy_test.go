@@ -47,7 +47,7 @@ func TestAPoolDaemonsPolicyBindsOnlyNamedLocalPrincipals(t *testing.T) {
 		"every user":               {`"user:*"`, ``},
 		"every service":            {`"service:*"`, ``},
 		"every box":                {`"sandbox:*"`, ``},
-		"one box":                  {`"sandbox:slot3-g7@local:box"`, ``},
+		"one box":                  {`"sandbox:worker3-g7@local:box"`, ``},
 		"a principal of a peer":    {`"gluck/user:1000"`, ``},
 		"a node":                   {`"node:gluck"`, ``},
 		"a troupe's service":       {`"service:ci@troupe:kelliher"`, ``},
@@ -68,7 +68,7 @@ func TestAPoolDaemonsPolicyBindsOnlyNamedLocalPrincipals(t *testing.T) {
 		err := policiesFor(true).Reload(path)
 		if err == nil {
 			t.Errorf("%s: a pool daemon loaded it", name)
-		} else if !strings.Contains(err.Error(), "a daemon that leases slots binds") {
+		} else if !strings.Contains(err.Error(), "a daemon that leases workers binds") {
 			t.Errorf("%s: refused for another reason: %v", name, err)
 		}
 	}

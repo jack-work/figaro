@@ -31,7 +31,7 @@ rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/groups/say"
 search_url = "http://127.0.0.1:4390/search"
 search_credential = "search-groups"
-workers = ["slot0", "slot1"]
+workers = ["worker0", "worker1"]
 
 [worker.pools.others]
 enabled = true
@@ -40,7 +40,7 @@ provider = "mock"
 rou2_lease_class = "group"
 rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/others/say"
-workers = ["slot5"]
+workers = ["worker5"]
 
 [worker.pools.closed]
 enabled = false
@@ -49,7 +49,7 @@ provider = "mock"
 rou2_lease_class = "group"
 rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/closed/say"
-workers = ["slot9"]
+workers = ["worker9"]
 `
 
 const leasingPolicy = `
@@ -120,7 +120,7 @@ func workerRefusal(t *testing.T, err error) rpc.WorkerRefusal {
 	t.Helper()
 	var coded *jkrpc.Error
 	if !errors.As(err, &coded) || coded.Code != rpc.ErrCodeWorker {
-		t.Fatalf("want a slot refusal (%d), got %v", rpc.ErrCodeWorker, err)
+		t.Fatalf("want a worker refusal (%d), got %v", rpc.ErrCodeWorker, err)
 	}
 	var out rpc.WorkerRefusal
 	if err := json.Unmarshal(coded.Data, &out); err != nil {
@@ -139,8 +139,8 @@ func TestALeaseAnswersItsBoxFigaroRoleAndBearerAndTheSameAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Pool != "groups" || first.Key != "chat:10" || first.Generation != 1 || first.Box != "slot0-g1" {
-		t.Errorf("the lease is %+v, want generation 1 of slot0 for groups/chat:10", first)
+	if first.Pool != "groups" || first.Key != "chat:10" || first.Generation != 1 || first.Box != "worker0-g1" {
+		t.Errorf("the lease is %+v, want generation 1 of worker0 for groups/chat:10", first)
 	}
 	if got := r.sandboxOf(t, first.Aria); got != first.Box {
 		t.Errorf("the leased figaro runs in %q, want %q", got, first.Box)
@@ -155,7 +155,7 @@ func TestALeaseAnswersItsBoxFigaroRoleAndBearerAndTheSameAgain(t *testing.T) {
 	if row.State != workerpool.Live || row.Holder != "user:broker" || row.SayBearer != first.SayBearer {
 		t.Errorf("the ledger row is %+v, want it live, broker's, with the bearer", row.WithoutBearer())
 	}
-	if boxes := r.a.Settings.LeasedBoxes(); !slices.Equal(boxes, []string{"slot0-g1"}) {
+	if boxes := r.a.Settings.LeasedBoxes(); !slices.Equal(boxes, []string{"worker0-g1"}) {
 		t.Errorf("the leased boxes are %v", boxes)
 	}
 
@@ -178,20 +178,20 @@ func TestALeaseAnswersItsBoxFigaroRoleAndBearerAndTheSameAgain(t *testing.T) {
 		resp, err := r.lease(asBroker(), params)
 		if err == nil {
 			t.Errorf("%s: leased %+v", why, resp)
-		} else if strings.Contains(err.Error(), rpc.WorkerPoolEmpty) || strings.Contains(err.Error(), "no free slot") {
-			t.Errorf("%s: refused only for want of a slot: %v", why, err)
+		} else if strings.Contains(err.Error(), rpc.WorkerPoolEmpty) || strings.Contains(err.Error(), "no free worker") {
+			t.Errorf("%s: refused only for want of a worker: %v", why, err)
 		}
 	}
 	if _, err := r.lease(as("user", "rival"), `{"pool":"groups","key":"chat:10"}`); err == nil || workerRefusal(t, err).Reason != rpc.WorkerNoSuchLease {
 		t.Errorf("another holder of the pool asked for broker's key: %v", err)
 	}
 	second, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:11"}`)
-	if err != nil || second.Box != "slot1-g1" || second.Aria == first.Aria || second.Role == first.Role || second.SayBearer == first.SayBearer {
-		t.Errorf("a second key leases %+v (%v), want slot1 with its own figaro, role and bearer", second, err)
+	if err != nil || second.Box != "worker1-g1" || second.Aria == first.Aria || second.Role == first.Role || second.SayBearer == first.SayBearer {
+		t.Errorf("a second key leases %+v (%v), want worker1 with its own figaro, role and bearer", second, err)
 	}
 	_, err = r.lease(asBroker(), `{"pool":"groups","key":"chat:12"}`)
 	if err == nil {
-		t.Fatal("a third key was leased from a pool of two slots")
+		t.Fatal("a third key was leased from a pool of two workers")
 	}
 	if got, want := workerRefusal(t, err), (rpc.WorkerRefusal{Reason: rpc.WorkerPoolEmpty, Pool: "groups", Workers: 2, Leased: 2}); got != want {
 		t.Errorf("the empty pool answers %+v, want %+v", got, want)
@@ -236,8 +236,8 @@ func TestALeaseThatCannotMintLeavesNothingAndItsWorkerFree(t *testing.T) {
 	}
 	edit(leasedOutfit)
 	next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
-	if err != nil || next.Box != "slot0-g2" {
-		t.Errorf("after the failure the key leases %+v (%v), want slot0 at generation 2", next, err)
+	if err != nil || next.Box != "worker0-g2" {
+		t.Errorf("after the failure the key leases %+v (%v), want worker0 at generation 2", next, err)
 	}
 }
 
@@ -310,8 +310,8 @@ func TestAReleaseDeletesEverythingOfTheLeaseAndFreesItsWorker(t *testing.T) {
 		t.Errorf("a second release of the same generation: %v", err)
 	}
 	next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
-	if err != nil || next.Box != "slot0-g2" || next.SayBearer == lease.SayBearer {
-		t.Errorf("after the release the key leases %+v (%v), want slot0 at generation 2 with a new bearer", next, err)
+	if err != nil || next.Box != "worker0-g2" || next.SayBearer == lease.SayBearer {
+		t.Errorf("after the release the key leases %+v (%v), want worker0 at generation 2 with a new bearer", next, err)
 	}
 	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err != nil || !ariaExists(r.a, next.Aria) {
 		t.Errorf("a late release of generation 1 touched generation 2 (%v)", err)
@@ -338,19 +338,19 @@ func TestAStartReleasesUnfinishedLeasesAndPurgesWhatNoLeaseHolds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.a.Workers.Ledger.Begin("groups", "slot1", "chat:11", 1, "user:broker"); err != nil {
+	if err := r.a.Workers.Ledger.Begin("groups", "worker1", "chat:11", 1, "user:broker"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.a.Settings.LeaseBox("groups", "slot1", 1); err != nil {
+	if _, err := r.a.Settings.LeaseBox("groups", "worker1", 1); err != nil {
 		t.Fatal(err)
 	}
 	figaro, role, err := r.hs.MintLeased(asBroker(), "groups", "chat:11", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	unnamed := r.formIn(t, "slot1-g1")
-	orphan := r.formIn(t, "slot5-g3")
-	elsewhere := r.formIn(t, "slot5-gx")
+	unnamed := r.formIn(t, "worker1-g1")
+	orphan := r.formIn(t, "worker5-g3")
+	elsewhere := r.formIn(t, "worker5-gx")
 	inLive := r.formIn(t, live.Box)
 	node, _ := r.hs.PoolNode("groups")
 
@@ -361,7 +361,7 @@ func TestAStartReleasesUnfinishedLeasesAndPurgesWhatNoLeaseHolds(t *testing.T) {
 			t.Errorf("%s outlived the start", name)
 		}
 	}
-	for name, id := range map[string]string{"the live lease's figaro": live.Aria, "its role": live.Role, "a form in the live lease's box": inLive, "a form whose box is no slot's generation": elsewhere, "the pool's node": node} {
+	for name, id := range map[string]string{"the live lease's figaro": live.Aria, "its role": live.Role, "a form in the live lease's box": inLive, "a form whose box is no worker's generation": elsewhere, "the pool's node": node} {
 		if !ariaExists(r.a, id) {
 			t.Errorf("the start deleted %s", name)
 		}
@@ -372,8 +372,8 @@ func TestAStartReleasesUnfinishedLeasesAndPurgesWhatNoLeaseHolds(t *testing.T) {
 	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Live {
 		t.Errorf("the live lease's row is %s", row.State)
 	}
-	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:12"}`); err != nil || next.Box != "slot1-g2" {
-		t.Errorf("after the start the freed slot leases %+v (%v), want slot1 at generation 2", next, err)
+	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:12"}`); err != nil || next.Box != "worker1-g2" {
+		t.Errorf("after the start the freed worker leases %+v (%v), want worker1 at generation 2", next, err)
 	}
 }
 
@@ -384,7 +384,7 @@ func TestAStartReleasesUnfinishedLeasesAndPurgesWhatNoLeaseHolds(t *testing.T) {
 // delete takes only orphans still goes.
 func TestAStartLeavesAnOrphanWhoseDeleteWouldTakeWhatIsNoOrphan(t *testing.T) {
 	r := leasingRig(t)
-	orphan := r.formIn(t, "slot5-g3")
+	orphan := r.formIn(t, "worker5-g3")
 	out, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: heldPatch(t, map[string]any{"note": "the owner's"})})
 	if err != nil {
 		t.Fatal(err)
@@ -393,7 +393,7 @@ func TestAStartLeavesAnOrphanWhoseDeleteWouldTakeWhatIsNoOrphan(t *testing.T) {
 	if err := r.hs.Place(asOwner(), unboxed, orphan); err != nil {
 		t.Fatal(err)
 	}
-	above, below := r.formIn(t, "slot5-g3"), r.formIn(t, "slot5-g4")
+	above, below := r.formIn(t, "worker5-g3"), r.formIn(t, "worker5-g4")
 	if err := r.hs.Place(asOwner(), below, above); err != nil {
 		t.Fatal(err)
 	}

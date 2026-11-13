@@ -21,7 +21,7 @@ import (
 // names the lease the provider was built with, over whatever the file's
 // static headers say, and a provider built with none adds none.
 func TestEachTransportSendsTheLeaseItWasBuiltWith(t *testing.T) {
-	for _, lease := range []string{"", "groups/slot0-g1"} {
+	for _, lease := range []string{"", "groups/worker0-g1"} {
 		t.Run(fmt.Sprint("lease=", lease), func(t *testing.T) {
 			var mu sync.Mutex
 			got := map[string][]string{}

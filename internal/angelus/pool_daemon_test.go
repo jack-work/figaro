@@ -19,7 +19,7 @@ provider = "rou2"
 rou2_lease_class = "chat-group"
 rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/groups/say"
-workers = ["slot0"]
+workers = ["worker0"]
 `
 
 // What a pool daemon refuses is decided when it starts: its log level, its

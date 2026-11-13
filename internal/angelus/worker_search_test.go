@@ -106,7 +106,7 @@ func TestASearchIsRefusedForAnyoneButTheLeasesOwnFigaro(t *testing.T) {
 			t.Errorf("a search claiming %s was made", why)
 		}
 	}
-	if _, err := r.hs.RunToolAtWake(context.Background(), "slot1-g7", aria, "search", ask); err == nil {
+	if _, err := r.hs.RunToolAtWake(context.Background(), "worker1-g7", aria, "search", ask); err == nil {
 		t.Error("a search from a box no lease holds was made")
 	}
 	for why, args := range map[string]map[string]any{

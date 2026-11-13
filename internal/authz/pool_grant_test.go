@@ -18,8 +18,8 @@ type leasesInForce map[string]bool
 func (l leasesInForce) InForce(box string) bool { return l[box] }
 
 const (
-	leaseA = "slot1-g4"
-	leaseB = "slot2-g1"
+	leaseA = "worker1-g4"
+	leaseB = "worker2-g1"
 )
 
 func poolFacts() fakeFacts {

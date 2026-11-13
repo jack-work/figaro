@@ -66,10 +66,10 @@ func TestAFigaroInALeasedBoxWakesWithThePoolsToolsAlone(t *testing.T) {
 	if got := r.hs.ToolsAtWake(lease.Box, lease.Aria); !slices.Equal(got, []string{"say", "search"}) {
 		t.Errorf("a leased figaro wakes with %v, want say and search", got)
 	}
-	if got := r.hs.ToolsAtWake("slot1-g4", "x"); !slices.Equal(got, []string{"say", "search"}) {
-		t.Errorf("a figaro in a slot's generation no lease holds wakes with %v, want say and search", got)
+	if got := r.hs.ToolsAtWake("worker1-g4", "x"); !slices.Equal(got, []string{"say", "search"}) {
+		t.Errorf("a figaro in a worker's generation no lease holds wakes with %v, want say and search", got)
 	}
-	if got := r.hs.ToolsAtWake("slot5-g1", "x"); !slices.Equal(got, []string{"say"}) {
+	if got := r.hs.ToolsAtWake("worker5-g1", "x"); !slices.Equal(got, []string{"say"}) {
 		t.Errorf("a figaro of a pool with no search endpoint wakes with %v, want say alone", got)
 	}
 	if got := r.hs.ToolsAtWake("", "x"); !slices.Equal(got, []string{"read", "write"}) {
@@ -172,7 +172,7 @@ func TestASayIsRefusedForAnyoneButTheLeasesOwnFigaro(t *testing.T) {
 			t.Errorf("a say claiming %s was posted", why)
 		}
 	}
-	if err := r.hs.SayAs(context.Background(), "slot1-g7", lease.Aria, "t"); err == nil {
+	if err := r.hs.SayAs(context.Background(), "worker1-g7", lease.Aria, "t"); err == nil {
 		t.Error("a say from a box no lease holds was posted")
 	}
 	for why, ctx := range map[string]context.Context{"the owner": asOwner(), "broker": asBroker()} {

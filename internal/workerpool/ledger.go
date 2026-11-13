@@ -26,9 +26,9 @@ const (
 
 var (
 	ErrNoSuchLease    = errors.New("no such lease")
-	ErrWorkerLeased   = errors.New("the slot has a lease that is not released")
+	ErrWorkerLeased   = errors.New("the worker has a lease that is not released")
 	ErrKeyLeased      = errors.New("the key has a lease that is not released")
-	ErrGenerationUsed = errors.New("the ledger already names that generation of the slot, or a later one")
+	ErrGenerationUsed = errors.New("the ledger already names that generation of the worker, or a later one")
 	ErrWrongState     = errors.New("the lease is not in a state that allows it")
 )
 
@@ -163,7 +163,7 @@ func CheckKey(key string) error {
 
 func (l *Ledger) Begin(pool, worker, key string, generation uint64, holder string) error {
 	if pool == "" || worker == "" || holder == "" {
-		return errors.New("ledger: a lease names its pool, its slot and who holds it")
+		return errors.New("ledger: a lease names its pool, its worker and who holds it")
 	}
 	if err := CheckKey(key); err != nil {
 		return fmt.Errorf("ledger: %w", err)

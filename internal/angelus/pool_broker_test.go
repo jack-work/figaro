@@ -19,7 +19,7 @@ func brokerOnAPoolWithALiveLease(t *testing.T) (r grantRig, secrets map[string]s
 	t.Helper()
 	r = pagesRig(t)
 	r.a.Policies.SetPoolDaemon(true)
-	box, err := r.a.Settings.LeaseBox("groups", "slot0", 1)
+	box, err := r.a.Settings.LeaseBox("groups", "worker0", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,12 +27,12 @@ func brokerOnAPoolWithALiveLease(t *testing.T) (r grantRig, secrets map[string]s
 	if err := os.WriteFile(filepath.Join(filepath.Dir(r.policy), "outfits", "boxed.toml"), []byte(outfit), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	leaseTo(t, r.a.Workers.Ledger, "slot0", "chat:10", 1, workerpool.Live)
+	leaseTo(t, r.a.Workers.Ledger, "worker0", "chat:10", 1, workerpool.Live)
 	leased, err := r.create(asOwner(), "boxed")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return r, map[string]string{"the leased figaro": leased.FigaroID, "the box": box, "the slot": "slot0", "the lease key": "chat:10", "the say bearer": "bearer-of-slot0", "a form id": `"@`}
+	return r, map[string]string{"the leased figaro": leased.FigaroID, "the box": box, "the worker": "worker0", "the lease key": "chat:10", "the say bearer": "bearer-of-worker0", "a form id": `"@`}
 }
 
 // Ruling (c): hello is the one call broker keeps beside its lease
