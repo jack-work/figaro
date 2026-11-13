@@ -155,11 +155,11 @@ func TestABoxMoveIsDrawnOnlyAndLeavesGrantsAlone(t *testing.T) {
 	if n, _ := d.backend.Node(a); n.Parent != o {
 		t.Fatalf("after the owner's move A's history parent is %q, want O %s", n.Parent, o)
 	}
-	before, held := d.a.Policies.Effective(a)
+	before, held, _ := d.a.Policies.Effective(a)
 	if !held {
 		t.Fatal("A has no effective grants to compare")
 	}
-	if wide, _ := d.a.Policies.Effective(f); fmt.Sprint(wide) == fmt.Sprint(before) {
+	if wide, _, _ := d.a.Policies.Effective(f); fmt.Sprint(wide) == fmt.Sprint(before) {
 		t.Fatalf("setup: F's effective grants %v are no wider than A's", wide)
 	}
 
@@ -172,7 +172,7 @@ func TestABoxMoveIsDrawnOnlyAndLeavesGrantsAlone(t *testing.T) {
 	if up := presentedUnder(t, d.grantRig, a); up != f {
 		t.Fatalf("the box's move presents A under %q, want F %s", up, f)
 	}
-	if after, _ := d.a.Policies.Effective(a); fmt.Sprint(after) != fmt.Sprint(before) {
+	if after, _, _ := d.a.Policies.Effective(a); fmt.Sprint(after) != fmt.Sprint(before) {
 		t.Fatalf("A's effective grants moved from %v to %v", before, after)
 	}
 	chain, _ := angelus.StoreFacts(d.backend).(authz.FigaroFacts).Ancestry(a)

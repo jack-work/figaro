@@ -58,11 +58,11 @@ func TestAFigaroCallIsTheCallersGrantsIntersectedWithTheFigaros(t *testing.T) {
 
 func TestTheCeilingBoundsEveryTopLevelFigaro(t *testing.T) {
 	p := narrowed(t, sandboxPolicy+"\n[figaros]\npermissions = [\"read:*\", \"*:lineage:self\", \"egress:*\"]\n", map[string]string{"top": `["*:*", "egress:api:443", "cred:github"]`})
-	top, _ := p.Effective("top")
+	top, _, _ := p.Effective("top")
 	if got := top.String(); got != "*:lineage:top, read:*, egress:api:443" {
 		t.Fatalf("top: %s", got)
 	}
-	kid, _ := p.Effective("kid")
+	kid, _, _ := p.Effective("kid")
 	if got := kid.String(); got != "*:lineage:top, read:*" {
 		t.Fatalf("kid: %s", got)
 	}

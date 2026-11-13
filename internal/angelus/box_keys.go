@@ -457,10 +457,6 @@ func (h *handlers) carryBeforeDetach(ids []string) error {
 		if n, ok := h.angelus.Backend.Node(id); !ok || n.Kind != store.KindConversation {
 			continue
 		}
-		g, held := p.ExplainGrants(id)
-		if !held || len(g.Unread) > 0 {
-			return fmt.Errorf("%s would leave the figaro that narrows it, and its scopes cannot be read to carry that narrowing", id)
-		}
 		if err := h.carryNarrowing(id); err != nil {
 			return fmt.Errorf("carrying the narrowing of %s: %w", id, err)
 		}
@@ -473,9 +469,18 @@ func (h *handlers) carryNarrowing(id string) error {
 	if p == nil {
 		return nil
 	}
-	eff, held := p.Effective(id)
-	alone, _ := p.EffectiveAlone(id)
-	if !held || p.Covers(eff, alone) {
+	eff, held, err := p.Effective(id)
+	if !held {
+		return fmt.Errorf("%s is not held here, so the narrowing it leaves cannot be carried", id)
+	}
+	if err != nil {
+		return err
+	}
+	alone, err := p.EffectiveAlone(id)
+	if err != nil {
+		return err
+	}
+	if p.Covers(eff, alone) {
 		return nil
 	}
 	raw, err := json.Marshal(eff.Strings())

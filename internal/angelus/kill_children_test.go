@@ -132,7 +132,7 @@ func TestALiftedChildKeepsTheNarrowingItInheritedThroughTheKilledFigaro(t *testi
 	for _, now := range []bool{false, true} {
 		r, _, x, c := guardChain(t)
 		narrow(t, r, x, "read:*", "kill:*")
-		before, _ := r.a.Policies.Effective(c)
+		before, _, _ := r.a.Policies.Effective(c)
 		if before.String() != "read:*, kill:*" {
 			t.Fatalf("control: C holds %s through X", before)
 		}
@@ -140,7 +140,7 @@ func TestALiftedChildKeepsTheNarrowingItInheritedThroughTheKilledFigaro(t *testi
 			t.Fatal(err)
 		}
 		if !now {
-			if eff, _ := r.a.Policies.Effective(c); eff.String() != before.String() {
+			if eff, _, _ := r.a.Policies.Effective(c); eff.String() != before.String() {
 				t.Fatalf("reaped: C widened from %s to %s", before, eff)
 			}
 			purgeDue(t, r, x)
@@ -148,7 +148,7 @@ func TestALiftedChildKeepsTheNarrowingItInheritedThroughTheKilledFigaro(t *testi
 		if got := scopesOf(t, r, c); got != `["read:*","kill:*"]` {
 			t.Fatalf("now=%v: C carries %s, want X's narrowing", now, got)
 		}
-		after, _ := r.a.Policies.Effective(c)
+		after, _, _ := r.a.Policies.Effective(c)
 		if after.String() != before.String() {
 			t.Fatalf("now=%v: C widened from %s to %s", now, before, after)
 		}

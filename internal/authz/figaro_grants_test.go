@@ -43,9 +43,9 @@ func lineageFakes(own map[string]string) figaroFakes {
 func effectiveOf(t *testing.T, f figaroFakes, id string) string {
 	t.Helper()
 	p := NewPolicies(me, f)
-	eff, held := p.Effective(id)
-	if !held {
-		t.Fatalf("%s not held", id)
+	eff, held, err := p.Effective(id)
+	if !held || err != nil {
+		t.Fatalf("%s: held=%v err=%v", id, held, err)
 	}
 	return eff.String()
 }
@@ -58,7 +58,7 @@ func TestNoGrantsAnywhereHoldsEveryFigaroVerbAndNoForeignOne(t *testing.T) {
 		}
 	}
 	p := NewPolicies(me, f)
-	eff, _ := p.Effective("grandkid")
+	eff, _, _ := p.Effective("grandkid")
 	for _, g := range []jkauthz.Grant{{Verb: "egress", Object: "*"}, {Verb: "cred", Object: "github"}, {Verb: "egress", Object: "host:443"}} {
 		if (selectors{}).covered(eff, g) {
 			t.Errorf("a figaro with no grants holds %s", g)
@@ -126,27 +126,31 @@ func TestSelfMeansTheFigaroAtEachLevel(t *testing.T) {
 	}
 }
 
-func TestAnUnreadableOrMalformedSetHoldsNothing(t *testing.T) {
+func TestAnUnreadableOrMalformedSetIsAnErrorNeverAnEmptySet(t *testing.T) {
+	refused := func(f figaroFakes, id, what string) {
+		t.Helper()
+		eff, held, err := NewPolicies(me, f).Effective(id)
+		if !held || err == nil || eff != nil {
+			t.Errorf("%s: eff=%q held=%v err=%v, want held with an error", what, eff, held, err)
+		}
+	}
 	f := lineageFakes(map[string]string{"top": `["read:*"]`, "kid": `["read"]`})
-	if got := effectiveOf(t, f, "kid"); got != "" {
-		t.Errorf("malformed: %s", got)
-	}
-	if got := effectiveOf(t, f, "grandkid"); got != "" {
-		t.Errorf("below a malformed set: %s", got)
-	}
+	refused(f, "kid", "malformed")
+	refused(f, "grandkid", "below a malformed set")
 	f = lineageFakes(nil)
 	f.broken = map[string]bool{"top": true}
-	if got := effectiveOf(t, f, "kid"); got != "" {
-		t.Errorf("below an unreadable form: %s", got)
+	refused(f, "kid", "below an unreadable form")
+	if _, err := NewPolicies(me, f).EffectiveAlone("top"); err == nil {
+		t.Error("an unreadable form alone read as no narrowing")
 	}
 }
 
 func TestAFigaroThisNodeDoesNotHoldHasNoEffectiveSet(t *testing.T) {
 	p := NewPolicies(me, lineageFakes(nil))
-	if _, held := p.Effective("elsewhere"); held {
+	if _, held, _ := p.Effective("elsewhere"); held {
 		t.Fatal("held")
 	}
-	if _, held := NewPolicies(me, facts()).Effective("top"); held {
+	if _, held, _ := NewPolicies(me, facts()).Effective("top"); held {
 		t.Fatal("facts without lineage still answered")
 	}
 }
@@ -237,12 +241,12 @@ func TestASuccessorsScopesAreWrittenOnlyWhenAncestorsNarrow(t *testing.T) {
 		{"only its own key: nothing to write", map[string]string{"kid": `["read:*"]`}, "kid", "", false},
 		{"no key anywhere: nothing to write", nil, "grandkid", "", false},
 	} {
-		got, narrowed, held := NewPolicies(me, lineageFakes(c.own)).SuccessorScopes(c.figaro)
+		got, narrowed, held, _ := NewPolicies(me, lineageFakes(c.own)).SuccessorScopes(c.figaro)
 		if !held || narrowed != c.narrowed || got.String() != c.want {
 			t.Errorf("%s: %q narrowed=%v held=%v, want %q narrowed=%v", c.name, got, narrowed, held, c.want, c.narrowed)
 		}
 	}
-	if _, _, held := NewPolicies(me, lineageFakes(nil)).SuccessorScopes("elsewhere"); held {
+	if _, _, held, _ := NewPolicies(me, lineageFakes(nil)).SuccessorScopes("elsewhere"); held {
 		t.Error("a figaro this node does not hold has scopes to hand on")
 	}
 }
@@ -255,7 +259,7 @@ func TestASuccessorReachesNothingItsPredecessorCouldNot(t *testing.T) {
 		"kid": `["send:lineage:self", "fork:aria:self", "set:*", "read:*", "kill:*"]`,
 	}
 	f := lineageFakes(own)
-	scopes, narrowed, held := NewPolicies(me, f).SuccessorScopes("kid")
+	scopes, narrowed, held, _ := NewPolicies(me, f).SuccessorScopes("kid")
 	if !held || !narrowed {
 		t.Fatalf("narrowed=%v held=%v", narrowed, held)
 	}
