@@ -431,6 +431,13 @@ func (l *treeLog[T]) TailSnapshot(n int) []Entry[T] {
 	if n <= 0 {
 		return nil
 	}
+	if t, ok := l.inner.(interface {
+		tailEnds(int) (Entry[T], Entry[T], bool)
+	}); ok {
+		if oldest, newest, ok := t.tailEnds(n); ok {
+			return l.span(l.key(oldest)-1, l.key(newest))
+		}
+	}
 	rows := TailSnapshot[T](l.inner, n)
 	if len(rows) == 0 {
 		return nil
