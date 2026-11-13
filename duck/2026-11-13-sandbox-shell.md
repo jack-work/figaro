@@ -235,7 +235,7 @@ connection and refuses any other `protocol`.
 `workload` is `job` or `conversation`. `writable` is every path the
 sandbox uid can write after a reset; each is empty then (the probe checks
 both). `egress` names the class's egress entries, for the daemon's log and
-`figaro sandbox classes`; it carries no upstream or credential.
+`figaro sandbox ls`; it carries no upstream or credential.
 
 `agent.sandboxes {}` →
 
@@ -364,7 +364,12 @@ other than `unix` is refused until the TLS transport exists.
   `workload` list lacks `job`. With one node in phase 1 this is a config
   check and one test, so the second node is a config change.
 - A figaro, its forks and its successors share the lease (one lineage, one
-  sandbox: an accepted residual).
+  sandbox: an accepted residual). The ledger row lists the lease's
+  **holders**: the leasing figaro, then each fork or successor born from a
+  holder. A figaro runs tools in a leased sandbox only while it is a holder
+  (checked where its agent starts), so a figaro that names the sandbox but
+  is not in the row (restored after its kill, or born in a crash window)
+  runs nothing there: it fails closed.
 - Who may lease (S4): `use:sandbox:kfin-read`. In phase 1 that is the
   owner and figaros of his own lineage; a troupe peer, a sandbox principal,
   a pool guest, `herald-server` and a figaro narrowed by `system.scopes`
@@ -380,8 +385,9 @@ other than `unix` is refused until the TLS transport exists.
   in container@figaro. The owner's change ends that figaro's binding and,
   if it was the last, triggers release.
 
-**4. Release and reset.** When no figaro or form names the sandbox (the
-kill of the last one; a leased sandbox's purge grace is `0`):
+**4. Release and reset.** A kill (of any grace) or the owner's move out
+of the sandbox removes that figaro from the holders. When the last holder
+leaves:
 
 1. Ledger row `releasing`, fsync. `box.session.killscope` for each figaro
    that held it (exists).
@@ -393,9 +399,10 @@ kill of the last one; a leased sandbox's purge grace is `0`):
 4. Probe over exec: as the sandbox uid, `find / -xdev -writable` lists
    only the expected empty dirs (`/work`, `/tmp`); no canary, no process
    but `figaro box serve`'s (S1). Pass: row `free`.
-5. A failed step or no receipt in two minutes: `out_of_service`, an ERROR
-   line. `figaro box reinstate kfin0` (owner) runs steps 2 to 4 again with
-   a new nonce, and never marks `free` by itself (S7).
+5. A failed step or no receipt in two minutes: `cordoned`, an ERROR
+   line. `figaro sandbox reinstate kfin0` (owner) runs steps 2 to 4 again
+   with a new nonce, and never marks `free` by itself (S7). `figaro sandbox
+   ls` lists the classes and every ledger row.
 6. The probe runs again at lease, before the row goes `leased`.
 
 Restart recovery reads the ledger and the agent's `agent.sandboxes` before any
