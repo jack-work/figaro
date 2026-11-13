@@ -1915,6 +1915,7 @@ there until you revoke it with the provider.`,
 
 	registerTroupe(r)
 	r.Register(boxVerb)
+	r.Register(sandboxVerb)
 
 	r.Register(&cmdkit.Command{
 		Name:  "models",

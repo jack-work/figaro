@@ -58,7 +58,14 @@ func sandboxName(kind string) string {
 	return kind
 }
 
-func (h *handlers) grantSandboxOn(ctx context.Context, id string) error {
+func (h *handlers) grantSandboxOn(ctx context.Context, id, parent string) error {
+	if err := h.pinSandbox(ctx, id); err != nil {
+		return err
+	}
+	return h.bindLeasedSandbox(ctx, id, parent)
+}
+
+func (h *handlers) pinSandbox(ctx context.Context, id string) error {
 	if h.angelus.Policies == nil {
 		return nil
 	}
@@ -189,6 +196,9 @@ func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, param
 		if err := json.Unmarshal(params, &req); err != nil {
 			return err
 		}
+		if err := h.checkLeasedSandboxWrite(ctx, id, req.Patch); err != nil {
+			return err
+		}
 		return h.checkFormWrite(ctx, id, req.Patch)
 	case rpc.MethodQua:
 		var req rpc.QuaRequest
@@ -196,6 +206,9 @@ func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, param
 			return err
 		}
 		if req.Form != nil && req.Form.Patch != nil {
+			if err := h.checkLeasedSandboxWrite(ctx, id, *req.Form.Patch); err != nil {
+				return err
+			}
 			return h.checkFormWrite(ctx, id, *req.Form.Patch)
 		}
 	}
@@ -234,6 +247,9 @@ func (h *handlers) checkFormWrite(ctx context.Context, id string, patch form.Pat
 func (h *handlers) refuseUnheldSandbox(ctx context.Context, patch *form.Patch) error {
 	if patch == nil || !patchTouches(*patch, "system.sandbox") {
 		return nil
+	}
+	if err := h.refuseLeasedSandboxName(form.Snapshot{}.Apply(*patch)); err != nil {
+		return err
 	}
 	pin, err := h.grantSandbox(ctx, form.Snapshot{}.Apply(*patch))
 	if err != nil {

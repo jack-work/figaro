@@ -112,6 +112,8 @@ const (
 
 	MethodQuarantineList    = "angelus.quarantine.ls"
 	MethodQuarantineRelease = "angelus.quarantine.release"
+	MethodSandboxList       = "sandbox.ls"
+	MethodSandboxReinstate  = "sandbox.reinstate"
 	MethodOutfits           = "angelus.outfits"
 	// MethodOutfitReload flags the default form for recomputation on the next
 	// create; outfit files are one-way sources of truth.

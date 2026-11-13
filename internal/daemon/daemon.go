@@ -411,6 +411,12 @@ func Run() {
 		slog.Error("authz: no policy in force; every call that needs one is refused", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v; every call that needs a policy is refused until it loads\n", err)
 	}
+	if len(loaded.SandboxNodes()) > 0 {
+		if a.Leases, err = angelus.OpenSandboxLeases(filepath.Join(boot.StateDir(), "sandbox-leases")); err != nil {
+			fmt.Fprintf(os.Stderr, "angelus: %v; a daemon that leases sandboxes does not start without its ledger\n", err)
+			os.Exit(1)
+		}
+	}
 	if loaded.PoolDaemon() {
 		if a.Slots, err = angelus.OpenSlotPools(filepath.Join(boot.StateDir(), "slot-pool"), loaded); err != nil {
 			fmt.Fprintf(os.Stderr, "angelus: %v; a daemon that leases slots does not start without its ledger\n", err)
@@ -479,6 +485,10 @@ func Run() {
 	if loaded.PoolDaemon() {
 		handlers.RecoverSlotPools(ctx)
 		go handlers.KeepReleasingSlots(ctx)
+	}
+	if a.Leases != nil {
+		handlers.RecoverSandboxLeases(ctx)
+		go handlers.KeepFinishingSandboxLeases(ctx)
 	}
 
 	if !hushGate.Await() {

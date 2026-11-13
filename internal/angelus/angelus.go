@@ -74,6 +74,7 @@ type Angelus struct {
 
 	Policies     *authz.Policies
 	Slots        *SlotPools
+	Leases       *SandboxLeases
 	Issuers      *authz.Issuers
 	APIKeys      *authz.APIKeys
 	Peercred     *authz.Peercred

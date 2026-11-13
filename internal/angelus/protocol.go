@@ -137,6 +137,8 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodResidents:          h.residents,
 		rpc.MethodQuarantineList:     h.quarantineList,
 		rpc.MethodQuarantineRelease:  h.quarantineRelease,
+		rpc.MethodSandboxList:        h.sandboxList,
+		rpc.MethodSandboxReinstate:   h.sandboxReinstate,
 		rpc.MethodProviderLedger:     h.providerLedger,
 		rpc.MethodModelsWant:         h.modelsWant,
 		rpc.MethodModelsRefresh:      h.modelsRefresh,
@@ -520,6 +522,9 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if err := h.refuseRoleOutOfBox(born.Apply(patch)); err != nil {
 		return nil, fmt.Errorf("form.create: %w", err)
 	}
+	if err := h.refuseLeasedSandboxName(born.Apply(patch)); err != nil {
+		return nil, fmt.Errorf("form.create: %w", err)
+	}
 	id, version, err := h.angelus.Backend.CreateForm(req.Parent, patch, mintedBy(ctx))
 	if err != nil {
 		return nil, err
@@ -577,7 +582,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		h.discardBirth(id)
 		return nil, fmt.Errorf("form.bind: stamp aria id: %w", err)
 	}
-	if err := h.grantSandboxOn(ctx, id); err != nil {
+	if err := h.grantSandboxOn(ctx, id, ""); err != nil {
 		h.discardBirth(id)
 		return nil, fmt.Errorf("form.bind: %w", err)
 	}

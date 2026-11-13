@@ -85,6 +85,16 @@ func (c *Angelus) ArmPprof(ctx context.Context, on bool) (string, error) {
 	return resp.Socket, err
 }
 
+func (c *Angelus) Sandboxes(ctx context.Context) (*rpc.SandboxListResponse, error) {
+	var resp rpc.SandboxListResponse
+	err := c.call(ctx, rpc.MethodSandboxList, nil, &resp)
+	return &resp, err
+}
+
+func (c *Angelus) ReinstateSandbox(ctx context.Context, sandbox string) error {
+	return c.call(ctx, rpc.MethodSandboxReinstate, rpc.SandboxReinstateRequest{Sandbox: sandbox}, &rpc.SandboxReinstateResponse{})
+}
+
 func (c *Angelus) Residents(ctx context.Context) (*rpc.ResidentsResponse, error) {
 	var resp rpc.ResidentsResponse
 	err := c.call(ctx, rpc.MethodResidents, nil, &resp)

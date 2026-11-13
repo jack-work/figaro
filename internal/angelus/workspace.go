@@ -40,6 +40,7 @@ func (h *handlers) killSessions(id string) int {
 	kind := h.sandboxOf(id)
 	loaded, _ := h.settings()
 	if _, ok := loaded.Box(kind); !ok {
+		h.leaveLeasedSandbox(id, kind)
 		return n
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -48,6 +49,7 @@ func (h *handlers) killSessions(id string) int {
 	if err != nil {
 		slog.Warn("sessions in the box may outlive the aria", "id", id, "box", kind, "err", err)
 	}
+	h.leaveLeasedSandbox(id, kind)
 	return n + m
 }
 

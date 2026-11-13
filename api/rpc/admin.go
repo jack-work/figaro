@@ -295,3 +295,35 @@ type QuarantineReleaseResponse struct {
 	Applied       bool           `json:"applied"`
 	Warning       string         `json:"warning,omitempty"`
 }
+
+type SandboxClass struct {
+	Name      string   `json:"name"`
+	Node      string   `json:"node"`
+	Workload  string   `json:"workload"`
+	Sandboxes []string `json:"sandboxes"`
+	Egress    []string `json:"egress,omitempty"`
+}
+
+type SandboxLease struct {
+	Node       string   `json:"node"`
+	Class      string   `json:"class"`
+	Generation uint64   `json:"generation"`
+	Sandbox    string   `json:"sandbox,omitempty"`
+	State      string   `json:"state"`
+	Leaser     string   `json:"leaser"`
+	Holders    []string `json:"holders,omitempty"`
+	Since      string   `json:"since"`
+}
+
+type SandboxListResponse struct {
+	Classes []SandboxClass `json:"classes"`
+	Leases  []SandboxLease `json:"leases"`
+}
+
+type SandboxReinstateRequest struct {
+	Sandbox string `json:"sandbox"`
+}
+
+type SandboxReinstateResponse struct {
+	Sandbox string `json:"sandbox"`
+}

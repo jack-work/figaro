@@ -191,3 +191,10 @@ func AsLeasedBox(box string) context.Context {
 func AsLeasedBoxThrough(box string, door authz.Door) context.Context {
 	return authz.WithSubject(authz.WithDoor(context.Background(), door), jkauthz.Subject{Principal: authz.BoxPrincipal(box)})
 }
+
+func (hs *Handlers) FinishSandboxLeases(ctx context.Context) {
+	loaded, _ := hs.h.settings()
+	hs.h.angelus.Leases.finishUnfinished(ctx, loaded)
+}
+
+func (hs *Handlers) MayRunIn(kind, id string) error { return hs.h.mayRunIn(kind, id) }

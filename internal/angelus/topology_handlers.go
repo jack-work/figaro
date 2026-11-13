@@ -122,7 +122,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		if _, aerr := backend.ApplyFormPrivileged(id, convBootPatch(id, cwd)); aerr != nil {
 			return nil, fmt.Errorf("stamp aria id: %w", aerr)
 		}
-		if err := h.grantSandboxOn(ctx, id); err != nil {
+		if err := h.grantSandboxOn(ctx, id, ""); err != nil {
 			return nil, err
 		}
 		if err := h.dropHostCwdInBox(id, patchTouches(dress, "system.cwd")); err != nil {
@@ -143,6 +143,9 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	}
 	if err := h.providerAllowedIn(formStr("system.sandbox"), provName); err != nil {
 		return nil, err
+	}
+	if err := h.mayRunIn(formStr("system.sandbox"), id); err != nil {
+		return nil, fmt.Errorf("sandbox: %w", err)
 	}
 	box, err := sandbox.Open(ctx, h.angelus.Sessions, loaded, formStr("system.sandbox"), id, formStr("system.cwd"))
 	if err != nil {
@@ -313,7 +316,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 				slog.Warn("fork: stays under the owner of its cut", "alt", alt, "under", forkOwner.Trunk, "err", merr)
 			}
 		}
-		if gerr := h.grantSandboxOn(ctx, alt); gerr != nil {
+		if gerr := h.grantSandboxOn(ctx, alt, req.FigaroID); gerr != nil {
 			h.discardBirth(alt)
 			alt = ""
 			return gerr
@@ -629,7 +632,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	if _, err := h.angelus.Backend.ApplyForm(id, form.Build(form.Snapshot{}, keys, nil)); err != nil {
 		return nil, fmt.Errorf("import: form: %w", err)
 	}
-	if err := h.grantSandboxOn(ctx, id); err != nil {
+	if err := h.grantSandboxOn(ctx, id, ""); err != nil {
 		h.discardBirth(id)
 		return nil, fmt.Errorf("import: %w", err)
 	}
