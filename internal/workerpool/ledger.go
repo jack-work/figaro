@@ -1,4 +1,4 @@
-package slotpool
+package workerpool
 
 import (
 	"bytes"
@@ -26,7 +26,7 @@ const (
 
 var (
 	ErrNoSuchLease    = errors.New("no such lease")
-	ErrSlotLeased     = errors.New("the slot has a lease that is not released")
+	ErrWorkerLeased   = errors.New("the slot has a lease that is not released")
 	ErrKeyLeased      = errors.New("the key has a lease that is not released")
 	ErrGenerationUsed = errors.New("the ledger already names that generation of the slot, or a later one")
 	ErrWrongState     = errors.New("the lease is not in a state that allows it")
@@ -41,7 +41,7 @@ var keySyntax = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 
 type Lease struct {
 	Pool       string   `json:"pool"`
-	Slot       string   `json:"slot"`
+	Worker     string   `json:"slot"`
 	Key        string   `json:"key"`
 	Generation uint64   `json:"generation"`
 	State      State    `json:"state"`
@@ -161,8 +161,8 @@ func CheckKey(key string) error {
 	return nil
 }
 
-func (l *Ledger) Begin(pool, slot, key string, generation uint64, holder string) error {
-	if pool == "" || slot == "" || holder == "" {
+func (l *Ledger) Begin(pool, worker, key string, generation uint64, holder string) error {
+	if pool == "" || worker == "" || holder == "" {
 		return errors.New("ledger: a lease names its pool, its slot and who holds it")
 	}
 	if err := CheckKey(key); err != nil {
@@ -171,22 +171,22 @@ func (l *Ledger) Begin(pool, slot, key string, generation uint64, holder string)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.commit(func(f *ledgerFile) error {
-		if generation <= f.Floors[slot] {
-			return fmt.Errorf("%w: %s at %d, asked %d", ErrGenerationUsed, slot, f.Floors[slot], generation)
+		if generation <= f.Floors[worker] {
+			return fmt.Errorf("%w: %s at %d, asked %d", ErrGenerationUsed, worker, f.Floors[worker], generation)
 		}
 		for _, r := range f.Leases {
 			if r.State == Released {
 				continue
 			}
-			if r.Slot == slot {
-				return fmt.Errorf("%w: %s", ErrSlotLeased, slot)
+			if r.Worker == worker {
+				return fmt.Errorf("%w: %s", ErrWorkerLeased, worker)
 			}
 			if r.Pool == pool && r.Key == key {
 				return ErrKeyLeased
 			}
 		}
-		f.Floors[slot] = generation
-		f.Leases = append(f.Leases, Lease{Pool: pool, Slot: slot, Key: key, Generation: generation, State: Minting, Holder: holder, At: l.now().Unix()})
+		f.Floors[worker] = generation
+		f.Leases = append(f.Leases, Lease{Pool: pool, Worker: worker, Key: key, Generation: generation, State: Minting, Holder: holder, At: l.now().Unix()})
 		return nil
 	})
 }
@@ -251,7 +251,7 @@ func (l *Ledger) Released(pool, key string, generation uint64) error {
 		if r.State != Releasing {
 			return fmt.Errorf("%w: it is %s", ErrWrongState, r.State)
 		}
-		*r = Lease{Pool: r.Pool, Slot: r.Slot, Key: r.Key, Generation: r.Generation, State: Released, Holder: r.Holder, At: l.now().Unix()}
+		*r = Lease{Pool: r.Pool, Worker: r.Worker, Key: r.Key, Generation: r.Generation, State: Released, Holder: r.Holder, At: l.now().Unix()}
 		released := 0
 		for _, x := range f.Leases {
 			if x.State == Released {
@@ -298,8 +298,8 @@ func (l *Ledger) Leases() []Lease {
 	return l.file.clone().Leases
 }
 
-func (l *Ledger) Floor(slot string) uint64 {
+func (l *Ledger) Floor(worker string) uint64 {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.file.Floors[slot]
+	return l.file.Floors[worker]
 }

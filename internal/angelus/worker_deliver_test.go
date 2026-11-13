@@ -18,12 +18,12 @@ import (
 // A rig can wake a dormant figaro only with form templates in hand.
 func thatWakesFigaros(c *angelus.ServerConfig) { c.FormTemplates = template.New("t") }
 
-func (r grantRig) deliver(ctx context.Context, params string) (rpc.SlotDeliverResponse, error) {
-	out, err := r.h[rpc.MethodSlotDeliver](ctx, []byte(params))
+func (r grantRig) deliver(ctx context.Context, params string) (rpc.WorkerDeliverResponse, error) {
+	out, err := r.h[rpc.MethodWorkerDeliver](ctx, []byte(params))
 	if err != nil {
-		return rpc.SlotDeliverResponse{}, err
+		return rpc.WorkerDeliverResponse{}, err
 	}
-	return out.(rpc.SlotDeliverResponse), nil
+	return out.(rpc.WorkerDeliverResponse), nil
 }
 
 func (r grantRig) delivered(t *testing.T, aria string) []message.Content {
@@ -79,7 +79,7 @@ func TestADeliveryIsQueuedOnceToTheLeasesFigaroUnderItsMessageID(t *testing.T) {
 	if again, err := r.deliver(asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"msg:-100:77","text":"`+text+`"}`); err != nil || !again.Queued {
 		t.Errorf("the same delivery again answered %+v (%v)", again, err)
 	}
-	r.a.Slots.ForgetLease(lease.Box)
+	r.a.Workers.ForgetLease(lease.Box)
 	if again, err := r.deliver(asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"msg:-100:77","text":"`+text+`"}`); err != nil || !again.Queued {
 		t.Errorf("the same delivery after a restart answered %+v (%v)", again, err)
 	}
@@ -109,12 +109,12 @@ func TestADeliveryIsRefusedForAnyLeaseButTheCallersLiveOne(t *testing.T) {
 		params string
 		reason string
 	}{
-		"for another generation":        {asBroker(), `{"pool":"groups","key":"chat:10","generation":2,"id":"m1","text":"t"}`, rpc.SlotStale},
-		"with no generation":            {asBroker(), `{"pool":"groups","key":"chat:10","id":"m1","text":"t"}`, rpc.SlotStale},
-		"by another holder":             {as("user", "rival"), `{"pool":"groups","key":"chat:10","generation":1,"id":"m1","text":"t"}`, rpc.SlotNoSuchLease},
-		"for a key with no lease":       {asBroker(), `{"pool":"groups","key":"chat:11","generation":1,"id":"m1","text":"t"}`, rpc.SlotNoSuchLease},
-		"to a disabled pool":            {asBroker(), `{"pool":"closed","key":"chat:10","generation":1,"id":"m1","text":"t"}`, rpc.SlotPoolDisabled},
-		"over the pool's cap":           {asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"m1","text":"` + big + `"}`, rpc.SlotTooLarge},
+		"for another generation":        {asBroker(), `{"pool":"groups","key":"chat:10","generation":2,"id":"m1","text":"t"}`, rpc.WorkerStale},
+		"with no generation":            {asBroker(), `{"pool":"groups","key":"chat:10","id":"m1","text":"t"}`, rpc.WorkerStale},
+		"by another holder":             {as("user", "rival"), `{"pool":"groups","key":"chat:10","generation":1,"id":"m1","text":"t"}`, rpc.WorkerNoSuchLease},
+		"for a key with no lease":       {asBroker(), `{"pool":"groups","key":"chat:11","generation":1,"id":"m1","text":"t"}`, rpc.WorkerNoSuchLease},
+		"to a disabled pool":            {asBroker(), `{"pool":"closed","key":"chat:10","generation":1,"id":"m1","text":"t"}`, rpc.WorkerPoolDisabled},
+		"over the pool's cap":           {asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"m1","text":"` + big + `"}`, rpc.WorkerTooLarge},
 		"with no text":                  {asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"m1","text":""}`, ""},
 		"with no id":                    {asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"text":"t"}`, ""},
 		"with an id that is no id":      {asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"m 1","text":"t"}`, ""},
@@ -127,7 +127,7 @@ func TestADeliveryIsRefusedForAnyLeaseButTheCallersLiveOne(t *testing.T) {
 			continue
 		}
 		if c.reason != "" {
-			if got := slotRefusal(t, err).Reason; got != c.reason {
+			if got := workerRefusal(t, err).Reason; got != c.reason {
 				t.Errorf("a delivery %s was refused as %q, want %q", why, got, c.reason)
 			}
 		}
@@ -139,15 +139,15 @@ func TestADeliveryIsRefusedForAnyLeaseButTheCallersLiveOne(t *testing.T) {
 	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err == nil {
 		t.Fatal("the release was to fail")
 	}
-	if _, err := r.deliver(asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"m1","text":"t"}`); err == nil || slotRefusal(t, err).Reason != rpc.SlotStale {
-		t.Errorf("a delivery to a lease that is being released answered %v, want %s", err, rpc.SlotStale)
+	if _, err := r.deliver(asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"m1","text":"t"}`); err == nil || workerRefusal(t, err).Reason != rpc.WorkerStale {
+		t.Errorf("a delivery to a lease that is being released answered %v, want %s", err, rpc.WorkerStale)
 	}
 	rou2Of(r).closeFails(nil)
 	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.deliver(asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"m1","text":"t"}`); err == nil || slotRefusal(t, err).Reason != rpc.SlotNoSuchLease {
-		t.Errorf("a delivery to a released lease answered %v, want %s", err, rpc.SlotNoSuchLease)
+	if _, err := r.deliver(asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"m1","text":"t"}`); err == nil || workerRefusal(t, err).Reason != rpc.WorkerNoSuchLease {
+		t.Errorf("a delivery to a released lease answered %v, want %s", err, rpc.WorkerNoSuchLease)
 	}
 	next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
 	if err != nil {
@@ -156,8 +156,8 @@ func TestADeliveryIsRefusedForAnyLeaseButTheCallersLiveOne(t *testing.T) {
 	if got := r.delivered(t, next.Aria); len(got) != 0 {
 		t.Errorf("the next generation's figaro was born holding deliveries: %+v", got)
 	}
-	if _, err := r.deliver(asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"m1","text":"t"}`); err == nil || slotRefusal(t, err).Reason != rpc.SlotStale {
-		t.Errorf("a delivery for the last generation answered %v, want %s", err, rpc.SlotStale)
+	if _, err := r.deliver(asBroker(), `{"pool":"groups","key":"chat:10","generation":1,"id":"m1","text":"t"}`); err == nil || workerRefusal(t, err).Reason != rpc.WorkerStale {
+		t.Errorf("a delivery for the last generation answered %v, want %s", err, rpc.WorkerStale)
 	}
 	if got, err := r.deliver(asBroker(), `{"pool":"groups","key":"chat:10","generation":2,"id":"m1","text":"t"}`); err != nil || !got.Queued {
 		t.Errorf("the id a refused delivery carried is taken for the next generation: %+v (%v)", got, err)
@@ -211,12 +211,12 @@ func TestAProviderThatSendsNoLeaseIsNotBuiltForALeasedFigaro(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.writeLeasedOutfit(t, leasedOutfit)
-	slots, err := angelus.OpenSlotPools(t.TempDir(), r.a.Settings)
+	workers, err := angelus.OpenWorkerPools(t.TempDir(), r.a.Settings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.a.Slots = slots
-	r.a.Policies.SetLeases(slots)
+	r.a.Workers = workers
+	r.a.Policies.SetLeases(workers)
 	installRou2(r)
 	lease, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
 	if err != nil {

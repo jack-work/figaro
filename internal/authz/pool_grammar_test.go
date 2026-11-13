@@ -47,7 +47,7 @@ func TestALeaseGrantReachesOnePoolAndNoOtherVerb(t *testing.T) {
 
 // say:lease:self is the leased box's whole role. It names the lease by
 // the box that speaks, so one generation's principal cannot say into the
-// next generation of the same slot.
+// next generation of the same worker.
 func TestSayOnLeaseSelfReachesOnlyTheSpeakersOwnLease(t *testing.T) {
 	m := selectors{}
 	g2 := subject(BoxPrincipal("slot3-g2"))

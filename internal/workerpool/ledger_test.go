@@ -1,4 +1,4 @@
-package slotpool
+package workerpool
 
 import (
 	"context"
@@ -42,7 +42,7 @@ func TestTheLedgerIsPrivateAndIsTheSameAfterARestart(t *testing.T) {
 	}
 	l = openLedger(t, path)
 	got, ok := l.Held("groups", "msg:-100")
-	if !l.Found() || !ok || got.State != Minting || got.Slot != "slot0" || got.Generation != 1 || got.Holder != broker || got.Rou2Lease != "groups/slot0-g1" || len(got.Minted) != 2 {
+	if !l.Found() || !ok || got.State != Minting || got.Worker != "slot0" || got.Generation != 1 || got.Holder != broker || got.Rou2Lease != "groups/slot0-g1" || len(got.Minted) != 2 {
 		t.Fatalf("after a restart: found %v, held %v, %+v", l.Found(), ok, got)
 	}
 }
@@ -110,11 +110,11 @@ func second[T any](_ T, err error) error { return err }
 
 // R1 rests on a generation naming one lease for good. The released rows are
 // trimmed, so the floor is kept apart from them.
-func TestASlotAndAKeyHoldOneLeaseAndNoGenerationIsUsedTwice(t *testing.T) {
+func TestAWorkerAndAKeyHoldOneLeaseAndNoGenerationIsUsedTwice(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ledger.json")
 	l := openLedger(t, path)
 	must(t, l.Begin("groups", "slot0", "a", 1, broker))
-	if err := l.Begin("groups", "slot0", "b", 2, broker); !errors.Is(err, ErrSlotLeased) {
+	if err := l.Begin("groups", "slot0", "b", 2, broker); !errors.Is(err, ErrWorkerLeased) {
 		t.Errorf("a second lease of a leased slot: %v", err)
 	}
 	if err := l.Begin("groups", "slot1", "a", 1, broker); !errors.Is(err, ErrKeyLeased) {

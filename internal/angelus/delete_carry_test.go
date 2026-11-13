@@ -125,15 +125,15 @@ var deletePaths = []deletePath{
 		purgeDue(t, r, x)
 	}},
 	{"a start's purge of a node in a leased box no lease holds", leasingConfig, false, []hierarchy.Op{hierarchy.Kill}, func(t *testing.T, r grantRig, x, _ string) {
-		slots, err := angelus.OpenSlotPools(t.TempDir(), r.a.Settings)
+		workers, err := angelus.OpenWorkerPools(t.TempDir(), r.a.Settings)
 		if err != nil {
 			t.Fatal(err)
 		}
-		r.a.Slots = slots
+		r.a.Workers = workers
 		if _, err := r.backend.ApplyForm(x, form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.sandbox": json.RawMessage(`"slot0-g9"`)}, nil)); err != nil {
 			t.Fatal(err)
 		}
-		r.hs.RecoverSlotPools(context.Background())
+		r.hs.RecoverWorkerPools(context.Background())
 	}},
 	{"an empty discard, which never strands a fork", "", true, []hierarchy.Op{hierarchy.Discard}, func(t *testing.T, r grantRig, x, _ string) {
 		if err := r.hs.RemoveAria(x, false); err == nil || !strings.Contains(err.Error(), "discard takes one leaf") {

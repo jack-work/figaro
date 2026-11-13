@@ -141,7 +141,7 @@ func (hs *Handlers) PoolNode(pool string) (string, bool) {
 	return poolNodeOf(hs.h.angelus.Backend, pool)
 }
 
-func (s *SlotPools) BeginMint(box string) (minted func(id string), done func(), err error) {
+func (s *WorkerPools) BeginMint(box string) (minted func(id string), done func(), err error) {
 	call, err := s.beginMint(box)
 	if err != nil {
 		return nil, nil, err
@@ -149,11 +149,11 @@ func (s *SlotPools) BeginMint(box string) (minted func(id string), done func(), 
 	return call.minted, call.done, nil
 }
 
-func (hs *Handlers) KeepReleasingSlotsEvery(ctx context.Context, every time.Duration) {
-	hs.h.keepReleasingSlots(ctx, every)
+func (hs *Handlers) KeepReleasingWorkersEvery(ctx context.Context, every time.Duration) {
+	hs.h.keepReleasingWorkers(ctx, every)
 }
 
-func (s *SlotPools) ForgetLease(box string) { s.forgetLease(box) }
+func (s *WorkerPools) ForgetLease(box string) { s.forgetLease(box) }
 
 func (hs *Handlers) ProviderIn(box, name string) (provider.Provider, error) {
 	return hs.h.factoryIn(box)(name, provider.Knobs{})

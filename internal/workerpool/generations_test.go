@@ -1,4 +1,4 @@
-package slotpool
+package workerpool
 
 import (
 	"os"

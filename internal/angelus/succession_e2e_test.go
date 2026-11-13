@@ -642,7 +642,7 @@ func TestSuccessionsInFlightAreInTheCatalog(t *testing.T) {
 	require.Contains(t, string(raw), "ramping")
 }
 
-// The slot pool mints its own successors: its outfit, its scopes, its bound.
+// The worker pool mints its own successors: its outfit, its scopes, its bound.
 func TestSuccessionMinterMintsWhatItClaims(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(succeeding(nil))

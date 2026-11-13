@@ -8,7 +8,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/slotpool"
+	"github.com/jack-work/figaro/internal/workerpool"
 )
 
 func (h *handlers) providerAllowedIn(sandboxName, prov string) error {
@@ -25,15 +25,15 @@ func (h *handlers) providerAllowedIn(sandboxName, prov string) error {
 
 func (h *handlers) rou2LeaseOf(sandboxName string) (string, error) {
 	loaded, _ := h.settings()
-	if loaded == nil || !leasedBoxOfSlot(sandboxName, poolSlots(loaded)) {
+	if loaded == nil || !leasedBoxOfWorker(sandboxName, poolWorkers(loaded)) {
 		return "", nil
 	}
-	slots := h.angelus.Slots
-	if slots == nil {
+	workers := h.angelus.Workers
+	if workers == nil {
 		return "", fmt.Errorf("leased box %s has no ledger behind it", sandboxName)
 	}
-	row, ok := slots.leaseOf(sandboxName)
-	if !ok || row.State != slotpool.Live || row.Rou2Lease == "" {
+	row, ok := workers.leaseOf(sandboxName)
+	if !ok || row.State != workerpool.Live || row.Rou2Lease == "" {
 		return "", fmt.Errorf("leased box %s has no live lease with an open rou2 lease, so a figaro in it sends nothing", sandboxName)
 	}
 	return row.Rou2Lease, nil

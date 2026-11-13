@@ -25,12 +25,12 @@ const atPackageLevel = "(package level)"
 func TestOnlyTheLeaseHandlersBuildAProvisionerSubject(t *testing.T) {
 	allowed := map[string]map[string][]string{
 		"ProvisionerServing": {
-			"internal/angelus/slot_mint.go":    {"mintLeased"},
-			"internal/angelus/slot_release.go": {"releaseLease"},
+			"internal/angelus/worker_mint.go":    {"mintLeased"},
+			"internal/angelus/worker_release.go": {"releaseLease"},
 		},
 		"ProvisionerPrincipal": {
-			"internal/authz/pool.go":        {"ProvisionerServing"},
-			"internal/angelus/slot_mint.go": {"poolNodeOf", "mintPoolNodes"},
+			"internal/authz/pool.go":          {"ProvisionerServing"},
+			"internal/angelus/worker_mint.go": {"poolNodeOf", "mintPoolNodes"},
 		},
 		"provisionerID": {
 			"internal/authz/pool.go": {atPackageLevel, "ProvisionerPrincipal", "IsProvisioner"},

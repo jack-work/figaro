@@ -55,7 +55,7 @@ func searchRig(t *testing.T) (grantRig, *searchEndpoint, string, string) {
 	t.Setenv("CREDENTIALS_DIRECTORY", dir)
 	r, _, lease := sayRig(t)
 	end := &searchEndpoint{}
-	r.a.Slots.SearchWire = end
+	r.a.Workers.SearchWire = end
 	return r, end, lease.Box, lease.Aria
 }
 
@@ -190,7 +190,7 @@ func TestTheSearchCredentialAndTheEndpointsBodyStayInTheDaemon(t *testing.T) {
 func TestALeaseSearchesAtMostItsBounds(t *testing.T) {
 	r, end, box, aria := searchRig(t)
 	now := time.Date(2026, 11, 12, 21, 0, 0, 0, time.UTC)
-	r.a.Slots.Now = func() time.Time { return now }
+	r.a.Workers.Now = func() time.Time { return now }
 	search := func() error {
 		_, err := r.hs.RunToolAtWake(context.Background(), box, aria, "search", map[string]any{"query": "q"})
 		return err

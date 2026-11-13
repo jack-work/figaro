@@ -13,33 +13,33 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-type SlotConfig struct {
+type WorkerConfig struct {
 	Pools map[string]PoolConfig `toml:"pools"`
 }
 
 type PoolConfig struct {
-	Enabled           bool       `toml:"enabled"`
-	Outfit            string     `toml:"outfit"`
-	Provider          string     `toml:"provider"`
-	Rou2LeaseClass    string     `toml:"rou2_lease_class"`
-	Rou2URL           string     `toml:"rou2_url"`
-	SayURL            string     `toml:"say_url"`
-	SuccessionsPerDay *int       `toml:"successions_per_day"`
-	SayPerMinute      *int       `toml:"say_per_minute"`
-	SearchURL         string     `toml:"search_url"`
-	SearchCredential  string     `toml:"search_credential"`
-	SearchPerMinute   *int       `toml:"search_per_minute"`
-	SearchPerDay      *int       `toml:"search_per_day"`
-	DeliverMaxBytes   int        `toml:"deliver_max_bytes"`
-	Slots             []PoolSlot `toml:"slots"`
+	Enabled           bool         `toml:"enabled"`
+	Outfit            string       `toml:"outfit"`
+	Provider          string       `toml:"provider"`
+	Rou2LeaseClass    string       `toml:"rou2_lease_class"`
+	Rou2URL           string       `toml:"rou2_url"`
+	SayURL            string       `toml:"say_url"`
+	SuccessionsPerDay *int         `toml:"successions_per_day"`
+	SayPerMinute      *int         `toml:"say_per_minute"`
+	SearchURL         string       `toml:"search_url"`
+	SearchCredential  string       `toml:"search_credential"`
+	SearchPerMinute   *int         `toml:"search_per_minute"`
+	SearchPerDay      *int         `toml:"search_per_day"`
+	DeliverMaxBytes   int          `toml:"deliver_max_bytes"`
+	Workers           []PoolWorker `toml:"slots"`
 }
 
-type PoolSlot string
+type PoolWorker string
 
-func (s *PoolSlot) UnmarshalTOML(v any) error {
+func (s *PoolWorker) UnmarshalTOML(v any) error {
 	switch v := v.(type) {
 	case string:
-		*s = PoolSlot(v)
+		*s = PoolWorker(v)
 		return nil
 	case map[string]any:
 		return fmt.Errorf("a slot is a name and nothing else: this one is a table carrying %s", strings.Join(sortedKeys(v), ", "))
@@ -89,20 +89,20 @@ func (p PoolConfig) DeliverCap() int {
 	return p.DeliverMaxBytes
 }
 
-func (p PoolConfig) SlotNames() []string {
-	out := make([]string, len(p.Slots))
-	for i, s := range p.Slots {
+func (p PoolConfig) WorkerNames() []string {
+	out := make([]string, len(p.Workers))
+	for i, s := range p.Workers {
 		out[i] = string(s)
 	}
 	return out
 }
 
-func (l *Loaded) PoolDaemon() bool { return len(l.cfg().Slot.Pools) > 0 }
+func (l *Loaded) PoolDaemon() bool { return len(l.cfg().Worker.Pools) > 0 }
 
-func (l *Loaded) Pools() []string { return sortedKeys(l.cfg().Slot.Pools) }
+func (l *Loaded) Pools() []string { return sortedKeys(l.cfg().Worker.Pools) }
 
 func (l *Loaded) Pool(name string) (PoolConfig, bool) {
-	p, ok := l.cfg().Slot.Pools[name]
+	p, ok := l.cfg().Worker.Pools[name]
 	return p, ok
 }
 
@@ -148,7 +148,7 @@ func carriesABearerSafely(raw string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func refuseUnknownSlotKeys(md toml.MetaData) error {
+func refuseUnknownWorkerKeys(md toml.MetaData) error {
 	for _, k := range md.Undecoded() {
 		if len(k) > 0 && k[0] == "slot" {
 			return fmt.Errorf("%s: not a key figaro knows; a pool reads no key it does not know, so a misspelt one cannot leave it open", k)
@@ -157,10 +157,10 @@ func refuseUnknownSlotKeys(md toml.MetaData) error {
 	return nil
 }
 
-func (c Config) validateSlot() error {
+func (c Config) validateWorker() error {
 	owner := map[string]string{}
-	for _, name := range sortedKeys(c.Slot.Pools) {
-		p := c.Slot.Pools[name]
+	for _, name := range sortedKeys(c.Worker.Pools) {
+		p := c.Worker.Pools[name]
 		where := "slot.pools." + name
 		switch {
 		case nameHasSeparator(name):
@@ -189,7 +189,7 @@ func (c Config) validateSlot() error {
 			return fmt.Errorf("%s.search_per_minute %d is negative", where, *p.SearchPerMinute)
 		case p.SearchPerDay != nil && *p.SearchPerDay < 0:
 			return fmt.Errorf("%s.search_per_day %d is negative", where, *p.SearchPerDay)
-		case len(p.Slots) == 0:
+		case len(p.Workers) == 0:
 			return fmt.Errorf("%s.slots: a pool with no slot can lease nothing", where)
 		}
 		if u, err := url.Parse(p.Rou2URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
@@ -201,26 +201,26 @@ func (c Config) validateSlot() error {
 		if p.SearchURL != "" && !carriesABearerSafely(p.SearchURL) {
 			return fmt.Errorf("%s.search_url %q: %s", where, p.SearchURL, bearerURLWant)
 		}
-		for _, slot := range p.SlotNames() {
+		for _, worker := range p.WorkerNames() {
 			switch {
-			case nameHasSeparator(slot):
-				return fmt.Errorf("%s.slots: %q: a slot name has no : / @ * or space", where, slot)
-			case slot == "local" || slot == "bwrap" || slot == "self":
-				return fmt.Errorf("%s.slots: %s is reserved", where, slot)
-			case leaseSuffix.MatchString(slot):
-				return fmt.Errorf("%s.slots: %q ends like a lease (<slot>-g<generation>); a slot name does not", where, slot)
+			case nameHasSeparator(worker):
+				return fmt.Errorf("%s.slots: %q: a slot name has no : / @ * or space", where, worker)
+			case worker == "local" || worker == "bwrap" || worker == "self":
+				return fmt.Errorf("%s.slots: %s is reserved", where, worker)
+			case leaseSuffix.MatchString(worker):
+				return fmt.Errorf("%s.slots: %q ends like a lease (<slot>-g<generation>); a slot name does not", where, worker)
 			}
-			if other, taken := owner[slot]; taken {
-				return fmt.Errorf("%s.slots: %q is also a slot of %s; a lease is named after its slot alone", where, slot, other)
+			if other, taken := owner[worker]; taken {
+				return fmt.Errorf("%s.slots: %q is also a slot of %s; a lease is named after its slot alone", where, worker, other)
 			}
-			owner[slot] = where
+			owner[worker] = where
 		}
 	}
 	return nil
 }
 
 func (c Config) refuseWhatAPoolDaemonCannotHold(md toml.MetaData, providerFiles []string, serviceTokenOf func(provider string) string) error {
-	if len(c.Slot.Pools) == 0 {
+	if len(c.Worker.Pools) == 0 {
 		return nil
 	}
 	for _, table := range [][]string{{"troupe"}, {"peers"}, {"door", "tls"}, {"sandbox", "boxes"}, {"authz", "api_keys"}} {
@@ -229,7 +229,7 @@ func (c Config) refuseWhatAPoolDaemonCannotHold(md toml.MetaData, providerFiles 
 		}
 	}
 	named := map[string]bool{}
-	for _, p := range c.Slot.Pools {
+	for _, p := range c.Worker.Pools {
 		if token := serviceTokenOf(p.Provider); token != "" {
 			named[token] = true
 		}
@@ -252,7 +252,7 @@ func (c Config) refuseWhatAPoolDaemonCannotHold(md toml.MetaData, providerFiles 
 		return fmt.Errorf("[slot.pools] without [authz] policy: a daemon that leases slots names its policy file and never falls back to the default policy")
 	}
 	var used []string
-	for _, p := range c.Slot.Pools {
+	for _, p := range c.Worker.Pools {
 		used = append(used, p.Provider)
 	}
 	sort.Strings(providerFiles)

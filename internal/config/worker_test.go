@@ -52,7 +52,7 @@ func TestAPoolLoadsWithItsDefaults(t *testing.T) {
 	if !ok || !p.Enabled || p.Outfit != "broker-group" || p.Provider != "rou2" {
 		t.Fatalf("pool %+v %v", p, ok)
 	}
-	if got := p.SlotNames(); len(got) != 2 || got[0] != "slot0" || got[1] != "slot1" {
+	if got := p.WorkerNames(); len(got) != 2 || got[0] != "slot0" || got[1] != "slot1" {
 		t.Fatalf("slots %v", got)
 	}
 	if p.Rou2URL != "http://127.0.0.1:9110" {
@@ -105,14 +105,14 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 		}
 		return strings.Replace(poolBody, old, new, 1)
 	}
-	slots := `slots = ["slot0", "slot1"]` + "\n"
+	workers := `slots = ["slot0", "slot1"]` + "\n"
 	for name, c := range map[string]struct{ body, want string }{
-		"a slot with an exec path":    {swap(slots, `slots = ["slot0", {name = "slot1", exec = "/run/box/slot1.sock"}]`+"\n"), "carrying exec"},
-		"a slot with a door":          {swap(slots, `slots = [{name = "slot0", door = "/run/door/slot0.sock"}]`+"\n"), "carrying door"},
-		"a slot with a reset":         {swap(slots, `slots = [{name = "slot0", reset = "/run/reset/slot0"}]`+"\n"), "carrying name, reset"},
-		"slots as tables":             {swap(slots, "[slot.pools.chat-groups.slots.slot0]\nexec = \"/run/box/slot0.sock\"\n"), "incompatible types"},
-		"a slot that is a number":     {swap(slots, "slots = [3]\n"), "a slot is a name"},
-		"no slots":                    {swap(slots, ""), "can lease nothing"},
+		"a slot with an exec path":    {swap(workers, `slots = ["slot0", {name = "slot1", exec = "/run/box/slot1.sock"}]`+"\n"), "carrying exec"},
+		"a slot with a door":          {swap(workers, `slots = [{name = "slot0", door = "/run/door/slot0.sock"}]`+"\n"), "carrying door"},
+		"a slot with a reset":         {swap(workers, `slots = [{name = "slot0", reset = "/run/reset/slot0"}]`+"\n"), "carrying name, reset"},
+		"slots as tables":             {swap(workers, "[slot.pools.chat-groups.slots.slot0]\nexec = \"/run/box/slot0.sock\"\n"), "incompatible types"},
+		"a slot that is a number":     {swap(workers, "slots = [3]\n"), "a slot is a name"},
+		"no slots":                    {swap(workers, ""), "can lease nothing"},
 		"an exec path on the pool":    {poolBody + "exec = \"/run/box/pool.sock\"\n", "slot.pools.chat-groups.exec"},
 		"a misspelt enabled":          {swap("enabled = true", "enabeld = false"), "slot.pools.chat-groups.enabeld"},
 		"an unknown key under slot":   {poolBody + "[slot.reset]\ncommand = \"/bin/reset\"\n", "slot.reset"},

@@ -13,8 +13,8 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/hierarchy"
-	"github.com/jack-work/figaro/internal/slotpool"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/workerpool"
 	"github.com/jack-work/jkauthz"
 )
 
@@ -73,18 +73,18 @@ func (h *handlers) mintPoolNodes(loaded *config.Loaded) {
 }
 
 func (a *Angelus) mintPlaces(box, node, under string) error {
-	slots := a.Slots
-	if slots == nil {
+	workers := a.Workers
+	if workers == nil {
 		return errors.New("this daemon leases no slots")
 	}
-	minting, minted := slots.mintedInThisCall(box, node)
+	minting, minted := workers.mintedInThisCall(box, node)
 	if !minting {
 		return fmt.Errorf("no mint is under way for lease %s", box)
 	}
 	if !minted {
 		return fmt.Errorf("the mint under way for lease %s did not mint it", box)
 	}
-	lease, ok := slots.leaseOf(box)
+	lease, ok := workers.leaseOf(box)
 	if !ok {
 		return fmt.Errorf("lease %s is not in the ledger", box)
 	}
@@ -124,26 +124,26 @@ func (h *handlers) provisionerBears(serving jkauthz.Subject, born form.Snapshot)
 }
 
 func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation uint64) (leasedMint, error) {
-	slots, backend := h.angelus.Slots, h.angelus.Backend
-	if slots == nil || backend == nil {
+	workers, backend := h.angelus.Workers, h.angelus.Backend
+	if workers == nil || backend == nil {
 		return leasedMint{}, errors.New("mint: this daemon leases no slots")
 	}
 	refused := func(err error) (leasedMint, error) {
 		return leasedMint{}, fmt.Errorf("mint for %s/%s g%d: %w", pool, key, generation, err)
 	}
-	row, ok := slots.Ledger.Find(pool, key, generation)
+	row, ok := workers.Ledger.Find(pool, key, generation)
 	if !ok {
-		return refused(slotpool.ErrNoSuchLease)
+		return refused(workerpool.ErrNoSuchLease)
 	}
-	if row.State != slotpool.Minting && row.State != slotpool.Live {
-		return refused(fmt.Errorf("%w: it is %s", slotpool.ErrWrongState, row.State))
+	if row.State != workerpool.Minting && row.State != workerpool.Live {
+		return refused(fmt.Errorf("%w: it is %s", workerpool.ErrWrongState, row.State))
 	}
 	loaded, ofit := h.settings()
 	poolConfig, ok := loaded.Pool(pool)
 	if !ok {
 		return refused(fmt.Errorf("no pool %q", pool))
 	}
-	box := config.LeasedBoxName(row.Slot, row.Generation)
+	box := config.LeasedBoxName(row.Worker, row.Generation)
 	if _, ok := loaded.Box(box); !ok {
 		return refused(fmt.Errorf("%s is not a leased box", box))
 	}
@@ -158,7 +158,7 @@ func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation 
 	if !ok {
 		return refused(errors.New("the pool has no node to place a lease under; reload the config"))
 	}
-	call, err := slots.beginMint(box)
+	call, err := workers.beginMint(box)
 	if err != nil {
 		return refused(err)
 	}
@@ -184,7 +184,7 @@ func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation 
 	}()
 	record := func(id string) error {
 		call.minted(id)
-		return slots.Ledger.Minted(pool, key, generation, id)
+		return workers.Ledger.Minted(pool, key, generation, id)
 	}
 	by := store.MintedBy(authz.BoxPrincipal(box).String())
 	parent, err := h.birthParent(backend, pinned.patch, pinned.name, true)
@@ -229,6 +229,6 @@ func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation 
 		}
 	}
 	kept = true
-	slog.Info("slot pool: minted", "pool", pool, "slot", row.Slot, "generation", generation, "figaro", out.Figaro, "role", out.Role)
+	slog.Info("slot pool: minted", "pool", pool, "slot", row.Worker, "generation", generation, "figaro", out.Figaro, "role", out.Role)
 	return out, nil
 }

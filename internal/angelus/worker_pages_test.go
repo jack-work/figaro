@@ -11,7 +11,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/authz"
-	"github.com/jack-work/figaro/internal/slotpool"
+	"github.com/jack-work/figaro/internal/workerpool"
 )
 
 const twoPoolConfig = `
@@ -55,28 +55,28 @@ func asBroker() context.Context { return as("user", "broker") }
 func pagesRig(t *testing.T) grantRig {
 	t.Helper()
 	r := newRigConfigured(t, brokerPoolPolicy, twoPoolConfig)
-	slots, err := angelus.OpenSlotPools(t.TempDir(), r.a.Settings)
+	workers, err := angelus.OpenWorkerPools(t.TempDir(), r.a.Settings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.a.Slots = slots
+	r.a.Workers = workers
 	return r
 }
 
-func (r grantRig) pages(t *testing.T, ctx context.Context, params string) ([]rpc.SlotPage, error) {
+func (r grantRig) pages(t *testing.T, ctx context.Context, params string) ([]rpc.WorkerPage, error) {
 	t.Helper()
-	out, err := r.h[rpc.MethodSlotPages](ctx, json.RawMessage(params))
+	out, err := r.h[rpc.MethodWorkerPages](ctx, json.RawMessage(params))
 	if err != nil {
 		return nil, err
 	}
-	resp, ok := out.(rpc.SlotPagesResponse)
+	resp, ok := out.(rpc.WorkerPagesResponse)
 	if !ok {
-		t.Fatalf("%s answered %T", rpc.MethodSlotPages, out)
+		t.Fatalf("%s answered %T", rpc.MethodWorkerPages, out)
 	}
 	return resp.Pages, nil
 }
 
-func pageIDs(pages []rpc.SlotPage) []uint64 {
+func pageIDs(pages []rpc.WorkerPage) []uint64 {
 	ids := make([]uint64, 0, len(pages))
 	for _, p := range pages {
 		ids = append(ids, p.ID)
@@ -89,12 +89,12 @@ func pageIDs(pages []rpc.SlotPage) []uint64 {
 // forward is not lost behind a later one.
 func TestAPageIsAnsweredOnEveryCallUntilItsIDIsNamed(t *testing.T) {
 	r := pagesRig(t)
-	for _, kind := range []slotpool.PageKind{slotpool.PurgeFailed, slotpool.SuccessionFailed, slotpool.LeaseClosed} {
-		if _, err := r.a.Slots.Ledger.Page("groups", "chat:10", 1, kind, "ab12"); err != nil {
+	for _, kind := range []workerpool.PageKind{workerpool.PurgeFailed, workerpool.SuccessionFailed, workerpool.LeaseClosed} {
+		if _, err := r.a.Workers.Ledger.Page("groups", "chat:10", 1, kind, "ab12"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := r.a.Slots.Ledger.Page("others", "chat:77", 1, slotpool.PurgeFailed, "cd34"); err != nil {
+	if _, err := r.a.Workers.Ledger.Page("others", "chat:77", 1, workerpool.PurgeFailed, "cd34"); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
@@ -137,10 +137,10 @@ func TestAPageIsAnsweredOnEveryCallUntilItsIDIsNamed(t *testing.T) {
 // a confused caller could send; none may read or acknowledge a page.
 func TestPagesRefusesEveryCallItWasNotBuiltFor(t *testing.T) {
 	r := pagesRig(t)
-	if _, err := r.a.Slots.Ledger.Page("groups", "chat:10", 1, slotpool.PurgeFailed, "ab12"); err != nil {
+	if _, err := r.a.Workers.Ledger.Page("groups", "chat:10", 1, workerpool.PurgeFailed, "ab12"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.a.Slots.Ledger.Page("others", "chat:77", 1, slotpool.PurgeFailed, "cd34"); err != nil {
+	if _, err := r.a.Workers.Ledger.Page("others", "chat:77", 1, workerpool.PurgeFailed, "cd34"); err != nil {
 		t.Fatal(err)
 	}
 	throughNodeDoor := func(ctx context.Context) context.Context { return authz.WithDoor(ctx, authz.DoorNode) }
@@ -196,7 +196,7 @@ func TestADaemonThatLeasesNothingRefusesPagesForItsOwner(t *testing.T) {
 func TestPagesWaitsInSecondsForTheNextPage(t *testing.T) {
 	r := pagesRig(t)
 	type answer struct {
-		pages []rpc.SlotPage
+		pages []rpc.WorkerPage
 		err   error
 	}
 	done := make(chan answer, 1)
@@ -209,7 +209,7 @@ func TestPagesWaitsInSecondsForTheNextPage(t *testing.T) {
 		t.Fatalf("with nothing held a waiting call answered at once: %v %v", a.pages, a.err)
 	case <-time.After(300 * time.Millisecond):
 	}
-	if _, err := r.a.Slots.Ledger.Page("groups", "chat:10", 1, slotpool.SuccessionBound, "ab12"); err != nil {
+	if _, err := r.a.Workers.Ledger.Page("groups", "chat:10", 1, workerpool.SuccessionBound, "ab12"); err != nil {
 		t.Fatal(err)
 	}
 	select {

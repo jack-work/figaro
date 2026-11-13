@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/internal/slotpool"
+	"github.com/jack-work/figaro/internal/workerpool"
 )
 
 // A release's purge goes through the kill, which applies the delete set
@@ -41,7 +41,7 @@ func TestAReleasePurgesNothingWhenItsDeleteSetChangesUnderIt(t *testing.T) {
 			t.Errorf("%s went with a refused purge", name)
 		}
 	}
-	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); row.State != slotpool.Releasing {
+	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Releasing {
 		t.Errorf("the row is %s, want releasing", row.State)
 	}
 	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err != nil {

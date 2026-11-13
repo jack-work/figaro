@@ -1,4 +1,4 @@
-package slotpool
+package workerpool
 
 import (
 	"context"
@@ -152,7 +152,7 @@ func TestARou2LeaseOpensOnceClosesForGoodAndNeverReopens(t *testing.T) {
 }
 
 // Every answer the client does not know is a failure: a release that took a
-// routing 404 or a 5xx for a close would free a slot whose lease still
+// routing 404 or a 5xx for a close would free a worker whose lease still
 // spends.
 func TestARou2AnswerThatIsNoLeaseAnswerIsAFailure(t *testing.T) {
 	fake, _, rou2 := rou2Rig(t)

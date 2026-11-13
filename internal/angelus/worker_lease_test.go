@@ -18,7 +18,7 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/slotpool"
+	"github.com/jack-work/figaro/internal/workerpool"
 )
 
 const leasingConfig = `
@@ -82,12 +82,12 @@ func leasingRigUnder(t *testing.T, policy string) grantRig {
 		t.Fatal(err)
 	}
 	r.writeLeasedOutfit(t, leasedOutfit)
-	slots, err := angelus.OpenSlotPools(t.TempDir(), r.a.Settings)
+	workers, err := angelus.OpenWorkerPools(t.TempDir(), r.a.Settings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.a.Slots = slots
-	r.a.Policies.SetLeases(slots)
+	r.a.Workers = workers
+	r.a.Policies.SetLeases(workers)
 	r.a.Policies.SetPoolDaemon(true)
 	installRou2(r)
 	return r
@@ -103,26 +103,26 @@ func (r grantRig) writeLeasedOutfit(t *testing.T, body string) {
 	}
 }
 
-func (r grantRig) lease(ctx context.Context, params string) (rpc.SlotLeaseResponse, error) {
-	out, err := r.h[rpc.MethodSlotLease](ctx, json.RawMessage(params))
+func (r grantRig) lease(ctx context.Context, params string) (rpc.WorkerLeaseResponse, error) {
+	out, err := r.h[rpc.MethodWorkerLease](ctx, json.RawMessage(params))
 	if err != nil {
-		return rpc.SlotLeaseResponse{}, err
+		return rpc.WorkerLeaseResponse{}, err
 	}
-	return out.(rpc.SlotLeaseResponse), nil
+	return out.(rpc.WorkerLeaseResponse), nil
 }
 
 func (r grantRig) release(ctx context.Context, params string) error {
-	_, err := r.h[rpc.MethodSlotRelease](ctx, json.RawMessage(params))
+	_, err := r.h[rpc.MethodWorkerRelease](ctx, json.RawMessage(params))
 	return err
 }
 
-func slotRefusal(t *testing.T, err error) rpc.SlotRefusal {
+func workerRefusal(t *testing.T, err error) rpc.WorkerRefusal {
 	t.Helper()
 	var coded *jkrpc.Error
-	if !errors.As(err, &coded) || coded.Code != rpc.ErrCodeSlot {
-		t.Fatalf("want a slot refusal (%d), got %v", rpc.ErrCodeSlot, err)
+	if !errors.As(err, &coded) || coded.Code != rpc.ErrCodeWorker {
+		t.Fatalf("want a slot refusal (%d), got %v", rpc.ErrCodeWorker, err)
 	}
-	var out rpc.SlotRefusal
+	var out rpc.WorkerRefusal
 	if err := json.Unmarshal(coded.Data, &out); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func slotRefusal(t *testing.T, err error) rpc.SlotRefusal {
 }
 
 // The lease, through the guard, as broker: a box of the next generation
-// of a free slot, a figaro in it, its role, a bearer; the same answer
+// of a free worker, a figaro in it, its role, a bearer; the same answer
 // again for the same key; the pool's bound; and nothing for a caller that
 // does not hold the key or the pool.
 func TestALeaseAnswersItsBoxFigaroRoleAndBearerAndTheSameAgain(t *testing.T) {
@@ -151,8 +151,8 @@ func TestALeaseAnswersItsBoxFigaroRoleAndBearerAndTheSameAgain(t *testing.T) {
 	if raw, err := json.Marshal(first.SayBearer); err != nil || len(first.SayBearer) != 64 || strings.Trim(first.SayBearer, "0123456789abcdef") != "" {
 		t.Errorf("the say bearer is %s, want 256 bits in hex", raw)
 	}
-	row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1)
-	if row.State != slotpool.Live || row.Holder != "user:broker" || row.SayBearer != first.SayBearer {
+	row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1)
+	if row.State != workerpool.Live || row.Holder != "user:broker" || row.SayBearer != first.SayBearer {
 		t.Errorf("the ledger row is %+v, want it live, broker's, with the bearer", row.WithoutBearer())
 	}
 	if boxes := r.a.Settings.LeasedBoxes(); !slices.Equal(boxes, []string{"slot0-g1"}) {
@@ -168,7 +168,7 @@ func TestALeaseAnswersItsBoxFigaroRoleAndBearerAndTheSameAgain(t *testing.T) {
 		t.Error("the second answer minted something")
 	}
 
-	// With a slot still free, so that each of these is refused for what it is.
+	// With a worker still free, so that each of these is refused for what it is.
 	for why, params := range map[string]string{
 		"an outfit beside the key": `{"pool":"groups","key":"chat:13","outfits":["mock"]}`,
 		"a key outside the syntax": `{"pool":"groups","key":"chat 13"}`,
@@ -178,11 +178,11 @@ func TestALeaseAnswersItsBoxFigaroRoleAndBearerAndTheSameAgain(t *testing.T) {
 		resp, err := r.lease(asBroker(), params)
 		if err == nil {
 			t.Errorf("%s: leased %+v", why, resp)
-		} else if strings.Contains(err.Error(), rpc.SlotPoolEmpty) || strings.Contains(err.Error(), "no free slot") {
+		} else if strings.Contains(err.Error(), rpc.WorkerPoolEmpty) || strings.Contains(err.Error(), "no free slot") {
 			t.Errorf("%s: refused only for want of a slot: %v", why, err)
 		}
 	}
-	if _, err := r.lease(as("user", "rival"), `{"pool":"groups","key":"chat:10"}`); err == nil || slotRefusal(t, err).Reason != rpc.SlotNoSuchLease {
+	if _, err := r.lease(as("user", "rival"), `{"pool":"groups","key":"chat:10"}`); err == nil || workerRefusal(t, err).Reason != rpc.WorkerNoSuchLease {
 		t.Errorf("another holder of the pool asked for broker's key: %v", err)
 	}
 	second, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:11"}`)
@@ -193,22 +193,22 @@ func TestALeaseAnswersItsBoxFigaroRoleAndBearerAndTheSameAgain(t *testing.T) {
 	if err == nil {
 		t.Fatal("a third key was leased from a pool of two slots")
 	}
-	if got, want := slotRefusal(t, err), (rpc.SlotRefusal{Reason: rpc.SlotPoolEmpty, Pool: "groups", Slots: 2, Leased: 2}); got != want {
+	if got, want := workerRefusal(t, err), (rpc.WorkerRefusal{Reason: rpc.WorkerPoolEmpty, Pool: "groups", Workers: 2, Leased: 2}); got != want {
 		t.Errorf("the empty pool answers %+v, want %+v", got, want)
 	}
 
-	if _, err := r.lease(asBroker(), `{"pool":"closed","key":"chat:13"}`); err == nil || slotRefusal(t, err).Reason != rpc.SlotPoolDisabled {
+	if _, err := r.lease(asBroker(), `{"pool":"closed","key":"chat:13"}`); err == nil || workerRefusal(t, err).Reason != rpc.WorkerPoolDisabled {
 		t.Errorf("a disabled pool leased: %v", err)
 	}
-	if n := len(r.a.Slots.Ledger.Leases()); n != 2 {
+	if n := len(r.a.Workers.Ledger.Leases()); n != 2 {
 		t.Errorf("the ledger holds %d rows after the refusals, want the two leases", n)
 	}
 }
 
 // A lease whose mint fails goes through the release path before the
 // caller hears of it: nothing of it is in the store or the box table, its
-// row is released, and the slot is offered again at the next generation.
-func TestALeaseThatCannotMintLeavesNothingAndItsSlotFree(t *testing.T) {
+// row is released, and the worker is offered again at the next generation.
+func TestALeaseThatCannotMintLeavesNothingAndItsWorkerFree(t *testing.T) {
 	r := leasingRig(t)
 	path := filepath.Join(filepath.Dir(r.policy), "outfits", "leased.toml")
 	edit := func(body string) {
@@ -231,7 +231,7 @@ func TestALeaseThatCannotMintLeavesNothingAndItsSlotFree(t *testing.T) {
 	if boxes := r.a.Settings.LeasedBoxes(); len(boxes) != 0 {
 		t.Errorf("the failed lease left the boxes %v", boxes)
 	}
-	if row, ok := r.a.Slots.Ledger.Find("groups", "chat:10", 1); !ok || row.State != slotpool.Released {
+	if row, ok := r.a.Workers.Ledger.Find("groups", "chat:10", 1); !ok || row.State != workerpool.Released {
 		t.Errorf("the failed lease's row is %+v, want it released", row)
 	}
 	edit(leasedOutfit)
@@ -242,10 +242,10 @@ func TestALeaseThatCannotMintLeavesNothingAndItsSlotFree(t *testing.T) {
 }
 
 // Release deletes what the lease minted and whatever else carries its
-// box, takes the box out of the table and frees the slot. It needs the
+// box, takes the box out of the table and frees the worker. It needs the
 // generation and the holder, answers a second time as the first, and
 // touches nothing of another lease or of the owner.
-func TestAReleaseDeletesEverythingOfTheLeaseAndFreesItsSlot(t *testing.T) {
+func TestAReleaseDeletesEverythingOfTheLeaseAndFreesItsWorker(t *testing.T) {
 	r := leasingRig(t)
 	lease, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
 	if err != nil {
@@ -300,7 +300,7 @@ func TestAReleaseDeletesEverythingOfTheLeaseAndFreesItsSlot(t *testing.T) {
 			t.Errorf("the release deleted %s", name)
 		}
 	}
-	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); row.State != slotpool.Released || row.SayBearer != "" || len(row.Minted) != 0 {
+	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Released || row.SayBearer != "" || len(row.Minted) != 0 {
 		t.Errorf("the released row is %+v", row)
 	}
 	if boxes := r.a.Settings.LeasedBoxes(); !slices.Equal(boxes, []string{other.Box}) {
@@ -331,14 +331,14 @@ func (r grantRig) formIn(t *testing.T, box string) string {
 // the last run left minting is released, with what it had minted. A node
 // that carries a leased box's name and that no lease holds, which is what
 // a crash between a birth and its ledger write leaves, is purged. A live
-// lease, the pools' nodes and a form in a box that is no slot's keep.
+// lease, the pools' nodes and a form in a box that is no worker's keep.
 func TestAStartReleasesUnfinishedLeasesAndPurgesWhatNoLeaseHolds(t *testing.T) {
 	r := leasingRig(t)
 	live, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.a.Slots.Ledger.Begin("groups", "slot1", "chat:11", 1, "user:broker"); err != nil {
+	if err := r.a.Workers.Ledger.Begin("groups", "slot1", "chat:11", 1, "user:broker"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.a.Settings.LeaseBox("groups", "slot1", 1); err != nil {
@@ -354,7 +354,7 @@ func TestAStartReleasesUnfinishedLeasesAndPurgesWhatNoLeaseHolds(t *testing.T) {
 	inLive := r.formIn(t, live.Box)
 	node, _ := r.hs.PoolNode("groups")
 
-	r.hs.RecoverSlotPools(context.Background())
+	r.hs.RecoverWorkerPools(context.Background())
 
 	for name, id := range map[string]string{"the unfinished lease's figaro": figaro, "its role": role, "a form in its box that its row does not name": unnamed, "a form in a box no lease holds": orphan} {
 		if ariaExists(r.a, id) {
@@ -366,10 +366,10 @@ func TestAStartReleasesUnfinishedLeasesAndPurgesWhatNoLeaseHolds(t *testing.T) {
 			t.Errorf("the start deleted %s", name)
 		}
 	}
-	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:11", 1); row.State != slotpool.Released {
+	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:11", 1); row.State != workerpool.Released {
 		t.Errorf("the unfinished lease's row is %s, want released", row.State)
 	}
-	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); row.State != slotpool.Live {
+	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Live {
 		t.Errorf("the live lease's row is %s", row.State)
 	}
 	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:12"}`); err != nil || next.Box != "slot1-g2" {
@@ -402,7 +402,7 @@ func TestAStartLeavesAnOrphanWhoseDeleteWouldTakeWhatIsNoOrphan(t *testing.T) {
 	old := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, nil)))
 	t.Cleanup(func() { slog.SetDefault(old) })
-	r.hs.RecoverSlotPools(context.Background())
+	r.hs.RecoverWorkerPools(context.Background())
 	slog.SetDefault(old)
 
 	if !ariaExists(r.a, unboxed) {

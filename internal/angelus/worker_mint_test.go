@@ -40,13 +40,13 @@ func mintRigWithNoDrawnTree(t *testing.T) (grantRig, string) {
 	if _, err := r.h[rpc.MethodConfigure](asOwner(), json.RawMessage(`{}`)); err != nil {
 		t.Fatal(err)
 	}
-	slots, err := angelus.OpenSlotPools(t.TempDir(), r.a.Settings)
+	workers, err := angelus.OpenWorkerPools(t.TempDir(), r.a.Settings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.a.Slots = slots
-	r.a.Policies.SetLeases(slots)
-	if err := slots.Ledger.Begin("groups", "slot0", "chat:10", 1, brokerHolder); err != nil {
+	r.a.Workers = workers
+	r.a.Policies.SetLeases(workers)
+	if err := workers.Ledger.Begin("groups", "slot0", "chat:10", 1, brokerHolder); err != nil {
 		t.Fatal(err)
 	}
 	box, err := r.a.Settings.LeaseBox("groups", "slot0", 1)
@@ -143,7 +143,7 @@ func TestALeaseMintsOneFigaroAndItsRoleInItsBoxUnderItsPoolsNode(t *testing.T) {
 	if n, ok := r.backend.Node(figaro); !ok || n.Kind != store.KindConversation {
 		t.Errorf("the leased figaro is a %+v, want a conversation", n)
 	}
-	row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1)
+	row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1)
 	if !slices.Equal(row.Minted, []string{figaro, role}) {
 		t.Errorf("the ledger row names %v, want the figaro then the role", row.Minted)
 	}
@@ -167,7 +167,7 @@ func TestTheMintBearsNothingThePolicyDoesNotGrantItsLease(t *testing.T) {
 		if after := r.nodeIDs(); !slices.Equal(after, before) {
 			t.Errorf("%s: the store went from %v to %v", why, before, after)
 		}
-		if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); len(row.Minted) != 0 {
+		if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); len(row.Minted) != 0 {
 			t.Errorf("%s: the ledger row names %v", why, row.Minted)
 		}
 	}
@@ -178,14 +178,14 @@ func TestTheMintBearsNothingThePolicyDoesNotGrantItsLease(t *testing.T) {
 	if err != nil && !strings.Contains(err.Error(), "create on sandbox:slot0-g1") {
 		t.Errorf("the refusal is not the policy's answer on create: %v", err)
 	}
-	r.a.Policies.SetLeases(r.a.Slots)
+	r.a.Policies.SetLeases(r.a.Workers)
 
 	_, _, err = r.hs.MintLeased(asBroker(), "groups", "chat:11", 1)
 	unborn("a key with no row", err)
 	_, _, err = r.hs.MintLeased(asBroker(), "others", "chat:10", 1)
 	unborn("the row's key in another pool", err)
 
-	if _, err := r.a.Slots.Ledger.Release("groups", "chat:10", 1); err != nil {
+	if _, err := r.a.Workers.Ledger.Release("groups", "chat:10", 1); err != nil {
 		t.Fatal(err)
 	}
 	_, _, err = r.hs.MintLeased(asBroker(), "groups", "chat:10", 1)
@@ -227,7 +227,7 @@ func TestTheProvisionerPlacesOnlyWhatItsMintJustBoreAndOnlyUnderItsPool(t *testi
 	}
 
 	stays("no mint under way", fresh, groups)
-	minted, done, err := r.a.Slots.BeginMint(box)
+	minted, done, err := r.a.Workers.BeginMint(box)
 	if err != nil {
 		t.Fatal(err)
 	}
