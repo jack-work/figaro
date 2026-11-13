@@ -10,14 +10,14 @@ import (
 const poolBody = `[authz]
 policy = "policy.toml"
 
-[slot.pools.chat-groups]
+[worker.pools.chat-groups]
 enabled = true
 outfit = "broker-group"
 provider = "rou2"
 rou2_lease_class = "chat-group"
 rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/groups/say"
-slots = ["slot0", "slot1"]
+workers = ["slot0", "slot1"]
 `
 
 func loadBody(t *testing.T, body string, providerFiles ...string) (*Loaded, error) {
@@ -105,17 +105,17 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 		}
 		return strings.Replace(poolBody, old, new, 1)
 	}
-	workers := `slots = ["slot0", "slot1"]` + "\n"
+	workers := `workers = ["slot0", "slot1"]` + "\n"
 	for name, c := range map[string]struct{ body, want string }{
-		"a slot with an exec path":    {swap(workers, `slots = ["slot0", {name = "slot1", exec = "/run/box/slot1.sock"}]`+"\n"), "carrying exec"},
-		"a slot with a door":          {swap(workers, `slots = [{name = "slot0", door = "/run/door/slot0.sock"}]`+"\n"), "carrying door"},
-		"a slot with a reset":         {swap(workers, `slots = [{name = "slot0", reset = "/run/reset/slot0"}]`+"\n"), "carrying name, reset"},
-		"slots as tables":             {swap(workers, "[slot.pools.chat-groups.slots.slot0]\nexec = \"/run/box/slot0.sock\"\n"), "incompatible types"},
-		"a slot that is a number":     {swap(workers, "slots = [3]\n"), "a slot is a name"},
+		"a slot with an exec path":    {swap(workers, `workers = ["slot0", {name = "slot1", exec = "/run/box/slot1.sock"}]`+"\n"), "carrying exec"},
+		"a slot with a door":          {swap(workers, `workers = [{name = "slot0", door = "/run/door/slot0.sock"}]`+"\n"), "carrying door"},
+		"a slot with a reset":         {swap(workers, `workers = [{name = "slot0", reset = "/run/reset/slot0"}]`+"\n"), "carrying name, reset"},
+		"slots as tables":             {swap(workers, "[worker.pools.chat-groups.workers.slot0]\nexec = \"/run/box/slot0.sock\"\n"), "incompatible types"},
+		"a slot that is a number":     {swap(workers, "workers = [3]\n"), "a slot is a name"},
 		"no slots":                    {swap(workers, ""), "can lease nothing"},
-		"an exec path on the pool":    {poolBody + "exec = \"/run/box/pool.sock\"\n", "slot.pools.chat-groups.exec"},
-		"a misspelt enabled":          {swap("enabled = true", "enabeld = false"), "slot.pools.chat-groups.enabeld"},
-		"an unknown key under slot":   {poolBody + "[slot.reset]\ncommand = \"/bin/reset\"\n", "slot.reset"},
+		"an exec path on the pool":    {poolBody + "exec = \"/run/box/pool.sock\"\n", "worker.pools.chat-groups.exec"},
+		"a misspelt enabled":          {swap("enabled = true", "enabeld = false"), "worker.pools.chat-groups.enabeld"},
+		"an unknown key under slot":   {poolBody + "[worker.reset]\ncommand = \"/bin/reset\"\n", "worker.reset"},
 		"no outfit":                   {swap("outfit = \"broker-group\"\n", ""), "outfit"},
 		"the outfit named default":    {swap(`"broker-group"`, `"default"`), "daemon's own figaros"},
 		"the config's default outfit": {"default_outfit = \"house\"\n" + swap(`"broker-group"`, `"house"`), "daemon's own figaros"},
@@ -125,8 +125,8 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 		"a rou2 url with a path":      {swap("http://127.0.0.1:9110", "http://127.0.0.1:9110/u/explabs/v1"), "rou2_url"},
 		"a rou2 url with a user":      {swap("http://127.0.0.1:9110", "http://u:p@127.0.0.1:9110"), "rou2_url"},
 		"a rou2 url on a file":        {swap("http://127.0.0.1:9110", "file:///run/rou2"), "rou2_url"},
-		"a route of broker's":         {poolBody + "page_route = \"admin\"\n", "slot.pools.chat-groups.page_route: not a key figaro knows"},
-		"a figaro to page":            {poolBody + "page = \"@owner\"\n", "slot.pools.chat-groups.page: not a key figaro knows"},
+		"a route of broker's":         {poolBody + "page_route = \"admin\"\n", "worker.pools.chat-groups.page_route: not a key figaro knows"},
+		"a figaro to page":            {poolBody + "page = \"@owner\"\n", "worker.pools.chat-groups.page: not a key figaro knows"},
 		"no say url":                  {swap("say_url = \"https://broker.example/groups/say\"\n", ""), "say_url"},
 		"a say url with no scheme":    {swap("https://broker.example/groups/say", "broker.example/groups/say"), "say_url"},
 		"a say url with a password":   {swap("https://broker.example", "https://u:p@broker.example"), "say_url"},
@@ -153,8 +153,8 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 		"an empty slot name":          {swap(`"slot1"`, `""`), "slot name"},
 		"a slot named self":           {swap(`"slot1"`, `"self"`), "reserved"},
 		"one slot twice":              {swap(`"slot1"`, `"slot0"`), "also a slot of"},
-		"one slot in two pools":       {poolBody + strings.Replace(poolBody[strings.Index(poolBody, "[slot.pools"):], "chat-groups", "other", 1), "also a slot of"},
-		"a pool name with a slash":    {swap("[slot.pools.chat-groups]", `[slot.pools."chat/groups"]`), "pool name"},
+		"one slot in two pools":       {poolBody + strings.Replace(poolBody[strings.Index(poolBody, "[worker.pools"):], "chat-groups", "other", 1), "also a slot of"},
+		"a pool name with a slash":    {swap("[worker.pools.chat-groups]", `[worker.pools."chat/groups"]`), "pool name"},
 		"negative successions":        {poolBody + "successions_per_day = -1\n", "successions_per_day"},
 		"a negative deliver cap":      {poolBody + "deliver_max_bytes = -1\n", "deliver_max_bytes"},
 		"a negative say bound":        {poolBody + "say_per_minute = -1\n", "say_per_minute"},
@@ -261,7 +261,7 @@ func TestAPoolDaemonHoldsOnlyTheServiceTokenOfItsPoolsProvider(t *testing.T) {
 // Each thing alone, beside an otherwise good pool. The reason is checked so a
 // snippet that fails some other validation cannot pass for the fence.
 func TestAPoolDaemonRefusesWhatItCannotHold(t *testing.T) {
-	const beside = "beside [slot.pools]"
+	const beside = "beside [worker.pools]"
 	for name, c := range map[string]struct {
 		body      string
 		providers []string
@@ -276,7 +276,7 @@ func TestAPoolDaemonRefusesWhatItCannotHold(t *testing.T) {
 		"a uid map":         {strings.Replace(poolBody, "policy = \"policy.toml\"\n", "policy = \"policy.toml\"\n[authz.peercred.uids]\n1001 = \"user:guest\"\n", 1), nil, "[authz.peercred] " + beside},
 		"no trunks":         {"trunks = false\n" + poolBody, nil, "trunks = false " + beside},
 		"a debug level":     {"[telemetry]\nlevel = \"Debug\"\n" + poolBody, nil, "level"},
-		"no policy named":   {poolBody[strings.Index(poolBody, "[slot.pools"):], nil, "never falls back to the default policy"},
+		"no policy named":   {poolBody[strings.Index(poolBody, "[worker.pools"):], nil, "never falls back to the default policy"},
 		"a stray provider":  {poolBody, []string{"rou2", "anthropic"}, "providers/anthropic.toml " + beside},
 		"only a stray file": {poolBody, []string{"copilot"}, "providers/copilot.toml " + beside},
 	} {
