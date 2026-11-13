@@ -1,6 +1,7 @@
 package xwal
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -32,10 +33,6 @@ func clearUnclean(root string) error {
 	return disk.SyncDir(root)
 }
 
-// repairCoherentCuts trims every live leaf lineage to a coherent cut: a
-// related-channel record whose main-LT referent did not survive the
-// crash is dropped, so no record references a missing main entry and no
-// reducible watermark runs ahead of main. Idempotent.
 func repairCoherentCuts(t *Trunks) error {
 	man, err := loadOrCreateManifest(t.root, t.cfg)
 	if err != nil {
@@ -45,9 +42,17 @@ func repairCoherentCuts(t *Trunks) error {
 	if err != nil {
 		return err
 	}
+	keyed, err := keyedChannelNodes(t.root, man)
+	if err != nil {
+		return err
+	}
 	kids := t.idx.ChildIndex()
 	for key := range t.idx.All() {
 		if len(kids[key]) > 0 {
+			continue
+		}
+		suspects := leafSuspects(t.root, keyed, key, codec)
+		if len(suspects) == 0 {
 			continue
 		}
 		mainTail, err := nodeMainTail(t.irDir(key), codec)
@@ -58,29 +63,90 @@ func repairCoherentCuts(t *Trunks) error {
 		if err != nil {
 			return fmt.Errorf("xwal: repair leaf %q: %w", key, err)
 		}
-		for _, mc := range man.Channels {
-			if mc.Name == man.Main {
-				continue
-			}
-			dir := filepath.Join(t.root, mc.Name, fsName(key))
-			if !pathExists(dir) {
-				continue
-			}
-			trimmed, err := trimChannelNode(dir, codec, mc.Kind == ChannelReducible.String(), mainTail)
+		for _, s := range suspects {
+			trimmed, err := trimChannelNode(s.dir, codec, s.reducible, mainTail)
 			if errors.Is(err, segment.ErrCorrupt) {
 				quarantine(key, err)
 				break
 			}
 			if err != nil {
-				return fmt.Errorf("xwal: repair channel %q leaf %q: %w", mc.Name, key, err)
+				return fmt.Errorf("xwal: repair channel %q leaf %q: %w", s.channel, key, err)
 			}
 			if trimmed > 0 {
 				slog.Warn("xwal: trimmed incoherent channel tail",
-					"channel", mc.Name, "leaf", key, "records", trimmed, "mainTail", mainTail)
+					"channel", s.channel, "leaf", key, "records", trimmed, "mainTail", mainTail)
 			}
 		}
 	}
 	return nil
+}
+
+type keyedChannel struct {
+	name      string
+	reducible bool
+	nodes     map[string]bool
+}
+
+type suspectChannel struct {
+	channel   string
+	dir       string
+	reducible bool
+}
+
+func keyedChannelNodes(root string, man manifest) ([]keyedChannel, error) {
+	var out []keyedChannel
+	for _, mc := range man.Channels {
+		if mc.Name == man.Main || mc.Unkeyed {
+			continue
+		}
+		entries, err := os.ReadDir(filepath.Join(root, mc.Name))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("xwal: repair channel %q: %w", mc.Name, err)
+		}
+		nodes := make(map[string]bool, len(entries))
+		for _, e := range entries {
+			nodes[e.Name()] = true
+		}
+		out = append(out, keyedChannel{name: mc.Name, reducible: mc.Kind == ChannelReducible.String(), nodes: nodes})
+	}
+	return out, nil
+}
+
+func leafSuspects(root string, keyed []keyedChannel, key string, codec segment.SegmentCodec) []suspectChannel {
+	name := fsName(key)
+	var out []suspectChannel
+	for _, kc := range keyed {
+		dir := filepath.Join(root, kc.name, name)
+		if name == "" {
+			if !pathExists(dir) {
+				continue
+			}
+		} else if !kc.nodes[name] {
+			continue
+		}
+		if !holdsFrames(dir, codec) {
+			continue
+		}
+		out = append(out, suspectChannel{channel: kc.name, dir: dir, reducible: kc.reducible})
+	}
+	return out
+}
+
+func holdsFrames(dir string, codec segment.SegmentCodec) bool {
+	bases, err := segmentBases(dir, codec)
+	if err != nil {
+		return true
+	}
+	for _, base := range bases {
+		fi, err := os.Stat(filepath.Join(dir, segFileName(base, codec)))
+		if err != nil || fi.Size() > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func quarantine(leaf string, err error) {
@@ -142,15 +208,26 @@ func segmentBases(dir string, codec segment.SegmentCodec) ([]uint64, error) {
 	return bases, nil
 }
 
-// nodeMainTail is the last complete main-channel entry index in a node
-// dir, or forkBase-1 for an empty fork node, or 0 for an empty root.
 func nodeMainTail(dir string, codec segment.SegmentCodec) (uint64, error) {
 	bases, err := segmentBases(dir, codec)
 	if err != nil {
 		return 0, err
 	}
 	for i := len(bases) - 1; i >= 0; i-- {
-		spans, err := scanSegmentFrames(filepath.Join(dir, segFileName(bases[i], codec)), codec)
+		path := filepath.Join(dir, segFileName(bases[i], codec))
+		if readsTailOnly(codec) {
+			idx, found, stamped, err := lastFrameIdx(path, codec)
+			if err != nil {
+				return 0, err
+			}
+			if !found {
+				continue
+			}
+			if stamped && idx >= bases[i] {
+				return idx, nil
+			}
+		}
+		spans, err := scanSegmentFrames(path, codec)
 		if err != nil {
 			return 0, err
 		}
@@ -172,11 +249,51 @@ func segFileName(base uint64, codec segment.SegmentCodec) string {
 	return fmt.Sprintf("%020d%s", base, codec.FileExt())
 }
 
-// trimChannelNode drops the suffix whose records reference main-LTs beyond
-// mainTail (mainTail+1 for reducible channels, whose one-ahead patch survives
-// a crash by contract). Records are main-LT non-decreasing, so the violating
-// region is a contiguous tail.
 func trimChannelNode(dir string, codec segment.SegmentCodec, headered bool, mainTail uint64) (int, error) {
+	if !readsTailOnly(codec) {
+		return trimChannelNodeScan(dir, codec, headered, mainTail)
+	}
+	if headered {
+		mainTail++
+	}
+	bases, err := segmentBases(dir, codec)
+	if err != nil {
+		return 0, err
+	}
+	trimmed := 0
+	for i := len(bases) - 1; i >= 0; i-- {
+		path := filepath.Join(dir, segFileName(bases[i], codec))
+		cut, n, sawEntry, allGone, err := judgeTail(path, codec, headered, mainTail)
+		if err != nil {
+			return trimmed, err
+		}
+		if n == 0 {
+			if sawEntry {
+				return trimmed, nil
+			}
+			continue
+		}
+		trimmed += n
+		if allGone && !headered && i > 0 {
+			if err := os.Remove(path); err != nil {
+				return trimmed, err
+			}
+			if err := disk.SyncDir(dir); err != nil {
+				return trimmed, err
+			}
+			continue
+		}
+		if err := truncateFileSynced(path, cut); err != nil {
+			return trimmed, err
+		}
+		if !allGone {
+			return trimmed, nil
+		}
+	}
+	return trimmed, nil
+}
+
+func trimChannelNodeScan(dir string, codec segment.SegmentCodec, headered bool, mainTail uint64) (int, error) {
 	if headered {
 		mainTail++
 	}
@@ -250,4 +367,178 @@ func truncateFileSynced(path string, size int64) error {
 		return err
 	}
 	return f.Close()
+}
+
+var repairReadsTailOnly = true
+
+func readsTailOnly(codec segment.SegmentCodec) bool {
+	_, jsonl := codec.(segment.JSONLCodec)
+	return repairReadsTailOnly && jsonl
+}
+
+func lastFrameIdx(path string, codec segment.SegmentCodec) (idx uint64, found, stamped bool, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, false, false, err
+	}
+	defer f.Close()
+	lines, err := newBackwardLines(f)
+	if err != nil {
+		return 0, false, false, fmt.Errorf("%s: %w", path, err)
+	}
+	for {
+		_, line, ok, err := lines.prev()
+		if err != nil {
+			return 0, false, false, fmt.Errorf("%s: %w", path, err)
+		}
+		if !ok {
+			return 0, false, false, nil
+		}
+		idx, stamped := canonicalLineIdx(line)
+		if _, _, err := codec.ReadFrame(bytes.NewReader(line), 0, int64(len(line))); err != nil {
+			continue
+		}
+		return idx, true, stamped, nil
+	}
+}
+
+func judgeTail(path string, codec segment.SegmentCodec, headered bool, mainTail uint64) (cut int64, trimmed int, sawEntry, allGone bool, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0, false, false, err
+	}
+	defer f.Close()
+	lines, err := newBackwardLines(f)
+	if err != nil {
+		return 0, 0, false, false, fmt.Errorf("%s: %w", path, err)
+	}
+	sawValid := false
+	for {
+		off, line, ok, err := lines.prev()
+		if err != nil {
+			return 0, 0, false, false, fmt.Errorf("%s: %w", path, err)
+		}
+		if !ok {
+			return cut, trimmed, sawEntry, true, nil
+		}
+		payload, _, err := codec.ReadFrame(bytes.NewReader(line), 0, int64(len(line)))
+		if err != nil {
+			if sawValid {
+				return 0, 0, false, false, fmt.Errorf("%s: %w", path, &segment.CorruptFrameError{Offset: off})
+			}
+			continue
+		}
+		sawValid = true
+		if headered && off == 0 {
+			return cut, trimmed, sawEntry, true, nil
+		}
+		sawEntry = true
+		m, err := decodeMainLT(payload, verifiesReads(codec))
+		if err != nil {
+			return 0, 0, false, false, err
+		}
+		if m <= mainTail {
+			return cut, trimmed, sawEntry, false, nil
+		}
+		trimmed++
+		cut = off
+	}
+}
+
+const (
+	canonicalHashPrefix = `{"_hash":"`
+	canonicalIdxPrefix  = `","_idx":`
+)
+
+func canonicalLineIdx(line []byte) (uint64, bool) {
+	if !bytes.HasPrefix(line, []byte(canonicalHashPrefix)) {
+		return 0, false
+	}
+	rest := line[len(canonicalHashPrefix):]
+	i := bytes.Index(rest, []byte(canonicalIdxPrefix))
+	if i <= 0 {
+		return 0, false
+	}
+	for _, c := range rest[:i] {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return 0, false
+		}
+	}
+	digits := rest[i+len(canonicalIdxPrefix):]
+	n := 0
+	for n < len(digits) && digits[n] >= '0' && digits[n] <= '9' {
+		n++
+	}
+	if n == 0 || n == len(digits) || (digits[n] != ',' && digits[n] != '}') {
+		return 0, false
+	}
+	idx, err := strconv.ParseUint(string(digits[:n]), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return idx, true
+}
+
+const backwardChunk = 64 << 10
+
+type backwardLines struct {
+	f      *os.File
+	bufOff int64
+	buf    []byte
+	end    int64
+}
+
+func newBackwardLines(f *os.File) (*backwardLines, error) {
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	b := &backwardLines{f: f, bufOff: fi.Size()}
+	p, err := b.lastNewlineBefore(fi.Size())
+	if err != nil {
+		return nil, err
+	}
+	b.end = p + 1
+	return b, nil
+}
+
+func (b *backwardLines) prev() (int64, []byte, bool, error) {
+	if b.end == 0 {
+		return 0, nil, false, nil
+	}
+	p, err := b.lastNewlineBefore(b.end - 1)
+	if err != nil {
+		return 0, nil, false, err
+	}
+	start := p + 1
+	line := b.buf[start-b.bufOff : b.end-b.bufOff]
+	b.end = start
+	return start, line, true, nil
+}
+
+func (b *backwardLines) lastNewlineBefore(limit int64) (int64, error) {
+	for {
+		if limit > b.bufOff {
+			if i := bytes.LastIndexByte(b.buf[:limit-b.bufOff], '\n'); i >= 0 {
+				return b.bufOff + int64(i), nil
+			}
+		}
+		if b.bufOff == 0 {
+			return -1, nil
+		}
+		n := int64(backwardChunk)
+		if l := int64(len(b.buf)); l > n {
+			n = l
+		}
+		if n > b.bufOff {
+			n = b.bufOff
+		}
+		chunk := make([]byte, n+int64(len(b.buf)))
+		if _, err := b.f.ReadAt(chunk[:n], b.bufOff-n); err != nil {
+			return 0, err
+		}
+		copy(chunk[n:], b.buf)
+		b.buf = chunk
+		b.bufOff -= n
+	}
 }
