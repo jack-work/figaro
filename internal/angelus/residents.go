@@ -17,8 +17,9 @@ func (r *Registry) ids() []string {
 	return out
 }
 
-// Residents are the live agents and open endpoints whose id the store holds
-// neither as a node nor as a form: what a delete should have taken with it.
+// Residents are the live agents, open endpoints and _meta sidecars whose id
+// the store holds neither as a node nor as a form: what a delete should have
+// taken with it. A tombstone's sidecar is kept on purpose and is not one.
 func (a *Angelus) Residents() []rpc.Resident {
 	if a.Backend == nil {
 		return []rpc.Resident{}
@@ -48,6 +49,13 @@ func (a *Angelus) Residents() []rpc.Resident {
 		for _, id := range a.Hubs.ids() {
 			if r := gone(id); r != nil {
 				r.Endpoint = true
+			}
+		}
+	}
+	if sc, ok := a.Backend.(interface{ LiveSidecarIDs() []string }); ok {
+		for _, id := range sc.LiveSidecarIDs() {
+			if r := gone(id); r != nil {
+				r.Sidecar = true
 			}
 		}
 	}

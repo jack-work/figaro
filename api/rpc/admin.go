@@ -253,12 +253,13 @@ type PprofArmResponse struct {
 	Socket string `json:"socket,omitempty"`
 }
 
-// Resident is a live agent or an open endpoint whose figaro the store does
-// not hold.
+// Resident is a live agent, an open endpoint or a _meta sidecar whose id
+// the store does not hold.
 type Resident struct {
 	ID       string `json:"id"`
 	Agent    bool   `json:"agent,omitempty"`
 	Endpoint bool   `json:"endpoint,omitempty"`
+	Sidecar  bool   `json:"sidecar,omitempty"`
 }
 
 type ResidentsResponse struct {

@@ -11,10 +11,10 @@ import (
 )
 
 func TestDoctorResidentsSaysCountAndWhatOutlivedItsFigaro(t *testing.T) {
-	rows := []rpc.Resident{{ID: "aaaa", Agent: true, Endpoint: true}, {ID: "bbbb", Endpoint: true}, {ID: "cccc", Agent: true}}
+	rows := []rpc.Resident{{ID: "aaaa", Agent: true, Endpoint: true}, {ID: "bbbb", Endpoint: true}, {ID: "cccc", Agent: true}, {ID: "dddd", Sidecar: true}}
 	var out bytes.Buffer
 	require.NoError(t, printResidents(&out, rows, false))
-	require.Equal(t, "3 resident(s) whose figaro the store does not hold\naaaa  agent and endpoint\nbbbb  endpoint\ncccc  agent\n", out.String())
+	require.Equal(t, "4 resident(s) whose id the store does not hold\naaaa  agent, endpoint\nbbbb  endpoint\ncccc  agent\ndddd  _meta sidecar\n", out.String())
 
 	out.Reset()
 	require.NoError(t, printResidents(&out, nil, true))
