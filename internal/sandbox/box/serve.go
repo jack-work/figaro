@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 
 	"github.com/jack-work/figaro/api/sandbox"
@@ -27,6 +28,35 @@ func Listen(path string) (net.Listener, error) {
 		return nil, err
 	}
 	return net.Listen("unix", path)
+}
+
+const listenFD = 3
+
+func Inherited() (net.Listener, bool, error) {
+	fds, pid := os.Getenv("LISTEN_FDS"), os.Getenv("LISTEN_PID")
+	if fds == "" && pid == "" {
+		return nil, false, nil
+	}
+	os.Unsetenv("LISTEN_FDS")
+	os.Unsetenv("LISTEN_PID")
+	os.Unsetenv("LISTEN_FDNAMES")
+	if pid != strconv.Itoa(os.Getpid()) {
+		return nil, false, fmt.Errorf("box: LISTEN_PID is %q, not this process (%d): the passed listener is someone else's", pid, os.Getpid())
+	}
+	if fds != "1" {
+		return nil, false, fmt.Errorf("box: LISTEN_FDS is %q: want exactly one passed listener", fds)
+	}
+	f := os.NewFile(listenFD, "listen")
+	defer f.Close()
+	ln, err := net.FileListener(f)
+	if err != nil {
+		return nil, false, fmt.Errorf("box: the passed listener: %w", err)
+	}
+	if ln.Addr().Network() != "unix" {
+		ln.Close()
+		return nil, false, fmt.Errorf("box: the passed listener is %s, want a unix stream socket", ln.Addr().Network())
+	}
+	return ln, true, nil
 }
 
 type Server struct {

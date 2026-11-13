@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"strings"
@@ -17,14 +18,17 @@ var boxVerb = &cmdkit.Command{
 	Name:  "box",
 	Group: "System",
 	Short: "Serve a sandbox over a unix socket, or run one command through it",
-	Usage: "box serve --socket <path> --workspace <dir> [--door <path>] | box exec --socket <path> [--cwd <dir>] [--scope <s>] -- <command>",
+	Usage: "box serve [--socket <path>] --workspace <dir> [--door <path>] | box exec --socket <path> [--cwd <dir>] [--scope <s>] -- <command>",
 	Long: `A box is a sandbox a daemon reaches over a unix socket: the daemon names
 it in [sandbox.boxes.<name>] and an aria picks it with system.sandbox.
 
   serve   run the local provider behind --socket, rooted at --workspace.
           It holds no figaro state and needs no daemon or config. The
           socket takes the process umask; a stale socket is replaced, a
-          live one refused. SIGINT or SIGTERM kills every session it holds.
+          live one refused. Started by a socket unit (LISTEN_FDS=1 and
+          LISTEN_PID naming it), it serves the passed listener instead,
+          and refuses --socket beside it. SIGINT or SIGTERM kills every
+          session it holds.
           --door names the daemon's door for this box as seen inside it:
           every command run here gets FIGARO_TROUPE=unix://<door> and
           FIGARO_RUNTIME_DIR=<its dir>, so figaro in the box calls back
@@ -42,7 +46,7 @@ it in [sandbox.boxes.<name>] and an aria picks it with system.sandbox.
 	ArgsMin: 1,
 	Run: func(ctx *cmdkit.RunContext) error {
 		sock := ctx.Flag("socket")
-		if sock == "" {
+		if sock == "" && ctx.Args[0] != "serve" {
 			return fmt.Errorf("box: --socket is required")
 		}
 		switch ctx.Args[0] {
@@ -85,14 +89,30 @@ func runBoxServe(sock, workspace, door string) error {
 			return err
 		}
 	}
-	ln, err := box.Listen(sock)
+	ln, err := boxListener(sock)
 	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	fmt.Fprintf(stderrw, "box: serving %s on %s\n", workspace, sock)
+	fmt.Fprintf(stderrw, "box: serving %s on %s\n", workspace, ln.Addr())
 	return srv.Serve(ctx, ln)
+}
+
+func boxListener(sock string) (net.Listener, error) {
+	ln, passed, err := box.Inherited()
+	switch {
+	case err != nil:
+		return nil, err
+	case passed && sock != "":
+		ln.Close()
+		return nil, fmt.Errorf("box serve: a socket unit passed a listener, so --socket names a second one; drop --socket")
+	case passed:
+		return ln, nil
+	case sock == "":
+		return nil, fmt.Errorf("box serve: --socket is required unless a socket unit passes the listener")
+	}
+	return box.Listen(sock)
 }
 
 func runBoxExec(sock, cwd, scope, command string) (int, error) {
