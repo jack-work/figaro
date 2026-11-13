@@ -732,6 +732,7 @@ type Loaded struct {
 	Detached   bool
 
 	leased *leasedBoxes
+	bound  *leasedBoxes
 }
 
 const DetachedEnv = "FIGARO_DETACHED"
@@ -846,6 +847,9 @@ func Load(configDir string) (*Loaded, error) {
 	l, err := load(configDir)
 	if err == nil && l.PoolDaemon() {
 		l.leased = newLeasedBoxes()
+	}
+	if err == nil && len(l.Config.Sandbox.Nodes) > 0 {
+		l.bound = newLeasedBoxes()
 	}
 	if err != nil || os.Getenv(DetachedEnv) == "" {
 		return l, err

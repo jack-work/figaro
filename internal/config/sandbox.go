@@ -7,11 +7,28 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jack-work/figaro/internal/sandbox/agent"
 )
 
 type SandboxConfig struct {
-	Boxes map[string]BoxConfig `toml:"boxes"`
+	Boxes map[string]BoxConfig  `toml:"boxes"`
+	Nodes map[string]NodeConfig `toml:"nodes"`
 }
+
+type NodeConfig struct {
+	Agent    string   `toml:"agent"`
+	Workload []string `toml:"workload"`
+}
+
+func (l *Loaded) SandboxNodes() []string { return sortedKeys(l.cfg().Sandbox.Nodes) }
+
+func (l *Loaded) SandboxNode(name string) (NodeConfig, bool) {
+	n, ok := l.cfg().Sandbox.Nodes[name]
+	return n, ok
+}
+
+func (n NodeConfig) Hosts(workload string) bool { return slices.Contains(n.Workload, workload) }
 
 type BoxConfig struct {
 	Exec        string   `toml:"exec"`
@@ -36,7 +53,10 @@ func (l *Loaded) Box(name string) (BoxConfig, bool) {
 	if b, ok := l.cfg().Sandbox.Boxes[name]; ok {
 		return b, true
 	}
-	return l.leasedBoxes().box(name)
+	if b, ok := l.leasedBoxes().box(name); ok {
+		return b, true
+	}
+	return l.boundSandboxes().box(name)
 }
 
 func (l *Loaded) BoxPurgeGrace(name string) (time.Duration, bool) {
@@ -114,7 +134,43 @@ func (l *Loaded) BoxDoorWithoutLists(name string) error {
 	return fmt.Errorf("sandbox.boxes.%s has a door but no %s list: the door stays shut, since a box behind it could mint undressed or on any provider; name them, or write [\"*\"] to allow any", name, strings.Join(missing, " or "))
 }
 
+func (c Config) validateSandboxNodes() error {
+	agents := map[string]string{}
+	for _, name := range sortedKeys(c.Sandbox.Nodes) {
+		n := c.Sandbox.Nodes[name]
+		where := "sandbox.nodes." + name
+		if !agent.ValidName(name) {
+			return fmt.Errorf("%s: a node name is lowercase letters, digits and dashes, starting with a letter", where)
+		}
+		path, err := agent.SocketPath(n.Agent)
+		if err != nil {
+			return fmt.Errorf("%s.agent: %w", where, err)
+		}
+		if other, ok := agents[path]; ok {
+			return fmt.Errorf("%s.agent: %s is also node %s's agent", where, path, other)
+		}
+		agents[path] = name
+		if len(n.Workload) == 0 {
+			return fmt.Errorf("%s.workload: name the workloads this node hosts: %q, %q or both", where, agent.Job, agent.Conversation)
+		}
+		seen := map[string]bool{}
+		for _, w := range n.Workload {
+			if !agent.ValidWorkload(w) || seen[w] {
+				return fmt.Errorf("%s.workload: %q is not %q or %q, or is named twice", where, w, agent.Job, agent.Conversation)
+			}
+			seen[w] = true
+		}
+		if _, clash := c.Sandbox.Boxes[name]; clash {
+			return fmt.Errorf("%s: a box has that name too", where)
+		}
+	}
+	return nil
+}
+
 func (c Config) validateSandbox() error {
+	if err := c.validateSandboxNodes(); err != nil {
+		return err
+	}
 	doors := map[string]string{}
 	for _, name := range sortedKeys(c.Sandbox.Boxes) {
 		b := c.Sandbox.Boxes[name]

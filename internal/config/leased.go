@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
 	"sync"
@@ -39,6 +40,9 @@ func (l *Loaded) Reload() (*Loaded, error) {
 	}
 	if t := l.leasedBoxes(); t != nil {
 		fresh.leased = t
+	}
+	if t := l.boundSandboxes(); t != nil {
+		fresh.bound = t
 	}
 	return fresh, nil
 }
@@ -121,4 +125,43 @@ func (t *leasedBoxes) names() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func (l *Loaded) boundSandboxes() *leasedBoxes {
+	if l == nil {
+		return nil
+	}
+	return l.bound
+}
+
+func (l *Loaded) BindSandbox(name, exec string) error {
+	t := l.boundSandboxes()
+	switch {
+	case t == nil:
+		return errors.New("bind a sandbox: this config names no [sandbox.nodes], so it has no table of leased sandboxes")
+	case !filepath.IsAbs(exec):
+		return fmt.Errorf("bind sandbox %s: exec %q is not an absolute socket path", name, exec)
+	}
+	if _, clash := l.cfg().Sandbox.Boxes[name]; clash || name == "local" || name == "self" || name == "bwrap" {
+		return fmt.Errorf("bind sandbox %s: a box or a reserved sandbox has that name", name)
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.boxes[name] = BoxConfig{Exec: exec}
+	return nil
+}
+
+func (l *Loaded) UnbindSandbox(name string) {
+	t := l.boundSandboxes()
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.boxes, name)
+}
+
+func (l *Loaded) BoundSandbox(name string) bool {
+	_, ok := l.boundSandboxes().box(name)
+	return ok
 }
