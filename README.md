@@ -11,7 +11,7 @@
 
 *Largo al factotum della calcolatore.*
 
-figaro is a programmer's harness. Its agents, figaros, are durable: each one is a log on disk, served by a daemon called the angelus (for you catholics out there) that keeps well over a thousand of them in under 500 MB of memory and runs fast on a laptop from 2004. Works with Claude, GitHub Copilot, OpenRouter, Azure, and any provider that speaks Anthropic Messages, OpenAI Chat Completions or the Responses API.
+figaro is a programmer's harness. Its agents, figaros, are durable: each one is a log on disk, served by a daemon called the angelus, after the bell that rings the hours. The angelus keeps well over a thousand of them in under 500 MB of memory and runs fast on a laptop from 2004. Works with Claude, GitHub Copilot, OpenRouter, Azure, and any provider that speaks Anthropic Messages, OpenAI Chat Completions or the Responses API.
 
 <p align="center"><img src="docs/media/turn.gif" alt="a prompt typed in figaro's pager: the agent runs git log with its bash tool and summarizes the result" width="820"></p>
 
