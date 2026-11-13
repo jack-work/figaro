@@ -200,8 +200,20 @@ connection whose uid is not the daemon's host uid, before reading a byte
 
 **Names.** A class name and a sandbox name match `[a-z][a-z0-9-]{0,31}`,
 are unique on the node, and a sandbox name does not end in `-g<digits>`.
-A generation is a positive integer. A nonce is 64 lowercase hex
-characters. Times are RFC 3339 UTC.
+A generation is a positive integer. A figaro is 32 lowercase hex
+characters (it goes into a header and every log line). A nonce is 64
+lowercase hex characters. A reason is at most 200 characters. Times are
+RFC 3339 UTC. Anything malformed answers `invalid_params`.
+
+**Paths.** An exec URL names a host path that container@figaro binds at
+the same path. spain renders `unix:///run/sandbox-agent/agent.sock` and
+`unix:///run/sandbox-agent/exec/<sandbox>.sock`.
+
+**Persistence.** The agent's table (each sandbox's state, generation,
+figaro and last receipt, and each class's floor) survives the agent's
+restarts and host reboots. A sandbox found `resetting` at agent start
+stays `resetting` until the daemon calls `agent.reset`: the agent never
+frees anything on its own (S7).
 
 **Methods.**
 
@@ -232,13 +244,14 @@ both). `egress` names the class's egress entries, for the daemon's log and
 {"sandboxes": [{
   "name": "shell0", "class": "shell",
   "state": "leased", "generation": 7, "figaro": "<id>",
-  "exec": "unix:///run/sandboxes/shell0/exec.sock"
+  "exec": "unix:///run/sandbox-agent/exec/shell0.sock"
 }]}
 ```
 
-`state` is `free`, `leased`, `resetting` or `cordoned`. `generation`,
-`figaro` and `exec` are present when `leased`; `generation` also when
-`resetting` or `cordoned`, naming the last lease.
+`state` is `free`, `leased`, `resetting` or `cordoned`. `exec` is present
+in every state, so a daemon that restarts between a receipt and its probe
+can still probe. `figaro` is present when `leased`. `generation` is
+present once the sandbox has had a lease, naming the last one.
 
 `agent.lease {"class", "generation", "figaro"}` →
 `{"sandbox", "generation", "exec"}`. The agent picks a `free` sandbox of
@@ -252,8 +265,11 @@ absolute path only.
 
 `agent.reset {"sandbox", "generation", "nonce"}` → after the reset has
 run: `{"sandbox", "generation", "nonce", "at"}`. Allowed from `leased`
-at that generation, from `resetting` at that generation (a retry), and
-from `cordoned` (reinstate: always a full reset). The agent sets
+at that generation, from `resetting` at that generation (a retry), from
+`free` when the sandbox's last generation is the call's (the daemon lost
+the receipt and asks again with a new nonce), and from `cordoned`
+(reinstate: always a full reset). A reset call while that sandbox's reset
+is running waits for it, then is judged on the state it left. The agent sets
 `resetting`, stops the container, starts it fresh, waits until the
 sandbox's `figaro box serve` accepts on the exec endpoint, sets `free`,
 and answers. A repeat with the same nonce after success answers the same
@@ -276,6 +292,7 @@ failed, or the daemon gave up waiting. Only `agent.reset` leaves
 | `unknown_sandbox` | reset or cordon of a name the node does not have | |
 | `wrong_state` | reset or cordon not allowed from the sandbox's state | `state`, `generation` |
 | `reset_failed` | a reset step failed; the sandbox is now `cordoned` | `step` |
+| `invalid_params` | a name, figaro, nonce, generation or reason out of shape | `field` |
 
 Any other error is the agent's fault: the daemon logs it and treats the
 call as failed.
@@ -303,11 +320,19 @@ sandbox uid runs besides `figaro box serve` and the probe's own. So every
 class has `sh`, `find` and `figaro` on its path.
 
 **Sandbox side, for edge.** The exec socket the agent serves speaks the
-existing exec wire (`internal/sandbox/box/wire.go`) unchanged; the agent
-splices bytes and reads only the first line of each connection, which
-the daemon always sends as `box.open` (its `scope` is the figaro id) or
-`box.session.killscope`; it logs that method and, for `box.open`, the
-scope (U3). Each container runs `figaro box serve` as
+existing exec wire (`internal/sandbox/box/wire.go`) unchanged. The relay
+admits a connection, after the peer check, only while the sandbox is
+`free` or `leased`; in `resetting` or `cordoned` it closes it and logs
+that. It reads only the first line of each connection: it must be
+`box.open` or `box.session.killscope` and at most 1 MiB, or the agent
+logs `refused` and closes without forwarding a byte. It logs the method
+and, for `box.open`, the `scope` (the figaro id), never `env` or
+`workspace` (U3). Today's daemon sends `box.open` first on every
+connection, the scope kill's included.
+
+**Egress identity.** `Sandbox-Figaro` names the figaro that leased the
+sandbox, not the fork in its lineage that made a given call: the proxy
+cannot see past the sandbox. Each container runs `figaro box serve` as
 the sandbox uid at boot, listening on the path the agent splices to.
 
 ## What figaro owns
@@ -316,7 +341,7 @@ the sandbox uid at boot, listening on the path the agent splices to.
 
 ```toml
 [sandbox.nodes.spain]
-agent    = "unix:///run/sandboxes/agent.sock"
+agent    = "unix:///run/sandbox-agent/agent.sock"
 workload = ["job", "conversation"]
 ```
 
