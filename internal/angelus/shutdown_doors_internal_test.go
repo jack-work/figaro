@@ -9,6 +9,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -508,4 +510,26 @@ func TestTheStopKeepsTheApprovedDoorOrder(t *testing.T) {
 		t.Fatalf("the stop returned with %v still out", out)
 	}
 	logStep("joined; the store closed after the join")
+}
+
+// The stop's refusal is the outermost layer of every door method, so a
+// request after the seal is turned away before authentication runs. The
+// order cannot be seen from outside (the box door's authentication only
+// reads params, and joined refuses one layer in), so it is pinned here by
+// the name of the closure each method is served by.
+func TestEveryDoorMethodIsRefusedBeforeItIsAuthenticated(t *testing.T) {
+	r := newStopRig(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	methods := NewHandlers(ServerConfig{Angelus: r.a, Config: r.a.Settings, Ctx: ctx}).Map
+	if len(methods) == 0 {
+		t.Fatal("canary: the door serves no methods")
+	}
+	want := "(*Angelus).refusingWhenStopping.func"
+	for name, fn := range methods {
+		got := runtime.FuncForPC(reflect.ValueOf(fn).Pointer()).Name()
+		if !strings.Contains(got, want) {
+			t.Errorf("%s is served by %s; the outermost layer must be refusingWhenStopping", name, got)
+		}
+	}
 }
