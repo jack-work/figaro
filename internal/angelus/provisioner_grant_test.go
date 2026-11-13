@@ -20,7 +20,7 @@ func provisionedRig(t *testing.T) (grantRig, string) {
 	}
 	r.a.Workers = workers
 	r.a.Policies.SetLeases(workers)
-	if err := workers.Ledger.Begin("groups", "slot0", "chat:10", 1, brokerHolder); err != nil {
+	if err := workers.Ledger.Begin("groups", "worker0", "chat:10", 1, brokerHolder); err != nil {
 		t.Fatal(err)
 	}
 	return r, box
@@ -48,18 +48,18 @@ func TestALeaseIsInForceFromMintingUntilItIsReleased(t *testing.T) {
 	r := newRigConfigured(t, grantPolicy, fourWorkerPoolConfig)
 	dir := t.TempDir()
 	before := ledgerIn(t, dir)
-	leaseTo(t, before, "slot0", "chat:10", 1, workerpool.Live)
-	leaseTo(t, before, "slot1", "chat:11", 1, workerpool.Minting)
-	leaseTo(t, before, "slot2", "chat:12", 4, workerpool.Releasing)
-	leaseTo(t, before, "slot3", "chat:13", 2, workerpool.Released)
-	leaseTo(t, before, "slot3", "chat:14", 3, workerpool.Minting)
+	leaseTo(t, before, "worker0", "chat:10", 1, workerpool.Live)
+	leaseTo(t, before, "worker1", "chat:11", 1, workerpool.Minting)
+	leaseTo(t, before, "worker2", "chat:12", 4, workerpool.Releasing)
+	leaseTo(t, before, "worker3", "chat:13", 2, workerpool.Released)
+	leaseTo(t, before, "worker3", "chat:14", 3, workerpool.Minting)
 	workers, err := angelus.OpenWorkerPools(dir, r.a.Settings)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for box, want := range map[string]bool{
-		"slot0-g1": true, "slot1-g1": true, "slot2-g4": true, "slot3-g3": true,
-		"slot3-g2": false, "slot0-g2": false, "slot2-g3": false, "slot0": false, "slot0-g": false, "groups": false, "chat:10": false, "": false,
+		"worker0-g1": true, "worker1-g1": true, "worker2-g4": true, "worker3-g3": true,
+		"worker3-g2": false, "worker0-g2": false, "worker2-g3": false, "worker0": false, "worker0-g": false, "groups": false, "chat:10": false, "": false,
 	} {
 		if got := workers.InForce(box); got != want {
 			t.Errorf("lease %q in force: %v, want %v", box, got, want)
@@ -101,9 +101,9 @@ func TestThroughTheHandlersTheProvisionerReachesOnlyItsLeasesFigaros(t *testing.
 		t.Error("the provisioner read the form of a figaro it may only write and delete")
 	}
 	for name, ctx := range map[string]context.Context{
-		"the slot's next generation": asProvisionerServing("slot0-g2"),
-		"no lease":                   authz.WithSubject(context.Background(), jkauthz.Subject{Principal: authz.ProvisionerPrincipal()}),
-		"this lease and another":     authz.WithSubject(context.Background(), jkauthz.Subject{Principal: authz.ProvisionerPrincipal(), Groups: []string{box + "@" + authz.PoolScope, "slot0-g2@" + authz.PoolScope}}),
+		"the worker's next generation": asProvisionerServing("worker0-g2"),
+		"no lease":                     authz.WithSubject(context.Background(), jkauthz.Subject{Principal: authz.ProvisionerPrincipal()}),
+		"this lease and another":       authz.WithSubject(context.Background(), jkauthz.Subject{Principal: authz.ProvisionerPrincipal(), Groups: []string{box + "@" + authz.PoolScope, "worker0-g2@" + authz.PoolScope}}),
 	} {
 		if err := r.note(t, ctx, leased); err == nil {
 			t.Errorf("serving %s the provisioner wrote the leased figaro", name)

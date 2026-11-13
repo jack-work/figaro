@@ -26,13 +26,13 @@ func TestALeaseGrantReachesOnePoolAndNoOtherVerb(t *testing.T) {
 	p := loaded(t, brokerGroupsPolicy)
 	s := subject(brokerClient)
 	for r, want := range map[Resource]bool{
-		Pool("chat-groups"):  true,
-		Pool("chat-group"):   false,
-		Pool(""):             false,
-		Daemon:               false,
-		Aria("chat-groups"):  false,
-		Lease("chat-groups"): false,
-		Sandbox("slot1-g1"):  false,
+		Pool("chat-groups"):   true,
+		Pool("chat-group"):    false,
+		Pool(""):              false,
+		Daemon:                false,
+		Aria("chat-groups"):   false,
+		Lease("chat-groups"):  false,
+		Sandbox("worker1-g1"): false,
 	} {
 		if got := p.Allow(s, rpc.VerbLease, r).Allowed; got != want {
 			t.Errorf("lease on %v: %v, want %v", r, got, want)
@@ -50,26 +50,26 @@ func TestALeaseGrantReachesOnePoolAndNoOtherVerb(t *testing.T) {
 // next generation of the same worker.
 func TestSayOnLeaseSelfReachesOnlyTheSpeakersOwnLease(t *testing.T) {
 	m := selectors{}
-	g2 := subject(BoxPrincipal("slot3-g2"))
+	g2 := subject(BoxPrincipal("worker3-g2"))
 	for _, c := range []struct {
 		who  jkauthz.Subject
 		r    Resource
 		want bool
 	}{
-		{g2, Lease("slot3-g2"), true},
-		{g2, Lease("slot3-g1"), false},
-		{g2, Lease("slot3-g3"), false},
-		{g2, Pool("slot3-g2"), false},
-		{g2, Sandbox("slot3-g2"), false},
-		{g2, Aria("slot3-g2"), false},
-		{subject(brokerClient), Lease("slot3-g2"), false},
-		{subject(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "slot3-g2@local:box"}), Lease("slot3-g2"), false},
+		{g2, Lease("worker3-g2"), true},
+		{g2, Lease("worker3-g1"), false},
+		{g2, Lease("worker3-g3"), false},
+		{g2, Pool("worker3-g2"), false},
+		{g2, Sandbox("worker3-g2"), false},
+		{g2, Aria("worker3-g2"), false},
+		{subject(brokerClient), Lease("worker3-g2"), false},
+		{subject(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "worker3-g2@local:box"}), Lease("worker3-g2"), false},
 	} {
 		if got := m.Match("lease:self", c.who, c.r); got != c.want {
 			t.Errorf("lease:self for %v on %v: %v, want %v", c.who.Principal, c.r, got, c.want)
 		}
 	}
-	if m.Match("lease:slot3-g2", g2, Lease("slot3-g2")) {
+	if m.Match("lease:worker3-g2", g2, Lease("worker3-g2")) {
 		t.Error("a lease was matched by name: only lease:self names one")
 	}
 }
@@ -78,23 +78,23 @@ func TestSayOnLeaseSelfReachesOnlyTheSpeakersOwnLease(t *testing.T) {
 // one lease. A policy file or a figaro's own scopes that could say it
 // would hand out another lease's figaros by name.
 func TestOnlyAComputedGrantNamesABoxedSet(t *testing.T) {
-	path := writePolicy(t, strings.Replace(brokerGroupsPolicy, "lease:pool:chat-groups", "kill:sandboxed:slot3-g2", 1))
+	path := writePolicy(t, strings.Replace(brokerGroupsPolicy, "lease:pool:chat-groups", "kill:sandboxed:worker3-g2", 1))
 	if err := NewPolicies(me, facts()).Reload(path); err == nil {
-		t.Error("a policy file bound sandboxed:slot3-g2")
+		t.Error("a policy file bound sandboxed:worker3-g2")
 	}
-	if _, err := ParseFigaroGrants([]string{"kill:sandboxed:slot3-g2"}); err == nil {
-		t.Error("a figaro's scopes named sandboxed:slot3-g2")
+	if _, err := ParseFigaroGrants([]string{"kill:sandboxed:worker3-g2"}); err == nil {
+		t.Error("a figaro's scopes named sandboxed:worker3-g2")
 	}
 	if _, err := ParseFigaroGrants([]string{"say:lease:self", "kill:sandboxed:self"}); err != nil {
 		t.Errorf("the spellings a policy may use were refused: %v", err)
 	}
 
-	f := fakeFacts{boxed: map[string]string{"in-g2": "slot3-g2", "in-g1": "slot3-g1", "unboxed": ""}, unreadable: map[string]bool{"lost": true}}
+	f := fakeFacts{boxed: map[string]string{"in-g2": "worker3-g2", "in-g1": "worker3-g1", "unboxed": ""}, unreadable: map[string]bool{"lost": true}}
 	m := selectors{facts: f}
 	who := subject(ProvisionerPrincipal())
 	for id, want := range map[string]bool{"in-g2": true, "in-g1": false, "unboxed": false, "lost": false, "never-minted": false} {
-		if got := m.Match("sandboxed:slot3-g2", who, Aria(id)); got != want {
-			t.Errorf("sandboxed:slot3-g2 on %s: %v, want %v", id, got, want)
+		if got := m.Match("sandboxed:worker3-g2", who, Aria(id)); got != want {
+			t.Errorf("sandboxed:worker3-g2 on %s: %v, want %v", id, got, want)
 		}
 	}
 	for _, id := range []string{"unboxed", "never-minted", "in-g2"} {
@@ -102,7 +102,7 @@ func TestOnlyAComputedGrantNamesABoxedSet(t *testing.T) {
 			t.Errorf("sandboxed: with no name matched %s", id)
 		}
 	}
-	if m.Match("sandboxed:slot3-g2", who, Sandbox("slot3-g2")) {
+	if m.Match("sandboxed:worker3-g2", who, Sandbox("worker3-g2")) {
 		t.Error("sandboxed:<name> matched the box itself, not the figaros in it")
 	}
 }
@@ -140,11 +140,11 @@ principals = ["user:ana@auth.kelliher.info"]
 		r    Resource
 	}{
 		{rpc.VerbLease, Pool("chat-groups")},
-		{rpc.VerbSay, Lease("slot3-g2")},
+		{rpc.VerbSay, Lease("worker3-g2")},
 		{rpc.VerbLease, Daemon},
 		{rpc.VerbSay, Aria("aaaa0002")},
 		{rpc.VerbRead, Pool("chat-groups")},
-		{rpc.VerbRead, Lease("slot3-g2")},
+		{rpc.VerbRead, Lease("worker3-g2")},
 	} {
 		if p.Allow(ana, c.verb, c.r).Allowed {
 			t.Errorf("the troupe lent %s on %v", c.verb, c.r)
@@ -155,8 +155,8 @@ principals = ["user:ana@auth.kelliher.info"]
 func TestAPoolSelectorNamesOnePool(t *testing.T) {
 	for sel, ok := range map[string]bool{
 		"pool:chat-groups": true, "pool:": false, "pool:tele*": false,
-		"lease:self": true, "lease:": false, "lease:slot3-g2": false, "lease:*": false,
-		"sandboxed:self": true, "sandboxed:slot3-g2": false, "sandboxed:": false,
+		"lease:self": true, "lease:": false, "lease:worker3-g2": false, "lease:*": false,
+		"sandboxed:self": true, "sandboxed:worker3-g2": false, "sandboxed:": false,
 	} {
 		if err := (selectors{}).Validate(sel); (err == nil) != ok {
 			t.Errorf("%s: %v", sel, err)

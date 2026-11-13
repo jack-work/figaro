@@ -27,13 +27,13 @@ func openLedger(t *testing.T, path string) *Ledger {
 func TestTheLedgerIsPrivateAndIsTheSameAfterARestart(t *testing.T) {
 	old := syscall.Umask(0)
 	defer syscall.Umask(old)
-	path := filepath.Join(t.TempDir(), "slot", "ledger.json")
+	path := filepath.Join(t.TempDir(), "worker", "ledger.json")
 	l := openLedger(t, path)
 	if l.Found() {
 		t.Fatal("a ledger that was never written says it was found")
 	}
-	must(t, l.Begin("groups", "slot0", "msg:-100", 1, broker))
-	must(t, l.Opens("groups", "msg:-100", 1, "groups/slot0-g1"))
+	must(t, l.Begin("groups", "worker0", "msg:-100", 1, broker))
+	must(t, l.Opens("groups", "msg:-100", 1, "groups/worker0-g1"))
 	must(t, l.Minted("groups", "msg:-100", 1, "aaaa", "@bbbb"))
 	for _, p := range []string{filepath.Dir(path), path} {
 		if st, _ := os.Stat(p); st.Mode().Perm()&0o077 != 0 {
@@ -42,7 +42,7 @@ func TestTheLedgerIsPrivateAndIsTheSameAfterARestart(t *testing.T) {
 	}
 	l = openLedger(t, path)
 	got, ok := l.Held("groups", "msg:-100")
-	if !l.Found() || !ok || got.State != Minting || got.Worker != "slot0" || got.Generation != 1 || got.Holder != broker || got.Rou2Lease != "groups/slot0-g1" || len(got.Minted) != 2 {
+	if !l.Found() || !ok || got.State != Minting || got.Worker != "worker0" || got.Generation != 1 || got.Holder != broker || got.Rou2Lease != "groups/worker0-g1" || len(got.Minted) != 2 {
 		t.Fatalf("after a restart: found %v, held %v, %+v", l.Found(), ok, got)
 	}
 }
@@ -53,7 +53,7 @@ func TestALeaseMovesOnlyForwardAndItsBearerLeavesTheDiskAtRelease(t *testing.T) 
 	path := filepath.Join(t.TempDir(), "ledger.json")
 	l := openLedger(t, path)
 	const bearer = "BEARERCANARY5f1c"
-	must(t, l.Begin("groups", "slot0", "k", 1, broker))
+	must(t, l.Begin("groups", "worker0", "k", 1, broker))
 	if err := l.Released("groups", "k", 1); !errors.Is(err, ErrWrongState) {
 		t.Fatalf("a lease still minting was marked released: %v", err)
 	}
@@ -113,17 +113,17 @@ func second[T any](_ T, err error) error { return err }
 func TestAWorkerAndAKeyHoldOneLeaseAndNoGenerationIsUsedTwice(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ledger.json")
 	l := openLedger(t, path)
-	must(t, l.Begin("groups", "slot0", "a", 1, broker))
-	if err := l.Begin("groups", "slot0", "b", 2, broker); !errors.Is(err, ErrWorkerLeased) {
-		t.Errorf("a second lease of a leased slot: %v", err)
+	must(t, l.Begin("groups", "worker0", "a", 1, broker))
+	if err := l.Begin("groups", "worker0", "b", 2, broker); !errors.Is(err, ErrWorkerLeased) {
+		t.Errorf("a second lease of a leased worker: %v", err)
 	}
-	if err := l.Begin("groups", "slot1", "a", 1, broker); !errors.Is(err, ErrKeyLeased) {
+	if err := l.Begin("groups", "worker1", "a", 1, broker); !errors.Is(err, ErrKeyLeased) {
 		t.Errorf("a second lease for a key that holds one: %v", err)
 	}
-	must(t, l.Begin("other", "slot1", "a", 1, broker))
+	must(t, l.Begin("other", "worker1", "a", 1, broker))
 	for gen := uint64(1); gen <= releasedKept+3; gen++ {
 		if gen > 1 {
-			must(t, l.Begin("groups", "slot0", "a", gen, broker))
+			must(t, l.Begin("groups", "worker0", "a", gen, broker))
 		}
 		_, err := l.Release("groups", "a", gen)
 		must(t, err)
@@ -136,37 +136,37 @@ func TestAWorkerAndAKeyHoldOneLeaseAndNoGenerationIsUsedTwice(t *testing.T) {
 		t.Fatal("the oldest released row was kept past the bound")
 	}
 	l = openLedger(t, path)
-	if got := l.Floor("slot0"); got != releasedKept+3 {
-		t.Fatalf("the floor of slot0 after its rows were trimmed and a restart: %d", got)
+	if got := l.Floor("worker0"); got != releasedKept+3 {
+		t.Fatalf("the floor of worker0 after its rows were trimmed and a restart: %d", got)
 	}
 	for _, gen := range []uint64{1, releasedKept + 3} {
-		if err := l.Begin("groups", "slot0", "c", gen, broker); !errors.Is(err, ErrGenerationUsed) {
-			t.Fatalf("generation %d of slot0 leased a second time: %v", gen, err)
+		if err := l.Begin("groups", "worker0", "c", gen, broker); !errors.Is(err, ErrGenerationUsed) {
+			t.Fatalf("generation %d of worker0 leased a second time: %v", gen, err)
 		}
 	}
-	must(t, l.Begin("groups", "slot0", "c", releasedKept+4, broker))
+	must(t, l.Begin("groups", "worker0", "c", releasedKept+4, broker))
 }
 
 func TestALeaseKeyCannotCarryProse(t *testing.T) {
 	l := openLedger(t, filepath.Join(t.TempDir(), "ledger.json"))
 	for _, key := range []string{"", "two words", "line\nbreak", "quote\"", strings.Repeat("k", 129), "naïve"} {
-		if err := l.Begin("groups", "slot0", key, 1, broker); err == nil {
+		if err := l.Begin("groups", "worker0", key, 1, broker); err == nil {
 			t.Errorf("a lease took the key %q", key)
 		}
 	}
-	must(t, l.Begin("groups", "slot0", "chat:-1001234567890", 1, broker))
+	must(t, l.Begin("groups", "worker0", "chat:-1001234567890", 1, broker))
 }
 
 // A caller mints only after the ledger says yes. If the write failed and the
 // row were kept in memory, a crash would leave a figaro no ledger names.
 func TestAWriteThatFailsChangesNothing(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "slot")
+	dir := filepath.Join(t.TempDir(), "worker")
 	path := filepath.Join(dir, "ledger.json")
 	l := openLedger(t, path)
-	must(t, l.Begin("groups", "slot0", "a", 1, broker))
+	must(t, l.Begin("groups", "worker0", "a", 1, broker))
 	must(t, os.Chmod(dir, 0o500))
 	defer os.Chmod(dir, 0o700)
-	if err := l.Begin("groups", "slot1", "b", 1, broker); err == nil {
+	if err := l.Begin("groups", "worker1", "b", 1, broker); err == nil {
 		t.Fatal("the ledger said yes with nowhere to write")
 	}
 	if _, held := l.Held("groups", "b"); held {
@@ -178,14 +178,14 @@ func TestAWriteThatFailsChangesNothing(t *testing.T) {
 	if got, _ := l.Pages(context.Background(), "groups", nil, 0); len(got) != 0 {
 		t.Fatalf("a page the disk does not hold is returned: %+v", got)
 	}
-	if l.Floor("slot1") != 0 {
+	if l.Floor("worker1") != 0 {
 		t.Fatal("the floor moved for a lease that was never written")
 	}
 }
 
 func TestALedgerThisBuildDidNotWriteIsRefused(t *testing.T) {
 	for name, body := range map[string]string{
-		"not json":         "minting slot0\n",
+		"not json":         "minting worker0\n",
 		"another version":  `{"version": 2, "leases": [], "floors": {}, "pages": [], "last_page": {}}`,
 		"no version":       `{"leases": []}`,
 		"an unknown field": `{"version": 1, "leases": [], "transcripts": ["hello"]}`,

@@ -19,7 +19,7 @@ provider = "mock"
 rou2_lease_class = "group"
 rou2_url = "http://127.0.0.1:9110"
 say_url = "https://broker.example/groups/say"
-workers = ["slot0", "slot1", "slot2", "slot3"]
+workers = ["worker0", "worker1", "worker2", "worker3"]
 `
 
 const brokerHolder = "service:broker@auth.kelliher.info"
@@ -60,17 +60,17 @@ func TestAtStartOnlyALiveLeaseGetsItsBoxBack(t *testing.T) {
 	r := newRigConfigured(t, grantPolicy, fourWorkerPoolConfig)
 	dir := t.TempDir()
 	before := ledgerIn(t, dir)
-	leaseTo(t, before, "slot0", "chat:10", 1, workerpool.Live)
-	leaseTo(t, before, "slot1", "chat:11", 1, workerpool.Minting)
-	leaseTo(t, before, "slot2", "chat:12", 4, workerpool.Releasing)
-	leaseTo(t, before, "slot3", "chat:13", 2, workerpool.Released)
+	leaseTo(t, before, "worker0", "chat:10", 1, workerpool.Live)
+	leaseTo(t, before, "worker1", "chat:11", 1, workerpool.Minting)
+	leaseTo(t, before, "worker2", "chat:12", 4, workerpool.Releasing)
+	leaseTo(t, before, "worker3", "chat:13", 2, workerpool.Released)
 
 	workers, err := angelus.OpenWorkerPools(dir, r.a.Settings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := r.a.Settings.LeasedBoxes(); !slices.Equal(got, []string{"slot0-g1"}) {
-		t.Fatalf("boxes leased after start: %v, want only the live lease's slot0-g1", got)
+	if got := r.a.Settings.LeasedBoxes(); !slices.Equal(got, []string{"worker0-g1"}) {
+		t.Fatalf("boxes leased after start: %v, want only the live lease's worker0-g1", got)
 	}
 	if !workers.Ledger.Found() {
 		t.Error("a ledger that was on disk reads as lost")
@@ -80,8 +80,8 @@ func TestAtStartOnlyALiveLeaseGetsItsBoxBack(t *testing.T) {
 			t.Errorf("%s after start: %v %v, want %s", key, l.State, ok, want)
 		}
 	}
-	if g, err := workers.Generations.Next("slot0", workers.Ledger.Floor("slot0")); err != nil || g != 2 {
-		t.Errorf("the next generation of slot0 is %d (%v), want 2: the counters or the floor were not opened", g, err)
+	if g, err := workers.Generations.Next("worker0", workers.Ledger.Floor("worker0")); err != nil || g != 2 {
+		t.Errorf("the next generation of worker0 is %d (%v), want 2: the counters or the floor were not opened", g, err)
 	}
 }
 
@@ -92,22 +92,22 @@ func TestALiveLeaseWhoseWorkerLeftTheConfigIsMarkedForRelease(t *testing.T) {
 	r := newRigConfigured(t, grantPolicy, mockPoolConfig)
 	dir := t.TempDir()
 	before := ledgerIn(t, dir)
-	leaseTo(t, before, "slot0", "chat:10", 3, workerpool.Live)
-	leaseTo(t, before, "slot9", "chat:19", 7, workerpool.Live)
+	leaseTo(t, before, "worker0", "chat:10", 3, workerpool.Live)
+	leaseTo(t, before, "worker9", "chat:19", 7, workerpool.Live)
 
 	workers, err := angelus.OpenWorkerPools(dir, r.a.Settings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := r.a.Settings.LeasedBoxes(); !slices.Equal(got, []string{"slot0-g3"}) {
-		t.Fatalf("boxes leased after start: %v, want only slot0-g3", got)
+	if got := r.a.Settings.LeasedBoxes(); !slices.Equal(got, []string{"worker0-g3"}) {
+		t.Fatalf("boxes leased after start: %v, want only worker0-g3", got)
 	}
 	gone, ok := workers.Ledger.Find("groups", "chat:19", 7)
 	if !ok || gone.State != workerpool.Releasing || gone.SayBearer != "" {
-		t.Errorf("the lease of a slot no longer configured: state %s, bearer kept %v, want releasing with no bearer", gone.State, gone.SayBearer != "")
+		t.Errorf("the lease of a worker no longer configured: state %s, bearer kept %v, want releasing with no bearer", gone.State, gone.SayBearer != "")
 	}
 	onDisk, err := os.ReadFile(filepath.Join(dir, "ledger.json"))
-	if err != nil || strings.Contains(string(onDisk), "bearer-of-slot9") {
+	if err != nil || strings.Contains(string(onDisk), "bearer-of-worker9") {
 		t.Errorf("the released lease's bearer is still on disk (%v)", err)
 	}
 }

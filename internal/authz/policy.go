@@ -263,7 +263,7 @@ func (p *Policies) Reload(path string) error {
 	defer p.mu.Unlock()
 	p.path = path
 	if path == "" && p.pool.Load() {
-		return errors.New("policy: a daemon that leases slots names its policy file and never takes the default policy")
+		return errors.New("policy: a daemon that leases workers names its policy file and never takes the default policy")
 	}
 	if path == "" {
 		return p.load([]byte(DefaultPolicy(p.self, p.boxes)))

@@ -46,10 +46,10 @@ func mintRigWithNoDrawnTree(t *testing.T) (grantRig, string) {
 	}
 	r.a.Workers = workers
 	r.a.Policies.SetLeases(workers)
-	if err := workers.Ledger.Begin("groups", "slot0", "chat:10", 1, brokerHolder); err != nil {
+	if err := workers.Ledger.Begin("groups", "worker0", "chat:10", 1, brokerHolder); err != nil {
 		t.Fatal(err)
 	}
-	box, err := r.a.Settings.LeaseBox("groups", "slot0", 1)
+	box, err := r.a.Settings.LeaseBox("groups", "worker0", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestTheMintBearsNothingThePolicyDoesNotGrantItsLease(t *testing.T) {
 	r.a.Policies.SetLeases(notInForce{})
 	_, _, err := r.hs.MintLeased(asBroker(), "groups", "chat:10", 1)
 	unborn("no lease in force", err)
-	if err != nil && !strings.Contains(err.Error(), "create on sandbox:slot0-g1") {
+	if err != nil && !strings.Contains(err.Error(), "create on sandbox:worker0-g1") {
 		t.Errorf("the refusal is not the policy's answer on create: %v", err)
 	}
 	r.a.Policies.SetLeases(r.a.Workers)
@@ -235,8 +235,8 @@ func TestTheProvisionerPlacesOnlyWhatItsMintJustBoreAndOnlyUnderItsPool(t *testi
 	stays("a figaro of the box this mint did not bear", older, groups)
 	stays("under another pool's node", fresh, others)
 	stays("under a figaro of its own box", fresh, target)
-	if err := r.hs.Place(asProvisionerServing("slot0-g2"), fresh, groups); err == nil {
-		t.Error("serving the slot's next generation the provisioner placed this lease's figaro")
+	if err := r.hs.Place(asProvisionerServing("worker0-g2"), fresh, groups); err == nil {
+		t.Error("serving the worker's next generation the provisioner placed this lease's figaro")
 	}
 	if err := r.hs.Place(serving, fresh, groups); err != nil {
 		t.Fatalf("the placement the mint makes was refused: %v", err)

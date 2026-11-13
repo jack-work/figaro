@@ -65,17 +65,17 @@ func (h *handlers) mintPoolNodes(loaded *config.Loaded) {
 		name, _ := json.Marshal(pool)
 		id, _, err := backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{poolNodeKey: name}, nil), store.MintedBy(authz.ProvisionerPrincipal().String()))
 		if err != nil {
-			slog.Error("slot pool: the pool has no node to place its leases under, so its leases are refused", "pool", pool, "err", err)
+			slog.Error("worker pool: the pool has no node to place its leases under, so its leases are refused", "pool", pool, "err", err)
 			continue
 		}
-		slog.Info("slot pool: node minted", "pool", pool, "node", id)
+		slog.Info("worker pool: node minted", "pool", pool, "node", id)
 	}
 }
 
 func (a *Angelus) mintPlaces(box, node, under string) error {
 	workers := a.Workers
 	if workers == nil {
-		return errors.New("this daemon leases no slots")
+		return errors.New("this daemon leases no workers")
 	}
 	minting, minted := workers.mintedInThisCall(box, node)
 	if !minting {
@@ -126,7 +126,7 @@ func (h *handlers) provisionerBears(serving jkauthz.Subject, born form.Snapshot)
 func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation uint64) (leasedMint, error) {
 	workers, backend := h.angelus.Workers, h.angelus.Backend
 	if workers == nil || backend == nil {
-		return leasedMint{}, errors.New("mint: this daemon leases no slots")
+		return leasedMint{}, errors.New("mint: this daemon leases no workers")
 	}
 	refused := func(err error) (leasedMint, error) {
 		return leasedMint{}, fmt.Errorf("mint for %s/%s g%d: %w", pool, key, generation, err)
@@ -178,7 +178,7 @@ func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation 
 		}
 		for _, id := range []string{out.Role, out.Figaro} {
 			if err := h.purgeNow(ctx, id); err != nil {
-				slog.Error("slot pool: a mint that failed left a node behind for the release to purge", "node", id, "err", err)
+				slog.Error("worker pool: a mint that failed left a node behind for the release to purge", "node", id, "err", err)
 			}
 		}
 	}()
@@ -229,6 +229,6 @@ func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation 
 		}
 	}
 	kept = true
-	slog.Info("slot pool: minted", "pool", pool, "slot", row.Worker, "generation", generation, "figaro", out.Figaro, "role", out.Role)
+	slog.Info("worker pool: minted", "pool", pool, "worker", row.Worker, "generation", generation, "figaro", out.Figaro, "role", out.Role)
 	return out, nil
 }

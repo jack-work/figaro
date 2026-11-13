@@ -49,7 +49,7 @@ func (l *Loaded) LeaseBox(pool, worker string, generation uint64) (string, error
 	case !ok:
 		return "", fmt.Errorf("lease a box: no pool %q in this daemon's config", pool)
 	case !slices.Contains(p.WorkerNames(), worker):
-		return "", fmt.Errorf("lease a box: %q is not a slot of pool %s", worker, pool)
+		return "", fmt.Errorf("lease a box: %q is not a worker of pool %s", worker, pool)
 	case generation == 0:
 		return "", fmt.Errorf("lease a box in %s: a generation starts at 1", worker)
 	}
@@ -74,10 +74,10 @@ func (t *leasedBoxes) lease(worker string, generation uint64, name string, box B
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if other, taken := t.held[worker]; taken {
-		return fmt.Errorf("lease a box: slot %s still holds %s; a slot holds one lease, and returns when its release has run to the end", worker, other)
+		return fmt.Errorf("lease a box: worker %s still holds %s; a worker holds one lease, and returns when its release has run to the end", worker, other)
 	}
 	if floor := t.floors[worker]; generation <= floor {
-		return fmt.Errorf("lease a box: slot %s already reached generation %d and %d does not pass it; a generation is never used twice", worker, floor, generation)
+		return fmt.Errorf("lease a box: worker %s already reached generation %d and %d does not pass it; a generation is never used twice", worker, floor, generation)
 	}
 	t.boxes[name] = box
 	t.held[worker] = name
