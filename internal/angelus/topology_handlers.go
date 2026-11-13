@@ -240,7 +240,10 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	inherited, _ := h.angelus.Backend.FormState(req.FigaroID)
+	inherited, err := h.angelus.Backend.FormState(req.FigaroID)
+	if err != nil {
+		return nil, fmt.Errorf("fork: the board of %s cannot be read to check the patch against it: %w", req.FigaroID, err)
+	}
 	if err := h.refuseCallerKeys(ctx, birthUnder(req.FigaroID), inherited, req.Patch); err != nil {
 		return nil, err
 	}
