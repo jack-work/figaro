@@ -248,4 +248,5 @@ type KillResponse struct {
 	Removed []string `json:"removed,omitempty"`
 	Roles   []string `json:"roles,omitempty"`
 	Lifted  []string `json:"lifted,omitempty"`
+	Reaped  []string `json:"reaped,omitempty"`
 }

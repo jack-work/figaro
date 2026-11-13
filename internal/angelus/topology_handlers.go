@@ -761,7 +761,7 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 			if err != nil {
 				return nil, err
 			}
-			return rpc.KillResponse{OK: true, PurgeAt: until.UnixMilli(), Roles: h.angelus.rolesIn(checked.Delete), Lifted: liftedIn(checked)}, nil
+			return rpc.KillResponse{OK: true, PurgeAt: until.UnixMilli(), Roles: h.angelus.rolesIn(checked.Delete), Lifted: liftedIn(checked), Reaped: orSelf(checked.Delete, req.FigaroID)}, nil
 		}
 	}
 	expect := checked.Delete
@@ -831,6 +831,11 @@ func (h *handlers) removeAria(ctx context.Context, by hierarchy.Principal, asked
 	if n := h.killSessions(id); n > 0 {
 		slog.Info("killed aria sessions", "id", id, "sessions", n)
 	}
+	for _, n := range plan.Delete {
+		if n != id {
+			h.stopAria(n)
+		}
+	}
 
 	var removed []string
 	if h.angelus.Backend != nil {
@@ -849,8 +854,10 @@ func (h *handlers) removeAria(ctx context.Context, by hierarchy.Principal, asked
 	}
 
 	// The endpoint outlives the agent, not the aria; this EOF must not happen on hibernate.
-	if hb := h.angelus.Hubs.drop(id); hb != nil {
-		hb.Close()
+	for _, n := range orSelf(removed, id) {
+		if hb := h.angelus.Hubs.drop(n); hb != nil {
+			hb.Close()
+		}
 	}
 
 	slog.Info("killed figaro", "id", id, "op", asked.Op.String(), "taken", removed)
