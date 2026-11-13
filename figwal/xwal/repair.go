@@ -34,51 +34,81 @@ func clearUnclean(root string) error {
 }
 
 func repairCoherentCuts(t *Trunks) error {
-	man, err := loadOrCreateManifest(t.root, t.cfg)
+	plan, err := loadRepairPlan(t.root, t.cfg)
 	if err != nil {
 		return err
 	}
-	codec, err := codecByName(man.Codec)
-	if err != nil {
-		return err
-	}
-	keyed, err := keyedChannelNodes(t.root, man)
-	if err != nil {
-		return err
-	}
-	kids := t.idx.ChildIndex()
-	for key := range t.idx.All() {
-		if len(kids[key]) > 0 {
-			continue
-		}
-		suspects := leafSuspects(t.root, keyed, key, codec)
-		if len(suspects) == 0 {
-			continue
-		}
-		mainTail, err := nodeMainTail(t.irDir(key), codec)
-		if errors.Is(err, segment.ErrCorrupt) {
-			quarantine(key, err)
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("xwal: repair leaf %q: %w", key, err)
-		}
-		for _, s := range suspects {
-			trimmed, err := trimChannelNode(s.dir, codec, s.reducible, mainTail)
-			if errors.Is(err, segment.ErrCorrupt) {
-				quarantine(key, err)
-				break
-			}
-			if err != nil {
-				return fmt.Errorf("xwal: repair channel %q leaf %q: %w", s.channel, key, err)
-			}
-			if trimmed > 0 {
-				slog.Warn("xwal: trimmed incoherent channel tail",
-					"channel", s.channel, "leaf", key, "records", trimmed, "mainTail", mainTail)
-			}
+	for _, key := range suspectLeaves(t.idx) {
+		if _, err := plan.repairLeaf(t, key); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+type repairPlan struct {
+	codec segment.SegmentCodec
+	keyed []keyedChannel
+}
+
+func loadRepairPlan(root string, cfg Config) (*repairPlan, error) {
+	man, err := loadOrCreateManifest(root, cfg)
+	if err != nil {
+		return nil, err
+	}
+	codec, err := codecByName(man.Codec)
+	if err != nil {
+		return nil, err
+	}
+	keyed, err := keyedChannelNodes(root, man)
+	if err != nil {
+		return nil, err
+	}
+	return &repairPlan{codec: codec, keyed: keyed}, nil
+}
+
+func suspectLeaves(idx *Index) []string {
+	kids := idx.ChildIndex()
+	var out []string
+	for key := range idx.All() {
+		if len(kids[key]) == 0 {
+			out = append(out, key)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (p *repairPlan) repairLeaf(t *Trunks, key string) (int, error) {
+	suspects := leafSuspects(t.root, p.keyed, key, p.codec)
+	if len(suspects) == 0 {
+		return 0, nil
+	}
+	mainTail, err := nodeMainTail(t.irDir(key), p.codec)
+	if errors.Is(err, segment.ErrCorrupt) {
+		quarantine(key, err)
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("xwal: repair leaf %q: %w", key, err)
+	}
+	total := 0
+	for _, s := range suspects {
+		trimmed, err := trimChannelNode(s.dir, p.codec, s.reducible, mainTail)
+		total += trimmed
+		if errors.Is(err, segment.ErrCorrupt) {
+			quarantine(key, err)
+			break
+		}
+		if err != nil {
+			return total, fmt.Errorf("xwal: repair channel %q leaf %q: %w", s.channel, key, err)
+		}
+		if trimmed > 0 {
+			slog.Warn("xwal: trimmed incoherent channel tail",
+				"channel", s.channel, "leaf", key, "records", trimmed, "mainTail", mainTail)
+		}
+	}
+	return total, nil
 }
 
 type keyedChannel struct {
