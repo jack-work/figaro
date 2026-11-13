@@ -150,8 +150,8 @@ func TestConversationList_TrunkScanCount(t *testing.T) {
 	}
 	trunkScanCount.Store(0)
 	updated := b.store.Conversations()
-	if got := trunkScanCount.Load(); got != 2 {
-		t.Fatalf("Conversations() after topology change did %d scans, want 2", got)
+	if got := trunkScanCount.Load(); got != 1 {
+		t.Fatalf("Conversations() after a spawn did %d scans, want 1: the stumps, not the trunks", got)
 	}
 	if len(updated) != len(nodes)+1 {
 		t.Fatalf("Conversations() after topology change returned %d nodes, want %d", len(updated), len(nodes)+1)
@@ -159,7 +159,7 @@ func TestConversationList_TrunkScanCount(t *testing.T) {
 	if _, ok := b.store.Node(created); !ok {
 		t.Fatalf("new conversation %s absent from rebuilt topology", created)
 	}
-	if got := trunkScanCount.Load(); got != 2 {
+	if got := trunkScanCount.Load(); got != 1 {
 		t.Fatalf("warm Node() rescanned topology: scans=%d", got)
 	}
 }

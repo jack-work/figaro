@@ -38,6 +38,18 @@ func (s *XwalStore) listTrunks() []xwal.TrunkInfo {
 	return s.trunks.ListLight()
 }
 
+func (s *XwalStore) listTrunksSince(prev *topologySnapshot) ([]xwal.TrunkInfo, uint64) {
+	if prev == nil {
+		v := s.trunks.Version()
+		return s.listTrunks(), v
+	}
+	infos, at, listed := s.trunks.ListLightSince(prev.infos, prev.version)
+	if listed {
+		trunkScanCount.Add(1)
+	}
+	return infos, at
+}
+
 func (s *XwalStore) listStumps() []xwal.StumpInfo {
 	trunkScanCount.Add(1)
 	all := s.trunks.Stumps()
@@ -236,6 +248,7 @@ func (s *XwalStore) TopologyAdjacency() topo.Topology { return xwalTopology{s} }
 func (s *XwalStore) SetTree(t topo.Tree) { s.tree = t }
 
 type topologySnapshot struct {
+	infos           []xwal.TrunkInfo
 	version         uint64
 	rev             uint64
 	nodes           []NodeView
@@ -889,7 +902,7 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 		return snapshot
 	}
 
-	infos := s.listTrunks()
+	infos, version := s.listTrunksSince(s.topology.Load())
 	at := s.vectorsLocked(infos)
 	nodes := make([]NodeView, 0, len(infos)+1)
 	for _, t := range infos {
@@ -918,6 +931,7 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 		byID[node.ID] = node
 	}
 	snapshot := &topologySnapshot{
+		infos:           infos,
 		version:         version,
 		rev:             rev,
 		nodes:           nodes,
