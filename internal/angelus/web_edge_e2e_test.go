@@ -100,6 +100,7 @@ func forge(t *testing.T, path string, header http.Header) (*edgeClient, *http.Re
 type rpcReply struct {
 	Result json.RawMessage `json:"result"`
 	Error  *struct {
+		Code    int    `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
 }

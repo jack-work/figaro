@@ -28,7 +28,10 @@ const (
 	ResourceOutfit
 	ResourcePool
 	ResourceLease
+	resourceAnyFigaro
 )
+
+var anyFigaro = Resource{Kind: resourceAnyFigaro}
 
 type Resource struct {
 	Kind ResourceKind
@@ -130,6 +133,9 @@ func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
 	case ResourceLease:
 		box, isBox := BoxOf(s.Principal)
 		return sel == selLease && isBox && box == r.ID
+	}
+	if r.Kind == resourceAnyFigaro {
+		return namesFigaros(sel)
 	}
 	if r.Kind != ResourceAria {
 		return false
@@ -310,6 +316,21 @@ func (p *Policies) load(data []byte) error {
 
 func bound(pol *jkauthz.Policy[Resource], s jkauthz.Subject) bool {
 	return pol != nil && pol.Binds(s)
+}
+
+func namesFigaros(sel string) bool {
+	switch {
+	case sel == selBoxed, sel == selUnboxed, sel == selOwner:
+		return true
+	}
+	return strings.HasPrefix(sel, selAria) || strings.HasPrefix(sel, selRole) || strings.HasPrefix(sel, selLineage) || strings.HasPrefix(sel, selBoxedIn)
+}
+
+func (p *Policies) NamesFigaros(s jkauthz.Subject, verbs ...rpc.Verb) bool {
+	if len(verbs) == 0 {
+		verbs = rpc.Verbs()
+	}
+	return slices.ContainsFunc(verbs, func(v rpc.Verb) bool { return p.Allow(s, v, anyFigaro).Allowed })
 }
 
 func (p *Policies) HoldsRole(s jkauthz.Subject) bool {
@@ -540,6 +561,8 @@ func (r Resource) String() string {
 		return "pool:" + r.ID
 	case ResourceLease:
 		return "lease:" + r.ID
+	case resourceAnyFigaro:
+		return "any figaro"
 	}
 	return "the daemon"
 }
