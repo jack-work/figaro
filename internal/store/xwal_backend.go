@@ -1309,6 +1309,10 @@ func (b *XwalBackend) SweepUnmarkedNodes(remove bool) (SweepReport, error) {
 	return b.store.trunks.SweepUnmarkedNodes(remove)
 }
 
+func (b *XwalBackend) PruneEmptyChannelDirs(dryRun bool) (ChannelDirPrune, error) {
+	return b.store.trunks.PruneEmptyChannelDirs(dryRun)
+}
+
 func (b *XwalBackend) PendingRemovals() []PendingRemoval { return b.store.PendingRemovals() }
 
 // Segment cache figures are process-wide: one segment file has one copy

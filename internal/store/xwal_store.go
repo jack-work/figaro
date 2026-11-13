@@ -1129,6 +1129,8 @@ func HandleIdleForTest() time.Duration { return time.Duration(handleIdle.Load())
 
 type SweepReport = xwal.SweepReport
 
+type ChannelDirPrune = xwal.ChannelDirPrune
+
 func sameIDs(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
