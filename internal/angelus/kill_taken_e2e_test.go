@@ -8,8 +8,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/sdk"
 )
 
@@ -54,9 +56,11 @@ func requireTaken(t *testing.T, a *angelus.Angelus, acli *sdk.Angelus, ctx conte
 		require.Error(t, dialAria(t, a, id, nil).Call(ctx, rpc.MethodContext, nil, &out), "status still answers for %s", id)
 		var sent rpc.QuaResponse
 		require.Error(t, dialAria(t, a, id, nil).Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: "still there?"}, &sent), "a send to %s was taken", id)
+		var stopped rpc.InterruptResponse
+		require.Error(t, dialAria(t, a, id, nil).Call(ctx, rpc.MethodInterrupt, rpc.InterruptRequest{}, &stopped), "an interrupt to %s was taken", id)
 		_, err := acli.Attach(ctx, id)
 		require.Error(t, err, "an attach to %s was taken", id)
-		require.Nil(t, a.Registry.Get(id), "a refused send or attach brought %s back", id)
+		require.Nil(t, a.Registry.Get(id), "a refused call brought %s back", id)
 	}
 	requireNoResidents(t, a, acli, ctx)
 }
@@ -77,6 +81,33 @@ func TestKillRNowLeavesNoTakenChildServed(t *testing.T) {
 	resp, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: root, Recursive: true, Now: true})
 	require.NoError(t, err)
 	require.Len(t, resp.Removed, 3)
+	requireTaken(t, a, acli, ctx, append([]string{root}, kids...))
+}
+
+// The purge of a reaped group goes through the same delete as --now.
+func TestAReapedGroupsPurgeLeavesNoTakenChildServed(t *testing.T) {
+	a, acli, ctx := daemonFixture(t)
+	root, kids := wokenSubtree(t, a, acli, ctx)
+	_, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: root, Recursive: true, GraceMS: time.Hour.Milliseconds()})
+	require.NoError(t, err)
+	past, _ := json.Marshal(store.ReapedUntilValue(time.Now().Add(-time.Minute)))
+	for _, id := range append([]string{root}, kids...) {
+		_, err := backend(t, a).ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemReapedUntilKey: past}, nil))
+		require.NoError(t, err)
+	}
+	a.SweepLifetimesNow()
+	requireTaken(t, a, acli, ctx, append([]string{root}, kids...))
+}
+
+// A spent lifetime with no reaped grace removes the group at once.
+func TestASpentLifetimeLeavesNoTakenChildServed(t *testing.T) {
+	a, acli, ctx := hardDeleteFixture(t)
+	root, kids := wokenSubtree(t, a, acli, ctx)
+	for _, id := range kids {
+		age(t, a, id, 72*time.Hour, 48*time.Hour, map[string]string{"system.ttl": "0", "system.keepalive": "0"})
+	}
+	age(t, a, root, 72*time.Hour, 48*time.Hour, map[string]string{"system.keepalive": "0"})
+	a.SweepLifetimesNow()
 	requireTaken(t, a, acli, ctx, append([]string{root}, kids...))
 }
 
