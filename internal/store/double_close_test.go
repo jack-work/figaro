@@ -8,11 +8,11 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// One invoke is closed once, however many doors are open over the log: a
+// One invoke is closed once, however many endpoints are open over the log: a
 // second closing notice at one tool_use_id is refused by the provider.
-// OpenFigIR mints a door per call, so what is open must be read from the
+// OpenFigIR mints an endpoint per call, so what is open must be read from the
 // log, not remembered.
-func TestOneInvokeIsClosedOnceAcrossDoors(t *testing.T) {
+func TestOneInvokeIsClosedOnceAcrossEndpoints(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { be.Close() })
@@ -21,9 +21,9 @@ func TestOneInvokeIsClosedOnceAcrossDoors(t *testing.T) {
 	aria, _, err := be.ForkWith(outfit, 0, setPatch(map[string]string{"system.cwd": "/tmp"}))
 	require.NoError(t, err)
 
-	agentDoor, err := be.OpenFigIR(aria)
+	agentEndpoint, err := be.OpenFigIR(aria)
 	require.NoError(t, err)
-	_, err = agentDoor.Append(Entry[message.Message]{Payload: message.Message{
+	_, err = agentEndpoint.Append(Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleOutput,
 		Content: []message.Content{{
 			Type: message.ContentToolInvoke, ToolCallID: "X", ToolName: "bash",
@@ -31,20 +31,20 @@ func TestOneInvokeIsClosedOnceAcrossDoors(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// The interrupt path closes it through a door of its own.
+	// The interrupt path closes it through an endpoint of its own.
 	n, err := be.CloseOpenToolCalls(aria)
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
 
-	// The agent carries on through the door it already had.
-	_, err = agentDoor.Append(Entry[message.Message]{Payload: message.Message{
+	// The agent carries on through the endpoint it already had.
+	_, err = agentEndpoint.Append(Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent("carry on")},
 	}})
 	require.NoError(t, err)
 
 	closes := 0
-	for _, e := range agentDoor.Read() {
+	for _, e := range agentEndpoint.Read() {
 		for _, c := range e.Payload.Content {
 			if c.Type == message.ContentToolResult && c.ToolCallID == "X" {
 				closes++

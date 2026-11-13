@@ -45,7 +45,7 @@ func keyNodes(s string) []string {
 	return out
 }
 
-type apiKeyDoor interface {
+type apiKeyEndpoint interface {
 	TroupeAPIKeyMint(ctx context.Context, req rpc.TroupeAPIKeyMintRequest) (*rpc.TroupeAPIKeyMintResponse, error)
 	TroupeAPIKeyRevoke(ctx context.Context, troupe, id string) (*rpc.TroupeAPIKeyRevokeResponse, error)
 	TroupeAPIKeyList(ctx context.Context, troupe string) (*rpc.TroupeAPIKeyListResponse, error)
@@ -80,7 +80,7 @@ func keyPrincipal(troupe, arg string) (string, error) {
 	return p.String(), nil
 }
 
-func apiKeyMint(ctx context.Context, d apiKeyDoor, out, info io.Writer, troupe, who string, o apiKeyOpts, jsonOut bool) error {
+func apiKeyMint(ctx context.Context, d apiKeyEndpoint, out, info io.Writer, troupe, who string, o apiKeyOpts, jsonOut bool) error {
 	principal, err := keyPrincipal(troupe, who)
 	if err != nil {
 		return err
@@ -144,7 +144,7 @@ func writeStaticKey(out, info io.Writer, wire string, k apikey.Key, principal st
 	return nil
 }
 
-func apiKeyList(ctx context.Context, d apiKeyDoor, out io.Writer, troupe string, jsonOut bool) error {
+func apiKeyList(ctx context.Context, d apiKeyEndpoint, out io.Writer, troupe string, jsonOut bool) error {
 	resp, err := d.TroupeAPIKeyList(ctx, troupe)
 	if err != nil {
 		return err
@@ -193,7 +193,7 @@ func keyState(k rpc.TroupeAPIKey, now time.Time) string {
 	return "live"
 }
 
-func apiKeyRevoke(ctx context.Context, d apiKeyDoor, out io.Writer, troupe, id string) error {
+func apiKeyRevoke(ctx context.Context, d apiKeyEndpoint, out io.Writer, troupe, id string) error {
 	resp, err := d.TroupeAPIKeyRevoke(ctx, troupe, id)
 	if err != nil {
 		return err

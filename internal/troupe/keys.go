@@ -224,16 +224,16 @@ func ParseSigned(chain [][]byte, rootDER []byte) (leaf, issuer, root *x509.Certi
 
 const rejoinDomain = "figaro troupe rejoin v1\n"
 
-func rejoinMessage(troupe, node string, pub ed25519.PublicKey, door string) []byte {
-	msg := []byte(rejoinDomain + troupe + "\n" + node + "\n" + door + "\n")
+func rejoinMessage(troupe, node string, pub ed25519.PublicKey, endpoint string) []byte {
+	msg := []byte(rejoinDomain + troupe + "\n" + node + "\n" + endpoint + "\n")
 	return append(msg, pub...)
 }
 
-func SignRejoin(old crypto.Signer, troupe, node string, pub ed25519.PublicKey, door string) ([]byte, error) {
-	return old.Sign(rand.Reader, rejoinMessage(troupe, node, pub, door), crypto.Hash(0))
+func SignRejoin(old crypto.Signer, troupe, node string, pub ed25519.PublicKey, endpoint string) ([]byte, error) {
+	return old.Sign(rand.Reader, rejoinMessage(troupe, node, pub, endpoint), crypto.Hash(0))
 }
 
-func CheckRejoin(leaf, issuer, root *x509.Certificate, sig []byte, troupe, node string, pub ed25519.PublicKey, door string) error {
+func CheckRejoin(leaf, issuer, root *x509.Certificate, sig []byte, troupe, node string, pub ed25519.PublicKey, endpoint string) error {
 	if !names(leaf, Identity(troupe, node)) {
 		return fmt.Errorf("the old certificate does not name %s", Identity(troupe, node))
 	}
@@ -242,7 +242,7 @@ func CheckRejoin(leaf, issuer, root *x509.Certificate, sig []byte, troupe, node 
 		return fmt.Errorf("the old certificate: %w", err)
 	}
 	old, ok := leaf.PublicKey.(ed25519.PublicKey)
-	if !ok || !ed25519.Verify(old, rejoinMessage(troupe, node, pub, door), sig) {
+	if !ok || !ed25519.Verify(old, rejoinMessage(troupe, node, pub, endpoint), sig) {
 		return errors.New("the request is not signed by the old certificate's key")
 	}
 	return nil

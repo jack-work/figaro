@@ -7,7 +7,7 @@ import (
 	"io"
 )
 
-var maxDoorFrame = 64 << 20
+var maxEndpointFrame = 64 << 20
 
 var errFrameTooLarge = errors.New("door frame too large")
 

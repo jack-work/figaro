@@ -37,16 +37,16 @@ type Config struct {
 	// CLI holds client-owned settings; everything else is the daemon's, which a client changes only through angelus.configure.
 	CLI CLIConfig `toml:"cli"`
 
-	Wire    WireConfig    `toml:"wire"`
-	Store   StoreConfig   `toml:"store"`
-	Memory  MemoryConfig  `toml:"memory"`
-	Models  ModelsConfig  `toml:"models"`
-	Door    DoorConfig    `toml:"door"`
-	Quote   QuoteConfig   `toml:"quote"`
-	Authz   AuthzConfig   `toml:"authz"`
-	Sandbox SandboxConfig `toml:"sandbox"`
-	Worker  WorkerConfig  `toml:"worker"`
-	Angelus AngelusConfig `toml:"angelus"`
+	Wire     WireConfig     `toml:"wire"`
+	Store    StoreConfig    `toml:"store"`
+	Memory   MemoryConfig   `toml:"memory"`
+	Models   ModelsConfig   `toml:"models"`
+	Endpoint EndpointConfig `toml:"door"`
+	Quote    QuoteConfig    `toml:"quote"`
+	Authz    AuthzConfig    `toml:"authz"`
+	Sandbox  SandboxConfig  `toml:"sandbox"`
+	Worker   WorkerConfig   `toml:"worker"`
+	Angelus  AngelusConfig  `toml:"angelus"`
 
 	ServiceTokens map[string]ServiceToken `toml:"service_tokens"`
 
@@ -741,11 +741,11 @@ func detach(cfg *Config) {
 	cfg.Troupe = TroupeConfig{}
 	cfg.CLI.Troupe = ""
 	cfg.Peers = nil
-	cfg.Door.TLS = nil
-	cfg.Door.Web = nil
+	cfg.Endpoint.TLS = nil
+	cfg.Endpoint.Web = nil
 	for name, b := range cfg.Sandbox.Boxes {
-		b.Door = ""
-		b.HostDoor = ""
+		b.Endpoint = ""
+		b.HostEndpoint = ""
 		cfg.Sandbox.Boxes[name] = b
 	}
 }

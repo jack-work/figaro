@@ -32,14 +32,14 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
-type joinDoor interface {
+type joinEndpoint interface {
 	TroupeIdentity(ctx context.Context, troupe string) (*rpc.TroupeIdentityResponse, error)
 	TroupeSign(ctx context.Context, req rpc.TroupeSignRequest) (*rpc.TroupeSignResponse, error)
 }
 
 type joinOpts struct {
 	Delegate    string
-	Door        string
+	Endpoint    string
 	Listen      string
 	RootSHA256  string
 	Yes         bool
@@ -55,35 +55,35 @@ type joinSite struct {
 	node     string
 }
 
-func (s joinSite) doors(o joinOpts) (door, listen string, err error) {
-	existing, ok, err := s.loaded.TLSDoor()
+func (s joinSite) endpoints(o joinOpts) (endpoint, listen string, err error) {
+	existing, ok, err := s.loaded.TLSEndpoint()
 	if err != nil {
 		return "", "", err
 	}
 	if ok && existing.Cert != "" {
 		return "", "", errors.New("[door.tls] names certificate files; a troupe member serves on troupe keys, so remove cert, key and client_ca first")
 	}
-	door, listen = o.Door, o.Listen
-	if door == "" && ok {
-		door = existing.Advertise
+	endpoint, listen = o.Endpoint, o.Listen
+	if endpoint == "" && ok {
+		endpoint = existing.Advertise
 	}
-	if door == "" {
+	if endpoint == "" {
 		return "", "", errors.New("--door host:port is required: the address other nodes dial to reach this one")
 	}
-	host, _, err := net.SplitHostPort(door)
+	host, _, err := net.SplitHostPort(endpoint)
 	if err != nil || host == "" || net.ParseIP(host).IsUnspecified() {
-		return "", "", fmt.Errorf("--door %q is not a host:port another node can dial", door)
+		return "", "", fmt.Errorf("--door %q is not a host:port another node can dial", endpoint)
 	}
 	if listen == "" && ok {
 		listen = existing.Listen
 	}
 	if listen == "" {
-		listen = door
+		listen = endpoint
 	}
 	if _, _, err := net.SplitHostPort(listen); err != nil {
 		return "", "", fmt.Errorf("--listen %q: %w", listen, err)
 	}
-	return door, listen, nil
+	return endpoint, listen, nil
 }
 
 func (s joinSite) fits(name string) error {
@@ -129,14 +129,14 @@ func trustRoot(id *rpc.TroupeIdentityResponse, held []byte, o joinOpts) (string,
 	return hexSum, nil
 }
 
-func troupeJoin(ctx context.Context, d joinDoor, site joinSite, name string, o joinOpts) error {
+func troupeJoin(ctx context.Context, d joinEndpoint, site joinSite, name string, o joinOpts) error {
 	if err := site.fits(name); err != nil {
 		return err
 	}
 	if err := checkDelegate(o); err != nil {
 		return err
 	}
-	door, listen, err := site.doors(o)
+	endpoint, listen, err := site.endpoints(o)
 	if err != nil {
 		return err
 	}
@@ -172,10 +172,10 @@ func troupeJoin(ctx context.Context, d joinDoor, site joinSite, name string, o j
 	if err != nil {
 		return err
 	}
-	req := rpc.TroupeSignRequest{Troupe: name, Node: site.node, PublicKey: pub, Door: door, TTLMillis: ttl.Milliseconds()}
+	req := rpc.TroupeSignRequest{Troupe: name, Node: site.node, PublicKey: pub, Endpoint: endpoint, TTLMillis: ttl.Milliseconds()}
 	if old, err := dir.Node(); err == nil {
 		if signer, ok := old.PrivateKey.(crypto.Signer); ok && len(old.Certificate) == 2 {
-			sig, err := troupe.SignRejoin(signer, name, site.node, pub, door)
+			sig, err := troupe.SignRejoin(signer, name, site.node, pub, endpoint)
 			if err != nil {
 				return err
 			}
@@ -218,7 +218,7 @@ func troupeJoin(ctx context.Context, d joinDoor, site joinSite, name string, o j
 	if err := dir.WriteJoined(l.Entries()); err != nil {
 		return err
 	}
-	snippet, err := joinConfig(site.loaded.ConfigPath, name, listen, door, o.UID, id.Principal)
+	snippet, err := joinConfig(site.loaded.ConfigPath, name, listen, endpoint, o.UID, id.Principal)
 	fmt.Fprintf(o.Out, "joined troupe %s as node %s, admitted by %s; certificate until %s\n",
 		name, site.node, me.AdmittedBy, leaf.NotAfter.UTC().Format("2006-01-02 15:04Z"))
 	if granted := time.Duration(resp.TTLMillis) * time.Millisecond; granted > 0 && granted < ttl {
@@ -254,11 +254,11 @@ func peercredFor(uid int, p rpc.Principal) string {
 	return text
 }
 
-func joinConfig(path, name, listen, door string, uid int, p rpc.Principal) (string, error) {
+func joinConfig(path, name, listen, endpoint string, uid int, p rpc.Principal) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[troupe]\nname = %q\nprovider = %q\n\n[door.tls]\nlisten = %q\n", name, config.ProviderFigaro, listen)
-	if door != listen {
-		fmt.Fprintf(&b, "advertise = %q\n", door)
+	if endpoint != listen {
+		fmt.Fprintf(&b, "advertise = %q\n", endpoint)
 	}
 	principal := peercredFor(uid, p)
 	if principal != "" {
@@ -277,11 +277,11 @@ func joinConfig(path, name, listen, door string, uid int, p rpc.Principal) (stri
 	tr := table(raw, "troupe")
 	tr["name"], tr["provider"] = name, config.ProviderFigaro
 	delete(tr, "version")
-	tlsDoor := table(table(raw, "door"), "tls")
-	tlsDoor["listen"] = listen
-	delete(tlsDoor, "advertise")
-	if door != listen {
-		tlsDoor["advertise"] = door
+	tlsEndpoint := table(table(raw, "door"), "tls")
+	tlsEndpoint["listen"] = listen
+	delete(tlsEndpoint, "advertise")
+	if endpoint != listen {
+		tlsEndpoint["advertise"] = endpoint
 	}
 	if principal != "" {
 		table(table(table(raw, "authz"), "peercred"), "uids")[strconv.Itoa(uid)] = principal
@@ -313,7 +313,7 @@ func table(m map[string]any, key string) map[string]any {
 	return t
 }
 
-func troupeEndpoint(tr boot.Troupe) (transport.Endpoint, error) {
+func endpointOfTroupe(tr boot.Troupe) (transport.Endpoint, error) {
 	u, err := url.Parse(tr.URL)
 	if err != nil {
 		return transport.Endpoint{}, fmt.Errorf("troupe %q: url %q: %w", tr.Name, tr.URL, err)
@@ -332,7 +332,7 @@ func runTroupeJoin(loaded *config.Loaded, name string, o joinOpts) {
 	if err != nil {
 		die("%s (troupe join reaches a member through troupes/%s.toml)", err, name)
 	}
-	ep, err := troupeEndpoint(tr)
+	ep, err := endpointOfTroupe(tr)
 	if err != nil {
 		die("%s", err)
 	}

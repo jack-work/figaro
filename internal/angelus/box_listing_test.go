@@ -10,7 +10,7 @@ import (
 // the anchors of outfits that dress into its own box and no others: before,
 // every box saw every anchor's id, so a receipt box listed the chat outfit.
 func TestABoxListsOnlyTheAnchorsItMayRead(t *testing.T) {
-	d := boxDoorRigConfigured(t, defaultPolicy, "true", judgeWearsOnlyJudged)
+	d := boxEndpointRigConfigured(t, defaultPolicy, "true", judgeWearsOnlyJudged)
 	if _, err := d.create(asOwner(), "judged"); err != nil {
 		t.Fatal(err)
 	}

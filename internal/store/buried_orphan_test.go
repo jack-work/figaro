@@ -28,10 +28,10 @@ func unmatchedInvokes(rows []Entry[message.Message]) []string {
 	return open
 }
 
-// The door is bounded: the IR is correct by construction, so only the last
-// round is inspected. A buried orphan from history written before the door
+// The endpoint is bounded: the IR is correct by construction, so only the last
+// round is inspected. A buried orphan from history written before the endpoint
 // survives it, and RepairToolCalls heals it once.
-func TestTheDoorDoesNotScanHistoryForOrphans(t *testing.T) {
+func TestTheEndpointDoesNotScanHistoryForOrphans(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { be.Close() })
@@ -40,7 +40,7 @@ func TestTheDoorDoesNotScanHistoryForOrphans(t *testing.T) {
 	aria, _, err := be.ForkWith(outfit, 0, setPatch(map[string]string{"system.cwd": "/tmp"}))
 	require.NoError(t, err)
 
-	// Written beneath the door, as a figaro that predates it left the history.
+	// Written beneath the endpoint, as a figaro that predates it left the history.
 	be.mu.Lock()
 	h, err := be.handleLocked(aria)
 	be.mu.Unlock()
@@ -61,7 +61,7 @@ func TestTheDoorDoesNotScanHistoryForOrphans(t *testing.T) {
 	}
 	require.Equal(t, []string{"toolu_buried"}, unmatchedInvokes(raw.Read()), "fixture")
 
-	// The door sees the last round, which is well formed, and closes nothing.
+	// The endpoint sees the last round, which is well formed, and closes nothing.
 	n, err := be.CloseOpenToolCalls(aria)
 	require.NoError(t, err)
 	require.Zero(t, n, "the door scanned past the current round")

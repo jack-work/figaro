@@ -27,9 +27,9 @@ type servedBox struct {
 	sock, ws string
 }
 
-func serveBox(t *testing.T) servedBox { return serveBoxDoor(t, false) }
+func serveBox(t *testing.T) servedBox { return serveBoxEndpoint(t, false) }
 
-func serveBoxDoor(t *testing.T, door bool) servedBox {
+func serveBoxEndpoint(t *testing.T, endpoint bool) servedBox {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "abox")
 	if err != nil {
@@ -45,7 +45,7 @@ func serveBoxDoor(t *testing.T, door bool) servedBox {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if door {
+	if endpoint {
 		if err := srv.CallBackThrough(filepath.Join(dir, "door.sock")); err != nil {
 			t.Fatal(err)
 		}
@@ -177,44 +177,44 @@ func TestABoxThatIsDownFailsTheBirthAndLeavesNothing(t *testing.T) {
 	}
 }
 
-type doorRig struct {
+type endpointRig struct {
 	grantRig
-	sb   servedBox
-	door string
-	p    *bashProvider
+	sb       servedBox
+	endpoint string
+	p        *bashProvider
 }
 
-func boxDoorRig(t *testing.T, command string) doorRig {
+func boxEndpointRig(t *testing.T, command string) endpointRig {
 	t.Helper()
-	return boxDoorRigWith(t, defaultPolicy, command)
+	return boxEndpointRigWith(t, defaultPolicy, command)
 }
 
-func boxDoorRigWith(t *testing.T, policy, command string, opts ...func(*angelus.ServerConfig)) doorRig {
+func boxEndpointRigWith(t *testing.T, policy, command string, opts ...func(*angelus.ServerConfig)) endpointRig {
 	t.Helper()
-	return boxDoorRigConfigured(t, policy, command, "", opts...)
+	return boxEndpointRigConfigured(t, policy, command, "", opts...)
 }
 
-func boxDoorRigConfigured(t *testing.T, policy, command, boxExtra string, opts ...func(*angelus.ServerConfig)) doorRig {
+func boxEndpointRigConfigured(t *testing.T, policy, command, boxExtra string, opts ...func(*angelus.ServerConfig)) endpointRig {
 	t.Helper()
-	sb := serveBoxDoor(t, true)
-	door := filepath.Join(filepath.Dir(sb.sock), "door.sock")
+	sb := serveBoxEndpoint(t, true)
+	endpoint := filepath.Join(filepath.Dir(sb.sock), "door.sock")
 	p := &bashProvider{command: command, turns: make(chan string, 4)}
-	r := newRigProviding(t, policy, fmt.Sprintf("[sandbox.boxes.judge]\nexec = %q\ndoor = %q\n%s", sb.sock, door, boxExtra),
+	r := newRigProviding(t, policy, fmt.Sprintf("[sandbox.boxes.judge]\nexec = %q\ndoor = %q\n%s", sb.sock, endpoint, boxExtra),
 		func(string, provider.Knobs) (provider.Provider, error) { return p, nil }, opts...)
-	ln, err := angelus.ListenUnix(door, 0o660)
+	ln, err := angelus.ListenUnix(endpoint, 0o660)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { r.a.Serve(ctx, ln, authz.DoorBox, authz.BoxAdmit("judge")); close(done) }()
+	go func() { r.a.Serve(ctx, ln, authz.EndpointBox, authz.BoxAdmit("judge")); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
-	return doorRig{grantRig: r, sb: sb, door: door, p: p}
+	return endpointRig{grantRig: r, sb: sb, endpoint: endpoint, p: p}
 }
 
-func (d doorRig) dial(t *testing.T) *jkrpc.Client {
+func (d endpointRig) dial(t *testing.T) *jkrpc.Client {
 	t.Helper()
-	nc, err := net.Dial("unix", d.door)
+	nc, err := net.Dial("unix", d.endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,8 +234,8 @@ func setKey(t *testing.T, c *jkrpc.Client, id, key, val string) error {
 	return boxOnAria(t, c, rpc.MethodSet, id, rpc.SetRequest{Patch: form.Build(form.Snapshot{}, map[string]json.RawMessage{key: v}, nil)}, nil)
 }
 
-func TestTheBoxDoorReachesOnlyAriasInItsBox(t *testing.T) {
-	d := boxDoorRig(t, `echo "$FIGARO_TROUPE"`)
+func TestTheBoxEndpointReachesOnlyAriasInItsBox(t *testing.T) {
+	d := boxEndpointRig(t, `echo "$FIGARO_TROUPE"`)
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)
@@ -250,7 +250,7 @@ func TestTheBoxDoorReachesOnlyAriasInItsBox(t *testing.T) {
 	}
 	select {
 	case out := <-d.p.turns:
-		if !strings.Contains(out, "unix://"+d.door) {
+		if !strings.Contains(out, "unix://"+d.endpoint) {
 			t.Fatalf("bash in the box sees FIGARO_TROUPE %q, want the door", out)
 		}
 	case <-time.After(10 * time.Second):
@@ -338,8 +338,8 @@ func mantraPatch(v string) *form.Patch {
 	return &p
 }
 
-func TestABoxThePolicyDoesNotBindIsRefusedAtTheDoor(t *testing.T) {
-	d := boxDoorRigWith(t, grantPolicy, "true")
+func TestABoxThePolicyDoesNotBindIsRefusedAtTheEndpoint(t *testing.T) {
+	d := boxEndpointRigWith(t, grantPolicy, "true")
 	c := d.dial(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

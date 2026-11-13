@@ -14,11 +14,11 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 )
 
-// El Inspector XIV, P2: a caller on the web door is admitted no longer than
-// the door keeps its connection, and a proposal it parks carries that bound.
-func TestAWebCallerIsAdmittedUntilTheDoorWouldCloseIt(t *testing.T) {
+// El Inspector XIV, P2: a caller on the web endpoint is admitted no longer than
+// the endpoint keeps its connection, and a proposal it parks carries that bound.
+func TestAWebCallerIsAdmittedUntilTheEndpointWouldCloseIt(t *testing.T) {
 	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, authz.PrincipalText(webPrincipal))}}
-	h.angelus.Handlers = h.door(map[string]jkrpc.HandlerFunc{rpc.MethodHello: func(ctx context.Context, _ json.RawMessage) (any, error) {
+	h.angelus.Handlers = h.endpoint(map[string]jkrpc.HandlerFunc{rpc.MethodHello: func(ctx context.Context, _ json.RawMessage) (any, error) {
 		by, err := h.angelus.topologyPrincipal(ctx)
 		if err != nil {
 			return nil, err

@@ -32,7 +32,7 @@ func keeperRig(t *testing.T, interTTL time.Duration) (*Keeper, *clock) {
 }
 
 // At boot the keeper issues the node certificate from the intermediate,
-// and the door can serve it at once.
+// and the endpoint can serve it at once.
 func TestTheKeeperIssuesTheNodeCertificateAtBoot(t *testing.T) {
 	k, c := keeperRig(t, IntermediateTTL)
 	require.NoError(t, k.Ensure())

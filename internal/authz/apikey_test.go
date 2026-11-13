@@ -219,7 +219,7 @@ func TestAJWTNeverReachesTheKeyTable(t *testing.T) {
 	require.ErrorIs(t, err, ErrUnadmitted)
 }
 
-// A key is good only on the nodes it names: another node's door refuses it
+// A key is good only on the nodes it names: another node's endpoint refuses it
 // after the secret checks out, and a connection it holds is never forwarded
 // to a node outside its audience.
 func TestAKeyIsGoodOnlyOnItsNodes(t *testing.T) {

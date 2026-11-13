@@ -63,7 +63,7 @@ func offToken(tr *transcript, base int) string {
 	case tr.selection.active:
 		// SELECTION-DRIVEN: the offset is wherever the selected node had to be
 		// scrolled to, so it is a fact about the node's position in the
-		// conversation, not about the key. `sel=true` next door already says
+		// conversation, not about the key. `sel=true` next endpoint already says
 		// the key selected something; the distance it travelled is content.
 		return "off:sel"
 	case tr.visual.active():

@@ -143,7 +143,7 @@ func TestPagesRefusesEveryCallItWasNotBuiltFor(t *testing.T) {
 	if _, err := r.a.Workers.Ledger.Page("others", "chat:77", 1, workerpool.PurgeFailed, "cd34"); err != nil {
 		t.Fatal(err)
 	}
-	throughNodeDoor := func(ctx context.Context) context.Context { return authz.WithDoor(ctx, authz.DoorNode) }
+	throughNodeEndpoint := func(ctx context.Context) context.Context { return authz.WithEndpoint(ctx, authz.EndpointNode) }
 	for name, c := range map[string]struct {
 		ctx    context.Context
 		params string
@@ -160,8 +160,8 @@ func TestPagesRefusesEveryCallItWasNotBuiltFor(t *testing.T) {
 		"no pool":                       {asBroker(), `{"seen":[1]}`},
 		"no params":                     {asBroker(), ``},
 		"a stranger":                    {as("user", "mallory"), `{"pool":"groups","seen":[1]}`},
-		"broker through a node door":    {throughNodeDoor(asBroker()), `{"pool":"groups","seen":[1]}`},
-		"the owner through a node door": {throughNodeDoor(asOwner()), `{"pool":"groups","seen":[1]}`},
+		"broker through a node door":    {throughNodeEndpoint(asBroker()), `{"pool":"groups","seen":[1]}`},
+		"the owner through a node door": {throughNodeEndpoint(asOwner()), `{"pool":"groups","seen":[1]}`},
 		"a pool the config lacks":       {asOwner(), `{"pool":"nowhere","seen":[1]}`},
 	} {
 		if pages, err := r.pages(t, c.ctx, c.params); err == nil {

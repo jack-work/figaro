@@ -15,7 +15,7 @@ import (
 
 // A box's aria can have branches outside the box: the owner forks it and moves
 // the fork out. A box takes nothing outside the box through the topology.
-func boxAriaWithForkOutside(t *testing.T, d doorRig, moveOut bool) (string, string) {
+func boxAriaWithForkOutside(t *testing.T, d endpointRig, moveOut bool) (string, string) {
 	t.Helper()
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
@@ -38,7 +38,7 @@ func boxAriaWithForkOutside(t *testing.T, d doorRig, moveOut bool) (string, stri
 }
 
 func TestABoxKillMinusRTakesNothingOutsideTheBox(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	root, fork := boxAriaWithForkOutside(t, d, true)
 	c := d.dial(t)
 	err := c.Call(context.Background(), rpc.MethodKill, rpc.KillRequest{FigaroID: root, Recursive: true}, nil)
@@ -49,7 +49,7 @@ func TestABoxKillMinusRTakesNothingOutsideTheBox(t *testing.T) {
 		t.Fatal("a refused kill -r took something")
 	}
 
-	canary := boxDoorRig(t, "true")
+	canary := boxEndpointRig(t, "true")
 	croot, cfork := boxAriaWithForkOutside(t, canary, false)
 	cc := canary.dial(t)
 	if err := cc.Call(context.Background(), rpc.MethodKill, rpc.KillRequest{FigaroID: croot, Recursive: true}, nil); err != nil {
@@ -61,7 +61,7 @@ func TestABoxKillMinusRTakesNothingOutsideTheBox(t *testing.T) {
 }
 
 func TestABoxCannotSetALifetime(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	root, _ := boxAriaWithForkOutside(t, d, true)
 	c := d.dial(t)
 	for _, key := range []string{"system.ttl", "system.keepalive"} {
@@ -75,7 +75,7 @@ func TestABoxCannotSetALifetime(t *testing.T) {
 // kept, whoever set the lifetime, so nothing set inside a box ends an aria
 // outside it.
 func TestTheLifetimeSweepNeverTakesAnotherSandboxsAria(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	root, fork := boxAriaWithForkOutside(t, d, true)
 	age(t, d.a, root, 72*time.Hour, 48*time.Hour, map[string]string{"system.keepalive": "0"})
 	idle(t, d.a, fork)
@@ -101,7 +101,7 @@ func TestTheLifetimeSweepNeverTakesAnotherSandboxsAria(t *testing.T) {
 		t.Fatalf("the listing does not show the root held: %+v", row)
 	}
 
-	canary := boxDoorRig(t, "true")
+	canary := boxEndpointRig(t, "true")
 	croot, cfork := boxAriaWithForkOutside(t, canary, false)
 	age(t, canary.a, croot, 72*time.Hour, 48*time.Hour, map[string]string{"system.keepalive": "0"})
 	idle(t, canary.a, cfork)

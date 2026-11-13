@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// What a door admits lives as long as the connection: a key's hold on its
+// What an endpoint admits lives as long as the connection: a key's hold on its
 // connection is released when the client goes, not when the key expires.
-func TestWebDoorEndsTheAdmittedContextWithTheConnection(t *testing.T) {
+func TestWebEndpointEndsTheAdmittedContextWithTheConnection(t *testing.T) {
 	admitted := make(chan context.Context, 1)
 	admit := func(ctx context.Context, r *http.Request) (context.Context, error) {
 		ctx = authz.WithPrincipal(ctx, webPrincipal)

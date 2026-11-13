@@ -43,7 +43,7 @@ func ariaIDsIn(snap form.Snapshot) string {
 // principal never sees another's rows, and there is no per-principal id on the
 // wire to name instead. Naming anything else under @arias is not found.
 func TestEachCallerReadsTheirOwnArias(t *testing.T) {
-	r := newRigWith(t, doorPolicy)
+	r := newRigWith(t, endpointPolicy)
 	owned, err := r.create(asOwner(), "mock")
 	if err != nil {
 		t.Fatal(err)
@@ -332,7 +332,7 @@ func setTopology(t *testing.T, r grantRig, ctx context.Context, set map[string]s
 // its history, valued with the aria it is drawn under. Writing it moves the
 // row; removing a key sends the aria back under its history parent.
 func TestTopologyIsWrittenThroughItsOwnForm(t *testing.T) {
-	r := newRigWith(t, doorPolicy)
+	r := newRigWith(t, endpointPolicy)
 	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -444,7 +444,7 @@ func lend(verbs []string, ids ...string) string {
 
 func lendGuest(t *testing.T, r grantRig, grants ...string) {
 	t.Helper()
-	text := doorPolicy + "\n[roles.lent]\npermissions = [" + strings.Join(grants, ", ") + "]\n\n[[bind]]\nrole = \"lent\"\nprincipals = [\"user:guest\"]\n"
+	text := endpointPolicy + "\n[roles.lent]\npermissions = [" + strings.Join(grants, ", ") + "]\n\n[[bind]]\nrole = \"lent\"\nprincipals = [\"user:guest\"]\n"
 	if err := os.WriteFile(r.policy, []byte(strings.ReplaceAll(text, "SELF", strconv.Itoa(os.Getuid()))), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -457,7 +457,7 @@ func lendGuest(t *testing.T, r grantRig, grants ...string) {
 // whose aria and P have different owners needs adopt on P; without it the
 // move waits on P for its holder, and nothing is drawn meanwhile.
 func TestArrangingUnderAnotherOwnersAriaNeedsAdoptOnIt(t *testing.T) {
-	r := newRigWith(t, doorPolicy)
+	r := newRigWith(t, endpointPolicy)
 	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -494,7 +494,7 @@ func TestArrangingUnderAnotherOwnersAriaNeedsAdoptOnIt(t *testing.T) {
 // that override moves the other aria: a caller without kill on it is refused
 // the whole edit (the kill floor).
 func TestAnArrangeDoesNotUndoAnOverrideTheCallerCannotKill(t *testing.T) {
-	r := newRigWith(t, doorPolicy)
+	r := newRigWith(t, endpointPolicy)
 	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)
 	}

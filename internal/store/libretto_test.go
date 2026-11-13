@@ -405,7 +405,7 @@ func TestLibrettoReaderSeesFoldsAfterItWasOpened(t *testing.T) {
 		t.Fatalf("the held accessor froze at %d: a source change after it was opened never rendered", at)
 	}
 
-	// And the wrong door is locked: reading a libretto as a node would open
+	// And the wrong endpoint is locked: reading a libretto as a node would open
 	// that second Form.
 	if _, err := be.FormVersion(LibrettoID(src)); err == nil {
 		t.Fatal("reading a libretto as a node succeeded; that is the orphaned reader")

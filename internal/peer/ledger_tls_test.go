@@ -91,14 +91,14 @@ func (lt *ledgerTroupe) membership(node string, es ...troupe.Entry) *Ledger {
 	return NewLedger(node, l, &Credentials{Certificate: k.Current, Roots: k.Roots})
 }
 
-// serveLedgerDoor runs node's door the way the daemon does: TLS from the
-// membership's credentials, the passage through Door.Admit, then an rpc
+// serveLedgerEndpoint runs node's endpoint the way the daemon does: TLS from the
+// membership's credentials, the passage through Endpoint.Admit, then an rpc
 // server that stops when the admitted context ends.
-func (lt *ledgerTroupe) serveLedgerDoor(node string, m *Ledger) *Door {
+func (lt *ledgerTroupe) serveLedgerEndpoint(node string, m *Ledger) *Endpoint {
 	lt.t.Helper()
-	cfg, err := ServerTLS(config.TLSDoor{}, m.Credentials())
+	cfg, err := ServerTLS(config.TLSEndpoint{}, m.Credentials())
 	require.NoError(lt.t, err)
-	d := &Door{Members: m, Versions: &Versions{}}
+	d := &Endpoint{Members: m, Versions: &Versions{}}
 	m.OnEvict(d.Evict)
 	ln := tls.NewListener(lt.ln[node], cfg)
 	go func() {
@@ -174,7 +174,7 @@ func TestLedgerMembersDialAndServeEachOther(t *testing.T) {
 	ma, mb := lt.membership("a", es...), lt.membership("b", es...)
 	require.Equal(t, []string{"b"}, ma.Nodes())
 	require.Equal(t, mb.Version(), ma.Version())
-	lt.serveLedgerDoor("b", mb)
+	lt.serveLedgerEndpoint("b", mb)
 
 	l, err := open(t, ma, "b")
 	require.NoError(t, err)
@@ -182,12 +182,12 @@ func TestLedgerMembersDialAndServeEachOther(t *testing.T) {
 	require.NoError(t, echo(l))
 }
 
-// A node that is not in the ledger is refused by the door at the TLS
+// A node that is not in the ledger is refused by the endpoint at the TLS
 // handshake, even holding a certificate from the troupe's root.
-func TestADoorRefusesACertifiedNodeTheLedgerDoesNotName(t *testing.T) {
+func TestAEndpointRefusesACertifiedNodeTheLedgerDoesNotName(t *testing.T) {
 	lt := newLedgerTroupe(t, "a", "b")
 	mb := lt.membership("b", lt.selfJoin("b"))
-	lt.serveLedgerDoor("b", mb)
+	lt.serveLedgerEndpoint("b", mb)
 	ma := lt.membership("a", lt.selfJoin("a"), lt.selfJoin("b"))
 
 	_, err := open(t, ma, "b")
@@ -195,7 +195,7 @@ func TestADoorRefusesACertifiedNodeTheLedgerDoesNotName(t *testing.T) {
 }
 
 // A revoke arriving while a link is open takes effect on both sides: the
-// door that learns it drops the revoked node's connections, the dialer
+// endpoint that learns it drops the revoked node's connections, the dialer
 // that learns it drops its links to that node, and the next handshake is
 // refused.
 func TestARevokeMidConnectionDropsTheLinkAndRefusesTheNextHandshake(t *testing.T) {
@@ -203,7 +203,7 @@ func TestARevokeMidConnectionDropsTheLinkAndRefusesTheNextHandshake(t *testing.T
 		lt := newLedgerTroupe(t, "a", "b")
 		es := []troupe.Entry{lt.selfJoin("a"), lt.selfJoin("b")}
 		ma, mb := lt.membership("a", es...), lt.membership("b", es...)
-		lt.serveLedgerDoor("b", mb)
+		lt.serveLedgerEndpoint("b", mb)
 		l, err := open(t, ma, "b")
 		require.NoError(t, err)
 		require.NoError(t, echo(l))
@@ -219,7 +219,7 @@ func TestARevokeMidConnectionDropsTheLinkAndRefusesTheNextHandshake(t *testing.T
 		lt := newLedgerTroupe(t, "a", "b")
 		es := []troupe.Entry{lt.selfJoin("a"), lt.selfJoin("b")}
 		ma, mb := lt.membership("a", es...), lt.membership("b", es...)
-		lt.serveLedgerDoor("b", mb)
+		lt.serveLedgerEndpoint("b", mb)
 		l, err := open(t, ma, "b")
 		require.NoError(t, err)
 		stale, ok := ma.Member("b")
@@ -300,13 +300,13 @@ func TestALeafFromAnIntermediateThatIsNotTheNodesIsRefused(t *testing.T) {
 	require.ErrorContains(t, md.Admit([]*x509.Certificate{leafFrom("d", "b")[0]}), "no issuing intermediate")
 }
 
-// The door forgets a connection when it ends, so a node that is never
+// The endpoint forgets a connection when it ends, so a node that is never
 // evicted does not accumulate one entry per call it ever made.
-func TestTheDoorForgetsAClosedConnection(t *testing.T) {
+func TestTheEndpointForgetsAClosedConnection(t *testing.T) {
 	lt := newLedgerTroupe(t, "a", "b")
 	es := []troupe.Entry{lt.selfJoin("a"), lt.selfJoin("b")}
 	ma, mb := lt.membership("a", es...), lt.membership("b", es...)
-	d := lt.serveLedgerDoor("b", mb)
+	d := lt.serveLedgerEndpoint("b", mb)
 	for range 3 {
 		l, err := open(t, ma, "b")
 		require.NoError(t, err)
@@ -320,19 +320,19 @@ func TestTheDoorForgetsAClosedConnection(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond)
 }
 
-// A node whose leave the door already holds gets through the handshake only
+// A node whose leave the endpoint already holds gets through the handshake only
 // to hear so: the passage answers Left with no ledger version, the dialer
 // gets no link, and Spread counts the member reached once the dialer holds
 // its own leave. A revoked node, and a left node's leaf from an
 // intermediate that is not its issuer, are still refused.
-func TestADoorAnswersANodeWhoseLeaveItHolds(t *testing.T) {
+func TestAEndpointAnswersANodeWhoseLeaveItHolds(t *testing.T) {
 	lt := newLedgerTroupe(t, "a", "b", "q")
 	es := []troupe.Entry{lt.selfJoin("a"), lt.selfJoin("b")}
 	ma, mb := lt.membership("a", es...), lt.membership("b", es...)
 	leave := lt.leave("b")
 	_, err := ma.Merge(leave)
 	require.NoError(t, err)
-	lt.serveLedgerDoor("a", ma)
+	lt.serveLedgerEndpoint("a", ma)
 
 	_, err = open(t, mb, "a")
 	var refused *Refused

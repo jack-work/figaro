@@ -69,7 +69,7 @@ func (f *fakeMember) TroupeSign(_ context.Context, req rpc.TroupeSignRequest) (*
 	}
 	self, err := troupe.SignJoin(f.ikey, f.inter, req.Troupe, "node-a", "a.lan:7443", "user:owner", time.Now())
 	require.NoError(f.t, err)
-	join, err := troupe.SignJoin(f.ikey, f.inter, req.Troupe, req.Node, req.Door, "user:owner", time.Now())
+	join, err := troupe.SignJoin(f.ikey, f.inter, req.Troupe, req.Node, req.Endpoint, "user:owner", time.Now())
 	require.NoError(f.t, err)
 	resp := &rpc.TroupeSignResponse{Chain: [][]byte{leaf.Raw, f.inter.Raw}, Root: f.root.Raw, Entries: troupe.Encode([]troupe.Entry{self, join})}
 	if f.tamper != nil {
@@ -119,7 +119,7 @@ func (r *joinRig) config(t *testing.T) map[string]any {
 func TestTroupeJoinWritesTheCertificateAndTheConfig(t *testing.T) {
 	f := newFakeMember(t)
 	r := newJoinRig(t, "default_outfit = \"mock\"\n")
-	err := troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Door: "b.lan:7443", Listen: "0.0.0.0:7443", Yes: true}))
+	err := troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Endpoint: "b.lan:7443", Listen: "0.0.0.0:7443", Yes: true}))
 	require.NoError(t, err, r.out.String())
 
 	d := troupe.DirFor(r.site.stateDir, "estate")
@@ -169,7 +169,7 @@ func TestTroupeJoinTrustsTheRootOnlyWhenTold(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			before := f.signed
 			r := newJoinRig(t, "")
-			c.o.Door = "b.lan:7443"
+			c.o.Endpoint = "b.lan:7443"
 			err := troupeJoin(context.Background(), f, r.site, "estate", r.opts(c.o))
 			if c.ok {
 				require.NoError(t, err)
@@ -185,8 +185,8 @@ func TestTroupeJoinTrustsTheRootOnlyWhenTold(t *testing.T) {
 	}
 }
 
-// What the door hands back is checked before anything is written.
-func TestTroupeJoinChecksWhatTheDoorReturns(t *testing.T) {
+// What the endpoint hands back is checked before anything is written.
+func TestTroupeJoinChecksWhatTheEndpointReturns(t *testing.T) {
 	other := newFakeMember(t)
 	cases := map[string]func(*rpc.TroupeSignResponse){
 		"another root":           func(r *rpc.TroupeSignResponse) { r.Root = other.root.Raw },
@@ -198,7 +198,7 @@ func TestTroupeJoinChecksWhatTheDoorReturns(t *testing.T) {
 			f := newFakeMember(t)
 			f.tamper = tamper
 			r := newJoinRig(t, "")
-			err := troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Door: "b.lan:7443", Yes: true}))
+			err := troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Endpoint: "b.lan:7443", Yes: true}))
 			require.Error(t, err)
 			_, err = troupe.DirFor(r.site.stateDir, "estate").Node()
 			require.Error(t, err, "kept a certificate that failed its checks")
@@ -217,8 +217,8 @@ func otherLeaf(t *testing.T, f *fakeMember) []byte {
 	return leaf.Raw
 }
 
-// A node already in a troupe, or configured with static peers or door
-// certificate files, is refused before the door is asked anything.
+// A node already in a troupe, or configured with static peers or endpoint
+// certificate files, is refused before the endpoint is asked anything.
 func TestTroupeJoinRefusesAConfigItWouldContradict(t *testing.T) {
 	for _, cfg := range []string{
 		"[troupe]\nname = \"other\"\n",
@@ -227,24 +227,24 @@ func TestTroupeJoinRefusesAConfigItWouldContradict(t *testing.T) {
 	} {
 		f := newFakeMember(t)
 		r := newJoinRig(t, cfg)
-		err := troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Door: "b.lan:7443", Yes: true}))
+		err := troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Endpoint: "b.lan:7443", Yes: true}))
 		require.Error(t, err, cfg)
 		require.Zero(t, f.signed, cfg)
 	}
-	for _, door := range []string{"", "0.0.0.0:7443", "b.lan"} {
+	for _, endpoint := range []string{"", "0.0.0.0:7443", "b.lan"} {
 		f := newFakeMember(t)
 		r := newJoinRig(t, "")
-		err := troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Door: door, Yes: true}))
-		require.ErrorContains(t, err, "door", door)
+		err := troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Endpoint: endpoint, Yes: true}))
+		require.ErrorContains(t, err, "door", endpoint)
 	}
 }
 
-// The door's own node is not joined through itself.
-func TestTroupeJoinRefusesItsOwnDoor(t *testing.T) {
+// The endpoint's own node is not joined through itself.
+func TestTroupeJoinRefusesItsOwnEndpoint(t *testing.T) {
 	f := newFakeMember(t)
 	r := newJoinRig(t, "")
 	r.site.node = "node-a"
-	err := troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Door: "a.lan:7443", Yes: true}))
+	err := troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Endpoint: "a.lan:7443", Yes: true}))
 	require.ErrorContains(t, err, "own")
 }
 
@@ -261,7 +261,7 @@ func TestPeercredIsWrittenOnlyForAnotherPrincipal(t *testing.T) {
 func TestTroupeJoinAgainCarriesProofOfTheOldKey(t *testing.T) {
 	f := newFakeMember(t)
 	r := newJoinRig(t, "")
-	require.NoError(t, troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Door: "b.lan:7443", Yes: true})))
+	require.NoError(t, troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Endpoint: "b.lan:7443", Yes: true})))
 	require.Nil(t, f.last.Rejoin)
 	old, err := troupe.DirFor(r.site.stateDir, "estate").Node()
 	require.NoError(t, err)
@@ -287,7 +287,7 @@ func TestTroupeJoinNeedsADelegationChoice(t *testing.T) {
 		"asked, answered neither":     {Yes: true, Interactive: true, In: strings.NewReader("maybe\n")},
 	} {
 		r := newJoinRig(t, "")
-		o.Door = "b.lan:7443"
+		o.Endpoint = "b.lan:7443"
 		before := f.signed
 		opts := r.opts(o)
 		if name == "no terminal, no flag" {
@@ -305,7 +305,7 @@ func TestTroupeJoinNeedsADelegationChoice(t *testing.T) {
 func TestTroupeJoinWritesTheDelegation(t *testing.T) {
 	f := newFakeMember(t)
 	r := newJoinRig(t, "default_outfit = \"mock\"\n")
-	require.NoError(t, troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Door: "b.lan:7443", Yes: true, Delegate: delegateAll})), r.out.String())
+	require.NoError(t, troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Endpoint: "b.lan:7443", Yes: true, Delegate: delegateAll})), r.out.String())
 	require.Equal(t, "policy.toml", r.config(t)["authz"].(map[string]any)["policy"])
 	path := filepath.Join(r.site.loaded.ConfigDir, "policy.toml")
 	reloaded, err := config.Load(r.site.loaded.ConfigDir)
@@ -328,7 +328,7 @@ func TestTroupeJoinWritesTheDelegation(t *testing.T) {
 	require.Equal(t, string(body), string(again), "a second join bound the troupe twice")
 
 	none := newJoinRig(t, "default_outfit = \"mock\"\n")
-	require.NoError(t, troupeJoin(context.Background(), f, none.site, "estate", none.opts(joinOpts{Door: "b.lan:7443", Yes: true, Delegate: delegateNone})))
+	require.NoError(t, troupeJoin(context.Background(), f, none.site, "estate", none.opts(joinOpts{Endpoint: "b.lan:7443", Yes: true, Delegate: delegateNone})))
 	_, err = os.Stat(filepath.Join(none.site.loaded.ConfigDir, "policy.toml"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 	require.Contains(t, none.out.String(), "lends troupe estate nothing")
@@ -343,7 +343,7 @@ func TestTroupeJoinAsksForTheConfiguredLeafLife(t *testing.T) {
 	} {
 		f := newFakeMember(t)
 		r := newJoinRig(t, cfg)
-		require.NoError(t, troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Door: "b.lan:7443", Yes: true})), r.out.String())
+		require.NoError(t, troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Endpoint: "b.lan:7443", Yes: true})), r.out.String())
 		require.Equal(t, want.Milliseconds(), f.last.TTLMillis, cfg)
 		require.NotContains(t, r.out.String(), "granted", "a member that does not say what it granted is not reported as capping")
 	}
@@ -354,6 +354,6 @@ func TestTroupeJoinSaysWhenTheMemberGrantedLess(t *testing.T) {
 	f := newFakeMember(t)
 	f.tamper = func(resp *rpc.TroupeSignResponse) { resp.TTLMillis = troupe.NodeTTL.Milliseconds() }
 	r := newJoinRig(t, "default_outfit = \"mock\"\n[troupe]\nleaf_ttl = \"30d\"\n")
-	require.NoError(t, troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Door: "b.lan:7443", Yes: true})), r.out.String())
+	require.NoError(t, troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Endpoint: "b.lan:7443", Yes: true})), r.out.String())
 	require.Contains(t, r.out.String(), "asked for 30d, granted 7d")
 }

@@ -24,15 +24,15 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
-type leaveDoor interface {
+type leaveEndpoint interface {
 	TroupeLeave(ctx context.Context, troupe string) (*rpc.TroupeLeaveResponse, error)
 }
 
-type revokeDoor interface {
+type revokeEndpoint interface {
 	TroupeEntries(ctx context.Context, req rpc.TroupeEntriesRequest) (*rpc.TroupeEntriesResponse, error)
 }
 
-func troupeLeave(ctx context.Context, d leaveDoor, site joinSite, name string, o joinOpts) error {
+func troupeLeave(ctx context.Context, d leaveEndpoint, site joinSite, name string, o joinOpts) error {
 	have, err := site.loaded.TroupeName()
 	if err != nil {
 		return err
@@ -94,9 +94,9 @@ func dropTroupeConfig(path string) error {
 		return err
 	}
 	delete(raw, "troupe")
-	if door, ok := raw["door"].(map[string]any); ok {
-		delete(door, "tls")
-		if len(door) == 0 {
+	if endpoint, ok := raw["door"].(map[string]any); ok {
+		delete(endpoint, "tls")
+		if len(endpoint) == 0 {
 			delete(raw, "door")
 		}
 	}
@@ -115,7 +115,7 @@ func dropTroupeConfig(path string) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-func troupeRevoke(ctx context.Context, d revokeDoor, in io.Reader, out io.Writer, site joinSite, name, node string) error {
+func troupeRevoke(ctx context.Context, d revokeEndpoint, in io.Reader, out io.Writer, site joinSite, name, node string) error {
 	key, err := readRoot(in, name)
 	if err != nil {
 		return err
@@ -145,7 +145,7 @@ func troupeRevoke(ctx context.Context, d revokeDoor, in io.Reader, out io.Writer
 }
 
 func localAngelus() *sdk.Angelus {
-	acli, err := sdk.DialAngelus(doorEndpoint())
+	acli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		die("the daemon must be running: %s", err)
 	}

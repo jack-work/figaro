@@ -197,7 +197,7 @@ type successionParty interface {
 
 func (h *handlers) ownerContext() context.Context {
 	ctx := authz.WithSubject(context.Background(), jkauthz.Subject{Principal: h.angelus.owner()})
-	return authz.WithDoor(ctx, authz.DoorLocal)
+	return authz.WithEndpoint(ctx, authz.EndpointLocal)
 }
 
 func (h *handlers) successionParty(ctx context.Context, id string) (successionParty, error) {

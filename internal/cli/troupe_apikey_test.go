@@ -18,21 +18,21 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-type fakeKeyDoor struct {
+type fakeKeyEndpoint struct {
 	minted rpc.TroupeAPIKeyMintRequest
 	list   rpc.TroupeAPIKeyListResponse
 }
 
-func (f *fakeKeyDoor) TroupeAPIKeyMint(_ context.Context, req rpc.TroupeAPIKeyMintRequest) (*rpc.TroupeAPIKeyMintResponse, error) {
+func (f *fakeKeyEndpoint) TroupeAPIKeyMint(_ context.Context, req rpc.TroupeAPIKeyMintRequest) (*rpc.TroupeAPIKeyMintResponse, error) {
 	f.minted = req
 	return &rpc.TroupeAPIKeyMintResponse{Key: rpc.TroupeAPIKey{ID: req.ID, Principal: req.Principal, By: "user:jack@auth.kelliher.info", Signer: "node-a", Nodes: []string{"node-a"}, NotAfter: time.Now().Add(time.Duration(req.TTLMillis) * time.Millisecond).UnixMilli()}, Reached: []string{"node-b"}}, nil
 }
 
-func (f *fakeKeyDoor) TroupeAPIKeyRevoke(_ context.Context, troupe, id string) (*rpc.TroupeAPIKeyRevokeResponse, error) {
+func (f *fakeKeyEndpoint) TroupeAPIKeyRevoke(_ context.Context, troupe, id string) (*rpc.TroupeAPIKeyRevokeResponse, error) {
 	return &rpc.TroupeAPIKeyRevokeResponse{Key: rpc.TroupeAPIKey{ID: id, Principal: "service:ci@troupe:estate", By: "user:0", RevokedBy: "user:0", RevokedVia: "node-a", RevokedAt: 1}}, nil
 }
 
-func (f *fakeKeyDoor) TroupeAPIKeyList(context.Context, string) (*rpc.TroupeAPIKeyListResponse, error) {
+func (f *fakeKeyEndpoint) TroupeAPIKeyList(context.Context, string) (*rpc.TroupeAPIKeyListResponse, error) {
 	return &f.list, nil
 }
 
@@ -64,7 +64,7 @@ func TestAKeyPrincipalTakesItsTroupeScope(t *testing.T) {
 // The key goes to stdout alone, once; the node is sent its hash and never
 // the key, and what it reports goes to stderr.
 func TestMintPrintsTheKeyOnceAndSendsOnlyItsHash(t *testing.T) {
-	d := &fakeKeyDoor{}
+	d := &fakeKeyEndpoint{}
 	var out, info bytes.Buffer
 	require.NoError(t, apiKeyMint(context.Background(), d, &out, &info, "estate", "service:ci", apiKeyOpts{TTL: "30d"}, false))
 	wire := strings.TrimSpace(out.String())
@@ -121,7 +121,7 @@ func TestAStaticKeyStanzaAdmitsItsKey(t *testing.T) {
 
 func TestListShowsWhoMintedEachKeyAndItsState(t *testing.T) {
 	now := time.Now()
-	d := &fakeKeyDoor{list: rpc.TroupeAPIKeyListResponse{Troupe: "estate", Caller: "user:0", All: true, Keys: []rpc.TroupeAPIKey{
+	d := &fakeKeyEndpoint{list: rpc.TroupeAPIKeyListResponse{Troupe: "estate", Caller: "user:0", All: true, Keys: []rpc.TroupeAPIKey{
 		{ID: "aaaaaaaaaa", Principal: "service:ci@troupe:estate", By: "user:jack@auth.kelliher.info", Signer: "node-a", MintedAt: now.UnixMilli(), NotAfter: now.Add(time.Hour).UnixMilli()},
 		{ID: "bbbbbbbbbb", Principal: "service:cd@troupe:estate", By: "user:0", Signer: "node-a", MintedAt: now.UnixMilli(), NotAfter: now.Add(time.Hour).UnixMilli(), RevokedBy: "user:0", RevokedAt: now.UnixMilli()},
 		{ID: "cccccccccc", Principal: "user:alice@troupe:estate", By: "user:0", Signer: "node-a", MintedAt: now.Add(-2 * time.Hour).UnixMilli(), NotAfter: now.Add(-time.Hour).UnixMilli()},

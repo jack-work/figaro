@@ -67,13 +67,13 @@ func ListenUnix(path string, mode os.FileMode) (net.Listener, error) {
 }
 
 func (a *Angelus) ServeWeb(ctx context.Context, ln net.Listener, w Web) error {
-	leave, ok := a.enterDoor("door "+authz.DoorWeb.String(), ln)
+	leave, ok := a.enterEndpoint("door "+authz.EndpointWeb.String(), ln)
 	if !ok {
 		return errStopping
 	}
 	defer leave()
 	srv := &http.Server{
-		Handler:           a.webDoor(ctx, w),
+		Handler:           a.webEndpoint(ctx, w),
 		ReadHeaderTimeout: webReadHeaderTimeout,
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
@@ -87,7 +87,7 @@ func (a *Angelus) ServeWeb(ctx context.Context, ln net.Listener, w Web) error {
 	return nil
 }
 
-func (a *Angelus) webDoor(ctx context.Context, w Web) http.Handler {
+func (a *Angelus) webEndpoint(ctx context.Context, w Web) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		if w.Admit == nil {
 			http.Error(rw, "this listener has no authenticator", http.StatusForbidden)
@@ -97,15 +97,15 @@ func (a *Angelus) webDoor(ctx context.Context, w Web) http.Handler {
 		defer done()
 		cctx, err := w.Admit(conn, r)
 		if err == nil {
-			err = a.seat(cctx, authz.DoorWeb)
+			err = a.seat(cctx, authz.EndpointWeb)
 		}
 		if unseated := (*unseated)(nil); errors.As(err, &unseated) {
-			slog.Warn("door refused upgrade", "door", authz.DoorWeb.String(), "err", err)
+			slog.Warn("door refused upgrade", "door", authz.EndpointWeb.String(), "err", err)
 			http.Error(rw, "forbidden", http.StatusForbidden)
 			return
 		}
 		if err != nil {
-			slog.Warn("door refused upgrade", "door", authz.DoorWeb.String(), "err", err)
+			slog.Warn("door refused upgrade", "door", authz.EndpointWeb.String(), "err", err)
 			rw.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(rw, "unauthorized", http.StatusUnauthorized)
 			return
@@ -124,7 +124,7 @@ func (a *Angelus) webDoor(ctx context.Context, w Web) http.Handler {
 		}
 		wc, release := newWebConn(ctx, cctx, c)
 		defer release()
-		a.handleConn(cctx, authz.DoorWeb, wc)
+		a.handleConn(cctx, authz.EndpointWeb, wc)
 	})
 }
 

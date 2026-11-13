@@ -90,23 +90,23 @@ func dialable(path string) bool {
 }
 
 // A daemon behind a shut gate serves nothing: not the CLI socket, not the web
-// door, not a box door, from spawn until it exits.
-func TestNoDoorAnswersBeforeTheHushGateOpens(t *testing.T) {
+// endpoint, not a box endpoint, from spawn until it exits.
+func TestNoEndpointAnswersBeforeTheHushGateOpens(t *testing.T) {
 	hushE2EEnabled(t)
 	rig := newHushRig(t, "doors")
-	doors := map[string]string{
+	endpoints := map[string]string{
 		"cli": filepath.Join(rig.root, "run", "angelus.sock"),
 		"web": filepath.Join(rig.root, "web.sock"),
 		"box": filepath.Join(rig.root, "box.sock"),
 	}
 	cfg := fmt.Sprintf("[door.web]\npath = %q\nauthn = \"upstream\"\n[authz.upstream]\nissuer = \"https://auth.example\"\n[sandbox.boxes.b]\nexec = %q\ndoor = %q\noutfits = [\"*\"]\nproviders = [\"*\"]\n",
-		doors["web"], filepath.Join(rig.root, "box-exec.sock"), doors["box"])
+		endpoints["web"], filepath.Join(rig.root, "box-exec.sock"), endpoints["box"])
 	if err := os.WriteFile(filepath.Join(rig.root, "config", "config.toml"), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	rig.start(t)
-	for name, p := range doors {
+	for name, p := range endpoints {
 		if !dialable(p) {
 			t.Fatalf("with the gate open the %s door %s does not answer: this test cannot see a door", name, p)
 		}
@@ -114,7 +114,7 @@ func TestNoDoorAnswersBeforeTheHushGateOpens(t *testing.T) {
 	if err := rig.run("stop", "--force"); err != nil {
 		t.Fatalf("figaro stop --force: %v", err)
 	}
-	for _, p := range doors {
+	for _, p := range endpoints {
 		os.Remove(p)
 	}
 
@@ -141,7 +141,7 @@ func TestNoDoorAnswersBeforeTheHushGateOpens(t *testing.T) {
 			t.Fatalf("the daemon exited while its gate was still shut (%v):\n%s", err, stderr.String())
 		default:
 		}
-		for name, p := range doors {
+		for name, p := range endpoints {
 			if dialable(p) {
 				w.Close()
 				t.Fatalf("the %s door %s answered before the hush gate opened", name, p)
@@ -160,7 +160,7 @@ func TestNoDoorAnswersBeforeTheHushGateOpens(t *testing.T) {
 		cmd.Process.Kill()
 		t.Fatal("the daemon did not exit after its gate closed shut")
 	}
-	for name, p := range doors {
+	for name, p := range endpoints {
 		if _, err := os.Stat(p); err == nil {
 			t.Fatalf("the %s door %s was bound although the gate never opened", name, p)
 		}

@@ -1,0 +1,299 @@
+package angelus
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"sync"
+	"time"
+
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/peer"
+	"github.com/jack-work/jkauthz"
+	"github.com/jack-work/jkrpc"
+)
+
+type follower struct {
+	srv *jkrpc.Server
+
+	mu     sync.Mutex
+	hubs   map[*ariaHub]struct{}
+	links  map[string]*peer.Link
+	closed bool
+}
+
+type followerKey struct{}
+
+func followerOf(ctx context.Context) *follower {
+	f, _ := ctx.Value(followerKey{}).(*follower)
+	return f
+}
+
+func (f *follower) notify(method string, params json.RawMessage) error {
+	return f.srv.Notify(method, params)
+}
+
+func (f *follower) follow(hb *ariaHub, ch channels) { f.join(hb, ch, true) }
+
+func (f *follower) followUnlessFollowing(hb *ariaHub) { f.join(hb, allChannels, false) }
+
+func (f *follower) join(hb *ariaHub, ch channels, replace bool) {
+	f.mu.Lock()
+	if f.closed {
+		f.mu.Unlock()
+		return
+	}
+	if _, ok := f.hubs[hb]; ok && !replace {
+		f.mu.Unlock()
+		return
+	}
+	f.hubs[hb] = struct{}{}
+	f.mu.Unlock()
+	if !hb.add(f, ch) {
+		f.forget(hb)
+	}
+}
+
+func (f *follower) unfollow(id string) bool {
+	f.mu.Lock()
+	var held []*ariaHub
+	for hb := range f.hubs {
+		if hb.id == id {
+			held = append(held, hb)
+			delete(f.hubs, hb)
+		}
+	}
+	f.mu.Unlock()
+	for _, hb := range held {
+		hb.remove(f)
+	}
+	return len(held) > 0
+}
+
+func (f *follower) forget(hb *ariaHub) {
+	f.mu.Lock()
+	delete(f.hubs, hb)
+	f.mu.Unlock()
+}
+
+func (f *follower) close() {
+	f.mu.Lock()
+	f.closed = true
+	hubs := make([]*ariaHub, 0, len(f.hubs))
+	for hb := range f.hubs {
+		hubs = append(hubs, hb)
+	}
+	links := f.links
+	f.hubs, f.links = nil, nil
+	f.mu.Unlock()
+	for _, hb := range hubs {
+		hb.remove(f)
+	}
+	for _, l := range links {
+		l.Close()
+	}
+}
+
+func (f *follower) link(ctx context.Context, d *peer.Dialer, node string, p rpc.Passage) (*peer.Link, error) {
+	f.mu.Lock()
+	l, ok := f.links[node]
+	f.mu.Unlock()
+	if ok {
+		select {
+		case <-l.Done():
+			l.Close()
+		default:
+			return l, nil
+		}
+	}
+	fresh, err := d.Open(ctx, node, p, func(method string, params json.RawMessage) {
+		f.notify(method, params)
+	})
+	if err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closed {
+		fresh.Close()
+		return nil, fmt.Errorf("connection closed")
+	}
+	if cur, ok := f.links[node]; ok && cur != l {
+		fresh.Close()
+		return cur, nil
+	}
+	if f.links == nil {
+		f.links = map[string]*peer.Link{}
+	}
+	f.links[node] = fresh
+	return fresh, nil
+}
+
+type Admit func(ctx context.Context, conn net.Conn) (context.Context, error)
+
+func (a *Angelus) cliAdmit() Admit {
+	if a.Peercred != nil {
+		return a.Peercred.Admit
+	}
+	return authz.Admit
+}
+
+func (a *Angelus) Serve(ctx context.Context, ln net.Listener, endpoint authz.Endpoint, admit Admit) error {
+	if admit == nil {
+		admit = authz.Admit
+	}
+	leave, ok := a.enterEndpoint("door "+endpoint.String(), ln)
+	if !ok {
+		return errStopping
+	}
+	defer leave()
+	go func() {
+		<-ctx.Done()
+		ln.Close()
+	}()
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+				return nil
+			}
+			slog.Warn("door accept", "err", err)
+			continue
+		}
+		go a.admitConn(ctx, conn, endpoint, admit)
+	}
+}
+
+func (a *Angelus) admitConn(ctx context.Context, conn net.Conn, endpoint authz.Endpoint, admit Admit) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cctx, err := admit(ctx, conn)
+	if err == nil {
+		err = a.seat(cctx, endpoint)
+	}
+	if err != nil {
+		if peer.IsLeftAlready(err) {
+			slog.Info("door answered a node that left", "err", err)
+		} else {
+			slog.Warn("door refused connection", "door", endpoint.String(), "err", err)
+		}
+		conn.Close()
+		return
+	}
+	a.handleConn(cctx, endpoint, conn)
+}
+
+type unseated struct {
+	endpoint authz.Endpoint
+	subject  jkauthz.Principal
+}
+
+func (e *unseated) Error() string {
+	return fmt.Sprintf("the %s door seats only a subject the policy binds to a role, and %s holds none", e.endpoint, e.subject)
+}
+
+func (a *Angelus) seat(ctx context.Context, endpoint authz.Endpoint) error {
+	if !endpoint.SeatsOnlyPolicySubjects() {
+		return nil
+	}
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil {
+		return err
+	}
+	if !a.holdsRole(sub) {
+		return &unseated{endpoint: endpoint, subject: sub.Principal}
+	}
+	return nil
+}
+
+func (a *Angelus) holdsRole(sub jkauthz.Subject) bool {
+	if a.Policies == nil {
+		return authz.IsOwner(a.owner(), sub)
+	}
+	return a.Policies.HoldsRole(sub)
+}
+
+func (a *Angelus) handleConn(ctx context.Context, endpoint authz.Endpoint, conn io.ReadWriteCloser) {
+	ctx = authz.WithEndpoint(ctx, endpoint)
+	if a.Handlers == nil {
+		conn.Close()
+		return
+	}
+	out := newOutbox(conn, a.outboxBudget(), func(err error) {
+		slog.Warn("door dropped a follower", "door", endpoint.String(), "err", err)
+		endWith(conn, err)
+	})
+	defer out.Close()
+	f := &follower{hubs: map[*ariaHub]struct{}{}}
+	f.srv = jkrpc.NewServer(jkrpc.NewConn(capFrames(out, maxEndpointFrame)), a.Handlers)
+	defer f.close()
+
+	done := make(chan struct{})
+	go func() {
+		if err := f.srv.Serve(context.WithValue(ctx, followerKey{}, f)); errors.Is(err, errFrameTooLarge) {
+			slog.Warn("door closed a connection", "door", endpoint.String(), "err", err)
+		}
+		close(done)
+	}()
+	var lapsed <-chan time.Time
+	l, lapses := lapseOf(ctx)
+	if lapses {
+		t := time.NewTimer(l.after)
+		defer t.Stop()
+		lapsed = t.C
+	}
+	select {
+	case <-done:
+	case <-lapsed:
+		_ = f.srv.Notify(rpc.MethodEndpointLapsed, rpc.EndpointLapsed{Reason: l.reason, AfterMS: l.after.Milliseconds()})
+		out.drain(lapseNoticeGrace)
+		l.end(errors.New(l.reason))
+		f.srv.Stop()
+	case <-ctx.Done():
+		if shut := endpointShut(ctx); shut != nil {
+			_ = f.srv.Notify(rpc.MethodEndpointLapsed, rpc.EndpointLapsed{Reason: shut.Reason})
+			out.drain(shut.noticeGrace())
+		}
+		f.srv.Stop()
+	}
+}
+
+const (
+	lapseNoticeGrace = 2 * time.Second
+	stopNoticeGrace  = 250 * time.Millisecond
+	stoppingReason   = "daemon stopping"
+)
+
+type reasonedCloser interface {
+	closeWith(reason error) error
+}
+
+func endWith(conn io.Closer, reason error) {
+	if r, ok := conn.(reasonedCloser); ok {
+		r.closeWith(reason)
+		return
+	}
+	conn.Close()
+}
+
+type lapse struct {
+	after  time.Duration
+	reason string
+	end    context.CancelCauseFunc
+}
+
+type lapseKey struct{}
+
+func withLapse(ctx context.Context, l lapse) context.Context {
+	return context.WithValue(ctx, lapseKey{}, l)
+}
+
+func lapseOf(ctx context.Context) (lapse, bool) {
+	l, ok := ctx.Value(lapseKey{}).(lapse)
+	return l, ok && l.after > 0
+}

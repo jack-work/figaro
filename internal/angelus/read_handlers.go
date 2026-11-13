@@ -37,7 +37,7 @@ func (h *handlers) liveAgent(id string) figaro.AgentServer {
 	return srv
 }
 
-// readFromStore is the one agentless read path for both doors.
+// readFromStore is the one agentless read path for both endpoints.
 func (h *handlers) readFromStore(ctx context.Context, id, method string, params json.RawMessage) (any, bool, error) {
 	if isCatalogID(id) {
 		return h.readCatalog(id, method, params)

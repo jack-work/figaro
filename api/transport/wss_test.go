@@ -27,7 +27,7 @@ func (b *rotatingBearer) Invalidate(string) error {
 	return nil
 }
 
-func echoDoor(t *testing.T, accept string) (*httptest.Server, *atomic.Pointer[string]) {
+func echoEndpoint(t *testing.T, accept string) (*httptest.Server, *atomic.Pointer[string]) {
 	t.Helper()
 	var seen atomic.Pointer[string]
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +60,7 @@ func wssURL(srv *httptest.Server) string { return "wss://" + strings.TrimPrefix(
 
 // One JSON-RPC frame travels as one text message, and frames survive the round trip intact.
 func TestWSSCarriesJSONRPCFramesWithTheBearer(t *testing.T) {
-	srv, seen := echoDoor(t, "tok-0")
+	srv, seen := echoEndpoint(t, "tok-0")
 	ep := WSSEndpoint(wssURL(srv), &rotatingBearer{})
 	ep.HTTPClient = srv.Client()
 
@@ -90,7 +90,7 @@ func TestWSSCarriesJSONRPCFramesWithTheBearer(t *testing.T) {
 }
 
 func TestWSSRetriesOnceAfterA401(t *testing.T) {
-	srv, _ := echoDoor(t, "tok-1")
+	srv, _ := echoEndpoint(t, "tok-1")
 	b := &rotatingBearer{}
 	ep := WSSEndpoint(wssURL(srv), b)
 	ep.HTTPClient = srv.Client()
@@ -103,7 +103,7 @@ func TestWSSRetriesOnceAfterA401(t *testing.T) {
 		t.Fatalf("invalidated %d times", b.invalidated.Load())
 	}
 
-	srv2, _ := echoDoor(t, "never")
+	srv2, _ := echoEndpoint(t, "never")
 	b2 := &rotatingBearer{}
 	ep2 := WSSEndpoint(wssURL(srv2), b2)
 	ep2.HTTPClient = srv2.Client()
@@ -125,10 +125,10 @@ type renewableBearer struct{ rotatingBearer }
 
 func (*renewableBearer) Renewal() string { return "figaro troupe login far" }
 
-// A door that keeps refusing a bearer which names its renewal gets that
+// An endpoint that keeps refusing a bearer which names its renewal gets that
 // command as the whole error, after the one retry.
-func TestWSSNamesTheRenewalWhenTheDoorKeepsRefusing(t *testing.T) {
-	srv, _ := echoDoor(t, "never")
+func TestWSSNamesTheRenewalWhenTheEndpointKeepsRefusing(t *testing.T) {
+	srv, _ := echoEndpoint(t, "never")
 	b := &renewableBearer{}
 	ep := WSSEndpoint(wssURL(srv), b)
 	ep.HTTPClient = srv.Client()

@@ -155,7 +155,7 @@ func TestALeasedFigaroSaysOverTheUnixSocketItsPoolNames(t *testing.T) {
 
 // What a say is refused for, and that a refused one reaches no broker: a
 // figaro that does not run in the lease's box, no figaro, a lease that is
-// not live, a call through any door. A broker refusal is the tool's error,
+// not live, a call through any endpoint. A broker refusal is the tool's error,
 // named by its status and not retried.
 func TestASayIsRefusedForAnyoneButTheLeasesOwnFigaro(t *testing.T) {
 	r, broker, lease := sayRig(t)
@@ -181,10 +181,10 @@ func TestASayIsRefusedForAnyoneButTheLeasesOwnFigaro(t *testing.T) {
 			t.Errorf("%s said through a door", why)
 		}
 	}
-	for _, door := range []authz.Door{authz.DoorBox, authz.DoorWeb, authz.DoorLocal} {
+	for _, endpoint := range []authz.Endpoint{authz.EndpointBox, authz.EndpointWeb, authz.EndpointLocal} {
 		params, _ := rpc.WithCaller(rpc.WorkerSayRequest{Text: "t"}, lease.Aria, nil)
-		if _, err := r.h[rpc.MethodWorkerSay](angelus.AsLeasedBoxThrough(lease.Box, door), params); err == nil {
-			t.Errorf("the lease's own principal said through the %v door", door)
+		if _, err := r.h[rpc.MethodWorkerSay](angelus.AsLeasedBoxThrough(lease.Box, endpoint), params); err == nil {
+			t.Errorf("the lease's own principal said through the %v door", endpoint)
 		}
 	}
 	if len(broker.got) != 0 {

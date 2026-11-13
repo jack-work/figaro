@@ -96,7 +96,7 @@ func TestAFounderSigningItsOwnJoinIsAMemberThatCanSign(t *testing.T) {
 	v := l.View()
 	require.Equal(t, []string{"a"}, members(v))
 	require.Equal(t, "a", v.Members["a"].AdmittedBy)
-	require.Equal(t, "a.lan:7444", v.Members["a"].Door)
+	require.Equal(t, "a.lan:7444", v.Members["a"].Endpoint)
 	require.Equal(t, []string{"a"}, v.Signers(s.now))
 	require.NotZero(t, v.Digest)
 }
@@ -147,7 +147,7 @@ func TestForgedAndTamperedEntriesAreRefused(t *testing.T) {
 	byInterRevoke.Sig = ed25519.Sign(s.ikey["a"], byInterRevoke.message())
 
 	cases := map[string]Entry{
-		"door changed":           func() Entry { e := good; e.Door = "evil:1"; return e }(),
+		"door changed":           func() Entry { e := good; e.Endpoint = "evil:1"; return e }(),
 		"node changed":           func() Entry { e := good; e.Node = "c"; return e }(),
 		"time changed":           func() Entry { e := good; e.At++; return e }(),
 		"another troupe's root":  other.join("a", "b", 0),
@@ -166,7 +166,7 @@ func TestForgedAndTamperedEntriesAreRefused(t *testing.T) {
 			e, _ := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c/d", "c:1", "user:owner", s.now)
 			return e
 		}(),
-		"leave carrying a door": func() Entry { e := s.leave("b", "a", 0); e.Door = "x:1"; return e }(),
+		"leave carrying a door": func() Entry { e := s.leave("b", "a", 0); e.Endpoint = "x:1"; return e }(),
 		"unknown kind":          func() Entry { e := good; e.Kind = "promote"; return e }(),
 		"owner changed":         func() Entry { e := good; e.Owner = "user:mallory"; return e }(),
 		"join without an owner": func() Entry { e, _ := SignJoin(s.ikey["a"], s.inter["a"], "estate", "c", "c:1", "", s.now); return e }(),
@@ -250,14 +250,14 @@ func TestARevokeAfterALeaveStillCascades(t *testing.T) {
 	require.Equal(t, Revoke, v.Gone["a"])
 }
 
-// The newest join names the door a node answers on.
-func TestTheLatestJoinNamesTheDoor(t *testing.T) {
+// The newest join names the endpoint a node answers on.
+func TestTheLatestJoinNamesTheEndpoint(t *testing.T) {
 	s := newEstate(t)
 	s.intermediate("a")
 	moved, err := SignJoin(s.ikey["a"], s.inter["a"], "estate", "a", "a.tail:7444", "user:owner", s.now.Add(time.Hour))
 	require.NoError(t, err)
 	v := s.ledger(moved, s.join("a", "a", 0)).View()
-	require.Equal(t, "a.tail:7444", v.Members["a"].Door)
+	require.Equal(t, "a.tail:7444", v.Members["a"].Endpoint)
 	require.Equal(t, s.now.Truncate(time.Millisecond), v.Members["a"].Since.Truncate(time.Millisecond))
 }
 
@@ -323,7 +323,7 @@ func TestAFullLedgerRefusesJoinsButNotRevokes(t *testing.T) {
 
 // Every node has an owner, the principal that joined it, signed into its
 // join so no peer can rewrite it; the newest join names it, as it names the
-// door.
+// endpoint.
 func TestAJoinRecordsTheNodesOwner(t *testing.T) {
 	s := newEstate(t)
 	s.intermediate("a")

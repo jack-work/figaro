@@ -22,15 +22,15 @@ import (
 
 const founder = "6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
 
-type fakeLeafDoor struct {
+type fakeLeafEndpoint struct {
 	held []troupe.Entry
 }
 
-func (f *fakeLeafDoor) TroupeIdentity(context.Context, string) (*rpc.TroupeIdentityResponse, error) {
+func (f *fakeLeafEndpoint) TroupeIdentity(context.Context, string) (*rpc.TroupeIdentityResponse, error) {
 	return &rpc.TroupeIdentityResponse{Troupe: "estate", Node: founder, Principal: rpc.Principal{Kind: rpc.PrincipalUser, ID: "admin@auth.kelliher.info"}}, nil
 }
 
-func (f *fakeLeafDoor) TroupeEntries(_ context.Context, req rpc.TroupeEntriesRequest) (*rpc.TroupeEntriesResponse, error) {
+func (f *fakeLeafEndpoint) TroupeEntries(_ context.Context, req rpc.TroupeEntriesRequest) (*rpc.TroupeEntriesResponse, error) {
 	es, err := troupe.Decode(req.Entries)
 	f.held = append(f.held, es...)
 	return &rpc.TroupeEntriesResponse{Entries: troupe.Encode(f.held), Reached: []string{otherNode}}, err
@@ -59,9 +59,9 @@ func TestALeafIsIssuedForAKeyThatNeverLeavesItsNode(t *testing.T) {
 	require.NoError(t, err)
 
 	out := filepath.Join(t.TempDir(), "for-spain")
-	d := &fakeLeafDoor{}
+	d := &fakeLeafEndpoint{}
 	var msg bytes.Buffer
-	o := leafOpts{For: otherNode, PublicKey: pubHex[1], Door: "10.233.1.2:7443", Out: out}
+	o := leafOpts{For: otherNode, PublicKey: pubHex[1], Endpoint: "10.233.1.2:7443", Out: out}
 	require.NoError(t, troupeLeafFor(context.Background(), d, bytes.NewReader(raw), &msg, state, "", "estate", o, time.Now()))
 
 	spain := troupe.Dir(out)
@@ -85,7 +85,7 @@ func TestALeafIsIssuedForAKeyThatNeverLeavesItsNode(t *testing.T) {
 	require.NoError(t, err)
 	v := l.View()
 	require.True(t, v.MayIssue(otherNode, founder))
-	require.Equal(t, "10.233.1.2:7443", v.Members[otherNode].Door)
+	require.Equal(t, "10.233.1.2:7443", v.Members[otherNode].Endpoint)
 	require.Equal(t, "user:admin@auth.kelliher.info", v.Members[otherNode].Owner)
 
 	for _, f := range leafFiles {
@@ -101,7 +101,7 @@ func TestALeafIsIssuedForAKeyThatNeverLeavesItsNode(t *testing.T) {
 	require.Len(t, rawEntries, 2)
 }
 
-// What is not a node id, an Ed25519 key, a dialable door or this troupe's
+// What is not a node id, an Ed25519 key, a dialable endpoint or this troupe's
 // root is refused before anything is signed or written.
 func TestALeafRefusesWhatItCannotStandBehind(t *testing.T) {
 	state := t.TempDir()
@@ -110,22 +110,22 @@ func TestALeafRefusesWhatItCannotStandBehind(t *testing.T) {
 	require.NoError(t, err)
 	pub, _, err := ed25519.GenerateKey(nil)
 	require.NoError(t, err)
-	good := leafOpts{For: otherNode, PublicKey: hex.EncodeToString(pub), Door: "10.233.1.2:7443"}
+	good := leafOpts{For: otherNode, PublicKey: hex.EncodeToString(pub), Endpoint: "10.233.1.2:7443"}
 	other, _ := troupeRootPEM(t)
 	for name, c := range map[string]struct {
 		o    leafOpts
 		root []byte
 		want string
 	}{
-		"a bad node id":     {leafOpts{For: "spain", PublicKey: good.PublicKey, Door: good.Door}, raw, "not a node id"},
-		"a short key":       {leafOpts{For: otherNode, PublicKey: "abcd", Door: good.Door}, raw, "--public-key"},
-		"a wildcard door":   {leafOpts{For: otherNode, PublicKey: good.PublicKey, Door: "0.0.0.0:7443"}, raw, "--door"},
+		"a bad node id":     {leafOpts{For: "spain", PublicKey: good.PublicKey, Endpoint: good.Endpoint}, raw, "not a node id"},
+		"a short key":       {leafOpts{For: otherNode, PublicKey: "abcd", Endpoint: good.Endpoint}, raw, "--public-key"},
+		"a wildcard door":   {leafOpts{For: otherNode, PublicKey: good.PublicKey, Endpoint: "0.0.0.0:7443"}, raw, "--door"},
 		"another root":      {good, other, "not troupe estate's root"},
-		"this node itself":  {leafOpts{For: founder, PublicKey: good.PublicKey, Door: good.Door}, raw, "names this node"},
-		"past the most":     {leafOpts{For: otherNode, PublicKey: good.PublicKey, Door: good.Door, TTL: 31 * 24 * time.Hour}, raw, "--ttl 31d is longer than this node issues: [troupe] max_leaf_ttl is 30d"},
-		"past its own most": {leafOpts{For: otherNode, PublicKey: good.PublicKey, Door: good.Door, TTL: 10 * 24 * time.Hour, MaxTTL: 9 * 24 * time.Hour}, raw, "max_leaf_ttl is 9d"},
+		"this node itself":  {leafOpts{For: founder, PublicKey: good.PublicKey, Endpoint: good.Endpoint}, raw, "names this node"},
+		"past the most":     {leafOpts{For: otherNode, PublicKey: good.PublicKey, Endpoint: good.Endpoint, TTL: 31 * 24 * time.Hour}, raw, "--ttl 31d is longer than this node issues: [troupe] max_leaf_ttl is 30d"},
+		"past its own most": {leafOpts{For: otherNode, PublicKey: good.PublicKey, Endpoint: good.Endpoint, TTL: 10 * 24 * time.Hour, MaxTTL: 9 * 24 * time.Hour}, raw, "max_leaf_ttl is 9d"},
 	} {
-		d := &fakeLeafDoor{}
+		d := &fakeLeafEndpoint{}
 		c.o.Out = filepath.Join(t.TempDir(), "out")
 		err := troupeLeafFor(context.Background(), d, bytes.NewReader(c.root), &bytes.Buffer{}, state, "", "estate", c.o, time.Now())
 		require.ErrorContains(t, err, c.want, name)
@@ -148,9 +148,9 @@ func TestALeafLivesForItsTTL(t *testing.T) {
 		pub, _, err := ed25519.GenerateKey(nil)
 		require.NoError(t, err)
 		out := filepath.Join(t.TempDir(), "out")
-		o := leafOpts{For: otherNode, PublicKey: hex.EncodeToString(pub), Door: "10.233.1.2:7443", Out: out, TTL: c.ttl, MaxTTL: c.most}
+		o := leafOpts{For: otherNode, PublicKey: hex.EncodeToString(pub), Endpoint: "10.233.1.2:7443", Out: out, TTL: c.ttl, MaxTTL: c.most}
 		now := time.Now()
-		require.NoError(t, troupeLeafFor(context.Background(), &fakeLeafDoor{}, bytes.NewReader(raw), &bytes.Buffer{}, state, "", "estate", o, now))
+		require.NoError(t, troupeLeafFor(context.Background(), &fakeLeafEndpoint{}, bytes.NewReader(raw), &bytes.Buffer{}, state, "", "estate", o, now))
 		chain, err := os.ReadFile(filepath.Join(out, "node.crt"))
 		require.NoError(t, err)
 		block, _ := pem.Decode(chain)

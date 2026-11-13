@@ -23,7 +23,7 @@ var errStopping = errors.New("daemon stopping")
 type flight struct {
 	name     string
 	call     bool
-	door     authz.Door
+	endpoint authz.Endpoint
 	params   json.RawMessage
 	listener io.Closer
 }
@@ -36,7 +36,7 @@ func (f flight) describe() string {
 	if aria == "" || rpc.ValidateAriaID(aria) != nil {
 		aria = "-"
 	}
-	return f.name + " aria=" + aria + " door=" + f.door.String()
+	return f.name + " aria=" + aria + " door=" + f.endpoint.String()
 }
 
 type inflight struct {
@@ -132,7 +132,7 @@ func (a *Angelus) Go(name string, fn func()) bool {
 	return true
 }
 
-func (a *Angelus) enterDoor(name string, ln net.Listener) (leave func(), ok bool) {
+func (a *Angelus) enterEndpoint(name string, ln net.Listener) (leave func(), ok bool) {
 	id, ok := a.inflight.enter(flight{name: name, listener: ln})
 	if !ok {
 		ln.Close()
@@ -154,7 +154,7 @@ func (a *Angelus) refusingWhenStopping(next jkrpc.HandlerFunc) jkrpc.HandlerFunc
 
 func (a *Angelus) joined(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
-		id, ok := a.inflight.enter(flight{name: method, call: true, door: authz.DoorOf(ctx), params: params})
+		id, ok := a.inflight.enter(flight{name: method, call: true, endpoint: authz.EndpointOf(ctx), params: params})
 		if !ok {
 			return nil, errStopping
 		}

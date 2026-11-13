@@ -9,33 +9,33 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-type fakeGCDoor struct {
+type fakeGCEndpoint struct {
 	plan    rpc.GCPlanResponse
 	applied []string
 	undone  []string
 }
 
-func (d *fakeGCDoor) GCPlan(context.Context, rpc.GCSelector) (*rpc.GCPlanResponse, error) {
+func (d *fakeGCEndpoint) GCPlan(context.Context, rpc.GCSelector) (*rpc.GCPlanResponse, error) {
 	p := d.plan
 	return &p, nil
 }
 
-func (d *fakeGCDoor) GCApply(_ context.Context, run string) (*rpc.GCApplyResponse, error) {
+func (d *fakeGCEndpoint) GCApply(_ context.Context, run string) (*rpc.GCApplyResponse, error) {
 	d.applied = append(d.applied, run)
 	return &rpc.GCApplyResponse{Run: run, Reaped: d.plan.Candidates}, nil
 }
 
-func (d *fakeGCDoor) GCUndo(_ context.Context, run string) (*rpc.GCUndoResponse, error) {
+func (d *fakeGCEndpoint) GCUndo(_ context.Context, run string) (*rpc.GCUndoResponse, error) {
 	d.undone = append(d.undone, run)
 	return &rpc.GCUndoResponse{Run: run, Restored: []string{"a"}}, nil
 }
 
-func gcFake() *fakeGCDoor {
-	return &fakeGCDoor{plan: rpc.GCPlanResponse{Run: "r1", Nodes: 1, Bytes: 2048,
+func gcFake() *fakeGCEndpoint {
+	return &fakeGCEndpoint{plan: rpc.GCPlanResponse{Run: "r1", Nodes: 1, Bytes: 2048,
 		Candidates: []rpc.GCCandidate{{ID: "0123456789abcdef0123456789abcdef", Handle: "pewter-nuisance", IdleMS: 40 * 86400000, Messages: 3, Bytes: 2048}}}}
 }
 
-func runGCWith(t *testing.T, d *fakeGCDoor, o gcOpts, interactive bool, answer string) (string, string) {
+func runGCWith(t *testing.T, d *fakeGCEndpoint, o gcOpts, interactive bool, answer string) (string, string) {
 	t.Helper()
 	var out, errw bytes.Buffer
 	if o.sel == (rpc.GCSelector{}) {

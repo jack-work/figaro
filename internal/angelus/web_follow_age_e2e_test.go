@@ -46,9 +46,9 @@ role = "watcher"
 groups = ["watchers@auth.kelliher.info"]
 `
 
-// followAgeDoor is edgeDoor with a follow age: the owner's aria may be
+// followAgeEndpoint is edgeEndpoint with a follow age: the owner's aria may be
 // followed by anyone in the watchers group the edge names.
-func followAgeDoor(t *testing.T, maxAge time.Duration) (path, owned string, a *angelus.Angelus, acli *sdk.Angelus, ctx context.Context) {
+func followAgeEndpoint(t *testing.T, maxAge time.Duration) (path, owned string, a *angelus.Angelus, acli *sdk.Angelus, ctx context.Context) {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
@@ -101,12 +101,12 @@ func (e *edgeClient) await(method string, within time.Duration) (json.RawMessage
 }
 
 // A follow is authorized once, on the groups the edge named at the upgrade.
-// At the follow age the door says so and closes the connection; the
+// At the follow age the endpoint says so and closes the connection; the
 // re-follow through the edge is judged on the groups it names now, so a
 // member who left the group loses the stream.
 func TestAnEdgeFollowEndsAtItsAgeAndTheRefollowIsJudgedOnCurrentGroups(t *testing.T) {
 	const maxAge = 400 * time.Millisecond
-	path, owned, a, _, ctx := followAgeDoor(t, maxAge)
+	path, owned, a, _, ctx := followAgeEndpoint(t, maxAge)
 
 	watcher, _, err := forge(t, path, http.Header{"Remote-User": {"ana"}, "Remote-Groups": {"watchers"}})
 	require.NoError(t, err)
@@ -114,7 +114,7 @@ func TestAnEdgeFollowEndsAtItsAgeAndTheRefollowIsJudgedOnCurrentGroups(t *testin
 	r := watcher.call(rpc.MethodFollow, onAria(owned, nil))
 	require.Nil(t, r.Error, "a watcher may follow")
 
-	fcli, err := sdk.DialAria(sdk.Addr{Door: transport.UnixEndpoint(a.SocketPath), ID: owned}, nil)
+	fcli, err := sdk.DialAria(sdk.Addr{Endpoint: transport.UnixEndpoint(a.SocketPath), ID: owned}, nil)
 	require.NoError(t, err)
 	defer fcli.Close()
 	_, _, err = fcli.Qua(ctx, "witness-f0llow", nil)
@@ -122,10 +122,10 @@ func TestAnEdgeFollowEndsAtItsAgeAndTheRefollowIsJudgedOnCurrentGroups(t *testin
 	_, err = watcher.await(rpc.MethodAriaFrame, 5*time.Second)
 	require.NoError(t, err, "the follow carried no frame before its age")
 
-	raw, err := watcher.await(rpc.MethodDoorLapsed, 5*time.Second)
+	raw, err := watcher.await(rpc.MethodEndpointLapsed, 5*time.Second)
 	require.NoError(t, err, "the door never said the follow lapsed")
 	require.GreaterOrEqual(t, time.Since(admitted), maxAge-50*time.Millisecond, "lapsed before its age")
-	var lapsed rpc.DoorLapsed
+	var lapsed rpc.EndpointLapsed
 	require.NoError(t, json.Unmarshal(raw, &lapsed))
 	require.Equal(t, maxAge.Milliseconds(), lapsed.AfterMS)
 	require.Contains(t, lapsed.Reason, "follow age limit")
@@ -147,14 +147,14 @@ func TestAnEdgeFollowEndsAtItsAgeAndTheRefollowIsJudgedOnCurrentGroups(t *testin
 	require.Nil(t, r.Error, "a re-follow with the group still held is admitted")
 }
 
-// The unix door has no edge and no follow age: a follow there outlives the
+// The unix endpoint has no edge and no follow age: a follow there outlives the
 // edge's limit and keeps carrying frames.
-func TestAUnixDoorFollowOutlivesTheEdgeFollowAge(t *testing.T) {
+func TestAUnixEndpointFollowOutlivesTheEdgeFollowAge(t *testing.T) {
 	const maxAge = 200 * time.Millisecond
-	_, owned, a, _, ctx := followAgeDoor(t, maxAge)
+	_, owned, a, _, ctx := followAgeEndpoint(t, maxAge)
 
 	frames := make(chan string, 64)
-	follower, err := sdk.DialAria(sdk.Addr{Door: transport.UnixEndpoint(a.SocketPath), ID: owned}, func(m string, _ json.RawMessage) {
+	follower, err := sdk.DialAria(sdk.Addr{Endpoint: transport.UnixEndpoint(a.SocketPath), ID: owned}, func(m string, _ json.RawMessage) {
 		frames <- m
 	})
 	require.NoError(t, err)
@@ -168,7 +168,7 @@ func TestAUnixDoorFollowOutlivesTheEdgeFollowAge(t *testing.T) {
 	default:
 	}
 
-	sender, err := sdk.DialAria(sdk.Addr{Door: transport.UnixEndpoint(a.SocketPath), ID: owned}, nil)
+	sender, err := sdk.DialAria(sdk.Addr{Endpoint: transport.UnixEndpoint(a.SocketPath), ID: owned}, nil)
 	require.NoError(t, err)
 	defer sender.Close()
 	_, _, err = sender.Qua(ctx, "after-the-age", nil)
@@ -177,7 +177,7 @@ func TestAUnixDoorFollowOutlivesTheEdgeFollowAge(t *testing.T) {
 	for {
 		select {
 		case m := <-frames:
-			require.NotEqual(t, rpc.MethodDoorLapsed, m)
+			require.NotEqual(t, rpc.MethodEndpointLapsed, m)
 			if m == rpc.MethodAriaFrame {
 				return
 			}

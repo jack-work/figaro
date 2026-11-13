@@ -53,7 +53,7 @@ func leaseTo(t *testing.T, l *workerpool.Ledger, worker, key string, generation 
 }
 
 // The ledger is the truth a restart reads. A live lease gets its box
-// back before any door serves; a lease caught mid-mint or mid-release
+// back before any endpoint serves; a lease caught mid-mint or mid-release
 // does not, since the release path finishes those; and a released row
 // names nothing that still exists.
 func TestAtStartOnlyALiveLeaseGetsItsBoxBack(t *testing.T) {

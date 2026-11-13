@@ -101,7 +101,7 @@ func (h *handlers) reloadPolicy() error {
 		return nil
 	}
 	loaded, _ := h.settings()
-	p.SetBoxes(loaded.DooredBoxes())
+	p.SetBoxes(loaded.BoxesWithEndpoints())
 	p.SetBoxesRequiringClaim(loaded.BoxesRequiringClaim())
 	if err := p.Reload(loaded.PolicyPath()); err != nil {
 		slog.Error("authz: policy reload failed; the previous policy stays in force", "err", err)
@@ -146,7 +146,7 @@ func (a *Angelus) owner() jkauthz.Principal {
 }
 
 func (h *handlers) passesUnpoliced(ctx context.Context, sub jkauthz.Subject) bool {
-	return authz.PassesUnpoliced(authz.DoorOf(ctx), h.angelus.owner(), sub)
+	return authz.PassesUnpoliced(authz.EndpointOf(ctx), h.angelus.owner(), sub)
 }
 
 func (h *handlers) allowed(ctx context.Context, verb rpc.Verb, res authz.Resource) error {
@@ -159,7 +159,7 @@ func (h *handlers) allowed(ctx context.Context, verb rpc.Verb, res authz.Resourc
 		if h.passesUnpoliced(ctx, sub) {
 			return nil
 		}
-		return fmt.Errorf("%s on %s: no policy is loaded, so the %s door passes only the owner", verb, res, authz.DoorOf(ctx))
+		return fmt.Errorf("%s on %s: no policy is loaded, so the %s door passes only the owner", verb, res, authz.EndpointOf(ctx))
 	}
 	if d := p.AllowFigaro(sub, authz.FigaroOf(ctx), verb, res); !d.Allowed {
 		return fmt.Errorf("%s on %s: %s", verb, res, d.Reason())

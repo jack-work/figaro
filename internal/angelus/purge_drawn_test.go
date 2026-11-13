@@ -13,9 +13,9 @@ import (
 
 // P local, C minted by box judge and drawn under P by @topology only: C's
 // history parent is elsewhere, so only the drawn tree puts it in P's set.
-func drawnBoxChild(t *testing.T) (d doorRig, p, c string) {
+func drawnBoxChild(t *testing.T) (d endpointRig, p, c string) {
 	t.Helper()
-	d = boxDoorRig(t, "true")
+	d = boxEndpointRig(t, "true")
 	if err := wire.Install(d.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)
 	}

@@ -25,7 +25,7 @@ func formAccessOf(t *testing.T, v any) *rpc.FormAccess {
 // The access a form read carries must say what the write guard will refuse:
 // the client greys those keys instead of offering an edit that bounces.
 func TestAFormReadCarriesTheCallersAccess(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

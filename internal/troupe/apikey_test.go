@@ -72,7 +72,7 @@ func TestForgedAndTamperedKeysAreRefused(t *testing.T) {
 		"by":        func(e *Entry) { e.By = "user:mallory" },
 		"key":       func(e *Entry) { e.Key = "aaaaaaaaaa" },
 		"node":      func(e *Entry) { e.Node = "b" },
-		"door":      func(e *Entry) { e.Door = "x.lan:1" },
+		"door":      func(e *Entry) { e.Endpoint = "x.lan:1" },
 		"nodes":     func(e *Entry) { e.Nodes = []string{"a", "b", "c"} },
 		"all nodes": func(e *Entry) { e.Nodes = []string{apikey.AllNodes} },
 	}

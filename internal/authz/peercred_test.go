@@ -46,7 +46,7 @@ func TestAdmitStampsThePeerUID(t *testing.T) {
 }
 
 // Nothing vouches for a peer that did not come over a unix socket, so the
-// door refuses it rather than serving it as nobody. A TCP or WebSocket
+// endpoint refuses it rather than serving it as nobody. A TCP or WebSocket
 // listener must bring its own authenticator.
 func TestAdmitRefusesAPeerPeercredCannotVouchFor(t *testing.T) {
 	a, b := net.Pipe()

@@ -21,10 +21,10 @@ import (
 	"github.com/jack-work/jkauthz"
 )
 
-// The node door shares the daemon's handlers, so an admitted node is a
+// The node endpoint shares the daemon's handlers, so an admitted node is a
 // principal like any other: it holds what the policy binds to node:<id>
 // and nothing more, and a reload changes the answer on a live link.
-func TestTheNodeDoorIsDecidedByThePolicy(t *testing.T) {
+func TestTheNodeEndpointIsDecidedByThePolicy(t *testing.T) {
 	p := peertest.NewPKI(t, "fed")
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
@@ -43,12 +43,12 @@ func TestTheNodeDoorIsDecidedByThePolicy(t *testing.T) {
 	t.Cleanup(cancel)
 	a.Handlers = angelus.NewHandlers(angelus.ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: ctx}).Map
 
-	tlsCfg, err := peer.ServerTLS(p.Door("b", ""), nil)
+	tlsCfg, err := peer.ServerTLS(p.Endpoint("b", ""), nil)
 	require.NoError(t, err)
 	raw, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	door := &peer.Door{Members: members(t, p.Peer("b", "a", "127.0.0.1:1"))}
-	go a.Serve(ctx, tls.NewListener(raw, tlsCfg), authz.DoorNode, door.Admit)
+	endpoint := &peer.Endpoint{Members: members(t, p.Peer("b", "a", "127.0.0.1:1"))}
+	go a.Serve(ctx, tls.NewListener(raw, tlsCfg), authz.EndpointNode, endpoint.Admit)
 
 	dialer := &peer.Dialer{Members: members(t, p.Peer("a", "b", raw.Addr().String()))}
 	l, err := dialer.Open(ctx, "b", rpc.Passage{}, nil)

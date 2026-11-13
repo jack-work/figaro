@@ -77,7 +77,7 @@ func runStop(o stopOptions) {
 		}
 	}
 
-	if d := resolveDoor(); d.configured {
+	if d := resolveEndpoint(); d.configured {
 		die("stop retires the daemon this shell started; %s is configured as the troupe, and figaro does not stop a daemon it reaches that way", d.label)
 	}
 	sockPath := boot.AngelusSocketPath()

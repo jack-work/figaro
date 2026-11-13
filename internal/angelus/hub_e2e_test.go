@@ -146,7 +146,7 @@ func runDaemon(t testing.TB, ctx context.Context, a *angelus.Angelus) {
 	}()
 }
 
-// ariaConn is one connection on the door addressing one aria, the way
+// ariaConn is one connection on the endpoint addressing one aria, the way
 // sdk.Aria does, without sdk's conveniences.
 type ariaConn struct {
 	*jkrpc.Client
@@ -175,7 +175,7 @@ func dialAria(t testing.TB, a *angelus.Angelus, id string, onNotify func(string,
 }
 
 func ariaAddr(a *angelus.Angelus, id string) sdk.Addr {
-	return sdk.Addr{Door: transport.UnixEndpoint(a.SocketPath), ID: id}
+	return sdk.Addr{Endpoint: transport.UnixEndpoint(a.SocketPath), ID: id}
 }
 
 func TestEndpointOutlivesAgent(t *testing.T) {
@@ -309,7 +309,7 @@ func TestReadOnlyConnectionCollectsNoPushes(t *testing.T) {
 	}
 }
 
-// No per-aria socket is ever created: the runtime dir holds the door alone.
+// No per-aria socket is ever created: the runtime dir holds the endpoint alone.
 func TestRuntimeDirHasNoAriaSockets(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
@@ -321,9 +321,9 @@ func TestRuntimeDirHasNoAriaSockets(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "a figaros/ directory exists")
 }
 
-// The door is one method map over any listener: the same calls reach the same
+// The endpoint is one method map over any listener: the same calls reach the same
 // aria over TCP as over the unix socket.
-func TestDoorServesTCP(t *testing.T) {
+func TestEndpointServesTCP(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
@@ -331,12 +331,12 @@ func TestDoorServesTCP(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	admitted := make(chan struct{}, 1)
-	go a.Serve(ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+	go a.Serve(ctx, ln, authz.EndpointLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		admitted <- struct{}{}
 		return authz.WithSubject(ctx, jkauthz.Subject{Principal: a.Peercred.Self()}), nil
 	})
 
-	tcp := sdk.Addr{Door: transport.Endpoint{Scheme: "tcp", Address: ln.Addr().String()}, ID: created.FigaroID}
+	tcp := sdk.Addr{Endpoint: transport.Endpoint{Scheme: "tcp", Address: ln.Addr().String()}, ID: created.FigaroID}
 	fc, err := sdk.DialAria(tcp, nil)
 	require.NoError(t, err)
 	defer fc.Close()
@@ -358,7 +358,7 @@ func TestDoorServesTCP(t *testing.T) {
 
 // An admitter that stalls (a TLS handshake that never finishes) holds only
 // its own connection; the next caller is admitted and served.
-func TestDoorAdmitsOffTheAcceptLoop(t *testing.T) {
+func TestEndpointAdmitsOffTheAcceptLoop(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
@@ -368,7 +368,7 @@ func TestDoorAdmitsOffTheAcceptLoop(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	var first atomic.Bool
-	go a.Serve(ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+	go a.Serve(ctx, ln, authz.EndpointLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		if first.CompareAndSwap(false, true) {
 			<-release
 		}
@@ -380,7 +380,7 @@ func TestDoorAdmitsOffTheAcceptLoop(t *testing.T) {
 	defer stalled.Close()
 	require.Eventually(t, first.Load, 5*time.Second, time.Millisecond)
 
-	tcp := sdk.Addr{Door: transport.Endpoint{Scheme: "tcp", Address: ln.Addr().String()}, ID: created.FigaroID}
+	tcp := sdk.Addr{Endpoint: transport.Endpoint{Scheme: "tcp", Address: ln.Addr().String()}, ID: created.FigaroID}
 	fc, err := sdk.DialAria(tcp, nil)
 	require.NoError(t, err)
 	defer fc.Close()
@@ -443,15 +443,15 @@ func TestBoundedListingThroughTheDaemon(t *testing.T) {
 
 // A listener whose admit names nobody serves nobody: the policy has no
 // principal to grant anything to.
-func TestADoorWhoseAdmitNamesNobodyServesNothing(t *testing.T) {
+func TestAEndpointWhoseAdmitNamesNobodyServesNothing(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	go a.Serve(ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) { return ctx, nil })
+	go a.Serve(ctx, ln, authz.EndpointLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) { return ctx, nil })
 
-	fc, err := sdk.DialAria(sdk.Addr{Door: transport.Endpoint{Scheme: "tcp", Address: ln.Addr().String()}, ID: created.FigaroID}, nil)
+	fc, err := sdk.DialAria(sdk.Addr{Endpoint: transport.Endpoint{Scheme: "tcp", Address: ln.Addr().String()}, ID: created.FigaroID}, nil)
 	if err == nil {
 		defer fc.Close()
 		callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)

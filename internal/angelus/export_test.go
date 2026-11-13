@@ -30,10 +30,10 @@ func (a *Angelus) SweepLifetimesNow() {
 	}
 }
 
-func SetMaxDoorFrameForTest(t interface{ Cleanup(func()) }, n int) {
-	old := maxDoorFrame
-	maxDoorFrame = n
-	t.Cleanup(func() { maxDoorFrame = old })
+func SetMaxEndpointFrameForTest(t interface{ Cleanup(func()) }, n int) {
+	old := maxEndpointFrame
+	maxEndpointFrame = n
+	t.Cleanup(func() { maxEndpointFrame = old })
 }
 
 func (a *Angelus) ExpireTTLForBench() { a.expireTTL() }
@@ -188,6 +188,6 @@ func AsLeasedBox(box string) context.Context {
 	return authz.WithSubject(inProcess(context.Background()), jkauthz.Subject{Principal: authz.BoxPrincipal(box)})
 }
 
-func AsLeasedBoxThrough(box string, door authz.Door) context.Context {
-	return authz.WithSubject(authz.WithDoor(context.Background(), door), jkauthz.Subject{Principal: authz.BoxPrincipal(box)})
+func AsLeasedBoxThrough(box string, endpoint authz.Endpoint) context.Context {
+	return authz.WithSubject(authz.WithEndpoint(context.Background(), endpoint), jkauthz.Subject{Principal: authz.BoxPrincipal(box)})
 }
