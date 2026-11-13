@@ -116,16 +116,15 @@ func (c *Cache[U]) measure(r *run[U]) {
 	}
 }
 
-// node holds one node's runs, sorted by coord.From, published whole with a
-// contiguous array of their upper bounds so locating a run touches one line.
+// node holds one node's runs, sorted by coord.From.
 type node[U any] struct {
 	idx atomic.Pointer[runIndex[U]]
 }
 
-// runIndex is immutable once published; tos[i] == runs[i].coord.To.
+// runIndex is immutable once published.
 type runIndex[U any] struct {
-	runs []*run[U]
-	tos  []uint64
+	runs  []*run[U]
+	maxTo []uint64
 }
 
 // touch stores the current epoch, and only when stale: a per-read bump made
@@ -281,7 +280,12 @@ func concat[U any](pieces [][]U, total int) []U {
 // At returns ONE unit at coordinate idx, or false if it is not resident. It
 // NEVER calls the Source and NEVER allocates.
 func (c *Cache[U]) At(node string, idx uint64) (U, bool) {
-	return atIn(c, c.runs(node), idx)
+	n := c.lookup(node)
+	if n == nil {
+		var zero U
+		return zero, false
+	}
+	return n.at(c, idx)
 }
 
 // Handle is one node resolved once, so a tenant reading it repeatedly does not
@@ -302,13 +306,15 @@ func (c *Cache[U]) Node(name string) *Handle[U] {
 
 // At is Cache.At without the name lookup. A per-handle last-run hint made
 // parallel reads worse.
-func (h *Handle[U]) At(idx uint64) (U, bool) {
-	ix := h.n.index()
+func (h *Handle[U]) At(idx uint64) (U, bool) { return h.n.at(h.c, idx) }
+
+func (n *node[U]) at(c *Cache[U], idx uint64) (U, bool) {
+	ix := n.index()
 	if ix == nil {
 		var zero U
 		return zero, false
 	}
-	u, ok, _ := atInIndex(h.c, ix, idx)
+	u, ok, _ := atInIndex(c, ix, idx)
 	return u, ok
 }
 
@@ -350,30 +356,10 @@ func residentIn[U any](rs []*run[U], from, to uint64) ([]U, bool) {
 	return nil, false
 }
 
-func atIn[U any](c *Cache[U], rs []*run[U], idx uint64) (U, bool) {
-	tos := make([]uint64, len(rs))
-	for i, r := range rs {
-		tos[i] = r.coord.To
-	}
-	u, ok, _ := atInIndex(c, &runIndex[U]{runs: rs, tos: tos}, idx)
-	return u, ok
-}
-
 // atInIndex also reports which run answered; -1 when none covers idx.
 func atInIndex[U any](c *Cache[U], ix *runIndex[U], idx uint64) (U, bool, int) {
 	var zero U
-	// Written out rather than sort.Search: a closure is an indirect call per probe.
-	tos := ix.tos
-	lo, hi := 0, len(tos)
-	for lo < hi {
-		mid := int(uint(lo+hi) >> 1)
-		if tos[mid] < idx {
-			lo = mid + 1
-		} else {
-			hi = mid
-		}
-	}
-	i := lo
+	i := ix.firstReaching(idx - 1)
 	rs := ix.runs
 	if i == len(rs) {
 		return zero, false, -1
@@ -494,7 +480,7 @@ func (c *Cache[U]) rangeInNodeAt(nd *node[U], coord Coord) ([]U, error) {
 		return concat(pieces, total)
 	}
 	for pos := coord.From; pos < coord.To; {
-		r := overlapping(nodeRuns(nd), pos, coord.To)
+		r := overlapping(nd.index(), pos, coord.To)
 		if r == nil {
 			units, err := c.fill(Coord{coord.Node, pos, coord.To})
 			add(units)
@@ -689,14 +675,34 @@ func (n *node[U]) load() []*run[U] {
 	return nil
 }
 
-func (n *node[U]) index() *runIndex[U] { return n.idx.Load() }
+func (n *node[U]) index() *runIndex[U] {
+	if n == nil {
+		return nil
+	}
+	return n.idx.Load()
+}
 
 func (n *node[U]) publish(runs []*run[U]) {
-	tos := make([]uint64, len(runs))
+	maxTo := make([]uint64, len(runs))
+	var reach uint64
 	for i, r := range runs {
-		tos[i] = r.coord.To
+		reach = max(reach, r.coord.To)
+		maxTo[i] = reach
 	}
-	n.idx.Store(&runIndex[U]{runs: runs, tos: tos})
+	n.idx.Store(&runIndex[U]{runs: runs, maxTo: maxTo})
+}
+
+func (ix *runIndex[U]) firstReaching(pos uint64) int {
+	lo, hi := 0, len(ix.maxTo)
+	for lo < hi {
+		mid := int(uint(lo+hi) >> 1)
+		if ix.maxTo[mid] <= pos {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo
 }
 
 func (n *node[U]) publishAppended(r *run[U]) bool {
@@ -708,7 +714,11 @@ func (n *node[U]) publishAppended(r *run[U]) bool {
 	if k := len(ix.runs); k > 0 && r.coord.From <= ix.runs[k-1].coord.From {
 		return false
 	}
-	n.idx.Store(&runIndex[U]{runs: append(ix.runs, r), tos: append(ix.tos, r.coord.To)})
+	reach := r.coord.To
+	if k := len(ix.maxTo); k > 0 {
+		reach = max(reach, ix.maxTo[k-1])
+	}
+	n.idx.Store(&runIndex[U]{runs: append(ix.runs, r), maxTo: append(ix.maxTo, reach)})
 	return true
 }
 
@@ -783,18 +793,15 @@ func at[U any](runs []*run[U], coord Coord) *run[U] {
 	return nil
 }
 
-// overlapping is the first run intersecting [pos, limit). Linear: To values do
-// not ascend once a tenant Puts overlapping spans.
-func overlapping[U any](runs []*run[U], pos, limit uint64) *run[U] {
-	for _, r := range runs {
-		if r.coord.From >= limit {
-			break // sorted by From: nothing later can intersect
-		}
-		if r.coord.To > pos {
-			return r
-		}
+func overlapping[U any](ix *runIndex[U], pos, limit uint64) *run[U] {
+	if ix == nil {
+		return nil
 	}
-	return nil
+	i := ix.firstReaching(pos)
+	if i == len(ix.runs) || ix.runs[i].coord.From >= limit {
+		return nil
+	}
+	return ix.runs[i]
 }
 
 // hollow is the evicted successor of r: same coord and bytes, no units.

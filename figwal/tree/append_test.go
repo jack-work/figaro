@@ -10,6 +10,20 @@ import (
 	"testing"
 )
 
+func maxToHolds(runs []*run[unit], maxTo []uint64) bool {
+	if len(maxTo) != len(runs) {
+		return false
+	}
+	var reach uint64
+	for i, r := range runs {
+		reach = max(reach, r.coord.To)
+		if maxTo[i] != reach {
+			return false
+		}
+	}
+	return true
+}
+
 func tailUnit(k uint64) unit { return unit{k: k, s: fmt.Sprintf("u%d", k)} }
 
 func putOne(c *Cache[unit], node string, k uint64) {
@@ -18,8 +32,8 @@ func putOne(c *Cache[unit], node string, k uint64) {
 
 // The index after any mix of tail appends, middle inserts and exact
 // replacements must equal what replace alone builds: sorted by From, one run
-// per coord, and tos[i] == runs[i].coord.To. Defends the fast path against
-// drifting from the slow one, and against runs and tos growing apart.
+// per coord, and maxTo[i] the largest To of runs[0..i]. Defends the fast path
+// against drifting from the slow one, and against runs and maxTo growing apart.
 func TestTailAppendsBuildTheIndexReplaceWould(t *testing.T) {
 	var calls int
 	var mu sync.Mutex
@@ -53,14 +67,14 @@ func TestTailAppendsBuildTheIndexReplaceWould(t *testing.T) {
 		}
 		c.Put(co, units, false)
 		want[co] = true
-		if ix := c.lookup("p").index(); len(ix.tos) != len(ix.runs) || ix.tos[len(ix.tos)-1] != ix.runs[len(ix.runs)-1].coord.To {
-			t.Fatalf("after put %d at %+v: %d runs against %d tos", i, co, len(ix.runs), len(ix.tos))
+		if ix := c.lookup("p").index(); !maxToHolds(ix.runs, ix.maxTo) {
+			t.Fatalf("after put %d at %+v: maxTo %v does not reach over runs", i, co, ix.maxTo[max(0, len(ix.maxTo)-3):])
 		}
 	}
 
 	ix := c.lookup("p").index()
-	if len(ix.runs) != len(want) || len(ix.tos) != len(ix.runs) {
-		t.Fatalf("index holds %d runs and %d tos; want %d of each", len(ix.runs), len(ix.tos), len(want))
+	if len(ix.runs) != len(want) || len(ix.maxTo) != len(ix.runs) {
+		t.Fatalf("index holds %d runs and %d maxTo; want %d of each", len(ix.runs), len(ix.maxTo), len(want))
 	}
 	if !sort.SliceIsSorted(ix.runs, func(i, j int) bool { return ix.runs[i].coord.From < ix.runs[j].coord.From }) {
 		t.Fatal("runs are not sorted by From")
@@ -70,9 +84,6 @@ func TestTailAppendsBuildTheIndexReplaceWould(t *testing.T) {
 			t.Fatalf("run %d at %+v was never put", i, r.coord)
 		}
 		delete(want, r.coord)
-		if ix.tos[i] != r.coord.To {
-			t.Fatalf("tos[%d] = %d, run's To = %d", i, ix.tos[i], r.coord.To)
-		}
 	}
 	for k := uint64(1); k <= tail; k++ {
 		if u, ok := c.At("p", k); ok && u.k != k {
@@ -105,24 +116,24 @@ func TestAHeldIndexNeverChangesUnderAppends(t *testing.T) {
 			for !stop.Load() {
 				ix := c.lookup("p").index()
 				runs := append([]*run[unit](nil), ix.runs...)
-				tos := append([]uint64(nil), ix.tos...)
-				if len(tos) != len(runs) {
-					t.Errorf("held index: %d runs against %d tos", len(runs), len(tos))
-					return
-				}
+				tos := append([]uint64(nil), ix.maxTo...)
 				for i := range runs {
-					if runs[i] == nil || tos[i] != runs[i].coord.To {
-						t.Errorf("held index: run %d is %v with tos %d", i, runs[i], tos[i])
+					if runs[i] == nil {
+						t.Errorf("held index: run %d is nil", i)
 						return
 					}
 				}
+				if !maxToHolds(runs, tos) {
+					t.Errorf("held index: maxTo does not reach over its %d runs", len(runs))
+					return
+				}
 				runtime.Gosched()
-				if len(ix.runs) != len(runs) || len(ix.tos) != len(tos) {
+				if len(ix.runs) != len(runs) || len(ix.maxTo) != len(tos) {
 					t.Errorf("held index changed length")
 					return
 				}
 				for i := range runs {
-					if ix.runs[i] != runs[i] || ix.tos[i] != tos[i] {
+					if ix.runs[i] != runs[i] || ix.maxTo[i] != tos[i] {
 						t.Errorf("held index changed at %d", i)
 						return
 					}
