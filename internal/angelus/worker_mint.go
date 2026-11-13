@@ -191,14 +191,11 @@ func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation 
 	if err != nil {
 		return refused(err)
 	}
-	if out.Figaro, _, err = backend.ForkWith(parent, 0, birth, by); err != nil {
+	if out.Figaro, _, err = backend.ForkWith(parent, 0, birth, by, ariaIDStamp()); err != nil {
 		return refused(fmt.Errorf("figaro: %w", err))
 	}
 	if err := record(out.Figaro); err != nil {
 		return refused(err)
-	}
-	if _, err := backend.ApplyFormPrivileged(out.Figaro, withAriaID(form.Patch{}, out.Figaro)); err != nil {
-		return refused(fmt.Errorf("stamp aria id: %w", err))
 	}
 	role := leaseRolePatch(box, out.Figaro)
 	held := form.Snapshot{}.Apply(role)
