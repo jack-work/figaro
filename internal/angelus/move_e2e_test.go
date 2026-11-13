@@ -188,7 +188,7 @@ func TestAMovedAriaWhoseNewHomeIsDownNamesIt(t *testing.T) {
 	_, err := a.as("probe").Move(ctx, id, b.id)
 	require.NoError(t, err)
 
-	b.doorLn.Close()
+	b.endpointLn.Close()
 	err = setMantra(t, a, "probe", id, `"lost"`)
 	require.ErrorContains(t, err, "node "+b.id+" is unreachable")
 }
@@ -239,14 +239,14 @@ func pendingDeparture(t *testing.T, n *fedNode, id, to, token string) {
 }
 
 // restart stops the daemon and opens its store again, on the same node
-// door address, without starting it: the caller may arrange the store first.
+// endpoint address, without starting it: the caller may arrange the store first.
 func (n *fedNode) restart() *fedNode {
 	t := n.t
-	addr := n.doorLn.Addr().String()
+	addr := n.endpointLn.Addr().String()
 	n.owner.Close()
 	n.stop()
 	n.a.Shutdown(0)
-	n.doorLn.Close()
+	n.endpointLn.Close()
 	require.NoError(t, n.a.Backend.Close())
 	backend, err := store.NewXwalBackend(n.dir+"/arias", 0)
 	require.NoError(t, err)
@@ -254,7 +254,7 @@ func (n *fedNode) restart() *fedNode {
 	ln, err := net.Listen("tcp", addr)
 	require.NoError(t, err)
 	return &fedNode{t: t, dir: n.dir, id: backend.NodeID(), issuer: n.issuer, alsoOwners: n.alsoOwners,
-		doorLn: ln, tlsCfg: n.tlsCfg, pendingPeers: n.pendingPeers,
+		endpointLn: ln, tlsCfg: n.tlsCfg, pendingPeers: n.pendingPeers,
 		a: angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, n.dir), Backend: backend})}
 }
 

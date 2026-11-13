@@ -392,7 +392,7 @@ func Run() {
 	a.Peercred = peer
 	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
 	a.Policies.SetPoolDaemon(loaded.PoolDaemon())
-	a.Policies.SetBoxes(loaded.DooredBoxes())
+	a.Policies.SetBoxes(loaded.BoxesWithEndpoints())
 	a.Policies.SetBoxesRequiringClaim(loaded.BoxesRequiringClaim())
 	a.Policies.SetIssuerScopes(authz.IssuerScopes(loaded.Config.Authz))
 	if a.Issuers, err = newIssuers(loaded.Config.Authz.Issuers); err != nil {
@@ -486,17 +486,17 @@ func Run() {
 		fmt.Fprintf(os.Stderr, "angelus: %v; exiting\n", boot.ErrHushGateShut)
 		os.Exit(1)
 	}
-	if err := serveWebDoor(ctx, a, loaded); err != nil {
+	if err := serveWebEndpoint(ctx, a, loaded); err != nil {
 		slog.Error("angelus web door", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
-	if err := a.OpenBoxDoors(ctx, loaded); err != nil {
+	if err := a.OpenBoxEndpoints(ctx, loaded); err != nil {
 		slog.Error("angelus box door", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
-	if err := serveNodeDoor(ctx, a, loaded); err != nil {
+	if err := serveNodeEndpoint(ctx, a, loaded); err != nil {
 		slog.Error("angelus node door", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
@@ -534,8 +534,8 @@ func Run() {
 	}
 }
 
-func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) error {
-	web, ok, err := loaded.WebDoor()
+func serveWebEndpoint(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) error {
+	web, ok, err := loaded.WebEndpoint()
 	if err != nil || !ok {
 		return err
 	}
@@ -548,38 +548,38 @@ func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded
 		ln.Close()
 		return fmt.Errorf("door.web: %w", err)
 	}
-	door, err := webDoorLimits(loaded, web, admit)
+	endpoint, err := webEndpointLimits(loaded, web, admit)
 	if err != nil {
 		ln.Close()
 		return err
 	}
-	slog.Info("web door listening", "path", web.Path, "authn", web.Authn, "max_conn_age", web.MaxConnAge.String(), "edge_follow_max_age", door.FollowMaxAge.String(), "admits", admit != nil)
+	slog.Info("web door listening", "path", web.Path, "authn", web.Authn, "max_conn_age", web.MaxConnAge.String(), "edge_follow_max_age", endpoint.FollowMaxAge.String(), "admits", admit != nil)
 	a.Go("web door socket", func() {
 		defer os.Remove(web.Path)
-		if err := a.ServeWeb(ctx, ln, door); err != nil {
+		if err := a.ServeWeb(ctx, ln, endpoint); err != nil {
 			slog.Error("web door", "err", err)
 		}
 	})
 	return nil
 }
 
-func webDoorLimits(loaded *config.Loaded, web config.WebDoor, admit angelus.WebAdmit) (angelus.Web, error) {
-	door := angelus.Web{Admit: admit, MaxConnAge: web.MaxConnAge}
+func webEndpointLimits(loaded *config.Loaded, web config.WebEndpoint, admit angelus.WebAdmit) (angelus.Web, error) {
+	endpoint := angelus.Web{Admit: admit, MaxConnAge: web.MaxConnAge}
 	if web.Authn != "upstream" {
-		return door, nil
+		return endpoint, nil
 	}
 	var err error
-	door.FollowMaxAge, err = loaded.EdgeFollowMaxAge()
-	return door, err
+	endpoint.FollowMaxAge, err = loaded.EdgeFollowMaxAge()
+	return endpoint, err
 }
 
-func webAuthenticator(name, listen, cliDoor string, cfg config.AuthzConfig, b authz.Bearers) (angelus.WebAdmit, error) {
+func webAuthenticator(name, listen, cliEndpoint string, cfg config.AuthzConfig, b authz.Bearers) (angelus.WebAdmit, error) {
 	if len(cfg.Issuers) == 0 {
 		b.Issuers = nil
 	}
 	switch name {
 	case "upstream":
-		u, err := authz.NewUpstream(cfg.Upstream, listen, cliDoor, b.Issuers)
+		u, err := authz.NewUpstream(cfg.Upstream, listen, cliEndpoint, b.Issuers)
 		if err != nil {
 			return nil, err
 		}

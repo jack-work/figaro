@@ -13,7 +13,7 @@ const judgePurgesInAnHour = "purge_grace = \"1h\"\n"
 // A guest's chat lives in a box whose transcripts must not outlast an hour
 // once reaped or killed; the daemon's week and three days stay for the rest.
 func TestABoxPurgesOnItsOwnGraceAndOthersKeepTheDaemons(t *testing.T) {
-	d := boxDoorRigConfigured(t, defaultPolicy, "true", judgePurgesInAnHour)
+	d := boxEndpointRigConfigured(t, defaultPolicy, "true", judgePurgesInAnHour)
 	boxed, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestABoxPurgesOnItsOwnGraceAndOthersKeepTheDaemons(t *testing.T) {
 }
 
 func TestAKilledBoxAriaIsPurgedWithinItsBoxsGrace(t *testing.T) {
-	d := boxDoorRigConfigured(t, defaultPolicy, "true", judgePurgesInAnHour)
+	d := boxEndpointRigConfigured(t, defaultPolicy, "true", judgePurgesInAnHour)
 	kill := func(id string, grace time.Duration) time.Duration {
 		t.Helper()
 		out, err := d.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: id, GraceMS: grace.Milliseconds()})

@@ -63,7 +63,7 @@ func PolicySetters(body string) ([]string, error) {
 
 func verifyPolicy(v verified, root *x509.Certificate, at time.Time) (crypto.PublicKey, error) {
 	e := v.Entry
-	if e.Door != "" || e.Owner != "" {
+	if e.Endpoint != "" || e.Owner != "" {
 		return nil, errors.New("a policy has no door or owner")
 	}
 	if e.Version == 0 {

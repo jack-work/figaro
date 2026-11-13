@@ -1,7 +1,7 @@
 package rpc
 
 // Methods are named by what they do, not where they are served: a read has
-// one name whichever door it arrives at. A new method must state which
+// one name whichever endpoint it arrives at. A new method must state which
 // existing method it is not.
 
 // Pushes: server -> client, on the connection the subscriber already holds.
@@ -100,7 +100,7 @@ const (
 // Administration: the daemon's own state, which may not share a filesystem
 // with the caller.
 const (
-	// MethodHello is the node door (api/rpc/door.go); first call on a
+	// MethodHello is the node endpoint (api/rpc/endpoint.go); first call on a
 	// connection.
 	MethodHello       = "angelus.hello"
 	MethodAngelusInfo = "angelus.info"

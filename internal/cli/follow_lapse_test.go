@@ -38,7 +38,7 @@ func (e *edgeStub) RoundTrip(r *http.Request) (*http.Response, error) {
 	return e.inner.RoundTrip(r)
 }
 
-// edgeServed is a real angelus over a real store with a web door that trusts
+// edgeServed is a real angelus over a real store with a web endpoint that trusts
 // the edge's headers and ends follows at maxAge, and the wss endpoint a CLI
 // behind the edge would dial. The edge is a stub that names the owner.
 func edgeServed(t *testing.T, maxAge time.Duration) (*sdk.Angelus, transport.Endpoint, *edgeStub, string) {
@@ -115,7 +115,7 @@ func TestAPagerFollowsAgainWhenTheEdgeEndsItsFollow(t *testing.T) {
 		ownsSubject: true, subjectDead: make(chan struct{}, 1), intrinsics: newIntrinsicMirrors(),
 	}
 	in.lt = newLivelogTurn(&out, 80, 20, in.set, id, time.Now(), newSessionStatus(id, time.Now()), nil, dimRule)
-	require.NoError(t, in.retarget(ctx, id, sdk.Addr{Door: ep, ID: id}))
+	require.NoError(t, in.retarget(ctx, id, sdk.Addr{Endpoint: ep, ID: id}))
 	first := in.aria()
 	require.EqualValues(t, 1, stub.upgrades.Load())
 
@@ -159,7 +159,7 @@ func TestAMountedFormFollowsAgainWhenTheEdgeEndsItsFollow(t *testing.T) {
 
 	var released atomic.Int32
 	ctx, cancel := context.WithCancel(context.Background())
-	view, closeView, done, err := openFormViewOn(ctx, cancel, sdk.Addr{Door: ep, ID: id}, id, "", func() {}, func() { released.Add(1) })
+	view, closeView, done, err := openFormViewOn(ctx, cancel, sdk.Addr{Endpoint: ep, ID: id}, id, "", func() {}, func() { released.Add(1) })
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool { return stub.upgrades.Load() >= 3 }, 5*time.Second, 10*time.Millisecond, "the mount did not follow again after two lapses")

@@ -10,7 +10,7 @@ import (
 // Shell bindings are keyed by bare pid, and a box has its own pid namespace:
 // a box that could bind would attach host shells to its arias.
 func TestShellBindingsStayRefusedToABox(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

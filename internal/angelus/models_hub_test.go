@@ -49,7 +49,7 @@ func TestModelsCatalogIsServedLikeAForm(t *testing.T) {
 	h, cat := modelsHandlers(t)
 	require.NoError(t, h.requireAria(models.FormID))
 	hb := h.hubFor(models.FormID)
-	client, frames := dialHubOn(t, serveDoor(t, h, authz.AllowAll()), hb)
+	client, frames := dialHubOn(t, serveEndpoint(t, h, authz.AllowAll()), hb)
 	require.Eventually(t, func() bool { return hb.Attached() == 1 }, 2*time.Second, 5*time.Millisecond)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -100,7 +100,7 @@ func TestModelsCatalogIsServedLikeAForm(t *testing.T) {
 
 func TestModelsCatalogRefusesWrites(t *testing.T) {
 	h, _ := modelsHandlers(t)
-	client, _ := dialDoor(t, serveDoor(t, h, authz.AllowAll()), models.FormID)
+	client, _ := dialEndpoint(t, serveEndpoint(t, h, authz.AllowAll()), models.FormID)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var out rpc.SetResponse

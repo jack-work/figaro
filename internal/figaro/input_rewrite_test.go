@@ -122,7 +122,7 @@ func TestResolveQuoteCountsRunes(t *testing.T) {
 	}
 }
 
-// mustPassage resolves through the same door Rewrite uses.
+// mustPassage resolves through the same endpoint Rewrite uses.
 func mustPassage(t *testing.T, view InputView, r quote.Range) passage {
 	t.Helper()
 	b, err := quoteBudget(view.Settings)

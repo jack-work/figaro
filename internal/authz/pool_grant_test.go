@@ -178,7 +178,7 @@ func guardedAsProvisioner(t *testing.T, p *Policies) (map[string]jkrpc.HandlerFu
 	}
 	p.SetPoolDaemon(true)
 	return Guard(handlers, AriaHeader{}, Enforce(p)), func(box string) context.Context {
-		return WithDoor(WithSubject(context.Background(), ProvisionerServing(box)), DoorInProcess)
+		return WithEndpoint(WithSubject(context.Background(), ProvisionerServing(box)), EndpointInProcess)
 	}
 }
 

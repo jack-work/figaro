@@ -21,7 +21,7 @@ grants = ["*:*"]
 role = "box"
 principals = ["sandbox:judge"]
 `)
-	box := guardCaller(jkauthz.KindSandbox, "judge", DoorBox)
+	box := guardCaller(jkauthz.KindSandbox, "judge", EndpointBox)
 	move := hierarchy.Move{Node: "alt", From: "trunk", To: "elsewhere", Tree: hierarchy.Storage, NodeOwner: box.Name}
 	_, err := g.Check(context.Background(), box, hierarchy.Plan{Op: hierarchy.Place, Node: "alt", Moves: []hierarchy.Move{move}})
 	if !errors.Is(err, hierarchy.ErrDrawnOnly) {
@@ -33,10 +33,10 @@ principals = ["sandbox:judge"]
 	}
 }
 
-// K7: the box door is never the owner, even if its principal were to equal him.
-func TestTheBoxDoorIsNeverTheOwner(t *testing.T) {
+// K7: the box endpoint is never the owner, even if its principal were to equal him.
+func TestTheBoxEndpointIsNeverTheOwner(t *testing.T) {
 	g := topologyGuard(t, setOnlyPolicy)
-	onBox := guardCaller(guardOwner.Kind, guardOwner.ID, DoorBox)
+	onBox := guardCaller(guardOwner.Kind, guardOwner.ID, EndpointBox)
 	move := hierarchy.Move{Node: "a", From: "s", To: "b", Tree: hierarchy.Storage, NodeOwner: guardOwner.String()}
 	_, err := g.Check(context.Background(), onBox, hierarchy.Plan{Op: hierarchy.Arrange, Moves: []hierarchy.Move{move}})
 	if !errors.Is(err, hierarchy.ErrDrawnOnly) {

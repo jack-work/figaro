@@ -30,7 +30,7 @@ func backend(t *testing.T, a *angelus.Angelus) metaWriter {
 }
 
 // age gives an aria a spent lifetime and an old last use, through the store
-// rather than the door, so arranging the test is not itself an access.
+// rather than the endpoint, so arranging the test is not itself an access.
 func age(t *testing.T, a *angelus.Angelus, id string, born, used time.Duration, keys map[string]string) {
 	t.Helper()
 	b := backend(t, a)

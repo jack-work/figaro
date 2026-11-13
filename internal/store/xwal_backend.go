@@ -283,7 +283,7 @@ func (b *XwalBackend) unreadableChannel(node, channel string) error {
 
 // OpenNode reads one node's IR: an ancestor's frozen index node included,
 // which is not an aria and must not get an aria handle, a sidecar or the IR
-// door.
+// endpoint.
 func (b *XwalBackend) OpenNode(node string) Log[message.Message] {
 	return newXwalLog[message.Message](b.store, node, chanIR, true)
 }

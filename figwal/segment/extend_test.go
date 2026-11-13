@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The writer reads its newest record before each append, as the IR door does.
+// The writer reads its newest record before each append, as the IR endpoint does.
 // Each record must be resident and charged once: extending the tail by
 // re-putting the chunk prefix left every prefix resident and charged the
 // budget about sixteen times the payload. Evicting the node must then hand

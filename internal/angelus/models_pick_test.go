@@ -23,7 +23,7 @@ func (p listing) Send(context.Context, provider.SendInput, provider.Bus) error {
 }
 func (p listing) Models(context.Context) ([]provider.ModelInfo, error) { return p.list, nil }
 
-func withModels(t *testing.T, d doorRig) {
+func withModels(t *testing.T, d endpointRig) {
 	t.Helper()
 	cat := modelcat.New(modelcat.Config{Build: func(string) (provider.Provider, error) {
 		return listing{list: []provider.ModelInfo{{ID: "m-2.5", Entry: models.Entry{Context: models.Context{Default: 200_000}}}}}, nil
@@ -40,7 +40,7 @@ func withModels(t *testing.T, d doorRig) {
 }
 
 func TestTheOwnerPicksAListedModel(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	withModels(t, d)
 	made, err := d.create(asOwner(), "mock")
 	if err != nil {
@@ -66,7 +66,7 @@ func TestTheOwnerPicksAListedModel(t *testing.T) {
 // Picking sets owner-held keys, so a box cannot pick for its own aria, by the
 // view's action or by the method itself.
 func TestABoxCannotPickAModel(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	withModels(t, d)
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {

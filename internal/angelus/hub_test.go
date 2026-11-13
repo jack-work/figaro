@@ -48,29 +48,29 @@ func testHub(t *testing.T) *ariaHub {
 	return newAriaHub("abcd1234")
 }
 
-// serveDoor stands a door up over h's hubs, guarded by policy, and returns
+// serveEndpoint stands an endpoint up over h's hubs, guarded by policy, and returns
 // its socket path. The method map is built the way the daemon builds its own.
-func serveDoor(t testing.TB, h *handlers, policy authz.Policy) string {
+func serveEndpoint(t testing.TB, h *handlers, policy authz.Policy) string {
 	t.Helper()
 	if h.angelus.Hubs == nil {
 		h.angelus.Hubs = newHubs()
 	}
-	h.angelus.Handlers = h.door(nil, policy)
+	h.angelus.Handlers = h.endpoint(nil, policy)
 	path := shortSocketPath(t)
 	ln, err := net.Listen("unix", path)
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go h.angelus.Serve(ctx, ln, authz.DoorLocal, nil)
+	go h.angelus.Serve(ctx, ln, authz.EndpointLocal, nil)
 	return path
 }
 
-// hubDoor serves hb alone on a door of its own.
-func hubDoor(t testing.TB, hb *ariaHub, policy authz.Policy) string {
+// hubEndpoint serves hb alone on an endpoint of its own.
+func hubEndpoint(t testing.TB, hb *ariaHub, policy authz.Policy) string {
 	t.Helper()
 	h := &handlers{angelus: &Angelus{Hubs: newHubs()}}
 	h.angelus.Hubs.putIfAbsent(hb.id, hb)
-	return serveDoor(t, h, policy)
+	return serveEndpoint(t, h, policy)
 }
 
 func shortSocketPath(t testing.TB) string {
@@ -86,7 +86,7 @@ type frame struct {
 	params json.RawMessage
 }
 
-// ariaClient addresses one aria on a door, the way sdk.Aria does.
+// ariaClient addresses one aria on an endpoint, the way sdk.Aria does.
 type ariaClient struct {
 	c  *jkrpc.Client
 	id string
@@ -104,7 +104,7 @@ func (a ariaClient) Call(ctx context.Context, method string, params, out any) er
 	return a.c.Call(ctx, method, raw, out)
 }
 
-func dialDoor(t testing.TB, path, id string) (ariaClient, chan frame) {
+func dialEndpoint(t testing.TB, path, id string) (ariaClient, chan frame) {
 	t.Helper()
 	frames := make(chan frame, 32)
 	conn, err := net.Dial("unix", path)
@@ -116,15 +116,15 @@ func dialDoor(t testing.TB, path, id string) (ariaClient, chan frame) {
 	return ariaClient{c: c, id: id}, frames
 }
 
-// dialHub dials a fresh door for hb and follows it.
+// dialHub dials a fresh endpoint for hb and follows it.
 func dialHub(t *testing.T, hb *ariaHub) (ariaClient, chan frame) {
 	t.Helper()
-	return dialHubOn(t, hubDoor(t, hb, authz.AllowAll()), hb)
+	return dialHubOn(t, hubEndpoint(t, hb, authz.AllowAll()), hb)
 }
 
 func dialHubOn(t testing.TB, path string, hb *ariaHub) (ariaClient, chan frame) {
 	t.Helper()
-	client, frames := dialDoor(t, path, hb.id)
+	client, frames := dialEndpoint(t, path, hb.id)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var out rpc.FollowResponse
@@ -176,7 +176,7 @@ func TestHubFansOutToEveryClient(t *testing.T) {
 	agent := newFakeAgent()
 	defer hb.bind(agent)()
 
-	path := hubDoor(t, hb, authz.AllowAll())
+	path := hubEndpoint(t, hb, authz.AllowAll())
 	_, framesA := dialHubOn(t, path, hb)
 	_, framesB := dialHubOn(t, path, hb)
 	require.Eventually(t, func() bool { return hb.Attached() == 2 },
@@ -286,9 +286,9 @@ func TestOneConnectionFollowsTwoArias(t *testing.T) {
 	h := &handlers{angelus: &Angelus{Hubs: newHubs()}}
 	h.angelus.Hubs.putIfAbsent(a.id, a)
 	h.angelus.Hubs.putIfAbsent(b.id, b)
-	path := serveDoor(t, h, authz.AllowAll())
+	path := serveEndpoint(t, h, authz.AllowAll())
 
-	ca, frames := dialDoor(t, path, a.id)
+	ca, frames := dialEndpoint(t, path, a.id)
 	cb := ariaClient{c: ca.c, id: b.id}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -315,12 +315,12 @@ func TestOneConnectionFollowsTwoArias(t *testing.T) {
 }
 
 // A connection that never addressed an aria hears nothing from it.
-func TestDoorPushesOnlyToFollowers(t *testing.T) {
+func TestEndpointPushesOnlyToFollowers(t *testing.T) {
 	hb := testHub(t)
 	agent := newFakeAgent()
 	defer hb.bind(agent)()
-	path := hubDoor(t, hb, authz.AllowAll())
-	_, idle := dialDoor(t, path, hb.id)
+	path := hubEndpoint(t, hb, authz.AllowAll())
+	_, idle := dialEndpoint(t, path, hb.id)
 	_, following := dialHubOn(t, path, hb)
 
 	agent.push(t, rpc.MethodAriaFrame, map[string]any{"n": 1})
@@ -338,9 +338,9 @@ func TestDoorPushesOnlyToFollowers(t *testing.T) {
 
 // An aria method that names no aria, or one that does not exist, is refused
 // before it reaches a hub.
-func TestDoorRefusesAnUnaddressedCall(t *testing.T) {
+func TestEndpointRefusesAnUnaddressedCall(t *testing.T) {
 	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Registry: NewRegistry(), Backend: testBackend(t)}}
-	path := serveDoor(t, h, authz.AllowAll())
+	path := serveEndpoint(t, h, authz.AllowAll())
 	conn, err := net.Dial("unix", path)
 	require.NoError(t, err)
 	c := jkrpc.NewClient(jkrpc.NewConn(conn), nil)

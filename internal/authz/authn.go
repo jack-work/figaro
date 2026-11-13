@@ -101,12 +101,12 @@ type Upstream struct {
 	reverify *Issuers
 }
 
-func NewUpstream(cfg config.UpstreamConfig, listen, cliDoor string, reverify *Issuers) (*Upstream, error) {
+func NewUpstream(cfg config.UpstreamConfig, listen, cliEndpoint string, reverify *Issuers) (*Upstream, error) {
 	if !filepath.IsAbs(listen) {
 		return nil, fmt.Errorf("authz.upstream: listener %q: want an absolute unix socket path; headers are trusted only from a socket the edge alone can reach", listen)
 	}
 	listen = filepath.Clean(listen)
-	if cliDoor != "" && listen == filepath.Clean(cliDoor) {
+	if cliEndpoint != "" && listen == filepath.Clean(cliEndpoint) {
 		return nil, fmt.Errorf("authz.upstream: %s is the CLI door; trusted headers there would let any local caller name itself", listen)
 	}
 	if cfg.Issuer == "" {

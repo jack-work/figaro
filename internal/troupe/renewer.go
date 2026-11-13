@@ -35,7 +35,7 @@ func SignOwnRenewer(key crypto.Signer, inter *x509.Certificate, troupe, renewer 
 
 func verifyRenewer(v verified, troupe string, root *x509.Certificate, at time.Time) (crypto.PublicKey, error) {
 	e := v.Entry
-	if e.Door != "" || e.Owner != "" {
+	if e.Endpoint != "" || e.Owner != "" {
 		return nil, errors.New("a renewer entry has no door or owner")
 	}
 	if err := rpc.ValidateAriaID(e.Renews); err != nil {

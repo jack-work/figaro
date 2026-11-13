@@ -48,7 +48,7 @@ func idCandidates(c *cmdkit.CompleteContext) []string {
 func fetchNames(c *cmdkit.CompleteContext, kinds ...string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	acli, err := sdk.DialAngelus(doorEndpoint())
+	acli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		return nil
 	}
@@ -407,7 +407,7 @@ const turnCandidatesMax = 200
 func turnCandidates(c *cmdkit.CompleteContext, id string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	acli, err := sdk.DialAngelus(doorEndpoint())
+	acli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		return nil
 	}

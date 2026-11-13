@@ -14,7 +14,7 @@ import (
 	"github.com/jack-work/figaro/internal/troupe"
 )
 
-func troupeRenewer(ctx context.Context, d revokeDoor, in io.Reader, out io.Writer, site joinSite, name, node, renewer string) error {
+func troupeRenewer(ctx context.Context, d revokeEndpoint, in io.Reader, out io.Writer, site joinSite, name, node, renewer string) error {
 	key, err := readRoot(in, name)
 	if err != nil {
 		return err

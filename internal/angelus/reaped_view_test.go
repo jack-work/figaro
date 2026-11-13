@@ -12,7 +12,7 @@ import (
 // An action in a view is the direct call: a box gets no further with it than
 // with the method itself, and cannot read the catalog that would offer it.
 func TestABoxCannotRestorePurgeOrSeeTheReapedView(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	outside, err := d.create(asOwner(), "mock")
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestABoxCannotRestorePurgeOrSeeTheReapedView(t *testing.T) {
 // A hint comes from the daemon's own table, keyed by catalog: no form a
 // caller can write carries one, whatever it holds.
 func TestNoWritableFormCarriesAViewHint(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	made, err := d.create(asOwner(), "mock")
 	if err != nil {
 		t.Fatal(err)

@@ -608,7 +608,7 @@ func (in *interactiveInput) angelus() (*sdk.Angelus, error) {
 	if in.loaded == nil {
 		return nil, fmt.Errorf("this session has no daemon connection")
 	}
-	cli, err := sdk.DialAngelus(doorEndpoint())
+	cli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		return nil, fmt.Errorf("connect angelus: %w", err)
 	}
@@ -736,7 +736,7 @@ func (in *interactiveInput) reconnect(gen uint64, id string, ep sdk.Addr) bool {
 	in.setAway()
 	in.progress("the angelus went away: reconnecting to " + ariaName(id))
 	var socketBack <-chan struct{}
-	if d := resolveDoor(); !d.configured {
+	if d := resolveEndpoint(); !d.configured {
 		var stop func()
 		socketBack, stop = watchSocketCreated(boot.AngelusSocketPath())
 		defer stop()
@@ -839,7 +839,7 @@ func (in *interactiveInput) claimSubject(gen uint64, id, from string, fcli *sdk.
 		in.seed = in.lt.retarget(id, status, shared)
 	}
 	in.lt.setDesync(in.desyncHandler(gen))
-	// Hooks are armed here, on both the cold and the warm door.
+	// Hooks are armed here, on both the cold and the warm endpoint.
 	in.wireHooks()
 	return old, ownedOld, true
 }

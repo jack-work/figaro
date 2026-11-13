@@ -68,7 +68,7 @@ func TestAFollowerThatStopsReadingCannotStallTheHub(t *testing.T) {
 	hb := testHub(t)
 	agent := newFakeAgent()
 	defer hb.bind(agent)()
-	path := hubDoor(t, hb, authz.AllowAll())
+	path := hubEndpoint(t, hb, authz.AllowAll())
 	stalled := followRaw(t, path, hb.id)
 	healthy := countingFollower(t, path, hb)
 	require.Eventually(t, func() bool { return hb.Attached() == 2 }, 2*time.Second, 10*time.Millisecond)
@@ -145,7 +145,7 @@ func TestAWriteThatNeverReturnsDropsTheConnection(t *testing.T) {
 	close(w.release)
 }
 
-// The door's last words (door lapsed, a reply to the final call) are queued
+// The endpoint's last words (endpoint lapsed, a reply to the final call) are queued
 // like any frame; closing the connection waits for them, within a grace.
 func TestClosingTheOutboxSendsWhatIsQueued(t *testing.T) {
 	w := &blockingWriter{release: make(chan struct{})}
@@ -166,11 +166,11 @@ func TestClosingTheOutboxSendsWhatIsQueued(t *testing.T) {
 }
 
 // The per-connection bound alone let a peer that opens many connections and
-// reads none make the daemon hold 16 MiB for each. All of a daemon's door
+// reads none make the daemon hold 16 MiB for each. All of a daemon's endpoint
 // queues share one budget: past it, the connection furthest behind is
 // dropped, so the total stays within the budget plus one frame, and a
 // follower that reads is never the one chosen.
-func TestManyConnectionsThatStopReadingStayWithinTheDoorBudget(t *testing.T) {
+func TestManyConnectionsThatStopReadingStayWithinTheEndpointBudget(t *testing.T) {
 	const budget = 2 << 20
 	setOutboxForTest(t, 16<<20, time.Minute)
 	hb := testHub(t)
@@ -179,7 +179,7 @@ func TestManyConnectionsThatStopReadingStayWithinTheDoorBudget(t *testing.T) {
 	h := &handlers{angelus: &Angelus{Hubs: newHubs()}}
 	h.angelus.outboxOnce.Do(func() { h.angelus.outboxes = newOutboxBudget(budget) })
 	h.angelus.Hubs.putIfAbsent(hb.id, hb)
-	path := serveDoor(t, h, authz.AllowAll())
+	path := serveEndpoint(t, h, authz.AllowAll())
 	const stalled = 12
 	for range stalled {
 		followRaw(t, path, hb.id)

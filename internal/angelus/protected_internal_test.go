@@ -13,7 +13,7 @@ import (
 	"github.com/jack-work/jkauthz"
 )
 
-// The box door already hides an aria outside the box; this holds the
+// The box endpoint already hides an aria outside the box; this holds the
 // protected-key rule on its own, should that reach ever widen.
 func TestAnAncestorInABoxManagesOnlyDescendantsStillInIt(t *testing.T) {
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)

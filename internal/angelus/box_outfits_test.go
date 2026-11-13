@@ -13,7 +13,7 @@ const judgeWearsOnlyJudged = "outfits = [\"judged\"]\n"
 // keys alone a box could still dress its arias in any outfit the owner keeps.
 // A box with an outfit list dresses only in those, at birth and after.
 func TestABoxDressesOnlyInTheOutfitsItsBoxNames(t *testing.T) {
-	d := boxDoorRigConfigured(t, defaultPolicy, "true", judgeWearsOnlyJudged)
+	d := boxEndpointRigConfigured(t, defaultPolicy, "true", judgeWearsOnlyJudged)
 	c := d.dial(t)
 	var born rpc.CreateResponse
 	if err := c.Call(t.Context(), rpc.MethodCreate, rpc.CreateRequest{Outfits: []string{"judged"}}, &born); err != nil {
@@ -42,7 +42,7 @@ func TestABoxDressesOnlyInTheOutfitsItsBoxNames(t *testing.T) {
 // form.bind mints an aria as surely as create does, so a box binds only in a
 // named outfit from its list, whether or not it names a parent of its own.
 func TestABoxBindsOnlyInANamedOutfitFromItsList(t *testing.T) {
-	d := boxDoorRigConfigured(t, defaultPolicy, "true", judgeWearsOnlyJudged)
+	d := boxEndpointRigConfigured(t, defaultPolicy, "true", judgeWearsOnlyJudged)
 	c := d.dial(t)
 	var own rpc.FormCreateResponse
 	if err := c.Call(t.Context(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: heldPatch(t, map[string]any{"note": "x"})}, &own); err != nil {
@@ -67,7 +67,7 @@ func TestABoxBindsOnlyInANamedOutfitFromItsList(t *testing.T) {
 // mints a fresh one: of an unbound form the box made, or at the genesis root,
 // it would carry no outfit at all, so it needs a listed outfit like create.
 func TestABoxForksBareOnlyAtTheHeadOfAConversation(t *testing.T) {
-	d := boxDoorRigConfigured(t, defaultPolicy, "true", "outfits = [\"judged-chat\"]\n")
+	d := boxEndpointRigConfigured(t, defaultPolicy, "true", "outfits = [\"judged-chat\"]\n")
 	c := d.dial(t)
 	var chat rpc.CreateResponse
 	if err := c.Call(t.Context(), rpc.MethodCreate, rpc.CreateRequest{Outfits: []string{"judged-chat"}}, &chat); err != nil {

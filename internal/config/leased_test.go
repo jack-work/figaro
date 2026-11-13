@@ -20,7 +20,7 @@ func loadedPool(t *testing.T) *Loaded {
 }
 
 // Every rule that keys on a box name reads Loaded.Box, so a lease has to be
-// found there, and with nothing a process could execute through or a door
+// found there, and with nothing a process could execute through or an endpoint
 // could be opened on.
 func TestALeasedBoxIsABoxWithNoSocketAndNoGrace(t *testing.T) {
 	l := loadedPool(t)
@@ -44,10 +44,10 @@ func TestALeasedBoxIsABoxWithNoSocketAndNoGrace(t *testing.T) {
 	if !slices.Equal(b.Outfits, []string{"broker-group"}) || !slices.Equal(b.Providers, []string{"rou2"}) {
 		t.Errorf("outfits %v providers %v: want the pool's one of each", b.Outfits, b.Providers)
 	}
-	if b.Exec != "" || b.Door != "" || b.HostDoor != "" || b.FigaroClaim != "" || b.Profile != "" {
+	if b.Exec != "" || b.Endpoint != "" || b.HostEndpoint != "" || b.FigaroClaim != "" || b.Profile != "" {
 		t.Errorf("a leased box carries a socket, door, claim or profile: %+v", b)
 	}
-	if len(l.BoxDoors())+len(l.HostDoors())+len(l.DooredBoxes())+len(l.BoxesRequiringClaim()) != 0 {
+	if len(l.BoxEndpoints())+len(l.HostEndpoints())+len(l.BoxesWithEndpoints())+len(l.BoxesRequiringClaim()) != 0 {
 		t.Error("the door machinery sees a leased box")
 	}
 	if !slices.Equal(l.LeasedBoxes(), []string{name}) {

@@ -91,7 +91,7 @@ func runReplay(loaded *config.Loaded, path string, opt replayOpts) {
 	if err := srv.listen(ctx, ep); err != nil {
 		die("replay: %s", err)
 	}
-	// The renderer leaves through tailFigaro's end-of-stream door, not ctx
+	// The renderer leaves through tailFigaro's end-of-stream endpoint, not ctx
 	// cancellation, which would report an interrupt that never happened.
 	if driver == nil {
 		go func() {
@@ -111,7 +111,7 @@ func runReplay(loaded *config.Loaded, path string, opt replayOpts) {
 	}
 	sessionNow = newTapeClock(started, frames, srv.position).now
 	tapeOnly.Store(true)
-	tailFigaro(ctx, cancel, sdk.Addr{Door: ep, ID: id}, h.Aria, loaded, tailOpts{end: end, startedAt: started, window: window})
+	tailFigaro(ctx, cancel, sdk.Addr{Endpoint: ep, ID: id}, h.Aria, loaded, tailOpts{end: end, startedAt: started, window: window})
 }
 
 func printTapeSummary(w *os.File, h tape.Header, frames []tape.Frame) {
@@ -548,7 +548,7 @@ func recordedModel(ctx context.Context, acli *sdk.Angelus, ep sdk.Addr) *tape.Mo
 		return nil
 	}
 	provider, name := models.Subject(bound)
-	catalogAt := sdk.Addr{Door: ep.Door, ID: models.FormID}
+	catalogAt := sdk.Addr{Endpoint: ep.Endpoint, ID: models.FormID}
 	catalog, _ := readForm(ctx, catalogAt)
 	limit := models.ContextLimit(catalog, bound)
 	if limit <= 0 && provider != "" && name != "" && acli != nil && acli.ModelsWant(ctx, provider, name) == nil {

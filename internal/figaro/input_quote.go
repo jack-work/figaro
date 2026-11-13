@@ -13,7 +13,7 @@ import (
 )
 
 // quoteRewrite replaces a leading `<lt.block:start-end>!` with a short quote of
-// the passage. It runs once, at the door; the log holds the resolved text.
+// the passage. It runs once, at the endpoint; the log holds the resolved text.
 type quoteRewrite struct{}
 
 func (quoteRewrite) Name() string { return "quote" }

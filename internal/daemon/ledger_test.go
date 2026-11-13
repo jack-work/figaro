@@ -48,8 +48,8 @@ type ledgerNode struct {
 	stateDir string
 	cfgDir   string
 	addr     string
-	door     *testDoor
-	serving  *doorTenancy
+	endpoint *testEndpoint
+	serving  *endpointTenancy
 	a        *angelus.Angelus
 	backend  *store.XwalBackend
 	stop     context.CancelFunc
@@ -60,7 +60,7 @@ type ledgerNode struct {
 func newLedgerNode(t *testing.T, root estateRoot) *ledgerNode {
 	t.Helper()
 	n := &ledgerNode{t: t, root: root, storeDir: t.TempDir(), stateDir: t.TempDir(), cfgDir: t.TempDir()}
-	n.moveDoor()
+	n.moveEndpoint()
 	n.open()
 	_, ik, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
@@ -73,10 +73,10 @@ func newLedgerNode(t *testing.T, root estateRoot) *ledgerNode {
 	return n
 }
 
-// moveDoor gives the node a newly bound port and names it in its config.
-func (n *ledgerNode) moveDoor() {
-	n.door = openTestDoor(n.t)
-	n.addr = n.door.addr()
+// moveEndpoint gives the node a newly bound port and names it in its config.
+func (n *ledgerNode) moveEndpoint() {
+	n.endpoint = openTestEndpoint(n.t)
+	n.addr = n.endpoint.addr()
 	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n[door.tls]\nlisten = %q\n", n.addr)
 	require.NoError(n.t, os.WriteFile(filepath.Join(n.cfgDir, "config.toml"), []byte(body), 0o600))
 }
@@ -113,11 +113,11 @@ func (n *ledgerNode) start() *peer.Ledger {
 	if n.handlers != nil {
 		n.handlers(n.a.Handlers)
 	}
-	door, ok, err := loaded.TLSDoor()
+	endpoint, ok, err := loaded.TLSEndpoint()
 	require.NoError(t, err)
 	require.True(t, ok)
-	n.serving = n.door.tenancy()
-	require.NoError(t, serveNodeDoorOn(ctx, n.a, door, n.serving))
+	n.serving = n.endpoint.tenancy()
+	require.NoError(t, serveNodeEndpointOn(ctx, n.a, endpoint, n.serving))
 	t.Cleanup(n.halt)
 	m, ok := n.a.Peers.(*peer.Ledger)
 	require.True(t, ok, "troupe.provider figaro built %T", n.a.Peers)
@@ -150,14 +150,14 @@ func storedEntries(t *testing.T, n *ledgerNode) map[string]string {
 }
 
 // A node holding an intermediate signs its own join at start, with the
-// door it advertises, keeps it in a form, and finds it there after a
+// endpoint it advertises, keeps it in a form, and finds it there after a
 // restart without signing another.
 func TestAFounderSignsItselfInAndKeepsItsLedgerInAForm(t *testing.T) {
 	n := newLedgerNode(t, newEstateRoot(t))
 	m := n.start()
 	me, ok := m.View().Members[n.id()]
 	require.True(t, ok)
-	require.Equal(t, n.addr, me.Door)
+	require.Equal(t, n.addr, me.Endpoint)
 	require.Equal(t, n.a.Peercred.Self().String(), me.Owner, "a founder is owned by the local principal")
 	require.Equal(t, []string{n.id()}, m.View().Signers(time.Now()))
 	require.Empty(t, m.Nodes(), "a node is not its own peer")
@@ -171,20 +171,20 @@ func TestAFounderSignsItselfInAndKeepsItsLedgerInAForm(t *testing.T) {
 }
 
 // A node moved to another address signs a newer join naming it.
-func TestANewDoorIsSignedIn(t *testing.T) {
+func TestANewEndpointIsSignedIn(t *testing.T) {
 	n := newLedgerNode(t, newEstateRoot(t))
 	n.start()
 	n.halt()
-	n.moveDoor()
+	n.moveEndpoint()
 	m := n.start()
 	require.Len(t, m.Entries(), 2)
-	require.Equal(t, n.addr, m.View().Members[n.id()].Door)
+	require.Equal(t, n.addr, m.View().Members[n.id()].Endpoint)
 }
 
-// Two daemons that know each other trade entries over the real node door
+// Two daemons that know each other trade entries over the real node endpoint
 // and keep what they learn; a node the root certified but no ledger names
 // is refused at the handshake.
-func TestTwoNodesTradeEntriesOverTheNodeDoor(t *testing.T) {
+func TestTwoNodesTradeEntriesOverTheNodeEndpoint(t *testing.T) {
 	root := newEstateRoot(t)
 	na, nb, stranger := newLedgerNode(t, root), newLedgerNode(t, root), newLedgerNode(t, root)
 	ma, mb := na.start(), nb.start()
@@ -213,20 +213,20 @@ func TestTwoNodesTradeEntriesOverTheNodeDoor(t *testing.T) {
 	require.Error(t, err, "a node no ledger names was admitted")
 }
 
-// The figaro provider needs a door peers can dial and serves it on troupe
+// The figaro provider needs an endpoint peers can dial and serves it on troupe
 // keys alone.
-func TestTheFigaroProviderRefusesADoorItCannotAdvertise(t *testing.T) {
-	for _, door := range []string{
+func TestTheFigaroProviderRefusesAEndpointItCannotAdvertise(t *testing.T) {
+	for _, endpoint := range []string{
 		"",
 		"[door.tls]\nlisten = \"0.0.0.0:7443\"\n",
 		"[door.tls]\nlisten = \"127.0.0.1:7443\"\ncert = \"c\"\nkey = \"k\"\nclient_ca = \"ca\"\n",
 	} {
 		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n"+door), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n"+endpoint), 0o600))
 		loaded, err := config.Load(dir)
 		require.NoError(t, err)
 		a := angelus.New(angelus.Config{RuntimeDir: t.TempDir(), Backend: store.NewTestBackend(t)})
-		require.Error(t, federateIn(context.Background(), a, loaded, t.TempDir()), door)
+		require.Error(t, federateIn(context.Background(), a, loaded, t.TempDir()), endpoint)
 	}
 }
 
@@ -240,7 +240,7 @@ func newLeafNode(t *testing.T, root estateRoot, signer *ledgerNode, issued time.
 func newLeafNodeFor(t *testing.T, root estateRoot, signer *ledgerNode, issued time.Time, ttl time.Duration) *ledgerNode {
 	t.Helper()
 	n := &ledgerNode{t: t, root: root, storeDir: t.TempDir(), stateDir: t.TempDir(), cfgDir: t.TempDir()}
-	n.moveDoor()
+	n.moveEndpoint()
 	n.open()
 	inter, ik, err := signer.dir().Intermediate()
 	require.NoError(t, err)
@@ -267,9 +267,9 @@ func (n *ledgerNode) joinedBy(signer *ledgerNode) []troupe.Entry {
 	return []troupe.Entry{e, r}
 }
 
-// A joined node renews its leaf from a signer over the node door, proving
+// A joined node renews its leaf from a signer over the node endpoint, proving
 // itself with the leaf it still holds.
-func TestALeafOnlyNodeRenewsOverTheNodeDoor(t *testing.T) {
+func TestALeafOnlyNodeRenewsOverTheNodeEndpoint(t *testing.T) {
 	root := newEstateRoot(t)
 	na := newLedgerNode(t, root)
 	nb := newLeafNode(t, root, na, time.Now().Add(-6*24*time.Hour))
@@ -287,7 +287,7 @@ func TestALeafOnlyNodeRenewsOverTheNodeDoor(t *testing.T) {
 }
 
 // Renewal needs the leaf to be current and its node unrevoked: an expired
-// leaf cannot open the door, and neither can a node the root revoked.
+// leaf cannot open the endpoint, and neither can a node the root revoked.
 // Either way the remedy is to join again.
 func TestRenewalNeedsACurrentUnrevokedLeaf(t *testing.T) {
 	t.Run("expired", func(t *testing.T) {
@@ -322,7 +322,7 @@ func TestRenewalNeedsACurrentUnrevokedLeaf(t *testing.T) {
 	})
 }
 
-// Over the node door a node asks only for itself.
+// Over the node endpoint a node asks only for itself.
 func TestANodeCannotAskForAnotherNodesCertificate(t *testing.T) {
 	root := newEstateRoot(t)
 	na := newLedgerNode(t, root)
@@ -339,12 +339,12 @@ func TestANodeCannotAskForAnotherNodesCertificate(t *testing.T) {
 	defer l.Close()
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	_, err = l.TroupeSign(context.Background(), rpc.TroupeSignRequest{Troupe: "estate", Node: "node-c", PublicKey: pub, Door: "c.lan:7443"})
+	_, err = l.TroupeSign(context.Background(), rpc.TroupeSignRequest{Troupe: "estate", Node: "node-c", PublicKey: pub, Endpoint: "c.lan:7443"})
 	require.ErrorContains(t, err, "only for its own")
 }
 
 // A member that is not a node's renewer refuses to renew it over the node
-// door: no member would take the leaf. The renewing client asks only its
+// endpoint: no member would take the leaf. The renewing client asks only its
 // renewers, so b renews from a even with q listening.
 func TestOnlyANodesRenewerRenewsIt(t *testing.T) {
 	root := newEstateRoot(t)
@@ -364,7 +364,7 @@ func TestOnlyANodesRenewerRenewsIt(t *testing.T) {
 	defer l.Close()
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	_, err = l.TroupeSign(context.Background(), rpc.TroupeSignRequest{Troupe: "estate", Node: nb.id(), PublicKey: pub, Door: nb.addr})
+	_, err = l.TroupeSign(context.Background(), rpc.TroupeSignRequest{Troupe: "estate", Node: nb.id(), PublicKey: pub, Endpoint: nb.addr})
 	require.ErrorContains(t, err, "is not "+nb.id()+"'s renewer")
 
 	require.NoError(t, nb.a.Troupe.Ensure())
@@ -399,7 +399,7 @@ func call(t *testing.T, n *ledgerNode, method string, req any) (any, error) {
 	params, err := json.Marshal(req)
 	require.NoError(t, err)
 	owner := authz.WithSubject(context.Background(), jkauthz.Subject{Principal: n.a.Peercred.Self()})
-	return n.a.Handlers[method](authz.WithDoor(owner, authz.DoorLocal), params)
+	return n.a.Handlers[method](authz.WithEndpoint(owner, authz.EndpointLocal), params)
 }
 
 func pair(t *testing.T) (*ledgerNode, *ledgerNode, *peer.Ledger, *peer.Ledger, estateRoot) {
@@ -507,8 +507,8 @@ func joinsSignedBy(m *peer.Ledger, node, signer string) []troupe.Entry {
 }
 
 // The renewal residue: q, an intermediate that is not b's, signs the newest
-// join for b with its own door and owner, and b's renewer a has signed no
-// join for b. Renewing b from a new door would have a sign a join copying
+// join for b with its own endpoint and owner, and b's renewer a has signed no
+// join for b. Renewing b from a new endpoint would have a sign a join copying
 // q's owner, turning it into a's word. a refuses and sends b to join again.
 func TestARenewalDoesNotVouchForAnOwnerNoIssuerNamed(t *testing.T) {
 	root := newEstateRoot(t)
@@ -528,16 +528,16 @@ func TestARenewalDoesNotVouchForAnOwnerNoIssuerNamed(t *testing.T) {
 	require.Empty(t, joinsSignedBy(ma, nb.id(), na.id()))
 }
 
-// With a join from its renewer on record, a renewal from a new door keeps
+// With a join from its renewer on record, a renewal from a new endpoint keeps
 // the owner that join named, whatever a newer join from q says.
-func TestARenewalFromANewDoorKeepsTheVouchedOwner(t *testing.T) {
+func TestARenewalFromANewEndpointKeepsTheVouchedOwner(t *testing.T) {
 	root := newEstateRoot(t)
 	na, nq := newLedgerNode(t, root), newLedgerNode(t, root)
 	nb := newLeafNode(t, root, na, time.Now().Add(-6*24*time.Hour))
 	ma := na.start()
 	_, err := ma.Merge(append(nb.joinedBy(na), nb.rogueJoin(nq))...)
 	require.NoError(t, err)
-	nb.moveDoor()
+	nb.moveEndpoint()
 	mb := nb.start()
 	_, err = mb.Merge(ma.Entries()...)
 	require.NoError(t, err)
@@ -545,6 +545,6 @@ func TestARenewalFromANewDoorKeepsTheVouchedOwner(t *testing.T) {
 	require.NoError(t, nb.a.Troupe.Ensure())
 	require.Len(t, joinsSignedBy(ma, nb.id(), na.id()), 2)
 	m := ma.View().Members[nb.id()]
-	require.Equal(t, nb.addr, m.Door)
+	require.Equal(t, nb.addr, m.Endpoint)
 	require.Equal(t, "user:owner", m.Owner)
 }

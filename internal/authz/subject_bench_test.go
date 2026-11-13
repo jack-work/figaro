@@ -8,7 +8,7 @@ import (
 	"github.com/jack-work/jkauthz"
 )
 
-// SubjectOf on a bearer connection is every RPC's cost on a web door.
+// SubjectOf on a bearer connection is every RPC's cost on a web endpoint.
 func BenchmarkSubjectOfSession(b *testing.B) {
 	is := newTestIssuer(b)
 	br := is.bearer(b)

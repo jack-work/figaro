@@ -133,13 +133,13 @@ type succeedParties struct {
 
 func succeedAssert(ctx context.Context, acli *sdk.Angelus, plan succeedPlan) (succeedParties, error) {
 	var p succeedParties
-	roleID, err := doorID(ctx, acli, plan.role)
+	roleID, err := endpointID(ctx, acli, plan.role)
 	if err != nil {
 		return p, fmt.Errorf("role %s: %w", plan.role, err)
 	}
 	successorID := ""
 	if plan.successor != "" {
-		if successorID, err = doorID(ctx, acli, plan.successor); err != nil {
+		if successorID, err = endpointID(ctx, acli, plan.successor); err != nil {
 			return p, fmt.Errorf("successor %s: %w", plan.successor, err)
 		}
 	}
@@ -415,7 +415,7 @@ func (r succeedReport) summary() string {
 }
 
 func runSucceed(plan succeedPlan, asJSON bool) error {
-	acli, err := sdk.DialAngelus(doorEndpoint())
+	acli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		return fmt.Errorf("connect angelus: %w", err)
 	}

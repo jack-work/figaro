@@ -111,7 +111,7 @@ func TestTheAttendedFigaroKeepsItsForksBesideItsForm(t *testing.T) {
 }
 
 // A figaro on another node mounts there: its row names a bare id, which is
-// read through that node's door.
+// read through that node's endpoint.
 func TestAnExpandedFigaroOnAPeerMountsThroughThePeer(t *testing.T) {
 	f, v := expandRig("none")
 	v.Items(100)

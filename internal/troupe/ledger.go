@@ -38,7 +38,7 @@ type Entry struct {
 	Kind      Kind     `json:"kind"`
 	Troupe    string   `json:"troupe"`
 	Node      string   `json:"node"`
-	Door      string   `json:"door,omitempty"`
+	Endpoint  string   `json:"door,omitempty"`
 	Owner     string   `json:"owner,omitempty"`
 	Version   uint64   `json:"version,omitempty"`
 	By        string   `json:"by,omitempty"`
@@ -64,13 +64,13 @@ func (e Entry) message() []byte {
 		return e.apiKeyMessage()
 	}
 	body, _ := json.Marshal(struct {
-		Kind   Kind   `json:"kind"`
-		Troupe string `json:"troupe"`
-		Node   string `json:"node"`
-		Door   string `json:"door"`
-		Owner  string `json:"owner"`
-		At     int64  `json:"at"`
-	}{e.Kind, e.Troupe, e.Node, e.Door, e.Owner, e.At})
+		Kind     Kind   `json:"kind"`
+		Troupe   string `json:"troupe"`
+		Node     string `json:"node"`
+		Endpoint string `json:"door"`
+		Owner    string `json:"owner"`
+		At       int64  `json:"at"`
+	}{e.Kind, e.Troupe, e.Node, e.Endpoint, e.Owner, e.At})
 	return append([]byte(entryDomain), body...)
 }
 
@@ -95,8 +95,8 @@ func sign(e Entry, key crypto.Signer) (Entry, error) {
 	return e, nil
 }
 
-func SignJoin(key crypto.Signer, inter *x509.Certificate, troupe, node, door, owner string, at time.Time) (Entry, error) {
-	return sign(Entry{Kind: Join, Troupe: troupe, Node: node, Door: door, Owner: owner, At: at.UnixMilli(), Chain: [][]byte{inter.Raw}}, key)
+func SignJoin(key crypto.Signer, inter *x509.Certificate, troupe, node, endpoint, owner string, at time.Time) (Entry, error) {
+	return sign(Entry{Kind: Join, Troupe: troupe, Node: node, Endpoint: endpoint, Owner: owner, At: at.UnixMilli(), Chain: [][]byte{inter.Raw}}, key)
 }
 
 func SignLeave(key crypto.Signer, leaf, inter *x509.Certificate, troupe, node string, at time.Time) (Entry, error) {
@@ -164,8 +164,8 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 		}
 		pub = key
 	case Join:
-		if _, _, err := net.SplitHostPort(e.Door); err != nil {
-			return out, fmt.Errorf("door %q: %w", e.Door, err)
+		if _, _, err := net.SplitHostPort(e.Endpoint); err != nil {
+			return out, fmt.Errorf("door %q: %w", e.Endpoint, err)
 		}
 		if err := ValidOwner(e.Owner); err != nil {
 			return out, err
@@ -182,7 +182,7 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 		}
 		pub = inter.PublicKey
 	case Leave:
-		if e.Door != "" || e.Owner != "" || len(out.chain) != 2 {
+		if e.Endpoint != "" || e.Owner != "" || len(out.chain) != 2 {
 			return out, errors.New("a leave carries the node's certificate and its issuer, and no door")
 		}
 		leaf := out.chain[0]
@@ -200,7 +200,7 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 		}
 		pub = key
 	case Revoke:
-		if e.Door != "" || e.Owner != "" || len(out.chain) != 0 {
+		if e.Endpoint != "" || e.Owner != "" || len(out.chain) != 0 {
 			return out, errors.New("a revoke is signed by the root alone, and has no door")
 		}
 		pub = root.PublicKey
@@ -247,7 +247,7 @@ func names(c *x509.Certificate, identity string) bool {
 
 type Member struct {
 	Node       string
-	Door       string
+	Endpoint   string
 	Owner      string
 	AdmittedBy string
 	Since      time.Time
@@ -421,7 +421,7 @@ func (l *Ledger) rebuild() {
 			m.Node, m.AdmittedBy, m.Since = e.Node, e.signer(), e.Time()
 		}
 		if e.At >= latest[e.Node] {
-			latest[e.Node], m.Door, m.Owner = e.At, e.Door, e.Owner
+			latest[e.Node], m.Endpoint, m.Owner = e.At, e.Endpoint, e.Owner
 		}
 		if e.signer() == e.Node && e.chain[0].NotAfter.After(m.SignsUntil) {
 			m.SignsUntil = e.chain[0].NotAfter

@@ -48,8 +48,8 @@ func NewServer(workspace string) (*Server, error) {
 	return &Server{root: root, host: local.NewHost(local.DefaultTTL), scopes: map[string]bool{}}, nil
 }
 
-func (s *Server) CallBackThrough(door string) error {
-	abs, err := filepath.Abs(door)
+func (s *Server) CallBackThrough(endpoint string) error {
+	abs, err := filepath.Abs(endpoint)
 	if err != nil {
 		return err
 	}

@@ -81,7 +81,7 @@ func ariasKey(ctx context.Context) string {
 	sub, _ := authz.SubjectOf(ctx)
 	groups := slices.Clone(sub.Groups)
 	slices.Sort(groups)
-	return strings.Join(append([]string{string(authz.DoorOf(ctx)), authz.IssuerOf(ctx), authz.PrincipalText(authz.PrincipalOf(ctx)), sub.Principal.String(), authz.FigaroOf(ctx)}, groups...), "\x00")
+	return strings.Join(append([]string{string(authz.EndpointOf(ctx)), authz.IssuerOf(ctx), authz.PrincipalText(authz.PrincipalOf(ctx)), sub.Principal.String(), authz.FigaroOf(ctx)}, groups...), "\x00")
 }
 
 func (h *handlers) ariasWatchFor(ctx context.Context, id string) (*ariasWatch, bool) {

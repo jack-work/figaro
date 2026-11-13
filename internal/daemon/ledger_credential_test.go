@@ -54,7 +54,7 @@ func TestANodeSignsWithAnIntermediateKeyFromACredential(t *testing.T) {
 	require.False(t, atRest)
 	me, ok := ma.View().Members[na.id()]
 	require.True(t, ok, "the founder did not sign itself in")
-	require.Equal(t, na.addr, me.Door)
+	require.Equal(t, na.addr, me.Endpoint)
 
 	_, err := ma.Merge(join...)
 	require.NoError(t, err)
@@ -90,7 +90,7 @@ func TestACredentialWithoutACredentialsDirectoryIsRefused(t *testing.T) {
 func newCredentialLeafNode(t *testing.T, root estateRoot, signer *ledgerNode, issued time.Time) *ledgerNode {
 	t.Helper()
 	n := &ledgerNode{t: t, root: root, storeDir: t.TempDir(), stateDir: t.TempDir(), cfgDir: t.TempDir()}
-	n.moveDoor()
+	n.moveEndpoint()
 	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\nnode_key_credential = \"troupe-node\"\n[door.tls]\nlisten = %q\n", n.addr)
 	require.NoError(t, os.WriteFile(filepath.Join(n.cfgDir, "config.toml"), []byte(body), 0o600))
 	creds := t.TempDir()

@@ -55,13 +55,13 @@ func TestABoxNamedBwrapIsRefusedAtLoad(t *testing.T) {
 	}
 }
 
-// A doored box without both lists could mint undressed or on any provider,
-// so its door must stay shut; a box with no door needs no lists.
-func TestABoxDoorNeedsBothLists(t *testing.T) {
+// A box with an endpoint without both lists could mint undressed or on any provider,
+// so its endpoint must stay shut; a box with no endpoint needs no lists.
+func TestABoxEndpointNeedsBothLists(t *testing.T) {
 	for _, c := range []struct {
-		extra   string
-		door    bool
-		refused string
+		extra    string
+		endpoint bool
+		refused  string
 	}{
 		{"", true, "outfits or providers"},
 		{"outfits = [\"judged\"]\n", true, "providers"},
@@ -72,7 +72,7 @@ func TestABoxDoorNeedsBothLists(t *testing.T) {
 		{"", false, ""},
 	} {
 		body := "[sandbox.boxes.judge]\nexec = \"/run/box/judge.sock\"\n" + c.extra
-		if c.door {
+		if c.endpoint {
 			body += "door = \"/run/door/judge.sock\"\n"
 		}
 		dir := t.TempDir()
@@ -83,7 +83,7 @@ func TestABoxDoorNeedsBothLists(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%q: %v", body, err)
 		}
-		err = l.BoxDoorWithoutLists("judge")
+		err = l.BoxEndpointWithoutLists("judge")
 		switch {
 		case c.refused == "" && err != nil:
 			t.Errorf("%q: refused: %v", body, err)
@@ -93,7 +93,7 @@ func TestABoxDoorNeedsBothLists(t *testing.T) {
 	}
 }
 
-func TestAHostDoorLivesWhereNoBoxCanReach(t *testing.T) {
+func TestAHostEndpointLivesWhereNoBoxCanReach(t *testing.T) {
 	const chat = "[sandbox.boxes.chat]\nexec = \"/run/sb/chat/exec/exec.sock\"\ndoor = \"/run/sb/chat/door/door.sock\"\n"
 	const receipt = "[sandbox.boxes.receipt]\nexec = \"/run/sb/receipt/exec/exec.sock\"\ndoor = \"/run/sb/receipt/door/door.sock\"\n"
 	for _, c := range []struct {
@@ -123,7 +123,7 @@ func TestAHostDoorLivesWhereNoBoxCanReach(t *testing.T) {
 		case c.refusal != "" && (err == nil || !strings.Contains(err.Error(), c.refusal)):
 			t.Errorf("%s: %v, want a refusal naming %q", c.name, err, c.refusal)
 		case c.refusal == "":
-			if got := l.HostDoors()["chat"]; got != "/run/sb/chat/host-door/host.sock" {
+			if got := l.HostEndpoints()["chat"]; got != "/run/sb/chat/host-door/host.sock" {
 				t.Errorf("%s: host door %q", c.name, got)
 			}
 			if got := l.BoxesRequiringClaim(); len(got) != 1 || got[0] != "chat" {

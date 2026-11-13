@@ -63,7 +63,7 @@ func isTestBinary(exe string) bool { return boot.IsTestBinary(exe) }
 
 func ensureAngelus() {
 	refuseOffTape("the daemon")
-	if d := resolveDoor(); d.configured {
+	if d := resolveEndpoint(); d.configured {
 		cli, err := sdk.DialAngelus(d.ep)
 		if err != nil {
 			die("troupe %s: %s\n"+
@@ -209,7 +209,7 @@ const (
 func mustConnectAngelus(loaded *config.Loaded) *sdk.Angelus {
 	_ = loaded
 	ensureAngelus()
-	cli, err := sdk.DialAngelus(doorEndpoint())
+	cli, err := sdk.DialAngelus(daemonEndpoint())
 	if err != nil {
 		die("connect angelus: %s", err)
 	}

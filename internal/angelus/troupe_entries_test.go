@@ -36,7 +36,7 @@ role = "member"
 principals = ["user:member"]
 `
 
-// Over a unix or web door, pushing entries takes admin on the troupe: a
+// Over a unix or web endpoint, pushing entries takes admin on the troupe: a
 // principal allowed to join is not thereby allowed to push revokes. A
 // static troupe has no entries to trade.
 func TestTroupeEntriesFromACallerNeedAdminOnTheTroupe(t *testing.T) {

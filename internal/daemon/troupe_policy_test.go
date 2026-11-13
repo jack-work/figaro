@@ -115,7 +115,7 @@ func TestATroupePolicySetOnOneNodeIsInForceOnEveryMember(t *testing.T) {
 }
 
 // The attack: c holds an intermediate of the same root but is no setter.
-// Its owner cannot set a version through its door, and a version c's
+// Its owner cannot set a version through its endpoint, and a version c's
 // intermediate signs and pushes is adopted on no member.
 func TestAnIntermediateThatIsNoSetterCannotPublishAPolicy(t *testing.T) {
 	root := newEstateRoot(t)

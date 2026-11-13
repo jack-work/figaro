@@ -32,7 +32,7 @@ func TestABoxPrincipalNamesItsBoxAndNothingElse(t *testing.T) {
 	}
 }
 
-func TestTheBoxDoorStampsItsBoxWhoeverConnects(t *testing.T) {
+func TestTheBoxEndpointStampsItsBoxWhoeverConnects(t *testing.T) {
 	ctx, err := BoxAdmit("judge")(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -93,8 +93,8 @@ func TestNoBoxesLeaveTheDefaultAsItWas(t *testing.T) {
 	}
 }
 
-func TestTheBoxDoorIsSeatedByPolicyAndNeverTrusted(t *testing.T) {
-	if DoorBox.String() != "box" || !DoorBox.SeatsOnlyPolicySubjects() || DoorBox.Trusted() {
-		t.Fatalf("door %s: seats-only %v, trusted %v", DoorBox, DoorBox.SeatsOnlyPolicySubjects(), DoorBox.Trusted())
+func TestTheBoxEndpointIsSeatedByPolicyAndNeverTrusted(t *testing.T) {
+	if EndpointBox.String() != "box" || !EndpointBox.SeatsOnlyPolicySubjects() || EndpointBox.Trusted() {
+		t.Fatalf("door %s: seats-only %v, trusted %v", EndpointBox, EndpointBox.SeatsOnlyPolicySubjects(), EndpointBox.Trusted())
 	}
 }

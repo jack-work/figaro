@@ -17,8 +17,8 @@ import (
 type NotifyHandler func(method string, params json.RawMessage)
 
 type Addr struct {
-	Door transport.Endpoint
-	ID   string
+	Endpoint transport.Endpoint
+	ID       string
 }
 
 type Aria struct {
@@ -51,7 +51,7 @@ func DialAriaWith(a Addr, onNotify NotifyHandler, tap transport.Tap) (*Aria, err
 	if err := rpc.ValidateAriaRef(a.ID); err != nil {
 		return nil, err
 	}
-	conn, err := transport.DialWith(a.Door, tap)
+	conn, err := transport.DialWith(a.Endpoint, tap)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func DialAriaWith(a Addr, onNotify NotifyHandler, tap transport.Tap) (*Aria, err
 		if onNotify != nil {
 			onNotify(method, params)
 		}
-		if method == rpc.MethodDoorLapsed {
+		if method == rpc.MethodEndpointLapsed {
 			c.lapsed.Store(true)
 		}
 		if method == rpc.MethodAriaClosed && rpc.AriaOf(params) == c.ID() {

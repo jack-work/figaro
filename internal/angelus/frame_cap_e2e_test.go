@@ -11,10 +11,10 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 )
 
-// A door peer that sends one huge frame is cut off at the cap instead of
+// An endpoint peer that sends one huge frame is cut off at the cap instead of
 // being buffered whole, and the daemon keeps serving everyone else.
-func TestTheDoorCutsOffAFrameOverTheCap(t *testing.T) {
-	angelus.SetMaxDoorFrameForTest(t, 4<<10)
+func TestTheEndpointCutsOffAFrameOverTheCap(t *testing.T) {
+	angelus.SetMaxEndpointFrameForTest(t, 4<<10)
 	a, acli, ctx := daemonFixture(t)
 
 	nc, err := net.Dial("unix", a.SocketPath)

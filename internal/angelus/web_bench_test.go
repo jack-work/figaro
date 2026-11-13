@@ -15,13 +15,13 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 )
 
-// One aria call on an open connection through each door, against the same
-// hub and agent: what the web door adds over the unix door.
-func BenchmarkDoorCallUnix(b *testing.B) {
+// One aria call on an open connection through each endpoint, against the same
+// hub and agent: what the web endpoint adds over the unix endpoint.
+func BenchmarkEndpointCallUnix(b *testing.B) {
 	quiet(b)
 	hb := newAriaHub("abcd1234")
 	defer hb.bind(newDrainAgent())()
-	client, _ := dialDoor(b, hubDoor(b, hb, authz.AllowAll()), hb.id)
+	client, _ := dialEndpoint(b, hubEndpoint(b, hb, authz.AllowAll()), hb.id)
 	ctx := context.Background()
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -33,7 +33,7 @@ func BenchmarkDoorCallUnix(b *testing.B) {
 	}
 }
 
-func BenchmarkDoorCallWeb(b *testing.B) {
+func BenchmarkEndpointCallWeb(b *testing.B) {
 	quiet(b)
 	hb := newAriaHub("abcd1234")
 	defer hb.bind(newDrainAgent())()
@@ -72,9 +72,9 @@ func (drainAgent) Handle(context.Context, string, json.RawMessage) (any, error) 
 
 func (drainAgent) Subscribe(figaro.Notifier) func() { return func() {} }
 
-// What a client pays to open the web door: the HTTP upgrade, admission and
+// What a client pays to open the web endpoint: the HTTP upgrade, admission and
 // the first frame back.
-func BenchmarkDoorUpgradeWeb(b *testing.B) {
+func BenchmarkEndpointUpgradeWeb(b *testing.B) {
 	quiet(b)
 	hb := newAriaHub("abcd1234")
 	defer hb.bind(newDrainAgent())()

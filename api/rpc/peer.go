@@ -47,7 +47,7 @@ type TroupeSignRequest struct {
 	Troupe    string        `json:"troupe"`
 	Node      string        `json:"node"`
 	PublicKey []byte        `json:"public_key"`
-	Door      string        `json:"door"`
+	Endpoint  string        `json:"door"`
 	Rejoin    *TroupeRejoin `json:"rejoin,omitempty"`
 	TTLMillis int64         `json:"ttl_ms,omitempty"`
 }

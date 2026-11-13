@@ -103,11 +103,11 @@ func TestAnAriaTheCallerCannotReadIsNotFound(t *testing.T) {
 func TestTheRowFilteredMethodsNeedARole(t *testing.T) {
 	h := enforced(t)
 	for _, m := range []string{rpc.MethodList, rpc.MethodNodeResolve} {
-		for _, d := range []Door{DoorInProcess, DoorLocal, DoorWeb} {
-			if err := call(t, h, WithDoor(WithSubject(context.Background(), subject(box)), d), m, ""); err != nil {
+		for _, d := range []Endpoint{EndpointInProcess, EndpointLocal, EndpointWeb} {
+			if err := call(t, h, WithEndpoint(WithSubject(context.Background(), subject(box)), d), m, ""); err != nil {
 				t.Errorf("%s at the %s door, for a role with no read on the daemon: %v", m, d, err)
 			}
-			err := call(t, h, WithDoor(WithSubject(context.Background(), subject(other)), d), m, "")
+			err := call(t, h, WithEndpoint(WithSubject(context.Background(), subject(other)), d), m, "")
 			if err == nil || !strings.Contains(err.Error(), "holds no role") {
 				t.Errorf("%s at the %s door, for a subject with no role: %v", m, d, err)
 			}
@@ -115,24 +115,24 @@ func TestTheRowFilteredMethodsNeedARole(t *testing.T) {
 	}
 }
 
-// hello names the node and the caller's principal. Off the local door it
+// hello names the node and the caller's principal. Off the local endpoint it
 // is answered only to a subject the policy binds to a role.
-func TestHelloOffTheLocalDoorNeedsARole(t *testing.T) {
+func TestHelloOffTheLocalEndpointNeedsARole(t *testing.T) {
 	h := enforced(t)
-	at := func(d Door, p jkauthz.Principal) context.Context {
-		return WithDoor(WithSubject(context.Background(), subject(p)), d)
+	at := func(d Endpoint, p jkauthz.Principal) context.Context {
+		return WithEndpoint(WithSubject(context.Background(), subject(p)), d)
 	}
 	for name, c := range map[string]struct {
 		ctx  context.Context
 		pass bool
 	}{
-		"a stranger in process":         {at(DoorInProcess, other), true},
+		"a stranger in process":         {at(EndpointInProcess, other), true},
 		"a stranger, door unstamped":    {WithSubject(context.Background(), subject(other)), false},
-		"a stranger at the local door":  {at(DoorLocal, other), true},
-		"a role holder at the web door": {at(DoorWeb, box), true},
-		"a stranger at the web door":    {at(DoorWeb, other), false},
-		"a stranger at a node door":     {at(DoorNode, other), false},
-		"a stranger at a new door":      {at(DoorWeb+1, other), false},
+		"a stranger at the local door":  {at(EndpointLocal, other), true},
+		"a role holder at the web door": {at(EndpointWeb, box), true},
+		"a stranger at the web door":    {at(EndpointWeb, other), false},
+		"a stranger at a node door":     {at(EndpointNode, other), false},
+		"a stranger at a new door":      {at(EndpointWeb+1, other), false},
 	} {
 		if err := call(t, h, c.ctx, rpc.MethodHello, ""); (err == nil) != c.pass {
 			t.Errorf("%s: err = %v, want pass %v", name, err, c.pass)

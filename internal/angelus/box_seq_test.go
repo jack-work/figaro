@@ -14,7 +14,7 @@ import (
 // owner's pit would believe it landed. Seqs are keyed by the authenticated
 // principal too: the box can only collide with its own writes.
 func TestABoxCannotSpendTheOwnersSeq(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	c := d.dial(t)
 	held := boxMintsForm(t, c, "shared")
 

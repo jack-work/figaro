@@ -88,7 +88,7 @@ func TestAnUnboxedGuestCannotGiveTheOwnersAriaALifetime(t *testing.T) {
 // figaro retire works inside a box on the box's own arias, so system.retired
 // stays writable for a box there, while every other non-owner is refused.
 func TestABoxStillRetiresItsOwnAria(t *testing.T) {
-	d := boxDoorRig(t, "true")
+	d := boxEndpointRig(t, "true")
 	inBox, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

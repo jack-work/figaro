@@ -44,10 +44,10 @@ type svcRig struct {
 	served []string
 }
 
-// svcDoor is a web door with the client's service principal bound to
+// svcEndpoint is a web endpoint with the client's service principal bound to
 // the given permissions, a decision model that counts what reaches it, and
 // one aria the owner made.
-func svcDoor(t *testing.T, permissions ...string) *svcRig {
+func svcEndpoint(t *testing.T, permissions ...string) *svcRig {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
@@ -132,7 +132,7 @@ func ask(extra map[string]any) map[string]any {
 // override of the decision model, and an aria are refused before the model
 // is asked.
 func TestDecideOnOneOutfitReachesThatOutfitAndNoOther(t *testing.T) {
-	r := svcDoor(t, "decide:outfit:narrow-decide")
+	r := svcEndpoint(t, "decide:outfit:narrow-decide")
 	c := r.client()
 
 	ok, reply := r.reached(c, ask(map[string]any{"outfit": "narrow-decide"}))
@@ -156,14 +156,14 @@ func TestDecideOnOneOutfitReachesThatOutfitAndNoOther(t *testing.T) {
 	}
 }
 
-// Every route the door serves, called by the client with an aria the owner
+// Every route the endpoint serves, called by the client with an aria the owner
 // holds: hello answers, the row-filtered listings (and the client's own api
 // keys, of which it has none) answer with nothing of anyone else's, and
 // everything else is refused. The canary widens the grant
 // with read:* and the same calls start answering, so the refusals above
 // come from the grant and not from calls that could never succeed.
 func TestDecideOnOneOutfitIsRefusedOnEveryOtherRoute(t *testing.T) {
-	r := svcDoor(t, "decide:outfit:narrow-decide")
+	r := svcEndpoint(t, "decide:outfit:narrow-decide")
 	c := r.client()
 	require.Greater(t, len(r.served), 60, "the door serves %d routes; the sweep is broken", len(r.served))
 
@@ -208,7 +208,7 @@ func TestDecideOnOneOutfitIsRefusedOnEveryOtherRoute(t *testing.T) {
 // decide needed before the decide verb) still does.
 func TestAWiderDecideGrantReachesWhatTheNarrowOneDoesNot(t *testing.T) {
 	for _, wide := range []string{"decide:*", "send:*"} {
-		r := svcDoor(t, wide)
+		r := svcEndpoint(t, wide)
 		c := r.client()
 		for name, params := range map[string]map[string]any{
 			"the group outfit":   {"outfit": "narrow-group"},
@@ -225,7 +225,7 @@ func TestAWiderDecideGrantReachesWhatTheNarrowOneDoesNot(t *testing.T) {
 // on the aria as well as send: send alone is not found, send and read
 // decide on it as send did before the decide verb.
 func TestAnAriaBoundDecideNeedsReadAndSend(t *testing.T) {
-	r := svcDoor(t, "decide:outfit:narrow-decide")
+	r := svcEndpoint(t, "decide:outfit:narrow-decide")
 	c := r.client()
 	r.grant("send:aria:" + r.owned)
 	ok, reply := r.reached(c, ask(map[string]any{rpc.AriaKey: r.owned}))
@@ -249,7 +249,7 @@ func TestAnOverrideOnAnAriaBoundDecideNeedsTheDaemon(t *testing.T) {
 		"a model override":    {"model": "decision-2"},
 		"an api override":     {"api": "openai"},
 	}
-	r := svcDoor(t, "decide:outfit:narrow-decide")
+	r := svcEndpoint(t, "decide:outfit:narrow-decide")
 	c := r.client()
 	r.grant("send:aria:"+r.owned, "read:aria:"+r.owned)
 	ok, reply := r.reached(c, ask(map[string]any{rpc.AriaKey: r.owned}))

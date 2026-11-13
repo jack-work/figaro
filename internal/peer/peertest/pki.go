@@ -97,9 +97,9 @@ func (p *PKI) Node(name, uri string) (cert, key string) {
 	return p.write(name+".crt", "CERTIFICATE", der), p.write(name+".key", "EC PRIVATE KEY", kder)
 }
 
-func (p *PKI) Door(node, listen string) config.TLSDoor {
+func (p *PKI) Endpoint(node, listen string) config.TLSEndpoint {
 	cert, key := p.Node(node+"-door", Identity(node))
-	return config.TLSDoor{Listen: listen, Cert: cert, Key: key, ClientCA: p.CA}
+	return config.TLSEndpoint{Listen: listen, Cert: cert, Key: key, ClientCA: p.CA}
 }
 
 func (p *PKI) Peer(as, to, addr string) config.Peer {

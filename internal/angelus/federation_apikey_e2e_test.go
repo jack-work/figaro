@@ -38,8 +38,8 @@ func grantBoth(t *testing.T, k apikey.Key, nodes []string, ns ...*fedNode) {
 }
 
 // A key good on node A alone reaches A's arias, and a call it makes for an
-// aria on node B is refused at A before anything is sent: B's door never
-// sees the key. Sent to B's door anyway, it is refused there. Named for
+// aria on node B is refused at A before anything is sent: B's endpoint never
+// sees the key. Sent to B's endpoint anyway, it is refused there. Named for
 // both nodes, the same call goes through.
 func TestAKeyIsNeverForwardedOutsideItsNodes(t *testing.T) {
 	a, b := keyPair(t)
@@ -49,13 +49,13 @@ func TestAKeyIsNeverForwardedOutsideItsNodes(t *testing.T) {
 	require.NoError(t, err)
 	grantBoth(t, k, []string{a.id}, a, b)
 
-	local, err := sdk.DialAria(sdk.Addr{Door: a.keyDoor(wire), ID: onA}, nil)
+	local, err := sdk.DialAria(sdk.Addr{Endpoint: a.keyEndpoint(wire), ID: onA}, nil)
 	require.NoError(t, err)
 	defer local.Close()
 	_, err = local.Form(ctx)
 	require.NoError(t, err, "the key works on its own node")
 
-	far, err := sdk.DialAria(sdk.Addr{Door: a.keyDoor(wire), ID: onB}, nil)
+	far, err := sdk.DialAria(sdk.Addr{Endpoint: a.keyEndpoint(wire), ID: onB}, nil)
 	require.NoError(t, err)
 	defer far.Close()
 	_, err = far.Form(ctx)
@@ -72,7 +72,7 @@ func TestAKeyIsNeverForwardedOutsideItsNodes(t *testing.T) {
 		nodes[0], nodes[1] = nodes[1], nodes[0]
 	}
 	grantBoth(t, k, nodes, a, b)
-	both, err := sdk.DialAria(sdk.Addr{Door: a.keyDoor(wire), ID: onB}, nil)
+	both, err := sdk.DialAria(sdk.Addr{Endpoint: a.keyEndpoint(wire), ID: onB}, nil)
 	require.NoError(t, err)
 	defer both.Close()
 	_, err = both.Form(ctx)

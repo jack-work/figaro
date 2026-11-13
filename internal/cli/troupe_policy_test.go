@@ -14,16 +14,16 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-type fakePolicyDoor struct {
+type fakePolicyEndpoint struct {
 	show    rpc.TroupePolicyResponse
 	setBody string
 }
 
-func (f *fakePolicyDoor) TroupePolicy(context.Context, string) (*rpc.TroupePolicyResponse, error) {
+func (f *fakePolicyEndpoint) TroupePolicy(context.Context, string) (*rpc.TroupePolicyResponse, error) {
 	return &f.show, nil
 }
 
-func (f *fakePolicyDoor) TroupePolicySet(_ context.Context, _ string, body string) (*rpc.TroupePolicySetResponse, error) {
+func (f *fakePolicyEndpoint) TroupePolicySet(_ context.Context, _ string, body string) (*rpc.TroupePolicySetResponse, error) {
 	f.setBody = body
 	return &rpc.TroupePolicySetResponse{Version: 4, Signer: "aaaa", Reached: []string{"bbbb"}, Unreachable: []rpc.NodeUnreachable{{Node: "cccc", Error: "refused"}}}, nil
 }
@@ -33,7 +33,7 @@ func (f *fakePolicyDoor) TroupePolicySet(_ context.Context, _ string, body strin
 // troupe can never grant.
 func TestTroupePolicyShowMakesDriftAndTiesVisible(t *testing.T) {
 	now := time.Now()
-	d := &fakePolicyDoor{show: rpc.TroupePolicyResponse{
+	d := &fakePolicyEndpoint{show: rpc.TroupePolicyResponse{
 		Troupe: "estate", Provider: "figaro",
 		InForce:   &rpc.TroupePolicyVersion{Version: 3, Signer: "aaaa", By: "user:jack@auth.kelliher.info", At: now.UnixMilli()},
 		Rivals:    []rpc.TroupePolicyVersion{{Version: 3, Root: true, By: "root:estate", At: now.UnixMilli()}},
@@ -62,7 +62,7 @@ func TestTroupePolicyShowMakesDriftAndTiesVisible(t *testing.T) {
 func TestTroupePolicySetSendsTheFileAndSaysWhoHeard(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "troupe.toml")
 	require.NoError(t, os.WriteFile(path, []byte("[roles.r]\n"), 0o600))
-	d := &fakePolicyDoor{}
+	d := &fakePolicyEndpoint{}
 	var out bytes.Buffer
 	require.NoError(t, troupePolicySet(context.Background(), d, nil, &out, "estate", path))
 	require.Equal(t, "[roles.r]\n", d.setBody)

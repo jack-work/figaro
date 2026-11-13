@@ -100,7 +100,7 @@ func front(t *testing.T, ups map[string]Upstream) *httptest.Server {
 
 func ok(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, `{"ok":true}`) }
 
-// The passthrough door must reach base+path with the provider's credential
+// The passthrough endpoint must reach base+path with the provider's credential
 // and headers, and nothing of the caller's own credentials.
 func TestPassthroughSwapsCredentialAndKeepsPath(t *testing.T) {
 	got := make(chan seen, 1)
@@ -140,7 +140,7 @@ func TestPassthroughSwapsCredentialAndKeepsPath(t *testing.T) {
 	}
 }
 
-// The /v1 door picks the provider from the model prefix, strips it, and posts
+// The /v1 endpoint picks the provider from the model prefix, strips it, and posts
 // to that provider's endpoint for the transport the path names.
 func TestModelPrefixPicksProviderAndIsStripped(t *testing.T) {
 	gotA, gotB := make(chan seen, 1), make(chan seen, 1)

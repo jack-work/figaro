@@ -100,7 +100,7 @@ func softFetchLiveKeys() ([]string, liveKeysStatus, error) {
 // softFetchLiveSnapshot never autostarts the daemon, prompts, or blocks long;
 // the error names the failing step.
 func softFetchLiveSnapshot() (form.Snapshot, liveKeysStatus, error) {
-	ep := doorEndpoint()
+	ep := daemonEndpoint()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	acli, err := sdk.DialAngelus(ep)
