@@ -167,7 +167,7 @@ func TestTheResourceNamesTheVersion(t *testing.T) {
 	assert.Contains(t, string(data), `"Key":"service.version","Value":{"Type":"STRING","Value":"9.9.9-test"}`)
 }
 
-// A second daemon on the same host (the slot pool's) tells its telemetry
+// A second daemon on the same host (the worker pool's) tells its telemetry
 // apart by the standard OTEL_SERVICE_NAME; with none set it is figaro.
 func TestTheResourceNamesTheServiceFromTheStandardEnv(t *testing.T) {
 	ctx := context.Background()

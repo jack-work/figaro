@@ -21,8 +21,8 @@ func newLeasedBoxes() *leasedBoxes {
 	return &leasedBoxes{boxes: map[string]BoxConfig{}, held: map[string]string{}, floors: map[string]uint64{}}
 }
 
-func LeasedBoxName(slot string, generation uint64) string {
-	return fmt.Sprintf("%s-g%d", slot, generation)
+func LeasedBoxName(worker string, generation uint64) string {
+	return fmt.Sprintf("%s-g%d", worker, generation)
 }
 
 func (l *Loaded) leasedBoxes() *leasedBoxes {
@@ -43,23 +43,23 @@ func (l *Loaded) Reload() (*Loaded, error) {
 	return fresh, nil
 }
 
-func (l *Loaded) LeaseBox(pool, slot string, generation uint64) (string, error) {
+func (l *Loaded) LeaseBox(pool, worker string, generation uint64) (string, error) {
 	p, ok := l.Pool(pool)
 	switch {
 	case !ok:
 		return "", fmt.Errorf("lease a box: no pool %q in this daemon's config", pool)
-	case !slices.Contains(p.SlotNames(), slot):
-		return "", fmt.Errorf("lease a box: %q is not a slot of pool %s", slot, pool)
+	case !slices.Contains(p.WorkerNames(), worker):
+		return "", fmt.Errorf("lease a box: %q is not a slot of pool %s", worker, pool)
 	case generation == 0:
-		return "", fmt.Errorf("lease a box in %s: a generation starts at 1", slot)
+		return "", fmt.Errorf("lease a box in %s: a generation starts at 1", worker)
 	}
 	t := l.leasedBoxes()
 	if t == nil {
 		return "", errors.New("lease a box: this config was not loaded as a pool daemon's and has no leased-box table")
 	}
-	name := LeasedBoxName(slot, generation)
+	name := LeasedBoxName(worker, generation)
 	box := BoxConfig{Outfits: []string{p.Outfit}, Providers: []string{p.Provider}, PurgeGrace: leasedBoxPurgeGrace}
-	return name, t.lease(slot, generation, name, box)
+	return name, t.lease(worker, generation, name, box)
 }
 
 func (l *Loaded) ReleaseBox(name string) {
@@ -70,18 +70,18 @@ func (l *Loaded) LeasedBoxes() []string {
 	return l.leasedBoxes().names()
 }
 
-func (t *leasedBoxes) lease(slot string, generation uint64, name string, box BoxConfig) error {
+func (t *leasedBoxes) lease(worker string, generation uint64, name string, box BoxConfig) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if other, taken := t.held[slot]; taken {
-		return fmt.Errorf("lease a box: slot %s still holds %s; a slot holds one lease, and returns when its release has run to the end", slot, other)
+	if other, taken := t.held[worker]; taken {
+		return fmt.Errorf("lease a box: slot %s still holds %s; a slot holds one lease, and returns when its release has run to the end", worker, other)
 	}
-	if floor := t.floors[slot]; generation <= floor {
-		return fmt.Errorf("lease a box: slot %s already reached generation %d and %d does not pass it; a generation is never used twice", slot, floor, generation)
+	if floor := t.floors[worker]; generation <= floor {
+		return fmt.Errorf("lease a box: slot %s already reached generation %d and %d does not pass it; a generation is never used twice", worker, floor, generation)
 	}
 	t.boxes[name] = box
-	t.held[slot] = name
-	t.floors[slot] = generation
+	t.held[worker] = name
+	t.floors[worker] = generation
 	return nil
 }
 
@@ -92,9 +92,9 @@ func (t *leasedBoxes) release(name string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.boxes, name)
-	for slot, held := range t.held {
+	for worker, held := range t.held {
 		if held == name {
-			delete(t.held, slot)
+			delete(t.held, worker)
 		}
 	}
 }

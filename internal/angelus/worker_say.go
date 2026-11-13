@@ -16,9 +16,9 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/slotpool"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/workerpool"
 )
 
 const sayTimeout = 10 * time.Second
@@ -44,7 +44,7 @@ func sayClientOver(socket string) *http.Client {
 
 func (h *handlers) toolsIn(sandboxName, figaroID string, otherwise func() *tool.Registry) *tool.Registry {
 	loaded, _ := h.settings()
-	if loaded == nil || !leasedBoxOfSlot(sandboxName, poolSlots(loaded)) {
+	if loaded == nil || !leasedBoxOfWorker(sandboxName, poolWorkers(loaded)) {
 		return otherwise()
 	}
 	pool, _ := poolOfLeasedBox(loaded, sandboxName)
@@ -65,11 +65,11 @@ func (h *handlers) poolTools(pool config.PoolConfig, box, figaroID string) *tool
 }
 
 func (h *handlers) sayAs(ctx context.Context, box, figaroID, text string) error {
-	say := h.angelus.Handlers[rpc.MethodSlotSay]
+	say := h.angelus.Handlers[rpc.MethodWorkerSay]
 	if say == nil {
 		return errors.New("chat: this daemon says nothing")
 	}
-	params, err := rpc.WithCaller(rpc.SlotSayRequest{Text: text}, figaroID, nil)
+	params, err := rpc.WithCaller(rpc.WorkerSayRequest{Text: text}, figaroID, nil)
 	if err != nil {
 		return err
 	}
@@ -78,64 +78,64 @@ func (h *handlers) sayAs(ctx context.Context, box, figaroID, text string) error 
 	return err
 }
 
-func (h *handlers) slotSay(ctx context.Context, params json.RawMessage) (any, error) {
+func (h *handlers) workerSay(ctx context.Context, params json.RawMessage) (any, error) {
 	if authz.DoorOf(ctx) != authz.DoorInProcess {
-		return nil, fmt.Errorf("%s is served to a leased figaro's own tool, through no door", rpc.MethodSlotSay)
+		return nil, fmt.Errorf("%s is served to a leased figaro's own tool, through no door", rpc.MethodWorkerSay)
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(params, &fields); err != nil {
-		return nil, fmt.Errorf("%s: %w", rpc.MethodSlotSay, err)
+		return nil, fmt.Errorf("%s: %w", rpc.MethodWorkerSay, err)
 	}
 	delete(fields, rpc.CallerKey)
 	bare, _ := json.Marshal(fields)
-	var req rpc.SlotSayRequest
+	var req rpc.WorkerSayRequest
 	if err := decodeExactly(bare, &req); err != nil {
-		return nil, fmt.Errorf("%s takes text and nothing else: %w", rpc.MethodSlotSay, err)
+		return nil, fmt.Errorf("%s takes text and nothing else: %w", rpc.MethodWorkerSay, err)
 	}
 	box, boxed := callerBox(ctx)
-	slots := h.angelus.Slots
-	if !boxed || slots == nil {
-		return nil, fmt.Errorf("%s: the caller holds no lease", rpc.MethodSlotSay)
+	workers := h.angelus.Workers
+	if !boxed || workers == nil {
+		return nil, fmt.Errorf("%s: the caller holds no lease", rpc.MethodWorkerSay)
 	}
-	row, ok := slots.leaseOf(box)
-	if !ok || row.State != slotpool.Live || row.SayBearer == "" {
-		return nil, fmt.Errorf("%s: lease %s is not live", rpc.MethodSlotSay, box)
+	row, ok := workers.leaseOf(box)
+	if !ok || row.State != workerpool.Live || row.SayBearer == "" {
+		return nil, fmt.Errorf("%s: lease %s is not live", rpc.MethodWorkerSay, box)
 	}
 	if err := h.speaksFor(box, authz.FigaroOf(ctx)); err != nil {
-		return nil, fmt.Errorf("%s: %w", rpc.MethodSlotSay, err)
+		return nil, fmt.Errorf("%s: %w", rpc.MethodWorkerSay, err)
 	}
 	loaded, _ := h.settings()
 	pool, ok := loaded.Pool(row.Pool)
 	if !ok || !pool.Enabled {
-		return nil, fmt.Errorf("%s: pool %s is not enabled", rpc.MethodSlotSay, row.Pool)
+		return nil, fmt.Errorf("%s: pool %s is not enabled", rpc.MethodWorkerSay, row.Pool)
 	}
-	if err := slots.spend(box, "say", perMinute("say_per_minute", pool.SayBound())); err != nil {
-		return nil, fmt.Errorf("%s: %w", rpc.MethodSlotSay, err)
+	if err := workers.spend(box, "say", perMinute("say_per_minute", pool.SayBound())); err != nil {
+		return nil, fmt.Errorf("%s: %w", rpc.MethodWorkerSay, err)
 	}
 	body, _ := json.Marshal(map[string]any{"key": row.Key, "generation": row.Generation, "text": req.Text})
 	target, client := pool.SayURL, sayClient
 	if socket, path, ok := config.SayOverUnix(pool.SayURL); ok {
 		target, client = "http://localhost"+path, sayClientOver(socket)
 	}
-	if slots.SayClient != nil {
-		client = slots.SayClient
+	if workers.SayClient != nil {
+		client = workers.SayClient
 	}
 	post, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", rpc.MethodSlotSay, err)
+		return nil, fmt.Errorf("%s: %w", rpc.MethodWorkerSay, err)
 	}
 	post.Header.Set("Content-Type", "application/json")
 	post.Header.Set("Authorization", "Bearer "+row.SayBearer)
 	resp, err := client.Do(post)
 	if err != nil {
-		return nil, fmt.Errorf("%s: the broker was not reached", rpc.MethodSlotSay)
+		return nil, fmt.Errorf("%s: the broker was not reached", rpc.MethodWorkerSay)
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("%s: the broker answered %d", rpc.MethodSlotSay, resp.StatusCode)
+		return nil, fmt.Errorf("%s: the broker answered %d", rpc.MethodWorkerSay, resp.StatusCode)
 	}
-	return rpc.SlotSayResponse{Said: true}, nil
+	return rpc.WorkerSayResponse{Said: true}, nil
 }
 
 func (h *handlers) speaksFor(box, figaroID string) error {

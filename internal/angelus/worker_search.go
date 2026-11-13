@@ -14,8 +14,8 @@ import (
 
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/slotpool"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/workerpool"
 )
 
 const (
@@ -34,7 +34,7 @@ func searchClient(wire http.RoundTripper) *http.Client {
 func poolOfLeasedBox(loaded *config.Loaded, box string) (config.PoolConfig, bool) {
 	for _, name := range loaded.Pools() {
 		p, _ := loaded.Pool(name)
-		if leasedBoxOfSlot(box, p.SlotNames()) {
+		if leasedBoxOfWorker(box, p.WorkerNames()) {
 			return p, true
 		}
 	}
@@ -42,12 +42,12 @@ func poolOfLeasedBox(loaded *config.Loaded, box string) (config.PoolConfig, bool
 }
 
 func (h *handlers) searchAs(ctx context.Context, box, figaroID, query string, count int) ([]tool.SearchResult, error) {
-	slots := h.angelus.Slots
-	if slots == nil {
+	workers := h.angelus.Workers
+	if workers == nil {
 		return nil, errors.New("search: this daemon leases nothing")
 	}
-	row, ok := slots.leaseOf(box)
-	if !ok || row.State != slotpool.Live {
+	row, ok := workers.leaseOf(box)
+	if !ok || row.State != workerpool.Live {
 		return nil, fmt.Errorf("search: lease %s is not live", box)
 	}
 	if err := h.speaksFor(box, figaroID); err != nil {
@@ -70,7 +70,7 @@ func (h *handlers) searchAs(ctx context.Context, box, figaroID, query string, co
 		bearer = read
 	}
 	minute, day := pool.SearchBounds()
-	if err := slots.spend(box, "search", perMinute("search_per_minute", minute), perDay("search_per_day", day)); err != nil {
+	if err := workers.spend(box, "search", perMinute("search_per_minute", minute), perDay("search_per_day", day)); err != nil {
 		return nil, err
 	}
 	body, _ := json.Marshal(map[string]any{"query": query, "count": count})
@@ -82,7 +82,7 @@ func (h *handlers) searchAs(ctx context.Context, box, figaroID, query string, co
 	if bearer != "" {
 		post.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := searchClient(slots.SearchWire).Do(post)
+	resp, err := searchClient(workers.SearchWire).Do(post)
 	if err != nil {
 		return nil, errors.New("search: the search endpoint was not reached")
 	}

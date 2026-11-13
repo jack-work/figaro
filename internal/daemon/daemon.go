@@ -22,7 +22,7 @@ import (
 	"github.com/jack-work/figaro/internal/modelcat"
 	"github.com/jack-work/figaro/internal/provider/routed"
 	"github.com/jack-work/figaro/internal/relay"
-	"github.com/jack-work/figaro/internal/slotpool"
+	"github.com/jack-work/figaro/internal/workerpool"
 
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
@@ -412,21 +412,21 @@ func Run() {
 		fmt.Fprintf(os.Stderr, "angelus: %v; every call that needs a policy is refused until it loads\n", err)
 	}
 	if loaded.PoolDaemon() {
-		if a.Slots, err = angelus.OpenSlotPools(filepath.Join(boot.StateDir(), "slot-pool"), loaded); err != nil {
+		if a.Workers, err = angelus.OpenWorkerPools(filepath.Join(boot.StateDir(), "slot-pool"), loaded); err != nil {
 			fmt.Fprintf(os.Stderr, "angelus: %v; a daemon that leases slots does not start without its ledger\n", err)
 			os.Exit(1)
 		}
-		a.Policies.SetLeases(a.Slots)
-		a.Slots.Caller = func(pool config.PoolConfig) (slotpool.Caller, error) {
+		a.Policies.SetLeases(a.Workers)
+		a.Workers.Caller = func(pool config.PoolConfig) (workerpool.Caller, error) {
 			up, err := relay.Resolve(loaded, pool.Provider)
 			if err != nil {
 				return nil, err
 			}
-			api, err := slotpool.LeaseAPI(pool.Rou2URL, up.Base())
+			api, err := workerpool.LeaseAPI(pool.Rou2URL, up.Base())
 			if err != nil {
 				return nil, err
 			}
-			return slotpool.Rou2{Base: api, Bearer: up.Credential()}, nil
+			return workerpool.Rou2{Base: api, Bearer: up.Credential()}, nil
 		}
 	}
 	figOtel.SetMemProbe(func() figOtel.MemSample {
@@ -477,8 +477,8 @@ func Run() {
 	a.RemoveAria = handlers.RemoveAria
 	a.RemoveAriaIf = handlers.RemoveAriaIf
 	if loaded.PoolDaemon() {
-		handlers.RecoverSlotPools(ctx)
-		go handlers.KeepReleasingSlots(ctx)
+		handlers.RecoverWorkerPools(ctx)
+		go handlers.KeepReleasingWorkers(ctx)
 	}
 
 	if !hushGate.Await() {

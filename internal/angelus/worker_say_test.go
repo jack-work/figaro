@@ -41,16 +41,16 @@ func (h *brokerSays) RoundTrip(r *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(`{"error":"said by broker, never to be quoted"}`)), Header: http.Header{}}, nil
 }
 
-func sayRig(t *testing.T) (grantRig, *brokerSays, rpc.SlotLeaseResponse) {
+func sayRig(t *testing.T) (grantRig, *brokerSays, rpc.WorkerLeaseResponse) {
 	t.Helper()
 	return sayRigUnder(t, leasingPolicy)
 }
 
-func sayRigUnder(t *testing.T, policy string) (grantRig, *brokerSays, rpc.SlotLeaseResponse) {
+func sayRigUnder(t *testing.T, policy string) (grantRig, *brokerSays, rpc.WorkerLeaseResponse) {
 	t.Helper()
 	r := leasingRigUnder(t, policy)
 	broker := &brokerSays{}
-	r.a.Slots.SayClient = &http.Client{Transport: broker}
+	r.a.Workers.SayClient = &http.Client{Transport: broker}
 	lease, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
 	if err != nil {
 		t.Fatal(err)
@@ -176,14 +176,14 @@ func TestASayIsRefusedForAnyoneButTheLeasesOwnFigaro(t *testing.T) {
 		t.Error("a say from a box no lease holds was posted")
 	}
 	for why, ctx := range map[string]context.Context{"the owner": asOwner(), "broker": asBroker()} {
-		params, _ := rpc.WithCaller(rpc.SlotSayRequest{Text: "t"}, lease.Aria, nil)
-		if _, err := r.h[rpc.MethodSlotSay](ctx, params); err == nil {
+		params, _ := rpc.WithCaller(rpc.WorkerSayRequest{Text: "t"}, lease.Aria, nil)
+		if _, err := r.h[rpc.MethodWorkerSay](ctx, params); err == nil {
 			t.Errorf("%s said through a door", why)
 		}
 	}
 	for _, door := range []authz.Door{authz.DoorBox, authz.DoorWeb, authz.DoorLocal} {
-		params, _ := rpc.WithCaller(rpc.SlotSayRequest{Text: "t"}, lease.Aria, nil)
-		if _, err := r.h[rpc.MethodSlotSay](angelus.AsLeasedBoxThrough(lease.Box, door), params); err == nil {
+		params, _ := rpc.WithCaller(rpc.WorkerSayRequest{Text: "t"}, lease.Aria, nil)
+		if _, err := r.h[rpc.MethodWorkerSay](angelus.AsLeasedBoxThrough(lease.Box, door), params); err == nil {
 			t.Errorf("the lease's own principal said through the %v door", door)
 		}
 	}
@@ -228,11 +228,11 @@ principals = ["sandbox:*"]
 		t.Fatalf("the lease's own say was refused: %v", err)
 	}
 	for method, params := range map[string]any{
-		rpc.MethodList:        map[string]any{},
-		rpc.MethodKill:        rpc.KillRequest{FigaroID: lease.Aria},
-		rpc.MethodSlotLease:   rpc.SlotLeaseRequest{Pool: "groups", Key: "chat:12"},
-		rpc.MethodSlotDeliver: rpc.SlotDeliverRequest{Pool: "groups", Key: "chat:10", Generation: 1, ID: "m", Text: "t"},
-		rpc.MethodFormCreate:  map[string]any{},
+		rpc.MethodList:          map[string]any{},
+		rpc.MethodKill:          rpc.KillRequest{FigaroID: lease.Aria},
+		rpc.MethodWorkerLease:   rpc.WorkerLeaseRequest{Pool: "groups", Key: "chat:12"},
+		rpc.MethodWorkerDeliver: rpc.WorkerDeliverRequest{Pool: "groups", Key: "chat:10", Generation: 1, ID: "m", Text: "t"},
+		rpc.MethodFormCreate:    map[string]any{},
 	} {
 		claimed, _ := rpc.WithCaller(params, lease.Aria, nil)
 		bare, _ := json.Marshal(params)
@@ -254,7 +254,7 @@ func TestALeaseSaysAtMostItsBoundInAnyMinute(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 11, 12, 21, 0, 0, 0, time.UTC)
-	r.a.Slots.Now = func() time.Time { return now }
+	r.a.Workers.Now = func() time.Time { return now }
 	ctx := context.Background()
 	for i := range config.DefaultSayPerMinute {
 		if err := r.hs.SayAs(ctx, lease.Box, lease.Aria, "t"); err != nil {

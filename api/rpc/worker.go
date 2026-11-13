@@ -1,39 +1,39 @@
 package rpc
 
 const (
-	MethodSlotPages   = "figaro.slot.pages"
-	MethodSlotLease   = "figaro.slot.lease"
-	MethodSlotRelease = "figaro.slot.release"
-	MethodSlotDeliver = "figaro.slot.deliver"
-	MethodSlotSay     = "figaro.slot.say"
+	MethodWorkerPages   = "figaro.slot.pages"
+	MethodWorkerLease   = "figaro.slot.lease"
+	MethodWorkerRelease = "figaro.slot.release"
+	MethodWorkerDeliver = "figaro.slot.deliver"
+	MethodWorkerSay     = "figaro.slot.say"
 )
 
-const ErrCodeSlot = -32021
+const ErrCodeWorker = -32021
 
 const (
-	SlotPoolDisabled = "pool_disabled"
-	SlotPoolEmpty    = "pool_empty"
-	SlotReleasing    = "releasing"
-	SlotNoSuchLease  = "no_such_lease"
-	SlotStale        = "stale_generation"
-	SlotTooLarge     = "too_large"
+	WorkerPoolDisabled = "pool_disabled"
+	WorkerPoolEmpty    = "pool_empty"
+	WorkerReleasing    = "releasing"
+	WorkerNoSuchLease  = "no_such_lease"
+	WorkerStale        = "stale_generation"
+	WorkerTooLarge     = "too_large"
 )
 
-type SlotRefusal struct {
+type WorkerRefusal struct {
 	Reason     string `json:"reason"`
 	Pool       string `json:"pool"`
-	Slots      int    `json:"slots,omitempty"`
+	Workers    int    `json:"slots,omitempty"`
 	Leased     int    `json:"leased,omitempty"`
 	Releasing  int    `json:"releasing,omitempty"`
 	RetryAfter int    `json:"retry_after,omitempty"`
 }
 
-type SlotLeaseRequest struct {
+type WorkerLeaseRequest struct {
 	Pool string `json:"pool"`
 	Key  string `json:"key"`
 }
 
-type SlotLeaseResponse struct {
+type WorkerLeaseResponse struct {
 	Pool       string `json:"pool"`
 	Key        string `json:"key"`
 	Generation uint64 `json:"generation"`
@@ -43,17 +43,17 @@ type SlotLeaseResponse struct {
 	SayBearer  string `json:"say_bearer"`
 }
 
-type SlotReleaseRequest struct {
+type WorkerReleaseRequest struct {
 	Pool       string `json:"pool"`
 	Key        string `json:"key"`
 	Generation uint64 `json:"generation"`
 }
 
-type SlotReleaseResponse struct {
+type WorkerReleaseResponse struct {
 	Released bool `json:"released"`
 }
 
-type SlotDeliverRequest struct {
+type WorkerDeliverRequest struct {
 	Pool       string `json:"pool"`
 	Key        string `json:"key"`
 	Generation uint64 `json:"generation"`
@@ -61,25 +61,25 @@ type SlotDeliverRequest struct {
 	Text       string `json:"text"`
 }
 
-type SlotDeliverResponse struct {
+type WorkerDeliverResponse struct {
 	Queued bool `json:"queued"`
 }
 
-type SlotSayRequest struct {
+type WorkerSayRequest struct {
 	Text string `json:"text"`
 }
 
-type SlotSayResponse struct {
+type WorkerSayResponse struct {
 	Said bool `json:"said"`
 }
 
-type SlotPagesRequest struct {
+type WorkerPagesRequest struct {
 	Pool string   `json:"pool"`
 	Seen []uint64 `json:"seen,omitempty"`
 	Wait int      `json:"wait,omitempty"`
 }
 
-type SlotPage struct {
+type WorkerPage struct {
 	ID         uint64 `json:"id"`
 	At         int64  `json:"at"`
 	Pool       string `json:"pool"`
@@ -90,6 +90,6 @@ type SlotPage struct {
 	Dropped    uint64 `json:"dropped,omitempty"`
 }
 
-type SlotPagesResponse struct {
-	Pages []SlotPage `json:"pages"`
+type WorkerPagesResponse struct {
+	Pages []WorkerPage `json:"pages"`
 }

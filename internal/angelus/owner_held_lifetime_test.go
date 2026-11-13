@@ -110,7 +110,7 @@ func TestABoxStillRetiresItsOwnAria(t *testing.T) {
 }
 
 // El Inspector D7: system.succession_failed is what holds a refused succession
-// off (the slot pool's per-day bound is a refusal), and system.retirement.page
+// off (the worker pool's per-day bound is a refusal), and system.retirement.page
 // says who hears of it. Anyone but the owner who could unset the first or
 // repoint the second would walk through the bound, or silence it.
 func TestOnlyTheOwnerClearsAFailedSuccessionOrMovesItsPage(t *testing.T) {

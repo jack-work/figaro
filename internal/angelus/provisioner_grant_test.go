@@ -7,20 +7,20 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/authz"
-	"github.com/jack-work/figaro/internal/slotpool"
+	"github.com/jack-work/figaro/internal/workerpool"
 	"github.com/jack-work/jkauthz"
 )
 
 func provisionedRig(t *testing.T) (grantRig, string) {
 	t.Helper()
 	r, box := leasedRig(t)
-	slots, err := angelus.OpenSlotPools(t.TempDir(), r.a.Settings)
+	workers, err := angelus.OpenWorkerPools(t.TempDir(), r.a.Settings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.a.Slots = slots
-	r.a.Policies.SetLeases(slots)
-	if err := slots.Ledger.Begin("groups", "slot0", "chat:10", 1, brokerHolder); err != nil {
+	r.a.Workers = workers
+	r.a.Policies.SetLeases(workers)
+	if err := workers.Ledger.Begin("groups", "slot0", "chat:10", 1, brokerHolder); err != nil {
 		t.Fatal(err)
 	}
 	return r, box
@@ -42,18 +42,18 @@ func (r grantRig) killNow(ctx context.Context, id string) error {
 }
 
 // The ledger row is the grant's lifetime, and the box name is how the
-// grant finds its row. A released generation of a slot stays released
-// while the next generation of the same slot is minting.
+// grant finds its row. A released generation of a worker stays released
+// while the next generation of the same worker is minting.
 func TestALeaseIsInForceFromMintingUntilItIsReleased(t *testing.T) {
-	r := newRigConfigured(t, grantPolicy, fourSlotPoolConfig)
+	r := newRigConfigured(t, grantPolicy, fourWorkerPoolConfig)
 	dir := t.TempDir()
 	before := ledgerIn(t, dir)
-	leaseTo(t, before, "slot0", "chat:10", 1, slotpool.Live)
-	leaseTo(t, before, "slot1", "chat:11", 1, slotpool.Minting)
-	leaseTo(t, before, "slot2", "chat:12", 4, slotpool.Releasing)
-	leaseTo(t, before, "slot3", "chat:13", 2, slotpool.Released)
-	leaseTo(t, before, "slot3", "chat:14", 3, slotpool.Minting)
-	slots, err := angelus.OpenSlotPools(dir, r.a.Settings)
+	leaseTo(t, before, "slot0", "chat:10", 1, workerpool.Live)
+	leaseTo(t, before, "slot1", "chat:11", 1, workerpool.Minting)
+	leaseTo(t, before, "slot2", "chat:12", 4, workerpool.Releasing)
+	leaseTo(t, before, "slot3", "chat:13", 2, workerpool.Released)
+	leaseTo(t, before, "slot3", "chat:14", 3, workerpool.Minting)
+	workers, err := angelus.OpenWorkerPools(dir, r.a.Settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestALeaseIsInForceFromMintingUntilItIsReleased(t *testing.T) {
 		"slot0-g1": true, "slot1-g1": true, "slot2-g4": true, "slot3-g3": true,
 		"slot3-g2": false, "slot0-g2": false, "slot2-g3": false, "slot0": false, "slot0-g": false, "groups": false, "chat:10": false, "": false,
 	} {
-		if got := slots.InForce(box); got != want {
+		if got := workers.InForce(box); got != want {
 			t.Errorf("lease %q in force: %v, want %v", box, got, want)
 		}
 	}
@@ -116,13 +116,13 @@ func TestThroughTheHandlersTheProvisionerReachesOnlyItsLeasesFigaros(t *testing.
 	if err := r.note(t, serving, leased); err != nil {
 		t.Errorf("the provisioner serving %s could not write its figaro: %v", box, err)
 	}
-	if _, err := r.a.Slots.Ledger.Release("groups", "chat:10", 1); err != nil {
+	if _, err := r.a.Workers.Ledger.Release("groups", "chat:10", 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.killNow(serving, leased); err != nil || ariaExists(r.a, leased) {
 		t.Errorf("with the lease releasing the provisioner could not delete its figaro: %v", err)
 	}
-	if err := r.a.Slots.Ledger.Released("groups", "chat:10", 1); err != nil {
+	if err := r.a.Workers.Ledger.Released("groups", "chat:10", 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.killNow(serving, kept); err == nil || !ariaExists(r.a, kept) {

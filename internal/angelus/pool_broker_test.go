@@ -11,7 +11,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
-	"github.com/jack-work/figaro/internal/slotpool"
+	"github.com/jack-work/figaro/internal/workerpool"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -27,7 +27,7 @@ func brokerOnAPoolWithALiveLease(t *testing.T) (r grantRig, secrets map[string]s
 	if err := os.WriteFile(filepath.Join(filepath.Dir(r.policy), "outfits", "boxed.toml"), []byte(outfit), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	leaseTo(t, r.a.Slots.Ledger, "slot0", "chat:10", 1, slotpool.Live)
+	leaseTo(t, r.a.Workers.Ledger, "slot0", "chat:10", 1, workerpool.Live)
 	leased, err := r.create(asOwner(), "boxed")
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +38,7 @@ func brokerOnAPoolWithALiveLease(t *testing.T) (r grantRig, secrets map[string]s
 // Ruling (c): hello is the one call broker keeps beside its lease
 // methods, so its answer must say nothing about what the pool holds:
 // the protocol, the node and broker's own name, and no figaro, form,
-// slot, lease or bearer.
+// worker, lease or bearer.
 func TestHelloTellsBrokerNothingAboutThePool(t *testing.T) {
 	r, secrets := brokerOnAPoolWithALiveLease(t)
 	out, err := r.call(asBroker(), rpc.MethodHello, rpc.HelloRequest{Version: rpc.ProtocolVersion})

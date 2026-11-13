@@ -14,8 +14,8 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/hierarchy"
-	"github.com/jack-work/figaro/internal/slotpool"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/workerpool"
 	"github.com/jack-work/jkauthz"
 )
 
@@ -92,18 +92,18 @@ func (h *handlers) awaitUnlinked(ctx context.Context, ids []string) error {
 }
 
 func (h *handlers) releaseLease(ctx context.Context, pool, key string, generation uint64) error {
-	slots := h.angelus.Slots
-	if slots == nil || h.angelus.Backend == nil {
+	workers := h.angelus.Workers
+	if workers == nil || h.angelus.Backend == nil {
 		return errors.New("release: this daemon leases no slots")
 	}
 	refused := func(err error) error {
 		return fmt.Errorf("release of %s/%s g%d: %w", pool, key, generation, err)
 	}
-	row, err := slots.Ledger.Release(pool, key, generation)
+	row, err := workers.Ledger.Release(pool, key, generation)
 	if err != nil {
 		return refused(err)
 	}
-	box := config.LeasedBoxName(row.Slot, row.Generation)
+	box := config.LeasedBoxName(row.Worker, row.Generation)
 	loaded, _ := h.settings()
 	ctx = context.WithoutCancel(ctx)
 	var unclosed error
@@ -111,7 +111,7 @@ func (h *handlers) releaseLease(ctx context.Context, pool, key string, generatio
 		unclosed = h.closeCaller(ctx, loaded, pool, row.Rou2Lease)
 	}
 	loaded.ReleaseBox(box)
-	slots.forgetLease(box)
+	workers.forgetLease(box)
 
 	ctx = authz.WithSubject(inProcess(ctx), authz.ProvisionerServing(box))
 	purged := h.everythingOfLease(box, row.Minted)
@@ -129,10 +129,10 @@ func (h *handlers) releaseLease(ctx context.Context, pool, key string, generatio
 	if unclosed != nil {
 		return refused(unclosed)
 	}
-	if err := slots.Ledger.Released(pool, key, generation); err != nil {
+	if err := workers.Ledger.Released(pool, key, generation); err != nil {
 		return refused(err)
 	}
-	slog.Info("slot pool: released", "pool", pool, "slot", row.Slot, "generation", generation, "purged", len(purged))
+	slog.Info("slot pool: released", "pool", pool, "slot", row.Worker, "generation", generation, "purged", len(purged))
 	return nil
 }
 
@@ -144,7 +144,7 @@ func (h *handlers) closeCaller(ctx context.Context, loaded *config.Loaded, pool,
 	return caller.Close(ctx, rou2Lease)
 }
 
-func leaseIsOver(l slotpool.Lease) bool { return l.State == slotpool.Released }
+func leaseIsOver(l workerpool.Lease) bool { return l.State == workerpool.Released }
 
 func (h *handlers) purgeNow(ctx context.Context, id string) error {
 	if _, ok := h.angelus.Backend.Node(id); !ok {
@@ -161,18 +161,18 @@ func (h *handlers) purgeNow(ctx context.Context, id string) error {
 	return nil
 }
 
-func poolSlots(loaded *config.Loaded) []string {
+func poolWorkers(loaded *config.Loaded) []string {
 	var names []string
 	for _, pool := range loaded.Pools() {
 		p, _ := loaded.Pool(pool)
-		names = append(names, p.SlotNames()...)
+		names = append(names, p.WorkerNames()...)
 	}
 	return names
 }
 
-func leasedBoxOfSlot(name string, slots []string) bool {
-	for _, slot := range slots {
-		digits, ok := strings.CutPrefix(name, slot+"-g")
+func leasedBoxOfWorker(name string, workers []string) bool {
+	for _, worker := range workers {
+		digits, ok := strings.CutPrefix(name, worker+"-g")
 		if ok && digits != "" && strings.Trim(digits, "0123456789") == "" {
 			return true
 		}
@@ -181,9 +181,9 @@ func leasedBoxOfSlot(name string, slots []string) bool {
 }
 
 func (h *handlers) orphansOfLeases() []string {
-	backend, slots := h.angelus.Backend, h.angelus.Slots
+	backend, workers := h.angelus.Backend, h.angelus.Workers
 	loaded, _ := h.settings()
-	names := poolSlots(loaded)
+	names := poolWorkers(loaded)
 	var forms, figaros []string
 	for _, n := range backend.Nodes() {
 		if n.Kind != store.KindForm && n.Kind != store.KindConversation {
@@ -200,10 +200,10 @@ func (h *handlers) orphansOfLeases() []string {
 				box, _ = authz.BoxOf(by)
 			}
 		}
-		if !leasedBoxOfSlot(box, names) {
+		if !leasedBoxOfWorker(box, names) {
 			continue
 		}
-		if _, held := slots.leaseOf(box); held {
+		if _, held := workers.leaseOf(box); held {
 			continue
 		}
 		if n.Kind == store.KindForm {
@@ -215,13 +215,13 @@ func (h *handlers) orphansOfLeases() []string {
 	return append(forms, figaros...)
 }
 
-func (hs *Handlers) RecoverSlotPools(ctx context.Context) { hs.h.recoverSlotPools(ctx) }
+func (hs *Handlers) RecoverWorkerPools(ctx context.Context) { hs.h.recoverWorkerPools(ctx) }
 
-func (hs *Handlers) KeepReleasingSlots(ctx context.Context) {
-	hs.h.keepReleasingSlots(ctx, unfinishedReleaseEvery)
+func (hs *Handlers) KeepReleasingWorkers(ctx context.Context) {
+	hs.h.keepReleasingWorkers(ctx, unfinishedReleaseEvery)
 }
 
-func (h *handlers) keepReleasingSlots(ctx context.Context, every time.Duration) {
+func (h *handlers) keepReleasingWorkers(ctx context.Context, every time.Duration) {
 	tick := time.NewTicker(every)
 	defer tick.Stop()
 	for {
@@ -235,34 +235,34 @@ func (h *handlers) keepReleasingSlots(ctx context.Context, every time.Duration) 
 }
 
 func (h *handlers) finishUnfinishedLeases(ctx context.Context) {
-	slots := h.angelus.Slots
-	if slots == nil || h.angelus.Backend == nil {
+	workers := h.angelus.Workers
+	if workers == nil || h.angelus.Backend == nil {
 		return
 	}
-	slots.leasing.Lock()
-	defer slots.leasing.Unlock()
+	workers.leasing.Lock()
+	defer workers.leasing.Unlock()
 	h.releaseUnfinishedLeases(ctx)
 }
 
 func (h *handlers) releaseUnfinishedLeases(ctx context.Context) {
-	slots := h.angelus.Slots
-	for _, l := range slots.Ledger.Leases() {
-		if l.State != slotpool.Minting && l.State != slotpool.Releasing {
+	workers := h.angelus.Workers
+	for _, l := range workers.Ledger.Leases() {
+		if l.State != workerpool.Minting && l.State != workerpool.Releasing {
 			continue
 		}
 		if err := h.releaseLease(ctx, l.Pool, l.Key, l.Generation); err != nil {
-			slog.Error("slot pool: an unfinished lease is not yet released, and its slot is not offered", "pool", l.Pool, "slot", l.Slot, "generation", l.Generation, "err", err)
+			slog.Error("slot pool: an unfinished lease is not yet released, and its slot is not offered", "pool", l.Pool, "slot", l.Worker, "generation", l.Generation, "err", err)
 		}
 	}
 }
 
-func (h *handlers) recoverSlotPools(ctx context.Context) {
-	slots := h.angelus.Slots
-	if slots == nil || h.angelus.Backend == nil {
+func (h *handlers) recoverWorkerPools(ctx context.Context) {
+	workers := h.angelus.Workers
+	if workers == nil || h.angelus.Backend == nil {
 		return
 	}
-	slots.leasing.Lock()
-	defer slots.leasing.Unlock()
+	workers.leasing.Lock()
+	defer workers.leasing.Unlock()
 	h.releaseUnfinishedLeases(ctx)
 	owner := authz.WithSubject(inProcess(context.WithoutCancel(ctx)), jkauthz.Subject{Principal: h.angelus.owner()})
 	orphans := h.orphansOfLeases()

@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/slotpool"
+	"github.com/jack-work/figaro/internal/workerpool"
 )
 
-const fourSlotPoolConfig = `
+const fourWorkerPoolConfig = `
 [slot.pools.groups]
 enabled = true
 outfit = "leased"
@@ -24,27 +24,27 @@ slots = ["slot0", "slot1", "slot2", "slot3"]
 
 const brokerHolder = "service:broker@auth.kelliher.info"
 
-func ledgerIn(t *testing.T, dir string) *slotpool.Ledger {
+func ledgerIn(t *testing.T, dir string) *workerpool.Ledger {
 	t.Helper()
-	l, err := slotpool.OpenLedger(filepath.Join(dir, "ledger.json"))
+	l, err := workerpool.OpenLedger(filepath.Join(dir, "ledger.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return l
 }
 
-func leaseTo(t *testing.T, l *slotpool.Ledger, slot, key string, generation uint64, to slotpool.State) {
+func leaseTo(t *testing.T, l *workerpool.Ledger, worker, key string, generation uint64, to workerpool.State) {
 	t.Helper()
 	steps := []func() error{
-		func() error { return l.Begin("groups", slot, key, generation, brokerHolder) },
-		func() error { return l.GoLive("groups", key, generation, "bearer-of-"+slot) },
+		func() error { return l.Begin("groups", worker, key, generation, brokerHolder) },
+		func() error { return l.GoLive("groups", key, generation, "bearer-of-"+worker) },
 		func() error { _, err := l.Release("groups", key, generation); return err },
 		func() error { return l.Released("groups", key, generation) },
 	}
-	reached := []slotpool.State{slotpool.Minting, slotpool.Live, slotpool.Releasing, slotpool.Released}
+	reached := []workerpool.State{workerpool.Minting, workerpool.Live, workerpool.Releasing, workerpool.Released}
 	for i, step := range steps {
 		if err := step(); err != nil {
-			t.Fatalf("%s to %s: %v", slot, reached[i], err)
+			t.Fatalf("%s to %s: %v", worker, reached[i], err)
 		}
 		if reached[i] == to {
 			return
@@ -57,53 +57,53 @@ func leaseTo(t *testing.T, l *slotpool.Ledger, slot, key string, generation uint
 // does not, since the release path finishes those; and a released row
 // names nothing that still exists.
 func TestAtStartOnlyALiveLeaseGetsItsBoxBack(t *testing.T) {
-	r := newRigConfigured(t, grantPolicy, fourSlotPoolConfig)
+	r := newRigConfigured(t, grantPolicy, fourWorkerPoolConfig)
 	dir := t.TempDir()
 	before := ledgerIn(t, dir)
-	leaseTo(t, before, "slot0", "chat:10", 1, slotpool.Live)
-	leaseTo(t, before, "slot1", "chat:11", 1, slotpool.Minting)
-	leaseTo(t, before, "slot2", "chat:12", 4, slotpool.Releasing)
-	leaseTo(t, before, "slot3", "chat:13", 2, slotpool.Released)
+	leaseTo(t, before, "slot0", "chat:10", 1, workerpool.Live)
+	leaseTo(t, before, "slot1", "chat:11", 1, workerpool.Minting)
+	leaseTo(t, before, "slot2", "chat:12", 4, workerpool.Releasing)
+	leaseTo(t, before, "slot3", "chat:13", 2, workerpool.Released)
 
-	slots, err := angelus.OpenSlotPools(dir, r.a.Settings)
+	workers, err := angelus.OpenWorkerPools(dir, r.a.Settings)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := r.a.Settings.LeasedBoxes(); !slices.Equal(got, []string{"slot0-g1"}) {
 		t.Fatalf("boxes leased after start: %v, want only the live lease's slot0-g1", got)
 	}
-	if !slots.Ledger.Found() {
+	if !workers.Ledger.Found() {
 		t.Error("a ledger that was on disk reads as lost")
 	}
-	for key, want := range map[string]slotpool.State{"chat:10": slotpool.Live, "chat:11": slotpool.Minting, "chat:12": slotpool.Releasing} {
-		if l, ok := slots.Ledger.Held("groups", key); !ok || l.State != want {
+	for key, want := range map[string]workerpool.State{"chat:10": workerpool.Live, "chat:11": workerpool.Minting, "chat:12": workerpool.Releasing} {
+		if l, ok := workers.Ledger.Held("groups", key); !ok || l.State != want {
 			t.Errorf("%s after start: %v %v, want %s", key, l.State, ok, want)
 		}
 	}
-	if g, err := slots.Generations.Next("slot0", slots.Ledger.Floor("slot0")); err != nil || g != 2 {
+	if g, err := workers.Generations.Next("slot0", workers.Ledger.Floor("slot0")); err != nil || g != 2 {
 		t.Errorf("the next generation of slot0 is %d (%v), want 2: the counters or the floor were not opened", g, err)
 	}
 }
 
-// A slot can leave the config while its lease is live. The lease has no
+// A worker can leave the config while its lease is live. The lease has no
 // box to come back to, so start marks it for release and its bearer
 // leaves the disk; it must not stay live with nothing behind it.
-func TestALiveLeaseWhoseSlotLeftTheConfigIsMarkedForRelease(t *testing.T) {
+func TestALiveLeaseWhoseWorkerLeftTheConfigIsMarkedForRelease(t *testing.T) {
 	r := newRigConfigured(t, grantPolicy, mockPoolConfig)
 	dir := t.TempDir()
 	before := ledgerIn(t, dir)
-	leaseTo(t, before, "slot0", "chat:10", 3, slotpool.Live)
-	leaseTo(t, before, "slot9", "chat:19", 7, slotpool.Live)
+	leaseTo(t, before, "slot0", "chat:10", 3, workerpool.Live)
+	leaseTo(t, before, "slot9", "chat:19", 7, workerpool.Live)
 
-	slots, err := angelus.OpenSlotPools(dir, r.a.Settings)
+	workers, err := angelus.OpenWorkerPools(dir, r.a.Settings)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := r.a.Settings.LeasedBoxes(); !slices.Equal(got, []string{"slot0-g3"}) {
 		t.Fatalf("boxes leased after start: %v, want only slot0-g3", got)
 	}
-	gone, ok := slots.Ledger.Find("groups", "chat:19", 7)
-	if !ok || gone.State != slotpool.Releasing || gone.SayBearer != "" {
+	gone, ok := workers.Ledger.Find("groups", "chat:19", 7)
+	if !ok || gone.State != workerpool.Releasing || gone.SayBearer != "" {
 		t.Errorf("the lease of a slot no longer configured: state %s, bearer kept %v, want releasing with no bearer", gone.State, gone.SayBearer != "")
 	}
 	onDisk, err := os.ReadFile(filepath.Join(dir, "ledger.json"))
@@ -113,7 +113,7 @@ func TestALiveLeaseWhoseSlotLeftTheConfigIsMarkedForRelease(t *testing.T) {
 }
 
 // A ledger this build cannot read stops the start: guessing at leases
-// would hand a slot out twice. With no ledger at all the daemon starts
+// would hand a worker out twice. With no ledger at all the daemon starts
 // empty, and says the ledger was not found so recovery can run.
 func TestALedgerThisBuildCannotReadStopsTheStart(t *testing.T) {
 	r := newRigConfigured(t, grantPolicy, mockPoolConfig)
@@ -126,15 +126,15 @@ func TestALedgerThisBuildCannotReadStopsTheStart(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "ledger.json"), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := angelus.OpenSlotPools(dir, r.a.Settings); err == nil {
+		if _, err := angelus.OpenWorkerPools(dir, r.a.Settings); err == nil {
 			t.Errorf("%s: the pool state opened", name)
 		}
 	}
-	slots, err := angelus.OpenSlotPools(t.TempDir(), r.a.Settings)
+	workers, err := angelus.OpenWorkerPools(t.TempDir(), r.a.Settings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if slots.Ledger.Found() || len(r.a.Settings.LeasedBoxes()) != 0 {
-		t.Errorf("an empty state dir: found %v, boxes %v", slots.Ledger.Found(), r.a.Settings.LeasedBoxes())
+	if workers.Ledger.Found() || len(r.a.Settings.LeasedBoxes()) != 0 {
+		t.Errorf("an empty state dir: found %v, boxes %v", workers.Ledger.Found(), r.a.Settings.LeasedBoxes())
 	}
 }

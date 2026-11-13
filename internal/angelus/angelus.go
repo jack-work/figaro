@@ -73,7 +73,7 @@ type Angelus struct {
 	Models *modelcat.Catalog
 
 	Policies     *authz.Policies
-	Slots        *SlotPools
+	Workers      *WorkerPools
 	Issuers      *authz.Issuers
 	APIKeys      *authz.APIKeys
 	Peercred     *authz.Peercred

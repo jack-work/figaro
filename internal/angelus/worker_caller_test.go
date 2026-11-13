@@ -10,7 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/slotpool"
+	"github.com/jack-work/figaro/internal/workerpool"
 )
 
 // A provider that sends the rou2 lease it was built with, as the routed
@@ -69,7 +69,7 @@ var rigRou2s sync.Map
 
 func installRou2(r grantRig) *rigRou2 {
 	f := &rigRou2{classes: map[string]string{}}
-	r.a.Slots.Caller = func(pool config.PoolConfig) (slotpool.Caller, error) {
+	r.a.Workers.Caller = func(pool config.PoolConfig) (workerpool.Caller, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.provider = append(f.provider, pool.Provider)
@@ -104,8 +104,8 @@ func TestALeaseOpensItsRou2LeaseBeforeItMintsAndItsReleaseClosesIt(t *testing.T)
 	r := leasingRig(t)
 	rou2 := rou2Of(r)
 	rou2.onOpen = func(id string) {
-		row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1)
-		if row.Rou2Lease != id || row.State != slotpool.Minting {
+		row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1)
+		if row.Rou2Lease != id || row.State != workerpool.Minting {
 			t.Errorf("rou2 was asked for %s while the ledger row is %s naming %q", id, row.State, row.Rou2Lease)
 		}
 		if slices.Contains(r.a.Settings.LeasedBoxes(), "slot0-g1") || boxNodes(r.a, "slot0-g1") != 0 {
@@ -155,7 +155,7 @@ func TestALeaseRou2DoesNotOpenMintsNothingAndIsReleased(t *testing.T) {
 	if slices.Contains(r.a.Settings.LeasedBoxes(), "slot0-g1") {
 		t.Error("the box of a lease rou2 did not open is in the table")
 	}
-	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); row.State != slotpool.Released {
+	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Released {
 		t.Errorf("the row is %s, want released", row.State)
 	}
 	if !slices.Equal(rou2.closed, []string{"groups/slot0-g1"}) {
@@ -168,9 +168,9 @@ func TestALeaseRou2DoesNotOpenMintsNothingAndIsReleased(t *testing.T) {
 }
 
 // A release whose rou2 lease does not close still purges, and is not done:
-// the row stays releasing and the slot is not offered, because the caller
+// the row stays releasing and the worker is not offered, because the caller
 // can still spend. The same release asked again finishes it.
-func TestAReleaseRou2DoesNotCloseStillPurgesAndKeepsTheSlot(t *testing.T) {
+func TestAReleaseRou2DoesNotCloseStillPurgesAndKeepsTheWorker(t *testing.T) {
 	r := leasingRig(t)
 	rou2 := rou2Of(r)
 	lease, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`)
@@ -187,7 +187,7 @@ func TestAReleaseRou2DoesNotCloseStillPurgesAndKeepsTheSlot(t *testing.T) {
 	if slices.Contains(r.a.Settings.LeasedBoxes(), lease.Box) {
 		t.Error("the box is still in the table")
 	}
-	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); row.State != slotpool.Releasing || row.Rou2Lease != "groups/slot0-g1" {
+	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Releasing || row.Rou2Lease != "groups/slot0-g1" {
 		t.Errorf("the row is %s naming %q, want releasing and still naming its rou2 lease", row.State, row.Rou2Lease)
 	}
 	if next, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:11"}`); err != nil || next.Box != "slot1-g1" {
@@ -197,7 +197,7 @@ func TestAReleaseRou2DoesNotCloseStillPurgesAndKeepsTheSlot(t *testing.T) {
 	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err != nil {
 		t.Fatal(err)
 	}
-	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); row.State != slotpool.Released || !slices.Equal(rou2.closed, []string{"groups/slot0-g1"}) {
+	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Released || !slices.Equal(rou2.closed, []string{"groups/slot0-g1"}) {
 		t.Errorf("after the second release the row is %s and rou2 closed %v", row.State, rou2.closed)
 	}
 }
@@ -206,20 +206,20 @@ func TestAReleaseRou2DoesNotCloseStillPurgesAndKeepsTheSlot(t *testing.T) {
 // named a rou2 lease is released without one.
 func TestWithNoRou2NothingIsLeased(t *testing.T) {
 	r := leasingRig(t)
-	r.a.Slots.Caller = nil
+	r.a.Workers.Caller = nil
 	if _, err := r.lease(asBroker(), `{"pool":"groups","key":"chat:10"}`); err == nil {
 		t.Fatal("a daemon with no rou2 answered a lease")
 	}
 	if n := boxNodes(r.a, "slot0-g1"); n != 0 {
 		t.Errorf("%d nodes were minted with no rou2", n)
 	}
-	if row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1); row.State != slotpool.Released || row.Rou2Lease != "" {
+	if row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1); row.State != workerpool.Released || row.Rou2Lease != "" {
 		t.Errorf("the row is %s naming %q, want released and naming none", row.State, row.Rou2Lease)
 	}
 }
 
 // A lease left releasing is finished on a timer, with no call from broker:
-// each pass runs the release again, and the slot comes back once the step
+// each pass runs the release again, and the worker comes back once the step
 // that could not finish can.
 func TestAReleasingLeaseIsFinishedOnATimerOnceItCanBe(t *testing.T) {
 	r := leasingRig(t)
@@ -231,25 +231,25 @@ func TestAReleasingLeaseIsFinishedOnATimerOnceItCanBe(t *testing.T) {
 	if err := r.release(asBroker(), `{"pool":"groups","key":"chat:10","generation":1}`); err == nil {
 		t.Fatal("a release whose rou2 lease did not close answered released")
 	}
-	state := func() slotpool.State {
-		row, _ := r.a.Slots.Ledger.Find("groups", "chat:10", 1)
+	state := func() workerpool.State {
+		row, _ := r.a.Workers.Ledger.Find("groups", "chat:10", 1)
 		return row.State
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	ended := make(chan struct{})
 	go func() {
-		r.hs.KeepReleasingSlotsEvery(ctx, 5*time.Millisecond)
+		r.hs.KeepReleasingWorkersEvery(ctx, 5*time.Millisecond)
 		close(ended)
 	}()
 	time.Sleep(40 * time.Millisecond)
-	if got := state(); got != slotpool.Releasing {
+	if got := state(); got != workerpool.Releasing {
 		t.Errorf("while rou2 is away the row is %s, want releasing", got)
 	}
 	rou2.closeFails(nil)
-	for deadline := time.Now().Add(5 * time.Second); state() != slotpool.Released && time.Now().Before(deadline); {
+	for deadline := time.Now().Add(5 * time.Second); state() != workerpool.Released && time.Now().Before(deadline); {
 		time.Sleep(5 * time.Millisecond)
 	}
-	if got := state(); got != slotpool.Released {
+	if got := state(); got != workerpool.Released {
 		t.Fatalf("with rou2 back the row is %s, want released by the timer", got)
 	}
 	cancel()

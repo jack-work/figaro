@@ -118,16 +118,16 @@ func TestALeaseOutlivesAReload(t *testing.T) {
 
 // owner:self reads minted_by, and a lease's figaros are minted as its box. A
 // name leased twice would hand the second lease what the first one minted.
-func TestASlotHoldsOneLeaseAndNeverTheSameGenerationTwice(t *testing.T) {
+func TestAWorkerHoldsOneLeaseAndNeverTheSameGenerationTwice(t *testing.T) {
 	l := loadedPool(t)
-	refused := func(slot string, generation uint64, want string) {
+	refused := func(worker string, generation uint64, want string) {
 		t.Helper()
-		_, err := l.LeaseBox(pool, slot, generation)
+		_, err := l.LeaseBox(pool, worker, generation)
 		if err == nil {
-			t.Fatalf("%s generation %d was leased", slot, generation)
+			t.Fatalf("%s generation %d was leased", worker, generation)
 		}
 		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("%s generation %d refused for another reason than %q: %v", slot, generation, want, err)
+			t.Fatalf("%s generation %d refused for another reason than %q: %v", worker, generation, want, err)
 		}
 	}
 	first, err := l.LeaseBox(pool, "slot0", 7)
@@ -146,19 +146,19 @@ func TestASlotHoldsOneLeaseAndNeverTheSameGenerationTwice(t *testing.T) {
 	}
 }
 
-func TestOnlyAPoolsOwnSlotIsLeased(t *testing.T) {
+func TestOnlyAPoolsOwnWorkerIsLeased(t *testing.T) {
 	l := loadedPool(t)
 	for name, c := range map[string]struct {
-		pool, slot string
-		generation uint64
-		want       string
+		pool, worker string
+		generation   uint64
+		want         string
 	}{
 		"a pool the config lacks": {"other", "slot0", 1, "no pool"},
 		"a slot the pool lacks":   {pool, "slot9", 1, "not a slot of pool"},
 		"a lease-shaped slot":     {pool, "slot0-g1", 1, "not a slot of pool"},
 		"generation zero":         {pool, "slot0", 0, "starts at 1"},
 	} {
-		if _, err := l.LeaseBox(c.pool, c.slot, c.generation); err == nil {
+		if _, err := l.LeaseBox(c.pool, c.worker, c.generation); err == nil {
 			t.Errorf("%s: leased", name)
 		} else if !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: refused for another reason than %q: %v", name, c.want, err)

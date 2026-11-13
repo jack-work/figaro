@@ -57,7 +57,7 @@ func filteredReads() []filteredRead {
 // Ruling (c): on other daemons any role holder may list, resolve and
 // follow, and sees only the rows it may read. broker holds a role on the
 // pool daemon, so that rule would hand it an open stream (@recent) and
-// an answer shaped by what exists. A daemon that leases slots decides
+// an answer shaped by what exists. A daemon that leases workers decides
 // those reads like any other call, which refuses broker and still
 // serves the admin; hello is all broker keeps.
 func TestAPoolDaemonRefusesBrokerTheReadsOtherDaemonsFilter(t *testing.T) {
