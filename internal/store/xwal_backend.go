@@ -224,6 +224,9 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	}
 	b.touchLocked(id)
 	if h := b.open[id]; h != nil {
+		if err := h.ir.heldLineageErr(); err != nil {
+			return nil, err
+		}
 		return h, nil
 	}
 	// Sanity-open once to fail fast on an unknown aria.
@@ -233,6 +236,9 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 		return nil, err
 	}
 	_ = xw.Close()
+	if _, err := b.store.Lineage(id); err != nil {
+		return nil, err
+	}
 	if err := b.refuseUnreadableChannel(id, chanIR); err != nil {
 		return nil, err
 	}
@@ -240,7 +246,7 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 		ir: newTreeLog[message.Message](
 			newXwalLog[message.Message](b.store, id, chanIR, true),
 			id, b.irCache, irEntrySize, irKey[message.Message],
-			func() []fwtree.Ref { return b.store.Lineage(id) }).
+			func() ([]fwtree.Ref, error) { return b.store.Lineage(id) }).
 			withNodeOpener(func(node string) Log[message.Message] {
 				return newXwalLog[message.Message](b.store, node, chanIR, true)
 			}).seedingTail(),
@@ -332,13 +338,16 @@ func (b *XwalBackend) OpenTranslator(ariaID, providerName string) (Log[[]json.Ra
 	cache := b.transCacheFor(providerName)
 	b.mu.Unlock()
 	ch := transChannel(providerName)
+	if _, err := b.store.Lineage(ariaID); err != nil {
+		return nil, err
+	}
 	if err := b.refuseUnreadableChannel(ariaID, ch); err != nil {
 		return nil, err
 	}
 	c := newTreeLog[[]json.RawMessage](
 		newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false),
 		ariaID, cache, transEntrySize, transKey[[]json.RawMessage],
-		func() []fwtree.Ref { return b.store.Lineage(ariaID) }).
+		func() ([]fwtree.Ref, error) { return b.store.Lineage(ariaID) }).
 		// A coordinate holds exactly one entry (the channel is addressed by its
 		// own LT), so the writer's append can be published rather than fetched back.
 		seedingTail().

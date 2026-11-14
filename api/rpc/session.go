@@ -50,6 +50,7 @@ type FigaroInfoResponse struct {
 	Trunk      string `json:"trunk,omitempty"`
 	Parent     string `json:"parent,omitempty"`
 	BranchedLT uint64 `json:"branched_lt,omitempty"`
+	BaseErr    string `json:"base_err,omitempty"`
 	// Present is where the row is drawn: Parent unless a promote moved it.
 	// Vector follows Present.
 	Present string `json:"present,omitempty"`

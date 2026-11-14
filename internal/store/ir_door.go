@@ -30,6 +30,8 @@ type figIRLog struct {
 	mu sync.Mutex
 }
 
+func (g *figIRLog) LineageErr() error { return LineageErr(g.Log) }
+
 // roundLookback bounds the tail read that resolves outstanding invokes: every
 // append through the door closes what it opened, so the only open invokes
 // belong to the last round.

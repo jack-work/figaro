@@ -56,10 +56,10 @@ func (a *Angelus) openNodeIR(node string) store.Log[message.Message] {
 	return log
 }
 
-func (a *Angelus) uiLineage(node string) []fwtree.Ref {
+func (a *Angelus) uiLineage(node string) ([]fwtree.Ref, error) {
 	lb, ok := a.Backend.(store.LineageBackend)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	return lb.Lineage(node)
 }

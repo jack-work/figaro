@@ -314,7 +314,11 @@ func (t *Trunks) SetBranchedTurn(trunk string, base, turn uint64, exact bool) er
 	if !ok {
 		return fmt.Errorf("%w %q", ErrUnknownTrunk, trunk)
 	}
-	if have := t.forkBaseOf(key); have != base {
+	have, err := t.forkBaseOf(key)
+	if err != nil {
+		return err
+	}
+	if have != base {
 		return fmt.Errorf("xwal: %s forks at LT %d, not %d: refusing to record its turn", trunk, have, base)
 	}
 	dir := t.irDir(key)
@@ -339,7 +343,43 @@ func (t *Trunks) SetBranchedTurn(trunk string, base, turn uint64, exact bool) er
 	return nil
 }
 
-func (t *Trunks) forkBaseOf(key string) uint64 {
-	base, _ := disk.ForkBaseOf(t.irDir(key))
-	return base
+func (t *Trunks) forkBaseOf(key string) (uint64, error) {
+	return forkBaseAt(key, t.irDir(key))
+}
+
+func (l Layout) ForkBase(root, key string) (uint64, error) {
+	return forkBaseAt(key, filepath.Join(root, l.Main, NodeDirName(key)))
+}
+
+func forkBaseAt(key, dir string) (uint64, error) {
+	path := filepath.Join(dir, ".fork")
+	if _, err := os.Stat(path); err != nil {
+		return 0, &ForkBaseError{Node: key, Path: path, Err: err}
+	}
+	base, err := disk.ForkBaseOf(dir)
+	if err != nil {
+		return 0, &ForkBaseError{Node: key, Path: path, Err: err}
+	}
+	return base, nil
+}
+
+type ForkBaseError struct {
+	Node string
+	Path string
+	Err  error
+}
+
+func (e *ForkBaseError) Error() string {
+	return fmt.Sprintf("xwal: %s has a parent but its fork base is unreadable: %s: %v", e.Node, e.Path, e.Err)
+}
+
+func (e *ForkBaseError) Unwrap() error { return e.Err }
+
+type MissingParentError struct {
+	Node   string
+	Parent string
+}
+
+func (e *MissingParentError) Error() string {
+	return fmt.Sprintf("xwal: %s forks from %s, which the store does not hold", e.Node, e.Parent)
 }

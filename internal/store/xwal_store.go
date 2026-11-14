@@ -742,6 +742,7 @@ type NodeView struct {
 	Trunk      string
 	Vector     []int
 	BranchedLT uint64 // main-LT this trunk diverged from its parent
+	BaseErr    error
 	// Present is where the row APPEARS: the topology edge unless a promote
 	// moved it. Vector follows Present, so a listing draws one tree.
 	Present string
@@ -767,7 +768,7 @@ func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
 	}
 	return NodeView{
 		ID: t.ID, Parent: parent, Kind: kind, Trunk: t.ID,
-		Stump: p.stump, Vector: p.vec, BranchedLT: t.BranchedLT,
+		Stump: p.stump, Vector: p.vec, BranchedLT: t.BranchedLT, BaseErr: t.BaseErr,
 	}
 }
 

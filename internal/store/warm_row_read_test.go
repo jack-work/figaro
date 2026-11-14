@@ -104,7 +104,7 @@ func TestATranslatorRowIsReadableOnAnAriaWhoseForkBaseIsAboveOne(t *testing.T) {
 		}})
 		require.NoError(t, err)
 	}
-	t.Logf("fig IR tail LT = %d, lineage = %+v", last.LT, be.store.Lineage(id))
+	t.Logf("fig IR tail LT = %d, lineage = %+v", last.LT, must(be.store.Lineage(id)))
 
 	rows, err := be.OpenTranslator(id, "anthropic")
 	require.NoError(t, err)
@@ -126,6 +126,6 @@ func TestATranslatorRowIsReadableOnAnAriaWhoseForkBaseIsAboveOne(t *testing.T) {
 	t.Cleanup(func() { cold.Close() })
 	coldRows, err := cold.OpenTranslator(id, "anthropic")
 	require.NoError(t, err)
-	t.Logf("cold lineage = %+v, Len = %d", cold.store.Lineage(id), coldRows.Len())
+	t.Logf("cold lineage = %+v, Len = %d", must(cold.store.Lineage(id)), coldRows.Len())
 	require.Len(t, coldRows.Read(), 1, "a cold read attributes the row to the PARENT node, which has none")
 }
