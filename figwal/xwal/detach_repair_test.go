@@ -277,6 +277,9 @@ func TestTheRepairSurvivesAKillInsideIt(t *testing.T) {
 			if len(got.state) != len(want.state)+2 || fmt.Sprint(got.state[:len(want.state)]) != fmt.Sprint(want.state) {
 				t.Fatalf("after a kill inside the repair the child reads state\n%v\nwant\n%v and two more", got.state, want.state)
 			}
+			if b, _ := os.ReadFile(filepath.Join(f.dir, "state", n, ".fork")); string(b) != "base=1\n" {
+				t.Errorf("state .fork is %q after the reopen, want the absorb finished at base=1", b)
+			}
 		})
 	}
 }
