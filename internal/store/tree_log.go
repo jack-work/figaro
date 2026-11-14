@@ -1,6 +1,8 @@
 package store
 
 import (
+	"errors"
+	"fmt"
 	"sort"
 	"sync/atomic"
 
@@ -407,8 +409,37 @@ func (l *treeLog[T]) Clear() error {
 }
 
 func (l *treeLog[T]) TruncateFrom(lt uint64) error {
+	if l.HidesOwnRows() {
+		return fmt.Errorf("truncate %s from %d: %w", l.node, lt, ErrViewHidesOwnRows)
+	}
 	l.cache.DropNode(l.node)
 	return l.inner.TruncateFrom(lt)
+}
+
+var ErrViewHidesOwnRows = errors.New("store: the lineage view serves an ancestor where this node owns rows")
+
+func (l *treeLog[T]) HidesOwnRows() bool {
+	fb, ok := l.inner.(channelForkBase)
+	if !ok {
+		return false
+	}
+	base, known := fb.ForkBase()
+	if !known {
+		return false
+	}
+	if base == 0 {
+		base = 1
+	}
+	tail, ok := l.inner.PeekTail()
+	if !ok || l.key(tail) < base {
+		return false
+	}
+	cuts := l.cuts(0, l.key(tail))
+	if len(cuts) == 0 {
+		return false
+	}
+	last := cuts[len(cuts)-1]
+	return last.Node != l.node || last.From >= base
 }
 
 // TailAfter's watermark is an LT, not a FigaroLT; the two agree on an unforked
