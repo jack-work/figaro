@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/jack-work/figaro/figwal/segment"
 )
 
 // mainLTs reads every main index visible from a trunk's head.
@@ -316,8 +314,10 @@ func TestDetachAbsorbsAPrefixLargerThanASegment(t *testing.T) {
 	}
 }
 
-// A crash mid-absorb leaves a partial prefix segment at its final name, and
-// Detach must still complete on the retry.
+// A crash mid-absorb leaves our scratch segment behind, and Detach must
+// still complete on the retry. A file at the final name is never partial
+// (absorb publishes a synced file by link), and absorb refuses to replace
+// one that is not its prefix: TestAbsorbNeverReplacesASegment.
 func TestDetachRecoversFromAPartialAbsorb(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, parent := seedMapTrunk(t, dir)
@@ -333,14 +333,7 @@ func TestDetachRecoversFromAPartialAbsorb(t *testing.T) {
 	key := f.head(string(child))
 	want := mainLTs(t, f, child)
 
-	// Simulate the crash twice over: a half-written segment at the FINAL
-	// name, and our own scratch file left behind. segment.Create is O_EXCL,
-	// so either one alone would fail every retry.
 	chDir := filepath.Join(dir, "ir", key)
-	partial := filepath.Join(chDir, segFileName(1, segment.JSONLCodec{}))
-	if err := os.WriteFile(partial, []byte("{\"truncated\":\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	scratch := filepath.Join(chDir, fmt.Sprintf(".absorb-%d", os.Getpid()))
 	if err := os.WriteFile(scratch, []byte("stale\n"), 0o644); err != nil {
 		t.Fatal(err)
