@@ -71,6 +71,9 @@ func (h *handlers) reapGroup(id string, recursive bool, until time.Time, expect 
 			return time.Time{}, false, hierarchy.HasChildren(id, live)
 		}
 	}
+	if err := h.refuseUnreadableBoxes(fresh); err != nil {
+		return time.Time{}, true, fmt.Errorf("kill %s: %w", id, err)
+	}
 	for _, n := range fresh {
 		h.stopAria(n)
 	}

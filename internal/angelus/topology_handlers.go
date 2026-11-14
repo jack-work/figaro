@@ -824,6 +824,9 @@ func (h *handlers) removeAria(ctx context.Context, by hierarchy.Principal, asked
 			return nil, deleteSetChanged(err)
 		}
 	}
+	if err := h.refuseUnreadableBoxes(orSelf(plan.Delete, id)); err != nil {
+		return nil, err
+	}
 	if h.angelus.Registry.Get(id) != nil {
 		if err := h.angelus.Registry.Kill(id); err != nil {
 			return nil, err

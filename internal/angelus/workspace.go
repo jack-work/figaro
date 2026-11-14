@@ -2,6 +2,7 @@ package angelus
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -37,7 +38,11 @@ func (h *handlers) killSessions(id string) int {
 	if h.angelus.Sessions != nil {
 		n = h.angelus.Sessions.KillScope(id)
 	}
-	kind := h.sandboxOf(id)
+	kind, err := h.boxOf(id)
+	if err != nil {
+		slog.Warn("sessions in a box may outlive the aria: its box cannot be read", "id", id, "err", err)
+		return n
+	}
 	loaded, _ := h.settings()
 	if _, ok := loaded.Box(kind); !ok {
 		return n
@@ -51,16 +56,30 @@ func (h *handlers) killSessions(id string) int {
 	return n + m
 }
 
+func (h *handlers) refuseUnreadableBoxes(ids []string) error {
+	for _, id := range ids {
+		if _, err := h.boxOf(id); err != nil {
+			return fmt.Errorf("the box of %s cannot be read, so its sessions could not go with it: %w", id, err)
+		}
+	}
+	return nil
+}
+
 func (h *handlers) sandboxOf(id string) string {
+	box, _ := h.boxOf(id)
+	return box
+}
+
+func (h *handlers) boxOf(id string) (string, error) {
 	if h.angelus.Backend == nil {
-		return ""
+		return "", nil
 	}
 	snap, err := h.angelus.Backend.FormState(id)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	if v := snap.Lookup("system.sandbox"); v != nil {
-		return *v
+		return *v, nil
 	}
-	return ""
+	return "", nil
 }
