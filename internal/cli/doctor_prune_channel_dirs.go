@@ -11,15 +11,11 @@ import (
 )
 
 func runDoctorPruneChannelDirs(dryRun, jsonOut bool) error {
-	if dryRun {
-		noteStoreLockForDryRun("prune-channel-dirs")
-	} else {
-		release, err := holdStoreForDoctor("prune-channel-dirs")
-		if err != nil {
-			return err
-		}
-		defer release()
+	release, err := holdStoreForDoctor("prune-channel-dirs")
+	if err != nil {
+		return err
 	}
+	defer release()
 	if cli, err := sdk.DialAngelus(doorEndpoint()); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")

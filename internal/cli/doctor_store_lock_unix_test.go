@@ -147,24 +147,19 @@ func TestPruneChannelDirsHoldsTheStoreLockAcrossItsRun(t *testing.T) {
 	f.Close()
 }
 
-func TestPruneChannelDirsDryRunNeedsNoLockButSaysWhoHoldsIt(t *testing.T) {
+// Opening the store can write (manifest settle, graft resume), so a dry run
+// takes the lock like a real one.
+func TestPruneChannelDirsDryRunRefusesWhileTheStoreLockIsHeld(t *testing.T) {
 	empty := pruneLockFixture(t)
 	daemon, ok := takeStoreLockAsDaemon(t)
 	if !ok {
 		t.Fatal("setup: could not take a free store lock")
 	}
 	defer daemon.Close()
-	var errs bytes.Buffer
-	prev := stderrw
-	stderrw = &errs
-	t.Cleanup(func() { stderrw = prev })
-	withStdout(t, &midRun{fn: func() {}})
 
-	if err := runDoctorPruneChannelDirs(true, false); err != nil {
-		t.Fatalf("dry run under a held lock: %v", err)
-	}
-	if !strings.Contains(errs.String(), fmt.Sprintf("store lock is held by pid %d", os.Getpid())) {
-		t.Fatalf("dry run did not name the holder: %q", errs.String())
+	err := runDoctorPruneChannelDirs(true, false)
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("store lock is held by pid %d", os.Getpid())) {
+		t.Fatalf("dry run under a held lock: %v, want a refusal naming the holder", err)
 	}
 	if _, err := os.Stat(empty); err != nil {
 		t.Fatalf("dry run removed %s: %v", empty, err)
@@ -172,31 +167,33 @@ func TestPruneChannelDirsDryRunNeedsNoLockButSaysWhoHoldsIt(t *testing.T) {
 }
 
 func TestDoctorWritersRefuseWhileTheStoreLockIsHeld(t *testing.T) {
-	for verb, run := range map[string]func() error{
-		"gc":        func() error { return runDoctorGC(false) },
-		"librettos": func() error { return runDoctorLibrettos(false) },
-		"toolcalls": func() error { return runDoctorToolCalls(false) },
-	} {
-		t.Run(verb, func(t *testing.T) {
-			pruneLockFixture(t)
-			daemon, ok := takeStoreLockAsDaemon(t)
-			if !ok {
-				t.Fatal("setup: could not take a free store lock")
-			}
-			defer daemon.Close()
-			manifest := filepath.Join(boot.AriaRoot(), "xwal.json")
-			before, err := os.ReadFile(manifest)
-			if err != nil {
-				t.Fatal(err)
-			}
-			err = run()
-			if err == nil || !strings.Contains(err.Error(), "doctor "+verb+": the store lock is held by") {
-				t.Fatalf("doctor %s under a held lock: %v, want a refusal naming the holder", verb, err)
-			}
-			after, _ := os.ReadFile(manifest)
-			if !bytes.Equal(before, after) {
-				t.Fatalf("a refused doctor %s rewrote the manifest", verb)
-			}
-		})
+	for _, dry := range []bool{false, true} {
+		for verb, run := range map[string]func(bool) error{
+			"gc":        runDoctorGC,
+			"librettos": runDoctorLibrettos,
+			"toolcalls": runDoctorToolCalls,
+		} {
+			t.Run(fmt.Sprintf("%s/dry=%v", verb, dry), func(t *testing.T) {
+				pruneLockFixture(t)
+				daemon, ok := takeStoreLockAsDaemon(t)
+				if !ok {
+					t.Fatal("setup: could not take a free store lock")
+				}
+				defer daemon.Close()
+				manifest := filepath.Join(boot.AriaRoot(), "xwal.json")
+				before, err := os.ReadFile(manifest)
+				if err != nil {
+					t.Fatal(err)
+				}
+				err = run(dry)
+				if err == nil || !strings.Contains(err.Error(), "doctor "+verb+": the store lock is held by") {
+					t.Fatalf("doctor %s under a held lock: %v, want a refusal naming the holder", verb, err)
+				}
+				after, _ := os.ReadFile(manifest)
+				if !bytes.Equal(before, after) {
+					t.Fatalf("a refused doctor %s rewrote the manifest", verb)
+				}
+			})
+		}
 	}
 }

@@ -33,9 +33,3 @@ func holdStoreForDoctor(verb string) (release func(), err error) {
 	boot.RecordStoreLockOwner(f)
 	return func() { f.Close() }, nil
 }
-
-func noteStoreLockForDryRun(verb string) {
-	if who, _, held := boot.StoreLockHolder(); held {
-		fmt.Fprintf(stderrw, "doctor %s --dry-run: the store lock is held by %s; a real run would refuse until it lets go\n", verb, who)
-	}
-}
