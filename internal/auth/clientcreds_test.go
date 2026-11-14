@@ -110,13 +110,14 @@ func TestClientCredentialsSecretPost(t *testing.T) {
 	assert.Equal(t, ccSecret, form["client_secret"])
 }
 
-// A refused mint names the server's error and never the secret.
+// A refused mint names the status and never reflects provider-controlled text.
 func TestClientCredentialsErrorKeepsTheSecretOut(t *testing.T) {
 	srv := newCCServer(t, false, http.StatusUnauthorized, 0)
 	c := &ClientCredentials{TokenURL: srv.URL + "/token", ClientID: "figaro", Secret: secretFile(t)}
 	_, err := c.Resolve()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid_client")
+	assert.Contains(t, err.Error(), "HTTP 401")
+	assert.NotContains(t, err.Error(), "invalid_client")
 	assert.NotContains(t, err.Error(), ccSecret)
 }
 

@@ -178,8 +178,9 @@ func TestLoginPKCEReportsTheIdPsRefusal(t *testing.T) {
 	}
 	_, err := loginPKCE(context.Background(), p.config(t), p.browser(t, refuse), 10*time.Second, quiet{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "access_denied")
-	assert.Contains(t, err.Error(), "not in rou2_users")
+	assert.Contains(t, err.Error(), "refused the sign-in")
+	assert.NotContains(t, err.Error(), "access_denied")
+	assert.NotContains(t, err.Error(), "not in rou2_users")
 }
 
 func TestLoginPKCEInsistsOnARefreshToken(t *testing.T) {

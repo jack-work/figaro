@@ -28,23 +28,28 @@ func assertNoRawControl(t *testing.T, err error) {
 	assert.Contains(t, msg, `\x1b]52`)
 }
 
-func TestTheIdPsRefusalOfAPKCESignInArrivesQuoted(t *testing.T) {
+func TestTheIdPsRefusalOfAPKCESignInIsNotReflected(t *testing.T) {
 	p := newPKCEIdP(t)
 	refuse := func(state string) url.Values {
 		return url.Values{"error": {hostileText}, "error_description": {hostileText}, "state": {state}}
 	}
 	_, err := loginPKCE(context.Background(), p.config(t), p.browser(t, refuse), 10*time.Second, quiet{})
-	assertNoRawControl(t, err)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), hostileText)
+	assert.NotContains(t, err.Error(), `\x1b]52`)
 }
 
-func TestATokenEndpointErrorArrivesQuoted(t *testing.T) {
+func TestATokenEndpointErrorIsNotReflected(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": hostileText, "error_description": hostileText})
 	}))
 	defer srv.Close()
 	_, err := requestToken(srv.Client(), srv.URL, "rou2", url.Values{"grant_type": {"authorization_code"}}, nil)
-	assertNoRawControl(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "HTTP 400")
+	assert.NotContains(t, err.Error(), hostileText)
+	assert.NotContains(t, err.Error(), `\x1b]52`)
 }
 
 func TestADeviceFlowErrorArrivesQuoted(t *testing.T) {

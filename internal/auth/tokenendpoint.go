@@ -113,21 +113,16 @@ func requestTokenContext(ctx context.Context, client *http.Client, endpoint, cli
 		RefreshToken string `json:"refresh_token"`
 		TokenType    string `json:"token_type"`
 		ExpiresIn    int    `json:"expires_in"`
-		Error        string `json:"error"`
-		Description  string `json:"error_description"`
 	}
 	_ = json.Unmarshal(body, &out)
 	if resp.StatusCode != http.StatusOK {
-		if out.Error != "" {
-			return tokenResponse{}, fmt.Errorf("client %s: token endpoint: HTTP %d: %q: %q", clientID, resp.StatusCode, out.Error, out.Description)
-		}
 		return tokenResponse{}, fmt.Errorf("client %s: token endpoint: HTTP %d", clientID, resp.StatusCode)
 	}
 	if out.AccessToken == "" {
 		return tokenResponse{}, fmt.Errorf("client %s: token endpoint returned no access_token", clientID)
 	}
 	if out.TokenType != "" && !strings.EqualFold(out.TokenType, "bearer") {
-		return tokenResponse{}, fmt.Errorf("client %s: token type %q, want bearer", clientID, out.TokenType)
+		return tokenResponse{}, fmt.Errorf("client %s: token endpoint returned an unsupported token type", clientID)
 	}
 	return tokenResponse{AccessToken: out.AccessToken, RefreshToken: out.RefreshToken, ExpiresIn: out.ExpiresIn}, nil
 }

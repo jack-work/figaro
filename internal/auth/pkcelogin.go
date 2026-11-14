@@ -185,9 +185,9 @@ func pkceCallback(provider, state string, redirect *url.URL, done chan<- pkceRed
 			loginPage(w, http.StatusBadRequest, "This sign-in link is not the one figaro is waiting for.")
 			return
 		}
-		if e := q.Get("error"); e != "" {
-			loginPage(w, http.StatusBadRequest, "Sign-in failed: "+e+". You can close this tab.")
-			finish(pkceRedirect{err: fmt.Errorf("%s: the IdP refused the sign-in: %q: %q", provider, e, q.Get("error_description"))})
+		if q.Get("error") != "" {
+			loginPage(w, http.StatusBadRequest, "Sign-in was refused. You can close this tab.")
+			finish(pkceRedirect{err: fmt.Errorf("%s: the IdP refused the sign-in", provider)})
 			return
 		}
 		code := q.Get("code")
