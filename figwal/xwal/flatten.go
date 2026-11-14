@@ -366,7 +366,7 @@ func (e *errNoForkBase) Error() string {
 
 func checkForkMarker(chanDir, rel string, codec segment.SegmentCodec) error {
 	dir := filepath.Join(chanDir, rel)
-	if _, err := readForkBaseFile(dir); err == nil {
+	if _, err := readForkBaseStrict(dir); err == nil {
 		return nil
 	}
 	first, ok, err := firstSegmentBase(dir, codec)
