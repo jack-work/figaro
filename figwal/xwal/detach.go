@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"sync"
 
 	"github.com/jack-work/figaro/figwal/disk"
 	"github.com/jack-work/figaro/figwal/log"
@@ -30,6 +32,8 @@ func (t *Trunks) Detach(node string) error {
 		return err
 	}
 	defer endMutation()
+	unlockNode := lockAbsorb("detach\x00" + canonicalDir(t.irDir(node)))
+	defer unlockNode()
 
 	x, err := t.openHotTopology(node)
 	if err != nil {
@@ -64,6 +68,14 @@ func (t *Trunks) Detach(node string) error {
 		}
 		absorb = append(absorb, pending{c.Name, dir, chLog, base, ch.absorbInitial()})
 	}
+	keys := make([]string, 0, len(absorb))
+	for _, p := range absorb {
+		keys = append(keys, canonicalDir(p.dir))
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		defer lockAbsorb(k)()
+	}
 	for _, p := range absorb {
 		if err := absorbPrefix(p.dir, p.log, p.base, p.initial, x.codec); err != nil {
 			x.Close()
@@ -95,8 +107,48 @@ func (t *Trunks) Detach(node string) error {
 	return t.rebuild()
 }
 
-func absorbScratch(dir string) string {
-	return filepath.Join(dir, fmt.Sprintf(".absorb-%d", os.Getpid()))
+var absorbLocks = struct {
+	sync.Mutex
+	held map[string]*keyedLock
+}{held: map[string]*keyedLock{}}
+
+type keyedLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+// lockAbsorb serializes, within this process, everything that builds or
+// judges an absorbed prefix under one key; the store's root lock keeps
+// other processes out. Two Trunks on one root, or a Detach beside a live
+// handle opening the same channel, otherwise race on one dir.
+func lockAbsorb(key string) func() {
+	absorbLocks.Lock()
+	l := absorbLocks.held[key]
+	if l == nil {
+		l = &keyedLock{}
+		absorbLocks.held[key] = l
+	}
+	l.refs++
+	absorbLocks.Unlock()
+	l.mu.Lock()
+	return func() {
+		l.mu.Unlock()
+		absorbLocks.Lock()
+		if l.refs--; l.refs == 0 {
+			delete(absorbLocks.held, key)
+		}
+		absorbLocks.Unlock()
+	}
+}
+
+func canonicalDir(dir string) string {
+	if p, err := filepath.EvalSymlinks(dir); err == nil {
+		return p
+	}
+	if p, err := filepath.Abs(dir); err == nil {
+		return p
+	}
+	return filepath.Clean(dir)
 }
 
 // absorbPrefix never replaces a file: a segment already at the absorbed
@@ -106,12 +158,11 @@ func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec s
 	if base <= 1 {
 		return nil
 	}
-	tmpName := absorbScratch(dir)
-	defer os.Remove(tmpName)
-	from, err := buildAbsorbed(tmpName, src, base, initial, codec)
+	tmpName, from, err := buildAbsorbed(dir, src, base, initial, codec)
 	if err != nil {
 		return err
 	}
+	defer os.Remove(tmpName)
 	if from > 1 {
 		if err := disk.StubHole(dir, segFileName(1, codec)); err != nil {
 			return err
@@ -133,29 +184,40 @@ func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec s
 }
 
 // buildAbsorbed writes the segment that holds src's records [from, base)
-// to path, and returns from. path is a scratch name: segment.Create is
-// O_EXCL, so a partial file at the final name would make every retry fail.
-func buildAbsorbed(path string, src *log.Log, base uint64, initial []byte, codec segment.SegmentCodec) (uint64, error) {
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return 0, err
-	}
+// under a scratch name in dir that no other call shares, and returns that
+// path and from. The caller removes the scratch.
+func buildAbsorbed(dir string, src *log.Log, base uint64, initial []byte, codec segment.SegmentCodec) (path string, from uint64, err error) {
 	from, header := uint64(1), initial
 	if initial != nil && src.Floor() > 0 {
 		h, segBase, err := src.SegmentHeaderAt(base - 1)
 		if err != nil {
-			return 0, err
+			return "", 0, err
 		}
 		from, header = segBase, h
 	}
-	// maxSize 0: unbounded, so the whole prefix lands in this one segment.
-	seg, err := segment.Create(path, codec, from, 0)
+	f, err := os.CreateTemp(dir, ".absorb-*")
 	if err != nil {
-		return 0, err
+		return "", 0, err
+	}
+	path = f.Name()
+	defer func() {
+		if err != nil {
+			os.Remove(path)
+			path = ""
+		}
+	}()
+	if err := f.Close(); err != nil {
+		return "", 0, err
+	}
+	// maxSize 0: unbounded, so the whole prefix lands in this one segment.
+	seg, err := segment.Open(path, codec, from, 0)
+	if err != nil {
+		return "", 0, err
 	}
 	if header != nil {
 		if err := seg.WriteHeader(header); err != nil {
 			seg.Close()
-			return 0, err
+			return "", 0, err
 		}
 	}
 	rerr := src.Range(from, func(idx uint64, payload []byte) error {
@@ -167,13 +229,16 @@ func buildAbsorbed(path string, src *log.Log, base uint64, initial []byte, codec
 	})
 	if rerr != nil && rerr != errStopRange {
 		seg.Close()
-		return 0, rerr
+		return "", 0, rerr
 	}
 	if err := seg.Sync(); err != nil {
 		seg.Close()
-		return 0, err
+		return "", 0, err
 	}
-	return from, seg.Close()
+	if err := seg.Close(); err != nil {
+		return "", 0, err
+	}
+	return path, from, nil
 }
 
 // finishInterruptedAbsorb runs on every open of a node's channel. A Detach
@@ -191,6 +256,20 @@ func finishInterruptedAbsorb(dir string, l *log.Log, initial []byte, codec segme
 	if segs := l.SegmentBaseIndexes(); len(segs) == 0 || segs[0] >= base {
 		return nil
 	}
+	unlock := lockAbsorb(canonicalDir(dir))
+	defer unlock()
+	onDisk, err := readForkBaseFile(dir)
+	if err != nil {
+		return err
+	}
+	if onDisk <= 1 {
+		// A Detach finished this channel while the log was loading.
+		l.AdoptAbsorbedPrefix()
+		return nil
+	}
+	if onDisk != base {
+		return fmt.Errorf("%w: %s .fork says base %d, the open log %d", ErrAbsorbConflict, dir, onDisk, base)
+	}
 	own, err := segmentBases(dir, codec)
 	if err != nil {
 		return err
@@ -199,12 +278,11 @@ func finishInterruptedAbsorb(dir string, l *log.Log, initial []byte, codec segme
 		return fmt.Errorf("%w: %s base %d: only a hole below the base", ErrAbsorbConflict, dir, base)
 	}
 	first := own[0]
-	tmp := absorbScratch(dir)
-	defer os.Remove(tmp)
-	from, err := buildAbsorbed(tmp, l, base, initial, codec)
+	tmp, from, err := buildAbsorbed(dir, l, base, initial, codec)
 	if err != nil {
 		return err
 	}
+	defer os.Remove(tmp)
 	name := segFileName(first, codec)
 	if first != from {
 		return fmt.Errorf("%w: %s base %d segment %s, absorb starts at %d", ErrAbsorbConflict, dir, base, name, from)

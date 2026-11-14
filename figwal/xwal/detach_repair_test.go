@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/figwal/log"
 	"github.com/jack-work/figaro/figwal/segment"
 )
 
@@ -366,8 +367,8 @@ func TestAbsorbNeverReplacesASegment(t *testing.T) {
 			if b, _ := os.ReadFile(seg); !bytes.Equal(b, tc.body) {
 				t.Errorf("absorb rewrote %s", seg)
 			}
-			if pathExists(absorbScratch(dir)) {
-				t.Errorf("absorb left its scratch segment behind")
+			if left, _ := filepath.Glob(filepath.Join(dir, ".absorb-*")); len(left) > 0 {
+				t.Errorf("absorb left its scratch segment behind: %v", left)
 			}
 		})
 	}
@@ -552,4 +553,151 @@ func rewriteSegment(t *testing.T, dir string, base, idx uint64, payload []byte) 
 	if err := os.Rename(tmp, path); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// Handles that open a channel in the interrupted layout while a Detach of
+// the same node runs each judge or build the absorbed prefix at once. Each
+// must work from its own scratch, under one lock per dir: a shared scratch
+// let one builder link another's half-written file as the final segment.
+// The handles here are private logs, so every one of them repairs.
+func TestConcurrentRepairsAndDetachOfOneNodeLoseNothing(t *testing.T) {
+	image, parentNode, node := interruptedImageWithAppends(t)
+	n := fsName(node)
+	segs := map[string][]byte{}
+	for _, ch := range []string{"main", "state"} {
+		b, err := os.ReadFile(filepath.Join(image, ch, n, segFileName(1, jsonl)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		segs[ch] = b
+	}
+	// The payload cache keeps one node per segment path, and Drop on one
+	// Segment races At on another instance of the same path: a separate
+	// finding. Private logs beside the hot store make exactly that pair.
+	old := segment.CacheBudget()
+	segment.SetCacheBudget(0)
+	defer segment.SetCacheBudget(old)
+	cfg := rootDetachOptions().config()
+	iterations := 40
+	if testing.Short() {
+		iterations = 8
+	}
+	for it := range iterations {
+		dir := filepath.Join(t.TempDir(), "s")
+		if err := os.CopyFS(dir, os.DirFS(image)); err != nil {
+			t.Fatal(err)
+		}
+		d, err := openTrunks(dir, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rx, err := Open(dir, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		state := rx.channel("state")
+		opts, initial, codec := rx.channelOpts(state), state.absorbInitial(), rx.codec
+		if err := rx.Close(); err != nil {
+			t.Fatal(err)
+		}
+		const readers = 4
+		var logs []*log.Log
+		for range readers {
+			p, err := log.Open(filepath.Join(dir, "state", fsName(parentNode)), opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			o := opts
+			o.Parent = p.Disk()
+			l, err := log.Open(filepath.Join(dir, "state", n), o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if segs := l.SegmentBaseIndexes(); len(segs) == 0 || segs[0] >= l.ForkBase() {
+				t.Fatalf("a handle opened %v under base %d, want the interrupted layout", segs, l.ForkBase())
+			}
+			logs = append(logs, l, p)
+		}
+		start := make(chan struct{})
+		errs := make(chan error, readers+1)
+		rows := make(chan []string, readers)
+		go func() {
+			<-start
+			errs <- d.Detach(node)
+		}()
+		for i := 0; i < len(logs); i += 2 {
+			l := logs[i]
+			go func() {
+				<-start
+				err := finishInterruptedAbsorb(filepath.Join(dir, "state", n), l, initial, codec)
+				var got []string
+				if err == nil {
+					err = l.Range(1, func(idx uint64, payload []byte) error {
+						got = append(got, fmt.Sprintf("%d:%s", idx, payload))
+						return nil
+					})
+				}
+				errs <- err
+				rows <- got
+			}()
+		}
+		close(start)
+		for range readers + 1 {
+			if err := <-errs; err != nil {
+				t.Fatalf("iteration %d: %v", it, err)
+			}
+		}
+		var want []string
+		for range readers {
+			got := <-rows
+			if want == nil {
+				want = got
+			}
+			if len(got) != 7 || fmt.Sprint(got) != fmt.Sprint(want) {
+				t.Fatalf("iteration %d: a handle read %d state records, %v; want the 4 inherited and 3 appended", it, len(got), got)
+			}
+		}
+		for _, l := range logs {
+			l.Close()
+		}
+		if err := d.Close(); err != nil {
+			t.Fatal(err)
+		}
+		for ch, b := range segs {
+			got, err := os.ReadFile(filepath.Join(dir, ch, n, segFileName(1, jsonl)))
+			if err != nil || !bytes.Equal(got, b) {
+				t.Fatalf("iteration %d: %s 0001 is %d bytes (%v), want the parent's prefix plus the appends, %d bytes", it, ch, len(got), err, len(b))
+			}
+			if fk, _ := os.ReadFile(filepath.Join(dir, ch, n, ".fork")); string(fk) != "base=1\n" {
+				t.Fatalf("iteration %d: %s .fork is %q, want base=1", it, ch, fk)
+			}
+		}
+		if left, _ := filepath.Glob(filepath.Join(dir, "*", n, ".absorb-*")); len(left) > 0 {
+			t.Fatalf("iteration %d: scratch left behind: %v", it, left)
+		}
+	}
+}
+
+// interruptedImageWithAppends is a store where a child's Detach absorbed
+// both channels and was killed before any .fork write, and three turns were
+// then appended into the absorbed 0001s.
+func interruptedImageWithAppends(t *testing.T) (dir, parentNode, node string) {
+	t.Helper()
+	f := newDetachFixture(t, false)
+	s := reopen(t, nil, f.dir)
+	appendTurns(t, s, f.child, "after", 3)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range f.changed[2:] {
+		putFile(t, f.dir, rel, f.pre[rel], true)
+	}
+	for _, p := range []string{".lock", ".unclean"} {
+		os.Remove(filepath.Join(f.dir, p))
+	}
+	m, ok := readNodeMarker(filepath.Join(f.dir, "main", fsName(f.node)))
+	if !ok || m.from == "" {
+		t.Fatalf("the interrupted child's .node %+v names no parent", m)
+	}
+	return f.dir, m.from, f.node
 }
