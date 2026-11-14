@@ -213,11 +213,16 @@ func (a *Angelus) Run(ctx context.Context) error {
 	a.Go("memory pressure", func() { a.watchMemPressure(ctx) })
 	a.seedRoles(ctx)
 	a.migrateLibrettoRefs()
+	if r, ok := a.Backend.(repairPassStarter); ok {
+		r.StartRepairPass()
+	}
 
 	err = a.Serve(ctx, ln, authz.DoorLocal, a.cliAdmit())
 	slog.Info("angelus shutting down")
 	return err
 }
+
+type repairPassStarter interface{ StartRepairPass() }
 
 func (a *Angelus) pidMonitor(ctx context.Context) {
 	ticker := time.NewTicker(2 * time.Second)

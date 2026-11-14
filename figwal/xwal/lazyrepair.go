@@ -164,14 +164,10 @@ func repairWorkers() int {
 	return min(4, max(1, runtime.GOMAXPROCS(0)))
 }
 
-func (r *leafRepairs) pass(stop <-chan struct{}, hold <-chan struct{}) {
-	if hold != nil {
-		select {
-		case <-hold:
-		case <-stop:
-			return
-		}
-	}
+func (r *leafRepairs) pass(stop <-chan struct{}) {
+	pending := r.pending.Load()
+	slog.Info("xwal: crash repair pass started", "leaves", r.total, "pending", pending,
+		"repaired_by_borrows", int64(r.total)-pending, "ms", time.Since(r.start).Milliseconds())
 	keys := make(chan string)
 	var wg sync.WaitGroup
 	for range repairWorkers() {

@@ -51,9 +51,11 @@ type Store struct {
 	stop         chan struct{}
 	done         chan struct{}
 
-	closeOnce  sync.Once
-	closeErr   error
-	repairDone chan struct{}
+	closeOnce   sync.Once
+	closeErr    error
+	repairDone  chan struct{}
+	repairStart chan struct{}
+	startOnce   sync.Once
 }
 
 const (
@@ -117,19 +119,27 @@ func OpenStore(root string, opts StoreOptions) (*Store, error) {
 		kick:         make(chan struct{}, 1),
 		stop:         make(chan struct{}),
 		done:         make(chan struct{}),
+		repairStart:  make(chan struct{}),
 	}
 	go s.run()
 	if repairs != nil && repairs.pending.Load() > 0 {
 		s.repairDone = make(chan struct{})
 		go func() {
 			defer close(s.repairDone)
-			repairs.pass(s.stop, repairPassHold)
+			select {
+			case <-s.repairStart:
+			case <-s.stop:
+				return
+			}
+			repairs.pass(s.stop)
 		}()
 	}
 	return s, nil
 }
 
-var repairPassHold <-chan struct{}
+func (s *Store) StartRepairPass() {
+	s.startOnce.Do(func() { close(s.repairStart) })
+}
 
 func (s *Store) run() {
 	defer close(s.done)

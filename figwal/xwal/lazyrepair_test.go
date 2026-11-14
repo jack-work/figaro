@@ -22,21 +22,9 @@ import (
 // same bytes on disk once every leaf is done, and no reader ever seeing a
 // leaf's rows before its repair.
 
-func holdRepairPass(t *testing.T) func() {
-	t.Helper()
-	ch := make(chan struct{})
-	repairPassHold = ch
-	var once sync.Once
-	release := func() { once.Do(func() { close(ch) }) }
-	t.Cleanup(func() {
-		release()
-		repairPassHold = nil
-	})
-	return release
-}
-
 func waitRepaired(t *testing.T, s *Store) {
 	t.Helper()
+	s.StartRepairPass()
 	deadline := time.Now().Add(20 * time.Second)
 	for s.RepairsPending() > 0 {
 		if time.Now().After(deadline) {
@@ -123,7 +111,7 @@ func (l *lazyLog) attrOf(message, key string) string {
 			return ""
 		}
 		v := rest[i+len(key)+2:]
-		for _, other := range []string{" leaves=", " cause=", " trimmed=", " ms="} {
+		for _, other := range []string{" leaves=", " cause=", " trimmed=", " ms=", " pending=", " repaired_by_borrows="} {
 			if j := strings.Index(v, other); j >= 0 {
 				v = v[:j]
 			}
@@ -243,7 +231,6 @@ func TestAFirstBorrowBeforeThePassSeesTheRepairedRows(t *testing.T) {
 	want, _ := eagerOracle(t, src, narrowTestOptions().config())
 	wantRows := oracleRows(t, want)
 	dir := lazyCopy(t, src)
-	release := holdRepairPass(t)
 	s, err := OpenStore(dir, narrowTestOptions())
 	if err != nil {
 		t.Fatal(err)
@@ -256,7 +243,6 @@ func TestAFirstBorrowBeforeThePassSeesTheRepairedRows(t *testing.T) {
 	if s.RepairsPending() >= before {
 		t.Fatalf("borrowing every trunk repaired nothing: %d pending, %d before", s.RepairsPending(), before)
 	}
-	release()
 	waitRepaired(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -307,7 +293,6 @@ func childBases(t *testing.T, dir, key string) string {
 
 func openHeld(t *testing.T, dir string) *Store {
 	t.Helper()
-	holdRepairPass(t)
 	s, err := OpenStore(dir, narrowTestOptions())
 	if err != nil {
 		t.Fatal(err)
@@ -447,7 +432,6 @@ func TestRemovingASuspectLeafNeverRacesItsRepair(t *testing.T) {
 	want, _ := eagerOracle(t, src, narrowTestOptions().config())
 	leaves := tornLeaves(t, src)
 	dir := lazyCopy(t, src)
-	release := holdRepairPass(t)
 	s, err := OpenStore(dir, narrowTestOptions())
 	if err != nil {
 		t.Fatal(err)
@@ -475,7 +459,7 @@ func TestRemovingASuspectLeafNeverRacesItsRepair(t *testing.T) {
 	if err := s.Remove(trunkOfNode(t, s, queued), false); err != nil {
 		t.Fatal(err)
 	}
-	release()
+	s.StartRepairPass()
 	<-entered
 	removed := make(chan error, 1)
 	go func() { removed <- s.Remove(trunkOfNode(t, s, busy), false) }()
@@ -528,7 +512,6 @@ func TestACrashMidPassLeavesAStoreTheNextOpenFinishes(t *testing.T) {
 	for _, k := range []int{0, 1, total / 2, total - 1} {
 		t.Run(fmt.Sprint(k), func(t *testing.T) {
 			dir := lazyCopy(t, src)
-			release := holdRepairPass(t)
 			s, err := OpenStore(dir, narrowTestOptions())
 			if err != nil {
 				t.Fatal(err)
@@ -540,7 +523,7 @@ func TestACrashMidPassLeavesAStoreTheNextOpenFinishes(t *testing.T) {
 				}
 				return nil
 			}
-			release()
+			s.StartRepairPass()
 			deadline := time.Now().Add(10 * time.Second)
 			for done.Load() < int64(total) && time.Now().Before(deadline) {
 				time.Sleep(time.Millisecond)
@@ -570,7 +553,6 @@ func TestAStopWithRepairsPendingKeepsTheMarkerAndTheNextOpenServesThemRepaired(t
 	wantRows := oracleRows(t, want)
 	dir := lazyCopy(t, src)
 
-	holdRepairPass(t)
 	s, err := OpenStore(dir, narrowTestOptions())
 	if err != nil {
 		t.Fatal(err)
@@ -601,7 +583,6 @@ func TestAStopWithRepairsPendingKeepsTheMarkerAndTheNextOpenServesThemRepaired(t
 		t.Fatalf("cause %q", cause)
 	}
 
-	release := holdRepairPass(t)
 	openLog := captureLog(t)
 	s2, err := OpenStore(dir, narrowTestOptions())
 	if err != nil {
@@ -614,7 +595,6 @@ func TestAStopWithRepairsPendingKeepsTheMarkerAndTheNextOpenServesThemRepaired(t
 		t.Fatal("the next open has nothing pending")
 	}
 	sameRows(t, wantRows, storeRows(t, s2, conversationTrunks(s2)))
-	release()
 	waitRepaired(t, s2)
 	if err := s2.Close(); err != nil {
 		t.Fatal(err)
@@ -642,7 +622,6 @@ func TestAFailedLeafRepairRefusesThatLeafOnlyAndTheNextBorrowRetries(t *testing.
 	want, _ := eagerOracle(t, src, narrowTestOptions().config())
 	wantRows := oracleRows(t, want)
 	dir := lazyCopy(t, src)
-	release := holdRepairPass(t)
 	s, err := OpenStore(dir, narrowTestOptions())
 	if err != nil {
 		t.Fatal(err)
@@ -666,7 +645,6 @@ func TestAFailedLeafRepairRefusesThatLeafOnlyAndTheNextBorrowRetries(t *testing.
 	}
 	failing.Store(false)
 	sameRows(t, wantRows, storeRows(t, s, trunks))
-	release()
 	waitRepaired(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -679,7 +657,6 @@ func TestBorrowsRacingThePassRepairEachLeafOnce(t *testing.T) {
 	want, _ := eagerOracle(t, src, narrowTestOptions().config())
 	wantRows := oracleRows(t, want)
 	dir := lazyCopy(t, src)
-	release := holdRepairPass(t)
 	s, err := OpenStore(dir, narrowTestOptions())
 	if err != nil {
 		t.Fatal(err)
@@ -701,7 +678,7 @@ func TestBorrowsRacingThePassRepairEachLeafOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			if i == 0 {
-				release()
+				s.StartRepairPass()
 			}
 			got[i] = storeRows(t, s, trunks)
 		}()
@@ -787,7 +764,7 @@ func TestTheLazyRepairMatchesTheEagerOneOnARealStore(t *testing.T) {
 	r := newLeafRepairs(tr, causeCrash)
 	tr.repairs.Store(r)
 	stop := make(chan struct{})
-	r.pass(stop, nil)
+	r.pass(stop)
 	if n := r.pending.Load(); n != 0 {
 		t.Fatalf("%d leaves left pending", n)
 	}
@@ -848,7 +825,6 @@ func TestPruningChannelDirsWithRepairsPendingRepairsFirst(t *testing.T) {
 	}
 
 	dir := lazyCopy(t, src)
-	release := holdRepairPass(t)
 	s, err := OpenStore(dir, narrowTestOptions())
 	if err != nil {
 		t.Fatal(err)
@@ -861,7 +837,6 @@ func TestPruningChannelDirsWithRepairsPendingRepairsFirst(t *testing.T) {
 	if n := s.RepairsPending(); n != 0 {
 		t.Errorf("the prune left %d leaves to repair over the directories it removed", n)
 	}
-	release()
 	waitRepaired(t, s)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -916,4 +891,48 @@ func TestThePruneDryRealDrySequenceOverPendingRepairs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestThePassWaitsForStartRepairPass(t *testing.T) {
+	src := buildTornStore(t)
+	want, _ := eagerOracle(t, src, narrowTestOptions().config())
+	dir := lazyCopy(t, src)
+	s, err := OpenStore(dir, narrowTestOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ran atomic.Int64
+	s.Trunks.repairs.Load().testRepair = func(string) error {
+		ran.Add(1)
+		return nil
+	}
+	total := s.RepairsPending()
+	if total == 0 {
+		t.Fatal("fixture: nothing pending")
+	}
+	time.Sleep(200 * time.Millisecond)
+	if n := ran.Load(); n != 0 || s.RepairsPending() != total {
+		t.Fatalf("before StartRepairPass the pass repaired %d leaves, %d of %d pending", n, s.RepairsPending(), total)
+	}
+	borrowed := 0
+	for _, tr := range conversationTrunks(s) {
+		if _, err := s.RecordsFrom(tr, "translations", 0, 0); err != nil {
+			t.Fatal(err)
+		}
+		if borrowed = total - s.RepairsPending(); borrowed > 0 {
+			break
+		}
+	}
+	log := captureLog(t)
+	waitRepaired(t, s)
+	if n := ran.Load(); n != int64(total) {
+		t.Fatalf("borrows and the pass repaired %d leaves, want %d", n, total)
+	}
+	if got := log.attrOf("xwal: crash repair pass started", "repaired_by_borrows"); got != fmt.Sprint(borrowed) {
+		t.Fatalf("the pass start logged %q repaired by borrows, want %d", got, borrowed)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sameStoreFiles(t, want, dir)
 }
