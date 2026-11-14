@@ -11,7 +11,7 @@ import (
 )
 
 func runDoctorPruneChannelDirs(dryRun, jsonOut bool) error {
-	if cli, err := sdk.DialAngelus(doorEndpoint()); err == nil {
+	if cli, err := sdk.DialAngelus(daemonEndpoint()); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}

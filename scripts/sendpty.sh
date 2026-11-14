@@ -8,7 +8,7 @@
 #   the reply lands in scrollback and the shell prompt comes back
 #   the bar carries the capacity figure and the mantra, in the incipit
 #   ^T promotes to the pager mid-session, and the pit keys work there
-#   :send from inside a send opens the queue (the hooks are wired on this door)
+#   :send from inside a send opens the queue (the hooks are wired on this path)
 #   --listen opens the pager at once
 #   a non-TTY send streams and exits 0
 #   leaving prints nothing at all
@@ -118,7 +118,7 @@ else
 fi
 
 # 3. ^T PROMOTES A SEND TO THE PAGER, and the pit keys work there -- the hooks
-#    are wired on this door too, which is the bug this refactor exists for.
+#    are wired on this path too, which is the bug this refactor exists for.
 slow 12
 tmux -S "$SOCK" send-keys -t send:0 "$BIN send --id $ARIA -- 'promote me'" Enter
 sleep 2
@@ -134,17 +134,17 @@ tmux -S "$SOCK" send-keys -t send:0 S; sleep 3
 if pane | grep -q "웃"; then
   echo "ok   S opens the form pit inside a send"
 else
-  echo "FAIL: S is dead on the send door"; fail=1; pane | tail -4 | sed 's/^/    |/'
+  echo "FAIL: S is dead on the send path"; fail=1; pane | tail -4 | sed 's/^/    |/'
 fi
 tmux -S "$SOCK" send-keys -t send:0 Escape; sleep 0.5
 
-# 4. THE COMMAND BOX IS WIRED ON THIS DOOR. ':' used to answer "commands need a
+# 4. THE COMMAND BOX IS WIRED ON THIS PATH. ':' used to answer "commands need a
 #    live session" inside a send, because the runner was armed in listen only.
 tmux -S "$SOCK" send-keys -t send:0 ':'; sleep 0.7
 tmux -S "$SOCK" send-keys -t send:0 -l "send -- queued from a send"; sleep 0.5
 tmux -S "$SOCK" send-keys -t send:0 Enter; sleep 3
 if pane | grep -q "live session"; then
-  echo "FAIL: the ':' box is not wired on the send door"; fail=1
+  echo "FAIL: the ':' box is not wired on the send path"; fail=1
 else
   echo "ok   the ':' box runs a command inside a send"
 fi

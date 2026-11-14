@@ -29,6 +29,12 @@ let
     '') (open proto);
 in
 {
+  imports = [
+    (lib.mkRemovedOptionModule [ "services" "figaro-container" "doorDir" ]
+      "renamed services.figaro-container.endpointDir in figaro 0.69"
+    )
+  ];
+
   options.services.figaro-container = {
     enable = lib.mkEnableOption "the figaro angelus in its own nspawn container";
 
