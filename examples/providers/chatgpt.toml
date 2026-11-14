@@ -1,0 +1,23 @@
+preset = "gateway"
+base_url = "https://chatgpt.com/backend-api/codex"
+
+[oauth]
+issuer = "https://auth.openai.com"
+client_id = "app_EMoamEEZ73f0CkXaXp7hrann"
+flow = "pkce"
+scopes = ["openid", "profile", "email", "offline_access"]
+authorize_url = "https://auth.openai.com/oauth/authorize"
+token_url = "https://auth.openai.com/oauth/token"
+redirect_uri = "http://localhost:1455/auth/callback"
+
+[headers]
+chatgpt-account-id = "REPLACE_WITH_YOUR_ACCOUNT_ID"
+OpenAI-Beta = "responses=experimental"
+originator = "experiential"
+
+[routing]
+catalog = "off"
+default = "responses"
+
+[responses]
+omit_fields = ["max_output_tokens"]

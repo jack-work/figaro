@@ -361,6 +361,35 @@ redirect to `http://127.0.0.1:<port>/callback`, an IP literal rather than
 Scopes go out as written, with no `offline_access` added, and a login that
 gets no `refresh_token` fails, since hush could not keep it fresh.
 
+For a registered fixed loopback callback, set `oauth.redirect_uri` to an
+HTTP loopback URL with an explicit port and path. Figaro binds that address
+before opening the browser, and uses the identical URI for authorization and
+exchange. An occupied port fails before the browser opens. With the setting
+unset, the random-port flow above is unchanged.
+
+`oauth.authorize_url` and `oauth.token_url` override discovery endpoints. Both
+must remain on the HTTPS issuer origin, with no userinfo or fragment; the
+token endpoint also refuses query parameters. Setting both for PKCE skips
+discovery. `oauth.authorize_params` adds provider-specific authorization
+parameters. Protocol-owned names (including state, redirect URI, client ID,
+scope and PKCE fields), duplicates and case-folded collisions are refused.
+
+A Responses backend can set `[responses] omit_fields = ["max_output_tokens"]`.
+Only named top-level fields are removed: nested tool arguments are unchanged.
+The transport fields `model`, `input`, `stream`, `store`, `type`, `headers`,
+`agent_task_id` and `initiator` cannot be omitted. Unconfigured providers keep
+the existing request shape. `store = false` and HTTP streaming remain intact.
+
+A credential-free ChatGPT subscription example is in
+`examples/providers/chatgpt.toml`. Its account header is an explicit owner
+setting, not an authorization grant. Mint an independent login chain: never
+copy a rotating refresh token from another process or the temporary proxy.
+Do not configure a paid API key or fallback in a subscription-only provider.
+Until subscription decision endpoints exist, set
+`system.methods.enabled = false`; `/decisions` and `/systemone` are not chat
+Responses endpoints. A successful plain response does not prove refresh,
+tool continuation or subscription capacity.
+
 Without `[oauth]`, the provider takes `api_key`, or the variable
 `api_key_env` names, and may run keyless, as `gateway` does.
 
