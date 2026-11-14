@@ -95,16 +95,17 @@ func reopen(t *testing.T, s *Store, dir string) *Store {
 	return s
 }
 
-// detachFixture is a child node with its own records on both channels,
-// forked from a parent with records, and the files a completed Detach of
-// the child changes, before and after.
+// detachFixture is a child node forked from a parent with records, and the
+// files a completed Detach of the child changes, before and after. Without
+// records of its own, the child's absorbed 0001 is its log's tail and takes
+// its appends.
 type detachFixture struct {
 	dir, child, node string
 	pre, post        map[string][]byte
 	changed          []string
 }
 
-func newDetachFixture(t *testing.T) *detachFixture {
+func newDetachFixture(t *testing.T, ownRecords bool) *detachFixture {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "s")
 	s := reopen(t, nil, dir)
@@ -117,7 +118,9 @@ func newDetachFixture(t *testing.T) *detachFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	appendTurns(t, s, child, "c", 3)
+	if ownRecords {
+		appendTurns(t, s, child, "c", 3)
+	}
 	node, ok := s.HeadNode(child)
 	if !ok {
 		t.Fatalf("no head node for %s", child)
@@ -191,47 +194,57 @@ func TestDetachInterruptedAtEachStepLosesNoRecord(t *testing.T) {
 		"main flipped to base=1",
 		"both flipped, .node not yet rewritten",
 	}
-	for k, name := range steps {
-		t.Run(name, func(t *testing.T) {
-			f := newDetachFixture(t)
-			f.crashAfter(t, k)
-			if k == 0 {
-				half := f.post[f.changed[0]]
-				putFile(t, f.dir, filepath.Join("main", fsName(f.node), ".absorb-1"), half[:len(half)/2], true)
-			}
-			s := reopen(t, nil, f.dir)
-			want := readRows(t, s, f.child)
-			if len(want.main) < 7 || len(want.state) < 7 {
-				t.Fatalf("after the crash the child reads %v, want its parent's and its own records", want)
-			}
-			appendTurns(t, s, f.child, "after", 4)
-			s = reopen(t, s, f.dir)
-			got := readRows(t, s, f.child)
-			want.main = append(want.main, got.main[len(want.main):]...)
-			want.state = append(want.state, got.state[len(want.state):]...)
-			if len(got.main) != len(want.main) || len(want.main) < 11 || len(want.state) < 11 {
-				t.Fatalf("after appends the child reads %v", got)
-			}
-			if err := s.Detach(f.node); err != nil {
-				t.Fatalf("detach re-run: %v", err)
-			}
-			if got := readRows(t, s, f.child); fmt.Sprint(got) != fmt.Sprint(want) {
-				t.Fatalf("after the re-run the child reads\n%v\nwant\n%v", got, want)
-			}
-			s = reopen(t, s, f.dir)
-			defer s.Close()
-			if got := readRows(t, s, f.child); fmt.Sprint(got) != fmt.Sprint(want) {
-				t.Fatalf("after the re-run and a reopen the child reads\n%v\nwant\n%v", got, want)
-			}
-			for _, ch := range []string{"main", "state"} {
-				if b, _ := os.ReadFile(filepath.Join(f.dir, ch, fsName(f.node), ".fork")); string(b) != "base=1\n" {
-					t.Errorf("%s .fork is %q after the re-run, want base=1", ch, b)
-				}
-			}
-			if m, _ := readNodeMarker(filepath.Join(f.dir, "main", fsName(f.node))); m.from != "" {
-				t.Errorf("the re-run left .node from=%q, want the node detached", m.from)
-			}
-		})
+	for _, own := range []bool{false, true} {
+		for k, name := range steps {
+			t.Run(fmt.Sprintf("own records=%v/%s", own, name), func(t *testing.T) {
+				detachInterruptedAt(t, own, k)
+			})
+		}
+	}
+}
+
+func detachInterruptedAt(t *testing.T, own bool, k int) {
+	f := newDetachFixture(t, own)
+	f.crashAfter(t, k)
+	if k == 0 {
+		half := f.post[f.changed[0]]
+		putFile(t, f.dir, filepath.Join("main", fsName(f.node), ".absorb-1"), half[:len(half)/2], true)
+	}
+	s := reopen(t, nil, f.dir)
+	want := readRows(t, s, f.child)
+	held := 4
+	if own {
+		held += 3
+	}
+	if len(want.main) != held || len(want.state) != held {
+		t.Fatalf("after the crash the child reads %v, want %d records on each channel", want, held)
+	}
+	appendTurns(t, s, f.child, "after", 4)
+	s = reopen(t, s, f.dir)
+	got := readRows(t, s, f.child)
+	if len(got.main) != held+4 || len(got.state) != held+4 ||
+		fmt.Sprint(got.main[:held], got.state[:held]) != fmt.Sprint(want.main, want.state) {
+		t.Fatalf("after appends the child reads %v, want %v and 4 more on each channel", got, want)
+	}
+	want = got
+	if err := s.Detach(f.node); err != nil {
+		t.Fatalf("detach re-run: %v", err)
+	}
+	if got := readRows(t, s, f.child); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("after the re-run the child reads\n%v\nwant\n%v", got, want)
+	}
+	s = reopen(t, s, f.dir)
+	defer s.Close()
+	if got := readRows(t, s, f.child); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("after the re-run and a reopen the child reads\n%v\nwant\n%v", got, want)
+	}
+	for _, ch := range []string{"main", "state"} {
+		if b, _ := os.ReadFile(filepath.Join(f.dir, ch, fsName(f.node), ".fork")); string(b) != "base=1\n" {
+			t.Errorf("%s .fork is %q after the re-run, want base=1", ch, b)
+		}
+	}
+	if m, _ := readNodeMarker(filepath.Join(f.dir, "main", fsName(f.node))); m.from != "" {
+		t.Errorf("the re-run left .node from=%q, want the node detached", m.from)
 	}
 }
 
@@ -241,7 +254,7 @@ func TestDetachInterruptedAtEachStepLosesNoRecord(t *testing.T) {
 func TestTheRepairSurvivesAKillInsideIt(t *testing.T) {
 	for _, flipped := range []bool{false, true} {
 		t.Run(fmt.Sprintf("fork-written=%v", flipped), func(t *testing.T) {
-			f := newDetachFixture(t)
+			f := newDetachFixture(t, false)
 			f.crashAfter(t, 2)
 			s := reopen(t, nil, f.dir)
 			want := readRows(t, s, f.child)
@@ -272,24 +285,15 @@ func TestTheRepairSurvivesAKillInsideIt(t *testing.T) {
 // would build, it is not this interrupted Detach, and the open refuses
 // without rewriting anything.
 func TestOpenRefusesASegmentBelowTheBaseThatIsNotTheParentsPrefix(t *testing.T) {
-	f := newDetachFixture(t)
+	f := newDetachFixture(t, false)
 	f.crashAfter(t, 2)
 	n := fsName(f.node)
-	seg := filepath.Join(f.dir, "state", n, segFileName(1, jsonl))
-	b, err := os.ReadFile(seg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tampered := bytes.Replace(b, []byte(`"p":0`), []byte(`"p":9`), 1)
-	if bytes.Equal(tampered, b) {
-		t.Fatalf("no parent record to tamper with in %s", b)
-	}
-	putFile(t, f.dir, filepath.Join("state", n, segFileName(1, jsonl)), tampered, true)
+	rewriteSegment(t, filepath.Join(f.dir, "state", n), 1, 2, []byte(`{"m":2,"p":{"foreign":true},"t":1}`))
 	before := snapshotFiles(t, filepath.Join(f.dir, "state", n))
 
 	s := reopen(t, nil, f.dir)
 	defer s.Close()
-	_, err = s.RecordsFrom(f.child, "state", 0, 0)
+	_, err := s.RecordsFrom(f.child, "state", 0, 0)
 	if !errors.Is(err, ErrAbsorbConflict) {
 		t.Fatalf("reading a channel with a foreign segment below its base: %v, want ErrAbsorbConflict", err)
 	}
@@ -320,7 +324,7 @@ func TestOpenRefusesASegmentBelowTheBaseThatIsNotTheParentsPrefix(t *testing.T) 
 // absorbPrefix publishes without replacing: a segment already at its name
 // stands if it is this very prefix and refuses otherwise.
 func TestAbsorbNeverReplacesASegment(t *testing.T) {
-	f := newDetachFixture(t)
+	f := newDetachFixture(t, true)
 	f.crashAfter(t, 0)
 	n := fsName(f.node)
 	absorbed := f.post[filepath.Join("state", n, segFileName(1, jsonl))]
@@ -393,15 +397,10 @@ func TestExportOfAnInterruptedDetach(t *testing.T) {
 		dir, tr := interruptedRootTrunk(t)
 		s := reopen(t, nil, dir)
 		node, _ := s.HeadNode(tr)
-		seg := filepath.Join(dir, "state", fsName(node), segFileName(1, jsonl))
-		b, err := os.ReadFile(seg)
-		if err != nil {
-			t.Fatal(err)
-		}
 		if err := s.Close(); err != nil {
 			t.Fatal(err)
 		}
-		putFile(t, dir, filepath.Join("state", fsName(node), segFileName(1, jsonl)), bytes.Replace(b, []byte(`"_idx":1,`), []byte(`"_idx":1,"z":0,`), 1), true)
+		rewriteSegment(t, filepath.Join(dir, "state", fsName(node)), 1, 1, []byte(`{"m":1,"p":{"foreign":true},"t":1}`))
 		s = reopen(t, nil, dir)
 		defer s.Close()
 		if _, err := s.Export(tr, "0123abcd"); !errors.Is(err, ErrAbsorbConflict) {
@@ -484,5 +483,46 @@ func TestARootLevelNodeForksTheStoreRootAtTwo(t *testing.T) {
 	}
 	if rows := channelRows(t, s, tr, "state"); len(rows) != 1 || !strings.HasPrefix(rows[0], "1:") {
 		t.Errorf("a fresh root-level trunk reads state %v, want the root's record 1", rows)
+	}
+}
+
+// rewriteSegment replaces record idx of the headered segment at base in dir
+// with payload, keeping every frame valid.
+func rewriteSegment(t *testing.T, dir string, base, idx uint64, payload []byte) {
+	t.Helper()
+	path := filepath.Join(dir, segFileName(base, jsonl))
+	src, err := segment.OpenReadOnlyHeadered(path, jsonl, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := path + ".rewrite"
+	dst, err := segment.Create(tmp, jsonl, base, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dst.WriteHeader(src.Header()); err != nil {
+		t.Fatal(err)
+	}
+	for i := base; i <= src.LastIndex(); i++ {
+		p, err := src.ReadIndex(i - base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == idx {
+			p = payload
+		}
+		if _, err := dst.Append(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if src.LastIndex() < idx {
+		t.Fatalf("segment %s ends at %d, before %d", path, src.LastIndex(), idx)
+	}
+	src.Close()
+	if err := dst.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		t.Fatal(err)
 	}
 }

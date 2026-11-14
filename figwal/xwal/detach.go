@@ -128,9 +128,6 @@ func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec s
 	} else if err != nil {
 		return err
 	}
-	if err := os.Remove(tmpName); err != nil {
-		return err
-	}
 	return disk.SyncDir(dir)
 }
 
