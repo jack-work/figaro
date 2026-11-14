@@ -55,7 +55,7 @@ var channelSchemas = map[string]channelSchema{
 	// rows cannot grow one and are re-derived.
 	// v4: a record that translates to nothing owns an empty row, so coverage
 	// below the watermark is a count; v3 channels have holes by construction.
-	"translations-v2/": {version: 4, class: classDerived},
+	"translations-v2/": {version: 5, class: classDerived},
 	chanUI:             {version: 1, class: classDerived},
 }
 
@@ -136,6 +136,7 @@ func checkGeneration(f schemaFile, root string, trunks *xwal.Store) error {
 	f.StoreVersion = storeVersion
 	stored := f.Channels
 	var bust []string
+	var repairs []func(string, *xwal.Store) error
 	for key, want := range channelSchemas {
 		have, seen := stored[key]
 		switch {
@@ -145,6 +146,8 @@ func checkGeneration(f schemaFile, root string, trunks *xwal.Store) error {
 				"store channel %q is schema v%d but this figaro understands v%d: "+
 					"refusing to open a store written by a newer build (upgrade figaro)",
 				strings.TrimSuffix(key, "/"), have, want.version)
+		case want.class == classDerived && have == want.version-1 && derivedRepairs[key][want.version] != nil:
+			repairs = append(repairs, derivedRepairs[key][want.version])
 		case want.class == classDerived:
 			bust = append(bust, key)
 		case want.class == classCanonical:
@@ -165,8 +168,17 @@ func checkGeneration(f schemaFile, root string, trunks *xwal.Store) error {
 			return err
 		}
 	}
+	for _, repair := range repairs {
+		if err := repair(root, trunks); err != nil {
+			return err
+		}
+	}
 	f.Channels = stored
 	return writeSchema(root, f)
+}
+
+var derivedRepairs = map[string]map[int]func(root string, trunks *xwal.Store) error{
+	"translations-v2/": {5: clearMisreadDerived},
 }
 
 // clearDerived is a directory removal and regeneration is lazy, so a bump stays cheap.
