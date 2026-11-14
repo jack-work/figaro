@@ -388,9 +388,12 @@ func (p *Provider) sendVia(ctx context.Context, t Transport, model string, in pr
 			transport = responses.Socket
 		}
 		r.SetTransport(model, transport)
-		if e, ok := p.entry(model); ok && e.Context.Default > 0 {
-			r.SetContextLimits(model, responses.ContextLimits{Default: e.Context.Default, Long: e.Context.Long})
+		limits := responses.ContextLimits{}
+		if e, ok := p.entry(model); ok {
+			limits.Default = e.Window("")
+			limits.Long = e.Window(apimodels.LongContextTier)
 		}
+		r.SetContextLimits(model, limits)
 		return provider.NameStreamCut(r.Send(ctx, in, bus), p.Name())
 	case Messages:
 		m, err := p.messagesBackend()
