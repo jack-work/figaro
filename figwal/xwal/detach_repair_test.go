@@ -324,6 +324,55 @@ func TestOpenRefusesASegmentBelowTheBaseThatIsNotTheParentsPrefix(t *testing.T) 
 	}
 }
 
+// absorbPrefix publishes without replacing: a segment already at its name
+// stands if it is this very prefix and refuses otherwise.
+func TestAbsorbNeverReplacesASegment(t *testing.T) {
+	f := newDetachFixture(t, true)
+	f.crashAfter(t, 0)
+	n := fsName(f.node)
+	absorbed := f.post[filepath.Join("state", n, segFileName(1, jsonl))]
+	for _, tc := range []struct {
+		name  string
+		body  []byte
+		valid bool
+	}{
+		{"the same prefix", absorbed, true},
+		{"other records", append(append([]byte(nil), absorbed...), absorbed[bytes.IndexByte(absorbed, '\n')+1:]...), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := reopen(t, nil, f.dir)
+			defer s.Close()
+			x, err := s.Head(f.child)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer x.Close()
+			ch := x.channel("state")
+			l, err := ch.Log()
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(f.dir, "state", n)
+			seg := filepath.Join(dir, segFileName(1, jsonl))
+			putFile(t, f.dir, filepath.Join("state", n, segFileName(1, jsonl)), tc.body, true)
+			defer os.Remove(seg)
+			err = absorbPrefix(dir, l, l.ForkBase(), ch.absorbInitial(), x.codec)
+			if tc.valid && err != nil {
+				t.Fatalf("absorb over the identical prefix: %v", err)
+			}
+			if !tc.valid && !errors.Is(err, ErrAbsorbConflict) {
+				t.Fatalf("absorb over other records: %v, want ErrAbsorbConflict", err)
+			}
+			if b, _ := os.ReadFile(seg); !bytes.Equal(b, tc.body) {
+				t.Errorf("absorb rewrote %s", seg)
+			}
+			if pathExists(absorbScratch(dir)) {
+				t.Errorf("absorb left its scratch segment behind")
+			}
+		})
+	}
+}
+
 // Why TestCrashKill's n0 says .node from= and .fork base=2 at once: from=
 // names the store root, whose channel directories hold record 1 (main's
 // genesis, state's initial watermark). Every root-level trunk forks it at

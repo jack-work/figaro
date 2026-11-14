@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -13,8 +14,9 @@ import (
 	"github.com/jack-work/figaro/figwal/segment"
 )
 
-// ErrAbsorbConflict: a channel holds a segment below its fork base that is
-// not the prefix absorbing from its parent builds. Nothing is replaced.
+// ErrAbsorbConflict: a channel holds a segment where its absorbed prefix
+// belongs, below its fork base, and the bytes are not that prefix. Nothing
+// is replaced.
 var ErrAbsorbConflict = errors.New("xwal: a segment below the fork base is not the parent's prefix")
 
 // Detach makes a node self-sufficient: it absorbs the history prefix it
@@ -33,7 +35,14 @@ func (t *Trunks) Detach(node string) error {
 	if err != nil {
 		return err
 	}
+	type pending struct {
+		channel, dir string
+		log          *log.Log
+		base         uint64
+		initial      []byte
+	}
 	var dirs []string
+	var absorb []pending
 	for _, c := range x.Channels() {
 		ch := x.channel(c.Name)
 		dir := filepath.Join(t.root, c.Name, fsName(node))
@@ -47,19 +56,18 @@ func (t *Trunks) Detach(node string) error {
 		chLog, lerr := ch.Log()
 		if lerr != nil {
 			x.Close()
-			return lerr
+			return fmt.Errorf("xwal: detach %q channel %q: %w", node, c.Name, lerr)
 		}
 		base := chLog.ForkBase()
 		if base <= 1 {
 			continue // already its own root in this channel
 		}
-		var initial []byte
-		if ch.kind == ChannelReducible {
-			initial = ch.initial
-		}
-		if err := absorbPrefix(dir, chLog, base, initial, x.codec); err != nil {
+		absorb = append(absorb, pending{c.Name, dir, chLog, base, ch.absorbInitial()})
+	}
+	for _, p := range absorb {
+		if err := absorbPrefix(p.dir, p.log, p.base, p.initial, x.codec); err != nil {
 			x.Close()
-			return fmt.Errorf("xwal: detach %q channel %q: %w", node, c.Name, err)
+			return fmt.Errorf("xwal: detach %q channel %q: %w", node, p.channel, err)
 		}
 	}
 	x.Close()
@@ -91,6 +99,9 @@ func absorbScratch(dir string) string {
 	return filepath.Join(dir, fmt.Sprintf(".absorb-%d", os.Getpid()))
 }
 
+// absorbPrefix never replaces a file: a segment already at the absorbed
+// name is either this very prefix (a Detach re-run after a crash) or the
+// node's own records, and only the first may stand.
 func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec segment.SegmentCodec) error {
 	if base <= 1 {
 		return nil
@@ -106,7 +117,16 @@ func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec s
 			return err
 		}
 	}
-	if err := os.Rename(tmpName, filepath.Join(dir, segFileName(from, codec))); err != nil {
+	name := segFileName(from, codec)
+	if err := os.Link(tmpName, filepath.Join(dir, name)); errors.Is(err, fs.ErrExist) {
+		same, cerr := sameFileBytes(tmpName, filepath.Join(dir, name))
+		if cerr != nil {
+			return cerr
+		}
+		if !same {
+			return fmt.Errorf("%w: %s base %d segment %s", ErrAbsorbConflict, dir, base, name)
+		}
+	} else if err != nil {
 		return err
 	}
 	return disk.SyncDir(dir)
@@ -201,6 +221,18 @@ func finishInterruptedAbsorb(dir string, l *log.Log, initial []byte, codec segme
 	}
 	l.AdoptAbsorbedPrefix()
 	return nil
+}
+
+func sameFileBytes(a, b string) (bool, error) {
+	x, err := os.ReadFile(a)
+	if err != nil {
+		return false, err
+	}
+	y, err := os.ReadFile(b)
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(x, y), nil
 }
 
 func fileHasPrefix(path, prefixPath string) (bool, error) {
