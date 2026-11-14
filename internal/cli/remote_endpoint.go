@@ -31,10 +31,10 @@ type endpointRecord struct {
 }
 
 type endpointCacheFile struct {
-	Endpoints map[string]endpointRecord `json:"doors"`
+	Endpoints map[string]endpointRecord `json:"endpoints"`
 }
 
-func troupeEndpointsPath() string { return filepath.Join(boot.CacheDir(), "troupe-doors.json") }
+func troupeEndpointsPath() string { return filepath.Join(boot.CacheDir(), "troupe-endpoints.json") }
 
 func readEndpointCache() map[string]endpointRecord {
 	out := map[string]endpointRecord{}
@@ -63,7 +63,7 @@ func writeEndpointCache(endpoints map[string]endpointRecord) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".troupe-doors.*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".troupe-endpoints.*")
 	if err != nil {
 		return err
 	}
