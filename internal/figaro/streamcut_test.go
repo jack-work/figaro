@@ -22,11 +22,12 @@ import (
 var errReset = errors.New("stream error: stream ID 697; CANCEL; received from peer")
 
 type cutProvider struct {
-	mu      sync.Mutex
-	cuts    int
-	calls   int
-	readyAt int
-	seen    [][]message.Message
+	mu       sync.Mutex
+	cuts     int
+	calls    int
+	readyAt  int
+	noReplay bool
+	seen     [][]message.Message
 }
 
 func (*cutProvider) Name() string                                         { return "cut-test" }
@@ -61,7 +62,11 @@ func (p *cutProvider) Send(ctx context.Context, in provider.SendInput, bus provi
 			Type: message.ContentToolInvoke, ToolCallID: "write-1", ToolName: "write", Arguments: map[string]any{},
 		})
 	}
-	return &provider.StreamCut{Provider: "copilot", Awaited: "message_stop", Events: 12, Err: errReset}
+	err := &provider.StreamCut{Provider: "copilot", Awaited: "message_stop", Events: 12, Err: errReset}
+	if p.noReplay {
+		return provider.WithoutReplay(err)
+	}
+	return err
 }
 
 func runCutTurn(t *testing.T, prov *cutProvider, tools *tool.Registry) (*figaro.Agent, string) {
@@ -140,4 +145,17 @@ func TestAStreamCutAfterAToolStartedIsNotResent(t *testing.T) {
 
 	assert.Equal(t, 1, prov.calls, "a resend could run the tool twice")
 	assert.Contains(t, reason, "copilot: the upstream cut the stream")
+}
+
+func TestAnAutoStreamCutDoesNotStartAnotherGeneration(t *testing.T) {
+	defer figaro.SetStreamCutBackoffForTest(time.Millisecond, time.Millisecond)()
+	prov := &cutProvider{cuts: 3, noReplay: true}
+	a, reason := runCutTurn(t, prov, nil)
+	require.Equal(t, 1, prov.calls)
+	require.Contains(t, reason, "upstream cut the stream")
+	for _, msg := range a.Context() {
+		for _, content := range msg.Content {
+			require.False(t, strings.HasPrefix(content.Text, "continue:"), "auto failure must not synthesize another generation")
+		}
+	}
 }

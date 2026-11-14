@@ -218,7 +218,7 @@ func (p *Provider) responsesBackend() *responses.Provider {
 	return r
 }
 
-func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) (sendErr error) {
 	if p.spec.SendFigaroID {
 		ctx = provider.WithFigaroID(ctx, in.AriaID)
 	}
@@ -247,6 +247,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return fmt.Errorf("%s: auto routes cannot be used with a lease", p.Name())
 	}
 	if auto != nil {
+		defer func() { sendErr = provider.WithoutReplay(sendErr) }()
 		if t != Responses && t != Messages {
 			return fmt.Errorf("%s: auto routes require native HTTP Responses or Messages", p.Name())
 		}

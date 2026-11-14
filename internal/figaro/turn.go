@@ -597,7 +597,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		sendErr = nil
 	}
 	if sendErr != nil && !appended && !appendedInline {
-		if cut, ok := provider.AsStreamCut(sendErr); ok {
+		if cut, ok := provider.AsStreamCut(sendErr); ok && !provider.ReplayForbidden(sendErr) {
 			if resumed, done := a.resumeAfterStreamCut(turnCtx, cut, spec, specDone, toolBuf); resumed {
 				return done
 			}
