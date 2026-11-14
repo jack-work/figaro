@@ -373,6 +373,88 @@ func TestAbsorbNeverReplacesASegment(t *testing.T) {
 	}
 }
 
+// Export absorbs the top node's prefix into scratch and adds the node's own
+// files; in the interrupted layout both held a 0001. Open now finishes or
+// refuses that layout first, and the package never names a file twice.
+func TestExportOfAnInterruptedDetach(t *testing.T) {
+	t.Run("finished on open", func(t *testing.T) {
+		dir, tr := interruptedRootTrunk(t)
+		s := reopen(t, nil, dir)
+		defer s.Close()
+		e, err := s.Export(tr, "0123abcd")
+		if err != nil {
+			t.Fatalf("export: %v", err)
+		}
+		defer e.Close()
+		seen := map[string]int{}
+		for _, f := range e.Files {
+			seen[f.Node+"/"+f.Channel+"/"+f.Name]++
+		}
+		for k, c := range seen {
+			if c > 1 {
+				t.Errorf("the package holds %s %d times", k, c)
+			}
+		}
+	})
+	t.Run("refused", func(t *testing.T) {
+		dir, tr := interruptedRootTrunk(t)
+		s := reopen(t, nil, dir)
+		node, _ := s.HeadNode(tr)
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+		rewriteSegment(t, filepath.Join(dir, "state", fsName(node)), 1, 1, []byte(`{"m":1,"p":{"foreign":true},"t":1}`))
+		s = reopen(t, nil, dir)
+		defer s.Close()
+		if _, err := s.Export(tr, "0123abcd"); !errors.Is(err, ErrAbsorbConflict) {
+			t.Fatalf("export of a foreign segment below the base: %v, want ErrAbsorbConflict", err)
+		}
+	})
+	t.Run("a name added twice", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, segFileName(1, jsonl)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		e := &Export{}
+		keep := func(string) bool { return true }
+		if err := e.addDir("n0", "state", dir, keep); err != nil {
+			t.Fatal(err)
+		}
+		if err := e.addDir("n0", "state", dir, keep); !errors.Is(err, ErrAbsorbConflict) {
+			t.Fatalf("adding %s twice: %v, want ErrAbsorbConflict", segFileName(1, jsonl), err)
+		}
+	})
+}
+
+// interruptedRootTrunk is the layout TestCrashKill found: a root-level
+// trunk whose state prefix was absorbed into its own 0001 under base=2,
+// with records appended after it.
+func interruptedRootTrunk(t *testing.T) (string, string) {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "s")
+	s := reopen(t, nil, dir)
+	tr, err := s.SpawnUnderRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, _ := s.HeadNode(tr)
+	if err := s.Detach(node); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	putFile(t, dir, filepath.Join("state", fsName(node), ".fork"), []byte("base=2\n"), true)
+	b, err := os.ReadFile(filepath.Join(dir, "state", fsName(node), segFileName(1, jsonl)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(b, []byte(`"_idx":1,`)) {
+		t.Fatalf("the absorbed state segment holds no record 1: %s", b)
+	}
+	return dir, tr
+}
+
 // Why TestCrashKill's n0 says .node from= and .fork base=2 at once: from=
 // names the store root, whose channel directories hold record 1 (main's
 // genesis, state's initial watermark). Every root-level trunk forks it at
