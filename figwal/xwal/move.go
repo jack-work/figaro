@@ -110,6 +110,7 @@ type Export struct {
 	Component
 	Files   []ComponentFile
 	scratch string
+	named   map[string]bool
 }
 
 func (e *Export) Close() error {
@@ -239,6 +240,14 @@ func (e *Export) addDir(node, channel, dir string, keep func(string) bool) error
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("xwal: node %q channel %q holds a non-regular file %q", node, channel, name)
 		}
+		key := node + "\x00" + channel + "\x00" + name
+		if e.named[key] {
+			return fmt.Errorf("%w: node %q channel %q has two files named %s", ErrAbsorbConflict, node, channel, name)
+		}
+		if e.named == nil {
+			e.named = map[string]bool{}
+		}
+		e.named[key] = true
 		e.Files = append(e.Files, ComponentFile{Node: node, Channel: channel, Name: name, Size: info.Size(), path: filepath.Join(dir, name)})
 	}
 	return nil
