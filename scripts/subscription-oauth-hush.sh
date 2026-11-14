@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /var/tmp/figaro-subscription-oauth
+cd "$(dirname "$0")/.."
 module=$(go list -m -f '{{.Dir}}' github.com/jack-work/hush)
 version=$(go list -m -f '{{.Version}}' github.com/jack-work/hush)
 test "$version" = v0.14.6
