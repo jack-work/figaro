@@ -84,6 +84,7 @@ type TrunkInfo struct {
 	BranchedTurnKnown bool
 	BranchedTurnExact bool
 	Tip               uint64
+	BaseErr           error
 }
 
 // List returns every trunk, in id order.
@@ -102,7 +103,7 @@ func (t *Trunks) List() []TrunkInfo {
 		if n := t.node(key); n != nil {
 			ti.Kind = n.Kind
 		}
-		ti.Parent, ti.Stump, ti.BranchedLT = t.lineage(id)
+		ti.Parent, ti.Stump, ti.BranchedLT, ti.BaseErr = t.lineage(id)
 		if x, err := t.openHotTopology(key); err == nil {
 			ti.Tip = mainTail(x)
 			x.Close()
@@ -116,19 +117,20 @@ func (t *Trunks) List() []TrunkInfo {
 // lineage finds a trunk's founding node (shallowest node carrying the
 // trunk), returning its parent trunk id, the stump it is rooted at (if its
 // parent is a stump), and the LT it branched at.
-func (t *Trunks) lineage(trunk string) (parent, stump string, bl uint64) {
+func (t *Trunks) lineage(trunk string) (parent, stump string, bl uint64, err error) {
 	head := t.head(trunk)
 	n := t.node(head)
 	if n == nil || n.IsRoot {
-		return "", "", 0
+		return "", "", 0, nil
 	}
 	// Flat: one node per trunk, so the head is the founding node and its
 	// parent is From.
 	p := t.node(n.From)
 	if p == nil {
-		return "", "", 0
+		return "", "", 0, nil
 	}
-	return p.Trunk, stumpName(n.From, p), t.forkBaseOf(head)
+	bl, err = t.forkBaseOf(head)
+	return p.Trunk, stumpName(n.From, p), bl, err
 }
 
 // InfoLight is ListLight for one trunk plus the recorded base turn, without
@@ -147,8 +149,8 @@ func (t *Trunks) InfoLight(id string) (TrunkInfo, bool) {
 	if n := t.node(key); n != nil {
 		ti.Kind = n.Kind
 	}
-	ti.Parent, ti.Stump, ti.BranchedLT = t.lineage(id)
-	if ti.BranchedLT > 0 {
+	ti.Parent, ti.Stump, ti.BranchedLT, ti.BaseErr = t.lineage(id)
+	if ti.BaseErr == nil && ti.BranchedLT > 0 {
 		ti.BranchedTurn, ti.BranchedTurnKnown, ti.BranchedTurnExact = t.forkTurnOf(key, ti.BranchedLT)
 	}
 	return ti, true
@@ -175,7 +177,7 @@ func (t *Trunks) lightInfo(id, key string) TrunkInfo {
 	if n := t.node(key); n != nil {
 		ti.Kind = n.Kind
 	}
-	ti.Parent, ti.Stump, ti.BranchedLT = t.lineage(id)
+	ti.Parent, ti.Stump, ti.BranchedLT, ti.BaseErr = t.lineage(id)
 	return ti
 }
 

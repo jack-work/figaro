@@ -18,11 +18,11 @@ type ComposedCache struct {
 	compose Composer
 
 	// lineage names a node's ancestry, root first; nil makes every aria a root.
-	lineage func(node string) []fwtree.Ref
+	lineage func(node string) ([]fwtree.Ref, error)
 }
 
 // NewComposedCache: nil budget is unbounded; nil compose makes every miss a gap.
-func NewComposedCache(budget *fwtree.Budget, compose Composer, lineage func(node string) []fwtree.Ref) *ComposedCache {
+func NewComposedCache(budget *fwtree.Budget, compose Composer, lineage func(node string) ([]fwtree.Ref, error)) *ComposedCache {
 	cc := &ComposedCache{compose: compose, lineage: lineage}
 	cc.cache = fwtree.New[Turn](cc.fetch, budget, turnBytes, coordOf)
 	return cc
@@ -236,7 +236,10 @@ func (c *TurnCache) seed(turns []Turn) {
 // put publishes a run of this node's own turns; a turn below the fork base
 // belongs to an ancestor's node.
 func (c *TurnCache) put(from, to uint64, turns []Turn) {
-	base := c.ownBase()
+	base, err := c.ownBase()
+	if err != nil {
+		return
+	}
 	for len(turns) > 0 && coordOf(turns[0]) < base {
 		turns = turns[1:]
 		if len(turns) > 0 {
@@ -331,8 +334,9 @@ func (c *TurnCache) rangeTurns(lo, hi int) []Turn {
 		}
 		last = i
 	}
-	if first >= 0 {
-		got, _ := c.cache.Range(c.lineage(), c.keys[first].coord()-1, c.keys[last].coord())
+	refs, err := c.lineage()
+	if first >= 0 && err == nil {
+		got, _ := c.cache.Range(refs, c.keys[first].coord()-1, c.keys[last].coord())
 		j := 0
 		for i := first; i <= last; i++ {
 			if c.keys[i].phantom {
@@ -363,20 +367,23 @@ func (c *TurnCache) rangeTurns(lo, hi int) []Turn {
 
 // lineage is this node's ancestry with every fork base snapped to a turn
 // boundary: a base can fall inside a turn whose content differs between branches.
-func (c *TurnCache) lineage() []fwtree.Ref {
+func (c *TurnCache) lineage() ([]fwtree.Ref, error) {
 	if c.shared == nil || c.shared.lineage == nil {
-		return []fwtree.Ref{{Node: c.node}}
+		return []fwtree.Ref{{Node: c.node}}, nil
 	}
-	refs := c.shared.lineage(c.node)
+	refs, err := c.shared.lineage(c.node)
+	if err != nil {
+		return nil, err
+	}
 	if len(refs) == 0 {
-		return []fwtree.Ref{{Node: c.node}}
+		return []fwtree.Ref{{Node: c.node}}, nil
 	}
 	out := make([]fwtree.Ref, len(refs))
 	copy(out, refs)
 	for i := range out {
 		out[i].Base = c.snapBase(out[i].Base)
 	}
-	return out
+	return out, nil
 }
 
 // snapBase lowers a fork base to the key of the turn it falls inside, so the
@@ -396,12 +403,15 @@ func (c *TurnCache) snapBase(base uint64) uint64 {
 }
 
 // ownBase is the coordinate below which turns live in an ancestor's node.
-func (c *TurnCache) ownBase() uint64 {
-	refs := c.lineage()
-	if len(refs) < 2 {
-		return 0
+func (c *TurnCache) ownBase() (uint64, error) {
+	refs, err := c.lineage()
+	if err != nil {
+		return 0, err
 	}
-	return refs[len(refs)-1].Base
+	if len(refs) < 2 {
+		return 0, nil
+	}
+	return refs[len(refs)-1].Base, nil
 }
 
 func (c *TurnCache) materialized() []Turn {

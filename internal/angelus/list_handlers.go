@@ -293,6 +293,9 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, vers map[string
 	entry.Parent = n.Parent
 	entry.Present = n.Present
 	entry.BranchedLT = n.BranchedLT
+	if n.BaseErr != nil {
+		entry.BaseErr = n.BaseErr.Error()
+	}
 	entry.Kind = n.Kind
 	if n.Kind == string(outfitKind) {
 		entry.OutfitName = n.Outfit

@@ -53,7 +53,10 @@ func (a *Angelus) chainOf(id string) ([]rpc.LineageLink, error) {
 	if !ok {
 		return nil, fmt.Errorf("%s: this store has no ancestry", rpc.MethodLineage)
 	}
-	links := cb.LineageLinks(id)
+	links, err := cb.LineageLinks(id)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]rpc.LineageLink, 0, len(links))
 	for i, l := range links {
 		// Anything above the first conversation is dropped, so two chains stay

@@ -115,7 +115,10 @@ func TestLineage_AnUnsealedBaseIsRefinedOnceTheParentWritesThere(t *testing.T) {
 
 func lastLink(t *testing.T, be *store.XwalBackend, id string) store.Link {
 	t.Helper()
-	links := be.LineageLinks(id)
+	links, err := be.LineageLinks(id)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(links) == 0 {
 		t.Fatalf("no lineage for %s", id)
 	}
