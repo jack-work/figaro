@@ -130,6 +130,18 @@ func (x *XWAL) newChannel(mc manifestChannel) (*channel, error) {
 			return openLog(store, name, cdir, opts)
 		}
 	}
+	open := ch.opener
+	ch.opener = func() (*log.Log, error) {
+		l, err := open()
+		if err != nil {
+			return nil, err
+		}
+		if err := finishInterruptedAbsorb(ch.dir, l, ch.absorbInitial(), x.codec); err != nil {
+			l.Close()
+			return nil, err
+		}
+		return l, nil
+	}
 	ch.fk = map[uint64]uint64{}
 	return ch, nil
 }

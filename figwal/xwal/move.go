@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/figwal/disk"
+	"github.com/jack-work/figaro/figwal/log"
 )
 
 type ComponentChannel = manifestChannel
@@ -109,6 +110,7 @@ type Export struct {
 	Component
 	Files   []ComponentFile
 	scratch string
+	named   map[string]bool
 }
 
 func (e *Export) Close() error {
@@ -175,6 +177,12 @@ func (t *Trunks) exportTop(e *Export) error {
 		return err
 	}
 	defer x.Close()
+	type pending struct {
+		channel string
+		log     *log.Log
+		initial []byte
+	}
+	var absorb []pending
 	for _, c := range x.Channels() {
 		ch := x.channel(c.Name)
 		if _, err := os.Stat(filepath.Join(t.root, c.Name, fsName(top))); os.IsNotExist(err) {
@@ -184,22 +192,20 @@ func (t *Trunks) exportTop(e *Export) error {
 		}
 		l, err := ch.Log()
 		if err != nil {
-			return err
+			return fmt.Errorf("xwal: export %q channel %q: %w", top, c.Name, err)
 		}
-		base := l.ForkBase()
-		if base <= 1 {
+		if l.ForkBase() <= 1 {
 			continue
 		}
-		dir := filepath.Join(e.scratch, c.Name)
+		absorb = append(absorb, pending{c.Name, l, ch.absorbInitial()})
+	}
+	for _, p := range absorb {
+		dir := filepath.Join(e.scratch, p.channel)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
-		var initial []byte
-		if ch.kind == ChannelReducible {
-			initial = ch.initial
-		}
-		if err := absorbPrefix(dir, l, base, initial, x.codec); err != nil {
-			return fmt.Errorf("xwal: export %q channel %q: %w", top, c.Name, err)
+		if err := absorbPrefix(dir, p.log, p.log.ForkBase(), p.initial, x.codec); err != nil {
+			return fmt.Errorf("xwal: export %q channel %q: %w", top, p.channel, err)
 		}
 		if err := writeForkMarker(dir, 1); err != nil {
 			return err
@@ -234,6 +240,14 @@ func (e *Export) addDir(node, channel, dir string, keep func(string) bool) error
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("xwal: node %q channel %q holds a non-regular file %q", node, channel, name)
 		}
+		key := node + "\x00" + channel + "\x00" + name
+		if e.named[key] {
+			return fmt.Errorf("%w: node %q channel %q has two files named %s", ErrAbsorbConflict, node, channel, name)
+		}
+		if e.named == nil {
+			e.named = map[string]bool{}
+		}
+		e.named[key] = true
 		e.Files = append(e.Files, ComponentFile{Node: node, Channel: channel, Name: name, Size: info.Size(), path: filepath.Join(dir, name)})
 	}
 	return nil
