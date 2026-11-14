@@ -254,7 +254,11 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		if auto.Capacity() == 0 && retirement.Percent > 0 && retirement.FallbackTokens <= 0 {
 			return fmt.Errorf("%s: auto context capacity is unknown; percentage succession requires system.retirement.fallback_tokens or an absolute context_threshold", p.Name())
 		}
-		ctx = provider.WithSingleAttempt(ctx)
+		credential, err := p.resolver.Resolve()
+		if err != nil {
+			return err
+		}
+		ctx = provider.WithAttemptCredential(provider.WithSingleAttempt(ctx), credential)
 	}
 	watched := &watchBus{Bus: bus}
 	err = p.sendVia(ctx, t, model, in, watched)
@@ -439,6 +443,9 @@ func (p *Provider) messagesTransport(client *http.Client) anthropic.TransportFn 
 			safeClient := *client
 			safeClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 			return safeClient.Do(req)
+		}
+		if token, ok := provider.AttemptCredential(ctx); ok {
+			return send(token)
 		}
 		if provider.SingleAttempt(ctx) {
 			token, err := p.resolver.Resolve()

@@ -19,6 +19,18 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
+type rotatingNativeCredential struct{ calls int }
+
+func (r *rotatingNativeCredential) Resolve() (string, error) {
+	r.calls++
+	if r.calls == 1 {
+		return "auth-token", nil
+	}
+	return "different-account-token", nil
+}
+
+func (*rotatingNativeCredential) Invalidate(string) error { return nil }
+
 func TestNativeFallback(t *testing.T) {
 	for _, from := range []Transport{Responses, Messages} {
 		for _, scenario := range []string{"success", "unknown-context", "stale", "wrong-model", "wrong-api", "second", "ordinary", "unsafe", "malformed", "cancelled", "stream-text", "stream-tool", "lease", "reasoning", "context", "tools", "tools-supported", "image", "images-supported", "redirect", "unauthorized"} {
@@ -124,7 +136,8 @@ func TestNativeFallback(t *testing.T) {
 				if scenario == "lease" {
 					lease = "box"
 				}
-				p, err := New(Spec{Name: "native-" + scenario, BaseURL: func() string { return server.URL }, Default: from, SendFigaroID: true}, provider.Knobs{Model: alias, MaxTokens: 64, Lease: lease}, staticToken("auth-token"), func(a, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(a, ns) })
+				credentials := &rotatingNativeCredential{}
+				p, err := New(Spec{Name: "native-" + scenario, BaseURL: func() string { return server.URL }, Default: from, SendFigaroID: true}, provider.Knobs{Model: alias, MaxTokens: 64, Lease: lease}, credentials, func(a, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(a, ns) })
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -169,6 +182,9 @@ func TestNativeFallback(t *testing.T) {
 				}
 				if (err == nil) != wantOK {
 					t.Fatalf("err=%v want success=%v", err, wantOK)
+				}
+				if wantHits > 0 && credentials.calls != 1 {
+					t.Fatalf("credential resolved %d times", credentials.calls)
 				}
 				if !deadline {
 					t.Fatal("fixture lacks parent deadline")

@@ -72,6 +72,17 @@ func QualifiedRouteModel(model string) bool {
 	return true
 }
 
+type attemptCredentialKey struct{}
+
+func WithAttemptCredential(ctx context.Context, credential string) context.Context {
+	return context.WithValue(ctx, attemptCredentialKey{}, credential)
+}
+
+func AttemptCredential(ctx context.Context) (string, bool) {
+	credential, ok := ctx.Value(attemptCredentialKey{}).(string)
+	return credential, ok
+}
+
 type singleAttemptKey struct{}
 
 func WithSingleAttempt(ctx context.Context) context.Context {

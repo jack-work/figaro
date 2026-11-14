@@ -188,7 +188,10 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err := p.validateContext(in, model, options); err != nil {
 		return err
 	}
-	token, err := p.tokenSrc.Resolve()
+	token, pinned := provider.AttemptCredential(ctx)
+	if !pinned {
+		token, err = p.tokenSrc.Resolve()
+	}
 	if err != nil {
 		if lr, ok := auth.SignInNeeded(err); ok {
 			return lr
