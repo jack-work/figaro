@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
@@ -43,11 +45,15 @@ func TestDemoteDoesNotPickAChildWhoseForkBaseIsUnreadable(t *testing.T) {
 	}
 	var path string
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err == nil && d.IsDir() && d.Name() == bad && filepath.Base(filepath.Dir(p)) == "ir" {
+		if err != nil || !d.IsDir() || filepath.Base(filepath.Dir(p)) != "ir" {
+			return nil
+		}
+		marker, _ := os.ReadFile(filepath.Join(p, ".node"))
+		if slices.Contains(strings.Split(string(marker), "\n"), "trunk="+bad) {
 			path = filepath.Join(p, ".fork")
 			return filepath.SkipAll
 		}
-		return nil
+		return filepath.SkipDir
 	})
 	if path == "" {
 		t.Fatal("no ir directory for the child")

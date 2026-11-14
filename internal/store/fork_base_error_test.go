@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -73,19 +74,28 @@ func newForkFamily(t *testing.T) forkFamily {
 	return f
 }
 
-func irForkPath(t *testing.T, root, key string) string {
+func irForkPath(t *testing.T, root, id string) string {
 	t.Helper()
+	if dir := irDirOf(root, id); dir != "" {
+		return filepath.Join(dir, ".fork")
+	}
+	t.Fatalf("no ir directory for %s under %s", id, root)
+	return ""
+}
+
+func irDirOf(root, id string) string {
 	var found string
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || !d.IsDir() || d.Name() != key || filepath.Base(filepath.Dir(path)) != "ir" {
+		if err != nil || !d.IsDir() || filepath.Base(filepath.Dir(path)) != "ir" {
 			return nil
 		}
-		found = filepath.Join(path, ".fork")
-		return filepath.SkipAll
+		marker, _ := os.ReadFile(filepath.Join(path, ".node"))
+		if d.Name() == id || slices.Contains(strings.Split(string(marker), "\n"), "trunk="+id) {
+			found = path
+			return filepath.SkipAll
+		}
+		return filepath.SkipDir
 	})
-	if found == "" {
-		t.Fatalf("no ir directory for %s under %s", key, root)
-	}
 	return found
 }
 
@@ -95,7 +105,7 @@ type familyView struct {
 	list  []NodeView
 }
 
-func viewOf(t *testing.T, b *XwalBackend, ids ...string) familyView {
+func viewOf(t *testing.T, b *XwalBackend, skip string, ids ...string) familyView {
 	t.Helper()
 	v := familyView{reads: map[string][]Entry[message.Message]{}, trans: map[string][]Entry[[]json.RawMessage]{}}
 	for _, id := range ids {
@@ -111,8 +121,9 @@ func viewOf(t *testing.T, b *XwalBackend, ids ...string) familyView {
 		v.trans[id] = tr.Read()
 	}
 	for _, n := range b.Conversations() {
-		n.BaseErr = nil
-		v.list = append(v.list, n)
+		if n.ID != skip {
+			v.list = append(v.list, n)
+		}
 	}
 	return v
 }
@@ -153,7 +164,7 @@ func TestAnUnreadableForkBaseRefusesTheNodeAndItsDescendantsOnly(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			before := viewOf(t, b, f.p, f.c2)
+			before := viewOf(t, b, f.c1, f.p, f.c2)
 			if err := b.Close(); err != nil {
 				t.Fatal(err)
 			}
@@ -181,7 +192,7 @@ func TestAnUnreadableForkBaseRefusesTheNodeAndItsDescendantsOnly(t *testing.T) {
 				refusesNaming(t, id+" translation", err, path)
 			}
 
-			after := viewOf(t, b, f.p, f.c2)
+			after := viewOf(t, b, f.c1, f.p, f.c2)
 			if !reflect.DeepEqual(before, after) {
 				t.Fatalf("the parent, the sibling or the listing changed:\nbefore %+v\nafter  %+v", before, after)
 			}

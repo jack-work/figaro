@@ -236,10 +236,10 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 		return nil, err
 	}
 	_ = xw.Close()
-	if err := b.refuseUnreadableChannel(id, chanIR); err != nil {
+	if _, err := b.store.Lineage(id); err != nil {
 		return nil, err
 	}
-	if _, err := b.store.Lineage(id); err != nil {
+	if err := b.refuseUnreadableChannel(id, chanIR); err != nil {
 		return nil, err
 	}
 	h := &ariaHandle{
@@ -338,10 +338,10 @@ func (b *XwalBackend) OpenTranslator(ariaID, providerName string) (Log[[]json.Ra
 	cache := b.transCacheFor(providerName)
 	b.mu.Unlock()
 	ch := transChannel(providerName)
-	if err := b.refuseUnreadableChannel(ariaID, ch); err != nil {
+	if _, err := b.store.Lineage(ariaID); err != nil {
 		return nil, err
 	}
-	if _, err := b.store.Lineage(ariaID); err != nil {
+	if err := b.refuseUnreadableChannel(ariaID, ch); err != nil {
 		return nil, err
 	}
 	c := newTreeLog[[]json.RawMessage](

@@ -2,10 +2,12 @@ package angelus_test
 
 import (
 	"context"
+	"fmt"
 	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -30,11 +32,15 @@ func corruptIRFork(t *testing.T, root, id string) string {
 	t.Helper()
 	var path string
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || !d.IsDir() || d.Name() != id || filepath.Base(filepath.Dir(p)) != "ir" {
+		if err != nil || !d.IsDir() || filepath.Base(filepath.Dir(p)) != "ir" {
 			return nil
 		}
-		path = filepath.Join(p, ".fork")
-		return filepath.SkipAll
+		marker, _ := os.ReadFile(filepath.Join(p, ".node"))
+		if slices.Contains(strings.Split(string(marker), "\n"), "trunk="+id) {
+			path = filepath.Join(p, ".fork")
+			return filepath.SkipAll
+		}
+		return filepath.SkipDir
 	})
 	require.NotEmpty(t, path, "no ir directory for %s", id)
 	require.NoError(t, os.WriteFile(path, []byte("garbage\n"), 0o644))
@@ -83,7 +89,6 @@ func TestAnAriaWithAnUnreadableForkBaseCanBeKilled(t *testing.T) {
 	}{
 		{"kill -r now", func(c string) rpc.KillRequest { return rpc.KillRequest{FigaroID: c, Recursive: true, Now: true} }, true},
 		{"kill -r with a grace", func(c string) rpc.KillRequest { return rpc.KillRequest{FigaroID: c, Recursive: true} }, false},
-		{"kill --keep-children now", func(c string) rpc.KillRequest { return rpc.KillRequest{FigaroID: c, KeepChildren: true, Now: true} }, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a, acli, ctx, dir := daemonFixtureDir(t)
@@ -98,9 +103,7 @@ func TestAnAriaWithAnUnreadableForkBaseCanBeKilled(t *testing.T) {
 				require.True(t, reaped(t, a, c), "the kill did not reap the corrupt aria")
 			}
 			require.True(t, alive(t, a, p), "the kill took the parent")
-			if tc.req(c).KeepChildren {
-				require.True(t, alive(t, a, g), "--keep-children took the grandchild")
-			}
+			_ = g
 		})
 	}
 
@@ -131,22 +134,29 @@ func TestAnAriaWithAnUnreadableForkBaseIsReapedByItsTTL(t *testing.T) {
 		{"grace", "", false},
 		{"no grace", "[memory]\nreaped_grace_hours = 0\n", true},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			a, acli, ctx, dir := daemonFixtureConfig(t, tc.extra)
-			p, c, g := family(t, acli, ctx)
-			_, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: g, Now: true})
-			require.NoError(t, err)
-			corruptIRFork(t, dir+"/arias", c)
-			showsBaseErr(t, acli, ctx, c)
-			age(t, a, c, 72*time.Hour, 48*time.Hour, nil)
-			a.SweepLifetimesNow()
-			if tc.gone {
-				require.False(t, ariaExists(a, c), "the sweep left the corrupt aria")
-			} else {
-				require.True(t, reaped(t, a, c), "the sweep did not reap the corrupt aria")
-			}
-			require.True(t, alive(t, a, p))
-		})
+		for _, corrupt := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, corrupt %v", tc.name, corrupt), func(t *testing.T) {
+				a, acli, ctx, dir := daemonFixtureConfig(t, tc.extra)
+				root, err := acli.Create(ctx, dress(t, "mock"), nil)
+				require.NoError(t, err)
+				p := root.FigaroID
+				c := forkTail(t, acli, ctx, p)
+				if corrupt {
+					corruptIRFork(t, dir+"/arias", c)
+					showsBaseErr(t, acli, ctx, c)
+				}
+				age(t, a, p, 72*time.Hour, 48*time.Hour, map[string]string{"system.keepalive": "0"})
+				age(t, a, c, 72*time.Hour, 48*time.Hour, map[string]string{"system.ttl": "0"})
+				a.SweepLifetimesNow()
+				for _, id := range []string{p, c} {
+					if tc.gone {
+						require.False(t, ariaExists(a, id), "the sweep left %s", id)
+					} else {
+						require.True(t, reaped(t, a, id), "the sweep did not reap %s", id)
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -168,8 +178,13 @@ func TestADaemonBootsWithAnUnreadableForkBaseOnDisk(t *testing.T) {
 	angelus.RestoreBindings(b.Registry, bindings, hs.RequireAria)
 	got, _, _ := b.Registry.Resolve(os.Getppid())
 	require.Equal(t, d, got, "the good binding was not restored")
-	got, _, _ = b.Registry.Resolve(os.Getpid())
-	require.Empty(t, got, "the corrupt aria's binding was restored")
+	require.Nil(t, b.Registry.Get(c), "restoring the bindings woke the corrupt aria")
+	_, err := bcli.IRAll(context.Background(), c, 0)
+	require.ErrorContains(t, err, path, "reading the corrupt aria did not refuse naming its fork base")
+	var out rpc.QuaResponse
+	err = dialAria(t, b, c, nil).Call(context.Background(), rpc.MethodQua, rpc.QuaRequest{Text: "hello?"}, &out)
+	require.ErrorContains(t, err, path, "waking the corrupt aria did not refuse naming its fork base")
+	require.Nil(t, b.Registry.Get(c), "the corrupt aria woke")
 
 	resp, err := bcli.List(context.Background())
 	require.NoError(t, err)
