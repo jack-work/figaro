@@ -629,7 +629,7 @@ func TestConcurrentRepairsAndDetachOfOneNodeLoseNothing(t *testing.T) {
 			l := logs[i]
 			go func() {
 				<-start
-				err := finishInterruptedAbsorb(filepath.Join(dir, "state", n), l, initial, codec)
+				err := finishInterruptedAbsorb(filepath.Join(dir, "state", n), l, initial, codec, nil)
 				var got []string
 				if err == nil {
 					err = l.Range(1, func(idx uint64, payload []byte) error {

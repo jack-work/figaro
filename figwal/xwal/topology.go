@@ -261,6 +261,15 @@ func waitRootBorrowers(root string, owner *Trunks) error {
 	return nil
 }
 
+func topologyMovedFor(root string) func() {
+	state := rootTopologyStateFor(root)
+	return func() {
+		state.mu.Lock()
+		state.epoch++
+		state.mu.Unlock()
+	}
+}
+
 func rootTopologyEpoch(root string) uint64 {
 	state := rootTopologyStateFor(root)
 	state.mu.Lock()

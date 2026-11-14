@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	fwtree "github.com/jack-work/figaro/figwal/tree"
+	"github.com/jack-work/figaro/figwal/xwal"
 )
 
 // Link is one node of an ancestry walk. BaseTurn is BaseLT as a turn of the
@@ -19,38 +20,39 @@ type Link struct {
 	BaseTurnExact bool
 }
 
-// LineageLinks walks a trunk's ancestry root first; the root's base is zero
-// whatever the tree recorded. One lookup per link: the walk is proportional to
-// ancestry depth, not store size.
-func (s *XwalStore) LineageLinks(id string) ([]Link, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var links []Link
-	seen := map[string]struct{}{}
+func (s *XwalStore) lineageInfos(id string) ([]xwal.TrunkInfo, error) {
+	snap := s.topologySnapshot()
+	var chain []xwal.TrunkInfo
 	for cur := id; cur != ""; {
-		// A cycle degrades to a partial lineage rather than a loop.
-		if _, dup := seen[cur]; dup {
-			break
-		}
-		seen[cur] = struct{}{}
-		t, ok := s.trunks.InfoLight(cur)
+		i, ok := snap.info[cur]
 		if !ok {
-			break
+			return nil, fmt.Errorf("lineage of %s: %w %q", id, xwal.ErrUnknownTrunk, cur)
 		}
+		if len(chain) >= len(snap.infos) {
+			return nil, fmt.Errorf("lineage of %s: a cycle through %s", id, cur)
+		}
+		t := snap.infos[i]
 		if t.BaseErr != nil {
 			return nil, fmt.Errorf("lineage of %s: %w", id, t.BaseErr)
 		}
-		links = append(links, Link{
-			Node: t.ID, Kind: t.Kind, BaseLT: t.BranchedLT,
-			BaseTurn: t.BranchedTurn, BaseTurnKnown: t.BranchedTurnKnown, BaseTurnExact: t.BranchedTurnExact,
-		})
+		chain = append(chain, t)
 		cur = t.Parent
 	}
-	if len(links) == 0 {
-		return nil, nil
+	slices.Reverse(chain)
+	return chain, nil
+}
+
+func (s *XwalStore) LineageLinks(id string) ([]Link, error) {
+	chain, err := s.lineageInfos(id)
+	if err != nil || len(chain) == 0 {
+		return nil, err
 	}
-	for l, r := 0, len(links)-1; l < r; l, r = l+1, r-1 {
-		links[l], links[r] = links[r], links[l]
+	links := make([]Link, len(chain))
+	for i, t := range chain {
+		links[i] = Link{Node: t.ID, Kind: t.Kind, BaseLT: t.BranchedLT}
+		if i > 0 && t.BranchedLT > 0 {
+			links[i].BaseTurn, links[i].BaseTurnKnown, links[i].BaseTurnExact = s.trunks.RecordedBaseTurn(t.ID, t.BranchedLT)
+		}
 	}
 	links[0].BaseLT = 0
 	links[0].BaseTurn, links[0].BaseTurnKnown, links[0].BaseTurnExact = 0, true, true
@@ -58,26 +60,31 @@ func (s *XwalStore) LineageLinks(id string) ([]Link, error) {
 }
 
 func (s *XwalStore) Lineage(id string) ([]fwtree.Ref, error) {
-	links, err := s.LineageLinks(id)
-	if err != nil {
+	chain, err := s.lineageInfos(id)
+	if err != nil || len(chain) == 0 {
 		return nil, err
 	}
-	return servingLineage(links), nil
+	refs := make([]fwtree.Ref, len(chain))
+	for i, t := range chain {
+		refs[i] = fwtree.Ref{Node: t.ID, Base: t.BranchedLT}
+	}
+	refs[0].Base = 0
+	return servingLineage(refs), nil
 }
 
-func servingLineage(links []Link) []fwtree.Ref {
-	if len(links) == 0 {
+func servingLineage(chain []fwtree.Ref) []fwtree.Ref {
+	if len(chain) == 0 {
 		return nil
 	}
-	leaf := links[len(links)-1]
-	refs := []fwtree.Ref{{Node: leaf.Node, Base: leaf.BaseLT}}
-	bound := leaf.BaseLT
-	for i := len(links) - 2; i >= 0; i-- {
-		if i > 0 && links[i].BaseLT >= bound {
+	leaf := chain[len(chain)-1]
+	refs := []fwtree.Ref{leaf}
+	bound := leaf.Base
+	for i := len(chain) - 2; i >= 0; i-- {
+		if i > 0 && chain[i].Base >= bound {
 			continue
 		}
-		refs = append(refs, fwtree.Ref{Node: links[i].Node, Base: links[i].BaseLT})
-		bound = links[i].BaseLT
+		refs = append(refs, chain[i])
+		bound = chain[i].Base
 	}
 	slices.Reverse(refs)
 	return refs
