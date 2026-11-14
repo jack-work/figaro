@@ -29,6 +29,15 @@ func deadChannel(name string) bool {
 }
 
 func runDoctorGC(dryRun bool) error {
+	if dryRun {
+		noteStoreLockForDryRun("gc")
+	} else {
+		release, err := holdStoreForDoctor("gc")
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	if cli, err := sdk.DialAngelus(doorEndpoint()); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
@@ -371,6 +380,15 @@ func runDoctorSkills(loaded *config.Loaded, asJSON bool) error {
 }
 
 func runDoctorLibrettos(dryRun bool) error {
+	if dryRun {
+		noteStoreLockForDryRun("librettos")
+	} else {
+		release, err := holdStoreForDoctor("librettos")
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	if cli, err := sdk.DialAngelus(doorEndpoint()); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
@@ -412,6 +430,15 @@ func runDoctorLibrettos(dryRun bool) error {
 // runDoctorToolCalls closes tool invokes no result answered: history from
 // before the door; providers refuse an aria carrying one.
 func runDoctorToolCalls(dryRun bool) error {
+	if dryRun {
+		noteStoreLockForDryRun("toolcalls")
+	} else {
+		release, err := holdStoreForDoctor("toolcalls")
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	if cli, err := sdk.DialAngelus(doorEndpoint()); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")

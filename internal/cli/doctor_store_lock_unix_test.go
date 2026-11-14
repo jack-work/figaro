@@ -110,15 +110,18 @@ func TestPruneChannelDirsRefusesWhileTheStoreLockIsHeldAndRemovesNothing(t *test
 }
 
 // A daemon autospawned mid-prune takes the store lock before it opens the
-// store; while the prune runs it must not get it.
+// store; while the prune runs it must not get it, and neither may another
+// doctor writer, which refuses rather than interleaving.
 func TestPruneChannelDirsHoldsTheStoreLockAcrossItsRun(t *testing.T) {
 	empty := pruneLockFixture(t)
 	var daemonGotIn bool
+	var doctorErr error
 	out := &midRun{fn: func() {
 		if f, ok := takeStoreLockAsDaemon(t); ok {
 			daemonGotIn = true
 			f.Close()
 		}
+		doctorErr = runDoctorToolCalls(false)
 	}}
 	withStdout(t, out)
 
@@ -130,6 +133,9 @@ func TestPruneChannelDirsHoldsTheStoreLockAcrossItsRun(t *testing.T) {
 	}
 	if daemonGotIn {
 		t.Fatal("a daemon took the store lock while the prune was running")
+	}
+	if doctorErr == nil || !strings.Contains(doctorErr.Error(), "store lock is held by") {
+		t.Fatalf("doctor toolcalls during the prune: %v, want a refusal naming the lock holder", doctorErr)
 	}
 	if _, err := os.Stat(empty); !os.IsNotExist(err) {
 		t.Fatalf("the prune left %s: %v", empty, err)
@@ -162,5 +168,35 @@ func TestPruneChannelDirsDryRunNeedsNoLockButSaysWhoHoldsIt(t *testing.T) {
 	}
 	if _, err := os.Stat(empty); err != nil {
 		t.Fatalf("dry run removed %s: %v", empty, err)
+	}
+}
+
+func TestDoctorWritersRefuseWhileTheStoreLockIsHeld(t *testing.T) {
+	for verb, run := range map[string]func() error{
+		"gc":        func() error { return runDoctorGC(false) },
+		"librettos": func() error { return runDoctorLibrettos(false) },
+		"toolcalls": func() error { return runDoctorToolCalls(false) },
+	} {
+		t.Run(verb, func(t *testing.T) {
+			pruneLockFixture(t)
+			daemon, ok := takeStoreLockAsDaemon(t)
+			if !ok {
+				t.Fatal("setup: could not take a free store lock")
+			}
+			defer daemon.Close()
+			manifest := filepath.Join(boot.AriaRoot(), "xwal.json")
+			before, err := os.ReadFile(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = run()
+			if err == nil || !strings.Contains(err.Error(), "doctor "+verb+": the store lock is held by") {
+				t.Fatalf("doctor %s under a held lock: %v, want a refusal naming the holder", verb, err)
+			}
+			after, _ := os.ReadFile(manifest)
+			if !bytes.Equal(before, after) {
+				t.Fatalf("a refused doctor %s rewrote the manifest", verb)
+			}
+		})
 	}
 }
