@@ -489,14 +489,14 @@ func formatContextUsage(tokens, limit int, exact bool) string {
 		tokens = 0
 	}
 	if tokens == 0 && limit <= 0 {
-		return "-"
+		return "capacity unknown"
 	}
 	used := formatTokenCount(tokens)
 	if !exact && tokens > 0 {
 		used = "~" + used
 	}
 	if limit <= 0 {
-		return used
+		return used + " (capacity unknown)"
 	}
 	return fmt.Sprintf("%s/%s %.1f%%", used, formatTokenCount(limit), float64(tokens)*100/float64(limit))
 }

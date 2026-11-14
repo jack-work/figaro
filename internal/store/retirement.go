@@ -47,14 +47,15 @@ func RetiredIn(snap form.Snapshot) bool {
 }
 
 type Retirement struct {
-	Tokens    int
-	Percent   float64
-	TTL       time.Duration
-	Action    string
-	Page      string
-	Timeout   time.Duration
-	Ramp      string
-	RampTurns int
+	FallbackTokens int
+	Tokens         int
+	Percent        float64
+	TTL            time.Duration
+	Action         string
+	Page           string
+	Timeout        time.Duration
+	Ramp           string
+	RampTurns      int
 }
 
 func (r Retirement) Succeeds() bool { return r.Action == RetirementSucceed }
@@ -86,6 +87,9 @@ func (r Retirement) Threshold(window int) int {
 	if r.Percent > 0 && window > 0 {
 		return int(float64(window) * r.Percent / 100)
 	}
+	if window <= 0 {
+		return r.FallbackTokens
+	}
 	return 0
 }
 
@@ -108,6 +112,10 @@ func ParseRetirement(raw json.RawMessage) (Retirement, error) {
 		case "context_threshold":
 			if err := r.parseThreshold(v); err != nil {
 				return Retirement{}, err
+			}
+		case "fallback_tokens":
+			if err := json.Unmarshal(v, &r.FallbackTokens); err != nil || r.FallbackTokens <= 0 {
+				return Retirement{}, fmt.Errorf("%s.fallback_tokens: want a positive token count", SystemRetirementKey)
 			}
 		case "ttl":
 			ttl, err := ParseTTL(lifetimeString(v))
@@ -143,7 +151,7 @@ func ParseRetirement(raw json.RawMessage) (Retirement, error) {
 			}
 			r.RampTurns = n
 		default:
-			return Retirement{}, fmt.Errorf("%s.%s: unknown field; want context_threshold, ttl, action, page, timeout, ramp or ramp_turns", SystemRetirementKey, k)
+			return Retirement{}, fmt.Errorf("%s.%s: unknown field; want context_threshold, fallback_tokens, ttl, action, page, timeout, ramp or ramp_turns", SystemRetirementKey, k)
 		}
 	}
 	if r.Action == "" {
