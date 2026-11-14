@@ -112,11 +112,11 @@ func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 	case err != nil:
 		return err
 	case !ok:
-		return errors.New("troupe.provider figaro needs a [door.tls] for its peers to reach")
+		return errors.New("troupe.provider figaro needs a [endpoint.tls] for its peers to reach")
 	case endpoint.Cert != "":
-		return errors.New("troupe.provider figaro serves its door on troupe keys: drop door.tls cert, key and client_ca")
+		return errors.New("troupe.provider figaro serves its endpoint on troupe keys: drop endpoint.tls cert, key and client_ca")
 	case endpoint.Advertise == "":
-		return fmt.Errorf("door.tls: listen %q is a wildcard, so set advertise to the host:port peers dial", endpoint.Listen)
+		return fmt.Errorf("endpoint.tls: listen %q is a wildcard, so set advertise to the host:port peers dial", endpoint.Listen)
 	}
 	if a.Peercred == nil {
 		return errors.New("troupe.provider figaro: no local principal to own this node")
@@ -129,7 +129,7 @@ func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 	k := a.Troupe
 	root, err := k.Dir.Root()
 	if err != nil {
-		slog.Error("troupe: no root certificate, so no members; the node door refuses peers", "troupe", k.Troupe, "err", err)
+		slog.Error("troupe: no root certificate, so no members; the node endpoint refuses peers", "troupe", k.Troupe, "err", err)
 		a.Peers, _ = peer.NewStatic(0, nil, nil)
 		return nil
 	}
@@ -262,7 +262,7 @@ func troupeKeys(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded, 
 		}
 	}
 	if err := k.Ensure(); err != nil {
-		slog.Error("troupe certificate: local callers are served, the node door refuses peers", "err", err)
+		slog.Error("troupe certificate: local callers are served, the node endpoint refuses peers", "err", err)
 	}
 	a.Go("troupe certificate renewal", func() { k.Run(ctx) })
 	a.Troupe = k
@@ -286,7 +286,7 @@ func serveNodeEndpoint(ctx context.Context, a *angelus.Angelus, loaded *config.L
 	}
 	ln, err := net.Listen("tcp", endpoint.Listen)
 	if err != nil {
-		return fmt.Errorf("door.tls: %w", err)
+		return fmt.Errorf("endpoint.tls: %w", err)
 	}
 	if err := serveNodeEndpointOn(ctx, a, endpoint, ln); err != nil {
 		ln.Close()
@@ -301,7 +301,7 @@ func serveNodeEndpointOn(ctx context.Context, a *angelus.Angelus, endpoint confi
 		return err
 	}
 	verify := forwardedCallers(authz.Bearers{Issuers: a.Issuers, Keys: a.APIKeys})
-	slog.Info("node door listening", "addr", ln.Addr().String(), "peers", a.Peers.Nodes(), "troupe_version", a.Peers.Version(), "forwarded_callers", verify != nil)
+	slog.Info("node endpoint listening", "addr", ln.Addr().String(), "peers", a.Peers.Nodes(), "troupe_version", a.Peers.Version(), "forwarded_callers", verify != nil)
 	nd := &peer.Endpoint{Members: a.Peers, Versions: a.PeerVersions, Verify: verify}
 	if m, ok := a.Peers.(*peer.Ledger); ok {
 		m.OnEvict(nd.Evict)
@@ -309,7 +309,7 @@ func serveNodeEndpointOn(ctx context.Context, a *angelus.Angelus, endpoint confi
 	}
 	go func() {
 		if err := a.Serve(ctx, tls.NewListener(ln, cfg), authz.EndpointNode, nd.Admit); err != nil {
-			slog.Error("node door", "err", err)
+			slog.Error("node endpoint", "err", err)
 		}
 	}()
 	return nil
@@ -341,11 +341,11 @@ func prunable(es []troupe.Entry, now time.Time) []string {
 
 func forwardedCallers(b authz.Bearers) peer.Verify {
 	if b.Issuers == nil && b.Keys == nil {
-		slog.Warn("door.tls: no issuers and no api keys, so every forwarded caller is refused")
+		slog.Warn("endpoint.tls: no issuers and no api keys, so every forwarded caller is refused")
 		return nil
 	}
 	if b.Issuers == nil || b.Issuers.Empty() {
-		slog.Warn("door.tls: no issuer yet, so forwarded callers other than api keys are refused until [[authz.issuers]] or the troupe policy names one")
+		slog.Warn("endpoint.tls: no issuer yet, so forwarded callers other than api keys are refused until [[authz.issuers]] or the troupe policy names one")
 	}
 	return b.Verify
 }

@@ -138,7 +138,7 @@ func TestTroupeJoinWritesTheCertificateAndTheConfig(t *testing.T) {
 	cfg := r.config(t)
 	require.Equal(t, "mock", cfg["default_outfit"], "the rest of the file survived")
 	require.Equal(t, map[string]any{"name": "estate", "provider": "figaro"}, cfg["troupe"])
-	require.Equal(t, map[string]any{"listen": "0.0.0.0:7443", "advertise": "b.lan:7443"}, cfg["door"].(map[string]any)["tls"])
+	require.Equal(t, map[string]any{"listen": "0.0.0.0:7443", "advertise": "b.lan:7443"}, cfg["endpoint"].(map[string]any)["tls"])
 	require.Equal(t, "user:jack@auth.test", cfg["authz"].(map[string]any)["peercred"].(map[string]any)["uids"].(map[string]any)["1000"])
 
 	reloaded, err := config.Load(filepath.Dir(r.site.loaded.ConfigPath))
@@ -223,7 +223,7 @@ func TestTroupeJoinRefusesAConfigItWouldContradict(t *testing.T) {
 	for _, cfg := range []string{
 		"[troupe]\nname = \"other\"\n",
 		"[peers.a1]\nendpoint = \"tls://127.0.0.1:7444\"\nidentity = \"spiffe://x/node/a1\"\nca = \"c\"\ncert = \"c\"\nkey = \"k\"\n",
-		"[door.tls]\nlisten = \"127.0.0.1:7443\"\ncert = \"c\"\nkey = \"k\"\nclient_ca = \"ca\"\n",
+		"[endpoint.tls]\nlisten = \"127.0.0.1:7443\"\ncert = \"c\"\nkey = \"k\"\nclient_ca = \"ca\"\n",
 	} {
 		f := newFakeMember(t)
 		r := newJoinRig(t, cfg)
@@ -235,7 +235,7 @@ func TestTroupeJoinRefusesAConfigItWouldContradict(t *testing.T) {
 		f := newFakeMember(t)
 		r := newJoinRig(t, "")
 		err := troupeJoin(context.Background(), f, r.site, "estate", r.opts(joinOpts{Endpoint: endpoint, Yes: true}))
-		require.ErrorContains(t, err, "door", endpoint)
+		require.ErrorContains(t, err, "endpoint", endpoint)
 	}
 }
 

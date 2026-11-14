@@ -77,7 +77,7 @@ func newLedgerNode(t *testing.T, root estateRoot) *ledgerNode {
 func (n *ledgerNode) moveEndpoint() {
 	n.endpoint = openTestEndpoint(n.t)
 	n.addr = n.endpoint.addr()
-	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n[door.tls]\nlisten = %q\n", n.addr)
+	body := fmt.Sprintf("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n[endpoint.tls]\nlisten = %q\n", n.addr)
 	require.NoError(n.t, os.WriteFile(filepath.Join(n.cfgDir, "config.toml"), []byte(body), 0o600))
 }
 
@@ -131,7 +131,7 @@ func (n *ledgerNode) halt() {
 	n.stop()
 	n.stop = nil
 	n.backend.Close()
-	require.Eventually(n.t, n.serving.closed, 2*time.Second, 10*time.Millisecond, "the node door never closed its listener")
+	require.Eventually(n.t, n.serving.closed, 2*time.Second, 10*time.Millisecond, "the node endpoint never closed its listener")
 }
 
 func storedEntries(t *testing.T, n *ledgerNode) map[string]string {
@@ -218,8 +218,8 @@ func TestTwoNodesTradeEntriesOverTheNodeEndpoint(t *testing.T) {
 func TestTheFigaroProviderRefusesAEndpointItCannotAdvertise(t *testing.T) {
 	for _, endpoint := range []string{
 		"",
-		"[door.tls]\nlisten = \"0.0.0.0:7443\"\n",
-		"[door.tls]\nlisten = \"127.0.0.1:7443\"\ncert = \"c\"\nkey = \"k\"\nclient_ca = \"ca\"\n",
+		"[endpoint.tls]\nlisten = \"0.0.0.0:7443\"\n",
+		"[endpoint.tls]\nlisten = \"127.0.0.1:7443\"\ncert = \"c\"\nkey = \"k\"\nclient_ca = \"ca\"\n",
 	} {
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[troupe]\nname = \"estate\"\nprovider = \"figaro\"\n"+endpoint), 0o600))
@@ -283,7 +283,7 @@ func TestALeafOnlyNodeRenewsOverTheNodeEndpoint(t *testing.T) {
 
 	require.NoError(t, nb.a.Troupe.Ensure())
 	require.True(t, nb.a.Troupe.Status().NodeExpires.After(time.Now().Add(6*24*time.Hour)))
-	require.Equal(t, before, len(ma.Entries()), "a renewal at the same door signed another join")
+	require.Equal(t, before, len(ma.Entries()), "a renewal at the same endpoint signed another join")
 }
 
 // Renewal needs the leaf to be current and its node unrevoked: an expired

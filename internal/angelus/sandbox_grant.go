@@ -159,7 +159,7 @@ func (h *handlers) allowed(ctx context.Context, verb rpc.Verb, res authz.Resourc
 		if h.passesUnpoliced(ctx, sub) {
 			return nil
 		}
-		return fmt.Errorf("%s on %s: no policy is loaded, so the %s door passes only the owner", verb, res, authz.EndpointOf(ctx))
+		return fmt.Errorf("%s on %s: no policy is loaded, so the %s endpoint passes only the owner", verb, res, authz.EndpointOf(ctx))
 	}
 	if d := p.AllowFigaro(sub, authz.FigaroOf(ctx), verb, res); !d.Allowed {
 		return fmt.Errorf("%s on %s: %s", verb, res, d.Reason())

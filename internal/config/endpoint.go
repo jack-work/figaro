@@ -22,7 +22,7 @@ func (l *Loaded) EndpointOutboxBudget() (int, error) {
 	case mib == 0:
 		return DefaultOutboxBudgetMiB << 20, nil
 	case mib < 0:
-		return 0, fmt.Errorf("door.outbox_budget_mib %d is not a positive size", mib)
+		return 0, fmt.Errorf("endpoint.outbox_budget_mib %d is not a positive size", mib)
 	}
 	return mib << 20, nil
 }
@@ -36,7 +36,7 @@ func (l *Loaded) EdgeFollowMaxAge() (time.Duration, error) {
 	}
 	d, err := time.ParseDuration(s)
 	if err != nil || d <= 0 {
-		return 0, fmt.Errorf("door.edge_follow_max_age %q is not a positive duration", s)
+		return 0, fmt.Errorf("endpoint.edge_follow_max_age %q is not a positive duration", s)
 	}
 	return d, nil
 }
@@ -66,20 +66,20 @@ func (l *Loaded) WebEndpoint() (WebEndpoint, bool, error) {
 		return WebEndpoint{}, false, nil
 	}
 	if w.Path == "" {
-		return WebEndpoint{}, false, fmt.Errorf("door.web: path is required")
+		return WebEndpoint{}, false, fmt.Errorf("endpoint.web: path is required")
 	}
 	out := WebEndpoint{Path: w.Path, Mode: defaultWebEndpointMode, MaxConnAge: defaultWebEndpointMaxConnAge, Authn: w.Authn}
 	if w.Mode != "" {
 		m, err := strconv.ParseUint(w.Mode, 8, 32)
 		if err != nil || m > 0o777 {
-			return WebEndpoint{}, false, fmt.Errorf("door.web: mode %q is not an octal permission", w.Mode)
+			return WebEndpoint{}, false, fmt.Errorf("endpoint.web: mode %q is not an octal permission", w.Mode)
 		}
 		out.Mode = os.FileMode(m)
 	}
 	if w.MaxConnAge != "" {
 		d, err := time.ParseDuration(w.MaxConnAge)
 		if err != nil || d <= 0 {
-			return WebEndpoint{}, false, fmt.Errorf("door.web: max_conn_age %q is not a positive duration", w.MaxConnAge)
+			return WebEndpoint{}, false, fmt.Errorf("endpoint.web: max_conn_age %q is not a positive duration", w.MaxConnAge)
 		}
 		out.MaxConnAge = d
 	}

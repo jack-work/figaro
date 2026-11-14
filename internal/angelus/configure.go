@@ -105,7 +105,7 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 		return nil, fmt.Errorf("configure: %w", err)
 	}
 	if err := h.angelus.ReloadBoxEndpoints(fresh); err != nil {
-		slog.Error("config reload refused at a box door; the running config stays", "err", err)
+		slog.Error("config reload refused at a box endpoint; the running config stays", "err", err)
 		return nil, fmt.Errorf("configure: %w", err)
 	}
 	routed.RegisterDeclared(fresh)
@@ -122,7 +122,7 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 	h.configMu.Unlock()
 	ofit.Warm(fresh.Config.DefaultOutfit)
 	if err := h.reloadPolicy(); err != nil {
-		return nil, fmt.Errorf("configure: the new config and its box doors are in force, but the policy did not reload: %w", err)
+		return nil, fmt.Errorf("configure: the new config and its box endpoints are in force, but the policy did not reload: %w", err)
 	}
 	return resp, nil
 }

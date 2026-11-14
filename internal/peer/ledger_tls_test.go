@@ -199,7 +199,7 @@ func TestAEndpointRefusesACertifiedNodeTheLedgerDoesNotName(t *testing.T) {
 // that learns it drops its links to that node, and the next handshake is
 // refused.
 func TestARevokeMidConnectionDropsTheLinkAndRefusesTheNextHandshake(t *testing.T) {
-	t.Run("the door learns it", func(t *testing.T) {
+	t.Run("the endpoint learns it", func(t *testing.T) {
 		lt := newLedgerTroupe(t, "a", "b")
 		es := []troupe.Entry{lt.selfJoin("a"), lt.selfJoin("b")}
 		ma, mb := lt.membership("a", es...), lt.membership("b", es...)

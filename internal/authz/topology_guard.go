@@ -409,7 +409,7 @@ func (g TopologyGuard) allow(c TopologyCaller, verb rpc.Verb, id string) error {
 		if PassesUnpoliced(c.Endpoint, g.owner(), c.Subject) {
 			return nil
 		}
-		return fmt.Errorf("%s on %s: no policy is loaded, so the %s door passes only the owner", verb, Aria(id), c.Endpoint)
+		return fmt.Errorf("%s on %s: no policy is loaded, so the %s endpoint passes only the owner", verb, Aria(id), c.Endpoint)
 	}
 	if d := pol.AllowFigaro(c.Subject, c.Figaro, verb, Aria(id)); !d.Allowed {
 		return fmt.Errorf("%s on %s: %s", verb, Aria(id), d.Reason())

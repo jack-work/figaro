@@ -46,7 +46,7 @@ func TestACallClaimingAFigaroNotHeldIsRefused(t *testing.T) {
 		ctx  context.Context
 	}{
 		{"in-process", authz.WithEndpoint(asOwner(), authz.EndpointInProcess)},
-		{"no door", asOwner()},
+		{"no endpoint", asOwner()},
 	}
 	for _, claim := range []string{x, "0123456789abcdef0123456789abcdef"} {
 		for _, endpoint := range endpoints {
@@ -70,7 +70,7 @@ func TestACallClaimingAFigaroNotHeldIsRefused(t *testing.T) {
 
 	for _, d := range []authz.Endpoint{authz.EndpointLocal, authz.EndpointNode} {
 		if _, err := r.h[rpc.MethodRead](authz.WithEndpoint(asOwner(), d), claimed(t, x, withAria(t, t1, rpc.ReadRequest{FigaroID: t1}))); err != nil {
-			t.Errorf("%s door: a claim not held here is dropped and the caller's own authority reads: %v", d, err)
+			t.Errorf("%s endpoint: a claim not held here is dropped and the caller's own authority reads: %v", d, err)
 		}
 	}
 	for _, c := range onT1 {

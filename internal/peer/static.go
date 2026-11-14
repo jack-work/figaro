@@ -141,7 +141,7 @@ func (m *Static) Left(*x509.Certificate) (string, bool) { return "", false }
 func ServerTLS(endpoint config.TLSEndpoint, creds *Credentials) (*tls.Config, error) {
 	if endpoint.Cert == "" {
 		if creds == nil {
-			return nil, errors.New("door.tls: no certificate files and no troupe keys")
+			return nil, errors.New("endpoint.tls: no certificate files and no troupe keys")
 		}
 		return &tls.Config{
 			MinVersion: tls.VersionTLS13,
@@ -168,11 +168,11 @@ func ServerTLS(endpoint config.TLSEndpoint, creds *Credentials) (*tls.Config, er
 	}
 	cert, err := tls.LoadX509KeyPair(endpoint.Cert, endpoint.Key)
 	if err != nil {
-		return nil, fmt.Errorf("door.tls: %w", err)
+		return nil, fmt.Errorf("endpoint.tls: %w", err)
 	}
 	cas, err := loadPool(endpoint.ClientCA)
 	if err != nil {
-		return nil, fmt.Errorf("door.tls: %w", err)
+		return nil, fmt.Errorf("endpoint.tls: %w", err)
 	}
 	return &tls.Config{
 		MinVersion:   tls.VersionTLS13,

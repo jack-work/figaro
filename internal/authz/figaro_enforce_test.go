@@ -165,13 +165,13 @@ func TestAHostEndpointIsAnsweredAsTheBoxWhateverTheBoxRequires(t *testing.T) {
 	call, p := boxClaimRig(t, EndpointHost)
 	p.SetBoxesRequiringClaim([]string{"judge"})
 	if seen, err := call("", rpc.MethodKill, "in-judge"); err != nil || seen != "" {
-		t.Fatalf("an unclaimed host-door call to a required box: seen %q, %v", seen, err)
+		t.Fatalf("an unclaimed host-endpoint call to a required box: seen %q, %v", seen, err)
 	}
 	if seen, err := call("made-up", rpc.MethodKill, "in-judge"); err != nil || seen != "" {
-		t.Fatalf("a made-up claim on the host door must fall back to the box: seen %q, %v", seen, err)
+		t.Fatalf("a made-up claim on the host endpoint must fall back to the box: seen %q, %v", seen, err)
 	}
 	if _, err := call("in-judge", rpc.MethodKill, "in-judge"); err == nil || !strings.Contains(err.Error(), "figaro:in-judge") {
-		t.Fatalf("a claim of the box's own figaro on the host door is narrowed: %v", err)
+		t.Fatalf("a claim of the box's own figaro on the host endpoint is narrowed: %v", err)
 	}
 	inBox, q := boxClaimRig(t, EndpointBox)
 	q.SetBoxesRequiringClaim([]string{"judge"})
@@ -190,7 +190,7 @@ func TestTheClaimRequirementStaysOnTheBoxEndpoint(t *testing.T) {
 	call := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodQua: ok}, AriaHeader{}, Enforce(p))[rpc.MethodQua]
 	plain, _ := json.Marshal(map[string]any{"figaro_id": "aaaa0001"})
 	if _, err := call(WithSubject(context.Background(), subject(me)), plain); err != nil {
-		t.Fatalf("the requirement reached another door: %v", err)
+		t.Fatalf("the requirement reached another endpoint: %v", err)
 	}
 }
 
@@ -301,8 +301,8 @@ func TestAEndpointDroppingAClaimNotHeldLogsTheEndpointAndTheID(t *testing.T) {
 			t.Fatalf("%s: %v", d, err)
 		}
 		line := logs.String()
-		if strings.Count(line, "claim for a figaro not held here dropped") != 1 || !strings.Contains(line, "door="+d.String()) || !strings.Contains(line, "figaro=elsewhere") {
-			t.Errorf("%s: want one drop line naming the door and the id:\n%s", d, line)
+		if strings.Count(line, "claim for a figaro not held here dropped") != 1 || !strings.Contains(line, "endpoint="+d.String()) || !strings.Contains(line, "figaro=elsewhere") {
+			t.Errorf("%s: want one drop line naming the endpoint and the id:\n%s", d, line)
 		}
 		if strings.Contains(line, "PARAMS-STAY-OUT") {
 			t.Errorf("%s: the drop line carries the params:\n%s", d, line)

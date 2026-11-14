@@ -143,7 +143,7 @@ func TestAnIDOnThisNodeOrNoNodeStaysLocal(t *testing.T) {
 		require.Equal(t, "unix", a.Endpoint.Scheme, id)
 		require.Equal(t, boot.AngelusSocketPath(), a.Endpoint.Address, id)
 	}
-	require.Zero(t, r.probeCount(), "a local id probes no door")
+	require.Zero(t, r.probeCount(), "a local id probes no endpoint")
 }
 
 func TestAConfiguredTroupeStillTakesEveryID(t *testing.T) {
@@ -167,7 +167,7 @@ func TestABearerNeverGoesToAnotherProfilesURL(t *testing.T) {
 	r.nodes["wss://liar.example"] = nodeSpain
 
 	_, err := endpointFor(nodeSpain + "/abc")
-	require.ErrorContains(t, err, "answers at 2 doors")
+	require.ErrorContains(t, err, "answers at 2 endpoints")
 	require.NotZero(t, r.probeCount())
 	for _, ep := range r.probes {
 		want := map[string]string{"wss://honest.example": "honest", "wss://liar.example": "liar"}[ep.Address]
@@ -313,7 +313,7 @@ func TestAStaleCachedEndpointIsCheckedBeforeAnIDGoesThere(t *testing.T) {
 
 	_, err := endpointFor(nodeSpain + "/abc")
 	require.EqualError(t, err, "no troupe profile reaches node "+nodeSpain)
-	require.Equal(t, []string{"wss://spain.example"}, r.checks, "only the who-are-you check reached the stale door")
+	require.Equal(t, []string{"wss://spain.example"}, r.checks, "only the who-are-you check reached the stale endpoint")
 	require.Equal(t, nodeThird, readEndpointCache()["wss://spain.example"].Node, "the new answer is cached")
 
 	r.nodes["wss://third.example"] = nodeSpain

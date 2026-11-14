@@ -146,7 +146,7 @@ func TestAttendAnAriaOnAnotherNodeAndReachItThroughItsEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	defer fcli.Close()
 	_, err = fcli.Form(ctx)
-	require.NoError(t, err, "the far aria answers through its door")
+	require.NoError(t, err, "the far aria answers through its endpoint")
 	require.Greater(t, p.edge.upgrades.Load(), before)
 
 	_, row, err := statusRow(ctx, p.local, "", "")

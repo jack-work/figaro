@@ -89,6 +89,6 @@ func TestADecoderOverTheCapStopsAtTheCap(t *testing.T) {
 	f := capFrames(rwc{strings.NewReader(strings.Repeat(" ", 1<<20) + `{"a":1}`)}, 4<<10)
 	var v map[string]any
 	if err := json.NewDecoder(f).Decode(&v); !errors.Is(err, errFrameTooLarge) {
-		t.Fatalf("the door's decoder took 1 MB of whitespace past a 4 KB cap: %v, %v", v, err)
+		t.Fatalf("the endpoint's decoder took 1 MB of whitespace past a 4 KB cap: %v, %v", v, err)
 	}
 }

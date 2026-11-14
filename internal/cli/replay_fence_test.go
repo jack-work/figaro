@@ -9,10 +9,10 @@ func TestAReplayDiesAtEveryEndpointOffItsTape(t *testing.T) {
 	tapeOnly.Store(true)
 	defer tapeOnly.Store(false)
 	for name, reach := range map[string]func(){
-		"resolveDoor":   func() { resolveEndpoint() },
-		"ensureAngelus": ensureAngelus,
-		"MustHush":      func() { MustHush() },
-		"cliOAuthStore": func() { _, _ = cliOAuthStore(false) },
+		"resolveEndpoint": func() { resolveEndpoint() },
+		"ensureAngelus":   ensureAngelus,
+		"MustHush":        func() { MustHush() },
+		"cliOAuthStore":   func() { _, _ = cliOAuthStore(false) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			defer func() {

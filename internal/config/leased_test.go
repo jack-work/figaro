@@ -45,10 +45,10 @@ func TestALeasedBoxIsABoxWithNoSocketAndNoGrace(t *testing.T) {
 		t.Errorf("outfits %v providers %v: want the pool's one of each", b.Outfits, b.Providers)
 	}
 	if b.Exec != "" || b.Endpoint != "" || b.HostEndpoint != "" || b.FigaroClaim != "" || b.Profile != "" {
-		t.Errorf("a leased box carries a socket, door, claim or profile: %+v", b)
+		t.Errorf("a leased box carries a socket, endpoint, claim or profile: %+v", b)
 	}
 	if len(l.BoxEndpoints())+len(l.HostEndpoints())+len(l.BoxesWithEndpoints())+len(l.BoxesRequiringClaim()) != 0 {
-		t.Error("the door machinery sees a leased box")
+		t.Error("the endpoint machinery sees a leased box")
 	}
 	if !slices.Equal(l.LeasedBoxes(), []string{name}) {
 		t.Errorf("leased boxes %v", l.LeasedBoxes())

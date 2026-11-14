@@ -20,7 +20,7 @@ import (
 // stamps its peers' rows. gluck listing through spain once lost gluck's rows
 // and warned that gluck refused spain.
 func TestListThroughAEndpointAddsThisNodesRows(t *testing.T) {
-	endpointBackend, there := store.NewTestAria(t, "door", message.Patch{})
+	endpointBackend, there := store.NewTestAria(t, "endpoint", message.Patch{})
 	homeBackend, here := store.NewTestAria(t, "home", message.Patch{})
 	require.NotEqual(t, endpointBackend.NodeID(), homeBackend.NodeID())
 	_, endpointDir := serveBackend(t, endpointBackend)
@@ -79,7 +79,7 @@ func TestListThroughAEndpointToThisNodeIsOneListing(t *testing.T) {
 func TestMergeHomeDropsTheEndpointsWordOnThisNode(t *testing.T) {
 	away := &rpc.ListResponse{
 		Figaros: []rpc.FigaroInfoResponse{
-			{ID: "on-door"},
+			{ID: "on-endpoint"},
 			{ID: "stale", Node: "home"},
 			{ID: "on-peer", Node: "peer"},
 		},
@@ -91,9 +91,9 @@ func TestMergeHomeDropsTheEndpointsWordOnThisNode(t *testing.T) {
 			{ID: "on-peer", Node: "peer"},
 			{ID: "only-home-sees", Node: "lone"},
 		},
-		Unreachable: []rpc.NodeUnreachable{{Node: "door", Error: "no bearer"}},
+		Unreachable: []rpc.NodeUnreachable{{Node: "endpoint", Error: "no bearer"}},
 	}
-	got := mergeHome(away, home, "home", "door", nodesAnswering(away, "door"))
+	got := mergeHome(away, home, "home", "endpoint", nodesAnswering(away, "endpoint"))
 
 	ids := map[string]string{}
 	for _, r := range got.Figaros {
@@ -101,8 +101,8 @@ func TestMergeHomeDropsTheEndpointsWordOnThisNode(t *testing.T) {
 		require.False(t, dup, r.ID)
 		ids[r.ID] = r.Node
 	}
-	require.Equal(t, map[string]string{"on-door": "", "on-peer": "peer", "mine": "home", "only-home-sees": "lone"}, ids)
-	require.Equal(t, []rpc.NodeUnreachable{{Node: "far", Error: "down (as seen from node door; this node did not try it)"}}, got.Unreachable)
+	require.Equal(t, map[string]string{"on-endpoint": "", "on-peer": "peer", "mine": "home", "only-home-sees": "lone"}, ids)
+	require.Equal(t, []rpc.NodeUnreachable{{Node: "far", Error: "down (as seen from node endpoint; this node did not try it)"}}, got.Unreachable)
 }
 
 // A local listing names the peers it could not ask in one line, never one
@@ -128,6 +128,6 @@ func TestLocalListSaysOnceWhatItDidNotAsk(t *testing.T) {
 }
 
 func TestMergeHomeCountsBothSidesUnaskedPeers(t *testing.T) {
-	got := mergeHome(&rpc.ListResponse{PeersUnasked: 1}, &rpc.ListResponse{PeersUnasked: 2}, "home", "door", map[string]bool{"door": true})
+	got := mergeHome(&rpc.ListResponse{PeersUnasked: 1}, &rpc.ListResponse{PeersUnasked: 2}, "home", "endpoint", map[string]bool{"endpoint": true})
 	require.Equal(t, 3, got.PeersUnasked)
 }

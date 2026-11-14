@@ -300,7 +300,7 @@ func TestARevokedKeysProposalIsRefusedAtAccept(t *testing.T) {
 	}
 	props := parkedOn(t, r, q)
 	if len(props) != 1 || props[0].By != ci || props[0].ExpiresMS != endpoint.UnixMilli() {
-		t.Fatalf("parked on Q: %+v, want the key's move, lapsing with its door at %d", props, endpoint.UnixMilli())
+		t.Fatalf("parked on Q: %+v, want the key's move, lapsing with its endpoint at %d", props, endpoint.UnixMilli())
 	}
 
 	grant.Void = "revoked"

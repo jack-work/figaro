@@ -80,7 +80,7 @@ func (h *handlers) sayAs(ctx context.Context, box, figaroID, text string) error 
 
 func (h *handlers) workerSay(ctx context.Context, params json.RawMessage) (any, error) {
 	if authz.EndpointOf(ctx) != authz.EndpointInProcess {
-		return nil, fmt.Errorf("%s is served to a leased figaro's own tool, through no door", rpc.MethodWorkerSay)
+		return nil, fmt.Errorf("%s is served to a leased figaro's own tool, through no endpoint", rpc.MethodWorkerSay)
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(params, &fields); err != nil {

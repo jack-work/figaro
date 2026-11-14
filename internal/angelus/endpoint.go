@@ -147,7 +147,7 @@ func (a *Angelus) Serve(ctx context.Context, ln net.Listener, endpoint authz.End
 	if admit == nil {
 		admit = authz.Admit
 	}
-	leave, ok := a.enterEndpoint("door "+endpoint.String(), ln)
+	leave, ok := a.enterEndpoint("endpoint "+endpoint.String(), ln)
 	if !ok {
 		return errStopping
 	}
@@ -162,7 +162,7 @@ func (a *Angelus) Serve(ctx context.Context, ln net.Listener, endpoint authz.End
 			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
 				return nil
 			}
-			slog.Warn("door accept", "err", err)
+			slog.Warn("endpoint accept", "err", err)
 			continue
 		}
 		go a.admitConn(ctx, conn, endpoint, admit)
@@ -178,9 +178,9 @@ func (a *Angelus) admitConn(ctx context.Context, conn net.Conn, endpoint authz.E
 	}
 	if err != nil {
 		if peer.IsLeftAlready(err) {
-			slog.Info("door answered a node that left", "err", err)
+			slog.Info("endpoint answered a node that left", "err", err)
 		} else {
-			slog.Warn("door refused connection", "door", endpoint.String(), "err", err)
+			slog.Warn("endpoint refused connection", "endpoint", endpoint.String(), "err", err)
 		}
 		conn.Close()
 		return
@@ -194,7 +194,7 @@ type unseated struct {
 }
 
 func (e *unseated) Error() string {
-	return fmt.Sprintf("the %s door seats only a subject the policy binds to a role, and %s holds none", e.endpoint, e.subject)
+	return fmt.Sprintf("the %s endpoint seats only a subject the policy binds to a role, and %s holds none", e.endpoint, e.subject)
 }
 
 func (a *Angelus) seat(ctx context.Context, endpoint authz.Endpoint) error {
@@ -225,7 +225,7 @@ func (a *Angelus) handleConn(ctx context.Context, endpoint authz.Endpoint, conn 
 		return
 	}
 	out := newOutbox(conn, a.outboxBudget(), func(err error) {
-		slog.Warn("door dropped a follower", "door", endpoint.String(), "err", err)
+		slog.Warn("endpoint dropped a follower", "endpoint", endpoint.String(), "err", err)
 		endWith(conn, err)
 	})
 	defer out.Close()
@@ -236,7 +236,7 @@ func (a *Angelus) handleConn(ctx context.Context, endpoint authz.Endpoint, conn 
 	done := make(chan struct{})
 	go func() {
 		if err := f.srv.Serve(context.WithValue(ctx, followerKey{}, f)); errors.Is(err, errFrameTooLarge) {
-			slog.Warn("door closed a connection", "door", endpoint.String(), "err", err)
+			slog.Warn("endpoint closed a connection", "endpoint", endpoint.String(), "err", err)
 		}
 		close(done)
 	}()

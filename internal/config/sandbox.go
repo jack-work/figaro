@@ -15,12 +15,12 @@ type SandboxConfig struct {
 
 type BoxConfig struct {
 	Exec         string   `toml:"exec"`
-	Endpoint     string   `toml:"door"`
+	Endpoint     string   `toml:"endpoint"`
 	Profile      string   `toml:"profile"`
 	Providers    []string `toml:"providers"`
 	Outfits      []string `toml:"outfits"`
 	PurgeGrace   string   `toml:"purge_grace"`
-	HostEndpoint string   `toml:"host_door"`
+	HostEndpoint string   `toml:"host_endpoint"`
 	FigaroClaim  string   `toml:"figaro_claim"`
 }
 
@@ -111,7 +111,7 @@ func (l *Loaded) BoxEndpointWithoutLists(name string) error {
 	if len(missing) == 0 {
 		return nil
 	}
-	return fmt.Errorf("sandbox.boxes.%s has a door but no %s list: the door stays shut, since a box behind it could mint undressed or on any provider; name them, or write [\"*\"] to allow any", name, strings.Join(missing, " or "))
+	return fmt.Errorf("sandbox.boxes.%s has an endpoint but no %s list: the endpoint stays shut, since a box behind it could mint undressed or on any provider; name them, or write [\"*\"] to allow any", name, strings.Join(missing, " or "))
 }
 
 func (c Config) validateSandbox() error {
@@ -127,15 +127,15 @@ func (c Config) validateSandbox() error {
 		case !filepath.IsAbs(b.Exec):
 			return fmt.Errorf("%s.exec: want the absolute path of the socket box serve listens on", where)
 		case b.Endpoint != "" && !filepath.IsAbs(b.Endpoint):
-			return fmt.Errorf("%s.door: want an absolute socket path", where)
+			return fmt.Errorf("%s.endpoint: want an absolute socket path", where)
 		case b.HostEndpoint != "" && !filepath.IsAbs(b.HostEndpoint):
-			return fmt.Errorf("%s.host_door: want an absolute socket path", where)
+			return fmt.Errorf("%s.host_endpoint: want an absolute socket path", where)
 		case b.HostEndpoint != "" && b.Endpoint == "":
-			return fmt.Errorf("%s.host_door: a host door reaches the box's door, and this box has none", where)
+			return fmt.Errorf("%s.host_endpoint: a host endpoint reaches the box's endpoint, and this box has none", where)
 		case b.FigaroClaim != "" && b.FigaroClaim != FigaroClaimRequired:
 			return fmt.Errorf("%s.figaro_claim = %q: want %q, or leave it out", where, b.FigaroClaim, FigaroClaimRequired)
 		case b.FigaroClaim != "" && b.Endpoint == "":
-			return fmt.Errorf("%s.figaro_claim: the box has no door to require it on", where)
+			return fmt.Errorf("%s.figaro_claim: the box has no endpoint to require it on", where)
 		}
 		for field, list := range map[string][]string{"outfits": b.Outfits, "providers": b.Providers} {
 			if len(list) > 1 && slices.Contains(list, "*") {
@@ -147,7 +147,7 @@ func (c Config) validateSandbox() error {
 				return fmt.Errorf("%s.purge_grace %q: want a duration like \"1h\"", where, b.PurgeGrace)
 			}
 		}
-		for field, path := range map[string]string{"door": b.Endpoint, "host_door": b.HostEndpoint} {
+		for field, path := range map[string]string{"endpoint": b.Endpoint, "host_endpoint": b.HostEndpoint} {
 			if path == "" {
 				continue
 			}
@@ -169,7 +169,7 @@ func (c Config) validateSandbox() error {
 				continue
 			}
 			if within(filepath.Dir(filepath.Clean(endpoint)), filepath.Clean(host)) {
-				return fmt.Errorf("sandbox.boxes.%s.host_door: %s is inside %s, box %s's door directory, which that box can reach; a host door lives where no box does", name, host, filepath.Dir(filepath.Clean(endpoint)), other)
+				return fmt.Errorf("sandbox.boxes.%s.host_endpoint: %s is inside %s, box %s's endpoint directory, which that box can reach; a host endpoint lives where no box does", name, host, filepath.Dir(filepath.Clean(endpoint)), other)
 			}
 		}
 	}

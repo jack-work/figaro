@@ -123,7 +123,7 @@ func TestAnEdgeFollowEndsAtItsAgeAndTheRefollowIsJudgedOnCurrentGroups(t *testin
 	require.NoError(t, err, "the follow carried no frame before its age")
 
 	raw, err := watcher.await(rpc.MethodEndpointLapsed, 5*time.Second)
-	require.NoError(t, err, "the door never said the follow lapsed")
+	require.NoError(t, err, "the endpoint never said the follow lapsed")
 	require.GreaterOrEqual(t, time.Since(admitted), maxAge-50*time.Millisecond, "lapsed before its age")
 	var lapsed rpc.EndpointLapsed
 	require.NoError(t, json.Unmarshal(raw, &lapsed))
@@ -164,7 +164,7 @@ func TestAUnixEndpointFollowOutlivesTheEdgeFollowAge(t *testing.T) {
 	require.False(t, follower.Lapsed())
 	select {
 	case <-follower.Done():
-		t.Fatal("the unix door ended a follow at the edge's age")
+		t.Fatal("the unix endpoint ended a follow at the edge's age")
 	default:
 	}
 

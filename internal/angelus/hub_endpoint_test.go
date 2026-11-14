@@ -64,7 +64,7 @@ func TestHubAttributesAForgedCallerAsAsserted(t *testing.T) {
 }
 
 func TestHubMethodsAreGuarded(t *testing.T) {
-	hb, path := policyHub(t, authz.PolicyFunc(func(authz.Request) authz.Decision { return authz.Deny("door closed") }))
+	hb, path := policyHub(t, authz.PolicyFunc(func(authz.Request) authz.Decision { return authz.Deny("endpoint closed") }))
 	hb.read = func(context.Context, string, string, json.RawMessage) (any, bool, error) {
 		t.Error("a denied request reached the store")
 		return nil, true, nil
@@ -75,5 +75,5 @@ func TestHubMethodsAreGuarded(t *testing.T) {
 	var out map[string]any
 	err := client.Call(ctx, rpc.MethodContext, struct{}{}, &out)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "door closed")
+	require.Contains(t, err.Error(), "endpoint closed")
 }

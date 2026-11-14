@@ -148,21 +148,21 @@ func TestPagesRefusesEveryCallItWasNotBuiltFor(t *testing.T) {
 		ctx    context.Context
 		params string
 	}{
-		"a wait over 50":                {asBroker(), `{"pool":"groups","seen":[1],"wait":51}`},
-		"a negative wait":               {asBroker(), `{"pool":"groups","seen":[1],"wait":-1}`},
-		"a wait that wraps a duration":  {asBroker(), `{"pool":"groups","seen":[1],"wait":18446744074}`},
-		"a field it does not know":      {asBroker(), `{"pool":"groups","seen":[1],"outfit":"x"}`},
-		"a route":                       {asBroker(), `{"pool":"groups","seen":[1],"page_route":"gluck"}`},
-		"a figaro id":                   {asBroker(), `{"pool":"groups","seen":[1],"figaro_id":"ab12"}`},
-		"through N in place of ids":     {asBroker(), `{"pool":"groups","seen":1}`},
-		"two values":                    {asBroker(), `{"pool":"groups","seen":[1]} {"pool":"groups"}`},
-		"another pool":                  {asBroker(), `{"pool":"others","seen":[1]}`},
-		"no pool":                       {asBroker(), `{"seen":[1]}`},
-		"no params":                     {asBroker(), ``},
-		"a stranger":                    {as("user", "mallory"), `{"pool":"groups","seen":[1]}`},
-		"broker through a node door":    {throughNodeEndpoint(asBroker()), `{"pool":"groups","seen":[1]}`},
-		"the owner through a node door": {throughNodeEndpoint(asOwner()), `{"pool":"groups","seen":[1]}`},
-		"a pool the config lacks":       {asOwner(), `{"pool":"nowhere","seen":[1]}`},
+		"a wait over 50":                    {asBroker(), `{"pool":"groups","seen":[1],"wait":51}`},
+		"a negative wait":                   {asBroker(), `{"pool":"groups","seen":[1],"wait":-1}`},
+		"a wait that wraps a duration":      {asBroker(), `{"pool":"groups","seen":[1],"wait":18446744074}`},
+		"a field it does not know":          {asBroker(), `{"pool":"groups","seen":[1],"outfit":"x"}`},
+		"a route":                           {asBroker(), `{"pool":"groups","seen":[1],"page_route":"gluck"}`},
+		"a figaro id":                       {asBroker(), `{"pool":"groups","seen":[1],"figaro_id":"ab12"}`},
+		"through N in place of ids":         {asBroker(), `{"pool":"groups","seen":1}`},
+		"two values":                        {asBroker(), `{"pool":"groups","seen":[1]} {"pool":"groups"}`},
+		"another pool":                      {asBroker(), `{"pool":"others","seen":[1]}`},
+		"no pool":                           {asBroker(), `{"seen":[1]}`},
+		"no params":                         {asBroker(), ``},
+		"a stranger":                        {as("user", "mallory"), `{"pool":"groups","seen":[1]}`},
+		"broker through a node endpoint":    {throughNodeEndpoint(asBroker()), `{"pool":"groups","seen":[1]}`},
+		"the owner through a node endpoint": {throughNodeEndpoint(asOwner()), `{"pool":"groups","seen":[1]}`},
+		"a pool the config lacks":           {asOwner(), `{"pool":"nowhere","seen":[1]}`},
 	} {
 		if pages, err := r.pages(t, c.ctx, c.params); err == nil {
 			t.Errorf("%s: answered %v", name, pageIDs(pages))

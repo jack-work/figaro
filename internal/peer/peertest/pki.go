@@ -98,7 +98,7 @@ func (p *PKI) Node(name, uri string) (cert, key string) {
 }
 
 func (p *PKI) Endpoint(node, listen string) config.TLSEndpoint {
-	cert, key := p.Node(node+"-door", Identity(node))
+	cert, key := p.Node(node+"-endpoint", Identity(node))
 	return config.TLSEndpoint{Listen: listen, Cert: cert, Key: key, ClientCA: p.CA}
 }
 

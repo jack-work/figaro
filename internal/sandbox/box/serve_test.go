@@ -93,7 +93,7 @@ func TestCommandsInABoxCallBackThroughItsEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.CallBackThrough(filepath.Join(dir, "door", "angelus.sock")); err != nil {
+	if err := srv.CallBackThrough(filepath.Join(dir, "endpoint", "angelus.sock")); err != nil {
 		t.Fatal(err)
 	}
 	sock := filepath.Join(dir, "s")
@@ -134,8 +134,8 @@ func TestCommandsInABoxCallBackThroughItsEndpoint(t *testing.T) {
 	<-exited
 	mu.Lock()
 	defer mu.Unlock()
-	want := "unix://" + filepath.Join(dir, "door", "angelus.sock") + " " + filepath.Join(dir, "door") + "\n"
+	want := "unix://" + filepath.Join(dir, "endpoint", "angelus.sock") + " " + filepath.Join(dir, "endpoint") + "\n"
 	if out.String() != want {
-		t.Fatalf("env %q, want %q: the box's door wins over what the daemon sends", out.String(), want)
+		t.Fatalf("env %q, want %q: the box's endpoint wins over what the daemon sends", out.String(), want)
 	}
 }

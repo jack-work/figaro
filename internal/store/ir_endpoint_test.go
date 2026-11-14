@@ -13,7 +13,7 @@ func endpointAria(t *testing.T) (Log[message.Message], *XwalBackend, string) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { be.Close() })
-	outfit, err := be.CreateOutfit("door", message.Patch{})
+	outfit, err := be.CreateOutfit("endpoint", message.Patch{})
 	require.NoError(t, err)
 	id, err := be.CreateConversation(outfit)
 	require.NoError(t, err)
@@ -164,7 +164,7 @@ func TestEndpointLeavesAWellFormedExchangeAlone(t *testing.T) {
 	require.NoError(t, err)
 
 	rows := log.Read()
-	require.Len(t, rows, base+2, "the door wrote a record of its own into a well-formed exchange")
+	require.Len(t, rows, base+2, "the endpoint wrote a record of its own into a well-formed exchange")
 	last := rows[len(rows)-1].Payload
 	require.Len(t, last.Content, 1)
 	require.False(t, last.Content[0].IsError)
