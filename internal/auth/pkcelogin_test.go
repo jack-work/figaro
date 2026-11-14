@@ -38,7 +38,7 @@ func newPKCEIdP(t *testing.T) *pkceIdP {
 				"authorization_endpoint": p.srv.URL + "/ui/oauth2",
 				"token_endpoint":         p.srv.URL + "/oauth2/token",
 			})
-		case "/oauth2/token":
+		case "/oauth2/token", "/custom/token":
 			require.NoError(t, r.ParseForm())
 			p.mu.Lock()
 			p.tokenForm = r.PostForm

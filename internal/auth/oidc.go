@@ -14,11 +14,15 @@ import (
 const FlowDevice = "device"
 
 type OAuthSettings struct {
-	Issuer    string   `toml:"issuer,omitempty"`
-	ClientID  string   `toml:"client_id,omitempty"`
-	Scopes    []string `toml:"scopes,omitempty"`
-	Flow      string   `toml:"flow,omitempty"`
-	Discovery string   `toml:"discovery,omitempty"`
+	Issuer          string            `toml:"issuer,omitempty"`
+	ClientID        string            `toml:"client_id,omitempty"`
+	Scopes          []string          `toml:"scopes,omitempty"`
+	Flow            string            `toml:"flow,omitempty"`
+	Discovery       string            `toml:"discovery,omitempty"`
+	AuthorizeURL    string            `toml:"authorize_url,omitempty"`
+	TokenURL        string            `toml:"token_url,omitempty"`
+	RedirectURI     string            `toml:"redirect_uri,omitempty"`
+	AuthorizeParams map[string]string `toml:"authorize_params,omitempty"`
 }
 
 type oidcConfiguration struct {
@@ -61,7 +65,10 @@ func (s OAuthSettings) DeviceConfig(provider string) (DeviceCodeConfig, error) {
 	if strings.TrimSpace(s.ClientID) == "" {
 		return DeviceCodeConfig{}, fmt.Errorf("%s: oauth names no client_id", provider)
 	}
-	oc, iu, err := discover(oidcHTTP, s.Issuer)
+	if s.RedirectURI != "" || s.AuthorizeURL != "" || len(s.AuthorizeParams) > 0 {
+		return DeviceCodeConfig{}, fmt.Errorf("%s: redirect_uri, authorize_url and authorize_params require the pkce flow", provider)
+	}
+	oc, iu, err := s.endpoints()
 	if err != nil {
 		return DeviceCodeConfig{}, fmt.Errorf("%s: oauth %w", provider, err)
 	}
@@ -92,7 +99,7 @@ func withOfflineAccess(scopes []string) string {
 
 func sameOrigin(raw string, want *url.URL) bool {
 	u, err := url.Parse(raw)
-	return err == nil && u.Scheme == want.Scheme && u.Host == want.Host
+	return err == nil && u.User == nil && u.Fragment == "" && u.Opaque == "" && u.Scheme == want.Scheme && u.Host == want.Host
 }
 
 func getJSON(endpoint string, out any) error { return getJSONWith(oidcHTTP, endpoint, out) }

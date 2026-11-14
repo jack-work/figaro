@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
-	"net"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -21,11 +21,13 @@ const (
 )
 
 type PKCEConfig struct {
-	ProviderName string
-	ClientID     string
-	Scope        string
-	AuthorizeURL string
-	TokenURL     string
+	ProviderName    string
+	ClientID        string
+	Scope           string
+	AuthorizeURL    string
+	TokenURL        string
+	RedirectURI     string
+	AuthorizeParams map[string]string
 }
 
 func (s OAuthSettings) PKCEConfig(provider string) (PKCEConfig, error) {
@@ -35,15 +37,18 @@ func (s OAuthSettings) PKCEConfig(provider string) (PKCEConfig, error) {
 	if strings.TrimSpace(s.ClientID) == "" {
 		return PKCEConfig{}, fmt.Errorf("%s: oauth names no client_id", provider)
 	}
-	oc, iu, err := discover(oidcHTTP, s.Issuer)
+	oc, iu, err := s.endpoints()
 	if err != nil {
 		return PKCEConfig{}, fmt.Errorf("%s: oauth %w", provider, err)
 	}
 	if oc.AuthorizationEndpoint == "" {
 		return PKCEConfig{}, fmt.Errorf("%s: %s offers no authorization code flow (no authorization_endpoint)", provider, s.Issuer)
 	}
-	if !sameOrigin(oc.AuthorizationEndpoint, iu) {
-		return PKCEConfig{}, fmt.Errorf("%s: authorization endpoint %q is not on the issuer %s", provider, oc.AuthorizationEndpoint, s.Issuer)
+	if err := validateOAuthEndpoint(oc.AuthorizationEndpoint, iu, true); err != nil {
+		return PKCEConfig{}, fmt.Errorf("%s: authorization endpoint: %w", provider, err)
+	}
+	if err := (PKCEConfig{RedirectURI: s.RedirectURI, AuthorizeURL: oc.AuthorizationEndpoint, AuthorizeParams: s.AuthorizeParams}).validate(); err != nil {
+		return PKCEConfig{}, fmt.Errorf("%s: %w", provider, err)
 	}
 	var scopes []string
 	for _, sc := range s.Scopes {
@@ -52,11 +57,13 @@ func (s OAuthSettings) PKCEConfig(provider string) (PKCEConfig, error) {
 		}
 	}
 	return PKCEConfig{
-		ProviderName: provider,
-		ClientID:     strings.TrimSpace(s.ClientID),
-		Scope:        strings.Join(scopes, " "),
-		AuthorizeURL: oc.AuthorizationEndpoint,
-		TokenURL:     oc.TokenEndpoint,
+		ProviderName:    provider,
+		ClientID:        strings.TrimSpace(s.ClientID),
+		Scope:           strings.Join(scopes, " "),
+		AuthorizeURL:    oc.AuthorizationEndpoint,
+		TokenURL:        oc.TokenEndpoint,
+		RedirectURI:     s.RedirectURI,
+		AuthorizeParams: maps.Clone(s.AuthorizeParams),
 	}, nil
 }
 
@@ -70,6 +77,14 @@ type pkceRedirect struct {
 }
 
 func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout time.Duration, c Console) (DeviceTokens, error) {
+	if err := cfg.validate(); err != nil {
+		return DeviceTokens{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return DeviceTokens{}, err
+	}
 	pkce, err := GeneratePKCE()
 	if err != nil {
 		return DeviceTokens{}, err
@@ -78,23 +93,24 @@ func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout t
 	if err != nil {
 		return DeviceTokens{}, err
 	}
-	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	ln, redirect, err := pkceListener(cfg.RedirectURI)
 	if err != nil {
 		return DeviceTokens{}, fmt.Errorf("%s: loopback listener: %w", cfg.ProviderName, err)
 	}
-	redirect := fmt.Sprintf("http://127.0.0.1:%d%s", ln.Addr().(*net.TCPAddr).Port, pkceCallbackPath)
+	defer ln.Close()
+	back, _ := url.Parse(redirect)
 	done := make(chan pkceRedirect, 1)
-	srv := &http.Server{Handler: pkceCallback(cfg.ProviderName, state, done), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: pkceCallback(cfg.ProviderName, state, back, done), ReadHeaderTimeout: 10 * time.Second}
 	go srv.Serve(ln)
 	defer srv.Close()
+	stop := context.AfterFunc(ctx, func() { srv.Close() })
+	defer stop()
 
 	authorize := authorizeURL(cfg, redirect, state, pkce.Challenge)
 	c.Note(cfg.ProviderName + " signs in through your browser (authorization code with PKCE) at this link:")
 	c.Link(authorize)
 	open(authorize)
 
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	var got pkceRedirect
 	select {
 	case got = <-done:
@@ -107,7 +123,7 @@ func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout t
 	if got.err != nil {
 		return DeviceTokens{}, got.err
 	}
-	tr, err := requestToken(oidcHTTP, cfg.TokenURL, cfg.ClientID, url.Values{
+	tr, err := requestTokenContext(ctx, oauthClient(), cfg.TokenURL, cfg.ClientID, url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {got.code},
 		"redirect_uri":  {redirect},
@@ -137,23 +153,34 @@ func authorizeURL(cfg PKCEConfig, redirect, state, challenge string) string {
 	if cfg.Scope != "" {
 		q.Set("scope", cfg.Scope)
 	}
-	sep := "?"
-	if strings.Contains(cfg.AuthorizeURL, "?") {
-		sep = "&"
+	u, _ := url.Parse(cfg.AuthorizeURL)
+	for key, values := range u.Query() {
+		q[key] = values
 	}
-	return cfg.AuthorizeURL + sep + q.Encode()
+	for key, value := range cfg.AuthorizeParams {
+		q.Set(key, value)
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
-func pkceCallback(provider, state string, done chan<- pkceRedirect) http.Handler {
+func pkceCallback(provider, state string, redirect *url.URL, done chan<- pkceRedirect) http.Handler {
 	finish := func(r pkceRedirect) {
 		select {
 		case done <- r:
 		default:
 		}
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc(pkceCallbackPath, func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.Host != redirect.Host || r.URL.EscapedPath() != redirect.EscapedPath() {
+			http.NotFound(w, r)
+			return
+		}
+		q, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(q["state"]) != 1 || len(q["code"]) > 1 || len(q["error"]) > 1 {
+			loginPage(w, http.StatusBadRequest, "The sign-in callback has invalid or duplicate parameters.")
+			return
+		}
 		if subtle.ConstantTimeCompare([]byte(q.Get("state")), []byte(state)) != 1 {
 			loginPage(w, http.StatusBadRequest, "This sign-in link is not the one figaro is waiting for.")
 			return
@@ -171,7 +198,6 @@ func pkceCallback(provider, state string, done chan<- pkceRedirect) http.Handler
 		loginPage(w, http.StatusOK, "figaro has the sign-in for "+provider+". You can close this tab and return to the terminal.")
 		finish(pkceRedirect{code: code})
 	})
-	return mux
 }
 
 func randomState() (string, error) {

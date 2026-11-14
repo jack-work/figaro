@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -57,9 +58,9 @@ func httpOr(c *http.Client) *http.Client {
 
 func discover(client *http.Client, issuer string) (oidcConfiguration, *url.URL, error) {
 	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
-	iu, err := url.Parse(issuer)
-	if err != nil || iu.Scheme != "https" || iu.Host == "" {
-		return oidcConfiguration{}, nil, fmt.Errorf("issuer %q is not an https URL", issuer)
+	iu, err := issuerURL(issuer)
+	if err != nil {
+		return oidcConfiguration{}, nil, err
 	}
 	doc := issuer + "/.well-known/openid-configuration"
 	var oc oidcConfiguration
@@ -69,8 +70,8 @@ func discover(client *http.Client, issuer string) (oidcConfiguration, *url.URL, 
 	if strings.TrimRight(oc.Issuer, "/") != issuer {
 		return oidcConfiguration{}, nil, fmt.Errorf("%s names issuer %q, configured %q", doc, oc.Issuer, issuer)
 	}
-	if !sameOrigin(oc.TokenEndpoint, iu) {
-		return oidcConfiguration{}, nil, fmt.Errorf("token endpoint %q is not on the issuer %s", oc.TokenEndpoint, issuer)
+	if err := validateOAuthEndpoint(oc.TokenEndpoint, iu, false); err != nil {
+		return oidcConfiguration{}, nil, fmt.Errorf("token endpoint: %w", err)
 	}
 	return oc, iu, nil
 }
@@ -84,7 +85,11 @@ type tokenResponse struct {
 func (t tokenResponse) lifetime() time.Duration { return time.Duration(t.ExpiresIn) * time.Second }
 
 func requestToken(client *http.Client, endpoint, clientID string, form url.Values, authorize func(*http.Request)) (tokenResponse, error) {
-	req, err := http.NewRequest(http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	return requestTokenContext(context.Background(), client, endpoint, clientID, form, authorize)
+}
+
+func requestTokenContext(ctx context.Context, client *http.Client, endpoint, clientID string, form url.Values, authorize func(*http.Request)) (tokenResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return tokenResponse{}, err
 	}
