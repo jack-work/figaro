@@ -114,6 +114,8 @@ func (l *figIRLog) TailAfter(lt uint64) ([]Entry[message.Message], int) {
 	return TailAfter(l.Log, lt)
 }
 
+func (l *figIRLog) HidesOwnRows() bool { return ViewHidesOwnRows(l.Log) }
+
 func (l *figIRLog) TailSnapshot(n int) []Entry[message.Message] {
 	return TailSnapshot(l.Log, n)
 }

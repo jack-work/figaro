@@ -89,6 +89,9 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 	if cfg.Translator == nil {
 		return stats, ErrNoTranslator
 	}
+	if store.ViewHidesOwnRows(cfg.Log) || store.ViewHidesOwnRows(cfg.Translator) {
+		return stats, store.ErrViewHidesOwnRows
+	}
 
 	var watermark uint64
 	if tail, ok := cfg.Translator.PeekTail(); ok {

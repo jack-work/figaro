@@ -41,3 +41,10 @@ func VerifyOnce[T any](log Log[T]) bool {
 	}
 	return true
 }
+
+type ownRowsHider interface{ HidesOwnRows() bool }
+
+func ViewHidesOwnRows[T any](log Log[T]) bool {
+	h, ok := log.(ownRowsHider)
+	return ok && h.HidesOwnRows()
+}
