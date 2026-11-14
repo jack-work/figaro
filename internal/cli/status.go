@@ -345,7 +345,11 @@ func printStatusPanel(out io.Writer, f *rpc.FigaroInfoResponse, more bool, forkT
 	row("model", dash(f.Model))
 	rowf("messages", "%d", f.MessageCount)
 
-	row("context", formatContextUsage(f.ContextTokens, f.ContextLimit, f.ContextExact))
+	contextUsage := formatContextUsage(f.ContextTokens, f.ContextLimit, f.ContextExact)
+	if f.ContextLimit <= 0 && f.ContextTokens <= 0 {
+		contextUsage = "capacity unknown"
+	}
+	row("context", contextUsage)
 
 	usage := "-"
 	if f.TokensIn > 0 || f.TokensOut > 0 {

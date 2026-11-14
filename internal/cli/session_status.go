@@ -489,7 +489,7 @@ func formatContextUsage(tokens, limit int, exact bool) string {
 		tokens = 0
 	}
 	if tokens == 0 && limit <= 0 {
-		return "capacity unknown"
+		return "-"
 	}
 	used := formatTokenCount(tokens)
 	if !exact && tokens > 0 {

@@ -11,8 +11,8 @@ func TestFormatContextUsage(t *testing.T) {
 		// The limit is known before the first turn; zero is never an estimate.
 		{0, 1_000_000, true, "0/1.0m 0.0%"},
 		{0, 1_000_000, false, "0/1.0m 0.0%"},
-		{0, 0, true, "capacity unknown"},
-		{-1, 0, true, "capacity unknown"},
+		{0, 0, true, "-"},
+		{-1, 0, true, "-"},
 		{-1, 1_000_000, true, "0/1.0m 0.0%"},
 		{135_000, 0, true, "135.0k (capacity unknown)"},
 		{135_000, 0, false, "~135.0k (capacity unknown)"},
