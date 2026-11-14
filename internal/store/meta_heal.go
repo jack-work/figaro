@@ -27,6 +27,10 @@ func (b *XwalBackend) healMeta(ariaID string, log Log[message.Message]) {
 	if err != nil || st.Value == nil {
 		return
 	}
+	if st.Value.Refold {
+		b.refoldMetaLocked(ariaID, c, st.Value, log)
+		return
+	}
 	// LastFigaroLT == 0 is a pre-watermark sidecar: its counts are absolute, so
 	// folding from LT 1 would double them. Healing is a suffix, never a scan.
 	if st.Value.LastFigaroLT == 0 || st.Value.LastFigaroLT >= tail.LT {
@@ -43,6 +47,30 @@ func (b *XwalBackend) healMeta(ariaID string, log Log[message.Message]) {
 		return
 	}
 	slog.Info("meta healed", "aria", ariaID, "from", st.Value.LastFigaroLT, "to", meta.LastFigaroLT, "folded", folded)
+}
+
+func (b *XwalBackend) refoldMetaLocked(ariaID string, c *metaCache, from *AriaMeta, log Log[message.Message]) {
+	meta := *from
+	meta.ResetCounters()
+	folded := int64(0)
+	for _, e := range log.ReadFrom(1, 0) {
+		meta.Fold(e)
+		folded++
+	}
+	meta.Refold = false
+	metaHealFolded.Add(folded)
+	if err := b.writeMetaLocked(ariaID, c, &meta); err != nil {
+		return
+	}
+	slog.Info("meta refolded", "aria", ariaID, "from", from.LastFigaroLT, "to", meta.LastFigaroLT, "folded", folded)
+}
+
+func (meta *AriaMeta) ResetCounters() {
+	meta.MessageCount, meta.TurnCount = 0, 0
+	meta.TokensIn, meta.TokensOut = 0, 0
+	meta.CacheReadTokens, meta.CacheWriteTokens = 0, 0
+	meta.ContextTokens, meta.ContextExact = 0, false
+	meta.LastFigaroLT = 0
 }
 
 func (meta *AriaMeta) Fold(e Entry[message.Message]) {

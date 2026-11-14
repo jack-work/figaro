@@ -1071,7 +1071,7 @@ func (b *XwalBackend) dropHandle(id string) {
 }
 
 func (b *XwalBackend) metaPath(id string) string {
-	return filepath.Join(b.root, "_meta", id+".json")
+	return metaSidecar(b.root, id)
 }
 
 func readJSON[T any](path string) (*T, error) {
