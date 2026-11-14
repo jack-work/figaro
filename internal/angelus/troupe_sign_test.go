@@ -154,7 +154,7 @@ func TestTroupeSignRefusals(t *testing.T) {
 	require.ErrorContains(t, err, "itself")
 	for _, endpoint := range []string{"", "b.lan", "0.0.0.0:7443", ":7443"} {
 		_, _, err = r.sign(as("0"), "node-b", endpoint)
-		require.ErrorContains(t, err, "door", endpoint)
+		require.ErrorContains(t, err, "endpoint", endpoint)
 	}
 	params, _ := json.Marshal(rpc.TroupeSignRequest{Troupe: "estate", Node: "node-b", PublicKey: []byte{1, 2, 3}, Endpoint: "b:1"})
 	_, err = r.call[rpc.MethodTroupeSign](as("0"), params)
@@ -226,7 +226,7 @@ func TestAMembersIdIsSignedAgainOnlyWithItsOldKey(t *testing.T) {
 	req.Rejoin = &rpc.TroupeRejoin{Chain: chain, Sig: sig}
 	req.Endpoint = "b.tail:7443"
 	_, err = r.call[rpc.MethodTroupeSign](as("member"), signParams(t, req))
-	require.ErrorContains(t, err, "old certificate's key", "the proof covers the door")
+	require.ErrorContains(t, err, "old certificate's key", "the proof covers the endpoint")
 	req.Endpoint = "b.lan:7443"
 	_, err = r.call[rpc.MethodTroupeSign](as("member"), signParams(t, req))
 	require.NoError(t, err)

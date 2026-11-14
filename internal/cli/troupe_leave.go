@@ -63,10 +63,10 @@ func troupeLeave(ctx context.Context, d leaveEndpoint, site joinSite, name strin
 		return err
 	}
 	if err := dropTroupeConfig(site.loaded.ConfigPath); err != nil {
-		fmt.Fprintf(o.Out, "could not edit %s (%v): remove [troupe] and [door.tls] yourself\n", site.loaded.ConfigPath, err)
+		fmt.Fprintf(o.Out, "could not edit %s (%v): remove [troupe] and [endpoint.tls] yourself\n", site.loaded.ConfigPath, err)
 		return err
 	}
-	fmt.Fprintf(o.Out, "removed this node's troupe keys and [troupe] and [door.tls] from %s; restart the daemon: figaro stop\n", site.loaded.ConfigPath)
+	fmt.Fprintf(o.Out, "removed this node's troupe keys and [troupe] and [endpoint.tls] from %s; restart the daemon: figaro stop\n", site.loaded.ConfigPath)
 	return nil
 }
 
@@ -94,10 +94,10 @@ func dropTroupeConfig(path string) error {
 		return err
 	}
 	delete(raw, "troupe")
-	if endpoint, ok := raw["door"].(map[string]any); ok {
+	if endpoint, ok := raw["endpoint"].(map[string]any); ok {
 		delete(endpoint, "tls")
 		if len(endpoint) == 0 {
-			delete(raw, "door")
+			delete(raw, "endpoint")
 		}
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".config.toml.*")

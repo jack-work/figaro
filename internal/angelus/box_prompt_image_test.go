@@ -60,10 +60,10 @@ func receiptJPEG(t *testing.T) string {
 // user turn, not through any tool.
 func TestABoxSendsAPictureToAnAriaWithNoTools(t *testing.T) {
 	sb := serveBoxEndpoint(t, true)
-	endpoint := filepath.Join(filepath.Dir(sb.sock), "door.sock")
+	endpoint := filepath.Join(filepath.Dir(sb.sock), "ep.sock")
 	p := &promptRecorder{seen: make(chan seenTurn, 1)}
 	r := newRigProviding(t, defaultPolicy,
-		fmt.Sprintf("[sandbox.boxes.judge]\nexec = %q\ndoor = %q\n", sb.sock, endpoint),
+		fmt.Sprintf("[sandbox.boxes.judge]\nexec = %q\nendpoint = %q\n", sb.sock, endpoint),
 		func(string, provider.Knobs) (provider.Provider, error) { return p, nil })
 	ln, err := angelus.ListenUnix(endpoint, 0o660)
 	if err != nil {
@@ -85,7 +85,7 @@ func TestABoxSendsAPictureToAnAriaWithNoTools(t *testing.T) {
 	img := receiptJPEG(t)
 	refused := boxOnAria(t, c, rpc.MethodQua, id, rpc.QuaRequest{Text: "total?", Images: []rpc.QuaImage{{MimeType: "image/jpeg", Data: base64.StdEncoding.EncodeToString([]byte("<svg/>"))}}}, nil)
 	if refused == nil || !strings.Contains(refused.Error(), "not png, jpeg, gif or webp") {
-		t.Fatalf("a non-image through the box door must be refused, got %v", refused)
+		t.Fatalf("a non-image through the box endpoint must be refused, got %v", refused)
 	}
 	if err := boxOnAria(t, c, rpc.MethodQua, id, rpc.QuaRequest{Text: "total?", Images: []rpc.QuaImage{{MimeType: "image/jpeg", Data: img}}}, nil); err != nil {
 		t.Fatalf("the box could not send a picture: %v", err)

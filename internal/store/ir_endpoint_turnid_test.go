@@ -81,7 +81,7 @@ func TestEndpointDerivationAgreesWithStampIDs(t *testing.T) {
 	require.Len(t, stored, len(fresh))
 	for i := range fresh {
 		require.Equal(t, fresh[i].TurnID, stored[i].Payload.TurnID,
-			"record %d: door stored %d, StampIDs derives %d",
+			"record %d: endpoint stored %d, StampIDs derives %d",
 			i, stored[i].Payload.TurnID, fresh[i].TurnID)
 	}
 }

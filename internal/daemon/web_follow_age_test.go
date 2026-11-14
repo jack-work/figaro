@@ -15,7 +15,7 @@ import (
 // edge follow age; a bearer endpoint's groups come from the token it verifies.
 func TestOnlyTheEdgeEndpointTakesTheFollowAge(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[door]\nedge_follow_max_age = \"20m\"\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[endpoint]\nedge_follow_max_age = \"20m\"\n"), 0o600))
 	loaded, err := config.Load(dir)
 	require.NoError(t, err)
 
@@ -28,7 +28,7 @@ func TestOnlyTheEdgeEndpointTakesTheFollowAge(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, bearer.FollowMaxAge)
 
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[door]\nedge_follow_max_age = \"0s\"\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[endpoint]\nedge_follow_max_age = \"0s\"\n"), 0o600))
 	loaded, err = config.Load(dir)
 	require.NoError(t, err)
 	_, err = webEndpointLimits(loaded, config.WebEndpoint{Authn: "upstream"}, nil)

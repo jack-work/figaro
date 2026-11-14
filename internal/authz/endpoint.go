@@ -36,7 +36,7 @@ func (d Endpoint) String() string {
 	case EndpointUnknown:
 		return "unknown"
 	}
-	return fmt.Sprintf("door %d", d)
+	return fmt.Sprintf("endpoint %d", d)
 }
 
 func (d Endpoint) SeatsOnlyPolicySubjects() bool {
@@ -67,7 +67,7 @@ func LocalOrOwner(owner jkauthz.Principal) Policy {
 		if PassesUnpoliced(r.Endpoint, owner, r.Subject) {
 			return Allow()
 		}
-		return Deny("%s: no policy is loaded, so the %s door passes only the owner", r.Method, r.Endpoint)
+		return Deny("%s: no policy is loaded, so the %s endpoint passes only the owner", r.Method, r.Endpoint)
 	})
 }
 

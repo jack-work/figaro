@@ -117,13 +117,13 @@ func TestALeafRefusesWhatItCannotStandBehind(t *testing.T) {
 		root []byte
 		want string
 	}{
-		"a bad node id":     {leafOpts{For: "spain", PublicKey: good.PublicKey, Endpoint: good.Endpoint}, raw, "not a node id"},
-		"a short key":       {leafOpts{For: otherNode, PublicKey: "abcd", Endpoint: good.Endpoint}, raw, "--public-key"},
-		"a wildcard door":   {leafOpts{For: otherNode, PublicKey: good.PublicKey, Endpoint: "0.0.0.0:7443"}, raw, "--door"},
-		"another root":      {good, other, "not troupe estate's root"},
-		"this node itself":  {leafOpts{For: founder, PublicKey: good.PublicKey, Endpoint: good.Endpoint}, raw, "names this node"},
-		"past the most":     {leafOpts{For: otherNode, PublicKey: good.PublicKey, Endpoint: good.Endpoint, TTL: 31 * 24 * time.Hour}, raw, "--ttl 31d is longer than this node issues: [troupe] max_leaf_ttl is 30d"},
-		"past its own most": {leafOpts{For: otherNode, PublicKey: good.PublicKey, Endpoint: good.Endpoint, TTL: 10 * 24 * time.Hour, MaxTTL: 9 * 24 * time.Hour}, raw, "max_leaf_ttl is 9d"},
+		"a bad node id":       {leafOpts{For: "spain", PublicKey: good.PublicKey, Endpoint: good.Endpoint}, raw, "not a node id"},
+		"a short key":         {leafOpts{For: otherNode, PublicKey: "abcd", Endpoint: good.Endpoint}, raw, "--public-key"},
+		"a wildcard endpoint": {leafOpts{For: otherNode, PublicKey: good.PublicKey, Endpoint: "0.0.0.0:7443"}, raw, "--endpoint"},
+		"another root":        {good, other, "not troupe estate's root"},
+		"this node itself":    {leafOpts{For: founder, PublicKey: good.PublicKey, Endpoint: good.Endpoint}, raw, "names this node"},
+		"past the most":       {leafOpts{For: otherNode, PublicKey: good.PublicKey, Endpoint: good.Endpoint, TTL: 31 * 24 * time.Hour}, raw, "--ttl 31d is longer than this node issues: [troupe] max_leaf_ttl is 30d"},
+		"past its own most":   {leafOpts{For: otherNode, PublicKey: good.PublicKey, Endpoint: good.Endpoint, TTL: 10 * 24 * time.Hour, MaxTTL: 9 * 24 * time.Hour}, raw, "max_leaf_ttl is 9d"},
 	} {
 		d := &fakeLeafEndpoint{}
 		c.o.Out = filepath.Join(t.TempDir(), "out")

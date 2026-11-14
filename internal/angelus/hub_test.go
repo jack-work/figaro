@@ -75,7 +75,7 @@ func hubEndpoint(t testing.TB, hb *ariaHub, policy authz.Policy) string {
 
 func shortSocketPath(t testing.TB) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "door")
+	dir, err := os.MkdirTemp("", "endpoint")
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	return filepath.Join(dir, "d.sock")

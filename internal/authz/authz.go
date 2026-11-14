@@ -266,9 +266,9 @@ func Enforce(p *Policies) Policy {
 		if (r.Endpoint == EndpointBox || r.Endpoint == EndpointHost) && !p.pinnedToBox(r.Subject, figaro) {
 			if box, _ := BoxOf(r.Subject.Principal); r.Endpoint == EndpointBox && verb != rpc.VerbNone && p.claimRequiredIn(box) {
 				if figaro == "" {
-					return Deny("%s: box %s's door takes only calls that name their figaro (sandbox.boxes.%s.figaro_claim = \"required\")", r.Method, box, box)
+					return Deny("%s: box %s's endpoint takes only calls that name their figaro (sandbox.boxes.%s.figaro_claim = \"required\")", r.Method, box, box)
 				}
-				return Deny("%s: figaro %s does not run in box %s, whose door takes only calls that name one that does (sandbox.boxes.%s.figaro_claim = \"required\")", r.Method, figaro, box, box)
+				return Deny("%s: figaro %s does not run in box %s, whose endpoint takes only calls that name one that does (sandbox.boxes.%s.figaro_claim = \"required\")", r.Method, figaro, box, box)
 			}
 			figaro, dropped = "", figaro != ""
 		}
@@ -300,7 +300,7 @@ func Enforce(p *Policies) Policy {
 		}
 		if verb == rpc.VerbLease || verb == rpc.VerbSay {
 			if r.Endpoint == EndpointNode {
-				return Deny("%s: %s is asked of the daemon that holds the pool, never through a node door", r.Method, verb)
+				return Deny("%s: %s is asked of the daemon that holds the pool, never through a node endpoint", r.Method, verb)
 			}
 		}
 		if verb == rpc.VerbLease {
@@ -376,7 +376,7 @@ func (p *Policies) dropsClaim(d Endpoint, figaro, method string) bool {
 	if !d.dropsClaimsNotHeld() || p.holdsFigaro(figaro) {
 		return false
 	}
-	slog.Info("authz: claim for a figaro not held here dropped", "door", d.String(), "figaro", figaro, "method", method)
+	slog.Info("authz: claim for a figaro not held here dropped", "endpoint", d.String(), "figaro", figaro, "method", method)
 	return true
 }
 

@@ -3,7 +3,7 @@
 # an isolated store, in the nix devshell. It exercises the seams this branch
 # cut, and it asserts rather than prints:
 #
-#   1. the collapsed READS -- one name, both doors, live AND dormant
+#   1. the collapsed READS -- one name, both endpoints, live AND dormant
 #   2. the SDK's two clients, through the CLI verbs that use them
 #   3. attendance, per verb (attendlive.sh covers this in full)
 #   4. a real turn, so the whole stack is proven end to end
@@ -55,7 +55,7 @@ has "status (dormant)" "$("$BIN" --bind status --id "$A" 2>&1)"   "$A"
 LIVE=$("$BIN" --bind ls 2>&1 | grep -c "$("$BIN" status "$A" -j 2>/dev/null | jq -r .handle)" || true)
 [ "$LIVE" -ge 1 ] && ok "the aria still lists after the read" || bad "the aria vanished from ls"
 
-echo "== forms, study, cast (the SDK's other door)"
+echo "== forms, study, cast (the SDK's other endpoint)"
 F=$("$BIN" --bind form new -S name=regress -j 2>/dev/null | jq -r .form_id)
 has "form new mints" "$F" "@"
 "$BIN" --bind set --id "$F" note hello >/dev/null 2>&1

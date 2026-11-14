@@ -93,13 +93,13 @@ func dialable(path string) bool {
 // endpoint, not a box endpoint, from spawn until it exits.
 func TestNoEndpointAnswersBeforeTheHushGateOpens(t *testing.T) {
 	hushE2EEnabled(t)
-	rig := newHushRig(t, "doors")
+	rig := newHushRig(t, "endpoints")
 	endpoints := map[string]string{
 		"cli": filepath.Join(rig.root, "run", "angelus.sock"),
 		"web": filepath.Join(rig.root, "web.sock"),
 		"box": filepath.Join(rig.root, "box.sock"),
 	}
-	cfg := fmt.Sprintf("[door.web]\npath = %q\nauthn = \"upstream\"\n[authz.upstream]\nissuer = \"https://auth.example\"\n[sandbox.boxes.b]\nexec = %q\ndoor = %q\noutfits = [\"*\"]\nproviders = [\"*\"]\n",
+	cfg := fmt.Sprintf("[endpoint.web]\npath = %q\nauthn = \"upstream\"\n[authz.upstream]\nissuer = \"https://auth.example\"\n[sandbox.boxes.b]\nexec = %q\nendpoint = %q\noutfits = [\"*\"]\nproviders = [\"*\"]\n",
 		endpoints["web"], filepath.Join(rig.root, "box-exec.sock"), endpoints["box"])
 	if err := os.WriteFile(filepath.Join(rig.root, "config", "config.toml"), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func TestNoEndpointAnswersBeforeTheHushGateOpens(t *testing.T) {
 	rig.start(t)
 	for name, p := range endpoints {
 		if !dialable(p) {
-			t.Fatalf("with the gate open the %s door %s does not answer: this test cannot see a door", name, p)
+			t.Fatalf("with the gate open the %s endpoint %s does not answer: this test cannot see an endpoint", name, p)
 		}
 	}
 	if err := rig.run("stop", "--force"); err != nil {
@@ -144,7 +144,7 @@ func TestNoEndpointAnswersBeforeTheHushGateOpens(t *testing.T) {
 		for name, p := range endpoints {
 			if dialable(p) {
 				w.Close()
-				t.Fatalf("the %s door %s answered before the hush gate opened", name, p)
+				t.Fatalf("the %s endpoint %s answered before the hush gate opened", name, p)
 			}
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -162,7 +162,7 @@ func TestNoEndpointAnswersBeforeTheHushGateOpens(t *testing.T) {
 	}
 	for name, p := range endpoints {
 		if _, err := os.Stat(p); err == nil {
-			t.Fatalf("the %s door %s was bound although the gate never opened", name, p)
+			t.Fatalf("the %s endpoint %s was bound although the gate never opened", name, p)
 		}
 	}
 }

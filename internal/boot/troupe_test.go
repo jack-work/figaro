@@ -47,9 +47,9 @@ func TestTroupeSelectedByConfigAndEnvironment(t *testing.T) {
 		t.Fatalf("hush credential = %q", tr.HushCredential())
 	}
 
-	t.Setenv("FIGARO_TROUPE", "unix:///run/figaro-door/angelus.sock")
+	t.Setenv("FIGARO_TROUPE", "unix:///run/figaro-endpoint/angelus.sock")
 	tr, ok, err = SelectedTroupe(l)
-	if err != nil || !ok || tr.URL != "unix:///run/figaro-door/angelus.sock" {
+	if err != nil || !ok || tr.URL != "unix:///run/figaro-endpoint/angelus.sock" {
 		t.Fatalf("env selection = %+v ok=%v err=%v: the environment outranks the config", tr, ok, err)
 	}
 	if TroupeResolver(tr) != nil {

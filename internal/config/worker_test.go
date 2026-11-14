@@ -108,7 +108,7 @@ func TestAPoolRefusesWhatItCannotBe(t *testing.T) {
 	workers := `workers = ["worker0", "worker1"]` + "\n"
 	for name, c := range map[string]struct{ body, want string }{
 		"a worker with an exec path":  {swap(workers, `workers = ["worker0", {name = "worker1", exec = "/run/box/worker1.sock"}]`+"\n"), "carrying exec"},
-		"a worker with a door":        {swap(workers, `workers = [{name = "worker0", door = "/run/door/worker0.sock"}]`+"\n"), "carrying door"},
+		"a worker with an endpoint":   {swap(workers, `workers = [{name = "worker0", endpoint = "/run/endpoint/worker0.sock"}]`+"\n"), "carrying endpoint"},
 		"a worker with a reset":       {swap(workers, `workers = [{name = "worker0", reset = "/run/reset/worker0"}]`+"\n"), "carrying name, reset"},
 		"workers as tables":           {swap(workers, "[worker.pools.chat-groups.workers.worker0]\nexec = \"/run/box/worker0.sock\"\n"), "incompatible types"},
 		"a worker that is a number":   {swap(workers, "workers = [3]\n"), "a worker is a name"},
@@ -268,8 +268,8 @@ func TestAPoolDaemonRefusesWhatItCannotHold(t *testing.T) {
 		want      string
 	}{
 		"a troupe":          {poolBody + "[troupe]\nname = \"kelliher\"\n", nil, "[troupe] " + beside},
-		"a peer":            {poolBody + "[peers.gluck]\ndoor = \"gluck:7777\"\n", nil, "[peers] " + beside},
-		"a node door":       {poolBody + "[door.tls]\nlisten = \":7777\"\n", nil, "[door.tls] " + beside},
+		"a peer":            {poolBody + "[peers.gluck]\nendpoint = \"gluck:7777\"\n", nil, "[peers] " + beside},
+		"a node endpoint":   {poolBody + "[endpoint.tls]\nlisten = \":7777\"\n", nil, "[endpoint.tls] " + beside},
 		"a static box":      {poolBody + "[sandbox.boxes.judge]\nexec = \"/run/box/judge.sock\"\n", nil, "[sandbox.boxes] " + beside},
 		"a service token":   {poolBody + "[service_tokens.edge]\nissuer = \"https://auth.example\"\n", nil, "[service_tokens.edge] " + beside},
 		"an api key":        {strings.Replace(poolBody, "policy = \"policy.toml\"\n", "policy = \"policy.toml\"\n[[authz.api_keys]]\nid = \"k1\"\n", 1), nil, "[authz.api_keys] " + beside},

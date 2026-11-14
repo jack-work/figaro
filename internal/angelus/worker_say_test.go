@@ -178,13 +178,13 @@ func TestASayIsRefusedForAnyoneButTheLeasesOwnFigaro(t *testing.T) {
 	for why, ctx := range map[string]context.Context{"the owner": asOwner(), "broker": asBroker()} {
 		params, _ := rpc.WithCaller(rpc.WorkerSayRequest{Text: "t"}, lease.Aria, nil)
 		if _, err := r.h[rpc.MethodWorkerSay](ctx, params); err == nil {
-			t.Errorf("%s said through a door", why)
+			t.Errorf("%s said through an endpoint", why)
 		}
 	}
 	for _, endpoint := range []authz.Endpoint{authz.EndpointBox, authz.EndpointWeb, authz.EndpointLocal} {
 		params, _ := rpc.WithCaller(rpc.WorkerSayRequest{Text: "t"}, lease.Aria, nil)
 		if _, err := r.h[rpc.MethodWorkerSay](angelus.AsLeasedBoxThrough(lease.Box, endpoint), params); err == nil {
-			t.Errorf("the lease's own principal said through the %v door", endpoint)
+			t.Errorf("the lease's own principal said through the %v endpoint", endpoint)
 		}
 	}
 	if len(broker.got) != 0 {

@@ -25,7 +25,7 @@ const oldShapeForm = `{"schema":1,"snapshot":{},"version":3,"view":{"rows":"*.mo
 // "json: cannot unmarshal". Every form read must say the daemon is another
 // build, name both builds, and say to run figaro stop.
 func TestAnOlderDaemonsFormNamesBothBuildsAndFigaroStop(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "door.sock")
+	sock := filepath.Join(t.TempDir(), "ep.sock")
 	var calls atomic.Int32
 	fakeRPCServer(t, sock, map[string]jkrpc.HandlerFunc{
 		rpc.MethodForm: func(context.Context, json.RawMessage) (interface{}, error) {

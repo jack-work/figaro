@@ -29,7 +29,7 @@ func (e *fellBehind) Error() string {
 	case e.stalled > 0:
 		return fmt.Sprintf("figaro: dropped a connection that stopped reading: one write stalled %s with %d bytes waiting; reconnect and resync", e.stalled.Round(time.Second), e.queued)
 	case e.budget > 0:
-		return fmt.Sprintf("figaro: dropped the connection furthest behind (%d bytes) when all doors passed %d; reconnect and resync", e.queued, e.budget)
+		return fmt.Sprintf("figaro: dropped the connection furthest behind (%d bytes) when all endpoints passed %d; reconnect and resync", e.queued, e.budget)
 	}
 	return fmt.Sprintf("figaro: dropped a connection that fell behind: %d bytes waiting, over %d; reconnect and resync", e.queued, outboxMax)
 }
@@ -38,7 +38,7 @@ func (a *Angelus) outboxBudget() *outboxBudget {
 	a.outboxOnce.Do(func() {
 		n, err := a.Settings.EndpointOutboxBudget()
 		if err != nil {
-			slog.Warn("door outbox budget", "err", err, "using_mib", config.DefaultOutboxBudgetMiB)
+			slog.Warn("endpoint outbox budget", "err", err, "using_mib", config.DefaultOutboxBudgetMiB)
 			n = config.DefaultOutboxBudgetMiB << 20
 		}
 		a.outboxes = newOutboxBudget(n)

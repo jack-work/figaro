@@ -79,7 +79,7 @@ func TestReaperEndToEnd(t *testing.T) {
 		require.True(t, reaped(t, a, c.FigaroID), "the sweep did not soft-delete it")
 	})
 
-	t.Run("a read through the door keeps it", func(t *testing.T) {
+	t.Run("a read through the endpoint keeps it", func(t *testing.T) {
 		a, acli, ctx := daemonFixture(t)
 		c, err := acli.Create(ctx, dress(t, "mock"), nil)
 		require.NoError(t, err)

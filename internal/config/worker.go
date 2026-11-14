@@ -223,9 +223,9 @@ func (c Config) refuseWhatAPoolDaemonCannotHold(md toml.MetaData, providerFiles 
 	if len(c.Worker.Pools) == 0 {
 		return nil
 	}
-	for _, table := range [][]string{{"troupe"}, {"peers"}, {"door", "tls"}, {"sandbox", "boxes"}, {"authz", "api_keys"}} {
+	for _, table := range [][]string{{"troupe"}, {"peers"}, {"endpoint", "tls"}, {"sandbox", "boxes"}, {"authz", "api_keys"}} {
 		if md.IsDefined(table...) {
-			return fmt.Errorf("[%s] beside [worker.pools]: a daemon that leases workers holds no troupe, peer, node door, static box or api key", strings.Join(table, "."))
+			return fmt.Errorf("[%s] beside [worker.pools]: a daemon that leases workers holds no troupe, peer, node endpoint, static box or api key", strings.Join(table, "."))
 		}
 	}
 	named := map[string]bool{}

@@ -165,7 +165,7 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 		pub = key
 	case Join:
 		if _, _, err := net.SplitHostPort(e.Endpoint); err != nil {
-			return out, fmt.Errorf("door %q: %w", e.Endpoint, err)
+			return out, fmt.Errorf("endpoint %q: %w", e.Endpoint, err)
 		}
 		if err := ValidOwner(e.Owner); err != nil {
 			return out, err
@@ -183,7 +183,7 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 		pub = inter.PublicKey
 	case Leave:
 		if e.Endpoint != "" || e.Owner != "" || len(out.chain) != 2 {
-			return out, errors.New("a leave carries the node's certificate and its issuer, and no door")
+			return out, errors.New("a leave carries the node's certificate and its issuer, and no endpoint")
 		}
 		leaf := out.chain[0]
 		if err := chainsTo(leaf, out.chain[1], root, at); err != nil {
@@ -201,7 +201,7 @@ func verify(e Entry, troupe string, root *x509.Certificate) (verified, error) {
 		pub = key
 	case Revoke:
 		if e.Endpoint != "" || e.Owner != "" || len(out.chain) != 0 {
-			return out, errors.New("a revoke is signed by the root alone, and has no door")
+			return out, errors.New("a revoke is signed by the root alone, and has no endpoint")
 		}
 		pub = root.PublicKey
 	default:

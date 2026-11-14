@@ -211,7 +211,7 @@ func TestWebEndpointClosesAConnectionAtItsMaxAge(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	_, notice, err := c.Read(ctx)
-	require.NoError(t, err, "the door closed without saying why")
+	require.NoError(t, err, "the endpoint closed without saying why")
 	require.GreaterOrEqual(t, time.Since(start), 150*time.Millisecond)
 	var lapsed struct {
 		Method string             `json:"method"`
@@ -375,7 +375,7 @@ func TestABearerConnectionEndsWhenItsTokenExpires(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, notice, err := c.Read(ctx)
-	require.NoError(t, err, "the door closed without saying why")
+	require.NoError(t, err, "the endpoint closed without saying why")
 	var lapsed struct {
 		Params rpc.EndpointLapsed `json:"params"`
 	}

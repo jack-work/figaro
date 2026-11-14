@@ -24,7 +24,7 @@ func loadBoxes(t *testing.T, dir string, boxes map[string]string) *config.Loaded
 	t.Helper()
 	var b strings.Builder
 	for name, endpoint := range boxes {
-		fmt.Fprintf(&b, "[sandbox.boxes.%s]\nexec = %q\ndoor = %q\noutfits = [\"*\"]\nproviders = [\"*\"]\n", name, filepath.Join(dir, name+"-exec.sock"), endpoint)
+		fmt.Fprintf(&b, "[sandbox.boxes.%s]\nexec = %q\nendpoint = %q\noutfits = [\"*\"]\nproviders = [\"*\"]\n", name, filepath.Join(dir, name+"-exec.sock"), endpoint)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(b.String()), 0o600); err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestAHandoverThatCannotListenRestoresTheEndpointItClosed(t *testing.T) {
 	}
 	held := holdEndpoint(t, endpoint)
 	if err := held.list(); err != nil {
-		t.Fatalf("canary: slot1's door never served: %v", err)
+		t.Fatalf("canary: slot1's endpoint never served: %v", err)
 	}
 
 	refused := errors.New("injected listen failure")
@@ -102,24 +102,24 @@ func TestAHandoverThatCannotListenRestoresTheEndpointItClosed(t *testing.T) {
 	t.Cleanup(func() { listenBoxEndpoint = ListenUnix })
 
 	err := a.ReloadBoxEndpoints(loadBoxes(t, dir, map[string]string{"slot2": endpoint}))
-	if !errors.Is(err, refused) || !strings.Contains(err.Error(), "slot1.door") {
+	if !errors.Is(err, refused) || !strings.Contains(err.Error(), "slot1.endpoint") {
 		t.Fatalf("the reload was not refused naming what it restored: %v", err)
 	}
 	select {
 	case r := <-held.lapsed:
-		if !strings.Contains(r, "box slot1's door left the config") {
+		if !strings.Contains(r, "box slot1's endpoint left the config") {
 			t.Fatalf("lapse reason %q", r)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("the connection held on the closed door got no lapse")
+		t.Fatal("the connection held on the closed endpoint got no lapse")
 	}
 	again := holdEndpoint(t, endpoint)
 	if err := again.list(); err != nil {
-		t.Fatalf("the closed door did not answer again after the refused reload: %v", err)
+		t.Fatalf("the closed endpoint did not answer again after the refused reload: %v", err)
 	}
 	a.boxEndpointsMu.Lock()
-	o, ok := a.boxEndpoints.open["slot1.door"]
-	_, handed := a.boxEndpoints.open["slot2.door"]
+	o, ok := a.boxEndpoints.open["slot1.endpoint"]
+	_, handed := a.boxEndpoints.open["slot2.endpoint"]
 	a.boxEndpointsMu.Unlock()
 	if !ok || o.spec.box != "slot1" || handed {
 		t.Fatalf("after the refused reload the path is held by %+v, slot2 holds it: %v", o, handed)

@@ -22,8 +22,8 @@ import (
 // came through: a box that requires a claim still answers its host endpoint.
 func TestARequiredBoxStillAnswersItsHostEndpoint(t *testing.T) {
 	dir := t.TempDir()
-	endpoint := filepath.Join(dir, "chat", "door", "door.sock")
-	host := filepath.Join(dir, "chat", "host-door", "host.sock")
+	endpoint := filepath.Join(dir, "chat", "ep", "ep.sock")
+	host := filepath.Join(dir, "chat", "host-endpoint", "host.sock")
 	for _, d := range []string{filepath.Dir(endpoint), filepath.Dir(host)} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
@@ -35,7 +35,7 @@ func TestARequiredBoxStillAnswersItsHostEndpoint(t *testing.T) {
 			if required {
 				claim = "figaro_claim = \"required\"\n"
 			}
-			body := fmt.Sprintf("[sandbox.boxes.chat]\nexec = %q\ndoor = %q\nhost_door = %q\noutfits = [\"*\"]\nproviders = [\"*\"]\n%s",
+			body := fmt.Sprintf("[sandbox.boxes.chat]\nexec = %q\nendpoint = %q\nhost_endpoint = %q\noutfits = [\"*\"]\nproviders = [\"*\"]\n%s",
 				filepath.Join(dir, "exec.sock"), endpoint, host, claim)
 			if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o600); err != nil {
 				t.Fatal(err)
@@ -71,11 +71,11 @@ func TestARequiredBoxStillAnswersItsHostEndpoint(t *testing.T) {
 				return c.Call(context.Background(), rpc.MethodList, rpc.ListRequest{}, &out)
 			}
 			if err := list(host); err != nil {
-				t.Fatalf("an unclaimed call through the host door: %v", err)
+				t.Fatalf("an unclaimed call through the host endpoint: %v", err)
 			}
 			err = list(endpoint)
 			if required && (err == nil || !strings.Contains(err.Error(), "figaro_claim")) {
-				t.Fatalf("an unclaimed call through the in-box door of a required box: %v", err)
+				t.Fatalf("an unclaimed call through the in-box endpoint of a required box: %v", err)
 			}
 			if !required && err != nil {
 				t.Fatalf("an unclaimed in-box call to a box that requires nothing: %v", err)

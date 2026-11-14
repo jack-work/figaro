@@ -487,17 +487,17 @@ func Run() {
 		os.Exit(1)
 	}
 	if err := serveWebEndpoint(ctx, a, loaded); err != nil {
-		slog.Error("angelus web door", "err", err)
+		slog.Error("angelus web endpoint", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
 	if err := a.OpenBoxEndpoints(ctx, loaded); err != nil {
-		slog.Error("angelus box door", "err", err)
+		slog.Error("angelus box endpoint", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
 	if err := serveNodeEndpoint(ctx, a, loaded); err != nil {
-		slog.Error("angelus node door", "err", err)
+		slog.Error("angelus node endpoint", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
@@ -541,23 +541,23 @@ func serveWebEndpoint(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 	}
 	ln, err := angelus.ListenUnix(web.Path, web.Mode)
 	if err != nil {
-		return fmt.Errorf("door.web: %w", err)
+		return fmt.Errorf("endpoint.web: %w", err)
 	}
 	admit, err := webAuthenticator(web.Authn, web.Path, a.SocketPath, loaded.Config.Authz, authz.Bearers{Issuers: a.Issuers, Keys: a.APIKeys})
 	if err != nil {
 		ln.Close()
-		return fmt.Errorf("door.web: %w", err)
+		return fmt.Errorf("endpoint.web: %w", err)
 	}
 	endpoint, err := webEndpointLimits(loaded, web, admit)
 	if err != nil {
 		ln.Close()
 		return err
 	}
-	slog.Info("web door listening", "path", web.Path, "authn", web.Authn, "max_conn_age", web.MaxConnAge.String(), "edge_follow_max_age", endpoint.FollowMaxAge.String(), "admits", admit != nil)
-	a.Go("web door socket", func() {
+	slog.Info("web endpoint listening", "path", web.Path, "authn", web.Authn, "max_conn_age", web.MaxConnAge.String(), "edge_follow_max_age", endpoint.FollowMaxAge.String(), "admits", admit != nil)
+	a.Go("web endpoint socket", func() {
 		defer os.Remove(web.Path)
 		if err := a.ServeWeb(ctx, ln, endpoint); err != nil {
-			slog.Error("web door", "err", err)
+			slog.Error("web endpoint", "err", err)
 		}
 	})
 	return nil
