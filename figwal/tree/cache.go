@@ -409,13 +409,20 @@ func (c *Cache[U]) DropNode(node string) {
 	c.mu.Lock()
 	var freed int64
 	if nd := c.lookup(node); nd != nil {
-		for _, r := range nd.load() {
-			if r.resident {
-				freed += r.bytes
-				r.units = nil
-				r.resident = false
-				r.pinned = false
+		runs := nd.load()
+		var next []*run[U]
+		for i, r := range runs {
+			if !r.resident {
+				continue
 			}
+			if next == nil {
+				next = append([]*run[U](nil), runs...)
+			}
+			next[i] = hollow(r)
+			freed += r.bytes
+		}
+		if next != nil {
+			nd.publish(next)
 		}
 	}
 	c.mu.Unlock()
