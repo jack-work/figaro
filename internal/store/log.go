@@ -53,6 +53,15 @@ type Log[T any] interface {
 
 var ErrBelowForkBase = xwal.ErrBelowForkBase
 
+type lineageLog interface{ LineageErr() error }
+
+func LineageErr[T any](log Log[T]) error {
+	if l, ok := log.(lineageLog); ok {
+		return l.LineageErr()
+	}
+	return nil
+}
+
 type batchLog[T any] interface {
 	AppendBatch(rows []Entry[T]) ([]Entry[T], error)
 }
