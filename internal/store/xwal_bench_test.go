@@ -81,6 +81,9 @@ func TestNodes_TrunkScanCount(t *testing.T) {
 	defer b.Close()
 	seedTree(t, b, 4, 3, 2) // 4 stumps x 3 convs x (1 + 2 branches) = 36 trunks
 
+	// Seeding asks for lineage, which builds the snapshot; drop it so the
+	// first Nodes() is the cold build being pinned.
+	b.store.topology.Store(nil)
 	trunkScanCount.Store(0)
 	_ = b.store.Nodes()
 	if got := trunkScanCount.Load(); got != 2 {
@@ -101,6 +104,7 @@ func TestConversationList_TrunkScanCount(t *testing.T) {
 	defer b.Close()
 	seedTree(t, b, 4, 3, 2)
 
+	b.store.topology.Store(nil)
 	trunkScanCount.Store(0)
 	nodes := b.store.Conversations()
 	if got := trunkScanCount.Load(); got != 2 {

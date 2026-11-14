@@ -1,9 +1,11 @@
 package store
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/figwal/xwal"
 )
 
 // Lineage is the plumbing prefix sharing needs: figaro's own topology
@@ -108,14 +110,19 @@ func TestLineageBaseMatchesTheTrunkBranchPoint(t *testing.T) {
 	}
 }
 
-func TestLineageOfAnUnknownIDIsEmpty(t *testing.T) {
+// An empty lineage reads as a root: treeLog falls back to the node's own
+// ref and ownBase to 0. A miss must refuse instead.
+func TestLineageOfAnUnknownIDIsAnError(t *testing.T) {
 	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer b.Close()
-	if got := must(b.Store().Lineage("nosuchtrunk")); got != nil {
-		t.Errorf("unknown id returned %v; a miss must not invent a lineage", got)
+	if got, err := b.Store().Lineage("nosuchtrunk"); !errors.Is(err, xwal.ErrUnknownTrunk) || got != nil {
+		t.Errorf("unknown id returned %v, %v; want ErrUnknownTrunk", got, err)
+	}
+	if got, err := b.Store().LineageLinks("nosuchtrunk"); !errors.Is(err, xwal.ErrUnknownTrunk) || got != nil {
+		t.Errorf("unknown id returned links %v, %v; want ErrUnknownTrunk", got, err)
 	}
 }
 
