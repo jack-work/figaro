@@ -10,7 +10,15 @@ import (
 
 var doctorStoreLockWait = 2 * time.Second
 
+const storeLockFDEnv = "FIGARO_STORE_LOCK_FD"
+
 func holdStoreForDoctor(verb string) (release func(), err error) {
+	if raw := os.Getenv(storeLockFDEnv); raw != "" {
+		if err := takeInheritedStoreLock(raw); err != nil {
+			return nil, fmt.Errorf("doctor %s: %w; nothing was changed", verb, err)
+		}
+		return func() {}, nil
+	}
 	if err := os.MkdirAll(boot.StateDir(), 0o700); err != nil {
 		return nil, err
 	}

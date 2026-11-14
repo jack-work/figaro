@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ func pruneLockFixture(t *testing.T) (emptyDir string) {
 	}
 	t.Cleanup(func() { os.RemoveAll(run) })
 	t.Setenv("FIGARO_RUNTIME_DIR", run)
+	t.Setenv(storeLockFDEnv, "")
 	prev := doctorStoreLockWait
 	doctorStoreLockWait = 100 * time.Millisecond
 	t.Cleanup(func() { doctorStoreLockWait = prev })
@@ -195,5 +197,78 @@ func TestDoctorWritersRefuseWhileTheStoreLockIsHeld(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A script holds .daemon.lock on an fd and runs doctor as its child; the
+// child shares that open file description, so flock re-enters.
+func TestPruneChannelDirsAcceptsAnInheritedStoreLock(t *testing.T) {
+	empty := pruneLockFixture(t)
+	parent, ok := takeStoreLockAsDaemon(t)
+	if !ok {
+		t.Fatal("setup: could not take a free store lock")
+	}
+	defer parent.Close()
+	t.Setenv(storeLockFDEnv, strconv.Itoa(int(parent.Fd())))
+	withStdout(t, &midRun{fn: func() {}})
+
+	if err := runDoctorPruneChannelDirs(false, false); err != nil {
+		t.Fatalf("prune under an inherited lock: %v", err)
+	}
+	if _, err := os.Stat(empty); !os.IsNotExist(err) {
+		t.Fatalf("the prune left %s: %v", empty, err)
+	}
+	if f, ok := takeStoreLockAsDaemon(t); ok {
+		f.Close()
+		t.Fatal("doctor let go of the lock its parent holds")
+	}
+}
+
+func TestPruneChannelDirsRefusesAnInheritedFdOnAnotherFile(t *testing.T) {
+	empty := pruneLockFixture(t)
+	if f, ok := takeStoreLockAsDaemon(t); ok {
+		f.Close()
+	}
+	other, err := os.CreateTemp(t.TempDir(), "lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if err := boot.TryLockFile(other); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(storeLockFDEnv, strconv.Itoa(int(other.Fd())))
+
+	err = runDoctorPruneChannelDirs(false, false)
+	if err == nil || !strings.Contains(err.Error(), "is not open on "+boot.StoreLockPath()) {
+		t.Fatalf("prune with an fd on another file: %v, want a refusal", err)
+	}
+	if _, err := os.Stat(empty); err != nil {
+		t.Fatalf("a refused prune removed %s: %v", empty, err)
+	}
+}
+
+// The fd names the right file, but another open holds the lock: the child
+// does not share it, so this is not an inherited lock.
+func TestPruneChannelDirsRefusesAnFdOnTheLockFileThatDoesNotHoldIt(t *testing.T) {
+	empty := pruneLockFixture(t)
+	daemon, ok := takeStoreLockAsDaemon(t)
+	if !ok {
+		t.Fatal("setup: could not take a free store lock")
+	}
+	defer daemon.Close()
+	stray, err := os.OpenFile(boot.StoreLockPath(), os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stray.Close()
+	t.Setenv(storeLockFDEnv, strconv.Itoa(int(stray.Fd())))
+
+	err = runDoctorPruneChannelDirs(false, false)
+	if err == nil || !strings.Contains(err.Error(), "the lock is held by") {
+		t.Fatalf("prune with an fd that does not hold the lock: %v, want a refusal", err)
+	}
+	if _, err := os.Stat(empty); err != nil {
+		t.Fatalf("a refused prune removed %s: %v", empty, err)
 	}
 }

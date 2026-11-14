@@ -2065,7 +2065,18 @@ the daemon neither reads nor writes it.`,
 	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
-		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; pprof arms the profiler on the running daemon; provider shows recent provider round-trips (including in-flight) and the decision routes methods have stopped asking; librettos recounts derived-form observers; normalize makes every aria own its history and drops the overrides its history now agrees with; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent; residents lists live agents, open endpoints and _meta sidecars whose id the store no longer holds; snapshot copies the most recently active arias, with their history and every form, into a new store; quarantine lists the segments a corrupt frame keeps closed and releases one by cutting it at the bad frame, after copying it aside (owner only); unit says whether the daemon on the socket is the systemd unit's",
+		Long: doctorSummary + `.
+
+The verbs that open the store offline (gc, librettos, toolcalls,
+prune-channel-dirs, dry runs included) take the store lock
+($STATE/.daemon.lock) and refuse while a daemon or another process
+holds it.
+
+A script that already holds that lock can hand it to doctor: open the
+lock file, flock it, and run doctor with FIGARO_STORE_LOCK_FD=<fd> naming
+the inherited descriptor. Doctor checks the fd is open on the same file
+and holds the lock through it, and refuses otherwise.`,
+		Short: doctorSummary,
 		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] | prune-channel-dirs [-n|--dry-run] [-j] | skills [-j] | keys | ttl [-j] | residents [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
@@ -2280,3 +2291,5 @@ auto-load it on the next tab.
 
 	return r
 }
+
+const doctorSummary = "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; pprof arms the profiler on the running daemon; provider shows recent provider round-trips (including in-flight) and the decision routes methods have stopped asking; librettos recounts derived-form observers; normalize makes every aria own its history and drops the overrides its history now agrees with; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent; residents lists live agents, open endpoints and _meta sidecars whose id the store no longer holds; snapshot copies the most recently active arias, with their history and every form, into a new store; quarantine lists the segments a corrupt frame keeps closed and releases one by cutting it at the bad frame, after copying it aside (owner only); unit says whether the daemon on the socket is the systemd unit's"
