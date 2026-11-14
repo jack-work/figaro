@@ -302,6 +302,19 @@ func (t *Trunks) forkTurnOf(key string, base uint64) (turn uint64, known, exact 
 	return turn, true, exact
 }
 
+func (t *Trunks) RecordedBaseTurn(trunk string, base uint64) (turn uint64, known, exact bool) {
+	endRead, err := t.beginTrackedRead()
+	if err != nil {
+		return 0, false, false
+	}
+	defer endRead()
+	key, ok := t.idx.Head(trunk)
+	if !ok {
+		return 0, false, false
+	}
+	return t.forkTurnOf(key, base)
+}
+
 // SetBranchedTurn records the turn a trunk's fork base falls in, in the
 // parent's turn space. base must be the base on disk now: a topology change
 // that moved it must not inherit the number. The write is atomic and
