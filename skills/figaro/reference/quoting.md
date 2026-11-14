@@ -6,7 +6,7 @@ from a shell, or with the cursor in the transcript pager.
 ## The token
 
 A prompt that BEGINS with a coordinate token quotes that passage. The daemon
-resolves it once, at the door, and what lands in the log is the quote, not the
+resolves it once, at the endpoint, and what lands in the log is the quote, not the
 token.
 
 ```

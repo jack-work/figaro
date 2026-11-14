@@ -799,7 +799,7 @@ in `transcript_screenmoved_test.go`: with the fix reverted the failure prints
 
 **Decided by the master, and built:** trouble goes in the FRAME BUFFER as the
 red left-most token of the status row, and the row ellipsises when it overflows
-(`livelogTurn.report` picks the door by renderer; `leaveTranscript` reprints the
+(`livelogTurn.report` picks the endpoint by renderer; `leaveTranscript` reprints the
 full text to the shell so a multi-line hint is not lost to a one-row widget).
 Note `displayWidth`, which that needed: `runewidth.StringWidth` counts the BYTES
 of an SGR run as columns, so a dim wrapper alone measured eight columns of
