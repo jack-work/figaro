@@ -339,6 +339,8 @@ func (l *Log) Disk() *disk.Log { return l.inner }
 // ForkBase returns the first index this log owns, or zero for a root log.
 func (l *Log) ForkBase() uint64 { return l.inner.ForkBase() }
 
+func (l *Log) AdoptAbsorbedPrefix() { l.inner.AdoptAbsorbedPrefix() }
+
 func (l *Log) Absent() bool { return l.inner.Absent() }
 
 // StateAt reconstructs a header-mode state from the on-disk watermark.
