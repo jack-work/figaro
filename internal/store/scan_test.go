@@ -133,8 +133,8 @@ func TestScanCrossesAForkSeam(t *testing.T) {
 			const base = 41
 			child := &treeLog[string]{
 				inner: childMem, node: "child", sizeOf: sizeOf, key: irKey[string],
-				lineage: func() []fwtree.Ref {
-					return []fwtree.Ref{{Node: "parent"}, {Node: "child", Base: base}}
+				lineage: func() ([]fwtree.Ref, error) {
+					return []fwtree.Ref{{Node: "parent"}, {Node: "child", Base: base}}, nil
 				},
 			}
 			child.cache = cache

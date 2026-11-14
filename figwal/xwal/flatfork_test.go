@@ -199,7 +199,7 @@ func TestRebuildKeepsAForkedParentLive(t *testing.T) {
 // lineage must follow .from, which is what a flat writer sets.
 func TestLineageReadsTheFlatParent(t *testing.T) {
 	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
-	if _, stump, _ := f.lineage(string(trunk)); stump != "s" {
+	if _, stump, _, _ := f.lineage(string(trunk)); stump != "s" {
 		t.Errorf("trunk under stump: stump = %q, want %q", stump, "s")
 	}
 	for range 3 {
@@ -211,7 +211,7 @@ func TestLineageReadsTheFlatParent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	parent, _, bl := f.lineage(string(alt))
+	parent, _, bl, _ := f.lineage(string(alt))
 	if parent != string(trunk) {
 		t.Errorf("forked trunk: parent = %q, want %q", parent, trunk)
 	}
