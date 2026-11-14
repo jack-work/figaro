@@ -25,7 +25,7 @@ These hold across the whole CLI:
 - **`-h`/`--help`** prints that verb's help on **stdout**, exit 0: reserved on
   every verb, so no command may claim `-h` for itself. Usage printed because
   argv was wrong goes to **stderr** with **exit 2**; exit 1 means the command
-  ran and failed. `figaro help [<verb>]` is the same help by another door.
+  ran and failed. `figaro help [<verb>]` is the same help by another route.
 
 ## Prompting
 
@@ -147,7 +147,7 @@ The wire behind all of this: the interrupt's queue disposition, the
 
 | Command | Effect |
 |---|---|
-| `figaro ls [<id>]` | List figaros. Attended, the default scope is you and everything forked below you; detached it is home. `<id>` names another subtree, `/` is home. Alias `list`. Through a troupe door, this node's rows come from its own daemon, not from the door. Without one, it lists this node only and says how many peers it did not ask. |
+| `figaro ls [<id>]` | List figaros. Attended, the default scope is you and everything forked below you; detached it is home. `<id>` names another subtree, `/` is home. Alias `list`. Through a troupe endpoint, this node's rows come from its own daemon, not from the endpoint. Without one, it lists this node only and says how many peers it did not ask. |
 | `figaro ls ^` / `^2` / `^^` | Climb N layers: your parent's subtree, you still in it. Past the root it clamps to the top-level figaro and prints a note. |
 | `figaro ls -H` | Home view: every top-level figaro, without unbinding you. (`-h` is help, on every verb.) |
 | `figaro lsh` | `ls -H`, spelled shorter. Same flags. |
@@ -156,12 +156,12 @@ The wire behind all of this: the interrupt's queue disposition, the
 | `figaro recent [-n N] [-j]` | Every figaro on this node, most recently active first, no tree: each row is its handle's first word (the whole handle when two rows share it), its mantra, and how long ago it was active. The pager's `M-l` and `:recent` show the same list as a pit. |
 | `figaro attend <id>` | Bind this shell to a figaro. Alias `at`. |
 | `figaro attend <id>:<turn>` | Bind with a pending fork point: the next bare prompt forks there. `<id>.<lt>` names an LT instead of a turn; `:head` alone drops the pending fork point. |
-| `figaro attend <node>/<id>` | Bind this shell to a figaro on another node. The id is resolved on that node, through the door of the `troupes/*.toml` profile that answers for it, and this node's daemon keeps the binding (the node must be a troupe member). Plain `figaro`, `listen` and `figaro -- <prompt>` in this shell then reach that figaro through the same door with that profile's login; `ls`, `new` and every verb that names no figaro stay on this node. `:<turn>` is refused there. |
+| `figaro attend <node>/<id>` | Bind this shell to a figaro on another node. The id is resolved on that node, through the endpoint of the `troupes/*.toml` profile that answers for it, and this node's daemon keeps the binding (the node must be a troupe member). Plain `figaro`, `listen` and `figaro -- <prompt>` in this shell then reach that figaro through the same endpoint with that profile's login; `ls`, `new` and every verb that names no figaro stay on this node. `:<turn>` is refused there. |
 | `figaro attend null` | Go home. There is no `detach` verb. |
 | `figaro back [<n>]` / `figaro forward [<n>]` | Move this shell's attendance along its history (ctrl+o / Tab in the pager). Every attend is an entry; an attend after a back drops what was ahead; the newest 50 are kept; a figaro killed or reaped since is passed over and dropped. A form is an entry like a figaro; landing on one in the pager (ctrl+o, Tab, `:attend`, a pick in `:ls`) opens its state in the pit fullscreen. The daemon keeps it with the attendance, so every pager on the shell shares it. |
 | `figaro show [<id>]` | Render history: the same rows `listen` draws. `-n N` last N turns, `-a` all, `-o` block addresses and timestamps, `-v` raw IR, `-l` no markdown, `-j` JSON. |
 | `figaro status [<id>]` | One node in focus, whichever species it is. A FIGARO: provider, model, context, cost. A FORM: its name, version, key count, and that it is not cast. A ROLE: the same plus `target-aria` and the state of the figaro it points at (live, dormant, or missing). `-m` adds cwd/outfit/fork origin for a figaro, and parent plus the keys held for a form. `-j` carries `species`. |
-| `figaro listen [<id>]` | Attach to the live stream without prompting. `<node>/<id>` on another node listens through that node's door (see the troupe file below). With no id and no figaro attended, mints one from the default outfit and attends it. On an unbound form (named, or attended with `fig at @form`) it opens the pager on the form's pit, live; a prompt there is refused, since a form has no turn loop. A role opens on the figaro that holds it. Opens in the transcript pager (no inline view); `q` with no pit open, or Ctrl-D, ends it and the turn survives. Esc does not end it, and Ctrl-T does nothing there. A daemon restart does not end it: it waits for the next angelus and follows on. |
+| `figaro listen [<id>]` | Attach to the live stream without prompting. `<node>/<id>` on another node listens through that node's endpoint (see the troupe file below). With no id and no figaro attended, mints one from the default outfit and attends it. On an unbound form (named, or attended with `fig at @form`) it opens the pager on the form's pit, live; a prompt there is refused, since a form has no turn loop. A role opens on the figaro that holds it. Opens in the transcript pager (no inline view); `q` with no pit open, or Ctrl-D, ends it and the turn survives. Esc does not end it, and Ctrl-T does nothing there. A daemon restart does not end it: it waits for the next angelus and follows on. |
 | `figaro hup [<id>] [-d]` | Hang up: stop the turn; `-d` also discards the queue (see The queue). |
 | `figaro cut [<id>]` | Shorthand for `hup -d`; `-j` returns the messages. |
 | `figaro queue [rm\|edit]` | Read, edit and delete what has not been answered yet. |
@@ -435,22 +435,22 @@ observer's mouth.
 | `figaro doctor keys` | What `keys.toml` asked for that figaro refused. Exits nonzero on any. |
 | `figaro provider login <name>` | Sign in to a model provider: its OAuth or device-code flow, else an API key sealed in hush. See [reference/providers.md](reference/providers.md#credentials). In the pager, `:login [<name>]` lists every provider's sign-in and runs the same flow in a pit: link and device code shown there, questions asked in a masked box, `x` signs out or cancels. It needs hush already running; it never asks for the vault passphrase. With `FIGARO_NO_BROWSER` set, or no display, neither opens a browser: the link is shown to open by hand. |
 | `figaro provider logout <name> [-j]` | Remove what figaro holds for it (the hush credential, a sealed `api_key`). Names and keeps what figaro did not write; exits 1 while a credential remains. |
-| `figaro troupe login <name>` | Sign in to a troupe's door. `[auth] scheme = "oidc-device"`: hush holds the token as `troupe:<name>`. `scheme = "api-key"`: reads the key without echo (or one line of stdin), checks it at the door, and hush seals it in `troupes/<name>.key`; with `key_file` set, it only checks that file's key. |
+| `figaro troupe login <name>` | Sign in to a troupe's endpoint. `[auth] scheme = "oidc-device"`: hush holds the token as `troupe:<name>`. `scheme = "api-key"`: reads the key without echo (or one line of stdin), checks it at the endpoint, and hush seals it in `troupes/<name>.key`; with `key_file` set, it only checks that file's key. |
 | `figaro troupe ls [-j]` | The troupes in `troupes/`: url, signed in or not, and `●` on the one selected. With `[peers]` or `[troupe] name` configured, also this node's `[troupe] version`, when its node certificate and intermediate end, and, per peer, the version it last showed on a handshake and any drift (asks a running daemon; never starts one). Under the figaro provider also who owns and who admitted each node, which can sign, and the nodes that left or were revoked. |
 | `hush troupe-root create <name>` | Start a troupe here from the root key on stdin (never written): `root.crt` and this node's one-year intermediate. See [reference/architecture.md](reference/architecture.md#troupe-keys). |
 | `hush troupe-root intermediate <name>` | Issue or renew this node's intermediate from the same root. |
 | `figaro troupe keygen --out <dir> [--allow-disk]` | A node key for a credential: `node.key` (0600) in `<dir>`, a tmpfs unless `--allow-disk`; prints the public key. |
-| `hush troupe-root leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir> [--ttl 30d]` | Issue another node a leaf from this node's intermediate for the key it made, record its join, and have the root name this node its renewer. Writes `root.crt`, `node.crt`, `joined.json` for its troupe dir. `--ttl` defaults to 7d, at most `[troupe] max_leaf_ttl`. |
+| `hush troupe-root leaf <name> --for <node-id> --public-key <hex> --endpoint <host:port> --out <dir> [--ttl 30d]` | Issue another node a leaf from this node's intermediate for the key it made, record its join, and have the root name this node its renewer. Writes `root.crt`, `node.crt`, `joined.json` for its troupe dir. `--ttl` defaults to 7d, at most `[troupe] max_leaf_ttl`. |
 | `hush troupe-root renewer <name> <node> <renewer>` | With the root, let `<renewer>`'s intermediate issue `<node>`'s certificates (a node joined through another member needs this once). |
 | `hush troupe-root policy set <name> <file> --root` | Sign a troupe policy version with the root; version 1 needs it, and its `setters = [...]` names the nodes that may sign the next. |
 | `hush troupe-root intermediate <name> --for <node-id> --out <dir> [--allow-disk]` | Issue another node's intermediate into `<dir>` (a tmpfs unless `--allow-disk`): `root.crt`, `intermediate.crt`, `intermediate.key`, 0600. Prints fingerprints only. |
-| `figaro troupe join <name> [--door host:port] [--listen host:port] [--root-sha256 <hex>\|-y]` | Sign this node into troupe `<name>` through the member `troupes/<name>.toml` reaches (needs `join` on `troupe:<name>`). Shows the root's sha256 and asks before trusting it; writes this node's leaf and the `[troupe]`, `[door.tls]` and peercred config; restart the daemon after. See [reference/architecture.md](reference/architecture.md#troupe-membership). |
-| `figaro troupe leave <name> [-y]` | The running daemon signs this node's leave with its own key and tells every member before it returns; then its troupe keys and `[troupe]`/`[door.tls]` go. Final for this node id. |
+| `figaro troupe join <name> [--endpoint host:port] [--listen host:port] [--root-sha256 <hex>\|-y]` | Sign this node into troupe `<name>` through the member `troupes/<name>.toml` reaches (needs `join` on `troupe:<name>`). Shows the root's sha256 and asks before trusting it; writes this node's leaf and the `[troupe]`, `[endpoint.tls]` and peercred config; restart the daemon after. See [reference/architecture.md](reference/architecture.md#troupe-membership). |
+| `figaro troupe leave <name> [-y]` | The running daemon signs this node's leave with its own key and tells every member before it returns; then its troupe keys and `[troupe]`/`[endpoint.tls]` go. Final for this node id. |
 | `figaro troupe apikey mint <name> <kind:name> [--nodes <id,...\|all>] [--ttl 90d] [--static]` | Mint an api key for `service:<n>` or `user:<n>`, scoped `@troupe:<name>` (needs admin on the troupe). The key goes to stdout once; the node keeps its hash. It is good on the nodes `--nodes` names (default: the minting node alone) and is never sent to another. `--nodes all` is refused while any member is leaf-only; name the nodes instead. Keep everyday keys short, days or weeks rather than the 365-day ceiling: a member offline at a revoke admits the key until its next gossip exchange, at most an hour after it is back. `--static` prints the key and an `[[authz.api_keys]]` stanza instead. See [reference/architecture.md](reference/architecture.md#troupe-api-keys). |
 | `figaro troupe apikey ls <name> [-j]` | Keys with who minted each, the nodes each is good on, and their state; every key for a troupe admin, else the ones you minted or that name you. |
 | `figaro troupe apikey revoke <name> <id>` | Revoke a key (its minter, its own principal, or a troupe admin) and tell every member; its open connections close. |
 | `hush troupe-root revoke <name> <node>` | Revoke a node with the root: it is out, and so is every join its intermediates signed. The running daemon tells every member and lists who heard. |
-| `figaro box serve --socket <path> --workspace <dir> [--door <path>]` | Inside a box: serve it to a daemon over `--socket`. No config, no state, no daemon. `--door` is the daemon's door for this box as seen inside it; `figaro` run in the box calls back through it. See [reference/architecture.md](reference/architecture.md#boxes-internalsandboxbox). |
+| `figaro box serve --socket <path> --workspace <dir> [--endpoint <path>]` | Inside a box: serve it to a daemon over `--socket`. No config, no state, no daemon. `--endpoint` is the daemon's endpoint for this box as seen inside it; `figaro` run in the box calls back through it. See [reference/architecture.md](reference/architecture.md#boxes-internalsandboxbox). |
 | `figaro box exec --socket <path> [--cwd <dir>] -- <command>` | Run one command through a served box, stream its output, exit with its code. |
 | `figaro provider ls [<name>] [-j]` | Each provider's credential sources in the order figaro tries them; the first is in use. |
 | `figaro models [--refresh] [-j]` | The daemon's model catalog (`@models`): every provider's models, when each was listed, and its last error. `--refresh` lists them all now. |
@@ -481,7 +481,7 @@ pointed at another daemon (`FIGARO_TROUPE`
 or `[cli] troupe`, naming `troupes/<name>.toml` or giving a `unix://` or `wss://`
 URL) never spawns one.
 
-A troupe file is the door as this CLI reaches it:
+A troupe file is the endpoint as this CLI reaches it:
 
 ```toml
 # ~/.config/figaro/troupes/spain.toml
@@ -496,14 +496,14 @@ client_id = "figaro-cli"
 `troupe:spain`. A key the file does not define is refused when it is read.
 
 With no troupe selected, an id on another node (`<node>/<id>`, the node
-whole or 8+ characters) goes to the door of the profile that answers for that
+whole or 8+ characters) goes to the endpoint of the profile that answers for that
 node: figaro asks each wss profile once for its node id and keeps the answers
-in `<cache-dir>/troupe-doors.json`, keyed by url, asking again when a node is
-missing. The first route to a door in a process checks that it still answers
-as that node, and applies the build check `FIGARO_TROUPE` gets. Profiles sharing a url are one door; `[troupe] name` speaks first,
+in `<cache-dir>/troupe-endpoints.json`, keyed by url, asking again when a node is
+missing. The first route to an endpoint in a process checks that it still answers
+as that node, and applies the build check `FIGARO_TROUPE` gets. Profiles sharing a url are one endpoint; `[troupe] name` speaks first,
 else the first signed in. A profile's token only goes to its own url. A node
 no profile reaches is refused (`no troupe profile reaches node <n>`), as is a
-node two doors claim. A login the door refuses or hush lacks reads
+node two endpoints claim. A login the endpoint refuses or hush lacks reads
 `figaro troupe login <name>`. The topology (`l`, `L`) opens another node's
 rows the same way.
 

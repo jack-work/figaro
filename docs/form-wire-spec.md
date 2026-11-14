@@ -45,7 +45,7 @@ Content-Length, no batching.
 ← {"jsonrpc":"2.0","id":1,"result":{"ok":true}}
 ```
 
-An unknown id is refused here. The door is `angelus.sock` under
+An unknown id is refused here. The endpoint is `angelus.sock` under
 `FIGARO_RUNTIME_DIR` (else `$XDG_RUNTIME_DIR/figaro`).
 
 ---
