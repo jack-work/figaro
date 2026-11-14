@@ -104,7 +104,7 @@ func TestLazyDirs_AForkThatInheritsRowsWritesItsBaseBeforeTheNode(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			base, err := readForkBaseFile(nodeDir(t, s, root, v.channel, k))
+			base, err := readForkBaseStrict(nodeDir(t, s, root, v.channel, k))
 			if err != nil {
 				t.Fatalf("the inheriting fork has no %s fork base: %v", v.channel, err)
 			}
@@ -149,7 +149,7 @@ func TestLazyDirs_ReadsOfAMissingDirAreEmptyAndTheFirstWriteOwnsItsLog(t *testin
 
 			appendTurn(t, s, k)
 			v.write(t, s, k, "k")
-			base, err := readForkBaseFile(nodeDir(t, s, root, v.channel, k))
+			base, err := readForkBaseStrict(nodeDir(t, s, root, v.channel, k))
 			if err != nil || base != 1 {
 				t.Fatalf("first write: base %d, err %v; want its own log from 1", base, err)
 			}

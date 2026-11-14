@@ -2,20 +2,22 @@ package xwal
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/jack-work/figaro/figwal/disk"
 )
 
 func (t *Trunks) readForkBase(key string) (uint64, error) {
-	dir := t.irDir(key)
-	if _, err := os.Stat(filepath.Join(dir, ".fork")); err != nil {
+	base, present, err := t.channelBase(key, t.main)
+	if err != nil {
 		return 0, err
 	}
-	return disk.ForkBaseOf(dir)
+	if !present {
+		return 0, &fs.PathError{Op: "stat", Path: filepath.Join(t.irDir(key), ".fork"), Err: fs.ErrNotExist}
+	}
+	return base, nil
 }
 
 // ForkTail mints a sibling sharing the trunk's whole present.
@@ -353,10 +355,10 @@ func (l Layout) ForkBase(root, key string) (uint64, error) {
 
 func forkBaseAt(key, dir string) (uint64, error) {
 	path := filepath.Join(dir, ".fork")
-	if _, err := os.Stat(path); err != nil {
-		return 0, &ForkBaseError{Node: key, Path: path, Err: err}
+	base, present, err := forkBaseIn(dir, false)
+	if err == nil && !present {
+		err = fs.ErrNotExist
 	}
-	base, err := disk.ForkBaseOf(dir)
 	if err != nil {
 		return 0, &ForkBaseError{Node: key, Path: path, Err: err}
 	}

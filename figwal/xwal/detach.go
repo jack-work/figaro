@@ -258,7 +258,7 @@ func finishInterruptedAbsorb(dir string, l *log.Log, initial []byte, codec segme
 	}
 	unlock := lockAbsorb(canonicalDir(dir))
 	defer unlock()
-	onDisk, err := readForkBaseFile(dir)
+	onDisk, err := readForkBaseStrict(dir)
 	if err != nil {
 		return err
 	}

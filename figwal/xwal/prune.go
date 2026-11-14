@@ -175,7 +175,8 @@ func (t *Trunks) channelDirShape(ch, key, dir string, planned bool) (DirShape, e
 		return ShapeRows, nil
 	}
 	if hasFork {
-		base, err := readForkBaseFile(dir)
+		base, present, err := t.recoveredChannelBase(key, ch)
+		base, err = strictForkBase(dir, base, present, err)
 		if err != nil {
 			return ShapeOther, nil
 		}
@@ -184,7 +185,8 @@ func (t *Trunks) channelDirShape(ch, key, dir string, planned bool) (DirShape, e
 		}
 	}
 	for _, child := range t.idx.ChildrenOf(key) {
-		cb, err := readForkBaseFile(filepath.Join(t.root, ch, fsName(child)))
+		cb, present, err := t.recoveredChannelBase(child, ch)
+		cb, err = strictForkBase(filepath.Join(t.root, ch, fsName(child)), cb, present, err)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
