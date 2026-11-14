@@ -50,6 +50,7 @@ type Provider struct {
 	messages  *anthropic.Anthropic
 	chat      *openaichat.Provider
 	responses *responses.Provider
+	knownAuto sync.Map
 }
 
 func New(spec Spec, knobs provider.Knobs, resolver auth.TokenResolver, translators Translators) (*Provider, error) {
@@ -229,6 +230,17 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		model = p.model
 		p.mu.RUnlock()
 	}
+	classified, _ := p.entry(model)
+	if classified.Auto != nil {
+		p.knownAuto.Store(model, true)
+	}
+	_, rememberedAuto := p.knownAuto.Load(model)
+	autoRequest := classified.Auto != nil || rememberedAuto || strings.HasSuffix(model, "@auto")
+	defer func() {
+		if autoRequest {
+			sendErr = provider.WithoutReplay(sendErr)
+		}
+	}()
 	if err := responses.Prevalidate(model, in.Snapshot); err != nil {
 		return err
 	}
@@ -243,11 +255,16 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 	entry, _ := p.entry(model)
 	auto := entry.Auto
+	if auto != nil {
+		autoRequest = true
+		p.knownAuto.Store(model, true)
+	} else if autoRequest {
+		return fmt.Errorf("%s: auto route catalog entry is unavailable", p.Name())
+	}
 	if auto != nil && p.knobs.Lease != "" {
 		return fmt.Errorf("%s: auto routes cannot be used with a lease", p.Name())
 	}
 	if auto != nil {
-		defer func() { sendErr = provider.WithoutReplay(sendErr) }()
 		if t != Responses && t != Messages {
 			return fmt.Errorf("%s: auto routes require native HTTP Responses or Messages", p.Name())
 		}

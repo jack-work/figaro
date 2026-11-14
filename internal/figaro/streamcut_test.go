@@ -3,6 +3,7 @@ package figaro_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -64,7 +65,7 @@ func (p *cutProvider) Send(ctx context.Context, in provider.SendInput, bus provi
 	}
 	err := &provider.StreamCut{Provider: "copilot", Awaited: "message_stop", Events: 12, Err: errReset}
 	if p.noReplay {
-		return provider.WithoutReplay(err)
+		return fmt.Errorf("outer provider wrapper: %w", provider.WithoutReplay(err))
 	}
 	return err
 }
