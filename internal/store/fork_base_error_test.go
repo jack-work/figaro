@@ -216,6 +216,8 @@ func TestAnUnreadableForkBaseRefusesTheNodeAndItsDescendantsOnly(t *testing.T) {
 	}
 }
 
+// The snapshot sees a file corrupted under it at the next topology move that
+// is not a spawn; the remove of an unrelated aria is that move.
 func TestAnOpenHandleRefusesOnceItsForkBaseIsUnreadable(t *testing.T) {
 	f := newForkFamily(t)
 	b, err := NewXwalBackend(f.dir, 0)
@@ -237,6 +239,13 @@ func TestAnOpenHandleRefusesOnceItsForkBaseIsUnreadable(t *testing.T) {
 
 	path := irForkPath(t, f.dir, f.c1)
 	if err := os.WriteFile(path, []byte("garbage\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	other, err := b.CreateConversation(f.outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Remove(other, false); err != nil {
 		t.Fatal(err)
 	}
 

@@ -80,8 +80,9 @@ type Config struct {
 	// without opening a channel. Set by the owning Trunks.
 	probeTS func(node string) int64
 	// ltsReg retains each node's lastTS counter across open/close/evict cycles.
-	ltsReg     *lastTSRegistry
-	channelGen func() uint64
+	ltsReg        *lastTSRegistry
+	channelGen    func() uint64
+	topologyMoved func()
 	// Now is a test seam; every record carries a server timestamp stamped by
 	// xwal at append, never by the caller.
 	Now func() time.Time

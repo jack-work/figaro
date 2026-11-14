@@ -549,6 +549,8 @@ func (s *Store) DurableThrough(trunk, channel string) (uint64, error) {
 
 func (s *Store) Close() error { return s.close(true) }
 
+func (s *Store) PeerTrunksForTest() (*Trunks, error) { return openTrunks(s.root, s.opts.config()) }
+
 func (s *Store) Abandon() error { return s.close(false) }
 
 func (s *Store) close(clean bool) error {

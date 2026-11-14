@@ -126,6 +126,7 @@ func createTrunks(dir string, cfg Config) (*Trunks, error) {
 	t.cfg.ParentOf = t.idx.ParentOf
 	t.idx.onSpawn = t.reviveNode
 	t.cfg.channelGen = channelGenFor(t.registryRoot)
+	t.cfg.topologyMoved = topologyMovedFor(t.registryRoot)
 	if err := t.rebuild(); err != nil {
 		return nil, err
 	}
@@ -197,6 +198,7 @@ func openTrunks(dir string, cfg Config) (*Trunks, error) {
 	t.cfg.ParentOf = t.idx.ParentOf
 	t.idx.onSpawn = t.reviveNode
 	t.cfg.channelGen = channelGenFor(t.registryRoot)
+	t.cfg.topologyMoved = topologyMovedFor(t.registryRoot)
 	if err := t.rebuild(); err != nil {
 		return nil, err
 	}
@@ -233,6 +235,8 @@ func (t *Trunks) reshape(change func() error) error {
 // Version returns the current topology version. It increases (never
 // resets) every time the in-memory index is rebuilt from disk.
 func (t *Trunks) Version() uint64 { return t.idx.Version() }
+
+func (t *Trunks) RootEpoch() uint64 { return rootTopologyEpoch(t.registryRoot) }
 
 // Refresh re-scans the markers: the escape hatch for a store another process mutated.
 func (t *Trunks) Refresh() error {

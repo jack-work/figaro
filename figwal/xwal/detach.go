@@ -248,7 +248,7 @@ func buildAbsorbed(dir string, src *log.Log, base uint64, initial []byte, codec 
 // absorb builds from the parent now, the absorb is finished by writing
 // .fork base=1; otherwise the open refuses and nothing is rewritten. The
 // node's .node is left to the Detach re-run, which also rebuilds topology.
-func finishInterruptedAbsorb(dir string, l *log.Log, initial []byte, codec segment.SegmentCodec) error {
+func finishInterruptedAbsorb(dir string, l *log.Log, initial []byte, codec segment.SegmentCodec, moved func()) error {
 	base := l.ForkBase()
 	if base <= 1 {
 		return nil
@@ -265,6 +265,7 @@ func finishInterruptedAbsorb(dir string, l *log.Log, initial []byte, codec segme
 	if onDisk <= 1 {
 		// A Detach finished this channel while the log was loading.
 		l.AdoptAbsorbedPrefix()
+		topologyMoved(moved)
 		return nil
 	}
 	if onDisk != base {
@@ -297,8 +298,15 @@ func finishInterruptedAbsorb(dir string, l *log.Log, initial []byte, codec segme
 	if err := writeForkMarker(dir, 1); err != nil {
 		return err
 	}
+	topologyMoved(moved)
 	l.AdoptAbsorbedPrefix()
 	return nil
+}
+
+func topologyMoved(moved func()) {
+	if moved != nil {
+		moved()
+	}
 }
 
 func sameFileBytes(a, b string) (bool, error) {

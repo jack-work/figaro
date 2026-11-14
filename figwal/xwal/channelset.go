@@ -136,7 +136,7 @@ func (x *XWAL) newChannel(mc manifestChannel) (*channel, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := finishInterruptedAbsorb(ch.dir, l, ch.absorbInitial(), x.codec); err != nil {
+		if err := finishInterruptedAbsorb(ch.dir, l, ch.absorbInitial(), x.codec, x.cfg.topologyMoved); err != nil {
 			l.Close()
 			return nil, err
 		}

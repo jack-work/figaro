@@ -24,7 +24,9 @@ import (
 // An aria whose fork base cannot be read refuses its history. These tests
 // defend everything else: it can still be killed and reaped, and a daemon
 // with one on disk boots, restores the other bindings and lists it with the
-// error rather than as base 0.
+// error rather than as base 0. Lineage comes from the topology snapshot, so a
+// file corrupted under a running daemon is seen at the next topology move
+// that is not a spawn; showsBaseErr makes one and checks it was seen.
 
 func corruptIRFork(t *testing.T, root, id string) string {
 	t.Helper()
@@ -43,6 +45,23 @@ func corruptIRFork(t *testing.T, root, id string) string {
 	require.NotEmpty(t, path, "no ir directory for %s", id)
 	require.NoError(t, os.WriteFile(path, []byte("garbage\n"), 0o644))
 	return path
+}
+
+func showsBaseErr(t *testing.T, acli *sdk.Angelus, ctx context.Context, id string) {
+	t.Helper()
+	throwaway, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	_, err = acli.Kill(ctx, rpc.KillRequest{FigaroID: throwaway.FigaroID, Now: true})
+	require.NoError(t, err)
+	resp, err := acli.List(ctx)
+	require.NoError(t, err)
+	for _, f := range resp.Figaros {
+		if f.ID == id {
+			require.NotEmpty(t, f.BaseErr, "the daemon does not see %s's unreadable fork base", id)
+			return
+		}
+	}
+	t.Fatalf("%s is not listed", id)
 }
 
 func forkTail(t *testing.T, acli *sdk.Angelus, ctx context.Context, id string) string {
@@ -75,6 +94,7 @@ func TestAnAriaWithAnUnreadableForkBaseCanBeKilled(t *testing.T) {
 			a, acli, ctx, dir := daemonFixtureDir(t)
 			p, c, g := family(t, acli, ctx)
 			corruptIRFork(t, dir+"/arias", c)
+			showsBaseErr(t, acli, ctx, c)
 			_, err := acli.Kill(ctx, tc.req(c))
 			require.NoError(t, err)
 			if tc.gone {
@@ -92,6 +112,7 @@ func TestAnAriaWithAnUnreadableForkBaseCanBeKilled(t *testing.T) {
 			a, acli, ctx, dir := daemonFixtureDir(t)
 			p, c, g := family(t, acli, ctx)
 			corruptIRFork(t, dir+"/arias", g)
+			showsBaseErr(t, acli, ctx, g)
 			_, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: g, Now: now})
 			require.NoError(t, err)
 			if now {
@@ -122,6 +143,7 @@ func TestAnAriaWithAnUnreadableForkBaseIsReapedByItsTTL(t *testing.T) {
 				c := forkTail(t, acli, ctx, p)
 				if corrupt {
 					corruptIRFork(t, dir+"/arias", c)
+					showsBaseErr(t, acli, ctx, c)
 				}
 				age(t, a, p, 72*time.Hour, 48*time.Hour, map[string]string{"system.keepalive": "0"})
 				age(t, a, c, 72*time.Hour, 48*time.Hour, map[string]string{"system.ttl": "0"})
@@ -230,6 +252,7 @@ func TestALiveAriaWhoseForkBaseTurnsUnreadableSendsNoRequest(t *testing.T) {
 	before := sends.Load()
 
 	corruptIRFork(t, dir+"/arias", c)
+	showsBaseErr(t, acli, ctx, c)
 	prompt(c)
 	require.Equal(t, before, sends.Load(), "a turn over an unreadable fork base reached the provider")
 

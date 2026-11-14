@@ -84,7 +84,7 @@ func TestForkPlacedUnderAParentAboveItsCutReadsItsOwnRecords(t *testing.T) {
 // The read lineage keeps an ancestor only while its base is below the one
 // beneath it: equal and higher bases own nothing the leaf can see.
 func TestServingLineageDropsAncestorsAtOrAboveTheBound(t *testing.T) {
-	links := []Link{{Node: "r"}, {Node: "a", BaseLT: 17}, {Node: "b", BaseLT: 21}, {Node: "c", BaseLT: 6}, {Node: "d", BaseLT: 6}, {Node: "e", BaseLT: 5}}
+	links := []fwtree.Ref{{Node: "r"}, {Node: "a", Base: 17}, {Node: "b", Base: 21}, {Node: "c", Base: 6}, {Node: "d", Base: 6}, {Node: "e", Base: 5}}
 	got := servingLineage(links)
 	want := []string{"r", "e"}
 	if len(got) != len(want) {
@@ -95,7 +95,7 @@ func TestServingLineageDropsAncestorsAtOrAboveTheBound(t *testing.T) {
 			t.Fatalf("got %v, want nodes %v", got, want)
 		}
 	}
-	rising := []Link{{Node: "r"}, {Node: "a", BaseLT: 3}, {Node: "b", BaseLT: 9}, {Node: "c", BaseLT: 9}, {Node: "d", BaseLT: 12}}
+	rising := []fwtree.Ref{{Node: "r"}, {Node: "a", Base: 3}, {Node: "b", Base: 9}, {Node: "c", Base: 9}, {Node: "d", Base: 12}}
 	if got := servingLineage(rising); len(got) != 4 || got[1].Node != "a" || got[2].Node != "c" || got[3].Node != "d" {
 		t.Fatalf("rising lineage: got %v", got)
 	}

@@ -253,6 +253,8 @@ func (s *XwalStore) SetTree(t topo.Tree) { s.tree = t }
 
 type topologySnapshot struct {
 	infos           []xwal.TrunkInfo
+	info            map[string]int
+	epoch           uint64
 	version         uint64
 	rev             uint64
 	nodes           []NodeView
@@ -292,8 +294,8 @@ func (s *XwalStore) MatchID(prefix string, limit int) []string {
 	return out
 }
 
-func (t *topologySnapshot) fresh(version, rev uint64) bool {
-	return t.version == version && t.rev == rev
+func (t *topologySnapshot) fresh(epoch, version, rev uint64) bool {
+	return t.epoch == epoch && t.version == version && t.rev == rev
 }
 
 // presentRev is the presentation clock, zero without a trunk capability.
@@ -893,21 +895,23 @@ func presentVectors(nodes []NodeView, pres map[string]string) map[string][]int {
 }
 
 func (s *XwalStore) topologySnapshot() *topologySnapshot {
-	// Keyed on both clocks: figwal's topology version and the presentation
-	// revision. A promote moves no bytes, so the first one does not move.
-	version, rev := s.trunks.Version(), s.presentRev()
-	if snapshot := s.topology.Load(); snapshot != nil && snapshot.fresh(version, rev) {
+	epoch, version, rev := s.trunks.RootEpoch(), s.trunks.Version(), s.presentRev()
+	if snapshot := s.topology.Load(); snapshot != nil && snapshot.fresh(epoch, version, rev) {
 		return snapshot
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	version, rev = s.trunks.Version(), s.presentRev()
-	if snapshot := s.topology.Load(); snapshot != nil && snapshot.fresh(version, rev) {
+	epoch, version, rev = s.trunks.RootEpoch(), s.trunks.Version(), s.presentRev()
+	if snapshot := s.topology.Load(); snapshot != nil && snapshot.fresh(epoch, version, rev) {
 		return snapshot
 	}
 
-	infos, version := s.listTrunksSince(s.topology.Load())
+	prev := s.topology.Load()
+	if prev != nil && prev.epoch != epoch {
+		prev = nil
+	}
+	infos, version := s.listTrunksSince(prev)
 	at := s.vectorsLocked(infos)
 	nodes := make([]NodeView, 0, len(infos)+1)
 	for _, t := range infos {
@@ -935,8 +939,14 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 		}
 		byID[node.ID] = node
 	}
+	info := make(map[string]int, len(infos))
+	for i, ti := range infos {
+		info[ti.ID] = i
+	}
 	snapshot := &topologySnapshot{
 		infos:           infos,
+		info:            info,
+		epoch:           epoch,
 		version:         version,
 		rev:             rev,
 		nodes:           nodes,
