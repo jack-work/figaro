@@ -121,8 +121,8 @@ func TestTreeLogForkSharesThePrefixStructurally(t *testing.T) {
 	const base = 41 // the child's first record is LT 41
 	child := &treeLog[string]{
 		inner: childMem, node: "child", sizeOf: sizeOf,
-		lineage: func() []fwtree.Ref {
-			return []fwtree.Ref{{Node: "parent"}, {Node: "child", Base: base}}
+		lineage: func() ([]fwtree.Ref, error) {
+			return []fwtree.Ref{{Node: "parent"}, {Node: "child", Base: base}}, nil
 		},
 	}
 	child.cache = cache
@@ -156,7 +156,7 @@ func TestAChannelKeyedByItsOwnLTIsNotCutByAnotherChannelsForkBase(t *testing.T) 
 	}
 	cache := NewIRCache[string](fwtree.NewBudget(0), open, sizeOf, transKey[string])
 	l := newTreeLog[string](child, "child", cache, sizeOf, transKey[string],
-		func() []fwtree.Ref { return []fwtree.Ref{{Node: "parent"}, {Node: "child", Base: 3}} }).
+		func() ([]fwtree.Ref, error) { return []fwtree.Ref{{Node: "parent"}, {Node: "child", Base: 3}}, nil }).
 		seedingTail().
 		withNodeOpener(open)
 

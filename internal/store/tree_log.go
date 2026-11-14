@@ -24,7 +24,8 @@ type treeLog[T any] struct {
 	seedOnAppend bool
 	verified     atomic.Bool
 	cache        *fwtree.Cache[Entry[T]]
-	lineage      func() []fwtree.Ref
+	lineage      func() ([]fwtree.Ref, error)
+	lineageErr   atomic.Pointer[error]
 	node         string
 	sizeOf       func(Entry[T]) int
 
@@ -66,7 +67,7 @@ func NewIRCache[T any](budget *fwtree.Budget, open func(node string) Log[T], siz
 
 // lineage reports the node chain root-first, so a fork reads its prefix out
 // of its ancestor's node.
-func newTreeLog[T any](inner Log[T], node string, cache *fwtree.Cache[Entry[T]], sizeOf func(Entry[T]) int, key func(Entry[T]) uint64, lineage func() []fwtree.Ref) *treeLog[T] {
+func newTreeLog[T any](inner Log[T], node string, cache *fwtree.Cache[Entry[T]], sizeOf func(Entry[T]) int, key func(Entry[T]) uint64, lineage func() ([]fwtree.Ref, error)) *treeLog[T] {
 	return &treeLog[T]{inner: inner, node: node, cache: cache, sizeOf: sizeOf, key: key, lineage: lineage}
 }
 
@@ -89,13 +90,31 @@ func (l *treeLog[T]) withNodeOpener(open func(node string) Log[T]) *treeLog[T] {
 	return l
 }
 
-func (l *treeLog[T]) refs() []fwtree.Ref {
+func (l *treeLog[T]) refs() ([]fwtree.Ref, error) {
 	if l.lineage != nil {
-		if refs := l.lineage(); len(refs) > 0 {
-			return refs
+		refs, err := l.lineage()
+		if err != nil {
+			l.lineageErr.Store(&err)
+			return nil, err
+		}
+		l.lineageErr.Store(nil)
+		if len(refs) > 0 {
+			return refs, nil
 		}
 	}
-	return []fwtree.Ref{{Node: l.node}}
+	return []fwtree.Ref{{Node: l.node}}, nil
+}
+
+func (l *treeLog[T]) heldLineageErr() error {
+	if p := l.lineageErr.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+func (l *treeLog[T]) LineageErr() error {
+	_, err := l.refs()
+	return err
 }
 
 // span reads (from..to] through the cache, materializing what is missing.
@@ -103,7 +122,11 @@ func (l *treeLog[T]) span(from, to uint64) []Entry[T] {
 	if to <= from {
 		return nil
 	}
-	out, err := l.cache.Range(l.refs(), from, to)
+	refs, err := l.refs()
+	if err != nil {
+		return nil
+	}
+	out, err := l.cache.Range(refs, from, to)
 	if err != nil {
 		return nil
 	}
@@ -284,7 +307,10 @@ func (l *treeLog[T]) substrateOf(node string) Log[T] {
 // cuts splits (from..to] across the lineage by fork base, root first: the same
 // division tree.Range makes, so a peek and a materializing read see one shape.
 func (l *treeLog[T]) cuts(from, to uint64) []fwtree.Coord {
-	refs := l.refs()
+	refs, err := l.refs()
+	if err != nil {
+		return nil
+	}
 	if l.seedOnAppend && len(refs) > 1 {
 		refs = l.rebase(refs)
 	}
@@ -376,6 +402,9 @@ func (l *treeLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 func (l *treeLog[T]) PeekTail() (Entry[T], bool) { return l.inner.PeekTail() }
 
 func (l *treeLog[T]) Append(e Entry[T]) (Entry[T], error) {
+	if err := l.heldLineageErr(); err != nil {
+		return Entry[T]{}, err
+	}
 	stamped, err := l.inner.Append(e)
 	if err != nil {
 		return stamped, err
@@ -389,6 +418,9 @@ func (l *treeLog[T]) Append(e Entry[T]) (Entry[T], error) {
 }
 
 func (l *treeLog[T]) AppendBatch(rows []Entry[T]) ([]Entry[T], error) {
+	if err := l.heldLineageErr(); err != nil {
+		return nil, err
+	}
 	stamped, err := AppendBatch(l.inner, rows)
 	if err != nil {
 		return nil, err

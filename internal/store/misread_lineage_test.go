@@ -3,6 +3,8 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"reflect"
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
@@ -168,5 +170,58 @@ func TestTranslationsV5RefoldsMisreadMeta(t *testing.T) {
 	mustIR(t, be, a)
 	if other, _ := be.Meta(a); other == nil || other.MessageCount != 999 {
 		t.Fatalf("a neighbour's sidecar was refolded: %+v", other)
+	}
+}
+
+// A fork base the repair cannot read must not stop the open: every node whose
+// chain passes through it is cleared as misread (derived rows only), named
+// with the unreadable node, and the rest of the store is left as it was.
+func TestAnUnreadableForkBaseOnTheChainCountsAsMisread(t *testing.T) {
+	for name, corrupt := range map[string]func(path string) error{
+		"malformed": func(p string) error { return os.WriteFile(p, []byte("base=x\n"), 0o644) },
+		"empty":     func(p string) error { return os.WriteFile(p, nil, 0o644) },
+		"deleted":   os.Remove,
+	} {
+		t.Run(name, func(t *testing.T) {
+			root, a, b, c := fallingStore(t)
+			if err := corrupt(irForkPath(t, root, b)); err != nil {
+				t.Fatal(err)
+			}
+			nodes, err := MisreadLineages(root)
+			if err != nil {
+				t.Fatalf("dry run refused the store: %v", err)
+			}
+			got := map[string]string{}
+			for _, n := range nodes {
+				got[n.Trunk] = n.Reason
+			}
+			want := map[string]string{b: "unreadable .fork on " + b, c: "unreadable .fork on " + b}
+			if !reflect.DeepEqual(got, want) {
+				raw, _ := json.Marshal(nodes)
+				t.Fatalf("misread nodes %s, want %v", raw, want)
+			}
+
+			putSchema(t, root, map[string]int{"translations-v2/": 4, chanIR: 5, chanForm: 2, chanUI: 1})
+			s, err := OpenXwalStore(root, 0)
+			if err != nil {
+				t.Fatalf("the v5 open refused a store with an unreadable fork base: %v", err)
+			}
+			s.trunks.Close()
+			for id, wantCleared := range map[string]bool{a: false, b: true, c: true} {
+				last, _ := channelLast(t, root, id, transChannel("anthropic"))
+				if (last == 0) != wantCleared {
+					t.Errorf("%s: translation last %d, cleared want %v", id, last, wantCleared)
+				}
+			}
+		})
+	}
+}
+
+// The falling reason stays for a chain whose bases all read.
+func TestAFallingChainIsNamedFalling(t *testing.T) {
+	root, _, _, c := fallingStore(t)
+	nodes, err := MisreadLineages(root)
+	if err != nil || len(nodes) != 1 || nodes[0].Trunk != c || nodes[0].Reason != MisreadFalling {
+		t.Fatalf("misread nodes %+v (%v), want %s as %q", nodes, err, c, MisreadFalling)
 	}
 }

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"slices"
 
 	fwtree "github.com/jack-work/figaro/figwal/tree"
@@ -21,7 +22,7 @@ type Link struct {
 // LineageLinks walks a trunk's ancestry root first; the root's base is zero
 // whatever the tree recorded. One lookup per link: the walk is proportional to
 // ancestry depth, not store size.
-func (s *XwalStore) LineageLinks(id string) []Link {
+func (s *XwalStore) LineageLinks(id string) ([]Link, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var links []Link
@@ -36,6 +37,9 @@ func (s *XwalStore) LineageLinks(id string) []Link {
 		if !ok {
 			break
 		}
+		if t.BaseErr != nil {
+			return nil, fmt.Errorf("lineage of %s: %w", id, t.BaseErr)
+		}
 		links = append(links, Link{
 			Node: t.ID, Kind: t.Kind, BaseLT: t.BranchedLT,
 			BaseTurn: t.BranchedTurn, BaseTurnKnown: t.BranchedTurnKnown, BaseTurnExact: t.BranchedTurnExact,
@@ -43,18 +47,22 @@ func (s *XwalStore) LineageLinks(id string) []Link {
 		cur = t.Parent
 	}
 	if len(links) == 0 {
-		return nil
+		return nil, nil
 	}
 	for l, r := 0, len(links)-1; l < r; l, r = l+1, r-1 {
 		links[l], links[r] = links[r], links[l]
 	}
 	links[0].BaseLT = 0
 	links[0].BaseTurn, links[0].BaseTurnKnown, links[0].BaseTurnExact = 0, true, true
-	return links
+	return links, nil
 }
 
-func (s *XwalStore) Lineage(id string) []fwtree.Ref {
-	return servingLineage(s.LineageLinks(id))
+func (s *XwalStore) Lineage(id string) ([]fwtree.Ref, error) {
+	links, err := s.LineageLinks(id)
+	if err != nil {
+		return nil, err
+	}
+	return servingLineage(links), nil
 }
 
 func servingLineage(links []Link) []fwtree.Ref {
@@ -75,9 +83,9 @@ func servingLineage(links []Link) []fwtree.Ref {
 	return refs
 }
 
-func (b *XwalBackend) Lineage(id string) []fwtree.Ref { return b.store.Lineage(id) }
+func (b *XwalBackend) Lineage(id string) ([]fwtree.Ref, error) { return b.store.Lineage(id) }
 
-func (b *XwalBackend) LineageLinks(id string) []Link { return b.store.LineageLinks(id) }
+func (b *XwalBackend) LineageLinks(id string) ([]Link, error) { return b.store.LineageLinks(id) }
 
 // TopologyRev is the topology form's version: the epoch a client compares when
 // holding anything derived from the shape of the tree.
@@ -85,10 +93,10 @@ func (b *XwalBackend) TopologyRev() uint64 { return b.store.presentRev() }
 
 // LineageBackend is optional; a caller asserts it and does nothing when absent.
 type LineageBackend interface {
-	Lineage(id string) []fwtree.Ref
+	Lineage(id string) ([]fwtree.Ref, error)
 }
 
 type ChainBackend interface {
-	LineageLinks(id string) []Link
+	LineageLinks(id string) ([]Link, error)
 	TopologyRev() uint64
 }

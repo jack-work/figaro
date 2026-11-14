@@ -185,7 +185,7 @@ func TestForkWithRecordsTheBaseTurn(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			links := be.LineageLinks(child)
+			links := must(be.LineageLinks(child))
 			l := links[len(links)-1]
 			if !l.BaseTurnKnown || l.BaseTurn != c.wantTurn || l.BaseTurnExact != c.wantExact {
 				t.Fatalf("recorded %+v, want turn %d exact=%v", l, c.wantTurn, c.wantExact)
@@ -216,7 +216,7 @@ func TestForkOfAFreshForkRecordsTheInheritedTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	links := be.LineageLinks(leaf)
+	links := must(be.LineageLinks(leaf))
 	if len(links) < 3 {
 		t.Fatalf("lineage %+v, want parent, mid, leaf at least", links)
 	}
@@ -305,7 +305,7 @@ func TestLineageLinksMatchesTheListingWalk(t *testing.T) {
 		}
 	}
 	for _, id := range ids {
-		got := be.LineageLinks(id)
+		got := must(be.LineageLinks(id))
 		want := listingWalk(be, id)
 		if len(got) != len(want) {
 			t.Fatalf("%s: %d links, the listing walk has %d", id, len(got), len(want))

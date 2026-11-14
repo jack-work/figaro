@@ -70,9 +70,10 @@ func TestForkPlacedUnderAParentAboveItsCutReadsItsOwnRecords(t *testing.T) {
 	for _, e := range tail {
 		after[e.LT] = text(e)
 	}
+	lineage, _ := be.Store().Lineage(c)
 	for lt, w := range want {
 		if scanned[lt] != w {
-			t.Errorf("Scan at %d = %q, want %q (lineage %v)", lt, scanned[lt], w, be.Store().Lineage(c))
+			t.Errorf("Scan at %d = %q, want %q (lineage %v)", lt, scanned[lt], w, lineage)
 		}
 		if after[lt] != w {
 			t.Errorf("TailAfter at %d = %q, want %q", lt, after[lt], w)
@@ -132,14 +133,18 @@ func TestAViewHidingOwnRowsRefusesToTruncate(t *testing.T) {
 	}
 
 	var raw []fwtree.Ref
-	for _, l := range be.Store().LineageLinks(c) {
+	links, err := be.Store().LineageLinks(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range links {
 		raw = append(raw, fwtree.Ref{Node: l.Node, Base: l.BaseLT})
 	}
 	open := func(node string) Log[message.Message] {
 		return newXwalLog[message.Message](be.store, node, chanIR, true)
 	}
 	hiding := newTreeLog[message.Message](open(c), c, be.irCache, irEntrySize, irKey[message.Message],
-		func() []fwtree.Ref { return raw }).withNodeOpener(open).seedingTail()
+		func() ([]fwtree.Ref, error) { return raw, nil }).withNodeOpener(open).seedingTail()
 	if !hiding.HidesOwnRows() {
 		t.Fatalf("a falling lineage %v must report hidden own rows", raw)
 	}

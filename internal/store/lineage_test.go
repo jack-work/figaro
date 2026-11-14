@@ -31,7 +31,7 @@ func TestLineageWalksToTheRootWithOwnedBases(t *testing.T) {
 
 	s := b.Store()
 
-	root := s.Lineage(conv)
+	root := must(s.Lineage(conv))
 	if len(root) == 0 {
 		t.Fatal("no lineage for the trunk")
 	}
@@ -42,7 +42,7 @@ func TestLineageWalksToTheRootWithOwnedBases(t *testing.T) {
 		t.Errorf("the root owns from the beginning, got base %d", root[0].Base)
 	}
 
-	branch := s.Lineage(alt)
+	branch := must(s.Lineage(alt))
 	if len(branch) < 2 {
 		t.Fatalf("a fork's lineage must include its ancestor, got %d refs", len(branch))
 	}
@@ -90,7 +90,7 @@ func TestLineageBaseMatchesTheTrunkBranchPoint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	refs := b.Store().Lineage(alt)
+	refs := must(b.Store().Lineage(alt))
 	own := refs[len(refs)-1]
 
 	var want uint64
@@ -114,7 +114,14 @@ func TestLineageOfAnUnknownIDIsEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b.Close()
-	if got := b.Store().Lineage("nosuchtrunk"); got != nil {
+	if got := must(b.Store().Lineage("nosuchtrunk")); got != nil {
 		t.Errorf("unknown id returned %v; a miss must not invent a lineage", got)
 	}
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

@@ -180,6 +180,10 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.runInquiryMethods(methodsCtx, prompt.text)
 		methodsSpan.End()
 	}
+	if err := store.LineageErr(a.figLog); err != nil {
+		a.endTurn(fmt.Sprintf("error: history unreadable: %s", err))
+		return
+	}
 	if _, err := a.appendUserPrompt(prompt, false); err != nil {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return

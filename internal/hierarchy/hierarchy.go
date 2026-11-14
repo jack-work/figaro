@@ -174,6 +174,7 @@ type Node struct {
 	Form       bool
 	Stump      string
 	BranchedLT uint64
+	BaseErr    error
 	Owner      string
 }
 
@@ -724,6 +725,9 @@ func (h *Hierarchy) demoteTarget(id, prefer string) string {
 		return ""
 	}
 	sort.Slice(kids, func(i, j int) bool {
+		if (kids[i].BaseErr == nil) != (kids[j].BaseErr == nil) {
+			return kids[i].BaseErr == nil
+		}
 		if kids[i].BranchedLT != kids[j].BranchedLT {
 			return kids[i].BranchedLT < kids[j].BranchedLT
 		}

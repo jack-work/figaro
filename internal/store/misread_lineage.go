@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/jack-work/figaro/figwal/disk"
 	"github.com/jack-work/figaro/figwal/xwal"
 )
 
@@ -18,7 +17,10 @@ type MisreadNode struct {
 	Bases    []uint64 `json:"bases"`
 	Channels []string `json:"channels"`
 	Meta     bool     `json:"meta"`
+	Reason   string   `json:"reason"`
 }
+
+const MisreadFalling = "falling"
 
 func MisreadLineages(root string) ([]MisreadNode, error) {
 	layout, err := xwal.ReadLayout(root)
@@ -26,10 +28,15 @@ func MisreadLineages(root string) ([]MisreadNode, error) {
 		return nil, err
 	}
 	bases := make(map[string]uint64, len(layout.Nodes))
-	for key := range layout.Nodes {
-		b, err := disk.ForkBaseOf(filepath.Join(root, layout.Main, xwal.NodeDirName(key)))
+	unreadable := map[string]error{}
+	for key, info := range layout.Nodes {
+		if info.From == "" {
+			continue
+		}
+		b, err := layout.ForkBase(root, key)
 		if err != nil {
-			return nil, fmt.Errorf("fork base of %s: %w", key, err)
+			unreadable[key] = err
+			continue
 		}
 		bases[key] = b
 	}
@@ -37,13 +44,25 @@ func MisreadLineages(root string) ([]MisreadNode, error) {
 	for key, info := range layout.Nodes {
 		chain := layout.Lineage(key)
 		var below []uint64
+		reason := ""
 		for i := len(chain) - 2; i >= 0; i-- {
+			if err, bad := unreadable[chain[i]]; bad && reason == "" {
+				at := chain[i]
+				if tr := layout.Nodes[at].Trunk; tr != "" {
+					at = tr
+				}
+				reason = "unreadable .fork on " + at
+				slog.Warn("misread lineage: unreadable fork base on the chain", "node", key, "at", chain[i], "err", err)
+			}
 			below = append(below, bases[chain[i]])
 		}
-		if !basesFall(below) {
+		if reason == "" && basesFall(below) {
+			reason = MisreadFalling
+		}
+		if reason == "" {
 			continue
 		}
-		n := MisreadNode{Node: key, Trunk: info.Trunk, Kind: info.Kind, Bases: below}
+		n := MisreadNode{Node: key, Trunk: info.Trunk, Kind: info.Kind, Bases: below, Reason: reason}
 		for _, ch := range layout.Channels {
 			if !isDerivedChannel(ch) {
 				continue
