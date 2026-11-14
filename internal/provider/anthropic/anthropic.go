@@ -1174,7 +1174,13 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		errBody, _ := io.ReadAll(resp.Body)
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, provider.FallbackBodyLimit+1))
+		if fallback := provider.ParseRouteFallback(resp.StatusCode, resp.Header, errBody); fallback != nil {
+			return fallback
+		}
+		if resp.StatusCode == http.StatusConflict {
+			return fmt.Errorf("%s: HTTP 409 rejection", label)
+		}
 		return refusalOf(resp.StatusCode, errBody, fmt.Errorf("%s: %s", label, apiErrorMessage(resp.StatusCode, errBody)))
 	}
 

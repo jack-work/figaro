@@ -197,7 +197,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 
 	err = p.sendWithToken(ctx, token, in, bus, options)
-	if err == nil || !isResponseUnauthorized(err) {
+	if err == nil || provider.SingleAttempt(ctx) || !isResponseUnauthorized(err) {
 		return err
 	}
 	if ierr := p.tokenSrc.Invalidate(token); ierr != nil {
@@ -639,6 +639,7 @@ func postResponses(ctx context.Context, endpoint string, headers http.Header, pa
 	}
 	req.Header = headers.Clone()
 	req.Header.Set("Accept", "text/event-stream")
+	provider.StampAttemptToken(ctx, req)
 	client := &http.Client{
 		Transport:     upstream.Shared(),
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -649,8 +650,14 @@ func postResponses(ctx context.Context, endpoint string, headers http.Header, pa
 	}
 	dump.Response(resp.Proto+" "+resp.Status, resp.Header)
 	if resp.StatusCode != http.StatusOK {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, provider.FallbackBodyLimit+1))
 		resp.Body.Close()
+		if fallback := provider.ParseRouteFallback(resp.StatusCode, resp.Header, raw); fallback != nil {
+			return nil, fallback
+		}
+		if resp.StatusCode == http.StatusConflict {
+			return nil, fmt.Errorf("responses: HTTP 409 rejection")
+		}
 		dump.Frame(raw)
 		return nil, httpResponseRejection(resp.StatusCode, raw)
 	}

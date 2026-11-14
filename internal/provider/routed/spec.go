@@ -133,7 +133,7 @@ func transportForEndpoints(endpoints []string) Transport {
 			t = Responses
 		case strings.Contains(e, "messages"):
 			t = Messages
-		case strings.Contains(e, "chat/completions"):
+		case strings.Contains(e, "chat/completions") || e == "chat_completions":
 			t = Chat
 		}
 		if rank[t] > rank[best] {

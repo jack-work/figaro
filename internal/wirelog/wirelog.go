@@ -112,7 +112,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		resp.Body = &timedBody{ReadCloser: resp.Body, span: trace.SpanFromContext(req.Context())}
 	}
 
-	if logBase != "" {
+	if logBase != "" && resp.StatusCode != http.StatusConflict {
 		respFile, ferr := createPrivate(logBase + ".resp.http")
 		if ferr == nil {
 			fmt.Fprintf(respFile, "%s %s\r\n", resp.Proto, resp.Status)

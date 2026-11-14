@@ -241,9 +241,24 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
+	entry, _ := p.entry(model)
+	auto := entry.Auto
+	if auto != nil && p.knobs.Lease != "" {
+		return fmt.Errorf("%s: auto routes cannot be used with a lease", p.Name())
+	}
+	if auto != nil {
+		ctx = provider.WithSingleAttempt(ctx)
+	}
 	watched := &watchBus{Bus: bus}
 	err = p.sendVia(ctx, t, model, in, watched)
 	if err == nil || watched.spoke.Load() || ctx.Err() != nil {
+		return err
+	}
+	var fallback *provider.RouteFallback
+	if errors.As(err, &fallback) {
+		return p.nativeFallback(ctx, model, t, auto, in, bus, fallback)
+	}
+	if auto != nil {
 		return err
 	}
 	if p.forgetImagesAfterRefusal(model, err) {
@@ -375,6 +390,7 @@ func (p *Provider) sendVia(ctx context.Context, t Transport, model string, in pr
 		if err != nil {
 			return err
 		}
+		m.SetModel(model)
 		return m.SendWithTransport(ctx, in, bus, false, p.messagesTransport(m.HTTPClient))
 	case Chat:
 		c, err := p.chatBackend()
@@ -389,7 +405,7 @@ func (p *Provider) sendVia(ctx context.Context, t Transport, model string, in pr
 func (p *Provider) messagesTransport(client *http.Client) anthropic.TransportFn {
 	headers := p.spec.headersFor(Messages)
 	return func(ctx context.Context, body *provider.RequestBody, header http.Header) (*http.Response, error) {
-		return auth.SendRenewing(p.resolver, func(token string) (*http.Response, error) {
+		send := func(token string) (*http.Response, error) {
 			req, err := http.NewRequestWithContext(ctx, "POST", p.Endpoint(Messages), nil)
 			if err != nil {
 				return nil, err
@@ -409,8 +425,19 @@ func (p *Provider) messagesTransport(client *http.Client) anthropic.TransportFn 
 				}
 			}
 			provider.StampCaller(ctx, req.Header)
-			return client.Do(req)
-		})
+			provider.StampAttemptToken(ctx, req)
+			safeClient := *client
+			safeClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+			return safeClient.Do(req)
+		}
+		if provider.SingleAttempt(ctx) {
+			token, err := p.resolver.Resolve()
+			if err != nil {
+				return nil, err
+			}
+			return send(token)
+		}
+		return auth.SendRenewing(p.resolver, send)
 	}
 }
 
