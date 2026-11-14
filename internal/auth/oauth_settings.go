@@ -156,6 +156,17 @@ func pkceListener(raw string) (net.Listener, string, error) {
 }
 
 func (c PKCEConfig) validate() error {
+	authorize, err := url.Parse(c.AuthorizeURL)
+	if err != nil || authorize.Scheme != "https" || authorize.Hostname() == "" {
+		return fmt.Errorf("authorization endpoint must be an https URL")
+	}
+	origin := &url.URL{Scheme: authorize.Scheme, Host: authorize.Host}
+	if err := validateOAuthEndpoint(c.AuthorizeURL, origin, true); err != nil {
+		return fmt.Errorf("authorization endpoint: %w", err)
+	}
+	if err := validateOAuthEndpoint(c.TokenURL, origin, false); err != nil {
+		return fmt.Errorf("token endpoint: %w", err)
+	}
 	if c.RedirectURI != "" {
 		if _, err := callbackURL(c.RedirectURI); err != nil {
 			return err

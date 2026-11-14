@@ -47,7 +47,7 @@ func (s OAuthSettings) PKCEConfig(provider string) (PKCEConfig, error) {
 	if err := validateOAuthEndpoint(oc.AuthorizationEndpoint, iu, true); err != nil {
 		return PKCEConfig{}, fmt.Errorf("%s: authorization endpoint: %w", provider, err)
 	}
-	if err := (PKCEConfig{RedirectURI: s.RedirectURI, AuthorizeURL: oc.AuthorizationEndpoint, AuthorizeParams: s.AuthorizeParams}).validate(); err != nil {
+	if err := (PKCEConfig{RedirectURI: s.RedirectURI, AuthorizeURL: oc.AuthorizationEndpoint, TokenURL: oc.TokenEndpoint, AuthorizeParams: s.AuthorizeParams}).validate(); err != nil {
 		return PKCEConfig{}, fmt.Errorf("%s: %w", provider, err)
 	}
 	var scopes []string
