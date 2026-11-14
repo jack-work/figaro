@@ -98,7 +98,8 @@ func (t *Trunks) sameInheritance(node string, path []string) error {
 			continue
 		}
 		dir := filepath.Join(t.root, c.Name(), fsName(node))
-		base, err := readForkBaseFile(dir)
+		base, present, err := t.recoveredChannelBase(node, c.Name())
+		base, err = strictForkBase(dir, base, present, err)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
@@ -109,7 +110,8 @@ func (t *Trunks) sameInheritance(node string, path []string) error {
 			continue
 		}
 		for _, k := range path {
-			kb, err := readForkBaseFile(filepath.Join(t.root, c.Name(), fsName(k)))
+			kb, present, err := t.recoveredChannelBase(k, c.Name())
+			kb, err = strictForkBase(filepath.Join(t.root, c.Name(), fsName(k)), kb, present, err)
 			if errors.Is(err, os.ErrNotExist) || (err == nil && kb < base) {
 				return fmt.Errorf("%w: %s in channel %s", ErrMoveCopies, k, c.Name())
 			}

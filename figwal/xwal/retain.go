@@ -78,7 +78,7 @@ func (t *Trunks) Retain(node, channel string, dryRun bool) (Retention, error) {
 func (t *Trunks) pinsOn(node, channel string) ([]uint64, error) {
 	var pins []uint64
 	for _, child := range t.idx.ChildrenOf(node) {
-		base, err := disk.ForkBaseOf(filepath.Join(t.root, channel, fsName(child)))
+		base, _, err := t.channelBase(child, channel)
 		if err != nil {
 			return nil, fmt.Errorf("xwal: pin of %q on %q: %w", child, node, err)
 		}
