@@ -32,7 +32,10 @@ type File struct {
 	Headers          map[string]string            `toml:"headers,omitempty"`
 	TransportHeaders map[string]map[string]string `toml:"transport_headers,omitempty"`
 	SendFigaroID     bool                         `toml:"send_figaro_id,omitempty"`
-	Routing          struct {
+	Responses        struct {
+		OmitFields []string `toml:"omit_fields,omitempty"`
+	} `toml:"responses"`
+	Routing struct {
 		Catalog string `toml:"catalog,omitempty"`
 		Default string `toml:"default,omitempty"`
 		Rules   []struct {
@@ -82,6 +85,7 @@ func (f File) Apply(spec Spec) (Spec, error) {
 	if f.TextOnly {
 		spec.TextOnly = true
 	}
+	spec.ResponsesOmitFields = append([]string(nil), f.Responses.OmitFields...)
 	if f.SendFigaroID {
 		spec.SendFigaroID = true
 	}

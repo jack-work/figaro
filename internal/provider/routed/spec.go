@@ -56,10 +56,14 @@ type Spec struct {
 	MarkMode    provider.MarkMode
 	TextOnly    bool
 
-	MaxRequestBytes int
+	MaxRequestBytes     int
+	ResponsesOmitFields []string
 }
 
 func (s Spec) Validate() error {
+	if err := responses.ValidateOmitFields(s.ResponsesOmitFields); err != nil {
+		return err
+	}
 	if s.Name == "" {
 		return fmt.Errorf("routed: a provider spec needs a name")
 	}

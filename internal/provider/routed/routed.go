@@ -212,6 +212,7 @@ func (p *Provider) responsesBackend() *responses.Provider {
 
 		Name:            p.spec.Name,
 		MaxRequestBytes: p.spec.MaxRequestBytes,
+		OmitFields:      p.spec.ResponsesOmitFields,
 	}
 	r := responses.New(p.knobsNow(), p.resolver, cfg, p.opener(Responses))
 	r.SetTemplates(p.templates)

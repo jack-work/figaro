@@ -43,6 +43,7 @@ type Config struct {
 
 	Name            string
 	MaxRequestBytes int
+	OmitFields      []string
 }
 
 type TokenSource interface {
@@ -68,17 +69,18 @@ type Provider struct {
 	headers   func(string, IDs) http.Header
 	envelope  func(IDs) map[string]string
 
-	mu        sync.Mutex
-	model     string
-	maxTokens int
-	templates *template.Template
-	machineID string
-	cache     store.Log[[]json.RawMessage]
-	sessionID string
-	limits    map[string]ContextLimits
-	transport map[string]Transport
-	maxBytes  int
-	name      string
+	mu         sync.Mutex
+	model      string
+	maxTokens  int
+	templates  *template.Template
+	machineID  string
+	cache      store.Log[[]json.RawMessage]
+	sessionID  string
+	limits     map[string]ContextLimits
+	transport  map[string]Transport
+	maxBytes   int
+	name       string
+	omitFields []string
 
 	baseURL func(string) string
 	dial    responseDialer
@@ -95,20 +97,21 @@ func New(
 		headers = func(token string, _ IDs) http.Header { return BearerHeaders(token) }
 	}
 	return &Provider{
-		tokenSrc:  tokenSrc,
-		cacheOpen: cacheOpen,
-		namespace: cfg.Namespace,
-		headers:   headers,
-		envelope:  cfg.Envelope,
-		model:     knobs.Model,
-		maxTokens: knobs.MaxTokens,
-		machineID: uuid.NewString(),
-		limits:    map[string]ContextLimits{},
-		transport: map[string]Transport{},
-		baseURL:   cfg.BaseURL,
-		dial:      dialResponses,
-		maxBytes:  cfg.MaxRequestBytes,
-		name:      cfg.Name,
+		tokenSrc:   tokenSrc,
+		cacheOpen:  cacheOpen,
+		namespace:  cfg.Namespace,
+		headers:    headers,
+		envelope:   cfg.Envelope,
+		model:      knobs.Model,
+		maxTokens:  knobs.MaxTokens,
+		machineID:  uuid.NewString(),
+		limits:     map[string]ContextLimits{},
+		transport:  map[string]Transport{},
+		baseURL:    cfg.BaseURL,
+		dial:       dialResponses,
+		maxBytes:   cfg.MaxRequestBytes,
+		name:       cfg.Name,
+		omitFields: append([]string(nil), cfg.OmitFields...),
 	}
 }
 
@@ -297,7 +300,7 @@ func (p *Provider) sendWithToken(
 	defer func() { sendErr = settle(sendErr) }()
 	var frames responseFrames
 	if transport == HTTP {
-		payload, err := json.Marshal(responseStreamRequest{responseBody: body, Stream: true})
+		payload, err := p.marshalRequest(responseStreamRequest{responseBody: body, Stream: true})
 		if err != nil {
 			return fmt.Errorf("responses: encode request: %w", err)
 		}
@@ -321,7 +324,7 @@ func (p *Provider) sendWithToken(
 			create.Headers = p.envelope(ids)
 			create.Initiator = "user"
 		}
-		payload, err := json.Marshal(create)
+		payload, err := p.marshalRequest(create)
 		if err != nil {
 			return fmt.Errorf("responses: encode create: %w", err)
 		}
