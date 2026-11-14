@@ -493,7 +493,20 @@ func (l *Log) HashPayload(payload []byte) (string, error) {
 func (l *Log) Parent() *Log { return l.parent }
 
 // ForkBase is zero for a trunk.
-func (l *Log) ForkBase() uint64 { return l.forkBase }
+func (l *Log) ForkBase() uint64 {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.forkBase
+}
+
+// AdoptAbsorbedPrefix is for a fork whose own segments already hold its
+// whole prefix and whose .fork now says base=1: it stops reading below its
+// old base through the parent.
+func (l *Log) AdoptAbsorbedPrefix() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.forkBase = 1
+}
 
 // IsReadOnly reports whether this log is a frozen branch point.
 func (l *Log) IsReadOnly() bool {

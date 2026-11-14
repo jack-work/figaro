@@ -1,7 +1,10 @@
 package xwal
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -9,6 +12,10 @@ import (
 	"github.com/jack-work/figaro/figwal/log"
 	"github.com/jack-work/figaro/figwal/segment"
 )
+
+// ErrAbsorbConflict: a channel holds a segment below its fork base that is
+// not the prefix absorbing from its parent builds. Nothing is replaced.
+var ErrAbsorbConflict = errors.New("xwal: a segment below the fork base is not the parent's prefix")
 
 // Detach makes a node self-sufficient: it absorbs the history prefix it
 // currently reads through an ancestor, and stops pointing at one.
@@ -80,53 +87,18 @@ func (t *Trunks) Detach(node string) error {
 	return t.rebuild()
 }
 
+func absorbScratch(dir string) string {
+	return filepath.Join(dir, fmt.Sprintf(".absorb-%d", os.Getpid()))
+}
+
 func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec segment.SegmentCodec) error {
 	if base <= 1 {
 		return nil
 	}
-	// Build under a scratch name and rename: segment.Create is O_EXCL, so a
-	// partial file at the final name would make every retry fail with EEXIST,
-	// and crash recovery here is re-running Detach.
-	tmpName := filepath.Join(dir, fmt.Sprintf(".absorb-%d", os.Getpid()))
-	if err := os.Remove(tmpName); err != nil && !os.IsNotExist(err) {
-		return err
-	}
+	tmpName := absorbScratch(dir)
 	defer os.Remove(tmpName)
-	from, header := uint64(1), initial
-	if initial != nil && src.Floor() > 0 {
-		h, segBase, err := src.SegmentHeaderAt(base - 1)
-		if err != nil {
-			return err
-		}
-		from, header = segBase, h
-	}
-	// maxSize 0: unbounded, so the whole prefix lands in this one segment.
-	seg, err := segment.Create(tmpName, codec, from, 0)
+	from, err := buildAbsorbed(tmpName, src, base, initial, codec)
 	if err != nil {
-		return err
-	}
-	if header != nil {
-		if err := seg.WriteHeader(header); err != nil {
-			seg.Close()
-			return err
-		}
-	}
-	rerr := src.Range(from, func(idx uint64, payload []byte) error {
-		if idx >= base {
-			return errStopRange
-		}
-		_, aerr := seg.Append(payload)
-		return aerr
-	})
-	if rerr != nil && rerr != errStopRange {
-		seg.Close()
-		return rerr
-	}
-	if err := seg.Sync(); err != nil {
-		seg.Close()
-		return err
-	}
-	if err := seg.Close(); err != nil {
 		return err
 	}
 	if from > 1 {
@@ -138,4 +110,116 @@ func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec s
 		return err
 	}
 	return disk.SyncDir(dir)
+}
+
+// buildAbsorbed writes the segment that holds src's records [from, base)
+// to path, and returns from. path is a scratch name: segment.Create is
+// O_EXCL, so a partial file at the final name would make every retry fail.
+func buildAbsorbed(path string, src *log.Log, base uint64, initial []byte, codec segment.SegmentCodec) (uint64, error) {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return 0, err
+	}
+	from, header := uint64(1), initial
+	if initial != nil && src.Floor() > 0 {
+		h, segBase, err := src.SegmentHeaderAt(base - 1)
+		if err != nil {
+			return 0, err
+		}
+		from, header = segBase, h
+	}
+	// maxSize 0: unbounded, so the whole prefix lands in this one segment.
+	seg, err := segment.Create(path, codec, from, 0)
+	if err != nil {
+		return 0, err
+	}
+	if header != nil {
+		if err := seg.WriteHeader(header); err != nil {
+			seg.Close()
+			return 0, err
+		}
+	}
+	rerr := src.Range(from, func(idx uint64, payload []byte) error {
+		if idx >= base {
+			return errStopRange
+		}
+		_, aerr := seg.Append(payload)
+		return aerr
+	})
+	if rerr != nil && rerr != errStopRange {
+		seg.Close()
+		return 0, rerr
+	}
+	if err := seg.Sync(); err != nil {
+		seg.Close()
+		return 0, err
+	}
+	return from, seg.Close()
+}
+
+// finishInterruptedAbsorb runs on every open of a node's channel. A Detach
+// that died after absorbing the channel's prefix and before its .fork write
+// leaves a segment below the base; the log takes appends into it, and a
+// later absorb would land on it. If the segment starts with exactly what
+// absorb builds from the parent now, the absorb is finished by writing
+// .fork base=1; otherwise the open refuses and nothing is rewritten. The
+// node's .node is left to the Detach re-run, which also rebuilds topology.
+func finishInterruptedAbsorb(dir string, l *log.Log, initial []byte, codec segment.SegmentCodec) error {
+	base := l.ForkBase()
+	if base <= 1 {
+		return nil
+	}
+	if segs := l.SegmentBaseIndexes(); len(segs) == 0 || segs[0] >= base {
+		return nil
+	}
+	own, err := segmentBases(dir, codec)
+	if err != nil {
+		return err
+	}
+	if len(own) == 0 {
+		return fmt.Errorf("%w: %s base %d: only a hole below the base", ErrAbsorbConflict, dir, base)
+	}
+	first := own[0]
+	tmp := absorbScratch(dir)
+	defer os.Remove(tmp)
+	from, err := buildAbsorbed(tmp, l, base, initial, codec)
+	if err != nil {
+		return err
+	}
+	name := segFileName(first, codec)
+	if first != from {
+		return fmt.Errorf("%w: %s base %d segment %s, absorb starts at %d", ErrAbsorbConflict, dir, base, name, from)
+	}
+	ok, err := fileHasPrefix(filepath.Join(dir, name), tmp)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("%w: %s base %d segment %s", ErrAbsorbConflict, dir, base, name)
+	}
+	if err := writeForkMarker(dir, 1); err != nil {
+		return err
+	}
+	l.AdoptAbsorbedPrefix()
+	return nil
+}
+
+func fileHasPrefix(path, prefixPath string) (bool, error) {
+	want, err := os.ReadFile(prefixPath)
+	if err != nil {
+		return false, err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	got := make([]byte, len(want))
+	n, err := f.ReadAt(got, 0)
+	if n < len(want) {
+		if err == nil || errors.Is(err, io.EOF) {
+			return false, nil
+		}
+		return false, err
+	}
+	return bytes.Equal(got, want), nil
 }

@@ -53,6 +53,14 @@ func (ch *channel) Log() (*log.Log, error) {
 	return l, nil
 }
 
+// absorbInitial is the header an absorbed prefix segment starts from.
+func (ch *channel) absorbInitial() []byte {
+	if ch.kind == ChannelReducible {
+		return ch.initial
+	}
+	return nil
+}
+
 func (ch *channel) setLog(l *log.Log) {
 	ch.openMu.Lock()
 	defer ch.openMu.Unlock()
