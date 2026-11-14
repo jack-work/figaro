@@ -477,8 +477,11 @@ func (p *Provider) route(ctx context.Context, model string) (Transport, error) {
 			entry, known = p.cat.lookup(model)
 		}
 		if known {
-			if t := transportForEndpoints(entry.Endpoints); t != "" {
+			if t := entryTransport(entry); t != "" {
 				return t, nil
+			}
+			if entry.Auto != nil {
+				return "", fmt.Errorf("%s: auto primary has no supported ingress API", p.Name())
 			}
 		}
 	}
@@ -500,12 +503,34 @@ const (
 	catalogTimeout = 10 * time.Second
 )
 
+func entryTransport(entry apimodels.Entry) Transport {
+	if entry.Auto == nil {
+		return transportForEndpoints(entry.Endpoints)
+	}
+	if len(entry.Auto.Candidates) == 0 {
+		return ""
+	}
+	primary := transportForEndpoints(entry.Auto.Candidates[0].APIs)
+	if primary != Messages && primary != Responses {
+		return ""
+	}
+	for _, endpoint := range entry.Endpoints {
+		if transportForEndpoints([]string{endpoint}) == primary {
+			return primary
+		}
+	}
+	return ""
+}
+
 func (p *Provider) cachedRoute(model string) Transport {
 	if t, ok := p.spec.ruleFor(model); ok {
 		return t
 	}
 	if entry, known := p.cat.lookup(model); known {
-		if t := transportForEndpoints(entry.Endpoints); t != "" {
+		if entry.Auto != nil {
+			return entryTransport(entry)
+		}
+		if t := entryTransport(entry); t != "" {
 			return t
 		}
 	}
