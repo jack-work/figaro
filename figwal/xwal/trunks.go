@@ -234,6 +234,8 @@ func (t *Trunks) reshape(change func() error) error {
 // resets) every time the in-memory index is rebuilt from disk.
 func (t *Trunks) Version() uint64 { return t.idx.Version() }
 
+func (t *Trunks) RootEpoch() uint64 { return rootTopologyEpoch(t.registryRoot) }
+
 // Refresh re-scans the markers: the escape hatch for a store another process mutated.
 func (t *Trunks) Refresh() error {
 	endMutation, err := t.beginTopologyMutation()
