@@ -3,6 +3,7 @@ package xwal
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -38,19 +39,46 @@ func mkdirAllSynced(path string) error {
 	return disk.SyncDir(path)
 }
 
-func readForkBaseFile(dir string) (uint64, error) {
+func forkBaseIn(dir string, recover bool) (base uint64, present bool, err error) {
 	path := filepath.Join(dir, ".fork")
-	if err := recoverAtomicReplacement(path); err != nil {
+	if recover {
+		if err := recoverAtomicReplacement(path); err != nil {
+			return 0, false, err
+		}
+	}
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return 0, false, nil
+	} else if err != nil {
+		return 0, false, err
+	}
+	base, err = disk.ForkBaseOf(dir)
+	return base, true, err
+}
+
+func (t *Trunks) channelBase(key, channel string) (uint64, bool, error) {
+	return forkBaseIn(t.channelDir(channel, key), false)
+}
+
+func (t *Trunks) recoveredChannelBase(key, channel string) (uint64, bool, error) {
+	return forkBaseIn(t.channelDir(channel, key), true)
+}
+
+func strictForkBase(dir string, base uint64, present bool, err error) (uint64, error) {
+	path := filepath.Join(dir, ".fork")
+	switch {
+	case err != nil:
 		return 0, err
+	case !present:
+		return 0, &fs.PathError{Op: "stat", Path: path, Err: fs.ErrNotExist}
+	case base == 0:
+		return 0, fmt.Errorf("xwal: malformed fork marker %q", path)
 	}
-	if _, err := os.Stat(path); err != nil {
-		return 0, err
-	}
-	base, err := disk.ForkBaseOf(dir)
-	if err == nil && base == 0 {
-		err = fmt.Errorf("xwal: malformed fork marker %q", path)
-	}
-	return base, err
+	return base, nil
+}
+
+func readForkBaseStrict(dir string) (uint64, error) {
+	base, present, err := forkBaseIn(dir, true)
+	return strictForkBase(dir, base, present, err)
 }
 
 func writeForkMarker(dir string, base uint64) error {
