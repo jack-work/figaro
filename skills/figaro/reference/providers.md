@@ -380,6 +380,15 @@ The transport fields `model`, `input`, `stream`, `store`, `type`, `headers`,
 `agent_task_id` and `initiator` cannot be omitted. Unconfigured providers keep
 the existing request shape. `store = false` and HTTP streaming remain intact.
 
+Set `[responses] no_replay = true` when a backend must not resume incomplete
+output. Its failures carry a no-replay marker through the Agent boundary, so
+partial text or an unfinished tool call ends the turn instead of adding a
+synthetic continue request. Provider image-refit and catalog-route resends are
+also disabled. This is an explicit declared-provider policy, not a model-name
+heuristic; the default preserves legacy behavior. A complete tool result can
+still start the next ordinary generation. Subscription configurations should
+set this policy even when the gateway itself never retries.
+
 A credential-free ChatGPT subscription example is in
 `examples/providers/chatgpt.toml`. Its account header is an explicit owner
 setting, not an authorization grant. Mint an independent login chain: never

@@ -63,7 +63,7 @@ func TestDeclaredSubscriptionHTTPToolResultRoundTrip(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	p := gatewayAt(t, "subscription-tool", "preset=\"gateway\"\nbase_url=\""+server.URL+"/codex\"\n[routing]\ncatalog=\"off\"\ndefault=\"responses\"\n[responses]\nomit_fields=[\"max_output_tokens\"]\n")
+	p := gatewayAt(t, "subscription-tool", "preset=\"gateway\"\nbase_url=\""+server.URL+"/codex\"\n[routing]\ncatalog=\"off\"\ndefault=\"responses\"\n[responses]\nomit_fields=[\"max_output_tokens\"]\nno_replay=true\n")
 	backend, id := store.NewTestAria(t, "subscription-tool", message.Patch{})
 	p.translators = func(id, ns string) (store.Log[[]json.RawMessage], error) { return backend.OpenTranslator(id, ns) }
 	registry := tool.NewRegistry()

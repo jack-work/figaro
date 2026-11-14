@@ -24,6 +24,7 @@ catalog="off"
 default="responses"
 [responses]
 omit_fields=["max_output_tokens"]
+no_replay=true
 `})
 	require.Contains(t, RegisterDeclared(loaded), "subscription-settings")
 	reg := provider.Lookup("subscription-settings")
@@ -38,6 +39,7 @@ omit_fields=["max_output_tokens"]
 	require.NoError(t, err)
 	p := built.(*Provider)
 	require.Equal(t, []string{"max_output_tokens"}, p.spec.ResponsesOmitFields)
+	require.True(t, p.spec.ResponsesNoReplay)
 	require.Empty(t, p.spec.Catalog)
 	require.Equal(t, Responses, p.spec.Default)
 }

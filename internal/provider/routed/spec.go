@@ -58,6 +58,7 @@ type Spec struct {
 
 	MaxRequestBytes     int
 	ResponsesOmitFields []string
+	ResponsesNoReplay   bool
 }
 
 func (s Spec) Validate() error {

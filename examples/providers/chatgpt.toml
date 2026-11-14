@@ -27,3 +27,4 @@ default = "responses"
 
 [responses]
 omit_fields = ["max_output_tokens"]
+no_replay = true

@@ -34,6 +34,7 @@ type File struct {
 	SendFigaroID     bool                         `toml:"send_figaro_id,omitempty"`
 	Responses        struct {
 		OmitFields []string `toml:"omit_fields,omitempty"`
+		NoReplay   bool     `toml:"no_replay,omitempty"`
 	} `toml:"responses"`
 	Routing struct {
 		Catalog string `toml:"catalog,omitempty"`
@@ -86,6 +87,7 @@ func (f File) Apply(spec Spec) (Spec, error) {
 		spec.TextOnly = true
 	}
 	spec.ResponsesOmitFields = append([]string(nil), f.Responses.OmitFields...)
+	spec.ResponsesNoReplay = f.Responses.NoReplay
 	if f.SendFigaroID {
 		spec.SendFigaroID = true
 	}

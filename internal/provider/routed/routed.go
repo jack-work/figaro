@@ -238,7 +238,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	_, rememberedAuto := p.knownAuto.Load(model)
 	autoRequest := classified.Auto != nil || rememberedAuto || strings.HasSuffix(model, "@auto")
 	defer func() {
-		if autoRequest {
+		if autoRequest || p.spec.ResponsesNoReplay {
 			sendErr = provider.WithoutReplay(sendErr)
 		}
 	}()
@@ -291,7 +291,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if errors.As(err, &fallback) {
 		return p.nativeFallback(ctx, model, t, auto, in, bus, fallback)
 	}
-	if auto != nil {
+	if auto != nil || p.spec.ResponsesNoReplay {
 		return err
 	}
 	if p.forgetImagesAfterRefusal(model, err) {
