@@ -247,6 +247,13 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return fmt.Errorf("%s: auto routes cannot be used with a lease", p.Name())
 	}
 	if auto != nil {
+		retirement, retirementErr := store.RetirementOf(in.Snapshot)
+		if retirementErr != nil {
+			return retirementErr
+		}
+		if auto.Capacity() == 0 && retirement.Percent > 0 && retirement.FallbackTokens <= 0 {
+			return fmt.Errorf("%s: auto context capacity is unknown; percentage succession requires system.retirement.fallback_tokens or an absolute context_threshold", p.Name())
+		}
 		ctx = provider.WithSingleAttempt(ctx)
 	}
 	watched := &watchBus{Bus: bus}

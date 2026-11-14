@@ -1,0 +1,173 @@
+{
+  "catalog": {
+    "object": "list",
+    "data": [
+      {
+        "id": "sol-opus@auto",
+        "object": "model",
+        "rou2_upstream": "auto",
+        "supported_endpoints": [
+          "/responses",
+          "/messages"
+        ],
+        "context_length": null,
+        "rou2_auto": {
+          "generation": "example-generation",
+          "candidates": [
+            {
+              "model": "explabs/gpt-6.1-sol",
+              "apis": [
+                "responses"
+              ],
+              "context_length": null,
+              "supports_tools": null,
+              "capabilities": {
+                "image_input": {
+                  "supported": null
+                }
+              }
+            },
+            {
+              "model": "modelflare/claude-opus-5-5",
+              "apis": [
+                "messages"
+              ],
+              "context_length": null,
+              "supports_tools": null,
+              "capabilities": {
+                "image_input": {
+                  "supported": null
+                }
+              }
+            }
+          ],
+          "context_status": "unknown"
+        },
+        "supports_tools": false,
+        "capabilities": {
+          "image_input": {
+            "supported": false
+          }
+        }
+      },
+      {
+        "id": "fable-sol@auto",
+        "object": "model",
+        "rou2_upstream": "auto",
+        "supported_endpoints": [
+          "/messages",
+          "/responses"
+        ],
+        "context_length": null,
+        "rou2_auto": {
+          "generation": "example-generation",
+          "candidates": [
+            {
+              "model": "modelflare/claude-fable-5-2",
+              "apis": [
+                "messages"
+              ],
+              "context_length": null,
+              "supports_tools": null,
+              "capabilities": {
+                "image_input": {
+                  "supported": null
+                }
+              }
+            },
+            {
+              "model": "explabs/gpt-6.1-sol",
+              "apis": [
+                "responses"
+              ],
+              "context_length": null,
+              "supports_tools": null,
+              "capabilities": {
+                "image_input": {
+                  "supported": null
+                }
+              }
+            }
+          ],
+          "context_status": "unknown"
+        },
+        "supports_tools": false,
+        "capabilities": {
+          "image_input": {
+            "supported": false
+          }
+        }
+      },
+      {
+        "id": "explabs/gpt-6.1-sol",
+        "object": "model",
+        "rou2_upstream": "explabs",
+        "context_length": null,
+        "supported_endpoints": [
+          "/responses"
+        ],
+        "supports_tools": null,
+        "capabilities": {
+          "image_input": {
+            "supported": null
+          }
+        }
+      },
+      {
+        "id": "modelflare/claude-opus-5-5",
+        "object": "model",
+        "rou2_upstream": "modelflare",
+        "context_length": null,
+        "supported_endpoints": [
+          "/messages"
+        ],
+        "supports_tools": null,
+        "capabilities": {
+          "image_input": {
+            "supported": null
+          }
+        }
+      },
+      {
+        "id": "modelflare/claude-fable-5-2",
+        "object": "model",
+        "rou2_upstream": "modelflare",
+        "context_length": null,
+        "supported_endpoints": [
+          "/messages"
+        ],
+        "supports_tools": null,
+        "capabilities": {
+          "image_input": {
+            "supported": null
+          }
+        }
+      }
+    ]
+  },
+  "rejection": {
+    "status": 409,
+    "content_type": "application/json",
+    "body": {
+      "error": {
+        "code": "route_fallback",
+        "retry_safe": true,
+        "generation": "example-generation",
+        "route": {
+          "model": "modelflare/claude-opus-5-5",
+          "api": "messages"
+        },
+        "attempt_token": "opaque-one-use-token"
+      }
+    },
+    "retry_header": "Rou2-Attempt-Token"
+  },
+  "configured_candidate_example": {
+    "upstream": "explabs",
+    "model": "gpt-6.1-sol",
+    "context_length": 100000,
+    "max_output_tokens": 16000,
+    "supports_tools": true,
+    "image_input": true
+  }
+}
