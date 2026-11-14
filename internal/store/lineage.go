@@ -1,6 +1,8 @@
 package store
 
 import (
+	"slices"
+
 	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
@@ -52,14 +54,24 @@ func (s *XwalStore) LineageLinks(id string) []Link {
 }
 
 func (s *XwalStore) Lineage(id string) []fwtree.Ref {
-	links := s.LineageLinks(id)
+	return servingLineage(s.LineageLinks(id))
+}
+
+func servingLineage(links []Link) []fwtree.Ref {
 	if len(links) == 0 {
 		return nil
 	}
-	refs := make([]fwtree.Ref, len(links))
-	for i, l := range links {
-		refs[i] = fwtree.Ref{Node: l.Node, Base: l.BaseLT}
+	leaf := links[len(links)-1]
+	refs := []fwtree.Ref{{Node: leaf.Node, Base: leaf.BaseLT}}
+	bound := leaf.BaseLT
+	for i := len(links) - 2; i >= 0; i-- {
+		if i > 0 && links[i].BaseLT >= bound {
+			continue
+		}
+		refs = append(refs, fwtree.Ref{Node: links[i].Node, Base: links[i].BaseLT})
+		bound = links[i].BaseLT
 	}
+	slices.Reverse(refs)
 	return refs
 }
 
