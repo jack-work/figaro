@@ -410,6 +410,30 @@ func TestExportOfAnInterruptedDetach(t *testing.T) {
 			t.Fatalf("export of a foreign segment below the base: %v, want ErrAbsorbConflict", err)
 		}
 	})
+	t.Run("a killed write's temps stay out", func(t *testing.T) {
+		dir, tr := interruptedRootTrunk(t)
+		s := reopen(t, nil, dir)
+		node, _ := s.HeadNode(tr)
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+		for _, ch := range []string{"main", "state"} {
+			putFile(t, dir, filepath.Join(ch, fsName(node), ".absorb-4242"), []byte("half"), true)
+			putFile(t, dir, filepath.Join(ch, fsName(node), "..fork-777"), []byte("base=1\n"), true)
+		}
+		s = reopen(t, nil, dir)
+		defer s.Close()
+		e, err := s.Export(tr, "0123abcd")
+		if err != nil {
+			t.Fatalf("export: %v", err)
+		}
+		defer e.Close()
+		for _, f := range e.Files {
+			if strings.HasPrefix(f.Name, ".absorb-") || strings.HasPrefix(f.Name, "..fork-") {
+				t.Errorf("the package carries %s/%s/%s", f.Node, f.Channel, f.Name)
+			}
+		}
+	})
 	t.Run("a name added twice", func(t *testing.T) {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, segFileName(1, jsonl)), []byte("x"), 0o644); err != nil {

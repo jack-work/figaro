@@ -214,6 +214,12 @@ func (t *Trunks) exportTop(e *Export) error {
 	return nil
 }
 
+// isWriteScratch names the temps absorbPrefix and writeSyncedFile leave in
+// a channel dir when killed mid-write.
+func isWriteScratch(name string) bool {
+	return strings.HasPrefix(name, ".absorb-") || strings.HasPrefix(name, "..fork-")
+}
+
 func (e *Export) addDir(node, channel, dir string, keep func(string) bool) error {
 	ents, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -227,7 +233,7 @@ func (e *Export) addDir(node, channel, dir string, keep func(string) bool) error
 		if name == disk.ForkPendingName {
 			return fmt.Errorf("xwal: node %q channel %q has a fork in progress", node, channel)
 		}
-		if !keep(name) {
+		if !keep(name) || isWriteScratch(name) {
 			continue
 		}
 		if ent.IsDir() {
