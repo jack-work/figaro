@@ -44,7 +44,7 @@ func TestWhereTheForkPrefixIsResident(t *testing.T) {
 		t.Fatal("the fork read nothing")
 	}
 
-	refs := b.Store().Lineage(alt)
+	refs := must(b.Store().Lineage(alt))
 	base := refs[len(refs)-1].Base
 
 	var own, inherited int

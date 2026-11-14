@@ -27,7 +27,7 @@ func runDoctorMisreadLineage(from string, jsonOut bool) error {
 		return enc.Encode(nodes)
 	}
 	w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NODE\tTRUNK\tKIND\tBASES\tDERIVED CHANNELS\tMETA")
+	fmt.Fprintln(w, "NODE\tTRUNK\tKIND\tBASES\tREASON\tDERIVED CHANNELS\tMETA")
 	for _, n := range nodes {
 		bases := make([]string, len(n.Bases))
 		for i, b := range n.Bases {
@@ -41,7 +41,7 @@ func runDoctorMisreadLineage(from string, jsonOut bool) error {
 		if n.Meta {
 			meta = "refold"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", n.Node, n.Trunk, n.Kind, strings.Join(bases, ","), clears, meta)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", n.Node, n.Trunk, n.Kind, strings.Join(bases, ","), n.Reason, clears, meta)
 	}
 	if err := w.Flush(); err != nil {
 		return err
