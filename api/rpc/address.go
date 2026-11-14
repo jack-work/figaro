@@ -37,7 +37,7 @@ type AriaClosed struct {
 	FigaroID string `json:"figaro_id"`
 }
 
-const MethodEndpointLapsed = "door.lapsed"
+const MethodEndpointLapsed = "endpoint.lapsed"
 
 type EndpointLapsed struct {
 	Reason  string `json:"reason"`
