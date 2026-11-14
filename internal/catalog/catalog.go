@@ -311,6 +311,19 @@ func (r *Reader) entry(id string, item any) models.Entry {
 	if o, ok := r.overrides[id]; ok {
 		applyOverride(&e, o)
 	}
+	if raw := at(item, []string{"rou2_auto"}); raw != nil {
+		var auto models.AutoRoute
+		data, err := json.Marshal(raw)
+		if err == nil {
+			err = json.Unmarshal(data, &auto)
+		}
+		if err != nil {
+			auto = models.AutoRoute{ContextStatus: "unknown"}
+		}
+		e.Auto = &auto
+		e.Context = models.Context{Default: auto.Capacity()}
+		e.Mark("context", models.SourceAPI)
+	}
 	return e
 }
 

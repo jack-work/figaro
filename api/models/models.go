@@ -31,7 +31,36 @@ type Context struct {
 	Long    int `json:"long,omitempty"`
 }
 
+type RouteCandidate struct {
+	Model         string   `json:"model"`
+	APIs          []string `json:"apis"`
+	ContextLength *int     `json:"context_length"`
+}
+
+type AutoRoute struct {
+	Generation    string           `json:"generation"`
+	Candidates    []RouteCandidate `json:"candidates"`
+	ContextStatus string           `json:"context_status"`
+}
+
+func (a *AutoRoute) Capacity() int {
+	if a == nil || a.ContextStatus != "known" || len(a.Candidates) == 0 {
+		return 0
+	}
+	minimum := 0
+	for _, c := range a.Candidates {
+		if c.ContextLength == nil || *c.ContextLength <= 0 {
+			return 0
+		}
+		if minimum == 0 || *c.ContextLength < minimum {
+			minimum = *c.ContextLength
+		}
+	}
+	return minimum
+}
+
 type Entry struct {
+	Auto       *AutoRoute        `json:"rou2_auto,omitempty"`
 	Name       string            `json:"name,omitempty"`
 	Context    Context           `json:"context,omitzero"`
 	MaxOutput  int               `json:"max_output,omitempty"`
@@ -47,6 +76,9 @@ type Entry struct {
 }
 
 func (e Entry) Window(tier string) int {
+	if e.Auto != nil {
+		return e.Auto.Capacity()
+	}
 	if tier == LongContextTier && e.Context.Long > 0 {
 		return e.Context.Long
 	}
@@ -150,16 +182,30 @@ func Subject(bound form.Snapshot) (provider, model string) {
 }
 
 func ContextLimit(catalog, bound form.Snapshot) int {
+	provider, model := Subject(bound)
+	if e, ok := Lookup(catalog, provider, model); ok && e.Auto != nil {
+		capacity := e.Auto.Capacity()
+		if n, ok := Override(bound); ok && capacity > 0 && n < capacity {
+			return n
+		}
+		return capacity
+	}
 	if n, ok := Override(bound); ok {
 		return n
 	}
-	provider, model := Subject(bound)
 	return EntryLimit(catalog, provider, model, stringAt(bound, ContextTierKey))
 }
 
 func EntryLimit(catalog form.Snapshot, provider, model, tier string) int {
 	if provider == "" || model == "" || !Current(catalog, provider) {
 		return 0
+	}
+	if raw, ok := catalog.Get(provider + ".models." + model + ".rou2_auto"); ok {
+		var auto AutoRoute
+		if json.Unmarshal(raw, &auto) != nil {
+			return 0
+		}
+		return auto.Capacity()
 	}
 	raw, ok := catalog.Get(provider + ".models." + model + ".context")
 	var c Context
