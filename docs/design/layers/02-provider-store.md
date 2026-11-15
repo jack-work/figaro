@@ -2,7 +2,7 @@
 
 ## Ledger
 
-Status: implemented on lane/history-log-carve, final normal Go and flake gates pending. This continues the Nov 8 bottom-up carve and Nov 10 gradual separation; it is not a new architecture plan.
+Status: implemented on lane/history-log-carve. The final normal Go and flake gates passed on implementation commit 7b19cdb6. This continues the Nov 8 bottom-up carve and Nov 10 gradual separation; it is not a new architecture plan.
 
 First landing: figwal/xwal owns the stored ancestry walk and contributing historical references. store no longer selects those ancestors. Full inspection retains turn annotations; history does not read .forkturn. Trunk/figaro IDs remain the tree-cache reference keys; physical node keys remain substrate details. Presentation overrides are unchanged.
 
@@ -18,6 +18,6 @@ Hidden variables resolved by explicit construction inputs:
 
 Disk state and behavior: no layout, schema, version or migration change. Per-channel LT and FigaroLT retain their distinct coordinates. Interior-fork pruning, full lineage inspection, hidden-row refusal and v5 derived repair retain the existing tests. No mutable ancestry cache was added.
 
-Validation: focused affected store/provider/decide/daemon suites green; the existing lineage selection row moved to figwal. One immutable final Go gate and one normal flake gate remain. No local Inspector or new worker.
+Validation: focused affected store/provider/decide/daemon suites green; the existing lineage selection row moved to figwal. The immutable final build, vet, full Go tests, boundary ratchet and normal flake gate passed. No local Inspector or new worker. Net production Go source is -25 lines across the two landings, with moved files counted as moves rather than deletions; tests are +275 lines, mostly type/import adaptations.
 
 Rollback: revert the relevant source commit. This carve writes no new disk state.
