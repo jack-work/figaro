@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -32,7 +33,9 @@ func TestInquiryChromeAgreesAcrossViews(t *testing.T) {
 		tr := newTranscript(ft, 48, 20, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
 		tr.enter()
 		tr.follow = false
-		assertChrome(t, tr.lines(), want)
+		pagerWant := append([]string(nil), want...)
+		pagerWant[0] = fmt.Sprintf("%-45s1", want[0])
+		assertChrome(t, tr.lines(), pagerWant)
 	})
 
 	t.Run("inline", func(t *testing.T) {
@@ -166,7 +169,7 @@ func assertNoGapBelowRule(t *testing.T, where string, rows []string) {
 		if j == i+1 || j >= len(shape) {
 			continue
 		}
-		if shape[j] == "> input" || shape[j] == "< figaro" {
+		if strings.HasPrefix(shape[j], "> input") || shape[j] == "< figaro" {
 			t.Fatalf("%s: %d blank row(s) between the rule at line %d and %q at line %d;\n"+
 				"the rule is that header's OVERLINE and nothing may come between them\n--- shape ---\n%s",
 				where, j-i-1, i+1, shape[j], j+1, strings.Join(shape, "\n"))

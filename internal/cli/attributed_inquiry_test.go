@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -46,7 +47,9 @@ func TestAttributedInquiryShapeAgreesAcrossViews(t *testing.T) {
 		tr := newTranscript(ft, 48, 24, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
 		tr.enter()
 		tr.follow = false
-		assertChrome(t, tr.lines(), want)
+		pagerWant := append([]string(nil), want...)
+		pagerWant[0] = fmt.Sprintf("%-45s1", want[0])
+		assertChrome(t, tr.lines(), pagerWant)
 	})
 
 	t.Run("inline", func(t *testing.T) {

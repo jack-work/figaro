@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -163,6 +164,7 @@ func twoTurnPager(t *testing.T) *transcript {
 // reply's first node washed it too, so the seam lit up for both selections.
 func TestASeamRuleBelongsToTheBlockAboveIt(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
+	heading := fmt.Sprintf("%-57s2", "> input")
 	for _, tc := range []struct {
 		name   string
 		ref    nodeRef
@@ -171,9 +173,9 @@ func TestASeamRuleBelongsToTheBlockAboveIt(t *testing.T) {
 	}{
 		{"the reply's first node", nodeRef{turn: 2, index: 0},
 			[]string{"< figaro", "first answer of TWO"},
-			[]string{"TWO", "second answer of ONE", "> input"}},
+			[]string{"TWO", "second answer of ONE", heading}},
 		{"the question", nodeRef{turn: 2, index: inquiryNode},
-			[]string{"> input", "TWO"},
+			[]string{heading, "TWO"},
 			[]string{"< figaro", "second answer of ONE"}},
 	} {
 		tr := twoTurnPager(t)
