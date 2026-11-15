@@ -543,8 +543,6 @@ func (s *Server) TailNodeLT() uint64 {
 	return PriorBoundaryOf(*tl)
 }
 
-// PriorBoundaryOf is a turn's last node record, or its LT bracket end when it
-// drew nothing; without the fallback the next window is the whole history.
 func PriorBoundaryOf(t Turn) uint64 {
 	var from uint64
 	for _, n := range t.Nodes {
@@ -553,7 +551,7 @@ func PriorBoundaryOf(t Turn) uint64 {
 		}
 	}
 	if from == 0 && len(t.LTs) > 0 {
-		from = t.LTs[len(t.LTs)-1]
+		from = t.LTs[0]
 	}
 	return from
 }

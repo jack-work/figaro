@@ -1,6 +1,8 @@
 package angelus
 
 import (
+	"slices"
+
 	"github.com/jack-work/figaro/api/message"
 	fwtree "github.com/jack-work/figaro/figwal/tree"
 	"github.com/jack-work/figaro/internal/arialog"
@@ -24,6 +26,7 @@ func (a *Angelus) composeTurns(node string, fromLT, toLT uint64) []aria.Turn {
 	if len(entries) == 0 {
 		return nil
 	}
+	entries = append(previousTurn(log, entries[0].LT), entries...)
 	entries = append(entries, tailOfLastTurn(log, entries)...)
 
 	msgs := make([]message.Message, len(entries))
@@ -34,12 +37,34 @@ func (a *Angelus) composeTurns(node string, fromLT, toLT uint64) []aria.Turn {
 	out := a.uiProj.Turns(msgs)
 	if fb, ok := a.Backend.(formdelta.Backend); ok {
 		seed := formdelta.Seed{}
-		if prev, _ := log.ReadPage(0, fromLT, 1); len(prev) > 0 {
+		if prev, _ := log.ReadPage(0, entries[0].LT, 1); len(prev) > 0 {
 			seed = formdelta.SeedFrom(prev[len(prev)-1])
 		}
 		formdelta.Attach(out, formdelta.PerRecordFrom(fb, node, seed, entries))
 	}
-	return out
+	return slices.DeleteFunc(out, func(t aria.Turn) bool {
+		return len(t.LTs) == 0 || t.LTs[0] < fromLT || t.LTs[0] > toLT
+	})
+}
+
+func previousTurn(log arialog.Log[message.Message], before uint64) []arialog.Entry[message.Message] {
+	var reverse []arialog.Entry[message.Message]
+	for before > 0 {
+		page, _ := log.ReadPage(0, before, 64)
+		if len(page) == 0 {
+			break
+		}
+		for i := len(page) - 1; i >= 0; i-- {
+			reverse = append(reverse, page[i])
+			if turns.Opens(page[i].Payload) {
+				slices.Reverse(reverse)
+				return reverse
+			}
+		}
+		before = page[0].LT
+	}
+	slices.Reverse(reverse)
+	return reverse
 }
 
 // openNodeIR asks for a bare node first: opening an ancestor as an aria
