@@ -66,6 +66,10 @@ var formViews = map[string]rpc.FormView{
 	},
 }
 
+func init() {
+	formViews[rpc.GlobalAriasFormID] = formViews[rpc.AriasFormID]
+}
+
 var navView = rpc.FormView{
 	Rows:    []string{"entries.*"},
 	Open:    []string{"entries"},

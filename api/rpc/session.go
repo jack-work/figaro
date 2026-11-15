@@ -155,6 +155,8 @@ const SuccessionsFormID = "@successions"
 
 const AriasFormID = "@arias"
 
+const GlobalAriasFormID = "@arias-global"
+
 const TroupeFormID = "@troupe"
 
 const TopologyFormID = "@topology"

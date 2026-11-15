@@ -39,6 +39,7 @@ type ariasWatch struct {
 	built   bool
 	builtAt time.Time
 	recent  recentWant
+	global  bool
 }
 
 type recentWant struct {
@@ -73,7 +74,7 @@ type ariasForms struct {
 	ticking bool
 }
 
-var callerFormIDs = []string{rpc.AriasFormID, rpc.TopologyFormID, rpc.RecentFormID}
+var callerFormIDs = []string{rpc.AriasFormID, rpc.GlobalAriasFormID, rpc.TopologyFormID, rpc.RecentFormID}
 
 func isCallerFormID(id string) bool { return slices.Contains(callerFormIDs, id) }
 
@@ -96,6 +97,7 @@ func (h *handlers) ariasWatchFor(ctx context.Context, id string) (*ariasWatch, b
 	if !ok {
 		w = newAriasWatch(context.WithoutCancel(ctx))
 		w.recent.asked = id == rpc.RecentFormID
+		w.global = id == rpc.GlobalAriasFormID
 		h.rebuildArias(w)
 		a.watches[key] = w
 	}
@@ -204,10 +206,22 @@ func (h *handlers) rebuildArias(w *ariasWatch) {
 	print := ariasPrint(rows, peers)
 	fresh := !w.built || print != w.print
 	w.print, w.built = print, true
-	if !fresh && (!w.recent.asked || w.recent.built) {
+	if !fresh && (!w.recent.asked || w.recent.built) && !w.global {
 		return
 	}
 	next := make(map[string]form.Snapshot, len(callerFormIDs))
+	if w.global {
+		params, _ := json.Marshal(rpc.ListRequest{Global: true})
+		if res, err := h.list(w.ctx, params); err == nil {
+			var global []rpc.FigaroInfoResponse
+			for _, r := range res.(rpc.ListResponse).Figaros {
+				if r.ReapedAt == 0 {
+					global = append(global, r)
+				}
+			}
+			next[rpc.GlobalAriasFormID] = ariasSnapshot(global, peers)
+		}
+	}
 	if fresh {
 		next[rpc.AriasFormID] = ariasSnapshot(rows, peers)
 		next[rpc.TopologyFormID] = topologySnapshot(rows)
@@ -329,6 +343,11 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers int) form.Snapshot {
 
 func (h *handlers) callerFormMethod(ctx context.Context, id, method string, params json.RawMessage) (any, error) {
 	w, built := h.ariasWatchFor(ctx, id)
+	if id == rpc.GlobalAriasFormID && !built {
+		w.build.Lock()
+		w.global = true
+		w.build.Unlock()
+	}
 	if id == rpc.RecentFormID && !built {
 		w.askRecent()
 	}
