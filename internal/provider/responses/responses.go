@@ -41,9 +41,10 @@ type Config struct {
 	Headers   func(token string, ids IDs) http.Header
 	Envelope  func(ids IDs) map[string]string
 
-	Name            string
-	MaxRequestBytes int
-	OmitFields      []string
+	Name                          string
+	MaxRequestBytes               int
+	OmitFields                    []string
+	DisablePromptCacheBreakpoints bool
 }
 
 type TokenSource interface {
@@ -69,18 +70,19 @@ type Provider struct {
 	headers   func(string, IDs) http.Header
 	envelope  func(IDs) map[string]string
 
-	mu         sync.Mutex
-	model      string
-	maxTokens  int
-	templates  *template.Template
-	machineID  string
-	cache      store.Log[[]json.RawMessage]
-	sessionID  string
-	limits     map[string]ContextLimits
-	transport  map[string]Transport
-	maxBytes   int
-	name       string
-	omitFields []string
+	mu                            sync.Mutex
+	model                         string
+	maxTokens                     int
+	templates                     *template.Template
+	machineID                     string
+	cache                         store.Log[[]json.RawMessage]
+	sessionID                     string
+	limits                        map[string]ContextLimits
+	transport                     map[string]Transport
+	maxBytes                      int
+	name                          string
+	omitFields                    []string
+	disablePromptCacheBreakpoints bool
 
 	baseURL func(string) string
 	dial    responseDialer
@@ -97,21 +99,22 @@ func New(
 		headers = func(token string, _ IDs) http.Header { return BearerHeaders(token) }
 	}
 	return &Provider{
-		tokenSrc:   tokenSrc,
-		cacheOpen:  cacheOpen,
-		namespace:  cfg.Namespace,
-		headers:    headers,
-		envelope:   cfg.Envelope,
-		model:      knobs.Model,
-		maxTokens:  knobs.MaxTokens,
-		machineID:  uuid.NewString(),
-		limits:     map[string]ContextLimits{},
-		transport:  map[string]Transport{},
-		baseURL:    cfg.BaseURL,
-		dial:       dialResponses,
-		maxBytes:   cfg.MaxRequestBytes,
-		name:       cfg.Name,
-		omitFields: append([]string(nil), cfg.OmitFields...),
+		tokenSrc:                      tokenSrc,
+		cacheOpen:                     cacheOpen,
+		namespace:                     cfg.Namespace,
+		headers:                       headers,
+		envelope:                      cfg.Envelope,
+		model:                         knobs.Model,
+		maxTokens:                     knobs.MaxTokens,
+		machineID:                     uuid.NewString(),
+		limits:                        map[string]ContextLimits{},
+		transport:                     map[string]Transport{},
+		baseURL:                       cfg.BaseURL,
+		dial:                          dialResponses,
+		maxBytes:                      cfg.MaxRequestBytes,
+		name:                          cfg.Name,
+		omitFields:                    append([]string(nil), cfg.OmitFields...),
+		disablePromptCacheBreakpoints: cfg.DisablePromptCacheBreakpoints,
 	}
 }
 
@@ -236,7 +239,10 @@ func (p *Provider) sendWithToken(
 	if len(input) == 0 {
 		return fmt.Errorf("responses: empty context")
 	}
-	input, breakpoints := markPromptCacheBreakpoint(input)
+	breakpoints := 0
+	if !p.disablePromptCacheBreakpoints {
+		input, breakpoints = markPromptCacheBreakpoint(input)
+	}
 
 	model, maxTokens, machineID := p.settings()
 	if model == "" {

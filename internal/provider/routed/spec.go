@@ -56,9 +56,10 @@ type Spec struct {
 	MarkMode    provider.MarkMode
 	TextOnly    bool
 
-	MaxRequestBytes     int
-	ResponsesOmitFields []string
-	ResponsesNoReplay   bool
+	MaxRequestBytes                 int
+	ResponsesOmitFields             []string
+	ResponsesNoReplay               bool
+	ResponsesPromptCacheBreakpoints bool
 }
 
 func (s Spec) Validate() error {

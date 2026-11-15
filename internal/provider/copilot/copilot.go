@@ -47,11 +47,12 @@ func Spec(tokens *CopilotTokenSource) routed.Spec {
 		TransportHeaders: map[routed.Transport]map[string]string{
 			routed.Messages: {"anthropic-dangerous-direct-browser-access": "true"},
 		},
-		IdentityHeaders: identityHeaders,
-		Catalog:         "/models",
-		Mapping:         catalogmaps.Builtin(providerName),
-		MessagesPath:    "/v1/messages",
-		Rules:           []routed.Rule{{Model: "claude-*", Transport: routed.Messages}},
+		IdentityHeaders:                 identityHeaders,
+		ResponsesPromptCacheBreakpoints: true,
+		Catalog:                         "/models",
+		Mapping:                         catalogmaps.Builtin(providerName),
+		MessagesPath:                    "/v1/messages",
+		Rules:                           []routed.Rule{{Model: "claude-*", Transport: routed.Messages}},
 	}
 }
 

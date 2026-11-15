@@ -210,9 +210,10 @@ func (p *Provider) responsesBackend() *responses.Provider {
 		},
 		Envelope: identity,
 
-		Name:            p.spec.Name,
-		MaxRequestBytes: p.spec.MaxRequestBytes,
-		OmitFields:      p.spec.ResponsesOmitFields,
+		Name:                          p.spec.Name,
+		MaxRequestBytes:               p.spec.MaxRequestBytes,
+		OmitFields:                    p.spec.ResponsesOmitFields,
+		DisablePromptCacheBreakpoints: (!p.spec.ResponsesPromptCacheBreakpoints && !p.spec.Caps.BlockMarkers) || p.spec.MarkMode == provider.MarkNone,
 	}
 	r := responses.New(p.knobsNow(), p.resolver, cfg, p.opener(Responses))
 	r.SetTemplates(p.templates)
