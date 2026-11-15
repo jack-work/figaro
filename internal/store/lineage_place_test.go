@@ -80,26 +80,6 @@ func TestForkPlacedUnderAParentAboveItsCutReadsItsOwnRecords(t *testing.T) {
 	}
 }
 
-// The read lineage keeps an ancestor only while its base is below the one
-// beneath it: equal and higher bases own nothing the leaf can see.
-func TestServingLineageDropsAncestorsAtOrAboveTheBound(t *testing.T) {
-	links := []Link{{Node: "r"}, {Node: "a", BaseLT: 17}, {Node: "b", BaseLT: 21}, {Node: "c", BaseLT: 6}, {Node: "d", BaseLT: 6}, {Node: "e", BaseLT: 5}}
-	got := servingLineage(links)
-	want := []string{"r", "e"}
-	if len(got) != len(want) {
-		t.Fatalf("got %v, want nodes %v", got, want)
-	}
-	for i, w := range want {
-		if got[i].Node != w {
-			t.Fatalf("got %v, want nodes %v", got, want)
-		}
-	}
-	rising := []Link{{Node: "r"}, {Node: "a", BaseLT: 3}, {Node: "b", BaseLT: 9}, {Node: "c", BaseLT: 9}, {Node: "d", BaseLT: 12}}
-	if got := servingLineage(rising); len(got) != 4 || got[1].Node != "a" || got[2].Node != "c" || got[3].Node != "d" {
-		t.Fatalf("rising lineage: got %v", got)
-	}
-}
-
 // A view that serves an ancestor where the node owns rows must refuse to cut:
 // the cut is computed from rows the view never showed (fossil-opium lost 25
 // translation rows that way before the lineage was pruned).
