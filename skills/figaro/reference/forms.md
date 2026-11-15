@@ -74,6 +74,9 @@ whose goroutine exists only while there is work, batching one fsync across
 concurrent patches);
 conditional writes (`if-version`) refuse when the bound form moved.
 
+For conditional replacement of declared outfit fields on an existing role,
+see [managed outfit application](managed-forms.md).
+
 **Fork.** `fig form fork @a5af1a83 who=trial` duplicates the state at
 that moment into a fresh `@id`. The parent stays fully patchable; later
 patches to it belong to it alone; a later fork takes the later state.
