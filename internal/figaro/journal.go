@@ -2,7 +2,7 @@ package figaro
 
 import (
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // journal is the one write path to the conversation's record: durability
@@ -10,14 +10,14 @@ import (
 // structural change and emits immediately; the streaming throttle must never
 // route through here.
 type journal struct {
-	log store.Log[message.Message]
+	log arialog.Log[message.Message]
 	// publish runs on the caller's goroutine, the drain loop.
 	publish func()
 }
 
 // Append writes and announces. A failed publish is swallowed: the durable
 // truth is not conditional on a client having heard it.
-func (j *journal) Append(e store.Entry[message.Message]) (store.Entry[message.Message], error) {
+func (j *journal) Append(e arialog.Entry[message.Message]) (arialog.Entry[message.Message], error) {
 	out, err := j.log.Append(e)
 	if err != nil {
 		return out, err
@@ -29,12 +29,12 @@ func (j *journal) Append(e store.Entry[message.Message]) (store.Entry[message.Me
 }
 
 // Read is deliberately not the whole Log interface; see appendable.
-func (j *journal) Read() []store.Entry[message.Message] { return j.log.Read() }
+func (j *journal) Read() []arialog.Entry[message.Message] { return j.log.Read() }
 
 // The agent holds nothing appendable but the journal, so an unpublished
 // append does not compile.
 var _ interface {
-	Append(store.Entry[message.Message]) (store.Entry[message.Message], error)
+	Append(arialog.Entry[message.Message]) (arialog.Entry[message.Message], error)
 } = (*journal)(nil)
 
 // writer binds on demand so a hand-built Agent carries no nil journal.
@@ -46,7 +46,7 @@ func (a *Agent) writer() *journal {
 	return a.journal
 }
 
-func (a *Agent) newJournal(log store.Log[message.Message]) *journal {
+func (a *Agent) newJournal(log arialog.Log[message.Message]) *journal {
 	return &journal{
 		log: log,
 		publish: func() {

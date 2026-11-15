@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	fwtree "github.com/jack-work/figaro/figwal/tree"
@@ -16,13 +18,13 @@ import (
 func TestTreeLogAnswersLikeItsSubstrate(t *testing.T) {
 	for _, budget := range []int64{0, 1 << 10, 1 << 20} {
 		t.Run(fmt.Sprint(budget), func(t *testing.T) {
-			mem := NewMemLog[string]()
+			mem := arialog.NewMemLog[string]()
 			for i := 0; i < 200; i++ {
-				_, err := mem.Append(Entry[string]{Payload: fmt.Sprintf("row-%03d", i)})
+				_, err := mem.Append(arialog.Entry[string]{Payload: fmt.Sprintf("row-%03d", i)})
 				require.NoError(t, err)
 			}
-			sizeOf := func(e Entry[string]) int { return len(e.Payload) + 48 }
-			cache := NewIRCache[string](fwtree.NewBudget(budget), func(string) Log[string] { return mem }, sizeOf, irKey[string])
+			sizeOf := func(e arialog.Entry[string]) int { return len(e.Payload) + 48 }
+			cache := NewIRCache[string](fwtree.NewBudget(budget), func(string) arialog.Log[string] { return mem }, sizeOf, irKey[string])
 			l := newTreeLog[string](mem, "aria", cache, sizeOf, irKey[string], nil)
 
 			require.Equal(t, mem.Len(), l.Len())
@@ -47,7 +49,7 @@ func TestTreeLogAnswersLikeItsSubstrate(t *testing.T) {
 				}
 			}
 
-			tailWant, totalWant := TailAfter[string](mem, 150)
+			tailWant, totalWant := arialog.TailAfter[string](mem, 150)
 			tailGot, totalGot := l.TailAfter(150)
 			require.Equal(t, totalWant, totalGot)
 			require.Equal(t, len(tailWant), len(tailGot))
@@ -60,12 +62,12 @@ func TestTreeLogAnswersLikeItsSubstrate(t *testing.T) {
 // An append lands in the substrate AND is seeded into the cache, so the tail a
 // writer just wrote is resident without a fetch.
 func TestTreeLogSeedsWhatItWrites(t *testing.T) {
-	mem := NewMemLog[string]()
-	sizeOf := func(e Entry[string]) int { return len(e.Payload) + 48 }
-	cache := NewIRCache[string](fwtree.NewBudget(0), func(string) Log[string] { return mem }, sizeOf, irKey[string])
+	mem := arialog.NewMemLog[string]()
+	sizeOf := func(e arialog.Entry[string]) int { return len(e.Payload) + 48 }
+	cache := NewIRCache[string](fwtree.NewBudget(0), func(string) arialog.Log[string] { return mem }, sizeOf, irKey[string])
 	l := newTreeLog[string](mem, "aria", cache, sizeOf, irKey[string], nil).seedingTail()
 
-	stamped, err := l.Append(Entry[string]{Payload: "first"})
+	stamped, err := l.Append(arialog.Entry[string]{Payload: "first"})
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), stamped.FigaroLT)
 
@@ -78,16 +80,16 @@ func TestTreeLogSeedsWhatItWrites(t *testing.T) {
 
 // Residency is reported from the tree's index, and a bounded budget bounds it.
 func TestTreeLogResidencyIsTheTreesIndex(t *testing.T) {
-	mem := NewMemLog[string]()
+	mem := arialog.NewMemLog[string]()
 	body := string(make([]byte, 512))
 	for i := 0; i < 300; i++ {
-		mem.Append(Entry[string]{Payload: body})
+		mem.Append(arialog.Entry[string]{Payload: body})
 	}
-	sizeOf := func(e Entry[string]) int { return len(e.Payload) + 48 }
+	sizeOf := func(e arialog.Entry[string]) int { return len(e.Payload) + 48 }
 	// The budget must exceed one run or nothing can stay: a run larger than
 	// the whole budget is evicted the moment it is charged.
 	budget := int64(128 << 10)
-	cache := NewIRCache[string](fwtree.NewBudget(budget), func(string) Log[string] { return mem }, sizeOf, irKey[string])
+	cache := NewIRCache[string](fwtree.NewBudget(budget), func(string) arialog.Log[string] { return mem }, sizeOf, irKey[string])
 	l := newTreeLog[string](mem, "aria", cache, sizeOf, irKey[string], nil)
 
 	_ = l.ReadFrom(1, 0) // pull the whole channel through the window
@@ -101,22 +103,22 @@ func TestTreeLogResidencyIsTheTreesIndex(t *testing.T) {
 // ANCESTOR's node, so the bytes are shared by construction rather than donated
 // once at open and guarded by a probe.
 func TestTreeLogForkSharesThePrefixStructurally(t *testing.T) {
-	parentMem := NewMemLog[string]()
+	parentMem := arialog.NewMemLog[string]()
 	for i := 0; i < 40; i++ {
-		parentMem.Append(Entry[string]{Payload: fmt.Sprintf("p-%02d", i)})
+		parentMem.Append(arialog.Entry[string]{Payload: fmt.Sprintf("p-%02d", i)})
 	}
-	sizeOf := func(e Entry[string]) int { return len(e.Payload) + 48 }
+	sizeOf := func(e arialog.Entry[string]) int { return len(e.Payload) + 48 }
 	// One cache, two tenants: parent and child are nodes in the same tree.
-	subs := map[string]Log[string]{"parent": parentMem}
-	cache := NewIRCache[string](fwtree.NewBudget(0), func(node string) Log[string] { return subs[node] }, sizeOf, irKey[string])
+	subs := map[string]arialog.Log[string]{"parent": parentMem}
+	cache := NewIRCache[string](fwtree.NewBudget(0), func(node string) arialog.Log[string] { return subs[node] }, sizeOf, irKey[string])
 	parent := newTreeLog[string](parentMem, "parent", cache, sizeOf, irKey[string], nil)
 	require.Len(t, parent.ReadFrom(1, 0), 40)
 
 	// The child's own log carries only its own records; everything below the
 	// fork base belongs to the parent.
-	childMem := NewMemLog[string]()
+	childMem := arialog.NewMemLog[string]()
 	for i := 0; i < 3; i++ {
-		childMem.Append(Entry[string]{Payload: fmt.Sprintf("c-%02d", i)})
+		childMem.Append(arialog.Entry[string]{Payload: fmt.Sprintf("c-%02d", i)})
 	}
 	const base = 41 // the child's first record is LT 41
 	child := &treeLog[string]{
@@ -143,16 +145,16 @@ func TestTreeLogForkSharesThePrefixStructurally(t *testing.T) {
 // dense LT, the lineage's Base is a main-channel LT, and splitting by it
 // attributes the whole span to the parent, which holds no rows of that channel.
 func TestAChannelKeyedByItsOwnLTIsNotCutByAnotherChannelsForkBase(t *testing.T) {
-	child := NewMemLog[string]()
-	_, err := child.Append(Entry[string]{FigaroLT: 6, Payload: "the only row"})
+	child := arialog.NewMemLog[string]()
+	_, err := child.Append(arialog.Entry[string]{FigaroLT: 6, Payload: "the only row"})
 	require.NoError(t, err)
 
-	sizeOf := func(e Entry[string]) int { return len(e.Payload) + 48 }
-	open := func(node string) Log[string] {
+	sizeOf := func(e arialog.Entry[string]) int { return len(e.Payload) + 48 }
+	open := func(node string) arialog.Log[string] {
 		if node == "child" {
 			return child
 		}
-		return NewMemLog[string]() // the parent has no rows of this channel
+		return arialog.NewMemLog[string]() // the parent has no rows of this channel
 	}
 	cache := NewIRCache[string](fwtree.NewBudget(0), open, sizeOf, transKey[string])
 	l := newTreeLog[string](child, "child", cache, sizeOf, transKey[string],

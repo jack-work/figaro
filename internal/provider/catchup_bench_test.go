@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 func benchRowBody(i int) json.RawMessage {
@@ -22,11 +22,11 @@ func benchRowBody(i int) json.RawMessage {
 	return body
 }
 
-func benchRowLog(b *testing.B, n int) *store.MemLog[[]json.RawMessage] {
+func benchRowLog(b *testing.B, n int) *arialog.MemLog[[]json.RawMessage] {
 	b.Helper()
-	rows := store.NewMemLog[[]json.RawMessage]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	for i := 0; i < n; i++ {
-		if _, err := rows.Append(store.Entry[[]json.RawMessage]{
+		if _, err := rows.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: uint64(i + 1),
 			Payload:  []json.RawMessage{benchRowBody(i)},
 		}); err != nil {

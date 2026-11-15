@@ -8,7 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/toolout"
 	"github.com/jack-work/figaro/internal/uiir"
 )
@@ -17,15 +17,15 @@ import (
 
 // openRegionRounds builds r completed tool rounds; lastRunning leaves the
 // final result absent, the state every live frame is composed in.
-func openRegionRounds(startLT uint64, r, outLines int, lastRunning bool) []store.Entry[message.Message] {
+func openRegionRounds(startLT uint64, r, outLines int, lastRunning bool) []arialog.Entry[message.Message] {
 	line := strings.Repeat("x", 79)
 	body := strings.Repeat(line+"\n", outLines)
-	var rows []store.Entry[message.Message]
+	var rows []arialog.Entry[message.Message]
 	lt := startLT
 	for i := 0; i < r; i++ {
 		id := fmt.Sprintf("call_%d", i)
 		lt++
-		rows = append(rows, store.Entry[message.Message]{
+		rows = append(rows, arialog.Entry[message.Message]{
 			LT: lt, FigaroLT: lt,
 			Payload: message.Message{
 				Role: message.RoleOutput,
@@ -40,7 +40,7 @@ func openRegionRounds(startLT uint64, r, outLines int, lastRunning bool) []store
 			break
 		}
 		lt++
-		rows = append(rows, store.Entry[message.Message]{
+		rows = append(rows, arialog.Entry[message.Message]{
 			LT: lt, FigaroLT: lt,
 			Payload: message.Message{
 				Role: message.RoleToolResult,
@@ -55,7 +55,7 @@ func openRegionRounds(startLT uint64, r, outLines int, lastRunning bool) []store
 
 func openRegionAgent(r, outLines int, lastRunning bool) *Agent {
 	// turnStartLT points at the prompt, so the open region is what was appended after it.
-	rows := []store.Entry[message.Message]{{
+	rows := []arialog.Entry[message.Message]{{
 		LT: 1, FigaroLT: 1,
 		Payload: message.Message{Role: message.RoleInput,
 			Content: []message.Content{message.TextContent("do the thing")}},

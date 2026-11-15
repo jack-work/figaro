@@ -6,7 +6,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 type compactedForm struct{ state form.Snapshot }
@@ -19,8 +19,8 @@ func (c compactedForm) StateAt(uint64) (form.Snapshot, bool)            { return
 // every message after the resume renders against an empty form.
 func TestASeedReadsTheFormStateNotItsWholeHistory(t *testing.T) {
 	state := form.Snapshot{}.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.model": json.RawMessage(`"opus"`)}, nil))
-	log := store.NewMemLog[message.Message]()
-	e, err := log.Append(store.Entry[message.Message]{
+	log := arialog.NewMemLog[message.Message]()
+	e, err := log.Append(arialog.Entry[message.Message]{
 		FormChannelVersion: 40,
 		Payload:            message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hi")}},
 	})
@@ -35,11 +35,11 @@ func TestASeedReadsTheFormStateNotItsWholeHistory(t *testing.T) {
 }
 
 // rowsThrough is a row log that carries bytes for each of the first n records.
-func rowsThrough(t *testing.T, n uint64) store.Log[[]json.RawMessage] {
+func rowsThrough(t *testing.T, n uint64) arialog.Log[[]json.RawMessage] {
 	t.Helper()
-	rows := store.NewMemLog[[]json.RawMessage]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	for lt := uint64(1); lt <= n; lt++ {
-		if _, err := rows.Append(store.Entry[[]json.RawMessage]{FigaroLT: lt, Payload: []json.RawMessage{json.RawMessage(`{}`)}}); err != nil {
+		if _, err := rows.Append(arialog.Entry[[]json.RawMessage]{FigaroLT: lt, Payload: []json.RawMessage{json.RawMessage(`{}`)}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -60,10 +60,10 @@ func setKey(key, value string) message.Patch {
 	return form.Build(form.Snapshot{}, map[string]json.RawMessage{key: json.RawMessage(`"` + value + `"`)}, nil)
 }
 
-func midTurnLog(t *testing.T) store.Log[message.Message] {
+func midTurnLog(t *testing.T) arialog.Log[message.Message] {
 	t.Helper()
-	log := store.NewMemLog[message.Message]()
-	for _, e := range []store.Entry[message.Message]{
+	log := arialog.NewMemLog[message.Message]()
+	for _, e := range []arialog.Entry[message.Message]{
 		{FormChannelVersion: 1, Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("go")}}},
 		{FormChannelVersion: 2, Payload: message.Message{Role: message.RoleOutput, StopReason: message.StopToolInvoke,
 			Content: []message.Content{{Type: message.ContentToolInvoke, ToolCallID: "c1", ToolName: "bash"}}}},
@@ -84,7 +84,7 @@ func TestAFormChangeDuringAStreamRidesTheNextUserMessage(t *testing.T) {
 	bound := versionedForm{patches: []message.Patch{setKey("mantra", "first"), setKey("mantra", "second")}}
 	log := midTurnLog(t)
 	d := NewDeriver(bound, nil)
-	entries, _ := store.TailAfter(log, 0)
+	entries, _ := arialog.TailAfter(log, 0)
 	var got [][]message.Patch
 	for _, e := range entries {
 		msg, _, ok := d.Next(e)

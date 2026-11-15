@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -37,7 +39,7 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 
 	log, err := backend.OpenFigIR(id)
 	require.NoError(t, err)
-	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, TurnID: 1,
 		Content: []message.Content{message.TextContent("one")}}})
 	require.NoError(t, err)
@@ -51,7 +53,7 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleOutput, TurnID: 1,
 		Content: []message.Content{message.TextContent("ONE.")}}})
 	require.NoError(t, err)

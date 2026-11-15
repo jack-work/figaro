@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -18,7 +20,7 @@ type TranslatorEncoder interface {
 	// entry that translates to nothing returns no messages and still owns a
 	// row; one that owes no row returns no fingerprint. source lets an
 	// encoder seed a cursor from an earlier entry.
-	EncodeEntry(ariaID string, source Log[message.Message], e Entry[message.Message]) ([]json.RawMessage, string, error)
+	EncodeEntry(ariaID string, source arialog.Log[message.Message], e arialog.Entry[message.Message]) ([]json.RawMessage, string, error)
 }
 
 // translatorEncoders is published, not locked: read on every IR append,
@@ -70,7 +72,7 @@ func (b *XwalBackend) AddTranslatorEncoders(encs ...TranslatorEncoder) {
 // has; a missing channel is created by the first send through that provider.
 // A failure here never fails the append: the translation is derived and
 // rebuilt by the next catch-up.
-func (b *XwalBackend) translateOnAppend(ariaID string, source Log[message.Message], e Entry[message.Message]) {
+func (b *XwalBackend) translateOnAppend(ariaID string, source arialog.Log[message.Message], e arialog.Entry[message.Message]) {
 	if b == nil || b.encoders.empty() {
 		return
 	}
@@ -112,12 +114,12 @@ func (b *XwalBackend) translateOnAppend(ariaID string, source Log[message.Messag
 		if encoded == nil {
 			encoded = []json.RawMessage{}
 		}
-		hash, err := FigaroHash(e.Payload)
+		hash, err := arialog.FigaroHash(e.Payload)
 		if err != nil {
 			slog.Warn("translate on append: hash", "aria", ariaID, "flt", e.LT, "err", err)
 			continue
 		}
-		if _, err := trans.Append(Entry[[]json.RawMessage]{
+		if _, err := trans.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT:    e.LT,
 			Payload:     encoded,
 			Fingerprint: fingerprint,

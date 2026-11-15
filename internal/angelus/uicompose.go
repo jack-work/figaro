@@ -3,6 +3,7 @@ package angelus
 import (
 	"github.com/jack-work/figaro/api/message"
 	fwtree "github.com/jack-work/figaro/figwal/tree"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/formdelta"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/store"
@@ -43,9 +44,9 @@ func (a *Angelus) composeTurns(node string, fromLT, toLT uint64) []aria.Turn {
 
 // openNodeIR asks for a bare node first: opening an ancestor as an aria
 // would mint a handle and heal a sidecar for a frozen trunk.
-func (a *Angelus) openNodeIR(node string) store.Log[message.Message] {
+func (a *Angelus) openNodeIR(node string) arialog.Log[message.Message] {
 	if o, ok := a.Backend.(interface {
-		OpenNode(string) store.Log[message.Message]
+		OpenNode(string) arialog.Log[message.Message]
 	}); ok {
 		return o.OpenNode(node)
 	}
@@ -66,8 +67,8 @@ func (a *Angelus) uiLineage(node string) []fwtree.Ref {
 
 // tailOfLastTurn completes a turn the bracket cut off. The boundary is
 // turns.Opens, not the stamped TurnID: records predating turn ids carry zero.
-func tailOfLastTurn(log store.Log[message.Message], entries []store.Entry[message.Message]) []store.Entry[message.Message] {
-	var extra []store.Entry[message.Message]
+func tailOfLastTurn(log arialog.Log[message.Message], entries []arialog.Entry[message.Message]) []arialog.Entry[message.Message] {
+	var extra []arialog.Entry[message.Message]
 	for from := entries[len(entries)-1].LT + 1; ; {
 		got := log.ReadFrom(from, 64)
 		if len(got) == 0 {

@@ -3,6 +3,8 @@ package figaro
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -11,11 +13,11 @@ import (
 )
 
 // buildStream pre-populates an in-memory stream; LTs are assigned by Append in order.
-func buildStream(t *testing.T, msgs ...message.Message) store.Log[message.Message] {
+func buildStream(t *testing.T, msgs ...message.Message) arialog.Log[message.Message] {
 	t.Helper()
-	s := store.NewMemLog[message.Message]()
+	s := arialog.NewMemLog[message.Message]()
 	for _, m := range msgs {
-		_, err := s.Append(store.Entry[message.Message]{Payload: m})
+		_, err := s.Append(arialog.Entry[message.Message]{Payload: m})
 		require.NoError(t, err)
 	}
 	return s
@@ -163,11 +165,11 @@ func TestTailRepair_FileBackedPersists(t *testing.T) {
 	require.NoError(t, err)
 	log1, err := b1.OpenFigIR(conv)
 	require.NoError(t, err)
-	_, err = log1.Append(store.Entry[message.Message]{
+	_, err = log1.Append(arialog.Entry[message.Message]{
 		Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")}},
 	})
 	require.NoError(t, err)
-	_, err = log1.Append(store.Entry[message.Message]{
+	_, err = log1.Append(arialog.Entry[message.Message]{
 		Payload: message.Message{
 			Role:       message.RoleOutput,
 			Content:    []message.Content{toolCall("tc_disk", "bash")},

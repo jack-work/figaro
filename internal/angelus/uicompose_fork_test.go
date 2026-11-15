@@ -2,8 +2,10 @@ package angelus
 
 import (
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/arialog"
 
 	"github.com/jack-work/figaro/api/message"
 	fwtree "github.com/jack-work/figaro/figwal/tree"
@@ -31,16 +33,16 @@ func TestAForkBelowATurnBoundaryServesItsOwnContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ask := func(log store.Log[message.Message], text string) uint64 {
-		e, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+	ask := func(log arialog.Log[message.Message], text string) uint64 {
+		e, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent(text)}}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return e.LT
 	}
-	say := func(log store.Log[message.Message], text string) uint64 {
-		e, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+	say := func(log arialog.Log[message.Message], text string) uint64 {
+		e, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleOutput, Content: []message.Content{message.TextContent(text)}}})
 		if err != nil {
 			t.Fatal(err)
@@ -121,7 +123,7 @@ func TestABracketThatCutsATurnComposesItWhole(t *testing.T) {
 		t.Fatal(err)
 	}
 	put := func(role message.Role, text string) uint64 {
-		e, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		e, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: role, Content: []message.Content{message.TextContent(text)}}})
 		if err != nil {
 			t.Fatal(err)

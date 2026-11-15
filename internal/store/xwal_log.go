@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/figwal/xwal"
 )
 
@@ -17,7 +19,7 @@ type xwalLog[T any] struct {
 	isMain  bool
 }
 
-var _ Log[any] = (*xwalLog[any])(nil)
+var _ arialog.Log[any] = (*xwalLog[any])(nil)
 
 func newXwalLog[T any](store *XwalStore, ariaID, channel string, isMain bool) *xwalLog[T] {
 	return &xwalLog[T]{store: store, ariaID: ariaID, channel: channel, isMain: isMain}
@@ -54,26 +56,26 @@ func decodeMeta(meta []byte) (fingerprint, recordHash string) {
 
 // decodeRecord owns its bytes; everything that can outlive the read goes
 // through it (see rowsplit.go).
-func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
+func decodeRecord[T any](r xwal.Record) (arialog.Entry[T], bool) {
 	return decodeRecordInto[T](r, false)
 }
 
 // decodeRecordAliased hands back windows onto r.Payload. Only ScanRange may
 // call it: the row is written to the wire and dropped.
-func decodeRecordAliased[T any](r xwal.Record) (Entry[T], bool) {
+func decodeRecordAliased[T any](r xwal.Record) (arialog.Entry[T], bool) {
 	return decodeRecordInto[T](r, true)
 }
 
-func decodeRecordInto[T any](r xwal.Record, alias bool) (Entry[T], bool) {
+func decodeRecordInto[T any](r xwal.Record, alias bool) (arialog.Entry[T], bool) {
 	var v T
 	if len(r.Payload) > 0 {
 		if !(alias && aliasRows(r.Payload, &v)) {
 			if err := json.Unmarshal(r.Payload, &v); err != nil {
-				return Entry[T]{}, false
+				return arialog.Entry[T]{}, false
 			}
 		}
 	}
-	return Entry[T]{
+	return arialog.Entry[T]{
 		LT:                 r.ChannelLT,
 		FigaroLT:           r.MainLT,
 		Payload:            v,
@@ -95,14 +97,14 @@ func (l *xwalLog[T]) openOnce(fn func(*xwal.XWAL) error) error {
 	return fnErr
 }
 
-func (l *xwalLog[T]) Read() []Entry[T] {
-	var out []Entry[T]
+func (l *xwalLog[T]) Read() []arialog.Entry[T] {
+	var out []arialog.Entry[T]
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
 		first, last, ok := channelBounds(xw, l.channel)
 		if !ok {
 			return nil
 		}
-		out = make([]Entry[T], 0, last-first+1)
+		out = make([]arialog.Entry[T], 0, last-first+1)
 		for lt := first; lt <= last; lt++ {
 			r, err := xw.ReadAt(l.channel, lt)
 			if err != nil {
@@ -117,9 +119,9 @@ func (l *xwalLog[T]) Read() []Entry[T] {
 	return out
 }
 
-func (l *xwalLog[T]) TailAfter(lt uint64) ([]Entry[T], int) {
+func (l *xwalLog[T]) TailAfter(lt uint64) ([]arialog.Entry[T], int) {
 	var (
-		out   []Entry[T]
+		out   []arialog.Entry[T]
 		total int
 	)
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
@@ -148,7 +150,7 @@ func (l *xwalLog[T]) TailAfter(lt uint64) ([]Entry[T], int) {
 
 // ScanRange walks (from..to] under one open, handing each record over before
 // the next is read.
-func (l *xwalLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
+func (l *xwalLog[T]) ScanRange(from, to uint64, yield func(arialog.Entry[T]) bool) {
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
 		first, last, ok := channelBounds(xw, l.channel)
 		if !ok {
@@ -197,9 +199,9 @@ func channelBounds(xw *xwal.XWAL, channel string) (first, last uint64, ok bool) 
 
 // TailBudgeted reads backward from the tail, decoding only what it keeps,
 // until budget or maxRows is reached.
-func (l *xwalLog[T]) TailBudgeted(budget, maxRows, num, denom int) ([]Entry[T], int) {
+func (l *xwalLog[T]) TailBudgeted(budget, maxRows, num, denom int) ([]arialog.Entry[T], int) {
 	var (
-		out   []Entry[T]
+		out   []arialog.Entry[T]
 		total int
 	)
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
@@ -270,15 +272,15 @@ func (l *xwalLog[T]) Len() int {
 // ReadFrom takes a coordinate in this channel's own index: on the main channel
 // main-LT equals channel-LT, and the translation channels are addressed by
 // their own LT, so the start index is the coordinate.
-func (l *xwalLog[T]) ReadFrom(lt uint64, n int) []Entry[T] {
-	var out []Entry[T]
+func (l *xwalLog[T]) ReadFrom(lt uint64, n int) []arialog.Entry[T] {
+	var out []arialog.Entry[T]
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
 		first, last, ok := channelBounds(xw, l.channel)
 		if !ok {
 			return nil
 		}
 		if n > 0 {
-			out = make([]Entry[T], 0, n)
+			out = make([]arialog.Entry[T], 0, n)
 		}
 		start := first
 		if lt > first {
@@ -300,8 +302,8 @@ func (l *xwalLog[T]) ReadFrom(lt uint64, n int) []Entry[T] {
 
 // ReadPage reads and decodes only the records the page returns: the window is
 // arithmetic on the bounds. total is the channel's extent, as Len reports it.
-func (l *xwalLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
-	var out []Entry[T]
+func (l *xwalLog[T]) ReadPage(from, before uint64, n int) ([]arialog.Entry[T], int) {
+	var out []arialog.Entry[T]
 	total := 0
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
 		first, last, ok := channelBounds(xw, l.channel)
@@ -309,10 +311,10 @@ func (l *xwalLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 			return nil
 		}
 		total = int(last-first) + 1
-		read := func(lt uint64) (Entry[T], bool) {
+		read := func(lt uint64) (arialog.Entry[T], bool) {
 			r, err := xw.ReadAt(l.channel, lt)
 			if err != nil {
-				return Entry[T]{}, false
+				return arialog.Entry[T]{}, false
 			}
 			return decodeRecord[T](r)
 		}
@@ -351,7 +353,7 @@ func (l *xwalLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 		return nil
 	})
 	if out == nil && before > 0 && n > 0 {
-		out = []Entry[T]{}
+		out = []arialog.Entry[T]{}
 	}
 	return out, total
 }
@@ -359,7 +361,7 @@ func (l *xwalLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 // TailSnapshot reads from the tail coordinate rather than materializing the
 // channel; without it the generic helper falls back to Read(), quadratic over
 // a conversation.
-func (l *xwalLog[T]) TailSnapshot(n int) []Entry[T] {
+func (l *xwalLog[T]) TailSnapshot(n int) []arialog.Entry[T] {
 	var from uint64
 	var ok bool
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
@@ -390,7 +392,7 @@ func tailWindow(xw *xwal.XWAL, channel string, n int) (from, last uint64, ok boo
 	return from, last, true
 }
 
-func (l *xwalLog[T]) tailEnds(n int) (oldest, newest Entry[T], ok bool) {
+func (l *xwalLog[T]) tailEnds(n int) (oldest, newest arialog.Entry[T], ok bool) {
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
 		from, last, inWindow := tailWindow(xw, l.channel, n)
 		if !inWindow {
@@ -410,11 +412,11 @@ func (l *xwalLog[T]) tailEnds(n int) (oldest, newest Entry[T], ok bool) {
 	return oldest, newest, ok
 }
 
-func recordCoords[T any](r xwal.Record) Entry[T] {
-	return Entry[T]{LT: r.ChannelLT, FigaroLT: r.MainLT}
+func recordCoords[T any](r xwal.Record) arialog.Entry[T] {
+	return arialog.Entry[T]{LT: r.ChannelLT, FigaroLT: r.MainLT}
 }
 
-func (l *xwalLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
+func (l *xwalLog[T]) Lookup(figaroLT uint64) (arialog.Entry[T], bool) {
 	var (
 		rec xwal.Record
 		hit bool
@@ -447,7 +449,7 @@ func (l *xwalLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 		return nil
 	})
 	if !hit {
-		return Entry[T]{}, false
+		return arialog.Entry[T]{}, false
 	}
 	return decodeRecord[T](rec)
 }
@@ -466,7 +468,7 @@ func (l *xwalLog[T]) ForkBase() (uint64, bool) {
 	return base, found
 }
 
-func (l *xwalLog[T]) PeekTail() (Entry[T], bool) {
+func (l *xwalLog[T]) PeekTail() (arialog.Entry[T], bool) {
 	var (
 		rec xwal.Record
 		hit bool
@@ -487,16 +489,16 @@ func (l *xwalLog[T]) PeekTail() (Entry[T], bool) {
 		return nil
 	})
 	if !hit {
-		return Entry[T]{}, false
+		return arialog.Entry[T]{}, false
 	}
 	return decodeRecord[T](rec)
 }
 
 // Append routes through Trunks, which serializes against topology changes inside figwal.
-func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
+func (l *xwalLog[T]) Append(e arialog.Entry[T]) (arialog.Entry[T], error) {
 	payload, err := json.Marshal(e.Payload)
 	if err != nil {
-		return Entry[T]{}, fmt.Errorf("xwalLog append marshal: %w", err)
+		return arialog.Entry[T]{}, fmt.Errorf("xwalLog append marshal: %w", err)
 	}
 	meta := encodeMeta(e.Fingerprint, e.FigaroHash)
 	if l.isMain {
@@ -504,12 +506,12 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 		// observed form stands.
 		_, lt, cursors, aerr := l.store.trunks.AppendCursors(l.ariaID, payload, meta, l.store.observedCursors(l.ariaID))
 		if aerr != nil {
-			return Entry[T]{}, aerr
+			return arialog.Entry[T]{}, aerr
 		}
 		e.LT = lt
 		e.FigaroLT = lt
 		if serr := l.store.trunks.SyncChannelThrough(l.ariaID, l.channel, lt); serr != nil {
-			return Entry[T]{}, fmt.Errorf("sync %s: %w", l.channel, serr)
+			return arialog.Entry[T]{}, fmt.Errorf("sync %s: %w", l.channel, serr)
 		}
 		// The stamp comes back from the append that wrote it, computed under
 		// the main channel's lock.
@@ -519,16 +521,16 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	}
 	lt, aerr := l.store.trunks.Append(l.ariaID, l.channel, e.FigaroLT, payload, meta)
 	if aerr != nil {
-		return Entry[T]{}, aerr
+		return arialog.Entry[T]{}, aerr
 	}
 	if serr := l.store.trunks.SyncChannelThrough(l.ariaID, l.channel, lt); serr != nil {
-		return Entry[T]{}, fmt.Errorf("sync %s: %w", l.channel, serr)
+		return arialog.Entry[T]{}, fmt.Errorf("sync %s: %w", l.channel, serr)
 	}
 	e.LT = lt
 	return e, nil
 }
 
-func (l *xwalLog[T]) AppendBatch(rows []Entry[T]) ([]Entry[T], error) {
+func (l *xwalLog[T]) AppendBatch(rows []arialog.Entry[T]) ([]arialog.Entry[T], error) {
 	if l.isMain {
 		return nil, fmt.Errorf("xwalLog append batch: %s takes one record at a time", l.channel)
 	}
@@ -544,7 +546,7 @@ func (l *xwalLog[T]) AppendBatch(rows []Entry[T]) ([]Entry[T], error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Entry[T], len(rows))
+	out := make([]arialog.Entry[T], len(rows))
 	for i, e := range rows {
 		e.LT = first + uint64(i)
 		out[i] = e

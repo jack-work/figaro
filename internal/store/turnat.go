@@ -2,6 +2,7 @@ package store
 
 import (
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // TurnAtLT is the turn owning lt: the turn of the record at lt or, past the
@@ -13,7 +14,7 @@ import (
 // records before the first question. Those belong to the nearest non-zero
 // stamp at or below, so the read is one record in the common case and a short
 // backward window otherwise. Positional reads only, never a walk from LT 1.
-func TurnAtLT(log Log[message.Message], lt uint64) (turn uint64, exact bool) {
+func TurnAtLT(log arialog.Log[message.Message], lt uint64) (turn uint64, exact bool) {
 	if log == nil || lt == 0 {
 		return 0, false
 	}

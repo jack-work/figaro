@@ -3,6 +3,8 @@ package store
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -15,13 +17,19 @@ func TestTheIRDoorKeepsTheTreeLogsFastReaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := lg.(tailAfterLog[message.Message]); !ok {
+	if _, ok := lg.(interface {
+		TailAfter(uint64) ([]arialog.Entry[message.Message], int)
+	}); !ok {
 		t.Error("the IR door hides TailAfter")
 	}
-	if _, ok := lg.(tailSnapshotLog[message.Message]); !ok {
+	if _, ok := lg.(interface {
+		TailSnapshot(int) []arialog.Entry[message.Message]
+	}); !ok {
 		t.Error("the IR door hides TailSnapshot")
 	}
-	if _, ok := lg.(rangeScanner[message.Message]); !ok {
+	if _, ok := lg.(interface {
+		ScanRange(uint64, uint64, func(arialog.Entry[message.Message]) bool)
+	}); !ok {
 		t.Error("the IR door hides ScanRange")
 	}
 }
@@ -33,7 +41,7 @@ func TestTheIRDoorsTailAfterReadsOnlyTheTail(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 20; i++ {
-		if _, err := lg.Append(Entry[message.Message]{Payload: message.Message{
+		if _, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent("x")},
 		}}); err != nil {
 			t.Fatal(err)
@@ -41,7 +49,7 @@ func TestTheIRDoorsTailAfterReadsOnlyTheTail(t *testing.T) {
 	}
 	tail, _ := lg.PeekTail()
 	want := lg.Read()
-	got, _ := TailAfter(lg, tail.LT-3)
+	got, _ := arialog.TailAfter(lg, tail.LT-3)
 	if len(got) != 3 {
 		t.Fatalf("TailAfter(%d) returned %d entries, want 3", tail.LT-3, len(got))
 	}
@@ -52,7 +60,7 @@ func TestTheIRDoorsTailAfterReadsOnlyTheTail(t *testing.T) {
 		}
 	}
 	var scanned []uint64
-	Scan(lg, tail.LT-2, 0, func(e Entry[message.Message]) bool { scanned = append(scanned, e.LT); return true })
+	arialog.Scan(lg, tail.LT-2, 0, func(e arialog.Entry[message.Message]) bool { scanned = append(scanned, e.LT); return true })
 	if len(scanned) != 2 || scanned[1] != tail.LT {
 		t.Fatalf("Scan from %d: got %v", tail.LT-2, scanned)
 	}

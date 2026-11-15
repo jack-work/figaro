@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/turns"
 )
@@ -20,7 +22,7 @@ import (
 //
 // Append-only: the door never edits a record already written.
 type figIRLog struct {
-	Log[message.Message]
+	arialog.Log[message.Message]
 	backend *XwalBackend
 	ariaID  string
 
@@ -40,7 +42,7 @@ const (
 	lateResultNotice = "a tool result arrived after its call was closed"
 )
 
-func (l *figIRLog) Append(e Entry[message.Message]) (Entry[message.Message], error) {
+func (l *figIRLog) Append(e arialog.Entry[message.Message]) (arialog.Entry[message.Message], error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	pending := l.openInvokes()
@@ -81,8 +83,8 @@ func (l *figIRLog) Append(e Entry[message.Message]) (Entry[message.Message], err
 			closing.Content = append(closing.Content,
 				message.ToolResultContent(inv.ToolCallID, inv.ToolName, toolClosedNotice, true))
 		}
-		if _, err := l.write(Entry[message.Message]{Payload: closing}); err != nil {
-			return Entry[message.Message]{}, err
+		if _, err := l.write(arialog.Entry[message.Message]{Payload: closing}); err != nil {
+			return arialog.Entry[message.Message]{}, err
 		}
 	}
 	_ = others
@@ -97,7 +99,7 @@ func (l *figIRLog) Append(e Entry[message.Message]) (Entry[message.Message], err
 			message.TextContent(fmt.Sprintf("%s: tool %q (id %s) returned after the call was closed. Its output follows.\n\n%s",
 				lateResultNotice, r.ToolName, r.ToolCallID, r.Text)),
 		}}
-		if _, err := l.write(Entry[message.Message]{Payload: note}); err != nil {
+		if _, err := l.write(arialog.Entry[message.Message]{Payload: note}); err != nil {
 			return stamped, err
 		}
 	}
@@ -106,22 +108,22 @@ func (l *figIRLog) Append(e Entry[message.Message]) (Entry[message.Message], err
 
 // GuardIR wraps any IR log in the door so an ephemeral aria gets the same
 // invariant; a backendless door only skips the recency stamp.
-func GuardIR(inner Log[message.Message]) Log[message.Message] {
+func GuardIR(inner arialog.Log[message.Message]) arialog.Log[message.Message] {
 	return &figIRLog{Log: inner}
 }
 
-func (l *figIRLog) TailAfter(lt uint64) ([]Entry[message.Message], int) {
-	return TailAfter(l.Log, lt)
+func (l *figIRLog) TailAfter(lt uint64) ([]arialog.Entry[message.Message], int) {
+	return arialog.TailAfter(l.Log, lt)
 }
 
-func (l *figIRLog) HidesOwnRows() bool { return ViewHidesOwnRows(l.Log) }
+func (l *figIRLog) HidesOwnRows() bool { return arialog.ViewHidesOwnRows(l.Log) }
 
-func (l *figIRLog) TailSnapshot(n int) []Entry[message.Message] {
-	return TailSnapshot(l.Log, n)
+func (l *figIRLog) TailSnapshot(n int) []arialog.Entry[message.Message] {
+	return arialog.TailSnapshot(l.Log, n)
 }
 
-func (l *figIRLog) ScanRange(from, to uint64, yield func(Entry[message.Message]) bool) {
-	Scan(l.Log, from, to, yield)
+func (l *figIRLog) ScanRange(from, to uint64, yield func(arialog.Entry[message.Message]) bool) {
+	arialog.Scan(l.Log, from, to, yield)
 }
 
 // CloseOpenToolCalls: the door does this on the next append anyway; the
@@ -140,13 +142,13 @@ func (l *figIRLog) CloseOpenToolCalls() (int, error) {
 			message.ToolResultContent(inv.ToolCallID, inv.ToolName, toolClosedNotice, true))
 	}
 	n := len(pending)
-	if _, err := l.write(Entry[message.Message]{Payload: closing}); err != nil {
+	if _, err := l.write(arialog.Entry[message.Message]{Payload: closing}); err != nil {
 		return 0, err
 	}
 	return n, nil
 }
 
-func (l *figIRLog) write(e Entry[message.Message]) (Entry[message.Message], error) {
+func (l *figIRLog) write(e arialog.Entry[message.Message]) (arialog.Entry[message.Message], error) {
 	e.Payload.TurnID = l.turnIDFor(e.Payload)
 	stamped, err := l.Log.Append(e)
 	if err != nil || l.backend == nil {
@@ -163,7 +165,7 @@ func (l *figIRLog) write(e Entry[message.Message]) (Entry[message.Message], erro
 // openInvokes reads what is open from the log at every append, bounded to the
 // round and never cached: a cached copy is a second answer that can disagree.
 func (l *figIRLog) openInvokes() []message.Content {
-	return outstandingInvokes(TailSnapshot(l.Log, roundLookback))
+	return outstandingInvokes(arialog.TailSnapshot(l.Log, roundLookback))
 }
 
 func isOpen(pending []message.Content, id string) bool {
@@ -176,7 +178,7 @@ func isOpen(pending []message.Content, id string) bool {
 }
 
 // outstandingInvokes: rows is a tail, not a history.
-func outstandingInvokes(rows []Entry[message.Message]) []message.Content {
+func outstandingInvokes(rows []arialog.Entry[message.Message]) []message.Content {
 	at := -1
 	for i := len(rows) - 1; i >= 0; i-- {
 		if len(assistantInvokes(rows[i].Payload)) > 0 {
@@ -250,7 +252,7 @@ func (b *XwalBackend) UnmatchedToolCalls(ariaID string) (int, error) {
 
 // duplicateResults: a second result for one invoke has nothing to pair with
 // and the provider refuses the whole history. Entry LT and block, in log order.
-func duplicateResults(rows []Entry[message.Message]) []struct {
+func duplicateResults(rows []arialog.Entry[message.Message]) []struct {
 	LT    uint64
 	Block message.Content
 } {
@@ -277,7 +279,7 @@ func duplicateResults(rows []Entry[message.Message]) []struct {
 	return out
 }
 
-func unansweredInvokes(rows []Entry[message.Message]) []message.Content {
+func unansweredInvokes(rows []arialog.Entry[message.Message]) []message.Content {
 	answered := map[string]bool{}
 	for _, e := range rows {
 		for _, c := range e.Payload.Content {
@@ -317,7 +319,7 @@ func (b *XwalBackend) RepairToolCalls(ariaID string) (int, error) {
 			message.ToolResultContent(inv.ToolCallID, inv.ToolName, toolClosedNotice, true))
 	}
 	guard := &figIRLog{Log: h.ir, backend: b, ariaID: ariaID}
-	if _, err := guard.write(Entry[message.Message]{Payload: closing}); err != nil {
+	if _, err := guard.write(arialog.Entry[message.Message]{Payload: closing}); err != nil {
 		return 0, err
 	}
 	return len(open), nil

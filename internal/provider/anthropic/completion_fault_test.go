@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -68,7 +70,7 @@ func sendSSE(t *testing.T, body string) (*recordingBus, error) {
 	be, aria := store.NewTestAria(t, "d", message.Patch{})
 	figLog, err := be.OpenFigIR(aria)
 	require.NoError(t, err)
-	_, err = figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("say ciao")},
 	}})
 	require.NoError(t, err)
@@ -76,7 +78,7 @@ func sendSSE(t *testing.T, body string) (*recordingBus, error) {
 	require.NoError(t, err)
 
 	a, err := New(provider.Knobs{Model: "claude-test", MaxTokens: 64}, nilResolver{},
-		func(string) (store.Log[[]json.RawMessage], error) { return rows, nil })
+		func(string) (arialog.Log[[]json.RawMessage], error) { return rows, nil })
 	require.NoError(t, err)
 
 	bus := &recordingBus{}

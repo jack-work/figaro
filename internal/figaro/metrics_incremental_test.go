@@ -6,12 +6,12 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/tokens"
 )
 
 func TestRefreshMetricsIncrementalMatchesFullFold(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	cb, _ := form.Open("")
 	a := &Agent{
 		figLog: log, form: cb,
@@ -35,7 +35,7 @@ func TestRefreshMetricsIncrementalMatchesFullFold(t *testing.T) {
 		},
 	}
 	for _, msg := range sequence {
-		if _, err := log.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: msg}); err != nil {
 			t.Fatal(err)
 		}
 		a.refreshMetrics()

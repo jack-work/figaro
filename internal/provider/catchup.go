@@ -10,8 +10,8 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	figOtel "github.com/jack-work/figaro/internal/otel"
-	"github.com/jack-work/figaro/internal/store"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -20,8 +20,8 @@ import (
 // is held between calls.
 type CatchUpConfig struct {
 	Context     context.Context
-	Log         store.Log[message.Message]
-	Translator  store.Log[[]json.RawMessage]
+	Log         arialog.Log[message.Message]
+	Translator  arialog.Log[[]json.RawMessage]
 	Form        Form
 	Studies     map[string]Form
 	Fingerprint string
@@ -89,8 +89,8 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 	if cfg.Translator == nil {
 		return stats, ErrNoTranslator
 	}
-	if store.ViewHidesOwnRows(cfg.Log) || store.ViewHidesOwnRows(cfg.Translator) {
-		return stats, store.ErrViewHidesOwnRows
+	if arialog.ViewHidesOwnRows(cfg.Log) || arialog.ViewHidesOwnRows(cfg.Translator) {
+		return stats, arialog.ErrViewHidesOwnRows
 	}
 
 	var watermark uint64
@@ -100,7 +100,7 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 		// reissued position adopts it.
 		if tail.FigaroHash != "" {
 			if at, ok := cfg.Log.Lookup(watermark); ok {
-				if have, err := store.FigaroHash(at.Payload); err == nil && have != tail.FigaroHash {
+				if have, err := arialog.FigaroHash(at.Payload); err == nil && have != tail.FigaroHash {
 					if cerr := cfg.Translator.Clear(); cerr != nil {
 						return stats, fmt.Errorf("clear misaligned rows at %d: %w", watermark, cerr)
 					}
@@ -110,16 +110,16 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 		}
 	}
 	cfg.phase("peeked")
-	entries, total := store.TailAfter(cfg.Log, watermark)
+	entries, total := arialog.TailAfter(cfg.Log, watermark)
 	cfg.phase("tail_read")
-	if watermark > 0 && store.VerifyOnce(cfg.Translator) {
+	if watermark > 0 && arialog.VerifyOnce(cfg.Translator) {
 		cfg.phase("verifying")
 		if owed := total - len(entries) - genesisBelow(cfg.Log, watermark); cfg.Translator.Len() != owed {
 			if gap, cut, found := firstGap(cfg, watermark); found {
 				tail, _ := cfg.Translator.PeekTail()
 				rowsCut, from := tail.LT-cut+1, watermark
 				switch err := cfg.Translator.TruncateFrom(cut); {
-				case errors.Is(err, store.ErrBelowForkBase):
+				case errors.Is(err, arialog.ErrBelowForkBase):
 					rowsCut, watermark = uint64(cfg.Translator.Len()), 0
 					if cerr := cfg.Translator.Clear(); cerr != nil {
 						return stats, fmt.Errorf("clear rows with a hole at %d: %w", gap, cerr)
@@ -132,7 +132,7 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 				slog.Warn("translator rows have a hole; re-deriving from the fig IR",
 					"figaro_lt", gap, "watermark", from, "rows_cut", rowsCut)
 				stats.RepairedAt = gap
-				entries, total = store.TailAfter(cfg.Log, watermark)
+				entries, total = arialog.TailAfter(cfg.Log, watermark)
 			}
 		}
 	}
@@ -148,7 +148,7 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 	cfg.phase("seeded")
 
 	var (
-		batch         []store.Entry[[]json.RawMessage]
+		batch         []arialog.Entry[[]json.RawMessage]
 		queued        int
 		written       int
 		stoppedBefore uint64
@@ -159,7 +159,7 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 		}
 		rows := batch
 		batch, queued = nil, 0
-		if _, werr := store.AppendBatch(cfg.Translator, rows); werr != nil {
+		if _, werr := arialog.AppendBatch(cfg.Translator, rows); werr != nil {
 			if cfg.ReportWriteError != nil {
 				cfg.ReportWriteError(rows[0].FigaroLT, werr)
 			}
@@ -202,12 +202,12 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 			stats.Unwritten++
 			encoded = []json.RawMessage{}
 		}
-		hash, herr := store.FigaroHash(entry.Payload)
+		hash, herr := arialog.FigaroHash(entry.Payload)
 		if herr != nil {
 			failed = fmt.Errorf("hash record at %d: %w", entry.LT, herr)
 			break
 		}
-		batch = append(batch, store.Entry[[]json.RawMessage]{
+		batch = append(batch, arialog.Entry[[]json.RawMessage]{
 			FigaroLT:    entry.LT,
 			Payload:     encoded,
 			Fingerprint: cfg.Fingerprint,
@@ -239,7 +239,7 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 
 // SeedLT is the FigaroLT the deriver resumes from: the newest row that
 // carries bytes, zero when none does.
-func SeedLT(rows store.Log[[]json.RawMessage]) uint64 {
+func SeedLT(rows arialog.Log[[]json.RawMessage]) uint64 {
 	tail, ok := rows.PeekTail()
 	if !ok {
 		return 0
@@ -263,7 +263,7 @@ func SeedLT(rows store.Log[[]json.RawMessage]) uint64 {
 }
 
 // Genesis is written once, at LT 1 of the root, so the count is a lookup.
-func genesisBelow(log store.Log[message.Message], watermark uint64) int {
+func genesisBelow(log arialog.Log[message.Message], watermark uint64) int {
 	if watermark < 1 {
 		return 0
 	}
@@ -277,12 +277,12 @@ func genesisBelow(log store.Log[message.Message], watermark uint64) int {
 func firstGap(cfg CatchUpConfig, watermark uint64) (gap, cut uint64, found bool) {
 	type rowKey struct{ lt, figaroLT uint64 }
 	var rows []rowKey
-	store.ScanAll(cfg.Translator, func(r store.Entry[[]json.RawMessage]) bool {
+	arialog.ScanAll(cfg.Translator, func(r arialog.Entry[[]json.RawMessage]) bool {
 		rows = append(rows, rowKey{r.LT, r.FigaroLT})
 		return true
 	})
 	i := 0
-	store.ScanAll(cfg.Log, func(entry store.Entry[message.Message]) bool {
+	arialog.ScanAll(cfg.Log, func(entry arialog.Entry[message.Message]) bool {
 		if entry.LT > watermark {
 			return false
 		}
@@ -310,12 +310,12 @@ func firstGap(cfg CatchUpConfig, watermark uint64) (gap, cut uint64, found bool)
 // whole-history slice on the send path is the design failure of invariant
 // #14. to bounds the read so an http replay sends the same conversation;
 // zero means the tail.
-func TranslationRows(rows store.Log[[]json.RawMessage], to uint64) RowSeq {
+func TranslationRows(rows arialog.Log[[]json.RawMessage], to uint64) RowSeq {
 	return func(yield func(json.RawMessage, uint64) bool) {
 		if rows == nil {
 			return
 		}
-		store.Scan(rows, 0, to, func(e store.Entry[[]json.RawMessage]) bool {
+		arialog.Scan(rows, 0, to, func(e arialog.Entry[[]json.RawMessage]) bool {
 			for _, raw := range e.Payload {
 				if len(raw) == 0 {
 					continue
@@ -330,7 +330,7 @@ func TranslationRows(rows store.Log[[]json.RawMessage], to uint64) RowSeq {
 }
 
 // TranslationTail is the bound for TranslationRows; false when the log is empty.
-func TranslationTail(rows store.Log[[]json.RawMessage]) (uint64, bool) {
+func TranslationTail(rows arialog.Log[[]json.RawMessage]) (uint64, bool) {
 	if rows == nil {
 		return 0, false
 	}
@@ -344,7 +344,7 @@ func TranslationTail(rows store.Log[[]json.RawMessage]) (uint64, bool) {
 func carriesBlocks(msg message.Message) bool { return msg.Role == message.RoleInput }
 
 // ClearStaleTranslationCache empties a log written under another fingerprint.
-func ClearStaleTranslationCache(rows store.Log[[]json.RawMessage], fingerprint string) (string, bool, error) {
+func ClearStaleTranslationCache(rows arialog.Log[[]json.RawMessage], fingerprint string) (string, bool, error) {
 	entry, ok := rows.PeekTail()
 	if !ok || entry.Fingerprint == "" || entry.Fingerprint == fingerprint {
 		return "", false, nil

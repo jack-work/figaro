@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/tokens"
 )
@@ -15,7 +17,7 @@ func MetaHealFolded() int64 { return metaHealFolded.Load() }
 
 // healMeta advances the sidecar to the log tail if it lags. It runs from Open
 // so the cost rides a read the caller was doing anyway; `list` never pays it.
-func (b *XwalBackend) healMeta(ariaID string, log Log[message.Message]) {
+func (b *XwalBackend) healMeta(ariaID string, log arialog.Log[message.Message]) {
 	tail, ok := log.PeekTail()
 	if !ok {
 		return
@@ -49,7 +51,7 @@ func (b *XwalBackend) healMeta(ariaID string, log Log[message.Message]) {
 	slog.Info("meta healed", "aria", ariaID, "from", st.Value.LastFigaroLT, "to", meta.LastFigaroLT, "folded", folded)
 }
 
-func (b *XwalBackend) refoldMetaLocked(ariaID string, c *metaCache, from *AriaMeta, log Log[message.Message]) {
+func (b *XwalBackend) refoldMetaLocked(ariaID string, c *metaCache, from *AriaMeta, log arialog.Log[message.Message]) {
 	meta := *from
 	meta.ResetCounters()
 	folded := int64(0)
@@ -73,7 +75,7 @@ func (meta *AriaMeta) ResetCounters() {
 	meta.LastFigaroLT = 0
 }
 
-func (meta *AriaMeta) Fold(e Entry[message.Message]) {
+func (meta *AriaMeta) Fold(e arialog.Entry[message.Message]) {
 	m := e.Payload
 	if m.Usage != nil {
 		meta.TokensIn += m.Usage.InputTokens

@@ -6,15 +6,15 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // The catch-up and the write path must produce the same bytes: they write to
 // one channel.
 func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 	bound := newFakeBoundForm(2, 3, 4, 5, 6)
-	build := func() *store.MemLog[message.Message] {
-		log := store.NewMemLog[message.Message]()
+	build := func() *arialog.MemLog[message.Message] {
+		log := arialog.NewMemLog[message.Message]()
 		stamp(t, log, "one", 2)
 		stamp(t, log, "two", 4)
 		stamp(t, log, "three", 6)
@@ -42,7 +42,7 @@ func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 		return []json.RawMessage{body}, nil
 	}
 
-	catchLog, catchTrans := build(), store.NewMemLog[[]json.RawMessage]()
+	catchLog, catchTrans := build(), arialog.NewMemLog[[]json.RawMessage]()
 	if _, err := CatchUp(CatchUpConfig{
 		Log: catchLog, Translator: catchTrans, Form: bound,
 		Fingerprint: "fp/v1", Encode: encode,
@@ -50,13 +50,13 @@ func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	appendLog, appendTrans := build(), store.NewMemLog[[]json.RawMessage]()
+	appendLog, appendTrans := build(), arialog.NewMemLog[[]json.RawMessage]()
 	adapter := NewOnAppend("fake",
 		encode,
 		func() string { return "fp/v1" },
 		func(string) Form { return newFakeBoundForm(2, 3, 4, 5, 6) },
 		func(string) map[string]Form { return nil },
-		func(string) (store.Log[[]json.RawMessage], error) { return appendTrans, nil },
+		func(string) (arialog.Log[[]json.RawMessage], error) { return appendTrans, nil },
 	)
 	for _, e := range appendLog.Read() {
 		encoded, fp, err := adapter.EncodeEntry("aria", appendLog, e)
@@ -66,7 +66,7 @@ func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 		if fp == "" {
 			continue
 		}
-		if _, err := appendTrans.Append(store.Entry[[]json.RawMessage]{
+		if _, err := appendTrans.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: e.LT, Payload: encoded, Fingerprint: fp,
 		}); err != nil {
 			t.Fatal(err)
@@ -90,8 +90,8 @@ func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 
 // The adapter resumes from the log, not from memory.
 func TestOnAppendSeedsItsCursorFromTheTranslatorTail(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	trans := store.NewMemLog[[]json.RawMessage]()
+	log := arialog.NewMemLog[message.Message]()
+	trans := arialog.NewMemLog[[]json.RawMessage]()
 	stamp(t, log, "one", 2)
 	stamp(t, log, "two", 4)
 
@@ -114,7 +114,7 @@ func TestOnAppendSeedsItsCursorFromTheTranslatorTail(t *testing.T) {
 		return NewOnAppend("fake", encode, func() string { return "fp/v1" },
 			func(string) Form { return newFakeBoundForm(2, 3, 4, 5, 6) },
 			func(string) map[string]Form { return nil },
-			func(string) (store.Log[[]json.RawMessage], error) { return trans, nil })
+			func(string) (arialog.Log[[]json.RawMessage], error) { return trans, nil })
 	}
 
 	entries := log.Read()
@@ -122,7 +122,7 @@ func TestOnAppendSeedsItsCursorFromTheTranslatorTail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := trans.Append(store.Entry[[]json.RawMessage]{
+	if _, err := trans.Append(arialog.Entry[[]json.RawMessage]{
 		FigaroLT: entries[0].LT, Payload: first, Fingerprint: fp,
 	}); err != nil {
 		t.Fatal(err)

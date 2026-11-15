@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
@@ -27,10 +29,10 @@ func TestLineage_AHeadForkSharesAllButTheLastTurn(t *testing.T) {
 	plog, _ := be.OpenFigIR(parent)
 	var last uint64
 	for i := uint64(1); i <= 5; i++ {
-		e, _ := plog.Append(store.Entry[message.Message]{Payload: message.Message{
+		e, _ := plog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, TurnID: i, Content: []message.Content{message.TextContent("q")}}})
 		_ = e
-		e2, _ := plog.Append(store.Entry[message.Message]{Payload: message.Message{
+		e2, _ := plog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleOutput, TurnID: i, Content: []message.Content{message.TextContent("a")}}})
 		last = e2.LT
 	}
@@ -66,11 +68,11 @@ func TestLineage_AnUnsealedBaseIsRefinedOnceTheParentWritesThere(t *testing.T) {
 	}
 	plog, _ := be.OpenFigIR(parent)
 	for i := uint64(1); i <= 3; i++ {
-		if _, err := plog.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := plog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, TurnID: i, Content: []message.Content{message.TextContent("q")}}}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := plog.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := plog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleOutput, TurnID: i, Content: []message.Content{message.TextContent("a")}}}); err != nil {
 			t.Fatal(err)
 		}
@@ -101,7 +103,7 @@ func TestLineage_AnUnsealedBaseIsRefinedOnceTheParentWritesThere(t *testing.T) {
 		t.Fatalf("a base past the end answers %d, want the turn the log stops inside", got)
 	}
 	// The parent writes at the base; the answer must be the new one.
-	if _, err := plog.Append(store.Entry[message.Message]{Payload: message.Message{
+	if _, err := plog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, TurnID: 4, Content: []message.Content{message.TextContent("q4")}}}); err != nil {
 		t.Fatal(err)
 	}

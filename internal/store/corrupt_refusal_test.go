@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -31,7 +33,7 @@ func TestARefusalOverACorruptFrameSaysWhereAndHowToRelease(t *testing.T) {
 	id, _ := be.CreateConversation(label)
 	lg, _ := be.OpenFigIR(id)
 	for i := 0; i < 4; i++ {
-		if _, err := lg.Append(Entry[message.Message]{Payload: message.Message{
+		if _, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent(fmt.Sprintf("record-%d", i))},
 		}}); err != nil {
 			t.Fatal(err)

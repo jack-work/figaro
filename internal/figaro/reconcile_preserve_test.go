@@ -10,10 +10,10 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
@@ -29,7 +29,7 @@ func (reconcileNoopProvider) Send(context.Context, provider.SendInput, provider.
 	return nil
 }
 
-func newBareAgent(t *testing.T, log store.Log[message.Message]) *Agent {
+func newBareAgent(t *testing.T, log arialog.Log[message.Message]) *Agent {
 	t.Helper()
 	cb, _ := form.Open("")
 	a := &Agent{
@@ -47,7 +47,7 @@ func newBareAgent(t *testing.T, log store.Log[message.Message]) *Agent {
 
 // reconcileAriaServer on a broken or empty figLog must not wipe committed state.
 func TestReconcileAriaServer_PreservesStateOnShorterHistory(t *testing.T) {
-	a := newBareAgent(t, store.NewMemLog[message.Message]()) // empty log
+	a := newBareAgent(t, arialog.NewMemLog[message.Message]()) // empty log
 	a.id = "recon-001"
 	for i := uint64(1); i <= 3; i++ {
 		a.ariaSrv.Commit(aria.Turn{
@@ -72,12 +72,12 @@ func TestReconcileAriaServer_PreservesStateOnShorterHistory(t *testing.T) {
 
 // When history covers the current state, Restore proceeds.
 func TestReconcileAriaServer_AllowsGrow(t *testing.T) {
-	logMem := store.NewMemLog[message.Message]()
-	_, err := logMem.Append(store.Entry[message.Message]{Payload: message.Message{
+	logMem := arialog.NewMemLog[message.Message]()
+	_, err := logMem.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")},
 	}})
 	require.NoError(t, err)
-	_, err = logMem.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err = logMem.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleOutput, Content: []message.Content{message.TextContent("world")},
 	}})
 	require.NoError(t, err)

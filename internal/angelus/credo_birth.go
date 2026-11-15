@@ -8,7 +8,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 const credoKey = "system.credo"
@@ -37,7 +37,7 @@ func (h *handlers) refuseCredoChange(method, id string, params json.RawMessage) 
 	return nil
 }
 
-func hasSpoken(log store.Log[message.Message]) bool {
+func hasSpoken(log arialog.Log[message.Message]) bool {
 	before := ^uint64(0)
 	for {
 		page, _ := log.ReadPage(0, before, 64)

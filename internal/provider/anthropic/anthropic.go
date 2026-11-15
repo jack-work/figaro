@@ -23,13 +23,13 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/models"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/catalog"
 	"github.com/jack-work/figaro/internal/catalogmaps"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropicmodels"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/turns"
 	"github.com/jack-work/figaro/internal/upstream"
 	"github.com/jack-work/figaro/internal/wirelog"
@@ -61,14 +61,14 @@ type Anthropic struct {
 
 	Templates *template.Template
 
-	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
+	CacheOpen      func(aria string) (arialog.Log[[]json.RawMessage], error)
 	CacheNamespace string
-	cache          store.Log[[]json.RawMessage]
+	cache          arialog.Log[[]json.RawMessage]
 
 	Catalog *catalog.Reader
 }
 
-func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Anthropic, error) {
+func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria string) (arialog.Log[[]json.RawMessage], error)) (*Anthropic, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("anthropic: nil token resolver")
 	}
@@ -96,7 +96,7 @@ func (a *Anthropic) route() provider.Route {
 	return a.Route
 }
 
-func (a *Anthropic) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
+func (a *Anthropic) cacheFor(aria string) (arialog.Log[[]json.RawMessage], error) {
 	if aria == "" || a.CacheOpen == nil {
 		return nil, nil
 	}
@@ -116,7 +116,7 @@ func (a *Anthropic) cacheFor(aria string) (store.Log[[]json.RawMessage], error) 
 	return s, nil
 }
 
-func (a *Anthropic) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
+func (a *Anthropic) invalidateIfStale(s arialog.Log[[]json.RawMessage]) bool {
 	want := a.Fingerprint()
 	stored, cleared, err := provider.ClearStaleTranslationCache(s, want)
 	if err != nil {
@@ -1244,7 +1244,7 @@ func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 
 // catchUp translates the untranslated delta and returns a walk over the rows
 // on disk, never a slice of them. Nil means the log has no rows.
-func (a *Anthropic) catchUp(ctx context.Context, figLog store.Log[message.Message], rows store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) (provider.RowSeq, error) {
+func (a *Anthropic) catchUp(ctx context.Context, figLog arialog.Log[message.Message], rows arialog.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) (provider.RowSeq, error) {
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Context:     ctx,
 		Log:         figLog,

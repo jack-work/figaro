@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/websocket"
 )
@@ -39,7 +39,7 @@ func TestResponsesOnlyRefreshesCredentialsOnHandshake401(t *testing.T) {
 				ws.ServeHTTP(w, r)
 			}))
 			defer server.Close()
-			p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
+			p := newResponsesTestProvider(server, arialog.NewMemLog[[]json.RawMessage]())
 			source := p.tokenSrc.(*staticResponseTokenSource)
 			err := p.Send(context.Background(), provider.SendInput{AriaID: "handshake-probe", FigLog: newResponsesInputLog(t)}, &responseTestBus{})
 			if status == 401 {
@@ -82,7 +82,7 @@ func TestResponsesAcceptsCodingOutputBeyondDefaultWebSocketLimit(t *testing.T) {
 			"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": text}},
 		}}}})
 	})
-	p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
+	p := newResponsesTestProvider(server, arialog.NewMemLog[[]json.RawMessage]())
 	bus := &responseTestBus{}
 	require.NoError(t, p.Send(context.Background(), provider.SendInput{AriaID: "large-frame", FigLog: newResponsesInputLog(t)}, bus))
 	require.Len(t, bus.messages, 1)

@@ -2,10 +2,11 @@ package figaro
 
 import (
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/api/message"
 	"strings"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -31,10 +32,10 @@ func TestBookkeepingNeverReachesTheModel(t *testing.T) {
 	}
 
 	alive := withoutBookkeeping(form.Build(form.Snapshot{}, map[string]json.RawMessage{
-		store.KeyLibrettoAlive: raw(`false`),
-		store.KeyLibrettoAt:    raw(`41`),
+		form.KeyLibrettoAlive: raw(`false`),
+		store.KeyLibrettoAt:   raw(`41`),
 	}, nil))
-	if string(mustEntry(alive, store.KeyLibrettoAlive)) != `false` {
+	if string(mustEntry(alive, form.KeyLibrettoAlive)) != `false` {
 		t.Errorf("the death was hidden: %v", alive.Entries())
 	}
 

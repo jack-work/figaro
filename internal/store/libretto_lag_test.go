@@ -2,8 +2,10 @@ package store
 
 import (
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/arialog"
 
 	"github.com/stretchr/testify/require"
 
@@ -46,7 +48,7 @@ func TestWhetherTheLibrettoIsBehindWhenAnEntryIsStamped(t *testing.T) {
 		srcAt, ok := be.store.formTail(src)
 		require.True(t, ok)
 
-		e, err := ir.Append(Entry[message.Message]{Payload: message.Message{
+		e, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent("prompt")},
 		}})
 		require.NoError(t, err)
@@ -94,7 +96,7 @@ func TestTheLibrettoAfterAReattachIsCurrentBeforeTheNextStamp(t *testing.T) {
 
 	ir, err := be.OpenFigIR(aria)
 	require.NoError(t, err)
-	_, err = ir.Append(Entry[message.Message]{Payload: message.Message{
+	_, err = ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("first")},
 	}})
 	require.NoError(t, err)
@@ -118,7 +120,7 @@ func TestTheLibrettoAfterAReattachIsCurrentBeforeTheNextStamp(t *testing.T) {
 
 	coldIR, err := cold.OpenFigIR(aria)
 	require.NoError(t, err)
-	e, err := coldIR.Append(Entry[message.Message]{Payload: message.Message{
+	e, err := coldIR.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("after restart")},
 	}})
 	require.NoError(t, err)

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // The seed asks the rows whether the last user record's row was written, and
@@ -17,11 +17,11 @@ import (
 // the model has already been told.
 func TestASeedReadsBackToTheLastUserRowThroughManyAssistantRows(t *testing.T) {
 	bound := versionedForm{patches: []message.Patch{setKey("mantra", "one"), setKey("mantra", "two"), setKey("mantra", "three")}}
-	said := func(role message.Role, text string, version uint64) store.Entry[message.Message] {
-		return store.Entry[message.Message]{FormChannelVersion: version,
+	said := func(role message.Role, text string, version uint64) arialog.Entry[message.Message] {
+		return arialog.Entry[message.Message]{FormChannelVersion: version,
 			Payload: message.Message{Role: role, Content: []message.Content{message.TextContent(text)}}}
 	}
-	head := []store.Entry[message.Message]{
+	head := []arialog.Entry[message.Message]{
 		said(message.RoleInput, "ask", 1),
 		said(message.RoleOutput, "answer", 1),
 		said(message.RoleInput, "ask again", 2),
@@ -30,12 +30,12 @@ func TestASeedReadsBackToTheLastUserRowThroughManyAssistantRows(t *testing.T) {
 		head = append(head, said(message.RoleOutput, fmt.Sprintf("step %d", i), 2))
 	}
 	next := said(message.RoleInput, "ask a third time", 3)
-	config := func(log store.Log[message.Message], rows store.Log[[]json.RawMessage]) CatchUpConfig {
+	config := func(log arialog.Log[message.Message], rows arialog.Log[[]json.RawMessage]) CatchUpConfig {
 		return CatchUpConfig{Log: log, Translator: rows, Form: bound, Fingerprint: "v1", Encode: emptyRowEncode}
 	}
-	fill := func(entries ...store.Entry[message.Message]) store.Log[message.Message] {
+	fill := func(entries ...arialog.Entry[message.Message]) arialog.Log[message.Message] {
 		t.Helper()
-		log := store.NewMemLog[message.Message]()
+		log := arialog.NewMemLog[message.Message]()
 		for _, e := range entries {
 			if _, err := log.Append(e); err != nil {
 				t.Fatal(err)
@@ -43,7 +43,7 @@ func TestASeedReadsBackToTheLastUserRowThroughManyAssistantRows(t *testing.T) {
 		}
 		return log
 	}
-	dump := func(rows store.Log[[]json.RawMessage]) string {
+	dump := func(rows arialog.Log[[]json.RawMessage]) string {
 		t.Helper()
 		b, err := json.Marshal(rows.Read())
 		if err != nil {
@@ -52,13 +52,13 @@ func TestASeedReadsBackToTheLastUserRowThroughManyAssistantRows(t *testing.T) {
 		return string(b)
 	}
 
-	wholeRows := store.NewMemLog[[]json.RawMessage]()
-	if _, err := CatchUp(config(fill(append(append([]store.Entry[message.Message]{}, head...), next)...), wholeRows)); err != nil {
+	wholeRows := arialog.NewMemLog[[]json.RawMessage]()
+	if _, err := CatchUp(config(fill(append(append([]arialog.Entry[message.Message]{}, head...), next)...), wholeRows)); err != nil {
 		t.Fatal(err)
 	}
 	want := dump(wholeRows)
 
-	log, rows := fill(head...), store.NewMemLog[[]json.RawMessage]()
+	log, rows := fill(head...), arialog.NewMemLog[[]json.RawMessage]()
 	if _, err := CatchUp(config(log, rows)); err != nil {
 		t.Fatal(err)
 	}

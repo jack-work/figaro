@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 )
@@ -31,7 +33,7 @@ func forkOverCorruptParentSized(t *testing.T, segmentSize int) (dir string, pare
 	}
 	lg, _ := be.OpenFigIR(parent)
 	for i := 0; i < 5; i++ {
-		if _, err := lg.Append(Entry[message.Message]{Payload: message.Message{
+		if _, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent(fmt.Sprintf("parent-%d", i))},
 		}}); err != nil {
 			t.Fatal(err)
@@ -43,7 +45,7 @@ func forkOverCorruptParentSized(t *testing.T, segmentSize int) (dir string, pare
 		t.Fatal(err)
 	}
 	clg, _ := be.OpenFigIR(child)
-	if _, err := clg.Append(Entry[message.Message]{Payload: message.Message{
+	if _, err := clg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("child-own")},
 	}}); err != nil {
 		t.Fatal(err)

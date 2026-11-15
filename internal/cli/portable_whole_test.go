@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/message"
@@ -32,7 +34,7 @@ func longAria(t *testing.T, n int) (*sdk.Angelus, string) {
 		if i%2 == 1 {
 			role = message.RoleOutput
 		}
-		_, err := ir.Append(store.Entry[message.Message]{Payload: message.Message{
+		_, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    role,
 			Content: []message.Content{message.TextContent(fmt.Sprintf("m%d", i))},
 		}})

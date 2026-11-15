@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
@@ -41,19 +43,19 @@ type liveForkBackend struct {
 	nodes      map[string]store.NodeView
 	form       map[string]message.Patch
 	formVer    uint64
-	log        store.Log[message.Message]
+	log        arialog.Log[message.Message]
 }
 
 // The parent's log holds one completed exchange so turn 1 resolves; a
 // fork's own log is empty, as a fork at the genesis root holds nothing.
-func (f *liveForkBackend) OpenFigIR(id string) (store.Log[message.Message], error) {
+func (f *liveForkBackend) OpenFigIR(id string) (arialog.Log[message.Message], error) {
 	if id == "alternative" {
-		return store.NewMemLog[message.Message](), nil
+		return arialog.NewMemLog[message.Message](), nil
 	}
 	if f.log == nil {
-		l := store.NewMemLog[message.Message]()
-		l.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, TurnID: 1}})
-		l.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleOutput, TurnID: 1}})
+		l := arialog.NewMemLog[message.Message]()
+		l.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, TurnID: 1}})
+		l.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleOutput, TurnID: 1}})
 		f.log = l
 	}
 	return f.log, nil
@@ -289,7 +291,7 @@ func TestForkDuringActiveStreamKeepsContinuationRunning(t *testing.T) {
 	require.Equal(t, 1, message.CountMessages(unwrapMessages(alternative.Read())))
 }
 
-func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
+func unwrapMessages(entries []arialog.Entry[message.Message]) []message.Message {
 	out := make([]message.Message, len(entries))
 	for i, entry := range entries {
 		out[i] = entry.Payload

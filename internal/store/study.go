@@ -22,7 +22,7 @@ type StudyDecl struct {
 // declares it. Idempotent: the bound form is a set and the refcount is derived
 // from the bound forms.
 func (b *XwalBackend) StudyForm(observerID, sourceFormID string, keys []string) (StudyDecl, error) {
-	keys = NormalizeStudyKeys(keys)
+	keys = form.NormalizeStudyKeys(keys)
 	lib, err := b.libretto(sourceFormID)
 	if err != nil {
 		return StudyDecl{}, err
@@ -46,7 +46,7 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string, keys []string) 
 		}
 		studies, version := studiesOf(at.Snapshot), at.Version
 		if slices.Contains(studies, sourceFormID) {
-			if held := StudyKeys(at.Snapshot, sourceFormID); !slices.Equal(held, keys) {
+			if held := form.StudyKeys(at.Snapshot, sourceFormID); !slices.Equal(held, keys) {
 				return StudyDecl{}, fmt.Errorf("already studying %s with keys %s: drop it first to change them", sourceFormID, describeKeys(held))
 			}
 			// The bound form already declares it: make the backref agree.
@@ -109,7 +109,7 @@ func (b *XwalBackend) DropForm(observerID, sourceFormID string) (StudyDecl, erro
 		}
 		// Bound form first, so a crash between the two over-counts rather than under-counts.
 		next := slices.Delete(append([]string(nil), studies...), idx, idx+1)
-		v, err := b.setStudies(observerID, next, studyKeysEdit{source: sourceFormID, clear: StudyKeys(at.Snapshot, sourceFormID) != nil, last: onlyStudyKeys(at.Snapshot, sourceFormID)}, version)
+		v, err := b.setStudies(observerID, next, studyKeysEdit{source: sourceFormID, clear: form.StudyKeys(at.Snapshot, sourceFormID) != nil, last: onlyStudyKeys(at.Snapshot, sourceFormID)}, version)
 		if err != nil {
 			if errors.Is(err, ErrFormMoved) {
 				backoff(attempt)
@@ -321,7 +321,7 @@ func (b *XwalBackend) setStudies(observerID string, ids []string, edit studyKeys
 		}
 		set[studyKeysPath(edit.source)] = k
 	case edit.clear && edit.last:
-		remove = append(remove, StudyKeysKey)
+		remove = append(remove, form.StudyKeysKey)
 	case edit.clear:
 		remove = append(remove, studyKeysPath(edit.source))
 	}

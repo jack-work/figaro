@@ -2,6 +2,8 @@ package store
 
 import (
 	"testing"
+
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 type tp struct {
@@ -41,14 +43,14 @@ func TestXwalLog_RoundTrip(t *testing.T) {
 
 	baseIR := len(ir.Read())
 	for i := 1; i <= 3; i++ {
-		e, err := ir.Append(Entry[tp]{Payload: tp{S: "msg"}})
+		e, err := ir.Append(arialog.Entry[tp]{Payload: tp{S: "msg"}})
 		if err != nil {
 			t.Fatalf("ir append: %v", err)
 		}
 		if e.LT == 0 || e.FigaroLT == 0 || e.LT != e.FigaroLT {
 			t.Fatalf("ir LT/FigaroLT = %d/%d (want non-zero, equal)", e.LT, e.FigaroLT)
 		}
-		if _, err := tr.Append(Entry[tp]{FigaroLT: e.LT, Payload: tp{S: "wire"}, Fingerprint: "anthropic/v0"}); err != nil {
+		if _, err := tr.Append(arialog.Entry[tp]{FigaroLT: e.LT, Payload: tp{S: "wire"}, Fingerprint: "anthropic/v0"}); err != nil {
 			t.Fatalf("tr append: %v", err)
 		}
 	}
@@ -85,7 +87,7 @@ func TestXwalLog_ReadsSurvivePromote(t *testing.T) {
 	// Warm the aria with a few messages.
 	ir := newXwalLog[tp](b.store, conv, chanIR, true)
 	for i := 0; i < 3; i++ {
-		if _, err := ir.Append(Entry[tp]{Payload: tp{S: "warm"}}); err != nil {
+		if _, err := ir.Append(arialog.Entry[tp]{Payload: tp{S: "warm"}}); err != nil {
 			t.Fatalf("warmup append: %v", err)
 		}
 	}
@@ -120,7 +122,7 @@ func TestXwalLog_ReadsSurvivePromote(t *testing.T) {
 		t.Fatalf("post-promote Read len = %d, want %d", got, warmedLen)
 	}
 	// So does write.
-	if _, err := ir.Append(Entry[tp]{Payload: tp{S: "after-promote"}}); err != nil {
+	if _, err := ir.Append(arialog.Entry[tp]{Payload: tp{S: "after-promote"}}); err != nil {
 		t.Fatalf("post-promote append: %v", err)
 	}
 	if got := len(ir.Read()); got != warmedLen+1 {

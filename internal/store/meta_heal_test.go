@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/tokens"
@@ -49,7 +51,7 @@ func healFixtureSized(t *testing.T, dir string, n, segmentSize int) (*XwalBacken
 				Usage:   &message.Usage{InputTokens: 100, OutputTokens: 10, CacheReadTokens: 5, CacheWriteTokens: 1},
 			}
 		}
-		e, err := ir.Append(Entry[message.Message]{Payload: m})
+		e, err := ir.Append(arialog.Entry[message.Message]{Payload: m})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -174,7 +176,7 @@ func TestSegmentRollsAtSegmentSize(t *testing.T) {
 			}
 			blob := strings.Repeat("x", 64*1024)
 			for written := int64(0); written < 3*tc.want/2; written += int64(len(blob)) {
-				if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{
+				if _, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 					Role: message.RoleInput, Content: []message.Content{message.TextContent(blob)},
 				}}); err != nil {
 					t.Fatal(err)

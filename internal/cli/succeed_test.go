@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/form"
@@ -171,7 +173,7 @@ func TestSucceedAtTheHeadKeepsEveryTurn(t *testing.T) {
 			require.NoError(t, err)
 			for i := uint64(1); i <= 3; i++ {
 				for _, role := range []message.Role{message.RoleInput, message.RoleOutput} {
-					_, err := ir.Append(store.Entry[message.Message]{Payload: message.Message{
+					_, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 						Role: role, TurnID: i, Content: []message.Content{message.TextContent(fmt.Sprintf("%s %d", role, i))}}})
 					require.NoError(t, err)
 				}

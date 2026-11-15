@@ -3,9 +3,9 @@ package figaro
 import (
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/formdelta"
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 // Projector is the only way the core reaches the projection; it may be nil.
@@ -49,7 +49,7 @@ func (a *Agent) projNodes(msgs []message.Message, tails, argPartials map[string]
 
 // attachFormDeltas folds form-state windows onto sealed turns as AriaReader
 // does for a dormant aria, so a transcript reads the same live or not.
-func (a *Agent) attachFormDeltas(turns []aria.Turn, entries []store.Entry[message.Message]) []aria.Turn {
+func (a *Agent) attachFormDeltas(turns []aria.Turn, entries []arialog.Entry[message.Message]) []aria.Turn {
 	fb, ok := a.backend.(formdelta.Backend)
 	if !ok || len(turns) == 0 || len(entries) == 0 {
 		return turns

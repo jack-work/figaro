@@ -10,7 +10,6 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 // StudyReminderTexts is deterministic: its bytes land in the per-LT cache.
@@ -42,7 +41,7 @@ func StudyReminderTexts(msg message.Message, bound form.Snapshot) []string {
 			if v, ok := msg.StudyAt[msg.Study.FormID]; ok {
 				body["version"] = v
 			}
-			if fold := studyFold(msg.Study.FormID, msg.StudyPatches[msg.Study.FormID], store.StudyKeys(declared, msg.Study.FormID), limits); fold != nil {
+			if fold := studyFold(msg.Study.FormID, msg.StudyPatches[msg.Study.FormID], form.StudyKeys(declared, msg.Study.FormID), limits); fold != nil {
 				if set, ok := fold["set"]; ok {
 					body["state"] = set
 				}
@@ -64,7 +63,7 @@ func StudyReminderTexts(msg message.Message, bound form.Snapshot) []string {
 			if fid == begun {
 				continue // its state rode the mark
 			}
-			if body := studyFold(fid, msg.StudyPatches[fid], store.StudyKeys(declared, fid), limits); body != nil {
+			if body := studyFold(fid, msg.StudyPatches[fid], form.StudyKeys(declared, fid), limits); body != nil {
 				if v, ok := msg.StudyAt[fid]; ok {
 					body["version"] = v
 				}
@@ -107,14 +106,14 @@ func studyFold(fid string, patches []message.Patch, keys []string, limits form.D
 			}
 			// The one system key a reader is owed: a studied form's death is
 			// reported in band.
-			if k == store.KeyLibrettoAlive {
+			if k == form.KeyLibrettoAlive {
 				var alive bool
 				if json.Unmarshal(v, &alive) == nil && !alive {
 					dead = true
 				}
 				continue
 			}
-			if !store.StudyKeyShown(k, keys) {
+			if !form.StudyKeyShown(k, keys) {
 				continue
 			}
 			set[k] = v
@@ -125,7 +124,7 @@ func studyFold(fid string, patches []message.Patch, keys []string, limits form.D
 				continue
 			}
 			k := ent.Key
-			if !store.StudyKeyShown(k, keys) {
+			if !form.StudyKeyShown(k, keys) {
 				continue
 			}
 			removed[k] = true
@@ -183,7 +182,7 @@ func studyFold(fid string, patches []message.Patch, keys []string, limits form.D
 
 func touchesShown(p message.Patch, keys []string) bool {
 	for _, ent := range p.Entries() {
-		if store.StudyKeyShown(ent.Key, keys) {
+		if form.StudyKeyShown(ent.Key, keys) {
 			return true
 		}
 	}

@@ -1,7 +1,6 @@
 package routed
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/catalogmaps"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 const (
@@ -140,17 +138,11 @@ func Build(ctx provider.BuildContext, spec Spec, apiKey string) (*Provider, erro
 	if resolver == nil {
 		resolver = staticToken(apiKey)
 	}
-	var translators Translators
-	if ctx.Backend != nil {
-		translators = func(aria, ns string) (store.Log[[]json.RawMessage], error) {
-			return ctx.Backend.OpenTranslator(aria, ns)
-		}
-	}
-	p, err := New(spec, knobs, resolver, translators)
+	p, err := New(spec, knobs, resolver, ctx.OpenTranslator)
 	if err != nil {
 		return nil, err
 	}
-	p.seedFromIR(ctx.Backend)
+	p.seedFromIR(ctx.Models)
 	p.SetTemplates(ctx.Templates)
 	rules := make([]string, 0, len(spec.Rules))
 	for _, r := range spec.Rules {

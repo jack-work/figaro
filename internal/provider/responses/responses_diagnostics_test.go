@@ -10,8 +10,8 @@ import (
 
 	responsews "github.com/coder/websocket"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/wirelog"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/websocket"
@@ -61,7 +61,7 @@ func TestResponsesDiagnosticsFollowActualFramesWithoutPayloads(t *testing.T) {
 			}
 		}
 	})
-	p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
+	p := newResponsesTestProvider(server, arialog.NewMemLog[[]json.RawMessage]())
 	var live *wirelog.InFlight
 	bus := &responseObservedBus{ready: func() {
 		for _, row := range wirelog.Outstanding() {
@@ -107,7 +107,7 @@ func TestResponsesDiagnosticsFollowActualFramesWithoutPayloads(t *testing.T) {
 }
 
 func TestResponsesDiagnosticsIncludeFailedDial(t *testing.T) {
-	p := newResponsesTestProvider(newResponseServer(t, func(conn *websocket.Conn) { conn.Close() }), store.NewMemLog[[]json.RawMessage]())
+	p := newResponsesTestProvider(newResponseServer(t, func(conn *websocket.Conn) { conn.Close() }), arialog.NewMemLog[[]json.RawMessage]())
 	var logs bytes.Buffer
 	old := slog.Default()
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))

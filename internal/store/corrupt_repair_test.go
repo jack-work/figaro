@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 )
@@ -30,7 +32,7 @@ func TestTheCrashRepairNeverTrimsPastACorruptFrame(t *testing.T) {
 	}
 	lg, _ := be.OpenFigIR(id)
 	for i := 0; i < 6; i++ {
-		if _, err := lg.Append(Entry[message.Message]{Payload: message.Message{
+		if _, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent(fmt.Sprintf("m%d", i))},
 		}}); err != nil {
 			t.Fatal(err)

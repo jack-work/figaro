@@ -10,8 +10,8 @@ import (
 	"golang.org/x/net/websocket"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 type captureBus struct {
@@ -53,7 +53,7 @@ func TestACancelledResponsesStreamHandsOverItsPartial(t *testing.T) {
 	})
 	defer srv.Close()
 
-	p := newResponsesTestProvider(srv, store.NewMemLog[[]json.RawMessage]())
+	p := newResponsesTestProvider(srv, arialog.NewMemLog[[]json.RawMessage]())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	bus := &captureBus{onDelta: cancel} // cancel only once the consumer has the delta

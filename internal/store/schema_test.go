@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -36,7 +38,7 @@ func seedSchemaStore(tb testing.TB) (string, string) {
 		m := message.Message{Role: message.RoleInput, Content: []message.Content{
 			{Type: message.ContentProse, Text: "canonical"},
 		}}
-		if _, err := lg.Append(Entry[message.Message]{Payload: m}); err != nil {
+		if _, err := lg.Append(arialog.Entry[message.Message]{Payload: m}); err != nil {
 			tb.Fatal(err)
 		}
 	}

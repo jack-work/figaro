@@ -8,7 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
@@ -22,14 +22,14 @@ func msg(role message.Role, turnID uint64, text string) message.Message {
 
 // turnEntries stores turn ids as figaro.appendMsg does, so a tail window can
 // number itself.
-func turnEntries(firstID uint64, n int, firstLT uint64) []store.Entry[message.Message] {
-	out := make([]store.Entry[message.Message], 0, n*2)
+func turnEntries(firstID uint64, n int, firstLT uint64) []arialog.Entry[message.Message] {
+	out := make([]arialog.Entry[message.Message], 0, n*2)
 	lt := firstLT
 	for i := 0; i < n; i++ {
 		id := firstID + uint64(i)
-		out = append(out, store.Entry[message.Message]{LT: lt, Payload: msg(message.RoleInput, id, "q")})
+		out = append(out, arialog.Entry[message.Message]{LT: lt, Payload: msg(message.RoleInput, id, "q")})
 		lt++
-		out = append(out, store.Entry[message.Message]{LT: lt, Payload: msg(message.RoleOutput, id, "a")})
+		out = append(out, arialog.Entry[message.Message]{LT: lt, Payload: msg(message.RoleOutput, id, "a")})
 		lt++
 	}
 	return out

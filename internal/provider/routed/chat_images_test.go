@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/catalog"
@@ -54,13 +56,13 @@ func sendImageThroughChat(t *testing.T, file string, model ...string) []json.Raw
 
 	be, aria := store.NewTestAria(t, "d", message.Patch{})
 	figLog, _ := be.OpenFigIR(aria)
-	_, _ = figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, _ = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{
 			message.ImageContent("image/png", pngPixel),
 			message.TextContent("what is in this picture?"),
 		},
 	}})
-	p.translators = func(aria, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
+	p.translators = func(aria, ns string) (arialog.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
 	m := "explabs/glm-5.3"
 	if len(model) > 0 {
 		m = model[0]

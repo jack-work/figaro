@@ -1,10 +1,11 @@
 package store
 
 import (
-	"errors"
 	"fmt"
 	"sort"
 	"sync/atomic"
+
+	"github.com/jack-work/figaro/internal/arialog"
 
 	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
@@ -13,33 +14,33 @@ import (
 // lineage step, one run per entry, keyed by l.key. Every read on this
 // interface is already a key bracket, so nothing is translated.
 type treeLog[T any] struct {
-	inner Log[T]
+	inner arialog.Log[T]
 	// key: on the translation channel FigaroLT is a foreign key, so a
 	// coordinate may hold several units. The tree allows that but forbids
 	// seeding one row as if it were the whole coordinate, which is why
 	// seedOnAppend exists.
-	key func(Entry[T]) uint64
+	key func(arialog.Entry[T]) uint64
 
 	// seedOnAppend is true only where a coordinate holds exactly one entry.
 	seedOnAppend bool
 	verified     atomic.Bool
-	cache        *fwtree.Cache[Entry[T]]
+	cache        *fwtree.Cache[arialog.Entry[T]]
 	lineage      func() []fwtree.Ref
 	node         string
-	sizeOf       func(Entry[T]) int
+	sizeOf       func(arialog.Entry[T]) int
 
 	// openNode resolves an ancestor's node to its substrate, for the peek path.
-	openNode func(node string) Log[T]
+	openNode func(node string) arialog.Log[T]
 }
 
-var _ Log[any] = (*treeLog[any])(nil)
+var _ arialog.Log[any] = (*treeLog[any])(nil)
 
 // NewIRCache is one instance for the whole process with a node per aria: a
 // child's lineage names its ancestor's node, and the prefix it reads is the
 // ancestor's own runs. open resolves a node to its substrate.
-func NewIRCache[T any](budget *fwtree.Budget, open func(node string) Log[T], sizeOf func(Entry[T]) int, key func(Entry[T]) uint64) *fwtree.Cache[Entry[T]] {
-	return fwtree.New[Entry[T]](
-		func(co fwtree.Coord) ([]Entry[T], error) {
+func NewIRCache[T any](budget *fwtree.Budget, open func(node string) arialog.Log[T], sizeOf func(arialog.Entry[T]) int, key func(arialog.Entry[T]) uint64) *fwtree.Cache[arialog.Entry[T]] {
+	return fwtree.New[arialog.Entry[T]](
+		func(co fwtree.Coord) ([]arialog.Entry[T], error) {
 			n := int(co.To - co.From)
 			if n <= 0 {
 				return nil, nil
@@ -54,7 +55,7 @@ func NewIRCache[T any](budget *fwtree.Budget, open func(node string) Log[T], siz
 			return clipToBracket(sub.ReadFrom(co.From+1, n), co.From, co.To, key), nil
 		},
 		budget,
-		func(e Entry[T]) int {
+		func(e arialog.Entry[T]) int {
 			if sizeOf == nil {
 				return 0
 			}
@@ -66,25 +67,25 @@ func NewIRCache[T any](budget *fwtree.Budget, open func(node string) Log[T], siz
 
 // lineage reports the node chain root-first, so a fork reads its prefix out
 // of its ancestor's node.
-func newTreeLog[T any](inner Log[T], node string, cache *fwtree.Cache[Entry[T]], sizeOf func(Entry[T]) int, key func(Entry[T]) uint64, lineage func() []fwtree.Ref) *treeLog[T] {
+func newTreeLog[T any](inner arialog.Log[T], node string, cache *fwtree.Cache[arialog.Entry[T]], sizeOf func(arialog.Entry[T]) int, key func(arialog.Entry[T]) uint64, lineage func() []fwtree.Ref) *treeLog[T] {
 	return &treeLog[T]{inner: inner, node: node, cache: cache, sizeOf: sizeOf, key: key, lineage: lineage}
 }
 
 // irKey addresses a channel whose FigaroLT is unique per record: the fig IR.
-func irKey[T any](e Entry[T]) uint64 { return e.FigaroLT }
+func irKey[T any](e arialog.Entry[T]) uint64 { return e.FigaroLT }
 
 // transKey addresses the translation channel by its own LT: unique and dense
 // by construction, so a coordinate holds exactly one entry and the writer can
 // seed its own append. FigaroLT there is a foreign key naming another
 // channel's entry and may repeat.
-func transKey[T any](e Entry[T]) uint64 { return e.LT }
+func transKey[T any](e arialog.Entry[T]) uint64 { return e.LT }
 
 // seedingTail marks a channel whose coordinate holds exactly one entry, so
 // the writer's own append can be published without replacing anything.
 func (l *treeLog[T]) seedingTail() *treeLog[T] { l.seedOnAppend = true; return l }
 
 // withNodeOpener lets the peek path read an ancestor's substrate directly.
-func (l *treeLog[T]) withNodeOpener(open func(node string) Log[T]) *treeLog[T] {
+func (l *treeLog[T]) withNodeOpener(open func(node string) arialog.Log[T]) *treeLog[T] {
 	l.openNode = open
 	return l
 }
@@ -99,7 +100,7 @@ func (l *treeLog[T]) refs() []fwtree.Ref {
 }
 
 // span reads (from..to] through the cache, materializing what is missing.
-func (l *treeLog[T]) span(from, to uint64) []Entry[T] {
+func (l *treeLog[T]) span(from, to uint64) []arialog.Entry[T] {
 	if to <= from {
 		return nil
 	}
@@ -114,7 +115,7 @@ func (l *treeLog[T]) span(from, to uint64) []Entry[T] {
 // substrate for the rest, inserting nothing: passing straight to the
 // substrate would re-decode every string the ancestor holds, and routing into
 // the cache would let one whole-history read evict every other aria's ranges.
-func (l *treeLog[T]) Read() []Entry[T] {
+func (l *treeLog[T]) Read() []arialog.Entry[T] {
 	tail, ok := l.inner.PeekTail()
 	if !ok {
 		return nil
@@ -124,11 +125,11 @@ func (l *treeLog[T]) Read() []Entry[T] {
 
 // peek serves (from..to] from resident runs where they exist and from the
 // substrate where they do not, without materializing anything into the cache.
-func (l *treeLog[T]) peek(from, to uint64) []Entry[T] {
+func (l *treeLog[T]) peek(from, to uint64) []arialog.Entry[T] {
 	if to <= from {
 		return nil
 	}
-	var out []Entry[T]
+	var out []arialog.Entry[T]
 	pos := from
 	for _, cut := range l.cuts(from, to) {
 		p := cut.From
@@ -163,7 +164,7 @@ func (l *treeLog[T]) peek(from, to uint64) []Entry[T] {
 
 // ScanRange is peek without the array; it materializes nothing into the
 // cache, so a whole-history walk costs the neighbours nothing.
-func (l *treeLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
+func (l *treeLog[T]) ScanRange(from, to uint64, yield func(arialog.Entry[T]) bool) {
 	if to == 0 {
 		tail, ok := l.inner.PeekTail()
 		if !ok {
@@ -175,7 +176,7 @@ func (l *treeLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
 		return
 	}
 	live := true
-	hand := func(e Entry[T]) bool {
+	hand := func(e arialog.Entry[T]) bool {
 		if !live {
 			return false
 		}
@@ -225,7 +226,7 @@ func (l *treeLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
 // substrateScan streams a bracket from one node's durable log, never the
 // cache. The clip is a coordinate conversion: Scan brackets in the substrate's
 // channel LT, this log in l.key(), and the two coincide on the main channel only.
-func (l *treeLog[T]) substrateScan(node string, from, to uint64, yield func(Entry[T]) bool) {
+func (l *treeLog[T]) substrateScan(node string, from, to uint64, yield func(arialog.Entry[T]) bool) {
 	if to <= from {
 		return
 	}
@@ -233,7 +234,7 @@ func (l *treeLog[T]) substrateScan(node string, from, to uint64, yield func(Entr
 	if sub == nil {
 		return
 	}
-	Scan(sub, from, to, func(e Entry[T]) bool {
+	arialog.Scan(sub, from, to, func(e arialog.Entry[T]) bool {
 		if k := l.key(e); k <= from || k > to {
 			return true
 		}
@@ -271,7 +272,7 @@ func (l *treeLog[T]) rebase(refs []fwtree.Ref) []fwtree.Ref {
 	return out
 }
 
-func (l *treeLog[T]) substrateOf(node string) Log[T] {
+func (l *treeLog[T]) substrateOf(node string) arialog.Log[T] {
 	if node == l.node {
 		return l.inner
 	}
@@ -288,26 +289,11 @@ func (l *treeLog[T]) cuts(from, to uint64) []fwtree.Coord {
 	if l.seedOnAppend && len(refs) > 1 {
 		refs = l.rebase(refs)
 	}
-	var out []fwtree.Coord
-	lo := from
-	for i, ref := range refs {
-		hi := to
-		if i+1 < len(refs) && refs[i+1].Base > 0 && refs[i+1].Base-1 < hi {
-			hi = refs[i+1].Base - 1
-		}
-		if hi > lo {
-			out = append(out, fwtree.Coord{Node: ref.Node, From: lo, To: hi})
-			lo = hi
-		}
-		if lo >= to {
-			break
-		}
-	}
-	return out
+	return fwtree.Split(refs, from, to)
 }
 
 // substrate reads a bracket from the durable log of ONE node, never the cache.
-func (l *treeLog[T]) substrate(node string, from, to uint64) []Entry[T] {
+func (l *treeLog[T]) substrate(node string, from, to uint64) []arialog.Entry[T] {
 	n := int(to - from)
 	if n <= 0 {
 		return nil
@@ -325,7 +311,7 @@ func (l *treeLog[T]) substrate(node string, from, to uint64) []Entry[T] {
 	return clipToBracket(sub.ReadFrom(from+1, n), from, to, l.key)
 }
 
-func clipToBracket[T any](rows []Entry[T], from, to uint64, key func(Entry[T]) uint64) []Entry[T] {
+func clipToBracket[T any](rows []arialog.Entry[T], from, to uint64, key func(arialog.Entry[T]) uint64) []arialog.Entry[T] {
 	out := rows[:0:0]
 	for _, e := range rows {
 		if k := key(e); k > from && k <= to {
@@ -340,7 +326,7 @@ func (l *treeLog[T]) Len() int { return l.inner.Len() }
 // VerifyOnce lives on the log so it is collected with it.
 func (l *treeLog[T]) VerifyOnce() bool { return l.verified.CompareAndSwap(false, true) }
 
-func (l *treeLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
+func (l *treeLog[T]) ReadFrom(figaroLT uint64, n int) []arialog.Entry[T] {
 	if figaroLT == 0 {
 		figaroLT = 1
 	}
@@ -352,7 +338,7 @@ func (l *treeLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
 	return l.span(figaroLT-1, to)
 }
 
-func (l *treeLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
+func (l *treeLog[T]) ReadPage(from, before uint64, n int) ([]arialog.Entry[T], int) {
 	total := l.inner.Len()
 	rows, _ := l.inner.ReadPage(from, before, n)
 	return rows, total
@@ -361,7 +347,7 @@ func (l *treeLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 // Lookup by FigaroLT is this cache's coordinate only on the IR; where the
 // channel is keyed by its own LT a span over FigaroLT names unrelated rows, so
 // the substrate answers.
-func (l *treeLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
+func (l *treeLog[T]) Lookup(figaroLT uint64) (arialog.Entry[T], bool) {
 	if l.seedOnAppend {
 		return l.inner.Lookup(figaroLT)
 	}
@@ -373,9 +359,9 @@ func (l *treeLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	return l.inner.Lookup(figaroLT)
 }
 
-func (l *treeLog[T]) PeekTail() (Entry[T], bool) { return l.inner.PeekTail() }
+func (l *treeLog[T]) PeekTail() (arialog.Entry[T], bool) { return l.inner.PeekTail() }
 
-func (l *treeLog[T]) Append(e Entry[T]) (Entry[T], error) {
+func (l *treeLog[T]) Append(e arialog.Entry[T]) (arialog.Entry[T], error) {
 	stamped, err := l.inner.Append(e)
 	if err != nil {
 		return stamped, err
@@ -383,20 +369,20 @@ func (l *treeLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	// The freshest record is seeded rather than left for a read to fetch: the
 	// writer already holds it, and a tail read is the next thing that happens.
 	if k := l.key(stamped); l.seedOnAppend && k > 0 {
-		l.cache.Put(fwtree.Coord{Node: l.node, From: k - 1, To: k}, []Entry[T]{stamped}, false)
+		l.cache.Put(fwtree.Coord{Node: l.node, From: k - 1, To: k}, []arialog.Entry[T]{stamped}, false)
 	}
 	return stamped, nil
 }
 
-func (l *treeLog[T]) AppendBatch(rows []Entry[T]) ([]Entry[T], error) {
-	stamped, err := AppendBatch(l.inner, rows)
+func (l *treeLog[T]) AppendBatch(rows []arialog.Entry[T]) ([]arialog.Entry[T], error) {
+	stamped, err := arialog.AppendBatch(l.inner, rows)
 	if err != nil {
 		return nil, err
 	}
 	if l.seedOnAppend {
 		for _, e := range stamped {
 			if k := l.key(e); k > 0 {
-				l.cache.Put(fwtree.Coord{Node: l.node, From: k - 1, To: k}, []Entry[T]{e}, false)
+				l.cache.Put(fwtree.Coord{Node: l.node, From: k - 1, To: k}, []arialog.Entry[T]{e}, false)
 			}
 		}
 	}
@@ -410,13 +396,11 @@ func (l *treeLog[T]) Clear() error {
 
 func (l *treeLog[T]) TruncateFrom(lt uint64) error {
 	if l.HidesOwnRows() {
-		return fmt.Errorf("truncate %s from %d: %w", l.node, lt, ErrViewHidesOwnRows)
+		return fmt.Errorf("truncate %s from %d: %w", l.node, lt, arialog.ErrViewHidesOwnRows)
 	}
 	l.cache.DropNode(l.node)
 	return l.inner.TruncateFrom(lt)
 }
-
-var ErrViewHidesOwnRows = errors.New("store: the lineage view serves an ancestor where this node owns rows")
 
 func (l *treeLog[T]) HidesOwnRows() bool {
 	fb, ok := l.inner.(channelForkBase)
@@ -445,9 +429,9 @@ func (l *treeLog[T]) HidesOwnRows() bool {
 // TailAfter's watermark is an LT, not a FigaroLT; the two agree on an unforked
 // lineage and diverge after a rewrite, so the boundary is resolved through the
 // substrate.
-func (l *treeLog[T]) TailAfter(lt uint64) ([]Entry[T], int) {
+func (l *treeLog[T]) TailAfter(lt uint64) ([]arialog.Entry[T], int) {
 	total := l.inner.Len()
-	suffix, _ := TailAfter[T](l.inner, lt)
+	suffix, _ := arialog.TailAfter[T](l.inner, lt)
 	if len(suffix) == 0 {
 		return nil, total
 	}
@@ -458,18 +442,18 @@ func (l *treeLog[T]) TailAfter(lt uint64) ([]Entry[T], int) {
 
 // TailSnapshot is a count, not a coordinate span: the key space is sparse, so
 // the bracket is resolved through the substrate.
-func (l *treeLog[T]) TailSnapshot(n int) []Entry[T] {
+func (l *treeLog[T]) TailSnapshot(n int) []arialog.Entry[T] {
 	if n <= 0 {
 		return nil
 	}
 	if t, ok := l.inner.(interface {
-		tailEnds(int) (Entry[T], Entry[T], bool)
+		tailEnds(int) (arialog.Entry[T], arialog.Entry[T], bool)
 	}); ok {
 		if oldest, newest, ok := t.tailEnds(n); ok {
 			return l.span(l.key(oldest)-1, l.key(newest))
 		}
 	}
-	rows := TailSnapshot[T](l.inner, n)
+	rows := arialog.TailSnapshot[T](l.inner, n)
 	if len(rows) == 0 {
 		return nil
 	}
@@ -524,7 +508,7 @@ func (l *treeLog[T]) Trim(keep int) int {
 }
 
 // residentBelow is kept while both caches coexist; nothing is donated now.
-func (l *treeLog[T]) residentBelow(figaroLT uint64) []Entry[T] {
+func (l *treeLog[T]) residentBelow(figaroLT uint64) []arialog.Entry[T] {
 	if figaroLT == 0 {
 		return nil
 	}

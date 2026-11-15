@@ -19,6 +19,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/figwal/segment"
@@ -79,12 +81,12 @@ type XwalBackend struct {
 	// irTree is the decoded-IR residency shared by every aria: one budget, one
 	// eviction order; a child's prefix lives in its ancestor's node.
 	irTree  *fwtree.Budget
-	irCache *fwtree.Cache[Entry[message.Message]]
+	irCache *fwtree.Cache[arialog.Entry[message.Message]]
 
 	// transTree is the translations' shared budget; one cache per provider,
 	// each with a node per aria.
 	transTree   *fwtree.Budget
-	transCaches map[string]*fwtree.Cache[Entry[[]json.RawMessage]]
+	transCaches map[string]*fwtree.Cache[arialog.Entry[[]json.RawMessage]]
 
 	// transBudget: the payload is the provider's wire form, so the estimate is
 	// the bytes themselves.
@@ -108,7 +110,7 @@ const (
 )
 
 // irEntrySize estimates retained bytes as encoded size times decode inflation.
-func irEntrySize(e Entry[message.Message]) int {
+func irEntrySize(e arialog.Entry[message.Message]) int {
 	if e.EncodedBytes > 0 {
 		return e.EncodedBytes * irDecodeNum / irDecodeDenom
 	}
@@ -127,7 +129,7 @@ const (
 
 // transEntrySize: the payload is the provider's wire form, so its encoded
 // size is the bytes themselves plus the []json.RawMessage headers.
-func transEntrySize(e Entry[[]json.RawMessage]) int {
+func transEntrySize(e arialog.Entry[[]json.RawMessage]) int {
 	n := 0
 	for _, raw := range e.Payload {
 		n += len(raw) + 16
@@ -189,12 +191,12 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 		irBudget:    DefaultIRBudgetBytes,
 		irTree:      fwtree.NewBudget(DefaultIRTreeBytes),
 		transTree:   fwtree.NewBudget(DefaultTransTreeBytes),
-		transCaches: map[string]*fwtree.Cache[Entry[[]json.RawMessage]]{},
+		transCaches: map[string]*fwtree.Cache[arialog.Entry[[]json.RawMessage]]{},
 		transBudget: DefaultTranslationBudgetBytes,
 	}
 	// One cache, a node per aria: that is what makes a fork's prefix its
 	// ancestor's runs rather than a copy.
-	b.irCache = NewIRCache[message.Message](b.irTree, func(node string) Log[message.Message] {
+	b.irCache = NewIRCache[message.Message](b.irTree, func(node string) arialog.Log[message.Message] {
 		return newXwalLog[message.Message](b.store, node, chanIR, true)
 	}, irEntrySize, irKey[message.Message])
 	return b, nil
@@ -241,7 +243,7 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 			newXwalLog[message.Message](b.store, id, chanIR, true),
 			id, b.irCache, irEntrySize, irKey[message.Message],
 			func() []fwtree.Ref { return b.store.Lineage(id) }).
-			withNodeOpener(func(node string) Log[message.Message] {
+			withNodeOpener(func(node string) arialog.Log[message.Message] {
 				return newXwalLog[message.Message](b.store, node, chanIR, true)
 			}).seedingTail(),
 		trans: map[string]*treeLog[[]json.RawMessage]{},
@@ -284,11 +286,11 @@ func (b *XwalBackend) unreadableChannel(node, channel string) error {
 // OpenNode reads one node's IR: an ancestor's frozen index node included,
 // which is not an aria and must not get an aria handle, a sidecar or the IR
 // door.
-func (b *XwalBackend) OpenNode(node string) Log[message.Message] {
+func (b *XwalBackend) OpenNode(node string) arialog.Log[message.Message] {
 	return newXwalLog[message.Message](b.store, node, chanIR, true)
 }
 
-func (b *XwalBackend) OpenFigIR(ariaID string) (Log[message.Message], error) {
+func (b *XwalBackend) OpenFigIR(ariaID string) (arialog.Log[message.Message], error) {
 	b.mu.Lock()
 	h, err := b.handleLocked(ariaID)
 	b.mu.Unlock()
@@ -316,7 +318,7 @@ const translationPrefix = "translations-v2/"
 
 func transChannel(provider string) string { return translationPrefix + provider }
 
-func (b *XwalBackend) OpenTranslator(ariaID, providerName string) (Log[[]json.RawMessage], error) {
+func (b *XwalBackend) OpenTranslator(ariaID, providerName string) (arialog.Log[[]json.RawMessage], error) {
 	b.mu.Lock()
 	h, err := b.handleLocked(ariaID)
 	b.mu.Unlock()
@@ -342,7 +344,7 @@ func (b *XwalBackend) OpenTranslator(ariaID, providerName string) (Log[[]json.Ra
 		// A coordinate holds exactly one entry (the channel is addressed by its
 		// own LT), so the writer's append can be published rather than fetched back.
 		seedingTail().
-		withNodeOpener(func(node string) Log[[]json.RawMessage] {
+		withNodeOpener(func(node string) arialog.Log[[]json.RawMessage] {
 			return newXwalLog[[]json.RawMessage](b.store, node, ch, false)
 		})
 	b.mu.Lock()
@@ -1390,12 +1392,12 @@ func (b *XwalBackend) SetObservedForms(ariaID string, formIDs []string) {
 // transCacheFor: one cache per provider with a node per aria, so a fork reads
 // its ancestor's translations as it reads its ancestor's IR; two providers
 // hold different records for the same aria. Caller holds b.mu.
-func (b *XwalBackend) transCacheFor(providerName string) *fwtree.Cache[Entry[[]json.RawMessage]] {
+func (b *XwalBackend) transCacheFor(providerName string) *fwtree.Cache[arialog.Entry[[]json.RawMessage]] {
 	if c := b.transCaches[providerName]; c != nil {
 		return c
 	}
 	ch := transChannel(providerName)
-	c := NewIRCache[[]json.RawMessage](b.transTree, func(node string) Log[[]json.RawMessage] {
+	c := NewIRCache[[]json.RawMessage](b.transTree, func(node string) arialog.Log[[]json.RawMessage] {
 		return newXwalLog[[]json.RawMessage](b.store, node, ch, false)
 	}, transEntrySize, transKey[[]json.RawMessage])
 	b.transCaches[providerName] = c

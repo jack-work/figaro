@@ -11,7 +11,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // An interrupted turn ends as "interrupted" and its provider's error is not
@@ -25,9 +25,9 @@ func TestACancelledCatchUpSaysWhereItStopped(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, nil)))
 	t.Cleanup(func() { slog.SetDefault(before) })
 
-	run := func(stopAfter int) (phases []string, rows store.Log[[]json.RawMessage], err error) {
+	run := func(stopAfter int) (phases []string, rows arialog.Log[[]json.RawMessage], err error) {
 		log, bound := cancelTestLog(t)
-		rows = store.NewMemLog[[]json.RawMessage]()
+		rows = arialog.NewMemLog[[]json.RawMessage]()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		cfg := cancelTestConfig(log, bound, rows)

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // The region memo must equal the full materialization, and composeTurn's
@@ -50,7 +50,7 @@ func TestRegionMemoEqualsAFullMaterializationAtEveryFrame(t *testing.T) {
 	}
 
 	for i := 0; i < 3; i++ {
-		if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := a.figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    message.RoleOutput,
 			Content: []message.Content{message.TextContent("appended between frames")},
 		}}); err != nil {

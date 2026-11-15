@@ -3,10 +3,12 @@ package angelus
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/api/form"
 	"io"
 	"log/slog"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/arialog"
 
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
@@ -14,22 +16,22 @@ import (
 )
 
 type readBenchLog struct {
-	*store.MemLog[message.Message]
+	*arialog.MemLog[message.Message]
 }
 
-func (l *readBenchLog) Read() []store.Entry[message.Message] {
+func (l *readBenchLog) Read() []arialog.Entry[message.Message] {
 	rows := l.MemLog.Read()
-	out := make([]store.Entry[message.Message], len(rows))
+	out := make([]arialog.Entry[message.Message], len(rows))
 	copy(out, rows)
 	return out
 }
 
 type readBenchBackend struct {
 	store.Backend
-	log store.Log[message.Message]
+	log arialog.Log[message.Message]
 }
 
-func (b readBenchBackend) OpenFigIR(string) (store.Log[message.Message], error) {
+func (b readBenchBackend) OpenFigIR(string) (arialog.Log[message.Message], error) {
 	return b.log, nil
 }
 
@@ -39,9 +41,9 @@ func (b readBenchBackend) Node(id string) (store.NodeView, bool) {
 
 func newReadBench(b *testing.B, req rpc.IRRequest) (*handlers, []byte) {
 	b.Helper()
-	log := &readBenchLog{MemLog: store.NewMemLog[message.Message]()}
+	log := &readBenchLog{MemLog: arialog.NewMemLog[message.Message]()}
 	for i := 0; i < 10_000; i++ {
-		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    message.RoleInput,
 			Content: []message.Content{message.TextContent(fmt.Sprintf("message %d", i))},
 		}}); err != nil {
@@ -115,7 +117,7 @@ func BenchmarkDormantList(b *testing.B) {
 						b.Fatal(err)
 					}
 					for j := 0; j < 2; j++ {
-						if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+						if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 							Role:    message.RoleInput,
 							Content: []message.Content{message.TextContent("message")},
 						}}); err != nil {

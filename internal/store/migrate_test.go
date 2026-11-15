@@ -1,10 +1,12 @@
 package store
 
 import (
-	"github.com/jack-work/figaro/api/message"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +26,7 @@ func TestMigrationsRunBackToBackOnOpen(t *testing.T) {
 	require.NoError(t, err)
 	ir, err := be.OpenFigIR(aria)
 	require.NoError(t, err)
-	_, err = ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")}}})
+	_, err = ir.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")}}})
 	require.NoError(t, err)
 	require.NoError(t, be.Close())
 

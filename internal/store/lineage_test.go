@@ -3,6 +3,8 @@ package store
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -20,7 +22,7 @@ func TestLineageWalksToTheRootWithOwnedBases(t *testing.T) {
 
 	ir, _ := b.OpenFigIR(conv)
 	for i := 0; i < 6; i++ {
-		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
+		if _, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -83,7 +85,7 @@ func TestLineageBaseMatchesTheTrunkBranchPoint(t *testing.T) {
 	conv, _ := b.CreateConversation(l)
 	ir, _ := b.OpenFigIR(conv)
 	for i := 0; i < 6; i++ {
-		ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
+		ir.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
 	}
 	_, alt, err := b.ForkAt(conv, 4)
 	if err != nil {

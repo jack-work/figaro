@@ -6,30 +6,30 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // A hole at position k costs N-k encodes and leaves every row before it
 // byte-identical: the repair cuts from the gap, never from zero.
 func TestAHoleIsRepairedFromTheGap(t *testing.T) {
 	const n, k = 40, 25
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	for i := range n {
 		appendProjectionMessage(t, log, "body "+strconv.Itoa(i))
 	}
-	full := store.NewMemLog[[]json.RawMessage]()
+	full := arialog.NewMemLog[[]json.RawMessage]()
 	if _, err := CatchUp(catchUpTestConfig(log, full)); err != nil {
 		t.Fatal(err)
 	}
 	all := full.Read()
 	missing := all[k-1].FigaroLT
 
-	rows := store.NewMemLog[[]json.RawMessage]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	for _, r := range all {
 		if r.FigaroLT == missing {
 			continue
 		}
-		if _, err := rows.Append(store.Entry[[]json.RawMessage]{
+		if _, err := rows.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: r.FigaroLT, Payload: r.Payload, Fingerprint: r.Fingerprint, FigaroHash: r.FigaroHash,
 		}); err != nil {
 			t.Fatal(err)

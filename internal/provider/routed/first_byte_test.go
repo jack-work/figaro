@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
@@ -66,10 +68,10 @@ func sendWithFirstByte(t *testing.T, srv *httptest.Server, transport, timeout st
 	p := gatewayAt(t, name, "preset = \"gateway\"\nbase_url = \""+srv.URL+"/v1\"\n[routing]\ncatalog = \"off\"\ndefault = \""+transport+"\"\n")
 	be, aria := store.NewTestAria(t, "d", message.Patch{})
 	figLog, _ := be.OpenFigIR(aria)
-	_, _ = figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, _ = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("hi")},
 	}})
-	p.translators = func(aria, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
+	p.translators = func(aria, ns string) (arialog.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
 	p.SetModel("explabs/qwen3.8-max")
 	raw, _ := json.Marshal(timeout)
 	snap := form.FromMap(map[string]json.RawMessage{provider.FirstByteTimeoutKey: raw})

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/figwal/xwal"
@@ -117,7 +119,7 @@ func TestCacheSeededRowsDoNotAliasTheirFrame(t *testing.T) {
 
 	big := strings.Repeat("x", 4096)
 	for i := 0; i < 8; i++ {
-		_, err := rows.Append(Entry[[]json.RawMessage]{
+		_, err := rows.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: uint64(i + 1),
 			Payload: []json.RawMessage{
 				json.RawMessage(fmt.Sprintf(`{"role":"user","content":%q}`, big)),

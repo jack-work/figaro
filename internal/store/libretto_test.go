@@ -3,10 +3,11 @@ package store
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/api/form"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/api/form"
 
 	"github.com/jack-work/figaro/api/message"
 )
@@ -444,7 +445,7 @@ func TestLibrettoStopsListeningWhenItsSourceDies(t *testing.T) {
 	// death arrives as an ordinary key transition.
 	sawDeath := false
 	for _, p := range lib.PatchesBetween(before, lib.Version()) {
-		if _, ok := p.Patch.Entry(KeyLibrettoAlive); ok {
+		if _, ok := p.Patch.Entry(form.KeyLibrettoAlive); ok {
 			sawDeath = true
 		}
 	}
@@ -564,7 +565,7 @@ func TestLibrettoReadersWhileItFolds(t *testing.T) {
 
 // Alive is the tests' read of the death record on the copy.
 func (l *Libretto) Alive() bool {
-	raw, ok := l.formState().Get(KeyLibrettoAlive)
+	raw, ok := l.formState().Get(form.KeyLibrettoAlive)
 	if !ok {
 		return true
 	}

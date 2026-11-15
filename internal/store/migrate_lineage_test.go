@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/stretchr/testify/require"
@@ -86,14 +88,14 @@ func TestMigrationsPreserveInheritedRemovalAndTurnIDs(t *testing.T) {
 	lg, err := be.OpenFigIR(aria)
 	require.NoError(t, err)
 	for _, m := range []message.Message{prompt("one"), reply("answer one"), prompt("two"), reply("answer two")} {
-		_, err = lg.Append(Entry[message.Message]{Payload: m})
+		_, err = lg.Append(arialog.Entry[message.Message]{Payload: m})
 		require.NoError(t, err)
 	}
 	_, alt, err := be.ForkAt(aria, lg.Read()[1].LT)
 	require.NoError(t, err)
 	altLog, err := be.OpenFigIR(alt)
 	require.NoError(t, err)
-	_, err = altLog.Append(Entry[message.Message]{Payload: prompt("alternative")})
+	_, err = altLog.Append(arialog.Entry[message.Message]{Payload: prompt("alternative")})
 	require.NoError(t, err)
 
 	boundForms := map[string]string{}

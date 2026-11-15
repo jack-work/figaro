@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 const (
@@ -20,7 +20,7 @@ type line struct {
 	cost int
 }
 
-func window(log store.Log[message.Message], budget int, centre, centreEnd uint64) []line {
+func window(log arialog.Log[message.Message], budget int, centre, centreEnd uint64) []line {
 	if log == nil || budget <= 0 {
 		return nil
 	}
@@ -31,7 +31,7 @@ func window(log store.Log[message.Message], budget int, centre, centreEnd uint64
 	perMessage := budget / headShare
 	spent := 0
 	var chosen []line
-	take := func(e store.Entry[message.Message]) bool {
+	take := func(e arialog.Entry[message.Message]) bool {
 		text, cost := render(e.Payload, perMessage)
 		if text == "" {
 			return true
@@ -86,19 +86,19 @@ const (
 )
 
 type walker struct {
-	log    store.Log[message.Message]
+	log    arialog.Log[message.Message]
 	dir    direction
 	cursor uint64
-	page   []store.Entry[message.Message]
+	page   []arialog.Entry[message.Message]
 	at     int
 	done   bool
 }
 
-func newWalker(log store.Log[message.Message], dir direction, cursor uint64) *walker {
+func newWalker(log arialog.Log[message.Message], dir direction, cursor uint64) *walker {
 	return &walker{log: log, dir: dir, cursor: cursor}
 }
 
-func (w *walker) next() (store.Entry[message.Message], bool) {
+func (w *walker) next() (arialog.Entry[message.Message], bool) {
 	for {
 		if w.at < len(w.page) {
 			e := w.page[w.at]
@@ -109,13 +109,13 @@ func (w *walker) next() (store.Entry[message.Message], bool) {
 			return e, true
 		}
 		if w.done || !w.fill() {
-			return store.Entry[message.Message]{}, false
+			return arialog.Entry[message.Message]{}, false
 		}
 	}
 }
 
 func (w *walker) fill() bool {
-	var page []store.Entry[message.Message]
+	var page []arialog.Entry[message.Message]
 	switch w.dir {
 	case backward:
 		if w.cursor <= 1 {

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
@@ -32,11 +34,11 @@ func TestDeclaredResponsesHistoryDoesNotInventCacheExtensions(t *testing.T) {
 	defer server.Close()
 	p := gatewayAt(t, "strict-history", "preset=\"gateway\"\nbase_url=\""+server.URL+"\"\n[routing]\ncatalog=\"off\"\ndefault=\"responses\"\n")
 	backend, id := store.NewTestAria(t, "strict-history", message.Patch{})
-	p.translators = func(id, ns string) (store.Log[[]json.RawMessage], error) { return backend.OpenTranslator(id, ns) }
+	p.translators = func(id, ns string) (arialog.Log[[]json.RawMessage], error) { return backend.OpenTranslator(id, ns) }
 	log, err := backend.OpenFigIR(id)
 	require.NoError(t, err)
 	appendMessage := func(role message.Role, text string) {
-		_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{Role: role, Content: []message.Content{message.TextContent(text)}}})
+		_, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: role, Content: []message.Content{message.TextContent(text)}}})
 		require.NoError(t, err)
 	}
 	appendMessage(message.RoleInput, "first")

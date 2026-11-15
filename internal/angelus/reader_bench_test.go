@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/store"
@@ -44,7 +46,7 @@ func benchStore(tb testing.TB, n int) (store.Backend, string) {
 		if role == message.RoleOutput {
 			m.Usage = &message.Usage{InputTokens: 10, OutputTokens: 20}
 		}
-		if _, err := log.Append(store.Entry[message.Message]{Payload: m}); err != nil {
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: m}); err != nil {
 			tb.Fatal(err)
 		}
 	}

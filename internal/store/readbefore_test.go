@@ -3,23 +3,25 @@ package store
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // buildLog seeds a MemLog with entries at the given FigaroLTs (sparse allowed).
 // Each entry's payload is its FigaroLT so tests can assert order easily.
-func buildLog(t testing.TB, fks []uint64) *MemLog[uint64] {
+func buildLog(t testing.TB, fks []uint64) *arialog.MemLog[uint64] {
 	t.Helper()
-	s := NewMemLog[uint64]()
+	s := arialog.NewMemLog[uint64]()
 	for _, fk := range fks {
-		_, err := s.Append(Entry[uint64]{FigaroLT: fk, Payload: fk})
+		_, err := s.Append(arialog.Entry[uint64]{FigaroLT: fk, Payload: fk})
 		require.NoError(t, err)
 	}
 	return s
 }
 
-func fks(entries []Entry[uint64]) []uint64 {
+func fks(entries []arialog.Entry[uint64]) []uint64 {
 	out := make([]uint64, len(entries))
 	for i, e := range entries {
 		out[i] = e.FigaroLT
@@ -51,7 +53,7 @@ func TestRead_CachedLogRemainsStableAfterAppend(t *testing.T) {
 	c := newCachedLog[uint64](inner)
 	before := c.Read()
 
-	_, err := c.Append(Entry[uint64]{FigaroLT: 30, Payload: 30})
+	_, err := c.Append(arialog.Entry[uint64]{FigaroLT: 30, Payload: 30})
 	assert.NoError(t, err)
 	assert.Equal(t, []uint64{10, 20}, fks(before), "an earlier read saw a later append")
 	assert.Equal(t, []uint64{10, 20, 30}, fks(c.Read()))
@@ -64,28 +66,28 @@ func TestTailAfter_SuffixAndTotal(t *testing.T) {
 	inner := buildLog(t, []uint64{10, 20, 30})
 	c := newCachedLog[uint64](inner)
 
-	all, total := TailAfter[uint64](c, 0)
+	all, total := arialog.TailAfter[uint64](c, 0)
 	assert.Equal(t, 3, total)
 	assert.Len(t, all, 3, "watermark 0 must read the whole log")
 
-	tail, total := TailAfter[uint64](c, all[0].LT)
+	tail, total := arialog.TailAfter[uint64](c, all[0].LT)
 	assert.Equal(t, 3, total)
 	assert.Len(t, tail, 2, "suffix past the first entry")
 
-	tail, total = TailAfter[uint64](c, all[2].LT)
+	tail, total = arialog.TailAfter[uint64](c, all[2].LT)
 	assert.Equal(t, 3, total)
 	assert.Empty(t, tail, "nothing past the tail")
 
 	// The fallback path (no TailAfter method) must agree exactly.
-	fallback, ftotal := TailAfter[uint64](onlyLog[uint64]{c}, all[0].LT)
+	fallback, ftotal := arialog.TailAfter[uint64](onlyLog[uint64]{c}, all[0].LT)
 	assert.Equal(t, total, ftotal)
 	assert.Equal(t, fks(tailOf(c, all[0].LT)), fks(fallback))
 }
 
 // onlyLog hides the optional interfaces so TailAfter takes its generic path.
-type onlyLog[T any] struct{ Log[T] }
+type onlyLog[T any] struct{ arialog.Log[T] }
 
-func tailOf[T any](c *treeLog[T], lt uint64) []Entry[T] {
+func tailOf[T any](c *treeLog[T], lt uint64) []arialog.Entry[T] {
 	out, _ := c.TailAfter(lt)
 	return out
 }
@@ -93,10 +95,10 @@ func tailOf[T any](c *treeLog[T], lt uint64) []Entry[T] {
 func TestTailSnapshot_CachedLogIsAscending(t *testing.T) {
 	inner := buildLog(t, []uint64{10, 20, 30})
 	c := newCachedLog[uint64](inner)
-	assert.Equal(t, []uint64{20, 30}, fks(TailSnapshot[uint64](c, 2)))
+	assert.Equal(t, []uint64{20, 30}, fks(arialog.TailSnapshot[uint64](c, 2)))
 }
 
 // newCachedLog is an unbounded cache; no shipped configuration builds one.
-func newCachedLog[T any](inner Log[T]) *treeLog[T] {
+func newCachedLog[T any](inner arialog.Log[T]) *treeLog[T] {
 	return newWindowedLog[T](inner, 0, 0, 1, 1, nil)
 }

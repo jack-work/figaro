@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	fwtree "github.com/jack-work/figaro/figwal/tree"
@@ -36,10 +38,10 @@ func TestUIWindowBoundsAResidentAgent(t *testing.T) {
 	}
 	body := strings.Repeat("lorem ipsum dolor sit amet ", 400) // ~10KB
 	for turn := uint64(1); turn <= 2000; turn++ {
-		log.Append(store.Entry[message.Message]{Payload: message.Message{
+		log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, TurnID: turn,
 			Content: []message.Content{message.TextContent(fmt.Sprintf("q%d", turn))}}})
-		log.Append(store.Entry[message.Message]{Payload: message.Message{
+		log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleOutput, TurnID: turn,
 			Content: []message.Content{message.TextContent(body)}}})
 	}

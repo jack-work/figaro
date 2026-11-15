@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/message"
@@ -22,7 +24,7 @@ func reply(text string) message.Message {
 // No record reaches the log without a turn id, whichever of the five append
 // paths makes it.
 func TestDoorStampsEveryAppendWhoeverMakesIt(t *testing.T) {
-	log := GuardIR(NewMemLog[message.Message]())
+	log := GuardIR(arialog.NewMemLog[message.Message]())
 
 	// A caller that stamps nothing at all.
 	for _, m := range []message.Message{
@@ -31,7 +33,7 @@ func TestDoorStampsEveryAppendWhoeverMakesIt(t *testing.T) {
 		prompt("second question"),
 		reply("second answer"),
 	} {
-		_, err := log.Append(Entry[message.Message]{Payload: m})
+		_, err := log.Append(arialog.Entry[message.Message]{Payload: m})
 		require.NoError(t, err)
 	}
 
@@ -63,9 +65,9 @@ func TestDoorDerivationAgreesWithStampIDs(t *testing.T) {
 		prompt("three"),
 	}
 
-	log := GuardIR(NewMemLog[message.Message]())
+	log := GuardIR(arialog.NewMemLog[message.Message]())
 	for _, m := range convo {
-		_, err := log.Append(Entry[message.Message]{Payload: m})
+		_, err := log.Append(arialog.Entry[message.Message]{Payload: m})
 		require.NoError(t, err)
 	}
 	stored := log.Read()
@@ -88,13 +90,13 @@ func TestDoorDerivationAgreesWithStampIDs(t *testing.T) {
 
 // A caller that knows its turn keeps it.
 func TestDoorRespectsACallerSuppliedTurn(t *testing.T) {
-	log := GuardIR(NewMemLog[message.Message]())
-	_, err := log.Append(Entry[message.Message]{Payload: prompt("one")})
+	log := GuardIR(arialog.NewMemLog[message.Message]())
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: prompt("one")})
 	require.NoError(t, err)
 
 	m := reply("late arrival")
 	m.TurnID = 42
-	_, err = log.Append(Entry[message.Message]{Payload: m})
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: m})
 	require.NoError(t, err)
 
 	got := log.Read()
@@ -103,8 +105,8 @@ func TestDoorRespectsACallerSuppliedTurn(t *testing.T) {
 
 // A record before the first prompt belongs to no turn and says so in its bytes.
 func TestPreTurnRecordsCarryAnExplicitZero(t *testing.T) {
-	log := GuardIR(NewMemLog[message.Message]())
-	_, err := log.Append(Entry[message.Message]{Payload: message.Message{Role: "genesis"}})
+	log := GuardIR(arialog.NewMemLog[message.Message]())
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: "genesis"}})
 	require.NoError(t, err)
 
 	got := log.Read()

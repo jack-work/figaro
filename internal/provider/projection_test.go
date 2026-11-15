@@ -7,13 +7,13 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // A failed encode leaves the watermark where it was.
 func TestAFailedEncodeLeavesTheWatermarkWhereItWas(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	rows := store.NewMemLog[[]json.RawMessage]()
+	log := arialog.NewMemLog[message.Message]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	appendProjectionMessage(t, log, "one")
 	attempts := map[string]int{}
 	cfg := CatchUpConfig{
@@ -61,8 +61,8 @@ func TestAFailedEncodeLeavesTheWatermarkWhereItWas(t *testing.T) {
 }
 
 func TestClearStaleTranslationCacheChecksTail(t *testing.T) {
-	cache := store.NewMemLog[[]json.RawMessage]()
-	if _, err := cache.Append(store.Entry[[]json.RawMessage]{
+	cache := arialog.NewMemLog[[]json.RawMessage]()
+	if _, err := cache.Append(arialog.Entry[[]json.RawMessage]{
 		FigaroLT: 1, Payload: []json.RawMessage{json.RawMessage(`{}`)}, Fingerprint: "old",
 	}); err != nil {
 		t.Fatal(err)
@@ -76,9 +76,9 @@ func TestClearStaleTranslationCacheChecksTail(t *testing.T) {
 	}
 }
 
-func appendProjectionMessage(t *testing.T, log *store.MemLog[message.Message], text string) store.Entry[message.Message] {
+func appendProjectionMessage(t *testing.T, log *arialog.MemLog[message.Message], text string) arialog.Entry[message.Message] {
 	t.Helper()
-	entry, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+	entry, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent(text)},
 	}})

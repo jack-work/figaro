@@ -3,6 +3,8 @@ package store
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -21,7 +23,7 @@ func BenchmarkIRAppend(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := ir.Append(Entry[message.Message]{Payload: msg}); err != nil {
+		if _, err := ir.Append(arialog.Entry[message.Message]{Payload: msg}); err != nil {
 			b.Fatal(err)
 		}
 	}

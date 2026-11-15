@@ -15,8 +15,8 @@ import (
 	"golang.org/x/net/websocket"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 var dumpCompleted = map[string]any{
@@ -67,7 +67,7 @@ func TestResponsesDumpsItsWireOnBothTransports(t *testing.T) {
 			require.NoError(t, websocket.JSON.Send(conn, dumpCompleted))
 		})
 		dir := t.TempDir()
-		sendDumped(t, newResponsesTestProvider(srv, store.NewMemLog[[]json.RawMessage]()), dir)
+		sendDumped(t, newResponsesTestProvider(srv, arialog.NewMemLog[[]json.RawMessage]()), dir)
 
 		req, resp := readDump(t, dir, ".req.http"), readDump(t, dir, ".resp.http")
 		require.True(t, strings.HasPrefix(req, "WS /responses "), "request line: %q", strings.SplitN(req, "\n", 2)[0])
@@ -88,7 +88,7 @@ func TestResponsesDumpsItsWireOnBothTransports(t *testing.T) {
 			}
 		}))
 		t.Cleanup(srv.Close)
-		p := newResponsesTestProvider(srv, store.NewMemLog[[]json.RawMessage]())
+		p := newResponsesTestProvider(srv, arialog.NewMemLog[[]json.RawMessage]())
 		p.SetTransport("gpt-5.6-terra", HTTP)
 		dir := t.TempDir()
 		sendDumped(t, p, dir)

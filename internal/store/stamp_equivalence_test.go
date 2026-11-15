@@ -2,8 +2,10 @@ package store
 
 import (
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/arialog"
 
 	"github.com/jack-work/figaro/api/message"
 )
@@ -23,7 +25,7 @@ func TestTheAppendedEntryCarriesTheSameStampTheLogServes(t *testing.T) {
 		}, nil)); err != nil {
 			t.Fatal(err)
 		}
-		returned, err := ir.Append(Entry[message.Message]{Payload: message.Message{
+		returned, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent(text)},
 		}})
 		if err != nil {

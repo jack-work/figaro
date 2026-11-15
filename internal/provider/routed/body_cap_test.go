@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -62,17 +64,17 @@ func sendImages(t *testing.T, srv *httptest.Server, transport, file string, imag
 	figLog, _ := be.OpenFigIR(aria)
 	pixels := strings.Repeat("A", imageBytes)
 	for i := 0; i < images; i++ {
-		_, _ = figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+		_, _ = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.ImageContent("image/png", pixels), message.TextContent("look")},
 		}})
-		_, _ = figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+		_, _ = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleOutput, Content: []message.Content{message.TextContent("seen")}, StopReason: message.StopEnd,
 		}})
 	}
-	_, _ = figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, _ = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.ImageContent("image/png", pixels), message.TextContent("and this one?")},
 	}})
-	p.translators = func(aria, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
+	p.translators = func(aria, ns string) (arialog.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
 	p.SetModel("explabs/qwen3.8-max")
 	return p.Send(context.Background(), provider.SendInput{AriaID: aria, FigLog: figLog, MaxTokens: 64}, &nullBus{})
 }

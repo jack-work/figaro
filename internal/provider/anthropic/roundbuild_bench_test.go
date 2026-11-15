@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
@@ -22,7 +24,7 @@ import (
 
 type roundBuildFixture struct {
 	a      *Anthropic
-	figLog store.Log[message.Message]
+	figLog arialog.Log[message.Message]
 	form   benchForm
 	aria   string
 	n      int
@@ -59,7 +61,7 @@ func newRoundBuildFixture(b *testing.B, turns, resultBytes int) *roundBuildFixtu
 	}
 	result := strings.Repeat("line of tool output with \"quotes\" and \\ escapes\n", resultBytes/48+1)
 	appendMsg := func(m message.Message) {
-		if _, err := figLog.Append(store.Entry[message.Message]{Payload: m}); err != nil {
+		if _, err := figLog.Append(arialog.Entry[message.Message]{Payload: m}); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -79,7 +81,7 @@ func newRoundBuildFixture(b *testing.B, turns, resultBytes int) *roundBuildFixtu
 		b.Fatal(err)
 	}
 	a, err := New(provider.Knobs{Model: "claude-test", MaxTokens: 64}, nilResolver{},
-		func(string) (store.Log[[]json.RawMessage], error) { return rows, nil })
+		func(string) (arialog.Log[[]json.RawMessage], error) { return rows, nil })
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -90,7 +92,7 @@ func newRoundBuildFixture(b *testing.B, turns, resultBytes int) *roundBuildFixtu
 
 func (f *roundBuildFixture) send(b *testing.B) int {
 	f.n++
-	if _, err := f.figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+	if _, err := f.figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent(fmt.Sprintf("round %d", f.n))},
 	}}); err != nil {
 		b.Fatal(err)

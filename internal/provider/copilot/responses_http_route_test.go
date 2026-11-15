@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"golang.org/x/net/websocket"
 
 	"github.com/jack-work/figaro/api/message"
@@ -143,7 +145,7 @@ func sendThroughCopilot(t *testing.T, srv *httptest.Server, model string, resolv
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+	if _, err := figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("reply with the single word pong")},
 	}}); err != nil {
 		t.Fatal(err)
@@ -153,7 +155,7 @@ func sendThroughCopilot(t *testing.T, srv *httptest.Server, model string, resolv
 		t.Fatal(err)
 	}
 	c, err := newTestCopilot(srv.URL, model, resolver,
-		func(aria, ns string) (store.Log[[]json.RawMessage], error) {
+		func(aria, ns string) (arialog.Log[[]json.RawMessage], error) {
 			if ns == "copilot-responses" {
 				return responsesRows, nil
 			}

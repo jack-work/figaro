@@ -3,12 +3,14 @@ package store
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/message"
 )
 
-func unmatchedInvokes(rows []Entry[message.Message]) []string {
+func unmatchedInvokes(rows []arialog.Entry[message.Message]) []string {
 	answered := map[string]bool{}
 	for _, e := range rows {
 		for _, c := range e.Payload.Content {
@@ -56,7 +58,7 @@ func TestTheDoorDoesNotScanHistoryForOrphans(t *testing.T) {
 		{Role: message.RoleInput, Content: []message.Content{
 			message.ToolResultContent("toolu_later", "bash", "done", false)}},
 	} {
-		_, err := raw.Append(Entry[message.Message]{Payload: m})
+		_, err := raw.Append(arialog.Entry[message.Message]{Payload: m})
 		require.NoError(t, err)
 	}
 	require.Equal(t, []string{"toolu_buried"}, unmatchedInvokes(raw.Read()), "fixture")

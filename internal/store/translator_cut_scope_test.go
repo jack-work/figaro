@@ -5,10 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
-func seedTranslatorRows(t *testing.T, be *XwalBackend, aria string, n int) Log[[]json.RawMessage] {
+func seedTranslatorRows(t *testing.T, be *XwalBackend, aria string, n int) arialog.Log[[]json.RawMessage] {
 	t.Helper()
 	ir, err := be.OpenFigIR(aria)
 	if err != nil {
@@ -19,13 +21,13 @@ func seedTranslatorRows(t *testing.T, be *XwalBackend, aria string, n int) Log[[
 		t.Fatal(err)
 	}
 	for i := 0; i < n; i++ {
-		e, err := ir.Append(Entry[message.Message]{Payload: message.Message{
+		e, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent("x")},
 		}})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := trans.Append(Entry[[]json.RawMessage]{
+		if _, err := trans.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: e.LT, Payload: []json.RawMessage{json.RawMessage(`{"r":1}`)},
 		}); err != nil {
 			t.Fatal(err)
@@ -77,7 +79,7 @@ func TestATranslatorCutIsNotBlockedByAnotherAriasOpenScan(t *testing.T) {
 	go func() {
 		defer close(done)
 		first := true
-		Scan(busyRows, 0, 0, func(Entry[[]json.RawMessage]) bool {
+		arialog.Scan(busyRows, 0, 0, func(arialog.Entry[[]json.RawMessage]) bool {
 			if first {
 				first = false
 				close(uploading)
@@ -98,7 +100,7 @@ func TestATranslatorCutIsNotBlockedByAnotherAriasOpenScan(t *testing.T) {
 	}
 }
 
-func coldTranslators(t *testing.T, be *XwalBackend, ids ...string) (*XwalBackend, []Log[[]json.RawMessage]) {
+func coldTranslators(t *testing.T, be *XwalBackend, ids ...string) (*XwalBackend, []arialog.Log[[]json.RawMessage]) {
 	t.Helper()
 	dir := be.root
 	if err := be.Close(); err != nil {
@@ -109,7 +111,7 @@ func coldTranslators(t *testing.T, be *XwalBackend, ids ...string) (*XwalBackend
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cold.Close() })
-	var out []Log[[]json.RawMessage]
+	var out []arialog.Log[[]json.RawMessage]
 	for _, id := range ids {
 		l, err := cold.OpenTranslator(id, "anthropic")
 		if err != nil {
@@ -161,7 +163,7 @@ func TestAParentCutWaitsForItsForksOpenScan(t *testing.T) {
 	go func() {
 		defer close(done)
 		first := true
-		Scan(childRows, inherited, 0, func(Entry[[]json.RawMessage]) bool {
+		arialog.Scan(childRows, inherited, 0, func(arialog.Entry[[]json.RawMessage]) bool {
 			if first {
 				first = false
 				close(uploading)

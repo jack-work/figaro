@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
@@ -25,7 +27,7 @@ type Seed struct {
 	Studies map[string]uint64
 }
 
-func SeedFrom(e store.Entry[message.Message]) Seed {
+func SeedFrom(e arialog.Entry[message.Message]) Seed {
 	s := Seed{Form: e.FormChannelVersion}
 	if len(e.StudyVersions) > 0 {
 		s.Studies = make(map[string]uint64, len(e.StudyVersions))
@@ -37,11 +39,11 @@ func SeedFrom(e store.Entry[message.Message]) Seed {
 }
 
 // PerRecord returns each record's deltas keyed by LT, then "<formid>.<path>".
-func PerRecord(b Backend, ariaID string, entries []store.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
+func PerRecord(b Backend, ariaID string, entries []arialog.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
 	return PerRecordFrom(b, ariaID, Seed{}, entries)
 }
 
-func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []store.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
+func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []arialog.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
 	if b == nil || ariaID == "" {
 		return nil
 	}
@@ -159,13 +161,13 @@ func foldStudied(deltas map[string]livedoc.FormDelta, fid string, sf *studiedFor
 		if ent.IsRemoval() {
 			continue
 		}
-		if k == store.KeyLibrettoAlive {
+		if k == form.KeyLibrettoAlive {
 			if strings.TrimSpace(string(v)) == "false" {
 				deltas[fid] = livedoc.FormDelta{Kind: kind, Event: livedoc.FormDeleted, Form: fid}
 			}
 			continue
 		}
-		if store.HiddenLibrettoKey(k) || !store.StudyKeyShown(k, keys) {
+		if store.HiddenLibrettoKey(k) || !form.StudyKeyShown(k, keys) {
 			continue
 		}
 		put(deltas, fid+"."+k, livedoc.FormDelta{Value: v, Prev: ent.Old, Kind: kind, Event: livedoc.FormSet, Form: fid})
@@ -175,7 +177,7 @@ func foldStudied(deltas map[string]livedoc.FormDelta, fid string, sf *studiedFor
 			continue
 		}
 		k := ent.Key
-		if store.HiddenLibrettoKey(k) || k == store.KeyLibrettoAlive || !store.StudyKeyShown(k, keys) {
+		if store.HiddenLibrettoKey(k) || k == form.KeyLibrettoAlive || !form.StudyKeyShown(k, keys) {
 			continue
 		}
 		put(deltas, fid+"."+k, livedoc.FormDelta{Prev: ent.Old, Kind: kind, Event: livedoc.FormRemoved, Form: fid})
@@ -320,5 +322,5 @@ func (o *observerState) keysAt(version uint64, fid string) []string {
 		}
 		o.snap, o.loaded = snap, true
 	}
-	return store.StudyKeys(o.snap, fid)
+	return form.StudyKeys(o.snap, fid)
 }

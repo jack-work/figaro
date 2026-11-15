@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -82,7 +84,7 @@ func TestOpenAfterCrashBeforeAssistantAppend(t *testing.T) {
 	defer b.Close()
 	ir, err := b.OpenFigIR(id)
 	require.NoError(t, err)
-	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err = ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("crashed mid-stream")},
 	}})
 	require.NoError(t, err)
@@ -103,7 +105,7 @@ func TestOpenAfterCrashWithUnresolvedTools(t *testing.T) {
 	defer b.Close()
 	ir, err := b.OpenFigIR(id)
 	require.NoError(t, err)
-	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err = ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:       message.RoleOutput,
 		StopReason: message.StopToolInvoke,
 		Content: []message.Content{{
@@ -552,11 +554,11 @@ func (p *nativeCommitProvider) Send(_ context.Context, in provider.SendInput, bu
 }
 
 type failingAssistantCacheLog struct {
-	store.Log[[]json.RawMessage]
+	arialog.Log[[]json.RawMessage]
 }
 
-func (l failingAssistantCacheLog) Append(store.Entry[[]json.RawMessage]) (store.Entry[[]json.RawMessage], error) {
-	return store.Entry[[]json.RawMessage]{}, errors.New("native cache unavailable")
+func (l failingAssistantCacheLog) Append(arialog.Entry[[]json.RawMessage]) (arialog.Entry[[]json.RawMessage], error) {
+	return arialog.Entry[[]json.RawMessage]{}, errors.New("native cache unavailable")
 }
 
 type failingAssistantCacheBackend struct {
@@ -564,7 +566,7 @@ type failingAssistantCacheBackend struct {
 	namespace string
 }
 
-func (b failingAssistantCacheBackend) OpenTranslator(ariaID, namespace string) (store.Log[[]json.RawMessage], error) {
+func (b failingAssistantCacheBackend) OpenTranslator(ariaID, namespace string) (arialog.Log[[]json.RawMessage], error) {
 	log, err := b.Backend.OpenTranslator(ariaID, namespace)
 	if err != nil || namespace != b.namespace {
 		return log, err

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jack-work/figaro/internal/mark"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -15,12 +14,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jack-work/figaro/internal/mark"
+
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/arialog"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -204,7 +206,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 
 // appendUserPrompt persists one prompt as its own user message. steering is
 // persisted so a replayed log classifies the same way it did live.
-func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[message.Message], error) {
+func (a *Agent) appendUserPrompt(prompt event, steering bool) (arialog.Entry[message.Message], error) {
 	msg := message.Message{
 		Role:      message.RoleInput,
 		Steering:  steering && prompt.text != "",
@@ -250,7 +252,7 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 	}
 	entry, err := a.appendMsg(msg)
 	if err != nil {
-		return store.Entry[message.Message]{}, err
+		return arialog.Entry[message.Message]{}, err
 	}
 	// refreshMetrics precedes OpenInquiry so the frame carrying the question also
 	// carries the context count and the mantra this prompt seeded.
@@ -339,6 +341,16 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	a.publishRuntime(rpc.RuntimeThinking, "")
 	snap := a.form.Snapshot()
 	in := provider.SendInput{
+		CheckContext: func(capacity int) error {
+			retirement, err := store.RetirementOf(snap)
+			if err != nil {
+				return err
+			}
+			if capacity == 0 && retirement.Percent > 0 && retirement.FallbackTokens <= 0 {
+				return fmt.Errorf("%s: auto context capacity is unknown; percentage succession requires system.retirement.fallback_tokens or an absolute context_threshold", prov.Name())
+			}
+			return nil
+		},
 		AriaID:    a.id,
 		FigLog:    a.figLog,
 		Snapshot:  snap,
@@ -449,7 +461,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				roundOut = &out
 			}
 			if ev.kind == evFigaro && roundErr == nil {
-				staged := store.Entry[message.Message]{Payload: ev.msg}
+				staged := arialog.Entry[message.Message]{Payload: ev.msg}
 				a.stageAssistant(&staged)
 				calls := assistantToolInvokes(staged.Payload)
 				appendedEntry, err := a.appendMsg(staged.Payload)
@@ -1097,10 +1109,10 @@ func (a *Agent) nextIndex() uint64 {
 }
 
 // appendedTail reports the tail entry iff the provider appended it at expectIdx.
-func (a *Agent) appendedTail(expectIdx uint64, role message.Role) (store.Entry[message.Message], bool) {
+func (a *Agent) appendedTail(expectIdx uint64, role message.Role) (arialog.Entry[message.Message], bool) {
 	e, ok := a.figLog.PeekTail()
 	if !ok || e.LT != expectIdx || e.Payload.Role != role {
-		return store.Entry[message.Message]{}, false
+		return arialog.Entry[message.Message]{}, false
 	}
 	return e, true
 }

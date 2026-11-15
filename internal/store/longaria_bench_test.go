@@ -6,15 +6,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
 func BenchmarkCachedLogReadLongAria(b *testing.B) {
 	for _, n := range []int{1_000, 10_000, 50_000} {
 		b.Run(fmt.Sprintf("messages=%d", n), func(b *testing.B) {
-			inner := NewMemLog[message.Message]()
+			inner := arialog.NewMemLog[message.Message]()
 			for i := 0; i < n; i++ {
-				_, _ = inner.Append(Entry[message.Message]{Payload: message.Message{
+				_, _ = inner.Append(arialog.Entry[message.Message]{Payload: message.Message{
 					Role:    message.RoleOutput,
 					Content: []message.Content{message.TextContent("synthetic history")},
 				}})
@@ -33,11 +35,11 @@ func BenchmarkCachedLogReadLongAria(b *testing.B) {
 // slowAppendLog stands in for a synced append: the cost that used to sit
 // inside cachedLog's read lock, and the reason readers waited on it.
 type slowAppendLog struct {
-	Log[message.Message]
+	arialog.Log[message.Message]
 	delay time.Duration
 }
 
-func (l *slowAppendLog) Append(e Entry[message.Message]) (Entry[message.Message], error) {
+func (l *slowAppendLog) Append(e arialog.Entry[message.Message]) (arialog.Entry[message.Message], error) {
 	time.Sleep(l.delay)
 	return l.Log.Append(e)
 }
@@ -51,9 +53,9 @@ func (l *slowAppendLog) Append(e Entry[message.Message]) (Entry[message.Message]
 // If a change makes readers wait on the append again, this benchmark is
 // where it shows: the reader's ns/op goes from tens to milliseconds.
 func BenchmarkCachedLogReadWhileAppending(b *testing.B) {
-	inner := NewMemLog[message.Message]()
+	inner := arialog.NewMemLog[message.Message]()
 	for i := 0; i < 5_000; i++ {
-		_, _ = inner.Append(Entry[message.Message]{Payload: message.Message{
+		_, _ = inner.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleOutput, Content: []message.Content{message.TextContent("history")},
 		}})
 	}
@@ -69,7 +71,7 @@ func BenchmarkCachedLogReadWhileAppending(b *testing.B) {
 				return
 			default:
 			}
-			_, _ = c.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
+			_, _ = c.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
 		}
 	}()
 

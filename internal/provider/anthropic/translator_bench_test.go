@@ -9,29 +9,29 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 type copyingBenchLog[T any] struct {
-	*store.MemLog[T]
+	*arialog.MemLog[T]
 }
 
 func newCopyingBenchLog[T any]() *copyingBenchLog[T] {
-	return &copyingBenchLog[T]{MemLog: store.NewMemLog[T]()}
+	return &copyingBenchLog[T]{MemLog: arialog.NewMemLog[T]()}
 }
 
-func (l *copyingBenchLog[T]) Read() []store.Entry[T] {
+func (l *copyingBenchLog[T]) Read() []arialog.Entry[T] {
 	entries := l.MemLog.Read()
-	out := make([]store.Entry[T], len(entries))
+	out := make([]arialog.Entry[T], len(entries))
 	copy(out, entries)
 	return out
 }
 
 // ScanRange copies per entry so a read costs something, as a real decode does.
-func (l *copyingBenchLog[T]) ScanRange(from, to uint64, yield func(store.Entry[T]) bool) {
-	l.MemLog.ScanRange(from, to, func(e store.Entry[T]) bool {
-		one := make([]store.Entry[T], 1)
+func (l *copyingBenchLog[T]) ScanRange(from, to uint64, yield func(arialog.Entry[T]) bool) {
+	l.MemLog.ScanRange(from, to, func(e arialog.Entry[T]) bool {
+		one := make([]arialog.Entry[T], 1)
 		one[0] = e
 		return yield(one[0])
 	})
@@ -46,14 +46,14 @@ type freshHandle[T any] struct {
 
 func (l *freshHandle[T]) VerifyOnce() bool { return l.verified.CompareAndSwap(false, true) }
 
-func copyRows(b *testing.B, from store.Log[[]json.RawMessage], skip uint64) *copyingBenchLog[[]json.RawMessage] {
+func copyRows(b *testing.B, from arialog.Log[[]json.RawMessage], skip uint64) *copyingBenchLog[[]json.RawMessage] {
 	b.Helper()
 	out := newCopyingBenchLog[[]json.RawMessage]()
 	for _, r := range from.Read() {
 		if r.FigaroLT == skip {
 			continue
 		}
-		if _, err := out.Append(store.Entry[[]json.RawMessage]{
+		if _, err := out.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: r.FigaroLT, Payload: r.Payload, Fingerprint: r.Fingerprint, FigaroHash: r.FigaroHash,
 		}); err != nil {
 			b.Fatal(err)
@@ -70,7 +70,7 @@ func directBenchLog(b *testing.B, n int) *copyingBenchLog[message.Message] {
 		if i%2 == 1 {
 			role = message.RoleOutput
 		}
-		_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		_, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    role,
 			Content: []message.Content{message.TextContent("turn body " + strconv.Itoa(i))},
 		}})
@@ -81,10 +81,10 @@ func directBenchLog(b *testing.B, n int) *copyingBenchLog[message.Message] {
 	return log
 }
 
-func appendDirectBenchSuffix(b *testing.B, log store.Log[message.Message]) {
+func appendDirectBenchSuffix(b *testing.B, log arialog.Log[message.Message]) {
 	b.Helper()
 	for _, role := range []message.Role{message.RoleInput, message.RoleOutput} {
-		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    role,
 			Content: []message.Content{message.TextContent("warm " + string(role))},
 		}}); err != nil {
@@ -182,7 +182,7 @@ func BenchmarkInvalidateIfStale(b *testing.B) {
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			a := &Anthropic{ReminderRenderer: "tag"}
 			for i := 0; i < n; i++ {
-				_, _ = cache.Append(store.Entry[[]json.RawMessage]{
+				_, _ = cache.Append(arialog.Entry[[]json.RawMessage]{
 					FigaroLT: uint64(i + 1), Payload: []json.RawMessage{json.RawMessage(`{}`)}, Fingerprint: a.Fingerprint(),
 				})
 			}

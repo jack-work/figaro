@@ -17,6 +17,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -81,11 +83,11 @@ func TestAnImageRefusalRefitsToTheCatalogAndResendsOnce(t *testing.T) {
 
 	be, aria := store.NewTestAria(t, "d", message.Patch{})
 	figLog, _ := be.OpenFigIR(aria)
-	_, _ = figLog.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{
+	_, _ = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{
 		message.ImageContent("image/png", big), message.ImageContent("image/png", noisyPNG(16, 16)), message.TextContent("noise?"),
 	}}})
 	c, err := newTestCopilot(srv.URL, "claude-test", staticResolver("gh-token"),
-		func(aria, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) })
+		func(aria, ns string) (arialog.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,11 +127,11 @@ func TestOtherRefusalsAreNotRefitted(t *testing.T) {
 	defer srv.Close()
 	be, aria := store.NewTestAria(t, "d", message.Patch{})
 	figLog, _ := be.OpenFigIR(aria)
-	_, _ = figLog.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{
+	_, _ = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{
 		message.ImageContent("image/png", noisyPNG(32, 32)), message.TextContent("hi"),
 	}}})
 	c, _ := newTestCopilot(srv.URL, "claude-test", staticResolver("gh-token"),
-		func(aria, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) })
+		func(aria, ns string) (arialog.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) })
 	if err := c.Send(context.Background(), provider.SendInput{AriaID: aria, FigLog: figLog, MaxTokens: 64}, &captureBus{}); err == nil {
 		t.Fatal("a refused request succeeded")
 	}

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/turns"
@@ -20,7 +22,7 @@ func birth(id string) message.Patch {
 	return form.Build(form.Snapshot{}, map[string]json.RawMessage{"aria_id": raw}, nil)
 }
 
-func newConversation(t testing.TB) (*XwalBackend, string, Log[message.Message]) {
+func newConversation(t testing.TB) (*XwalBackend, string, arialog.Log[message.Message]) {
 	t.Helper()
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
@@ -38,9 +40,9 @@ func newConversation(t testing.TB) (*XwalBackend, string, Log[message.Message]) 
 	return be, id, log
 }
 
-func put(t testing.TB, log Log[message.Message], m message.Message) uint64 {
+func put(t testing.TB, log arialog.Log[message.Message], m message.Message) uint64 {
 	t.Helper()
-	e, err := log.Append(Entry[message.Message]{Payload: m})
+	e, err := log.Append(arialog.Entry[message.Message]{Payload: m})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +67,7 @@ func TestTurnAtLTAgreesWithStampIDs(t *testing.T) {
 		be, cur, log := newConversation(t)
 		chain := []string{cur}
 		turn := uint64(0)
-		write := func(l Log[message.Message], n int) {
+		write := func(l arialog.Log[message.Message], n int) {
 			for i := 0; i < n; i++ {
 				turn++
 				put(t, l, ask(turn, "q"))
@@ -131,7 +133,7 @@ func definition(stamped []message.Message, lt uint64) (uint64, bool) {
 }
 
 // readAll is the log, every record, stamped the way StampIDs stamps it.
-func readAll(l Log[message.Message]) []message.Message {
+func readAll(l arialog.Log[message.Message]) []message.Message {
 	var msgs []message.Message
 	for from := uint64(1); ; {
 		got := l.ReadFrom(from, 512)
@@ -149,7 +151,7 @@ func readAll(l Log[message.Message]) []message.Message {
 	return msgs
 }
 
-func lastTurn(t *testing.T, l Log[message.Message]) uint64 {
+func lastTurn(t *testing.T, l arialog.Log[message.Message]) uint64 {
 	t.Helper()
 	all := readAll(l)
 	if len(all) == 0 {
@@ -392,7 +394,7 @@ func TestReadPageByPositionMatchesTheSlice(t *testing.T) {
 		}
 		for _, id := range chain {
 			aria, _ := be.OpenFigIR(id)
-			for name, l := range map[string]Log[message.Message]{"raw": be.OpenNode(id), "aria": aria} {
+			for name, l := range map[string]arialog.Log[message.Message]{"raw": be.OpenNode(id), "aria": aria} {
 				all := l.Read()
 				if len(all) == 0 {
 					continue
@@ -411,7 +413,7 @@ func TestReadPageByPositionMatchesTheSlice(t *testing.T) {
 						from = 0
 					}
 					got, _ := l.ReadPage(from, before, n)
-					want, _ := readPage(all, from, before, n)
+					want, _ := arialog.ReadPage(all, from, before, n)
 					if len(got) != len(want) {
 						t.Fatalf("seed %d %s %s ReadPage(%d, %d, %d): %d entries, the slice has %d",
 							seed, name, id, from, before, n, len(got), len(want))

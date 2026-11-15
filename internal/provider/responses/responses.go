@@ -20,9 +20,9 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tokens"
 	"github.com/jack-work/figaro/internal/upstream"
 	"github.com/jack-work/figaro/internal/wirelog"
@@ -65,7 +65,7 @@ type responseFrames func(context.Context) ([]byte, error)
 
 type Provider struct {
 	tokenSrc  TokenSource
-	cacheOpen func(string) (store.Log[[]json.RawMessage], error)
+	cacheOpen func(string) (arialog.Log[[]json.RawMessage], error)
 	namespace string
 	headers   func(string, IDs) http.Header
 	envelope  func(IDs) map[string]string
@@ -75,7 +75,7 @@ type Provider struct {
 	maxTokens                     int
 	templates                     *template.Template
 	machineID                     string
-	cache                         store.Log[[]json.RawMessage]
+	cache                         arialog.Log[[]json.RawMessage]
 	sessionID                     string
 	limits                        map[string]ContextLimits
 	transport                     map[string]Transport
@@ -92,7 +92,7 @@ func New(
 	knobs provider.Knobs,
 	tokenSrc TokenSource,
 	cfg Config,
-	cacheOpen func(string) (store.Log[[]json.RawMessage], error),
+	cacheOpen func(string) (arialog.Log[[]json.RawMessage], error),
 ) *Provider {
 	headers := cfg.Headers
 	if headers == nil {
@@ -128,7 +128,7 @@ func BearerHeaders(token string) http.Header {
 
 func (p *Provider) Namespace() string { return p.namespace }
 
-func (p *Provider) CacheOpen(aria string) (store.Log[[]json.RawMessage], error) {
+func (p *Provider) CacheOpen(aria string) (arialog.Log[[]json.RawMessage], error) {
 	return p.cacheOpen(aria)
 }
 
@@ -453,9 +453,9 @@ func (p *Provider) validateContext(
 	return nil
 }
 
-func contextSizeForLog(log store.Log[message.Message]) (int, bool) {
+func contextSizeForLog(log arialog.Log[message.Message]) (int, bool) {
 	const tailSize = 64
-	tail := store.TailSnapshot(log, tailSize)
+	tail := arialog.TailSnapshot(log, tailSize)
 	for i := len(tail) - 1; i >= 0; i-- {
 		entry := tail[i]
 		if entry.Payload.Usage == nil {
@@ -518,7 +518,7 @@ func (p *Provider) sessionIDFor() string {
 	return p.sessionID
 }
 
-func (p *Provider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
+func (p *Provider) cacheFor(aria string) (arialog.Log[[]json.RawMessage], error) {
 	if aria == "" || p.cacheOpen == nil {
 		return nil, nil
 	}
@@ -542,7 +542,7 @@ func (p *Provider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
 	return cache, nil
 }
 
-func (p *Provider) invalidateCache(cache store.Log[[]json.RawMessage], fingerprint string) bool {
+func (p *Provider) invalidateCache(cache arialog.Log[[]json.RawMessage], fingerprint string) bool {
 	_, _, err := provider.ClearStaleTranslationCache(cache, fingerprint)
 	return err == nil
 }

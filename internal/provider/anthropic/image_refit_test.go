@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/message"
@@ -60,14 +62,14 @@ func sendRefusedImage(t *testing.T, refusal string, always bool) ([][]byte, erro
 	be, aria := store.NewTestAria(t, "d", message.Patch{})
 	figLog, err := be.OpenFigIR(aria)
 	require.NoError(t, err)
-	_, err = figLog.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{
+	_, err = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{
 		message.ImageContent("image/png", noisyPNG(400, 300)), message.TextContent("noise?"),
 	}}})
 	require.NoError(t, err)
 	rows, err := be.OpenTranslator(aria, "anthropic")
 	require.NoError(t, err)
 	a, err := New(provider.Knobs{Model: "claude-test", MaxTokens: 64}, nilResolver{},
-		func(string) (store.Log[[]json.RawMessage], error) { return rows, nil })
+		func(string) (arialog.Log[[]json.RawMessage], error) { return rows, nil })
 	require.NoError(t, err)
 	route := provider.AnthropicDirect()
 	route.BaseURL = srv.URL + "/v1"

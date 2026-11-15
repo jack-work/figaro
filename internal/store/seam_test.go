@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // The seam: every read path forks between the resident tail and whatever
@@ -14,18 +16,18 @@ import (
 
 func seamLog(t *testing.T, n int) *treeLog[string] {
 	t.Helper()
-	inner := NewMemLog[string]()
+	inner := arialog.NewMemLog[string]()
 	for i := 1; i <= n; i++ {
-		if _, err := inner.Append(Entry[string]{Payload: fmt.Sprintf("row-%04d", i)}); err != nil {
+		if _, err := inner.Append(arialog.Entry[string]{Payload: fmt.Sprintf("row-%04d", i)}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return newWindowedLog[string](inner, 0, 0, 1, 1, func(e Entry[string]) int { return len(e.Payload) + 48 })
+	return newWindowedLog[string](inner, 0, 0, 1, 1, func(e arialog.Entry[string]) int { return len(e.Payload) + 48 })
 }
 
 // exactlyOnceInOrder is the whole assertion: strictly ascending LTs, so a
 // duplicate and a reordering both fail, and neither can hide in the contents.
-func exactlyOnceInOrder(t *testing.T, what string, got []Entry[string]) {
+func exactlyOnceInOrder(t *testing.T, what string, got []arialog.Entry[string]) {
 	t.Helper()
 	seen := make(map[uint64]int, len(got))
 	for i, e := range got {
@@ -41,7 +43,7 @@ func exactlyOnceInOrder(t *testing.T, what string, got []Entry[string]) {
 
 // contiguous also rejects a GAP, which is the mirror error: an off-by-one that
 // drops the boundary LT instead of duplicating it.
-func contiguous(t *testing.T, what string, got []Entry[string]) {
+func contiguous(t *testing.T, what string, got []arialog.Entry[string]) {
 	t.Helper()
 	for i := 1; i < len(got); i++ {
 		if got[i].FigaroLT != got[i-1].FigaroLT+1 {
@@ -146,7 +148,7 @@ func TestSeamHoldsWhileTheBoundaryMoves(t *testing.T) {
 	}
 
 	for i := 0; i < 300; i++ {
-		c.Append(Entry[string]{Payload: fmt.Sprintf("new-%04d", i)})
+		c.Append(arialog.Entry[string]{Payload: fmt.Sprintf("new-%04d", i)})
 		c.Trim(500 + i%400) // walk the boundary back and forth under the readers
 	}
 	close(stop)

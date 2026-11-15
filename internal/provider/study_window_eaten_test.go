@@ -6,7 +6,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // A contentless input record can carry a study block and encodes to
@@ -18,15 +18,15 @@ func TestAContentlessEntryDoesNotEatTheStudyWindow(t *testing.T) {
 	// subject is whether the range is asked for twice.
 	studies := map[string]Form{fid: patchAt(7)}
 
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	// 1: a contentless input record stamped with the new study version.
-	if _, err := log.Append(store.Entry[message.Message]{
+	if _, err := log.Append(arialog.Entry[message.Message]{
 		StudyVersions: map[string]uint64{fid: 7},
 		Payload:       message.Message{Role: message.RoleInput},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := log.Append(store.Entry[message.Message]{
+	if _, err := log.Append(arialog.Entry[message.Message]{
 		StudyVersions: map[string]uint64{fid: 7},
 		Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")},
@@ -47,11 +47,11 @@ func TestAContentlessEntryDoesNotEatTheStudyWindow(t *testing.T) {
 		return []json.RawMessage{body}, nil
 	}
 
-	trans := store.NewMemLog[[]json.RawMessage]()
+	trans := arialog.NewMemLog[[]json.RawMessage]()
 	adapter := NewOnAppend("fake", encode, func() string { return "fp/v1" },
 		func(string) Form { return nil },
 		func(string) map[string]Form { return studies },
-		func(string) (store.Log[[]json.RawMessage], error) { return trans, nil },
+		func(string) (arialog.Log[[]json.RawMessage], error) { return trans, nil },
 	)
 
 	for _, e := range log.Read() {
@@ -62,7 +62,7 @@ func TestAContentlessEntryDoesNotEatTheStudyWindow(t *testing.T) {
 		if fp == "" {
 			continue // the store writes nothing, and neither do we
 		}
-		if _, err := trans.Append(store.Entry[[]json.RawMessage]{
+		if _, err := trans.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: e.LT, Payload: encoded, Fingerprint: fp,
 		}); err != nil {
 			t.Fatal(err)
@@ -93,12 +93,12 @@ func TestTheDeltaSpansEveryUntranslatedMessageBetween(t *testing.T) {
 	const fid = "@studied"
 	studies := map[string]Form{fid: patchesEvery{}}
 
-	entry := func(stamp uint64, body string) store.Entry[message.Message] {
+	entry := func(stamp uint64, body string) arialog.Entry[message.Message] {
 		m := message.Message{Role: message.RoleInput}
 		if body != "" {
 			m.Content = []message.Content{message.TextContent(body)}
 		}
-		return store.Entry[message.Message]{StudyVersions: map[string]uint64{fid: stamp}, Payload: m}
+		return arialog.Entry[message.Message]{StudyVersions: map[string]uint64{fid: stamp}, Payload: m}
 	}
 
 	d := NewDeriver(nil, studies)
@@ -149,9 +149,9 @@ func TestACatchUpRecoversAWindowAWriteFailureSkipped(t *testing.T) {
 	const fid = "@studied"
 	studies := map[string]Form{fid: patchesEvery{}}
 
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	for _, at := range []uint64{6, 15} {
-		if _, err := log.Append(store.Entry[message.Message]{
+		if _, err := log.Append(arialog.Entry[message.Message]{
 			StudyVersions: map[string]uint64{fid: at},
 			Payload: message.Message{
 				Role: message.RoleInput, Content: []message.Content{message.TextContent("m")},
@@ -168,7 +168,9 @@ func TestACatchUpRecoversAWindowAWriteFailureSkipped(t *testing.T) {
 		func() string { return "fp/v1" },
 		func(string) Form { return nil },
 		func(string) map[string]Form { return studies },
-		func(string) (store.Log[[]json.RawMessage], error) { return store.NewMemLog[[]json.RawMessage](), nil },
+		func(string) (arialog.Log[[]json.RawMessage], error) {
+			return arialog.NewMemLog[[]json.RawMessage](), nil
+		},
 	)
 	for _, e := range log.Read() {
 		if _, _, err := adapter.EncodeEntry("aria", log, e); err != nil {
@@ -177,7 +179,7 @@ func TestACatchUpRecoversAWindowAWriteFailureSkipped(t *testing.T) {
 	}
 
 	var seen int
-	trans := store.NewMemLog[[]json.RawMessage]()
+	trans := arialog.NewMemLog[[]json.RawMessage]()
 	if _, err := CatchUp(CatchUpConfig{
 		Log: log, Translator: trans, Studies: studies, Fingerprint: "fp/v1",
 		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {

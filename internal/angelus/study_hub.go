@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
@@ -60,7 +62,7 @@ func (h *handlers) markStudyForHub(ariaID, formID string, began bool) {
 	if err != nil {
 		return
 	}
-	_, _ = log.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, _ = log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:      message.RoleInput,
 		Study:     &message.StudyMark{FormID: formID, Began: began},
 		Timestamp: time.Now().UnixMilli(),

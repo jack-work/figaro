@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
@@ -72,12 +74,12 @@ func TestRou2WireCatalogDrivesNativeAutoFallback(t *testing.T) {
 				_, err = p.Models(context.Background())
 				require.NoError(t, err)
 				backend, id := store.NewTestAria(t, "wire-auto", message.Patch{})
-				p.translators = func(aria, namespace string) (store.Log[[]json.RawMessage], error) {
+				p.translators = func(aria, namespace string) (arialog.Log[[]json.RawMessage], error) {
 					return backend.OpenTranslator(aria, namespace)
 				}
 				log, err := backend.OpenFigIR(id)
 				require.NoError(t, err)
-				_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")}}})
+				_, err = log.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")}}})
 				require.NoError(t, err)
 				model, _ := json.Marshal(alias)
 				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)

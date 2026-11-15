@@ -3,6 +3,8 @@ package store
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/message"
@@ -23,7 +25,7 @@ func TestOneInvokeIsClosedOnceAcrossDoors(t *testing.T) {
 
 	agentDoor, err := be.OpenFigIR(aria)
 	require.NoError(t, err)
-	_, err = agentDoor.Append(Entry[message.Message]{Payload: message.Message{
+	_, err = agentDoor.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleOutput,
 		Content: []message.Content{{
 			Type: message.ContentToolInvoke, ToolCallID: "X", ToolName: "bash",
@@ -37,7 +39,7 @@ func TestOneInvokeIsClosedOnceAcrossDoors(t *testing.T) {
 	require.Equal(t, 1, n)
 
 	// The agent carries on through the door it already had.
-	_, err = agentDoor.Append(Entry[message.Message]{Payload: message.Message{
+	_, err = agentDoor.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent("carry on")},
 	}})

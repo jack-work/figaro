@@ -8,7 +8,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/models"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 type ModelInfo struct {
@@ -79,10 +79,11 @@ type EntryEncoder interface {
 }
 
 type SendInput struct {
-	AriaID   string
-	FigLog   store.Log[message.Message]
-	Snapshot form.Snapshot
-	Form     Form // inline transitions; nil = none (ephemeral)
+	CheckContext func(int) error
+	AriaID       string
+	FigLog       arialog.Log[message.Message]
+	Snapshot     form.Snapshot
+	Form         Form // inline transitions; nil = none (ephemeral)
 	// Studies are the observed forms' accessors, keyed by form id.
 	Studies   map[string]Form
 	Tools     []Tool

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
 
@@ -11,19 +13,19 @@ import (
 // the same span, in one binary and one run so the two share the machine.
 // Both are lock-free on the read path.
 
-func hotTailFixture(entries, body int) (*treeLog[string], *fwtree.Cache[Entry[string]], []fwtree.Ref) {
-	mem := NewMemLog[string]()
+func hotTailFixture(entries, body int) (*treeLog[string], *fwtree.Cache[arialog.Entry[string]], []fwtree.Ref) {
+	mem := arialog.NewMemLog[string]()
 	payload := string(make([]byte, body))
 	for i := 0; i < entries; i++ {
-		mem.Append(Entry[string]{Payload: fmt.Sprintf("%d%s", i, payload)})
+		mem.Append(arialog.Entry[string]{Payload: fmt.Sprintf("%d%s", i, payload)})
 	}
-	sizeOf := func(e Entry[string]) int { return len(e.Payload) }
+	sizeOf := func(e arialog.Entry[string]) int { return len(e.Payload) }
 	flat := newWindowedLog[string](mem, 0, 64<<20, 1, 1, sizeOf)
 
 	all := mem.Read()
-	cache := fwtree.New[Entry[string]](
-		func(co fwtree.Coord) ([]Entry[string], error) {
-			var out []Entry[string]
+	cache := fwtree.New[arialog.Entry[string]](
+		func(co fwtree.Coord) ([]arialog.Entry[string], error) {
+			var out []arialog.Entry[string]
 			for _, e := range all {
 				if e.LT > co.From && e.LT <= co.To {
 					out = append(out, e)
@@ -33,7 +35,7 @@ func hotTailFixture(entries, body int) (*treeLog[string], *fwtree.Cache[Entry[st
 		},
 		fwtree.NewBudget(64<<20),
 		sizeOf,
-		func(e Entry[string]) uint64 { return e.LT },
+		func(e arialog.Entry[string]) uint64 { return e.LT },
 	)
 	lineage := []fwtree.Ref{{Node: "aria"}}
 	cache.Range(lineage, 0, uint64(entries)) // warm

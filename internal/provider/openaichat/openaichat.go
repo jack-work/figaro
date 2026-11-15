@@ -17,12 +17,12 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/catalog"
 	"github.com/jack-work/figaro/internal/catalogmaps"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/upstream"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
@@ -37,9 +37,9 @@ type Provider struct {
 	// Route has no default.
 	Route provider.Route
 
-	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
+	CacheOpen      func(aria string) (arialog.Log[[]json.RawMessage], error)
 	CacheNamespace string
-	cache          store.Log[[]json.RawMessage]
+	cache          arialog.Log[[]json.RawMessage]
 
 	// markMode is refreshed from the form at the top of every Send and is part
 	// of Fingerprint: it decides the shape of every encoded message.
@@ -51,7 +51,7 @@ type Provider struct {
 }
 
 func New(knobs provider.Knobs, resolver auth.TokenResolver, route provider.Route,
-	cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Provider, error) {
+	cacheOpen func(aria string) (arialog.Log[[]json.RawMessage], error)) (*Provider, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("openaichat: nil token resolver")
 	}
@@ -350,7 +350,7 @@ func (p *Provider) assistantCache(msg message.Message) (provider.AssistantCache,
 	}, nil
 }
 
-func (p *Provider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
+func (p *Provider) cacheFor(aria string) (arialog.Log[[]json.RawMessage], error) {
 	if aria == "" || p.CacheOpen == nil {
 		return nil, nil
 	}
@@ -376,7 +376,7 @@ func (p *Provider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
 	return s, nil
 }
 
-func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
+func (p *Provider) invalidateIfStale(s arialog.Log[[]json.RawMessage]) bool {
 	want := p.Fingerprint()
 	stored, cleared, err := provider.ClearStaleTranslationCache(s, want)
 	if err != nil {
@@ -393,7 +393,7 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 // watermark is the row log's tail.
 //
 //nolint:lll // signature mirrors the other providers
-func (p *Provider) catchUp(ctx context.Context, figLog store.Log[message.Message], rows store.Log[[]json.RawMessage],
+func (p *Provider) catchUp(ctx context.Context, figLog arialog.Log[message.Message], rows arialog.Log[[]json.RawMessage],
 	form provider.Form, studies map[string]provider.Form) (provider.RowSeq, error) {
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Context:     ctx,

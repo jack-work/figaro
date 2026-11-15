@@ -5,20 +5,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	figOtel "github.com/jack-work/figaro/internal/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"math"
 	"sort"
 	"strings"
 	"time"
+
+	figOtel "github.com/jack-work/figaro/internal/otel"
+	"go.opentelemetry.io/otel/attribute"
 
 	apidecide "github.com/jack-work/figaro/api/decide"
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/quote"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/auth"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 const (
@@ -39,7 +40,7 @@ const (
 )
 
 type Source struct {
-	Log       store.Log[message.Message]
+	Log       arialog.Log[message.Message]
 	BoundForm form.Snapshot
 	Defaults  form.Snapshot
 	Context   string

@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/figwal/xwal"
@@ -91,7 +93,7 @@ func talk(t *testing.T, be *XwalBackend, id string, turn uint64, text string) ui
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tr.Append(Entry[[]json.RawMessage]{LT: lt, Payload: []json.RawMessage{json.RawMessage(`{"signed":"` + text + `"}`)}}); err != nil {
+	if _, err := tr.Append(arialog.Entry[[]json.RawMessage]{LT: lt, Payload: []json.RawMessage{json.RawMessage(`{"signed":"` + text + `"}`)}}); err != nil {
 		t.Fatal(err)
 	}
 	return lt

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/store"
@@ -30,7 +32,7 @@ func vp(v uint64, key, val string) store.VersionedPatch {
 // stamp; a stamped member with no accessor renders nothing.
 func TestProjectionFoldsStudiedPatchesBetweenStamps(t *testing.T) {
 	// MemLog does not persist StudyVersions.
-	entries := []store.Entry[message.Message]{
+	entries := []arialog.Entry[message.Message]{
 		{LT: 1, Payload: message.Message{Role: message.RoleInput}, StudyVersions: map[string]uint64{"@r": 1}},
 		{LT: 2, Payload: message.Message{Role: message.RoleOutput}, StudyVersions: map[string]uint64{"@r": 3}},
 		{LT: 3, Payload: message.Message{Role: message.RoleInput}, StudyVersions: map[string]uint64{"@r": 3, "@gone": 9}},
@@ -44,7 +46,7 @@ func TestProjectionFoldsStudiedPatchesBetweenStamps(t *testing.T) {
 	var folded []message.Message
 	_, err := CatchUp(CatchUpConfig{
 		Log:        stamped,
-		Translator: store.NewMemLog[[]json.RawMessage](),
+		Translator: arialog.NewMemLog[[]json.RawMessage](),
 		Studies:    map[string]Form{"@r": role},
 		Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			folded = append(folded, m)
@@ -76,14 +78,14 @@ func TestProjectionFoldsStudiedPatchesBetweenStamps(t *testing.T) {
 }
 
 type stampedLog struct {
-	store.Log[message.Message]
-	entries []store.Entry[message.Message]
+	arialog.Log[message.Message]
+	entries []arialog.Entry[message.Message]
 }
 
-func (l *stampedLog) Read() []store.Entry[message.Message] { return l.entries }
-func (l *stampedLog) Len() int                             { return len(l.entries) }
-func (l *stampedLog) ReadFrom(from uint64, limit int) []store.Entry[message.Message] {
-	var out []store.Entry[message.Message]
+func (l *stampedLog) Read() []arialog.Entry[message.Message] { return l.entries }
+func (l *stampedLog) Len() int                               { return len(l.entries) }
+func (l *stampedLog) ReadFrom(from uint64, limit int) []arialog.Entry[message.Message] {
+	var out []arialog.Entry[message.Message]
 	for _, e := range l.entries {
 		if e.FigaroLT >= from || e.LT >= from {
 			out = append(out, e)
@@ -215,7 +217,7 @@ func TestStudyMarkCarriesTheBaselineState(t *testing.T) {
 // change written during a turn lands in the window that closes on the
 // turn's own answer.
 func TestAssistantRecordDoesNotSwallowAStudyWindow(t *testing.T) {
-	entries := []store.Entry[message.Message]{
+	entries := []arialog.Entry[message.Message]{
 		{LT: 1, Payload: message.Message{Role: message.RoleInput}, StudyVersions: map[string]uint64{"@r": 1}},
 		{LT: 2, Payload: message.Message{Role: message.RoleOutput}, StudyVersions: map[string]uint64{"@r": 3}},
 		{LT: 3, Payload: message.Message{Role: message.RoleInput}, StudyVersions: map[string]uint64{"@r": 3}},
@@ -227,7 +229,7 @@ func TestAssistantRecordDoesNotSwallowAStudyWindow(t *testing.T) {
 	var folded []message.Message
 	_, err := CatchUp(CatchUpConfig{
 		Log:        &stampedLog{entries: entries},
-		Translator: store.NewMemLog[[]json.RawMessage](),
+		Translator: arialog.NewMemLog[[]json.RawMessage](),
 		Studies:    map[string]Form{"@r": role},
 		Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			folded = append(folded, m)
@@ -250,8 +252,8 @@ func TestAssistantRecordDoesNotSwallowAStudyWindow(t *testing.T) {
 func TestADeadSourceIsRenderedAsAFact(t *testing.T) {
 	msg := message.Message{StudyPatches: map[string][]message.Patch{
 		"@r": {form.Build(form.Snapshot{}, map[string]json.RawMessage{
-			store.KeyLibrettoAlive: json.RawMessage(`false`),
-			store.KeyLibrettoAt:    json.RawMessage(`9`),
+			form.KeyLibrettoAlive: json.RawMessage(`false`),
+			store.KeyLibrettoAt:   json.RawMessage(`9`),
 		}, nil)},
 	}}
 	joined := strings.Join(StudyReminderTexts(msg, form.Snapshot{}), "\n")

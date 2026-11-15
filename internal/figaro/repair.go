@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 const tailRepairNotice = "process died mid-turn; output not captured"
@@ -14,8 +14,8 @@ const tailRepairNotice = "process died mid-turn; output not captured"
 // the tail, and this runs at every open of every aria.
 const repairTailLookback = 64
 
-func repairInterruptedTail(stream store.Log[message.Message], ariaID string) (store.Entry[message.Message], bool) {
-	rows := store.TailSnapshot(stream, repairTailLookback)
+func repairInterruptedTail(stream arialog.Log[message.Message], ariaID string) (arialog.Entry[message.Message], bool) {
+	rows := arialog.TailSnapshot(stream, repairTailLookback)
 	at := -1
 	for i := len(rows) - 1; i >= 0; i-- {
 		if len(assistantToolInvokes(rows[i].Payload)) > 0 {
@@ -24,14 +24,14 @@ func repairInterruptedTail(stream store.Log[message.Message], ariaID string) (st
 		}
 	}
 	if at < 0 {
-		return store.Entry[message.Message]{}, false
+		return arialog.Entry[message.Message]{}, false
 	}
 	// A partial answer is left alone: an append-only log cannot splice a result
 	// in front of a tic already there. Only a wholly unanswered call can be closed.
 	for _, e := range rows[at+1:] {
 		for _, c := range e.Payload.Content {
 			if c.Type == message.ContentToolResult {
-				return store.Entry[message.Message]{}, false
+				return arialog.Entry[message.Message]{}, false
 			}
 		}
 	}
@@ -40,16 +40,16 @@ func repairInterruptedTail(stream store.Log[message.Message], ariaID string) (st
 		results = append(results, message.ToolResultContent(call.ToolCallID, call.ToolName, tailRepairNotice, true))
 	}
 	if len(results) == 0 {
-		return store.Entry[message.Message]{}, false
+		return arialog.Entry[message.Message]{}, false
 	}
-	stamped, err := stream.Append(store.Entry[message.Message]{Payload: message.Message{
+	stamped, err := stream.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:      message.RoleInput,
 		Content:   results,
 		Timestamp: time.Now().UnixMilli(),
 	}})
 	if err != nil {
 		slog.Error("append interrupted tool results", "aria", ariaID, "err", err)
-		return store.Entry[message.Message]{}, false
+		return arialog.Entry[message.Message]{}, false
 	}
 	slog.Warn("repaired dangling tool_use",
 		"aria", ariaID,

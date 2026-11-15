@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/models"
@@ -128,7 +130,7 @@ func TestNativeFallback(t *testing.T) {
 				if scenario == "image" || scenario == "images-supported" {
 					content = message.ImageContent("image/png", "aGVsbG8=")
 				}
-				_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{content}}})
+				_, err = log.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{content}}})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -137,7 +139,7 @@ func TestNativeFallback(t *testing.T) {
 					lease = "box"
 				}
 				credentials := &rotatingNativeCredential{}
-				p, err := New(Spec{Name: "native-" + scenario, BaseURL: func() string { return server.URL }, Default: from, SendFigaroID: true}, provider.Knobs{Model: alias, MaxTokens: 64, Lease: lease}, credentials, func(a, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(a, ns) })
+				p, err := New(Spec{Name: "native-" + scenario, BaseURL: func() string { return server.URL }, Default: from, SendFigaroID: true}, provider.Knobs{Model: alias, MaxTokens: 64, Lease: lease}, credentials, func(a, ns string) (arialog.Log[[]json.RawMessage], error) { return be.OpenTranslator(a, ns) })
 				if err != nil {
 					t.Fatal(err)
 				}

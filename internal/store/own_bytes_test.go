@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/store"
@@ -87,12 +89,12 @@ func TestOwnBytesIsDuOfTheNodesOwnDirectories(t *testing.T) {
 				t.Fatal(err)
 			}
 			for i := 0; i < n; i++ {
-				e, err := ir.Append(store.Entry[message.Message]{Payload: message.Message{
+				e, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 					Role: message.RoleInput, Content: []message.Content{message.TextContent("a record worth translating")}}})
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err := tl.Append(store.Entry[[]json.RawMessage]{FigaroLT: e.LT, Fingerprint: "fp-" + p,
+				if _, err := tl.Append(arialog.Entry[[]json.RawMessage]{FigaroLT: e.LT, Fingerprint: "fp-" + p,
 					Payload: []json.RawMessage{json.RawMessage(`{"content":"a translated record"}`)}}); err != nil {
 					t.Fatal(err)
 				}

@@ -2,10 +2,12 @@ package store
 
 import (
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/arialog"
 
 	"github.com/jack-work/figaro/api/message"
 )
@@ -229,7 +231,7 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e1, err := log.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
+	e1, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +250,7 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForFold(t, lib, v1)
-	e2, err := log.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleOutput}})
+	e2, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleOutput}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +260,7 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 
 	// Dropped: later records stamp nothing for it.
 	be.SetObservedForms(aria, nil)
-	e3, err := log.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
+	e3, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
 	if err != nil {
 		t.Fatal(err)
 	}

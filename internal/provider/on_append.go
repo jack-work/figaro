@@ -7,7 +7,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // OnAppend puts a provider's encoder behind store.TranslatorEncoder: one
@@ -20,7 +20,7 @@ type OnAppend struct {
 	fingerprint func() string
 	bound       func(ariaID string) Form
 	studies     func(ariaID string) map[string]Form
-	translator  func(ariaID string) (store.Log[[]json.RawMessage], error)
+	translator  func(ariaID string) (arialog.Log[[]json.RawMessage], error)
 
 	mu sync.Mutex
 	at map[string]*Deriver
@@ -32,7 +32,7 @@ func NewOnAppend(
 	fingerprint func() string,
 	bound func(ariaID string) Form,
 	studies func(ariaID string) map[string]Form,
-	translator func(ariaID string) (store.Log[[]json.RawMessage], error),
+	translator func(ariaID string) (arialog.Log[[]json.RawMessage], error),
 ) *OnAppend {
 	return &OnAppend{
 		name: name, encode: encode, fingerprint: fingerprint,
@@ -46,12 +46,12 @@ func (o *OnAppend) Provider() string { return o.name }
 // The cursor is seeded from the translator's tail, never assumed, so a
 // restart, fork or catch-up in between cannot render patches twice or not
 // at all.
-func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message], e store.Entry[message.Message]) ([]json.RawMessage, string, error) {
+func (o *OnAppend) EncodeEntry(ariaID string, source arialog.Log[message.Message], e arialog.Entry[message.Message]) ([]json.RawMessage, string, error) {
 	o.mu.Lock()
 	d, ok := o.at[ariaID]
 	if !ok {
 		d = NewDeriver(o.bound(ariaID), o.studies(ariaID))
-		var rows store.Log[[]json.RawMessage]
+		var rows arialog.Log[[]json.RawMessage]
 		if o.translator != nil {
 			var err error
 			if rows, err = o.translator(ariaID); err != nil {

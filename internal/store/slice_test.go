@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/figwal/xwal"
@@ -64,7 +66,7 @@ func (f *sliceFixture) say(id string, turns int, text string) {
 	}
 	for i := 0; i < turns; i++ {
 		msg := message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent(text)}}
-		if _, err := ir.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
+		if _, err := ir.Append(arialog.Entry[message.Message]{Payload: msg}); err != nil {
 			f.t.Fatal(err)
 		}
 	}

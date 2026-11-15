@@ -2,9 +2,11 @@ package store
 
 import (
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/arialog"
 
 	"github.com/jack-work/figaro/api/message"
 )
@@ -39,7 +41,7 @@ func TestIdleAriasAreEvictedAndRebuildIdentically(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := lg.Append(Entry[message.Message]{Payload: message.Message{
+		if _, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{{Type: message.ContentProse, Text: "hello"}},
 		}}); err != nil {
 			t.Fatal(err)

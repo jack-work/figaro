@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/websocket"
@@ -122,13 +124,13 @@ func (b *responseTestBus) PushMessageEnd(reason string) {
 
 func newResponsesTestProvider(
 	server *httptest.Server,
-	cache store.Log[[]json.RawMessage],
+	cache arialog.Log[[]json.RawMessage],
 ) *Provider {
 	tokenSource := &staticResponseTokenSource{token: "test-token"}
 	p := New(provider.Knobs{
 		Model:     "gpt-5.6-terra",
 		MaxTokens: 1024,
-	}, tokenSource, testConfig, func(string) (store.Log[[]json.RawMessage], error) {
+	}, tokenSource, testConfig, func(string) (arialog.Log[[]json.RawMessage], error) {
 		return cache, nil
 	})
 	p.baseURL = func(string) string { return server.URL }
@@ -142,10 +144,10 @@ func newResponseServer(t *testing.T, handler func(*websocket.Conn)) *httptest.Se
 	return server
 }
 
-func newResponsesInputLog(t *testing.T) store.Log[message.Message] {
+func newResponsesInputLog(t *testing.T) arialog.Log[message.Message] {
 	t.Helper()
-	log := store.NewMemLog[message.Message]()
-	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+	log := arialog.NewMemLog[message.Message]()
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent("ciao")},
 	}})
@@ -189,7 +191,7 @@ func TestResponsesProviderStreamsAndCachesAssistant(t *testing.T) {
 		}))
 	})
 
-	cache := store.NewMemLog[[]json.RawMessage]()
+	cache := arialog.NewMemLog[[]json.RawMessage]()
 	p := newResponsesTestProvider(server, cache)
 	log := newResponsesInputLog(t)
 	bus := &responseTestBus{}
@@ -273,7 +275,7 @@ func TestResponsesProviderMapsFunctionCalls(t *testing.T) {
 		}))
 	})
 
-	p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
+	p := newResponsesTestProvider(server, arialog.NewMemLog[[]json.RawMessage]())
 	log := newResponsesInputLog(t)
 	bus := &responseTestBus{}
 	require.NoError(t, p.Send(context.Background(), provider.SendInput{
@@ -322,7 +324,7 @@ func TestResponsesProviderAppliesFormParameters(t *testing.T) {
 		}))
 	})
 
-	p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
+	p := newResponsesTestProvider(server, arialog.NewMemLog[[]json.RawMessage]())
 	log := newResponsesInputLog(t)
 	temperature := 0.4
 	require.NoError(t, p.Send(context.Background(), provider.SendInput{
@@ -410,10 +412,10 @@ func TestResponseOptionsRejectInvalidFormParameters(t *testing.T) {
 }
 
 func TestResponsesProviderContextTierBudget(t *testing.T) {
-	p := newResponsesTestProvider(newResponseServer(t, func(conn *websocket.Conn) { conn.Close() }), store.NewMemLog[[]json.RawMessage]())
+	p := newResponsesTestProvider(newResponseServer(t, func(conn *websocket.Conn) { conn.Close() }), arialog.NewMemLog[[]json.RawMessage]())
 	p.SetContextLimits("gpt-5.6-terra", ContextLimits{Default: 20, Long: 200})
-	log := store.NewMemLog[message.Message]()
-	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+	log := arialog.NewMemLog[message.Message]()
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent(strings.Repeat("x", 100))},
 	}})
@@ -435,11 +437,11 @@ func TestResponsesProviderContextTierBudget(t *testing.T) {
 }
 
 func TestResponsesProviderInvalidatesCacheOnModelSwitch(t *testing.T) {
-	cache := store.NewMemLog[[]json.RawMessage]()
+	cache := arialog.NewMemLog[[]json.RawMessage]()
 	server := newResponseServer(t, func(conn *websocket.Conn) { conn.Close() })
 	p := newResponsesTestProvider(server, cache)
 	initialFingerprint := p.Fingerprint()
-	_, err := cache.Append(store.Entry[[]json.RawMessage]{
+	_, err := cache.Append(arialog.Entry[[]json.RawMessage]{
 		FigaroLT:    1,
 		Payload:     []json.RawMessage{json.RawMessage(`{"type":"reasoning","encrypted_content":"opaque"}`)},
 		Fingerprint: initialFingerprint,
@@ -641,7 +643,7 @@ func TestResponsesProviderCancellationDoesNotAppend(t *testing.T) {
 		_ = websocket.JSON.Receive(conn, &ignored)
 	})
 
-	p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
+	p := newResponsesTestProvider(server, arialog.NewMemLog[[]json.RawMessage]())
 	log := newResponsesInputLog(t)
 	bus := &responseTestBus{}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -678,7 +680,7 @@ func TestResponsesProviderSuppliesCacheWithoutAppendingIt(t *testing.T) {
 			},
 		}))
 	})
-	cache := store.NewMemLog[[]json.RawMessage]()
+	cache := arialog.NewMemLog[[]json.RawMessage]()
 	p := newResponsesTestProvider(server, cache)
 	log := newResponsesInputLog(t)
 	bus := &responseTestBus{}
@@ -722,7 +724,7 @@ func TestResponsesProviderQuarantinesMalformedFunctionArguments(t *testing.T) {
 		}))
 	})
 
-	p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
+	p := newResponsesTestProvider(server, arialog.NewMemLog[[]json.RawMessage]())
 	log := newResponsesInputLog(t)
 	bus := &responseTestBus{}
 	err := p.Send(context.Background(), provider.SendInput{AriaID: "aria-1", FigLog: log}, bus)
@@ -742,27 +744,27 @@ func TestResponsesProviderQuarantinesMalformedFunctionArguments(t *testing.T) {
 }
 
 func TestResponsesInputPreservesCachedAssistantOutput(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	first, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+	log := arialog.NewMemLog[message.Message]()
+	first, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent("question")},
 	}})
 	require.NoError(t, err)
-	second, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+	second, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleOutput,
 		Content: []message.Content{message.TextContent("answer")},
 	}})
 	require.NoError(t, err)
 
-	cache := store.NewMemLog[[]json.RawMessage]()
-	_, err = cache.Append(store.Entry[[]json.RawMessage]{
+	cache := arialog.NewMemLog[[]json.RawMessage]()
+	_, err = cache.Append(arialog.Entry[[]json.RawMessage]{
 		FigaroLT:    first.LT,
 		Payload:     []json.RawMessage{json.RawMessage(`{"type":"message","role":"user","content":[{"type":"input_text","text":"question"}]}`)},
 		Fingerprint: testFingerprint("gpt-5.6-terra"),
 	})
 	require.NoError(t, err)
 	rawAssistant := json.RawMessage(`{"type":"reasoning","id":"rs_1","encrypted_content":"opaque"}`)
-	_, err = cache.Append(store.Entry[[]json.RawMessage]{
+	_, err = cache.Append(arialog.Entry[[]json.RawMessage]{
 		FigaroLT:    second.LT,
 		Payload:     []json.RawMessage{rawAssistant},
 		Fingerprint: testFingerprint("gpt-5.6-terra"),
@@ -794,8 +796,8 @@ func TestResponsesInputPlacesToolOutputBeforeSteeringText(t *testing.T) {
 }
 
 func TestResponsesProviderClearsIncompatibleCache(t *testing.T) {
-	cache := store.NewMemLog[[]json.RawMessage]()
-	_, err := cache.Append(store.Entry[[]json.RawMessage]{
+	cache := arialog.NewMemLog[[]json.RawMessage]()
+	_, err := cache.Append(arialog.Entry[[]json.RawMessage]{
 		FigaroLT:    1,
 		Payload:     []json.RawMessage{json.RawMessage(`{"legacy":true}`)},
 		Fingerprint: "anthropic-sdk/tag/v1",
@@ -811,7 +813,7 @@ func TestResponsesProviderClearsIncompatibleCache(t *testing.T) {
 }
 
 func TestResponsesInputWarmPreservesPrefixBytes(t *testing.T) {
-	cache := store.NewMemLog[[]json.RawMessage]()
+	cache := arialog.NewMemLog[[]json.RawMessage]()
 	server := newResponseServer(t, func(conn *websocket.Conn) { conn.Close() })
 	p := newResponsesTestProvider(server, cache)
 	log := newResponsesInputLog(t)
@@ -820,7 +822,7 @@ func TestResponsesInputWarmPreservesPrefixBytes(t *testing.T) {
 	first, err := p.inputFor(context.Background(), in)
 	require.NoError(t, err)
 	prefix := append([]byte(nil), first[0]...)
-	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("next")},
 	}})
 	require.NoError(t, err)
@@ -833,7 +835,7 @@ func TestResponsesInputWarmPreservesPrefixBytes(t *testing.T) {
 
 func TestContextSizeForLogMatchesCanonicalEstimator(t *testing.T) {
 	for _, withUsage := range []bool{false, true} {
-		log := store.NewMemLog[message.Message]()
+		log := arialog.NewMemLog[message.Message]()
 		var messages []message.Message
 		for i := 0; i < 100; i++ {
 			msg := message.Message{
@@ -844,7 +846,7 @@ func TestContextSizeForLogMatchesCanonicalEstimator(t *testing.T) {
 				msg.Usage = &message.Usage{InputTokens: 700, OutputTokens: 30}
 			}
 			messages = append(messages, msg)
-			_, err := log.Append(store.Entry[message.Message]{Payload: msg})
+			_, err := log.Append(arialog.Entry[message.Message]{Payload: msg})
 			require.NoError(t, err)
 		}
 
@@ -934,7 +936,7 @@ func TestResponsesProviderHonorsContextDeadline(t *testing.T) {
 		require.NoError(t, websocket.JSON.Receive(conn, &request))
 		time.Sleep(100 * time.Millisecond)
 	})
-	p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
+	p := newResponsesTestProvider(server, arialog.NewMemLog[[]json.RawMessage]())
 	log := newResponsesInputLog(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
@@ -1087,7 +1089,7 @@ func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
 		reply(conn, "ok")
 	})
 
-	cache := store.NewMemLog[[]json.RawMessage]()
+	cache := arialog.NewMemLog[[]json.RawMessage]()
 	p := newResponsesTestProvider(server, cache)
 	log := newResponsesInputLog(t)
 	snap := form.FromMap(map[string]json.RawMessage{"system.credo": json.RawMessage(`"be concise"`)})
@@ -1098,13 +1100,13 @@ func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
 	first := <-requests
 
 	// This test plays the drain loop's part and appends the assistant.
-	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleOutput,
 		Content: []message.Content{message.TextContent("first reply")},
 	}})
 	require.NoError(t, err)
 
-	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent("again")},
 	}})
@@ -1136,7 +1138,7 @@ func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
 		"turn 2 must carry exactly one explicit breakpoint")
 
 	// Only a third turn can show a marker accumulated by in-place stamping.
-	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent("third")},
 	}})

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
@@ -30,7 +32,7 @@ func TestAnAriaWithACorruptHistoryIsNotWokenOnAnEmptyOne(t *testing.T) {
 	}
 	lg, _ := be.OpenFigIR(id)
 	for i := 0; i < 4; i++ {
-		if _, err := lg.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent(fmt.Sprintf("record-%d", i))},
 		}}); err != nil {
 			t.Fatal(err)

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -41,7 +43,7 @@ func seedLargeAria(tb testing.TB, nMsgs, msgBytes int) (string, string) {
 		m := message.Message{Role: role, Content: []message.Content{
 			{Type: message.ContentProse, Text: fmt.Sprintf("m%d %s", i, blob)},
 		}}
-		if _, err := lg.Append(Entry[message.Message]{Payload: m}); err != nil {
+		if _, err := lg.Append(arialog.Entry[message.Message]{Payload: m}); err != nil {
 			tb.Fatal(err)
 		}
 	}

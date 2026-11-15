@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/form"
@@ -114,7 +116,7 @@ func (w *liveAtEnd) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func bodyBytes(t *testing.T, a *Anthropic, rows store.Log[[]json.RawMessage], snap form.Snapshot) uint64 {
+func bodyBytes(t *testing.T, a *Anthropic, rows arialog.Log[[]json.RawMessage], snap form.Snapshot) uint64 {
 	t.Helper()
 	req, seq, err := a.projectRequest(provider.TranslationRows(rows, 0), snap, nil, 4096, false, "claude-opus-5")
 	require.NoError(t, err)
@@ -146,7 +148,7 @@ func setPatch(kv map[string]string) message.Patch {
 
 // benchRowLog reopens the backend before returning the log: an append seeds
 // the tree cache, and a resident log decodes nothing.
-func benchRowLog(tb testing.TB, n int) store.Log[[]json.RawMessage] {
+func benchRowLog(tb testing.TB, n int) arialog.Log[[]json.RawMessage] {
 	tb.Helper()
 	root := tb.TempDir()
 	be, err := store.NewXwalBackend(root, 0)
@@ -170,7 +172,7 @@ func benchRowLog(tb testing.TB, n int) store.Log[[]json.RawMessage] {
 			row = json.RawMessage(`{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_` +
 				strconv.Itoa(i-1) + `","content":"` + padding(i) + `"}]}`)
 		}
-		_, err := rows.Append(store.Entry[[]json.RawMessage]{
+		_, err := rows.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: uint64(i + 1),
 			Payload:  []json.RawMessage{row},
 		})

@@ -3,8 +3,9 @@ package store
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/api/form"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
 )
 
 // Every crash must leave the refcount too high: too high is a leak the sweep
@@ -125,7 +126,7 @@ func TestDropDeclaresBeforeItReleases(t *testing.T) {
 	}
 	// The COPY survives: an IR record references this libretto forever, so
 	// dropping the last observer must not take the state with it.
-	if _, ok := lib.State().Get(KeyLibrettoAlive); !ok {
+	if _, ok := lib.State().Get(form.KeyLibrettoAlive); !ok {
 		t.Fatal("the libretto lost its state when the last observer dropped")
 	}
 	// Dropping again is legal and changes nothing.

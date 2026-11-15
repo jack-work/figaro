@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/websocket"
 
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 // Defends #89: the socket handshake carries Figaro-Id when the caller named
@@ -39,7 +39,7 @@ func TestTheSocketHandshakeCarriesFigaroIdOnlyWhenNamed(t *testing.T) {
 				ws.ServeHTTP(w, r)
 			}))
 			defer server.Close()
-			p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
+			p := newResponsesTestProvider(server, arialog.NewMemLog[[]json.RawMessage]())
 			ctx := context.Background()
 			if named {
 				ctx = provider.WithFigaroID(ctx, "handshake-probe")

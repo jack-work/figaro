@@ -3,6 +3,8 @@ package store
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -151,7 +153,7 @@ func TestOnlyTheBirthRecordIsStamped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hi")}}}); err != nil {
+	if _, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hi")}}}); err != nil {
 		t.Fatal(err)
 	}
 	birthPrincipal(t, b, id)

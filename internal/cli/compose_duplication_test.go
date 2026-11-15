@@ -7,23 +7,23 @@ import (
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/compose"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
 // The fixture carries both node kinds: compose rebuilds a tool node's text
 // while prose passes through, so prose alone would overstate sharing.
-func composeFixture(n int) []store.Entry[message.Message] {
+func composeFixture(n int) []arialog.Entry[message.Message] {
 	long := ""
 	for i := 0; i < 400; i++ {
 		long += fmt.Sprintf("tool output line %d, long enough to be worth sharing\n", i)
 	}
-	var out []store.Entry[message.Message]
+	var out []arialog.Entry[message.Message]
 	lt := uint64(0)
 	add := func(role message.Role, turn uint64, c ...message.Content) {
 		lt++
-		out = append(out, store.Entry[message.Message]{
+		out = append(out, arialog.Entry[message.Message]{
 			FigaroLT: lt, LT: lt,
 			Payload: message.Message{Role: role, TurnID: turn, Content: c},
 		})
@@ -42,7 +42,7 @@ func composeFixture(n int) []store.Entry[message.Message] {
 	return out
 }
 
-func composeTurns(entries []store.Entry[message.Message]) []aria.Turn {
+func composeTurns(entries []arialog.Entry[message.Message]) []aria.Turn {
 	msgs := make([]message.Message, len(entries))
 	for i, e := range entries {
 		msgs[i] = e.Payload

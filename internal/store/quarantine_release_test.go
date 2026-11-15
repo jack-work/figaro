@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 )
@@ -35,14 +37,14 @@ func TestReleasingAQuarantinedHistoryCutsAtTheBadFrameAndKeepsACopy(t *testing.T
 		t.Fatal(err)
 	}
 	for i := 0; i < 6; i++ {
-		e, err := lg.Append(Entry[message.Message]{Payload: message.Message{
+		e, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent(fmt.Sprintf("record-%d", i))},
 		}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		row, _ := json.Marshal(map[string]string{"role": "user", "content": fmt.Sprintf("row-%d", i)})
-		if _, err := tr.Append(Entry[[]json.RawMessage]{FigaroLT: e.LT, Payload: []json.RawMessage{row}}); err != nil {
+		if _, err := tr.Append(arialog.Entry[[]json.RawMessage]{FigaroLT: e.LT, Payload: []json.RawMessage{row}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -204,14 +206,14 @@ func TestAReleaseThatCutsButCannotTrimSaysSo(t *testing.T) {
 	lg, _ := be.OpenFigIR(id)
 	tr, _ := be.OpenTranslator(id, "anthropic")
 	for i := 0; i < 5; i++ {
-		e, err := lg.Append(Entry[message.Message]{Payload: message.Message{
+		e, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent(fmt.Sprintf("record-%d", i))},
 		}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		row, _ := json.Marshal(map[string]string{"role": "user", "content": fmt.Sprintf("row-%d", i)})
-		if _, err := tr.Append(Entry[[]json.RawMessage]{FigaroLT: e.LT, Payload: []json.RawMessage{row}}); err != nil {
+		if _, err := tr.Append(arialog.Entry[[]json.RawMessage]{FigaroLT: e.LT, Payload: []json.RawMessage{row}}); err != nil {
 			t.Fatal(err)
 		}
 	}

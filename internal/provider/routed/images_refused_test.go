@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/message"
@@ -60,13 +62,13 @@ func sendImageTurn(t *testing.T, p *Provider) error {
 	t.Helper()
 	be, aria := store.NewTestAria(t, "d", message.Patch{})
 	figLog, _ := be.OpenFigIR(aria)
-	_, _ = figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, _ = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{
 			message.ImageContent("image/png", pngPixel),
 			message.TextContent("what is in this picture?"),
 		},
 	}})
-	p.translators = func(aria, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
+	p.translators = func(aria, ns string) (arialog.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
 	return p.Send(context.Background(), provider.SendInput{AriaID: aria, FigLog: figLog, MaxTokens: 64}, &nullBus{})
 }
 

@@ -1,4 +1,4 @@
-package store
+package arialog
 
 import (
 	"sort"
@@ -7,14 +7,13 @@ import (
 )
 
 type MemLog[T any] struct {
-	mu       sync.Mutex // writers only
+	mu       sync.Mutex
 	state    atomic.Pointer[memState[T]]
 	verified atomic.Bool
 }
 
 func (l *MemLog[T]) VerifyOnce() bool { return l.verified.CompareAndSwap(false, true) }
 
-// memState is the whole of a MemLog, immutable once published.
 type memState[T any] struct {
 	entries    []Entry[T]
 	byFigaroLT map[uint64]int
@@ -35,8 +34,6 @@ func (s *MemLog[T]) Read() []Entry[T] { return s.load().entries }
 
 func (s *MemLog[T]) Snapshot() []Entry[T] { return s.load().entries }
 
-// ScanRange is declared so store.Scan's Read fallback never materializes a
-// wrapper of this log whole.
 func (s *MemLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
 	for _, e := range s.load().entries {
 		if e.LT <= from {
@@ -79,8 +76,7 @@ func (s *MemLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
 }
 
 func (s *MemLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
-	page, total := readPage(s.load().entries, from, before, n)
-	return page, total
+	return ReadPage(s.load().entries, from, before, n)
 }
 
 func (s *MemLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
@@ -108,14 +104,13 @@ func (s *MemLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	return s.appendLocked(e), nil
 }
 
-// Caller holds s.mu.
 func (s *MemLog[T]) appendLocked(e Entry[T]) Entry[T] {
 	cur := s.load()
 	e.LT = cur.nextLT
 	if e.FigaroLT == 0 {
 		e.FigaroLT = e.LT
 	}
-	// Copy-on-append: a reader holding the old header never sees a half-written tail.
+
 	entries := make([]Entry[T], len(cur.entries), len(cur.entries)+1)
 	copy(entries, cur.entries)
 	entries = append(entries, e)

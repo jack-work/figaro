@@ -5,7 +5,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // Deriver turns a fig IR entry into what an encoder renders: the bound form before
@@ -28,7 +28,7 @@ type formStater interface {
 	StateAt(version uint64) (form.Snapshot, bool)
 }
 
-func (d *Deriver) SeedAt(log store.Log[message.Message], rows store.Log[[]json.RawMessage]) {
+func (d *Deriver) SeedAt(log arialog.Log[message.Message], rows arialog.Log[[]json.RawMessage]) {
 	d.lastForm = 0
 	d.lastStudy = map[string]uint64{}
 	d.snap = form.Snapshot{}
@@ -59,7 +59,7 @@ func (d *Deriver) SeedAt(log store.Log[message.Message], rows store.Log[[]json.R
 		d.snap = form.Fold(d.snap, d.form.PatchesBetween(0, d.lastForm))
 	default:
 		// No accessor: O(entries before the watermark), on this branch only.
-		prefix, _ := store.TailAfter(log, 0)
+		prefix, _ := arialog.TailAfter(log, 0)
 		for _, e := range prefix {
 			if e.LT > watermark {
 				break
@@ -71,23 +71,23 @@ func (d *Deriver) SeedAt(log store.Log[message.Message], rows store.Log[[]json.R
 
 func (d *Deriver) At() uint64 { return d.lastForm }
 
-func lastCommittedAtOrBefore(log store.Log[message.Message], rows store.Log[[]json.RawMessage], lt uint64) (store.Entry[message.Message], bool) {
+func lastCommittedAtOrBefore(log arialog.Log[message.Message], rows arialog.Log[[]json.RawMessage], lt uint64) (arialog.Entry[message.Message], bool) {
 	behind := rowsBehind{rows: rows}
 	for ; lt > 0; lt-- {
 		at, ok := log.Lookup(lt)
 		if !ok {
-			return store.Entry[message.Message]{}, false
+			return arialog.Entry[message.Message]{}, false
 		}
 		if at.Payload.Role == message.RoleGenesis || carriesBlocks(at.Payload) && behind.carriesBytes(lt) {
 			return at, true
 		}
 	}
-	return store.Entry[message.Message]{}, false
+	return arialog.Entry[message.Message]{}, false
 }
 
 type rowsBehind struct {
-	rows    store.Log[[]json.RawMessage]
-	page    []store.Entry[[]json.RawMessage]
+	rows    arialog.Log[[]json.RawMessage]
+	page    []arialog.Entry[[]json.RawMessage]
 	before  uint64
 	reach   int
 	started bool
@@ -116,7 +116,7 @@ func (r *rowsBehind) carriesBytes(figaroLT uint64) bool {
 				r.spent = true
 				return false
 			}
-			r.page, r.before = []store.Entry[[]json.RawMessage]{tail}, tail.LT
+			r.page, r.before = []arialog.Entry[[]json.RawMessage]{tail}, tail.LT
 			continue
 		}
 		r.reach = min(max(2*r.reach, 1), rowsBehindReach)
@@ -133,7 +133,7 @@ func (r *rowsBehind) carriesBytes(figaroLT uint64) bool {
 // before it. Call in log order, once per entry. It does not advance the
 // cursors: an entry can encode to nothing, and its window must then ride the
 // next entry that carries bytes (Commit).
-func (d *Deriver) Next(entry store.Entry[message.Message]) (msg message.Message, snap form.Snapshot, translatable bool) {
+func (d *Deriver) Next(entry arialog.Entry[message.Message]) (msg message.Message, snap form.Snapshot, translatable bool) {
 	msg = entry.Payload
 	msg.LogicalTime = entry.LT
 	if msg.Role == message.RoleGenesis {
@@ -170,7 +170,7 @@ func (d *Deriver) Next(entry store.Entry[message.Message]) (msg message.Message,
 
 // Commit advances the cursors past an entry whose row was written; call it
 // exactly when the store accepted a row.
-func (d *Deriver) Commit(entry store.Entry[message.Message], msg message.Message) {
+func (d *Deriver) Commit(entry arialog.Entry[message.Message], msg message.Message) {
 	if !carriesBlocks(msg) {
 		return
 	}
@@ -182,7 +182,7 @@ func (d *Deriver) Commit(entry store.Entry[message.Message], msg message.Message
 }
 
 // Skip advances the cursors past an untranslatable entry (genesis).
-func (d *Deriver) Skip(entry store.Entry[message.Message]) {
+func (d *Deriver) Skip(entry arialog.Entry[message.Message]) {
 	d.lastForm = maxVersion(d.lastForm, entry.FormChannelVersion)
 	for fid, upTo := range entry.StudyVersions {
 		d.lastStudy[fid] = maxVersion(d.lastStudy[fid], upTo)

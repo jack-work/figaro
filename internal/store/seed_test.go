@@ -3,6 +3,8 @@ package store
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -13,7 +15,7 @@ import (
 
 // unseededOpen builds a cache for id the way a cold process would: a fresh
 // backend, no ancestor resident, nothing to seed from.
-func unseededOpen(t *testing.T, dir, id string) []Entry[message.Message] {
+func unseededOpen(t *testing.T, dir, id string) []arialog.Entry[message.Message] {
 	t.Helper()
 	b, err := NewXwalBackend(dir, 0)
 	if err != nil {
@@ -27,7 +29,7 @@ func unseededOpen(t *testing.T, dir, id string) []Entry[message.Message] {
 	return l.Read()
 }
 
-func ltsOf(rows []Entry[message.Message]) []uint64 {
+func ltsOf(rows []arialog.Entry[message.Message]) []uint64 {
 	out := make([]uint64, len(rows))
 	for i, e := range rows {
 		out[i] = e.FigaroLT
@@ -45,7 +47,7 @@ func TestSeededForkAnswersIdenticallyToAnUnseededOne(t *testing.T) {
 	parent, _ := b.CreateConversation(lay)
 	pIR, _ := b.OpenFigIR(parent)
 	for i := 0; i < 200; i++ {
-		if _, err := pIR.Append(Entry[message.Message]{Payload: message.Message{
+		if _, err := pIR.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    message.RoleInput,
 			Content: []message.Content{message.TextContent("a record with text long enough to be worth sharing")},
 		}}); err != nil {
@@ -64,7 +66,7 @@ func TestSeededForkAnswersIdenticallyToAnUnseededOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 20; i++ {
-		if _, err := cIR.Append(Entry[message.Message]{Payload: message.Message{
+		if _, err := cIR.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    message.RoleInput,
 			Content: []message.Content{message.TextContent("the child's own record")},
 		}}); err != nil {
@@ -114,7 +116,7 @@ func TestSeededForkAnswersIdenticallyToAnUnseededOne(t *testing.T) {
 		t.Fatalf("the fixture read nothing (seeded %d, ReadFrom %d); it cannot compare anything", len(seeded), len(fromLT))
 	}
 	// ReadFrom must agree with the same suffix of the unseeded read.
-	var want []Entry[message.Message]
+	var want []arialog.Entry[message.Message]
 	for _, e := range unseeded {
 		if e.FigaroLT >= 100 {
 			want = append(want, e)
@@ -138,8 +140,8 @@ func TestSeededForkSharesTheAncestorsEntries(t *testing.T) {
 	bIR, _ := b.OpenFigIR(childB)
 	a, c := aIR.Read(), bIR.Read()
 
-	byLT := func(rows []Entry[message.Message]) map[uint64]Entry[message.Message] {
-		m := make(map[uint64]Entry[message.Message], len(rows))
+	byLT := func(rows []arialog.Entry[message.Message]) map[uint64]arialog.Entry[message.Message] {
+		m := make(map[uint64]arialog.Entry[message.Message], len(rows))
 		for _, e := range rows {
 			m[e.FigaroLT] = e
 		}
@@ -156,7 +158,7 @@ func TestSeededForkSharesTheAncestorsEntries(t *testing.T) {
 		if pt == "" {
 			continue
 		}
-		for _, child := range []map[uint64]Entry[message.Message]{am, cm} {
+		for _, child := range []map[uint64]arialog.Entry[message.Message]{am, cm} {
 			ce, ok := child[lt]
 			if !ok {
 				continue

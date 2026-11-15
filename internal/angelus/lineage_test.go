@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
@@ -39,8 +41,8 @@ func buildLineage(t *testing.T) lineageFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write := func(log store.Log[message.Message], role message.Role, text string) uint64 {
-		e, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+	write := func(log arialog.Log[message.Message], role message.Role, text string) uint64 {
+		e, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: role, Content: []message.Content{message.TextContent(text)}}})
 		if err != nil {
 			t.Fatal(err)
@@ -163,13 +165,13 @@ func TestLineage_StampedLogsTakeTheOneRecordPath(t *testing.T) {
 	plog, _ := be.OpenFigIR(parent)
 	var opens []uint64
 	for i := uint64(1); i <= 5; i++ {
-		e, err := plog.Append(store.Entry[message.Message]{Payload: message.Message{
+		e, err := plog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, TurnID: i, Content: []message.Content{message.TextContent("q")}}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		opens = append(opens, e.LT)
-		if _, err := plog.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := plog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleOutput, TurnID: i, Content: []message.Content{message.TextContent("a")}}}); err != nil {
 			t.Fatal(err)
 		}

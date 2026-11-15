@@ -14,6 +14,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/api/form"
@@ -26,14 +28,13 @@ import (
 	"github.com/jack-work/figaro/internal/provider/anthropic"
 	"github.com/jack-work/figaro/internal/provider/openaichat"
 	"github.com/jack-work/figaro/internal/provider/responses"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/upstream"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
 const anthropicVersion = "2023-06-01"
 
-type Translators func(aria, namespace string) (store.Log[[]json.RawMessage], error)
+type Translators func(aria, namespace string) (arialog.Log[[]json.RawMessage], error)
 
 type Provider struct {
 	spec        Spec
@@ -86,9 +87,9 @@ func (p *Provider) Name() string { return p.spec.Name }
 
 func (p *Provider) base() string { return strings.TrimRight(p.spec.BaseURL(), "/") }
 
-func (p *Provider) opener(t Transport) func(string) (store.Log[[]json.RawMessage], error) {
+func (p *Provider) opener(t Transport) func(string) (arialog.Log[[]json.RawMessage], error) {
 	ns := p.spec.namespace(t)
-	return func(aria string) (store.Log[[]json.RawMessage], error) {
+	return func(aria string) (arialog.Log[[]json.RawMessage], error) {
 		if p.translators == nil {
 			return nil, nil
 		}
@@ -270,12 +271,10 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		if t != Responses && t != Messages {
 			return fmt.Errorf("%s: auto routes require native HTTP Responses or Messages", p.Name())
 		}
-		retirement, retirementErr := store.RetirementOf(in.Snapshot)
-		if retirementErr != nil {
-			return retirementErr
-		}
-		if auto.Capacity() == 0 && retirement.Percent > 0 && retirement.FallbackTokens <= 0 {
-			return fmt.Errorf("%s: auto context capacity is unknown; percentage succession requires system.retirement.fallback_tokens or an absolute context_threshold", p.Name())
+		if in.CheckContext != nil {
+			if err := in.CheckContext(auto.Capacity()); err != nil {
+				return err
+			}
 		}
 		credential, err := p.resolver.Resolve()
 		if err != nil {

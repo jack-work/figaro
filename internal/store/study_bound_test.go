@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
 )
 
 func twoFigaros(t *testing.T) (*XwalBackend, string, string) {
@@ -92,7 +94,7 @@ func TestStudyKeysRideTheDeclarationAndLeaveWithTheDrop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := StudyKeys(snap, parent); !slices.Equal(got, []string{"comments", "mantra"}) {
+	if got := form.StudyKeys(snap, parent); !slices.Equal(got, []string{"comments", "mantra"}) {
 		t.Fatalf("declared keys = %v", got)
 	}
 
@@ -110,14 +112,14 @@ func TestStudyKeysRideTheDeclarationAndLeaveWithTheDrop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if raw, ok := snap.Get(StudyKeysKey); ok {
+	if raw, ok := snap.Get(form.StudyKeysKey); ok {
 		t.Fatalf("the drop left the keys behind: %s", raw)
 	}
 	if _, err := be.StudyForm(child, parent, nil); err != nil {
 		t.Fatalf("after a drop the study starts fresh: %v", err)
 	}
 	snap, _ = be.FormState(child)
-	if got := StudyKeys(snap, parent); got != nil {
+	if got := form.StudyKeys(snap, parent); got != nil {
 		t.Fatalf("an unfiltered study carries keys %v", got)
 	}
 }
@@ -138,7 +140,7 @@ func TestStudyKeyShown(t *testing.T) {
 		{"system.model", []string{"system.model"}, true},
 	}
 	for _, c := range cases {
-		if got := StudyKeyShown(c.key, c.keys); got != c.want {
+		if got := form.StudyKeyShown(c.key, c.keys); got != c.want {
 			t.Errorf("StudyKeyShown(%q, %v) = %v, want %v", c.key, c.keys, got, c.want)
 		}
 	}
@@ -159,10 +161,10 @@ func TestDroppingOneFilteredStudyKeepsAnothersKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	snap, _ := be.FormState(child)
-	if got := StudyKeys(snap, other); !slices.Equal(got, []string{"comments"}) {
+	if got := form.StudyKeys(snap, other); !slices.Equal(got, []string{"comments"}) {
 		t.Fatalf("the other study's keys after a drop: %v", got)
 	}
-	if got := StudyKeys(snap, parent); got != nil {
+	if got := form.StudyKeys(snap, parent); got != nil {
 		t.Fatalf("the dropped study's keys: %v", got)
 	}
 }

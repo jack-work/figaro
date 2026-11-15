@@ -8,7 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 type fakeBoundForm struct {
@@ -32,9 +32,9 @@ func (b *fakeBoundForm) PatchesBetween(after, upTo uint64) []message.Patch {
 	return out
 }
 
-func stamp(t *testing.T, log *store.MemLog[message.Message], text string, at uint64) {
+func stamp(t *testing.T, log *arialog.MemLog[message.Message], text string, at uint64) {
 	t.Helper()
-	e, err := log.Append(store.Entry[message.Message]{
+	e, err := log.Append(arialog.Entry[message.Message]{
 		FormChannelVersion: at,
 		Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent(text)},
@@ -47,7 +47,7 @@ func stamp(t *testing.T, log *store.MemLog[message.Message], text string, at uin
 }
 
 // renderedKeys records which bound form keys each entry was given.
-func renderedKeys(log store.Log[message.Message], rows store.Log[[]json.RawMessage], bound Form) ([]string, error) {
+func renderedKeys(log arialog.Log[message.Message], rows arialog.Log[[]json.RawMessage], bound Form) ([]string, error) {
 	var seen []string
 	_, err := CatchUp(CatchUpConfig{
 		Log:         log,
@@ -72,21 +72,21 @@ func renderedKeys(log store.Log[message.Message], rows store.Log[[]json.RawMessa
 
 // The patches a catch-up renders must not depend on where it resumed.
 func TestAResumedCatchUpRendersWhatAColdOneWould(t *testing.T) {
-	build := func() *store.MemLog[message.Message] {
-		log := store.NewMemLog[message.Message]()
+	build := func() *arialog.MemLog[message.Message] {
+		log := arialog.NewMemLog[message.Message]()
 		stamp(t, log, "one", 2)   // the outfit patch lands here
 		stamp(t, log, "two", 4)   // two more patches
 		stamp(t, log, "three", 5) // one more
 		return log
 	}
 
-	coldKeys, err := renderedKeys(build(), store.NewMemLog[[]json.RawMessage](), newFakeBoundForm(2, 3, 4, 5))
+	coldKeys, err := renderedKeys(build(), arialog.NewMemLog[[]json.RawMessage](), newFakeBoundForm(2, 3, 4, 5))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	warmLog := store.NewMemLog[message.Message]()
-	rows := store.NewMemLog[[]json.RawMessage]()
+	warmLog := arialog.NewMemLog[message.Message]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	stamp(t, warmLog, "one", 2)
 	stamp(t, warmLog, "two", 4)
 	warmKeys, err := renderedKeys(warmLog, rows, newFakeBoundForm(2, 3, 4, 5))
@@ -110,8 +110,8 @@ func TestAResumedCatchUpRendersWhatAColdOneWould(t *testing.T) {
 
 // Every patch reaches the model exactly once.
 func TestEveryPatchRendersExactlyOnceAcrossResumes(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	rows := store.NewMemLog[[]json.RawMessage]()
+	log := arialog.NewMemLog[message.Message]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	var all []string
 
 	// A fresh bound form cursor every pass: formAccessor() is called per Send.

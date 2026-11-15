@@ -6,9 +6,11 @@ import (
 	"sort"
 	"text/template"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 type Registration struct {
@@ -36,12 +38,12 @@ type Registration struct {
 }
 
 type BuildContext struct {
-	Loaded    *config.Loaded
-	Knobs     Knobs
-	Resolver  auth.TokenResolver
-	Templates *template.Template
-	CacheOpen func(aria string) (store.Log[[]json.RawMessage], error)
-	Backend   store.Backend
+	Loaded         *config.Loaded
+	Knobs          Knobs
+	Resolver       auth.TokenResolver
+	Templates      *template.Template
+	OpenTranslator func(string, string) (arialog.Log[[]json.RawMessage], error)
+	Models         form.Snapshot
 }
 
 var registry = map[string]*Registration{}

@@ -3,13 +3,15 @@ package figaro
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/internal/mark"
 	"log/slog"
 	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/jack-work/figaro/internal/arialog"
+	"github.com/jack-work/figaro/internal/mark"
 
 	"go.opentelemetry.io/otel/attribute"
 
@@ -118,7 +120,7 @@ type Agent struct {
 	tools       *tool.Registry
 	proj        Projector
 	// figLog is read directly and written through journal only; see journal.go.
-	figLog  store.Log[message.Message]
+	figLog  arialog.Log[message.Message]
 	journal *journal
 	// turnFirstLT is the LT of the record that opened the current turn; zero between turns.
 	turnFirstLT uint64
@@ -288,7 +290,7 @@ func NewAgent(cfg Config) *Agent {
 }
 
 // The backend owns the log instance and closes it; the agent never does.
-func (a *Agent) newLog() store.Log[message.Message] {
+func (a *Agent) newLog() arialog.Log[message.Message] {
 	log, err := a.backend.OpenFigIR(a.id)
 	if err != nil {
 		// Falling back to memory would silently orphan the on-disk content.
@@ -296,7 +298,7 @@ func (a *Agent) newLog() store.Log[message.Message] {
 		if a.figLog != nil {
 			return a.figLog
 		}
-		return store.GuardIR(store.NewMemLog[message.Message]())
+		return store.GuardIR(arialog.NewMemLog[message.Message]())
 	}
 	return log
 }
@@ -653,9 +655,9 @@ func (a *Agent) Context() []message.Message {
 }
 
 // appendMsg stamps the in-flight turn id; every durable message write goes through here.
-func (a *Agent) appendMsg(m message.Message) (store.Entry[message.Message], error) {
+func (a *Agent) appendMsg(m message.Message) (arialog.Entry[message.Message], error) {
 	m.TurnID = a.turnID
-	return a.writer().Append(store.Entry[message.Message]{Payload: m})
+	return a.writer().Append(arialog.Entry[message.Message]{Payload: m})
 }
 
 // openTurn seeds from the log on first use, so a forked child continues its parent's numbering.
@@ -675,7 +677,7 @@ func (a *Agent) seedTurnID() uint64 {
 }
 
 // unwrapMessages stamps LT and, for entries predating turn ids, a derived TurnID.
-func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
+func unwrapMessages(entries []arialog.Entry[message.Message]) []message.Message {
 	if len(entries) == 0 {
 		return nil
 	}

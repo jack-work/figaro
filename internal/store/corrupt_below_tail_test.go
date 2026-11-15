@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -37,14 +39,14 @@ func TestACorruptFrameBelowTheRepairedTailRefusesTheFigaroAtFirstOpen(t *testing
 			t.Fatal(err)
 		}
 		lg, _ := be.OpenFigIR(id)
-		var tr Log[[]json.RawMessage]
+		var tr arialog.Log[[]json.RawMessage]
 		if rows {
 			if tr, err = be.OpenTranslator(id, "anthropic"); err != nil {
 				t.Fatal(err)
 			}
 		}
 		for i := 0; i < 6; i++ {
-			e, err := lg.Append(Entry[message.Message]{Payload: message.Message{
+			e, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 				Role: message.RoleInput, Content: []message.Content{message.TextContent(fmt.Sprintf("%s-msg-%d", tag, i))},
 			}})
 			if err != nil {
@@ -52,7 +54,7 @@ func TestACorruptFrameBelowTheRepairedTailRefusesTheFigaroAtFirstOpen(t *testing
 			}
 			if rows {
 				row, _ := json.Marshal(map[string]string{"role": "user", "content": fmt.Sprintf("%s-row-%d", tag, i)})
-				if _, err := tr.Append(Entry[[]json.RawMessage]{FigaroLT: e.LT, Payload: []json.RawMessage{row}}); err != nil {
+				if _, err := tr.Append(arialog.Entry[[]json.RawMessage]{FigaroLT: e.LT, Payload: []json.RawMessage{row}}); err != nil {
 					t.Fatal(err)
 				}
 			}

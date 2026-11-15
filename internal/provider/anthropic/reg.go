@@ -8,11 +8,11 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/catalog"
 	"github.com/jack-work/figaro/internal/catalogmaps"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 func init() {
@@ -35,10 +35,9 @@ func buildFromContext(ctx provider.BuildContext) (provider.Provider, error) {
 	if knobs.Model == "" && reg != nil {
 		knobs.Model = reg.DefaultModel
 	}
-	cacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
-		return ctx.Backend.OpenTranslator(aria, "anthropic")
-	}
-	a, err := New(knobs, ctx.Resolver, cacheOpen)
+	a, err := New(knobs, ctx.Resolver, func(id string) (arialog.Log[[]json.RawMessage], error) {
+		return ctx.OpenTranslator(id, "anthropic")
+	})
 	if err != nil {
 		return nil, err
 	}

@@ -4,15 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
-	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
+	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/store"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDeclaredResponsesOmissionReachesHTTPWithoutCatalog(t *testing.T) {
@@ -39,10 +41,10 @@ func TestDeclaredResponsesOmissionReachesHTTPWithoutCatalog(t *testing.T) {
 			}
 			p := gatewayAt(t, "subscription-wire-"+fmt.Sprint(omit), config)
 			backend, id := store.NewTestAria(t, "subscription", message.Patch{})
-			p.translators = func(id, ns string) (store.Log[[]json.RawMessage], error) { return backend.OpenTranslator(id, ns) }
+			p.translators = func(id, ns string) (arialog.Log[[]json.RawMessage], error) { return backend.OpenTranslator(id, ns) }
 			log, err := backend.OpenFigIR(id)
 			require.NoError(t, err)
-			_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")}}})
+			_, err = log.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")}}})
 			require.NoError(t, err)
 			require.NoError(t, p.Send(context.Background(), provider.SendInput{AriaID: id, FigLog: log, Snapshot: form.FromMap(map[string]json.RawMessage{"system.model": json.RawMessage(`"model"`)}), MaxTokens: 321}, &captureBus{}))
 			require.Equal(t, 1, calls)

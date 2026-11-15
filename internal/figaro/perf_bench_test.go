@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
@@ -28,16 +30,16 @@ func (perfProvider) Send(context.Context, provider.SendInput, provider.Bus) erro
 	return nil
 }
 
-func longMemLog(tb testing.TB, n int) store.Log[message.Message] {
+func longMemLog(tb testing.TB, n int) arialog.Log[message.Message] {
 	tb.Helper()
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	text := strings.Repeat("x", 256)
 	for i := 0; i < n; i++ {
 		role := message.RoleInput
 		if i%2 == 1 {
 			role = message.RoleOutput
 		}
-		_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		_, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    role,
 			Content: []message.Content{message.TextContent(text)},
 		}})
@@ -81,10 +83,10 @@ func BenchmarkInterruptRepairScanOnly10000(b *testing.B) {
 
 // danglingToolLog ends in an unanswered tool_invoke: the only input that drives
 // repairInterruptedTail past its first guard.
-func danglingToolLog(tb testing.TB, n int) store.Log[message.Message] {
+func danglingToolLog(tb testing.TB, n int) arialog.Log[message.Message] {
 	tb.Helper()
 	log := longMemLog(tb, n)
-	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleOutput,
 		Content: []message.Content{
 			message.TextContent("about to run something"),

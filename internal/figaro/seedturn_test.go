@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/message"
@@ -15,7 +17,7 @@ import (
 func TestSeedTurnIDPeeksToTheSameAnswerTheWalkFinds(t *testing.T) {
 	for _, n := range []int{0, 1, 2, 7, 50, 200} {
 		t.Run(fmt.Sprint(n), func(t *testing.T) {
-			log := store.GuardIR(store.NewMemLog[message.Message]())
+			log := store.GuardIR(arialog.NewMemLog[message.Message]())
 			for i := 0; i < n; i++ {
 				var m message.Message
 				switch i % 3 {
@@ -29,7 +31,7 @@ func TestSeedTurnIDPeeksToTheSameAnswerTheWalkFinds(t *testing.T) {
 					m = message.Message{Role: message.RoleInput, Steering: true,
 						Content: []message.Content{message.TextContent("steer")}}
 				}
-				_, err := log.Append(store.Entry[message.Message]{Payload: m})
+				_, err := log.Append(arialog.Entry[message.Message]{Payload: m})
 				require.NoError(t, err)
 			}
 
@@ -43,18 +45,18 @@ func TestSeedTurnIDPeeksToTheSameAnswerTheWalkFinds(t *testing.T) {
 }
 
 func TestSeedTurnIDInheritsAcrossAFork(t *testing.T) {
-	parent := store.GuardIR(store.NewMemLog[message.Message]())
+	parent := store.GuardIR(arialog.NewMemLog[message.Message]())
 	for i := 0; i < 6; i++ {
 		m := message.Message{Role: message.RoleInput,
 			Content: []message.Content{message.TextContent(fmt.Sprintf("q%d", i))}}
-		_, err := parent.Append(store.Entry[message.Message]{Payload: m})
+		_, err := parent.Append(arialog.Entry[message.Message]{Payload: m})
 		require.NoError(t, err)
 	}
 	require.Equal(t, uint64(6), (&Agent{figLog: parent}).seedTurnID())
 
-	child := store.GuardIR(store.NewMemLog[message.Message]())
+	child := store.GuardIR(arialog.NewMemLog[message.Message]())
 	for _, e := range parent.Read() {
-		_, err := child.Append(store.Entry[message.Message]{Payload: e.Payload})
+		_, err := child.Append(arialog.Entry[message.Message]{Payload: e.Payload})
 		require.NoError(t, err)
 	}
 	require.Equal(t, uint64(6), (&Agent{figLog: child}).seedTurnID(),

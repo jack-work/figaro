@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/authz"
@@ -179,7 +181,7 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 
 // ariaReadDeltas seeds cursors from the record preceding the page; a zero
 // seed over-attributes everything before the page to its first record.
-func (h *handlers) ariaReadDeltas(log store.Log[message.Message], figaroID string, page []store.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
+func (h *handlers) ariaReadDeltas(log arialog.Log[message.Message], figaroID string, page []arialog.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
 	fb, ok := h.angelus.Backend.(formdelta.Backend)
 	if !ok || len(page) == 0 {
 		return nil

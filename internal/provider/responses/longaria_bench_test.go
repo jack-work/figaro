@@ -8,19 +8,19 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 func benchmarkWarmResponsesInput(b *testing.B, n int) (*Provider, provider.SendInput) {
 	b.Helper()
-	figLog := store.NewMemLog[message.Message]()
-	cache := store.NewMemLog[[]json.RawMessage]()
+	figLog := arialog.NewMemLog[message.Message]()
+	cache := arialog.NewMemLog[[]json.RawMessage]()
 	p := New(
 		provider.Knobs{Model: "gpt-5.6-terra", MaxTokens: 1024},
 		&staticResponseTokenSource{token: "test-token"},
 		testConfig,
-		func(string) (store.Log[[]json.RawMessage], error) { return cache, nil },
+		func(string) (arialog.Log[[]json.RawMessage], error) { return cache, nil },
 	)
 	fp := p.Fingerprint()
 	for i := 0; i < n; i++ {
@@ -28,14 +28,14 @@ func benchmarkWarmResponsesInput(b *testing.B, n int) (*Provider, provider.SendI
 		if i%2 == 1 {
 			role = message.RoleOutput
 		}
-		entry, err := figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+		entry, err := figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    role,
 			Content: []message.Content{message.TextContent("synthetic history")},
 		}})
 		if err != nil {
 			b.Fatal(err)
 		}
-		if _, err := cache.Append(store.Entry[[]json.RawMessage]{
+		if _, err := cache.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT:    entry.LT,
 			Fingerprint: fp,
 			Payload: []json.RawMessage{json.RawMessage(fmt.Sprintf(

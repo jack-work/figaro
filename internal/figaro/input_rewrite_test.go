@@ -12,17 +12,17 @@ import (
 
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/quote"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 // quoteLog: lt1 input "the question"; lt2 output [prose, tool_invoke bash];
 // lt3 input [tool_result]; lt4 output [thinking, prose].
-func quoteLog(t *testing.T) *store.MemLog[message.Message] {
+func quoteLog(t *testing.T) *arialog.MemLog[message.Message] {
 	t.Helper()
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	add := func(m message.Message) {
-		if _, err := log.Append(store.Entry[message.Message]{Payload: m}); err != nil {
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: m}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -107,8 +107,8 @@ func TestResolveQuoteRefuses(t *testing.T) {
 }
 
 func TestResolveQuoteCountsRunes(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	_, _ = log.Append(store.Entry[message.Message]{Payload: message.Message{
+	log := arialog.NewMemLog[message.Message]()
+	_, _ = log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleOutput, Content: []message.Content{message.TextContent("héllo wörld 日本")}}})
 	got, err := quoteText(log, mustRange(t, "<1.0:6-14>!"))
 	if err != nil {
@@ -225,10 +225,10 @@ func TestRewriteInputOrderAndNaming(t *testing.T) {
 func BenchmarkQuoteBoundedByOutput(b *testing.B) {
 	for _, size := range []int{1 << 10, 1 << 20, 4 << 20} {
 		b.Run(fmt.Sprintf("%dKiB", size>>10), func(b *testing.B) {
-			log := store.NewMemLog[message.Message]()
+			log := arialog.NewMemLog[message.Message]()
 			block := strings.Repeat("figaro qua, figaro la, figaro su, figaro giu. ", size/45)
 			for range 3 {
-				if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+				if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 					Role: message.RoleOutput, Content: []message.Content{message.TextContent(block)},
 				}}); err != nil {
 					b.Fatal(err)
@@ -262,9 +262,9 @@ func mustParseRange(tb testing.TB, s string) quote.Range {
 
 // Clipping is exact whatever shape the passage arrives in.
 func TestQuoteClipsToItsBudget(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	for _, text := range []string{strings.Repeat("a", 1000), strings.Repeat("b", 1000), strings.Repeat("c", 1000)} {
-		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleOutput, Content: []message.Content{message.TextContent(text)},
 		}}); err != nil {
 			t.Fatal(err)
@@ -310,9 +310,9 @@ func TestQuoteBudgetRefusals(t *testing.T) {
 }
 
 func TestQuoteWalkStopsWithTheRequest(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	for range 50 {
-		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleOutput, Content: []message.Content{message.TextContent(strings.Repeat("x", 100))},
 		}}); err != nil {
 			t.Fatal(err)

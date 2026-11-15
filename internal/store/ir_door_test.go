@@ -3,12 +3,14 @@ package store
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/message"
 )
 
-func doorAria(t *testing.T) (Log[message.Message], *XwalBackend, string) {
+func doorAria(t *testing.T) (arialog.Log[message.Message], *XwalBackend, string) {
 	t.Helper()
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
@@ -40,7 +42,7 @@ func prose(text string) message.Message {
 
 // openInvokes reports invoke ids with no later result: the property every
 // provider needs and the one the door exists to keep.
-func openInvokes(rows []Entry[message.Message]) []string {
+func openInvokes(rows []arialog.Entry[message.Message]) []string {
 	answered := map[string]bool{}
 	var order []string
 	seen := map[string]bool{}
@@ -70,9 +72,9 @@ func openInvokes(rows []Entry[message.Message]) []string {
 // history never carries an invoke without its result.
 func TestDoorClosesAnOpenCallWhenAMessageArrives(t *testing.T) {
 	log, _, _ := doorAria(t)
-	_, err := log.Append(Entry[message.Message]{Payload: invoke("t1", "bash")})
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: invoke("t1", "bash")})
 	require.NoError(t, err)
-	_, err = log.Append(Entry[message.Message]{Payload: prose("never mind, do something else")})
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: prose("never mind, do something else")})
 	require.NoError(t, err)
 
 	rows := log.Read()
@@ -97,9 +99,9 @@ func TestDoorCompletesAPartialResultSetInPlace(t *testing.T) {
 		{Type: message.ContentToolInvoke, ToolCallID: "a", ToolName: "read"},
 		{Type: message.ContentToolInvoke, ToolCallID: "b", ToolName: "write"},
 	}}
-	_, err := log.Append(Entry[message.Message]{Payload: two})
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: two})
 	require.NoError(t, err)
-	_, err = log.Append(Entry[message.Message]{Payload: result("a", "read", "ok")})
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: result("a", "read", "ok")})
 	require.NoError(t, err)
 
 	rows := log.Read()
@@ -118,13 +120,13 @@ func TestDoorCompletesAPartialResultSetInPlace(t *testing.T) {
 // not reach the wire unmatched: it becomes a system note the model can read.
 func TestDoorTurnsALateResultIntoASystemNote(t *testing.T) {
 	log, _, _ := doorAria(t)
-	_, err := log.Append(Entry[message.Message]{Payload: invoke("t1", "bash")})
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: invoke("t1", "bash")})
 	require.NoError(t, err)
-	_, err = log.Append(Entry[message.Message]{Payload: prose("stop")})
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: prose("stop")})
 	require.NoError(t, err)
 
 	// The tool finally answers, long after the door closed it.
-	_, err = log.Append(Entry[message.Message]{Payload: result("t1", "bash", "the output nobody waited for")})
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: result("t1", "bash", "the output nobody waited for")})
 	require.NoError(t, err, "a late result must not fail the write")
 
 	rows := log.Read()
@@ -158,9 +160,9 @@ func TestDoorTurnsALateResultIntoASystemNote(t *testing.T) {
 func TestDoorLeavesAWellFormedExchangeAlone(t *testing.T) {
 	log, _, _ := doorAria(t)
 	base := len(log.Read()) // genesis and the birth record
-	_, err := log.Append(Entry[message.Message]{Payload: invoke("t1", "bash")})
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: invoke("t1", "bash")})
 	require.NoError(t, err)
-	_, err = log.Append(Entry[message.Message]{Payload: result("t1", "bash", "ok")})
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: result("t1", "bash", "ok")})
 	require.NoError(t, err)
 
 	rows := log.Read()
@@ -175,9 +177,9 @@ func TestDoorLeavesAWellFormedExchangeAlone(t *testing.T) {
 // which is the case that reaches a provider as a hard error otherwise.
 func TestDoorHealsAForkTakenMidToolCall(t *testing.T) {
 	log, be, id := doorAria(t)
-	_, err := log.Append(Entry[message.Message]{Payload: prose("hello")})
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: prose("hello")})
 	require.NoError(t, err)
-	_, err = log.Append(Entry[message.Message]{Payload: invoke("t1", "bash")})
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: invoke("t1", "bash")})
 	require.NoError(t, err)
 
 	_, alt, err := be.Fork(id)
@@ -187,7 +189,7 @@ func TestDoorHealsAForkTakenMidToolCall(t *testing.T) {
 
 	require.NotEmpty(t, openInvokes(childLog.Read()), "fixture: the child must inherit an open call")
 
-	_, err = childLog.Append(Entry[message.Message]{Payload: prose("carry on")})
+	_, err = childLog.Append(arialog.Entry[message.Message]{Payload: prose("carry on")})
 	require.NoError(t, err)
 	require.Empty(t, openInvokes(childLog.Read()), "the fork's inherited call was never closed")
 }
@@ -196,13 +198,13 @@ func TestDoorHealsAForkTakenMidToolCall(t *testing.T) {
 // closing on one would end a live tool call because a fork marker was written.
 func TestDoorIgnoresCeremonialMessages(t *testing.T) {
 	log, _, _ := doorAria(t)
-	_, err := log.Append(Entry[message.Message]{Payload: invoke("t1", "bash")})
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: invoke("t1", "bash")})
 	require.NoError(t, err)
-	_, err = log.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleGenesis}})
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleGenesis}})
 	require.NoError(t, err)
 	require.NotEmpty(t, openInvokes(log.Read()), "a ceremonial record closed a live tool call")
 
-	_, err = log.Append(Entry[message.Message]{Payload: result("t1", "bash", "ok")})
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: result("t1", "bash", "ok")})
 	require.NoError(t, err)
 	require.Empty(t, openInvokes(log.Read()))
 }
@@ -212,7 +214,7 @@ func TestDoorIgnoresCeremonialMessages(t *testing.T) {
 // history rather than one waiting to be healed.
 func TestDoorClosesOnDemandForTheInterruptPath(t *testing.T) {
 	log, _, _ := doorAria(t)
-	_, err := log.Append(Entry[message.Message]{Payload: invoke("t1", "bash")})
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: invoke("t1", "bash")})
 	require.NoError(t, err)
 
 	closer, ok := log.(interface{ CloseOpenToolCalls() (int, error) })
@@ -233,10 +235,10 @@ func TestDoorClosesOnDemandForTheInterruptPath(t *testing.T) {
 
 // An ephemeral aria has no backend and goes through the same door.
 func TestEphemeralLogGetsTheSameInvariant(t *testing.T) {
-	log := GuardIR(NewMemLog[message.Message]())
-	_, err := log.Append(Entry[message.Message]{Payload: invoke("t1", "bash")})
+	log := GuardIR(arialog.NewMemLog[message.Message]())
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: invoke("t1", "bash")})
 	require.NoError(t, err)
-	_, err = log.Append(Entry[message.Message]{Payload: prose("changed my mind")})
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: prose("changed my mind")})
 	require.NoError(t, err)
 	require.Empty(t, openInvokes(log.Read()), "an ephemeral aria kept a dangling invoke")
 }

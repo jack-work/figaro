@@ -4,6 +4,8 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -13,7 +15,7 @@ import (
 
 // textOf returns the entry's first text, or "" for records that carry none
 // (the outfit birth record at LT 1, for one).
-func textOf(e Entry[message.Message]) string {
+func textOf(e arialog.Entry[message.Message]) string {
 	for _, c := range e.Payload.Content {
 		if c.Text != "" {
 			return c.Text
@@ -25,7 +27,7 @@ func textOf(e Entry[message.Message]) string {
 // sameDecode reports whether two entries are one decoded value: they share
 // the backing array of their Content slice. Only meaningful for entries that
 // carry content; two empty slices are not a shared decode.
-func sameDecode(a, b Entry[message.Message]) bool {
+func sameDecode(a, b arialog.Entry[message.Message]) bool {
 	return len(a.Payload.Content) > 0 && len(a.Payload.Content) == len(b.Payload.Content) &&
 		unsafe.SliceData(a.Payload.Content) == unsafe.SliceData(b.Payload.Content)
 }
@@ -41,7 +43,7 @@ func forkedPair(t *testing.T) (b *XwalBackend, parent, childA, childB string) {
 
 	ir, _ := b.OpenFigIR(parent)
 	for i := 0; i < 200; i++ {
-		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{
+		if _, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    message.RoleInput,
 			Content: []message.Content{message.TextContent("a record with text long enough to be worth sharing")},
 		}}); err != nil {
@@ -87,13 +89,13 @@ func TestOpeningAForkWithoutAResidentAncestorDecodesItsOwnCopy(t *testing.T) {
 	}
 
 	const shared = 50
-	find := func(rows []Entry[message.Message]) (Entry[message.Message], bool) {
+	find := func(rows []arialog.Entry[message.Message]) (arialog.Entry[message.Message], bool) {
 		for _, e := range rows {
 			if e.FigaroLT == shared {
 				return e, true
 			}
 		}
-		return Entry[message.Message]{}, false
+		return arialog.Entry[message.Message]{}, false
 	}
 	pe, ok1 := find(p)
 	ae, ok2 := find(a)
@@ -126,7 +128,7 @@ func TestShallowCopyOfEntriesSharesPayload(t *testing.T) {
 		t.Fatal("nothing resident")
 	}
 
-	seeded := make([]Entry[message.Message], len(rows))
+	seeded := make([]arialog.Entry[message.Message], len(rows))
 	copy(seeded, rows)
 
 	compared := 0

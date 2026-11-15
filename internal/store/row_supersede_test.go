@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -16,7 +18,7 @@ func TestTwoEntriesAtOneFigaroLTAreVisibleWarmAndCold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry, err := ir.Append(Entry[message.Message]{Payload: message.Message{
+	entry, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("one")},
 	}})
 	if err != nil {
@@ -28,7 +30,7 @@ func TestTwoEntriesAtOneFigaroLTAreVisibleWarmAndCold(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, body := range []string{`{"first":true}`, `{"second":true}`} {
-		if _, err := trans.Append(Entry[[]json.RawMessage]{
+		if _, err := trans.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: entry.LT,
 			Payload:  []json.RawMessage{json.RawMessage(body)},
 		}); err != nil {

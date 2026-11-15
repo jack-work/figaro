@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/figwal/xwal"
 )
 
-func tailSnapshotFromDecodedRows[T any](l *treeLog[T], n int) []Entry[T] {
-	rows := TailSnapshot[T](l.inner, n)
+func tailSnapshotFromDecodedRows[T any](l *treeLog[T], n int) []arialog.Entry[T] {
+	rows := arialog.TailSnapshot[T](l.inner, n)
 	if len(rows) == 0 {
 		return nil
 	}
@@ -34,7 +36,7 @@ func appendInputs(t *testing.T, b *XwalBackend, id string, n int) {
 		t.Fatal(err)
 	}
 	for i := 0; i < n; i++ {
-		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{
+		if _, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    message.RoleInput,
 			Content: []message.Content{message.TextContent("a line")},
 		}}); err != nil {
@@ -43,7 +45,7 @@ func appendInputs(t *testing.T, b *XwalBackend, id string, n int) {
 	}
 }
 
-func figaroLTs[T any](rows []Entry[T]) []uint64 {
+func figaroLTs[T any](rows []arialog.Entry[T]) []uint64 {
 	out := make([]uint64, len(rows))
 	for i, e := range rows {
 		out[i] = e.FigaroLT
@@ -111,7 +113,7 @@ func TestTailSnapshotFromEndsMatchesTheDecodedWindow(t *testing.T) {
 	}
 	trans := tl.(*treeLog[[]json.RawMessage])
 	for i := 0; i < 120; i++ {
-		if _, err := trans.Append(Entry[[]json.RawMessage]{FigaroLT: uint64(2 * (i + 1)), Payload: []json.RawMessage{json.RawMessage(`"row"`)}}); err != nil {
+		if _, err := trans.Append(arialog.Entry[[]json.RawMessage]{FigaroLT: uint64(2 * (i + 1)), Payload: []json.RawMessage{json.RawMessage(`"row"`)}}); err != nil {
 			t.Fatal(err)
 		}
 	}

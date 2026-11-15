@@ -8,16 +8,16 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
 // The window between the durable append and OpenInquiry. realisticLog stamps
 // usage on every assistant message so tokens.ContextSize can take its shortcut.
-func realisticLog(tb testing.TB, n int, withUsage bool) store.Log[message.Message] {
+func realisticLog(tb testing.TB, n int, withUsage bool) arialog.Log[message.Message] {
 	tb.Helper()
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	prose := strings.Repeat("some prose from the user. ", 20) // ~520B
 	output := strings.Repeat("tool output line\n", 250)       // ~4.2KB
 	for i := 0; i < n; i++ {
@@ -36,7 +36,7 @@ func realisticLog(tb testing.TB, n int, withUsage bool) store.Log[message.Messag
 				}
 			}
 		}
-		if _, err := log.Append(store.Entry[message.Message]{Payload: m}); err != nil {
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: m}); err != nil {
 			tb.Fatal(err)
 		}
 	}

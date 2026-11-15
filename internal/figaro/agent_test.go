@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -29,7 +31,7 @@ import (
 
 type mockProvider struct {
 	response string
-	cache    store.Log[[]json.RawMessage] // nil = no cache (tests don't need one)
+	cache    arialog.Log[[]json.RawMessage] // nil = no cache (tests don't need one)
 }
 
 func (m *mockProvider) Name() string                                             { return "mock" }
@@ -123,7 +125,7 @@ func (c *fakeCatalog) wanted() []string {
 type mockEncodeFn func(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error)
 
 // mockCatchUp mirrors what real providers do at the top of Send; skipped when cache is nil.
-func mockCatchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], encode mockEncodeFn, fingerprint string) {
+func mockCatchUp(figLog arialog.Log[message.Message], cache arialog.Log[[]json.RawMessage], encode mockEncodeFn, fingerprint string) {
 	snap := form.Snapshot{}
 	for _, e := range figLog.Read() {
 		msg := e.Payload
@@ -131,7 +133,7 @@ func mockCatchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMe
 		if cache != nil {
 			if _, ok := cache.Lookup(msg.LogicalTime); !ok {
 				if payload, err := encode(msg, snap); err == nil {
-					_, _ = cache.Append(store.Entry[[]json.RawMessage]{
+					_, _ = cache.Append(arialog.Entry[[]json.RawMessage]{
 						FigaroLT:    msg.LogicalTime,
 						Payload:     payload,
 						Fingerprint: fingerprint,
@@ -148,7 +150,7 @@ func mockCatchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMe
 }
 
 // mockPushAssistant simulates a streaming turn: delta, figLog append, cache write, PushFigaro.
-func mockPushAssistant(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], bus provider.Bus, encode mockEncodeFn, fingerprint, text string) {
+func mockPushAssistant(figLog arialog.Log[message.Message], cache arialog.Log[[]json.RawMessage], bus provider.Bus, encode mockEncodeFn, fingerprint, text string) {
 	if text == "" {
 		return
 	}
@@ -158,12 +160,12 @@ func mockPushAssistant(figLog store.Log[message.Message], cache store.Log[[]json
 		Content:    []message.Content{message.TextContent(text)},
 		StopReason: message.StopEnd,
 	}
-	entry, err := figLog.Append(store.Entry[message.Message]{Payload: msg})
+	entry, err := figLog.Append(arialog.Entry[message.Message]{Payload: msg})
 	if err == nil {
 		msg.LogicalTime = entry.LT
 		if cache != nil {
 			if payload, eErr := encode(msg, form.Snapshot{}); eErr == nil {
-				_, _ = cache.Append(store.Entry[[]json.RawMessage]{
+				_, _ = cache.Append(arialog.Entry[[]json.RawMessage]{
 					FigaroLT:    entry.LT,
 					Payload:     payload,
 					Fingerprint: fingerprint,
@@ -308,7 +310,7 @@ func backedConv(t *testing.T, dir string) (store.Backend, string) {
 	return b, conv
 }
 
-func unwrapForTest(entries []store.Entry[message.Message]) []message.Message {
+func unwrapForTest(entries []arialog.Entry[message.Message]) []message.Message {
 	out := make([]message.Message, len(entries))
 	for i, e := range entries {
 		out[i] = e.Payload
@@ -917,14 +919,14 @@ func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 
 	pre, err := backend.OpenFigIR(conv)
 	require.NoError(t, err)
-	_, err = pre.Append(store.Entry[message.Message]{
+	_, err = pre.Append(arialog.Entry[message.Message]{
 		Payload: message.Message{
 			Role:    message.RoleInput,
 			Content: []message.Content{message.TextContent("run a tool")},
 		},
 	})
 	require.NoError(t, err)
-	_, err = pre.Append(store.Entry[message.Message]{
+	_, err = pre.Append(arialog.Entry[message.Message]{
 		Payload: message.Message{
 			Role: message.RoleOutput,
 			Content: []message.Content{

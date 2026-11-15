@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/form"
@@ -35,7 +37,7 @@ func (r *studyRenderer) Send(_ context.Context, in provider.SendInput, bus provi
 	var texts []string
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:        in.FigLog,
-		Translator: store.NewMemLog[[]json.RawMessage](),
+		Translator: arialog.NewMemLog[[]json.RawMessage](),
 		Form:       in.Form,
 		Studies:    in.Studies,
 		Encode: func(m message.Message, snap form.Snapshot) ([]json.RawMessage, error) {

@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 // InterruptedToolNotice is the only durable mark an interrupt leaves.
@@ -58,7 +58,7 @@ func (t *turnState) repairView() (message.Message, []turnTool) {
 }
 
 // stageAssistant keeps what the provider produced, not what the drain assembled.
-func (a *Agent) stageAssistant(e *store.Entry[message.Message]) {
+func (a *Agent) stageAssistant(e *arialog.Entry[message.Message]) {
 	if a.turn == nil || e == nil {
 		return
 	}
@@ -159,7 +159,7 @@ func (a *Agent) commitAssistantCache(lt uint64, cache *provider.AssistantCache) 
 	if err != nil {
 		return fmt.Errorf("open assistant cache %s: %w", cache.Namespace, err)
 	}
-	if _, err := native.Append(store.Entry[[]json.RawMessage]{
+	if _, err := native.Append(arialog.Entry[[]json.RawMessage]{
 		FigaroLT:    lt,
 		Payload:     cloneRawMessages(cache.Payload),
 		Fingerprint: cache.Fingerprint,

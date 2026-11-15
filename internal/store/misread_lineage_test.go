@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -55,7 +57,7 @@ func fallingStore(t *testing.T) (root, a, b, c string) {
 	return root, a, b, c
 }
 
-func mustIR(t *testing.T, be *XwalBackend, id string) Log[message.Message] {
+func mustIR(t *testing.T, be *XwalBackend, id string) arialog.Log[message.Message] {
 	t.Helper()
 	l, err := be.OpenFigIR(id)
 	if err != nil {
@@ -152,7 +154,7 @@ func TestTranslationsV5RefoldsMisreadMeta(t *testing.T) {
 	defer be.Close()
 	ir := mustIR(t, be, c)
 	var want AriaMeta
-	ScanAll(ir, func(e Entry[message.Message]) bool { want.Fold(e); return true })
+	arialog.ScanAll(ir, func(e arialog.Entry[message.Message]) bool { want.Fold(e); return true })
 	got, err := be.Meta(c)
 	if err != nil || got == nil {
 		t.Fatalf("meta of %s: %v %v", c, got, err)

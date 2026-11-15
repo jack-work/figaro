@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
-type hidingLog[T any] struct{ store.Log[T] }
+type hidingLog[T any] struct{ arialog.Log[T] }
 
 func (hidingLog[T]) HidesOwnRows() bool { return true }
 
@@ -25,7 +25,7 @@ func TestCatchUpRefusesAViewThatHidesOwnRows(t *testing.T) {
 	} {
 		cfg := f.config(t, perRowChannel)
 		wrap(&cfg)
-		if _, err := CatchUp(cfg); !errors.Is(err, store.ErrViewHidesOwnRows) {
+		if _, err := CatchUp(cfg); !errors.Is(err, arialog.ErrViewHidesOwnRows) {
 			t.Fatalf("catch-up through a hiding view: err %v, want ErrViewHidesOwnRows", err)
 		}
 		if n := f.config(t, perRowChannel).Translator.Len(); n != 0 {

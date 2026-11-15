@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -34,7 +36,7 @@ func realAria(t testing.TB, n, textBytes int) (*XwalBackend, string) {
 		if i%2 == 1 {
 			role = message.RoleOutput
 		}
-		_, err := log.Append(Entry[message.Message]{Payload: message.Message{
+		_, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    role,
 			TurnID:  uint64(i/2 + 1),
 			Content: []message.Content{{Type: message.ContentProse, Text: fmt.Sprintf("%d:%s", i, body)}},

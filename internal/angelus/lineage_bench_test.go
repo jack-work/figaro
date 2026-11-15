@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
@@ -104,7 +106,7 @@ func newHopFixture(b *testing.B, history, unrelated int) *hopFixture {
 				{Role: message.RoleOutput, TurnID: t, Content: []message.Content{message.TextContent(prose)}},
 				{Role: message.RoleOutput, TurnID: t, Content: []message.Content{message.TextContent(prose)}},
 			} {
-				if _, err := log.Append(store.Entry[message.Message]{Payload: m}); err != nil {
+				if _, err := log.Append(arialog.Entry[message.Message]{Payload: m}); err != nil {
 					b.Fatal(err)
 				}
 			}

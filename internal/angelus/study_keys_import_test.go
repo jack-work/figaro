@@ -19,8 +19,8 @@ func TestImportRestoresAStudysKeys(t *testing.T) {
 	req := rpc.ImportRequest{
 		Outfit: "imp",
 		Form: form.Build(form.Snapshot{}, map[string]json.RawMessage{
-			store.StudiesKey:                  studies,
-			store.StudyKeysKey + "." + formID: json.RawMessage(`["comments"]`),
+			store.StudiesKey:                 studies,
+			form.StudyKeysKey + "." + formID: json.RawMessage(`["comments"]`),
 		}, nil),
 	}
 	raw, err := json.Marshal(req)
@@ -31,7 +31,7 @@ func TestImportRestoresAStudysKeys(t *testing.T) {
 
 	snap, err := be.FormState(id)
 	require.NoError(t, err)
-	require.True(t, slices.Equal(store.StudyKeys(snap, formID), []string{"comments"}), "keys after import: %v", store.StudyKeys(snap, formID))
+	require.True(t, slices.Equal(form.StudyKeys(snap, formID), []string{"comments"}), "keys after import: %v", form.StudyKeys(snap, formID))
 	lib, err := be.Libretto(formID)
 	require.NoError(t, err)
 	require.Equal(t, 1, lib.Refs())

@@ -8,6 +8,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/figwal/xwal"
 )
@@ -62,7 +64,7 @@ func turn(tb testing.TB, b *XwalBackend, id string, n int) {
 		tb.Fatal(err)
 	}
 	for i := 0; i < n; i++ {
-		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
+		if _, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 			tb.Fatal(err)
 		}
 	}

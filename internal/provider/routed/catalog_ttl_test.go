@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/BurntSushi/toml"
 
 	"github.com/jack-work/figaro/api/message"
@@ -103,13 +105,13 @@ func movingProvider(t *testing.T, g *movingGateway) (*Provider, *testClock, func
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+	if _, err := figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("say something")},
 	}}); err != nil {
 		t.Fatal(err)
 	}
 	p, err := New(spec, provider.Knobs{Model: "gpt-x", MaxTokens: 64}, &revocable{},
-		func(aria, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) })
+		func(aria, ns string) (arialog.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) })
 	if err != nil {
 		t.Fatal(err)
 	}

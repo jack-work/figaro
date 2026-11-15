@@ -3,6 +3,8 @@ package store
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -21,7 +23,7 @@ func TestWhereTheForkPrefixIsResident(t *testing.T) {
 	ir, _ := b.OpenFigIR(conv)
 	const history = 300
 	for i := 0; i < history; i++ {
-		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{
+		if _, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    message.RoleInput,
 			Content: []message.Content{message.TextContent("a message of some length to make bytes real")},
 		}}); err != nil {

@@ -8,21 +8,21 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 type copyingBenchLog[T any] struct {
-	*store.MemLog[T]
+	*arialog.MemLog[T]
 }
 
 func newCopyingBenchLog[T any]() *copyingBenchLog[T] {
-	return &copyingBenchLog[T]{MemLog: store.NewMemLog[T]()}
+	return &copyingBenchLog[T]{MemLog: arialog.NewMemLog[T]()}
 }
 
-func (l *copyingBenchLog[T]) Read() []store.Entry[T] {
+func (l *copyingBenchLog[T]) Read() []arialog.Entry[T] {
 	entries := l.MemLog.Read()
-	out := make([]store.Entry[T], len(entries))
+	out := make([]arialog.Entry[T], len(entries))
 	copy(out, entries)
 	return out
 }
@@ -35,7 +35,7 @@ func benchLog(b *testing.B, n int) *copyingBenchLog[message.Message] {
 		if i%2 == 1 {
 			role = message.RoleOutput
 		}
-		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    role,
 			Content: []message.Content{message.TextContent("turn body " + strconv.Itoa(i))},
 		}}); err != nil {
@@ -75,7 +75,7 @@ func BenchmarkCatchUp(b *testing.B) {
 			prefix := benchLog(b, n)
 			log := benchLog(b, n)
 			for _, role := range []message.Role{message.RoleInput, message.RoleOutput} {
-				if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+				if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 					Role:    role,
 					Content: []message.Content{message.TextContent("warm " + string(role))},
 				}}); err != nil {

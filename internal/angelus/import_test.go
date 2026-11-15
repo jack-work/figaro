@@ -3,8 +3,10 @@ package angelus
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/arialog"
 
 	"github.com/stretchr/testify/require"
 
@@ -115,7 +117,7 @@ func TestImportLeavesExistingAriasAlone(t *testing.T) {
 	require.NoError(t, err)
 	rlog, err := backend.OpenFigIR(resident)
 	require.NoError(t, err)
-	_, err = rlog.Append(store.Entry[message.Message]{Payload: say(message.RoleOutput, "I was here first")})
+	_, err = rlog.Append(arialog.Entry[message.Message]{Payload: say(message.RoleOutput, "I was here first")})
 	require.NoError(t, err)
 	before := len(rlog.Read())
 

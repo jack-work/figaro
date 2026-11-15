@@ -16,6 +16,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/hush/managed"
 
 	"github.com/jack-work/figaro/internal/decide"
@@ -24,6 +26,7 @@ import (
 	"github.com/jack-work/figaro/internal/relay"
 	"github.com/jack-work/figaro/internal/workerpool"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/authz"
@@ -273,19 +276,23 @@ func buildProvider(loaded *config.Loaded, formTmpls *template.Template, backend 
 		if err != nil {
 			return nil, err
 		}
-		cacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
-			if backend == nil {
-				return nil, fmt.Errorf("no backend")
+		var openTranslator func(string, string) (arialog.Log[[]json.RawMessage], error)
+		var catalog form.Snapshot
+		if backend != nil {
+			openTranslator = backend.OpenTranslator
+			if b, ok := backend.(interface{ ModelsForm() (*store.Form, error) }); ok {
+				if f, err := b.ModelsForm(); err == nil {
+					catalog, _ = f.Snapshot()
+				}
 			}
-			return backend.OpenTranslator(aria, providerName)
 		}
 		p, err := reg.Build(providerPkg.BuildContext{
-			Loaded:    loaded,
-			Knobs:     knobs,
-			Resolver:  resolver,
-			Templates: formTmpls,
-			CacheOpen: cacheOpen,
-			Backend:   backend,
+			Loaded:         loaded,
+			Knobs:          knobs,
+			Resolver:       resolver,
+			Templates:      formTmpls,
+			OpenTranslator: openTranslator,
+			Models:         catalog,
 		})
 		if err != nil {
 			return nil, err
@@ -313,7 +320,7 @@ func registerOnAppend(backend store.Backend, p providerPkg.Provider) {
 		enc.Fingerprint,
 		func(aria string) providerPkg.Form { return figaro.BoundFormAccessorFor(backend, aria) },
 		func(aria string) map[string]providerPkg.Form { return figaro.StudyAccessorsFor(backend, aria) },
-		func(aria string) (store.Log[[]json.RawMessage], error) {
+		func(aria string) (arialog.Log[[]json.RawMessage], error) {
 			return backend.OpenTranslator(aria, enc.TranslatorChannel())
 		},
 	))

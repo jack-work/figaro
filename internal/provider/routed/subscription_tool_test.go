@@ -3,13 +3,6 @@ package routed
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/tool"
-	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +11,15 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/arialog"
+	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/tool"
+	"github.com/stretchr/testify/require"
 )
 
 type subscriptionEcho struct{ calls atomic.Int32 }
@@ -65,7 +67,7 @@ func TestDeclaredSubscriptionHTTPToolResultRoundTrip(t *testing.T) {
 	defer server.Close()
 	p := gatewayAt(t, "subscription-tool", "preset=\"gateway\"\nbase_url=\""+server.URL+"/codex\"\n[routing]\ncatalog=\"off\"\ndefault=\"responses\"\n[responses]\nomit_fields=[\"max_output_tokens\"]\nno_replay=true\n")
 	backend, id := store.NewTestAria(t, "subscription-tool", message.Patch{})
-	p.translators = func(id, ns string) (store.Log[[]json.RawMessage], error) { return backend.OpenTranslator(id, ns) }
+	p.translators = func(id, ns string) (arialog.Log[[]json.RawMessage], error) { return backend.OpenTranslator(id, ns) }
 	registry := tool.NewRegistry()
 	echo := &subscriptionEcho{}
 	require.NoError(t, registry.Register(echo))

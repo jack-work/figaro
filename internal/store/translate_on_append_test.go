@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -18,7 +20,7 @@ type countingEncoder struct {
 
 func (e *countingEncoder) Provider() string { return e.provider }
 
-func (e *countingEncoder) EncodeEntry(_ string, _ Log[message.Message], en Entry[message.Message]) ([]json.RawMessage, string, error) {
+func (e *countingEncoder) EncodeEntry(_ string, _ arialog.Log[message.Message], en arialog.Entry[message.Message]) ([]json.RawMessage, string, error) {
 	e.calls++
 	e.seen = append(e.seen, en.LT)
 	if e.fail {
@@ -31,9 +33,9 @@ func (e *countingEncoder) EncodeEntry(_ string, _ Log[message.Message], en Entry
 	return []json.RawMessage{body}, e.provider + "/v1", nil
 }
 
-func writeFigIR(t *testing.T, log Log[message.Message], text string) Entry[message.Message] {
+func writeFigIR(t *testing.T, log arialog.Log[message.Message], text string) arialog.Entry[message.Message] {
 	t.Helper()
-	e, err := log.Append(Entry[message.Message]{Payload: message.Message{
+	e, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent(text)},
 	}})
 	if err != nil {
@@ -82,7 +84,7 @@ func TestAnAppendTranslatesIntoTheChannelsTheAriaAlreadyHas(t *testing.T) {
 		t.Fatalf("fingerprint=%q, want the encoder's", got[0].Fingerprint)
 	}
 	// THE ENTRY NAMES ITS SOURCE BY CONTENT, not only by position.
-	want, err := FigaroHash(first.Payload)
+	want, err := arialog.FigaroHash(first.Payload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +144,7 @@ func TestTheWritePathTranslatesTheRecordsItMintsItself(t *testing.T) {
 
 	// An assistant message that opens a tool call, then a message that is not
 	// its result: the write path closes the call with a synthesized record.
-	if _, err := log.Append(Entry[message.Message]{Payload: message.Message{
+	if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleOutput,
 		Content: []message.Content{
 			{Type: message.ContentToolInvoke, ToolCallID: "t1", ToolName: "echo", Arguments: map[string]any{}},
@@ -240,7 +242,7 @@ func TestAnAssistantEntryIsNotTranslatedOnAppend(t *testing.T) {
 	}
 
 	writeFigIR(t, log, "a user message")
-	if _, err := log.Append(Entry[message.Message]{Payload: message.Message{
+	if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleOutput,
 		Content: []message.Content{message.TextContent("an assistant message")},
 	}}); err != nil {
@@ -295,7 +297,7 @@ func TestReadingTheEncoderSetTakesNoLock(t *testing.T) {
 type fakeEncoder struct{ name string }
 
 func (f fakeEncoder) Provider() string { return f.name }
-func (f fakeEncoder) EncodeEntry(string, Log[message.Message], Entry[message.Message]) ([]json.RawMessage, string, error) {
+func (f fakeEncoder) EncodeEntry(string, arialog.Log[message.Message], arialog.Entry[message.Message]) ([]json.RawMessage, string, error) {
 	return nil, "", nil
 }
 
@@ -303,7 +305,7 @@ func (f fakeEncoder) EncodeEntry(string, Log[message.Message], Entry[message.Mes
 type emptyEncoder struct{ owed bool }
 
 func (e emptyEncoder) Provider() string { return "anthropic" }
-func (e emptyEncoder) EncodeEntry(string, Log[message.Message], Entry[message.Message]) ([]json.RawMessage, string, error) {
+func (e emptyEncoder) EncodeEntry(string, arialog.Log[message.Message], arialog.Entry[message.Message]) ([]json.RawMessage, string, error) {
 	if e.owed {
 		return nil, "anthropic/v1", nil
 	}
@@ -337,7 +339,7 @@ func TestAnEmptyTranslationStillOwnsARow(t *testing.T) {
 			if tc.rows == 0 {
 				return
 			}
-			want, _ := FigaroHash(e.Payload)
+			want, _ := arialog.FigaroHash(e.Payload)
 			if got[0].FigaroLT != e.LT || len(got[0].Payload) != 0 || got[0].Fingerprint != "anthropic/v1" || got[0].FigaroHash != want {
 				t.Fatalf("row=%+v, want an empty row stamped for %d", got[0], e.LT)
 			}

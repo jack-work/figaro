@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,8 +51,8 @@ func TestWindow_ReadsAgreeWithUnwindowed(t *testing.T) {
 		assert.Equal(t, fks(full.ReadFrom(probe, 0)), fks(win.ReadFrom(probe, 0)),
 			"ReadFrom(%d)", probe)
 
-		ft, ftot := TailAfter[uint64](full, probe)
-		wt, wtot := TailAfter[uint64](win, probe)
+		ft, ftot := arialog.TailAfter[uint64](full, probe)
+		wt, wtot := arialog.TailAfter[uint64](win, probe)
 		assert.Equal(t, ftot, wtot, "TailAfter(%d) total", probe)
 		assert.Equal(t, fks(ft), fks(wt), "TailAfter(%d)", probe)
 	}
@@ -109,7 +111,7 @@ func BenchmarkWindowAppend(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				if _, err := c.Append(Entry[uint64]{FigaroLT: uint64(1000 + i)}); err != nil {
+				if _, err := c.Append(arialog.Entry[uint64]{FigaroLT: uint64(1000 + i)}); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -119,7 +121,7 @@ func BenchmarkWindowAppend(b *testing.B) {
 
 // sizeOf for the byte-budget tests: entry i costs its payload value in bytes,
 // so a skewed distribution is expressible.
-func costOf(e Entry[uint64]) int { return int(e.Payload) }
+func costOf(e arialog.Entry[uint64]) int { return int(e.Payload) }
 
 // The byte budget is the bound that matters: the large tool results cluster
 // at the tail, so row windowing is a poor proxy.
@@ -133,9 +135,9 @@ func TestWindow_ByteBudgetBoundsBytes(t *testing.T) {
 			fks[i] = 1000 // fat tool results
 		}
 	}
-	inner := NewMemLog[uint64]()
+	inner := arialog.NewMemLog[uint64]()
 	for _, v := range fks {
-		_, err := inner.Append(Entry[uint64]{FigaroLT: uint64(len(inner.Read()) + 1), Payload: v})
+		_, err := inner.Append(arialog.Entry[uint64]{FigaroLT: uint64(len(inner.Read()) + 1), Payload: v})
 		require.NoError(t, err)
 	}
 
@@ -155,9 +157,9 @@ func TestWindow_ByteBudgetBoundsBytes(t *testing.T) {
 // A single entry larger than the whole budget must still be resident: the tail
 // is load-bearing for PeekTail and Append.
 func TestWindow_ByteBudgetKeepsOneOversizeEntry(t *testing.T) {
-	inner := NewMemLog[uint64]()
+	inner := arialog.NewMemLog[uint64]()
 	for _, v := range []uint64{10, 10, 999999} {
-		_, err := inner.Append(Entry[uint64]{FigaroLT: uint64(len(inner.Read()) + 1), Payload: v})
+		_, err := inner.Append(arialog.Entry[uint64]{FigaroLT: uint64(len(inner.Read()) + 1), Payload: v})
 		require.NoError(t, err)
 	}
 	c := newWindowedLog[uint64](inner, 0, 100, 1, 1, costOf)
@@ -173,9 +175,9 @@ func TestWindow_RowAndByteBoundsCompose(t *testing.T) {
 	for i := range fks {
 		fks[i] = 10
 	}
-	inner := NewMemLog[uint64]()
+	inner := arialog.NewMemLog[uint64]()
 	for _, v := range fks {
-		_, err := inner.Append(Entry[uint64]{FigaroLT: uint64(len(inner.Read()) + 1), Payload: v})
+		_, err := inner.Append(arialog.Entry[uint64]{FigaroLT: uint64(len(inner.Read()) + 1), Payload: v})
 		require.NoError(t, err)
 	}
 	// Rows allow 50, bytes allow 10 entries. Bytes bind.
@@ -211,7 +213,7 @@ func TestTranslationBudgetReachesTheCache(t *testing.T) {
 		// FigaroLT is the coordinate a translation is addressed by -- the IR
 		// record it translates -- and production always stamps it. A row
 		// without one cannot be found by ReadFrom or Lookup either.
-		if _, err := log.Append(Entry[[]json.RawMessage]{
+		if _, err := log.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: uint64(i + 1), Payload: []json.RawMessage{big},
 		}); err != nil {
 			t.Fatal(err)
@@ -320,7 +322,7 @@ func TestRecencyMemoAdvancesOnAWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(2 * time.Millisecond)
-	if _, err := log.Append(Entry[message.Message]{Payload: message.Message{
+	if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleOutput, Content: []message.Content{message.TextContent("hi")},
 	}}); err != nil {
 		t.Fatal(err)

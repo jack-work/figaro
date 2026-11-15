@@ -7,8 +7,8 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 // What observation costs per translated turn as the observed set grows.
@@ -46,13 +46,13 @@ func projectWith(b *testing.B, turns, observed int, warm bool) {
 		studies[id] = &benchForm{patches: benchPatches(turns + 1)}
 		stamp[id] = 0
 	}
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	for t := 0; t < turns; t++ {
 		versions := map[string]uint64{}
 		for id := range studies {
 			versions[id] = uint64(t + 1) // one patch per form per turn
 		}
-		_, _ = log.Append(store.Entry[message.Message]{
+		_, _ = log.Append(arialog.Entry[message.Message]{
 			Payload:       message.Message{Role: message.RoleInput},
 			StudyVersions: versions,
 		})
@@ -61,7 +61,7 @@ func projectWith(b *testing.B, turns, observed int, warm bool) {
 	newCfg := func() provider.CatchUpConfig {
 		return provider.CatchUpConfig{
 			Log:        log,
-			Translator: store.NewMemLog[[]json.RawMessage](),
+			Translator: arialog.NewMemLog[[]json.RawMessage](),
 			Studies:    studies,
 			Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 				// Count the folds so the derivation is not elided.

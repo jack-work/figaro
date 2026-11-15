@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
@@ -198,10 +200,10 @@ func TestAGatewayWithoutACatalogRoutesByRulesAndDefault(t *testing.T) {
 		for i := 0; i < 2; i++ {
 			be, aria := store.NewTestAria(t, "d", message.Patch{})
 			figLog, _ := be.OpenFigIR(aria)
-			_, _ = figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+			_, _ = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 				Role: message.RoleInput, Content: []message.Content{message.TextContent("hi")},
 			}})
-			p.translators = func(aria, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
+			p.translators = func(aria, ns string) (arialog.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
 			p.SetModel("llama")
 			if err := p.Send(context.Background(), provider.SendInput{AriaID: aria, FigLog: figLog, MaxTokens: 64}, &nullBus{}); err != nil {
 				t.Fatalf("%d: turn %d failed: %v", status, i, err)

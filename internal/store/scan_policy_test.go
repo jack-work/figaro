@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync/atomic"
 	"testing"
+
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // A whole-history read through the public surface does not cost the
@@ -13,36 +15,36 @@ import (
 // countingLog counts what the layer BELOW the window is asked to do, which is
 // the only externally visible sign that residency was lost.
 type countingLog[T any] struct {
-	Log[T]
+	arialog.Log[T]
 	reads atomic.Int64
 }
 
-func (c *countingLog[T]) Read() []Entry[T] {
+func (c *countingLog[T]) Read() []arialog.Entry[T] {
 	c.reads.Add(1)
 	return c.Log.Read()
 }
 
-func (c *countingLog[T]) ReadFrom(lt uint64, n int) []Entry[T] {
+func (c *countingLog[T]) ReadFrom(lt uint64, n int) []arialog.Entry[T] {
 	c.reads.Add(1)
 	return c.Log.ReadFrom(lt, n)
 }
 
-func (c *countingLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
+func (c *countingLog[T]) ReadPage(from, before uint64, n int) ([]arialog.Entry[T], int) {
 	c.reads.Add(1)
 	return c.Log.ReadPage(from, before, n)
 }
 
 func windowedAria(t *testing.T, name string, n, window int) (*treeLog[string], *countingLog[string]) {
 	t.Helper()
-	inner := NewMemLog[string]()
+	inner := arialog.NewMemLog[string]()
 	for i := 1; i <= n; i++ {
-		if _, err := inner.Append(Entry[string]{Payload: fmt.Sprintf("%s-%06d", name, i)}); err != nil {
+		if _, err := inner.Append(arialog.Entry[string]{Payload: fmt.Sprintf("%s-%06d", name, i)}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	counted := &countingLog[string]{Log: inner}
 	return newWindowedLog[string](counted, window, 0, 1, 1,
-		func(e Entry[string]) int { return len(e.Payload) + 48 }), counted
+		func(e arialog.Entry[string]) int { return len(e.Payload) + 48 }), counted
 }
 
 func TestWholeHistoryReadKeepsNeighboursResident(t *testing.T) {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	fwtree "github.com/jack-work/figaro/figwal/tree"
@@ -12,9 +14,9 @@ import (
 
 // collect drains a scan into the slice Read would have built. TESTS ONLY: the
 // point of Scan is that the send path never does this.
-func collect[T any](log Log[T], from, to uint64) []Entry[T] {
-	var out []Entry[T]
-	Scan(log, from, to, func(e Entry[T]) bool {
+func collect[T any](log arialog.Log[T], from, to uint64) []arialog.Entry[T] {
+	var out []arialog.Entry[T]
+	arialog.Scan(log, from, to, func(e arialog.Entry[T]) bool {
 		out = append(out, e)
 		return true
 	})
@@ -27,13 +29,13 @@ func collect[T any](log Log[T], from, to uint64) []Entry[T] {
 func TestScanIsReadWithoutTheArray(t *testing.T) {
 	for _, budget := range []int64{0, 1 << 10, 1 << 20} {
 		t.Run(fmt.Sprint(budget), func(t *testing.T) {
-			mem := NewMemLog[string]()
+			mem := arialog.NewMemLog[string]()
 			for i := 0; i < 200; i++ {
-				_, err := mem.Append(Entry[string]{Payload: fmt.Sprintf("row-%03d", i)})
+				_, err := mem.Append(arialog.Entry[string]{Payload: fmt.Sprintf("row-%03d", i)})
 				require.NoError(t, err)
 			}
-			sizeOf := func(e Entry[string]) int { return len(e.Payload) + 48 }
-			cache := NewIRCache[string](fwtree.NewBudget(budget), func(string) Log[string] { return mem }, sizeOf, irKey[string])
+			sizeOf := func(e arialog.Entry[string]) int { return len(e.Payload) + 48 }
+			cache := NewIRCache[string](fwtree.NewBudget(budget), func(string) arialog.Log[string] { return mem }, sizeOf, irKey[string])
 			l := newTreeLog[string](mem, "aria", cache, sizeOf, irKey[string], nil)
 
 			// Warm SOME of it, so the walk crosses resident runs and holes in
@@ -44,7 +46,7 @@ func TestScanIsReadWithoutTheArray(t *testing.T) {
 			require.Equal(t, l.Read(), collect[string](l, 0, 0), "whole channel")
 
 			for _, span := range [][2]uint64{{0, 10}, {35, 75}, {119, 131}, {150, 200}, {195, 400}} {
-				want := make([]Entry[string], 0)
+				want := make([]arialog.Entry[string], 0)
 				for _, e := range l.Read() {
 					if e.LT > span[0] && e.LT <= span[1] {
 						want = append(want, e)
@@ -70,7 +72,7 @@ func TestXwalLogScanMatchesRead(t *testing.T) {
 	rows, err := b.OpenTranslator(aria, "anthropic")
 	require.NoError(t, err)
 	for i := 0; i < 64; i++ {
-		_, err := rows.Append(Entry[[]json.RawMessage]{
+		_, err := rows.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: uint64(i + 1),
 			Payload:  []json.RawMessage{json.RawMessage(fmt.Sprintf(`{"role":"user","n":%d}`, i))},
 		})
@@ -84,7 +86,7 @@ func TestXwalLogScanMatchesRead(t *testing.T) {
 	// A scan that stops early stops the read: nothing past the refusal is
 	// decoded, which is what makes an early exit cheap.
 	seen := 0
-	Scan(rows, 0, 0, func(Entry[[]json.RawMessage]) bool {
+	arialog.Scan(rows, 0, 0, func(arialog.Entry[[]json.RawMessage]) bool {
 		seen++
 		return seen < 3
 	})
@@ -94,15 +96,15 @@ func TestXwalLogScanMatchesRead(t *testing.T) {
 // A walk bounded at a coordinate stops there even as the log grows: the
 // property a replayed request body depends on.
 func TestScanBoundHoldsAgainstAppends(t *testing.T) {
-	mem := NewMemLog[string]()
+	mem := arialog.NewMemLog[string]()
 	for i := 0; i < 10; i++ {
-		_, err := mem.Append(Entry[string]{Payload: fmt.Sprintf("row-%d", i)})
+		_, err := mem.Append(arialog.Entry[string]{Payload: fmt.Sprintf("row-%d", i)})
 		require.NoError(t, err)
 	}
 	before := collect[string](mem, 0, 10)
 	require.Len(t, before, 10)
 
-	_, err := mem.Append(Entry[string]{Payload: "row-10"})
+	_, err := mem.Append(arialog.Entry[string]{Payload: "row-10"})
 	require.NoError(t, err)
 
 	require.Equal(t, before, collect[string](mem, 0, 10), "a bounded walk does not see the append")
@@ -113,21 +115,21 @@ func TestScanBoundHoldsAgainstAppends(t *testing.T) {
 // has no lineage, so substrateScan against another node interleaved with
 // resident runs only executes here.
 func TestScanCrossesAForkSeam(t *testing.T) {
-	parentMem := NewMemLog[string]()
+	parentMem := arialog.NewMemLog[string]()
 	for i := 0; i < 40; i++ {
-		_, err := parentMem.Append(Entry[string]{Payload: fmt.Sprintf("p-%02d", i)})
+		_, err := parentMem.Append(arialog.Entry[string]{Payload: fmt.Sprintf("p-%02d", i)})
 		require.NoError(t, err)
 	}
-	sizeOf := func(e Entry[string]) int { return len(e.Payload) + 48 }
-	subs := map[string]Log[string]{"parent": parentMem}
-	open := func(node string) Log[string] { return subs[node] }
+	sizeOf := func(e arialog.Entry[string]) int { return len(e.Payload) + 48 }
+	subs := map[string]arialog.Log[string]{"parent": parentMem}
+	open := func(node string) arialog.Log[string] { return subs[node] }
 
 	for _, budget := range []int64{0, 1 << 20} {
 		t.Run(fmt.Sprint(budget), func(t *testing.T) {
 			cache := NewIRCache[string](fwtree.NewBudget(budget), open, sizeOf, irKey[string])
-			childMem := NewMemLog[string]()
+			childMem := arialog.NewMemLog[string]()
 			for i := 0; i < 3; i++ {
-				_, err := childMem.Append(Entry[string]{Payload: fmt.Sprintf("c-%02d", i)})
+				_, err := childMem.Append(arialog.Entry[string]{Payload: fmt.Sprintf("c-%02d", i)})
 				require.NoError(t, err)
 			}
 			const base = 41
@@ -154,7 +156,7 @@ func TestScanCrossesAForkSeam(t *testing.T) {
 
 			// And an early exit inside the ancestor's half stops there.
 			seen := 0
-			Scan[string](child, 0, 40, func(Entry[string]) bool {
+			arialog.Scan[string](child, 0, 40, func(arialog.Entry[string]) bool {
 				seen++
 				return seen < 7
 			})

@@ -9,10 +9,10 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/decide"
 	"github.com/jack-work/figaro/internal/methods"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/turns"
 )
 
@@ -113,7 +113,7 @@ func (a *Agent) inquiriesBefore(n int) []string {
 	return out
 }
 
-func appendInquiries(out []string, page []store.Entry[message.Message], n int) []string {
+func appendInquiries(out []string, page []arialog.Entry[message.Message], n int) []string {
 	for i := len(page) - 1; i >= 0 && len(out) < n; i-- {
 		if turns.Opens(page[i].Payload) {
 			out = append(out, turns.Text(page[i].Payload))

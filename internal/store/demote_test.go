@@ -3,6 +3,8 @@ package store_test
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -23,7 +25,7 @@ func withTurns(t *testing.T, b *store.XwalBackend, id string, n int) {
 		t.Fatal(err)
 	}
 	for i := 0; i < n; i++ {
-		if _, err := ir.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
+		if _, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 			t.Fatal(err)
 		}
 	}

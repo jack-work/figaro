@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -25,7 +27,7 @@ func BenchmarkReadPage(b *testing.B) {
 		aria, _ := be.OpenFigIR(id)
 		for _, src := range []struct {
 			name string
-			log  Log[message.Message]
+			log  arialog.Log[message.Message]
 		}{{"raw", be.OpenNode(id)}, {"aria", aria}} {
 			for _, q := range []struct {
 				name         string

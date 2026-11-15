@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	apimodels "github.com/jack-work/figaro/api/models"
@@ -38,11 +40,7 @@ func (g *slowCatalog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type irBackend struct{ f *store.Form }
-
-func (b irBackend) ModelsForm() (*store.Form, error) { return b.f, nil }
-
-func persistedIR(t *testing.T, name string, refreshed time.Time, ids ...string) irBackend {
+func persistedIR(t *testing.T, name string, refreshed time.Time, ids ...string) form.Snapshot {
 	t.Helper()
 	f := store.NewMemForm()
 	p := apimodels.Provider{IR: apimodels.IRVersion, RefreshedAt: refreshed.UnixMilli(), Models: map[string]apimodels.Entry{}}
@@ -57,7 +55,8 @@ func persistedIR(t *testing.T, name string, refreshed time.Time, ids ...string) 
 	if _, _, err := f.ApplyEffect(form.Build(snap, map[string]json.RawMessage{name: raw}, nil), 0); err != nil {
 		t.Fatal(err)
 	}
-	return irBackend{f}
+	snapshot, _ := f.Snapshot()
+	return snapshot
 }
 
 func coldGateway(t *testing.T, name string, delay time.Duration, def Transport) (*Provider, *slowCatalog, func(model string) error) {
@@ -70,13 +69,13 @@ func coldGateway(t *testing.T, name string, delay time.Duration, def Transport) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+	if _, err := figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("say something")},
 	}}); err != nil {
 		t.Fatal(err)
 	}
 	p := mustNew(t, Spec{Name: name, BaseURL: func() string { return srv.URL + "/v1" }, Catalog: "/models", Default: def, Mapping: copilotShape})
-	p.translators = func(aria, ns string) (store.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
+	p.translators = func(aria, ns string) (arialog.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
 	send := func(model string) error {
 		p.SetModel(model)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

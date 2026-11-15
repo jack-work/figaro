@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
@@ -47,8 +49,8 @@ func TestLineage_EveryTurnItCallsSharedIsByteIdentical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	put := func(log store.Log[message.Message], m message.Message) uint64 {
-		e, err := log.Append(store.Entry[message.Message]{Payload: m})
+	put := func(log arialog.Log[message.Message], m message.Message) uint64 {
+		e, err := log.Append(arialog.Entry[message.Message]{Payload: m})
 		if err != nil {
 			t.Fatal(err)
 		}

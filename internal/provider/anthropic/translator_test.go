@@ -9,16 +9,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 func TestCatchUpPreservesPrefixBytes(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	cache := store.NewMemLog[[]json.RawMessage]()
+	log := arialog.NewMemLog[message.Message]()
+	cache := arialog.NewMemLog[[]json.RawMessage]()
 	a := &Anthropic{ReminderRenderer: "tag"}
 	for _, role := range []message.Role{message.RoleInput, message.RoleOutput} {
-		_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		_, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: role, Content: []message.Content{message.TextContent(string(role))},
 		}})
 		require.NoError(t, err)
@@ -27,7 +27,7 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 	firstSeq, _ := a.catchUp(context.Background(), log, cache, nil, nil)
 	first, _ := provider.CollectRows(firstSeq)
 	prefix := append([]byte(nil), first[0]...)
-	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("next")},
 	}})
 	require.NoError(t, err)
@@ -39,9 +39,9 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 }
 
 func TestInvalidateIfStaleUsesTailFingerprint(t *testing.T) {
-	cache := store.NewMemLog[[]json.RawMessage]()
+	cache := arialog.NewMemLog[[]json.RawMessage]()
 	a := &Anthropic{ReminderRenderer: "tag"}
-	_, err := cache.Append(store.Entry[[]json.RawMessage]{
+	_, err := cache.Append(arialog.Entry[[]json.RawMessage]{
 		FigaroLT: 1, Payload: []json.RawMessage{json.RawMessage(`{}`)}, Fingerprint: "stale",
 	})
 	require.NoError(t, err)

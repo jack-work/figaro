@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/models"
@@ -27,9 +29,9 @@ func TestAutoResponsesLimitsUseTheMinimumAndClearWhenUnknown(t *testing.T) {
 	backend, id := store.NewTestAria(t, "auto-limits", message.Patch{})
 	log, err := backend.OpenFigIR(id)
 	require.NoError(t, err)
-	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("a prompt that exceeds a one token window")}}})
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("a prompt that exceeds a one token window")}}})
 	require.NoError(t, err)
-	p, err := New(Spec{Name: "auto-limits", BaseURL: func() string { return srv.URL }, Default: Responses}, provider.Knobs{Model: "auto", MaxTokens: 64}, staticToken("unused"), func(aria, ns string) (store.Log[[]json.RawMessage], error) { return backend.OpenTranslator(aria, ns) })
+	p, err := New(Spec{Name: "auto-limits", BaseURL: func() string { return srv.URL }, Default: Responses}, provider.Knobs{Model: "auto", MaxTokens: 64}, staticToken("unused"), func(aria, ns string) (arialog.Log[[]json.RawMessage], error) { return backend.OpenTranslator(aria, ns) })
 	require.NoError(t, err)
 	tiny := 1
 	auto := &models.AutoRoute{ContextStatus: "known", Candidates: []models.RouteCandidate{{Model: "vendor/model", APIs: []string{"responses"}, ContextLength: &tiny}}}

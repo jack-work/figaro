@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
@@ -83,7 +85,7 @@ func (p *midTurnEffortProvider) Send(ctx context.Context, in provider.SendInput,
 func sentRows(in provider.SendInput) ([]json.RawMessage, error) {
 	enc := &anthropic.Anthropic{}
 	d := provider.NewDeriver(in.Form, nil)
-	entries, _ := store.TailAfter(in.FigLog, 0)
+	entries, _ := arialog.TailAfter(in.FigLog, 0)
 	var rows []json.RawMessage
 	for _, e := range entries {
 		msg, snap, ok := d.Next(e)

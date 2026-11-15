@@ -3,9 +3,11 @@ package figaro
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/api/form"
 	"strconv"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/arialog"
 
 	"github.com/stretchr/testify/require"
 
@@ -39,7 +41,7 @@ func BenchmarkSeedTurnID(b *testing.B) {
 	}
 }
 
-func coldTurnLog(tb testing.TB, n int) store.Log[message.Message] {
+func coldTurnLog(tb testing.TB, n int) arialog.Log[message.Message] {
 	tb.Helper()
 	root := tb.TempDir()
 	be, err := store.NewXwalBackend(root, 0)
@@ -61,7 +63,7 @@ func coldTurnLog(tb testing.TB, n int) store.Log[message.Message] {
 		if i%2 == 1 {
 			role = message.RoleOutput
 		}
-		_, err := lg.Append(store.Entry[message.Message]{Payload: message.Message{
+		_, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    role,
 			Content: []message.Content{message.TextContent(fmt.Sprintf("%d %s", i, body))},
 		}})

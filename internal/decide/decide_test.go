@@ -15,7 +15,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/quote"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // What api.experientiallabs.ai/v1/systemone answered on 2026-10-12, verbatim.
@@ -60,11 +60,11 @@ func engineReplying(t *testing.T, reply string) (*Engine, *seen) {
 	return at(srv.URL), got
 }
 
-func logOf(t *testing.T, msgs ...message.Message) store.Log[message.Message] {
+func logOf(t *testing.T, msgs ...message.Message) arialog.Log[message.Message] {
 	t.Helper()
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	for _, m := range msgs {
-		if _, err := log.Append(store.Entry[message.Message]{Payload: m}); err != nil {
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: m}); err != nil {
 			t.Fatal(err)
 		}
 	}

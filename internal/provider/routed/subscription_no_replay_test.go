@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
@@ -37,7 +39,7 @@ func TestDeclaredNoReplayStopsPartialSubscriptionAtTheAgentBoundary(t *testing.T
 			defer server.Close()
 			p := gatewayAt(t, "subscription-no-replay-"+fmt.Sprint(partialTool), "preset=\"gateway\"\nbase_url=\""+server.URL+"\"\n[routing]\ncatalog=\"off\"\ndefault=\"responses\"\n[responses]\nno_replay=true\nomit_fields=[\"max_output_tokens\"]\n")
 			backend, id := store.NewTestAria(t, "subscription-cut", message.Patch{})
-			p.translators = func(id, ns string) (store.Log[[]json.RawMessage], error) { return backend.OpenTranslator(id, ns) }
+			p.translators = func(id, ns string) (arialog.Log[[]json.RawMessage], error) { return backend.OpenTranslator(id, ns) }
 			state, err := form.Open("")
 			require.NoError(t, err)
 			state.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.model": json.RawMessage(`"model"`), "system.methods.enabled": json.RawMessage(`false`)}, nil))

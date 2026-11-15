@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -26,7 +28,7 @@ type formSpyProvider struct {
 	mu       sync.Mutex
 	encoded  []message.Message
 	sentRuns int
-	cache    store.Log[[]json.RawMessage] // optional, set by tests that inspect cache state
+	cache    arialog.Log[[]json.RawMessage] // optional, set by tests that inspect cache state
 }
 
 func (p *formSpyProvider) Name() string                                           { return "spy" }

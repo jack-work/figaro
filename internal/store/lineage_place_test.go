@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	fwtree "github.com/jack-work/figaro/figwal/tree"
 )
@@ -45,7 +47,7 @@ func TestForkPlacedUnderAParentAboveItsCutReadsItsOwnRecords(t *testing.T) {
 		own = append(own, put(t, cLog, ask(uint64(30+i), fmt.Sprintf("c%d", i))))
 	}
 
-	text := func(e Entry[message.Message]) string {
+	text := func(e arialog.Entry[message.Message]) string {
 		if len(e.Payload.Content) == 0 {
 			return ""
 		}
@@ -61,11 +63,11 @@ func TestForkPlacedUnderAParentAboveItsCutReadsItsOwnRecords(t *testing.T) {
 		}
 	}
 	scanned := map[uint64]string{}
-	ScanAll(cLog, func(e Entry[message.Message]) bool {
+	arialog.ScanAll(cLog, func(e arialog.Entry[message.Message]) bool {
 		scanned[e.LT] = text(e)
 		return true
 	})
-	tail, _ := TailAfter(cLog, own[0]-1)
+	tail, _ := arialog.TailAfter(cLog, own[0]-1)
 	after := map[uint64]string{}
 	for _, e := range tail {
 		after[e.LT] = text(e)
@@ -107,7 +109,7 @@ func TestAViewHidingOwnRowsRefusesToTruncate(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		put(t, cLog, ask(uint64(30+i), "c"))
 	}
-	if ViewHidesOwnRows(cLog) {
+	if arialog.ViewHidesOwnRows(cLog) {
 		t.Fatal("the pruned lineage hides the node's own rows")
 	}
 
@@ -115,7 +117,7 @@ func TestAViewHidingOwnRowsRefusesToTruncate(t *testing.T) {
 	for _, l := range be.Store().LineageLinks(c) {
 		raw = append(raw, fwtree.Ref{Node: l.Node, Base: l.BaseLT})
 	}
-	open := func(node string) Log[message.Message] {
+	open := func(node string) arialog.Log[message.Message] {
 		return newXwalLog[message.Message](be.store, node, chanIR, true)
 	}
 	hiding := newTreeLog[message.Message](open(c), c, be.irCache, irEntrySize, irKey[message.Message],
@@ -124,7 +126,7 @@ func TestAViewHidingOwnRowsRefusesToTruncate(t *testing.T) {
 		t.Fatalf("a falling lineage %v must report hidden own rows", raw)
 	}
 	tail, _ := cLog.PeekTail()
-	if err := hiding.TruncateFrom(tail.LT - 2); !errors.Is(err, ErrViewHidesOwnRows) {
+	if err := hiding.TruncateFrom(tail.LT - 2); !errors.Is(err, arialog.ErrViewHidesOwnRows) {
 		t.Fatalf("TruncateFrom through a hiding view: err %v, want ErrViewHidesOwnRows", err)
 	}
 	if after, _ := cLog.PeekTail(); after.LT != tail.LT {

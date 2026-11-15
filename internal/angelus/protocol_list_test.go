@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
@@ -48,9 +50,9 @@ func (b *metadataListBackend) FormState(string) (form.Snapshot, error) {
 	return form.Snapshot{}, nil
 }
 
-func (b *metadataListBackend) OpenFigIR(string) (store.Log[message.Message], error) {
+func (b *metadataListBackend) OpenFigIR(string) (arialog.Log[message.Message], error) {
 	b.logReads.Add(1)
-	return store.NewMemLog[message.Message](), nil
+	return arialog.NewMemLog[message.Message](), nil
 }
 
 func TestDormantListUsesMetadataOnly(t *testing.T) {

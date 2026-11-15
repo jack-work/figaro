@@ -19,9 +19,8 @@ const librettoPrefix = "@libretto::"
 // system.libretto.* is the one namespace a form cannot write (CheckWritable
 // refuses it), which makes a collision impossible rather than unlikely.
 const (
-	KeyLibrettoRefs  = "system.libretto.refs"
-	KeyLibrettoAlive = "system.libretto.alive"
-	KeyLibrettoAt    = "system.libretto.at"
+	KeyLibrettoRefs = "system.libretto.refs"
+	KeyLibrettoAt   = "system.libretto.at"
 )
 
 // LibrettoID is deterministic from the source id: nothing is looked up or
@@ -62,10 +61,10 @@ func OpenLibretto(s *XwalStore, sourceFormID string) (*Libretto, error) {
 	l := &Libretto{form: f, source: strings.TrimPrefix(sourceFormID, "@")}
 	// Written once, so a reader can tell never-studied from studied-and-dropped
 	// without inferring it from an absence.
-	if _, ok := l.formState().Get(KeyLibrettoAlive); !ok {
+	if _, ok := l.formState().Get(form.KeyLibrettoAlive); !ok {
 		if _, _, err := l.form.ApplyEffectPrivileged(librettoPatch(map[string]any{
-			KeyLibrettoAlive: true,
-			KeyLibrettoRefs:  0,
+			form.KeyLibrettoAlive: true,
+			KeyLibrettoRefs:       0,
 		}), 0); err != nil {
 			f.Close()
 			return nil, err
@@ -313,7 +312,7 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) bool {
 	}
 	if dead {
 		raw, _ := json.Marshal(false)
-		set[KeyLibrettoAlive] = raw
+		set[form.KeyLibrettoAlive] = raw
 	}
 	raw, err := json.Marshal(last)
 	if err != nil {
@@ -367,7 +366,7 @@ func isLibrettoKey(k string) bool {
 // fold, and refs moves whenever another aria studies or drops the same form,
 // cross-aria noise inside one aria's context.
 func HiddenLibrettoKey(k string) bool {
-	return strings.HasPrefix(k, "system.libretto.") && k != KeyLibrettoAlive
+	return strings.HasPrefix(k, "system.libretto.") && k != form.KeyLibrettoAlive
 }
 
 func librettoPatch(kv map[string]any) message.Patch {

@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/authz"
@@ -146,7 +148,7 @@ func (a *Agent) writeStudyMark(mark *message.StudyMark) {
 	if a.figLog == nil || mark == nil {
 		return
 	}
-	_, _ = a.writer().Append(store.Entry[message.Message]{Payload: message.Message{
+	_, _ = a.writer().Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:      message.RoleInput,
 		Study:     mark,
 		Timestamp: time.Now().UnixMilli(),

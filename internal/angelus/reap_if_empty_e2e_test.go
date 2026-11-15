@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -49,7 +51,7 @@ func writeMessage(t *testing.T, a *angelus.Angelus, id string, counted int) {
 	t.Helper()
 	log, err := a.Backend.OpenFigIR(id)
 	require.NoError(t, err)
-	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err = log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{{Type: message.ContentProse, Text: "hello"}},
 	}})

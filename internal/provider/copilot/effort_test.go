@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
@@ -56,7 +58,7 @@ data: {"type":"message_stop"}`,
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+	if _, err := figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Patches: []message.Patch{effort},
 		Content: []message.Content{message.TextContent("say ciao")},
 	}}); err != nil {
@@ -67,7 +69,7 @@ data: {"type":"message_stop"}`,
 		t.Fatal(err)
 	}
 	c, err := newTestCopilot(srv.URL, "claude-opus-5.5", staticResolver("gh-token"),
-		func(aria, ns string) (store.Log[[]json.RawMessage], error) {
+		func(aria, ns string) (arialog.Log[[]json.RawMessage], error) {
 			if ns == "copilot-messages" {
 				return rows, nil
 			}

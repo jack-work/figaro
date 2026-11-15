@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/api/form"
@@ -589,7 +591,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 		return nil, fmt.Errorf("import: open %q: %w", id, err)
 	}
 	for i, m := range req.Messages {
-		if _, err := log.Append(store.Entry[message.Message]{Payload: m}); err != nil {
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: m}); err != nil {
 			return nil, fmt.Errorf("import: append message %d of %d: %w", i+1, len(req.Messages), err)
 		}
 	}
@@ -607,7 +609,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	}
 	studyKeys := map[string][]string{}
 	for k, raw := range keys {
-		fid, ok := strings.CutPrefix(k, store.StudyKeysKey+".")
+		fid, ok := strings.CutPrefix(k, form.StudyKeysKey+".")
 		if !ok {
 			continue
 		}

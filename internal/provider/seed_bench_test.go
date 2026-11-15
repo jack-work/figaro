@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/store"
@@ -13,11 +15,11 @@ import (
 
 // countedRows counts the rows a reader is handed, whichever way it asks.
 type countedRows struct {
-	store.Log[[]json.RawMessage]
+	arialog.Log[[]json.RawMessage]
 	handed *int
 }
 
-func (c countedRows) PeekTail() (store.Entry[[]json.RawMessage], bool) {
+func (c countedRows) PeekTail() (arialog.Entry[[]json.RawMessage], bool) {
 	e, ok := c.Log.PeekTail()
 	if ok {
 		*c.handed++
@@ -25,7 +27,7 @@ func (c countedRows) PeekTail() (store.Entry[[]json.RawMessage], bool) {
 	return e, ok
 }
 
-func (c countedRows) Lookup(figaroLT uint64) (store.Entry[[]json.RawMessage], bool) {
+func (c countedRows) Lookup(figaroLT uint64) (arialog.Entry[[]json.RawMessage], bool) {
 	e, ok := c.Log.Lookup(figaroLT)
 	if ok {
 		*c.handed++
@@ -33,19 +35,19 @@ func (c countedRows) Lookup(figaroLT uint64) (store.Entry[[]json.RawMessage], bo
 	return e, ok
 }
 
-func (c countedRows) ReadPage(from, before uint64, n int) ([]store.Entry[[]json.RawMessage], int) {
+func (c countedRows) ReadPage(from, before uint64, n int) ([]arialog.Entry[[]json.RawMessage], int) {
 	page, total := c.Log.ReadPage(from, before, n)
 	*c.handed += len(page)
 	return page, total
 }
 
-func (c countedRows) ReadFrom(figaroLT uint64, n int) []store.Entry[[]json.RawMessage] {
+func (c countedRows) ReadFrom(figaroLT uint64, n int) []arialog.Entry[[]json.RawMessage] {
 	out := c.Log.ReadFrom(figaroLT, n)
 	*c.handed += len(out)
 	return out
 }
 
-func (c countedRows) Read() []store.Entry[[]json.RawMessage] {
+func (c countedRows) Read() []arialog.Entry[[]json.RawMessage] {
 	out := c.Log.Read()
 	*c.handed += len(out)
 	return out
@@ -88,7 +90,7 @@ func BenchmarkFirstEncodeSeedsTheDeriver(b *testing.B) {
 				if i%2 == 1 {
 					role = message.RoleOutput
 				}
-				if _, err := f.log.Append(store.Entry[message.Message]{Payload: message.Message{
+				if _, err := f.log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 					Role:      role,
 					Content:   []message.Content{message.TextContent(fmt.Sprintf("record %d %s", i, strings.Repeat("x", (i*37)%400)))},
 					Timestamp: int64(1000 + i),
@@ -123,7 +125,7 @@ func BenchmarkFirstEncodeSeedsTheDeriver(b *testing.B) {
 				func() string { return "test/v1" },
 				func(string) Form { return boundFormOf{f} },
 				func(string) map[string]Form { return nil },
-				func(aria string) (store.Log[[]json.RawMessage], error) {
+				func(aria string) (arialog.Log[[]json.RawMessage], error) {
 					opened, err := backend.OpenTranslator(aria, batchedChannel)
 					return countedRows{Log: opened, handed: &handed}, err
 				},

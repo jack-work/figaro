@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // The old whole-message-copy derivations of the repair view, kept as an
@@ -140,7 +140,7 @@ func TestTurnShadowPrefersTheDurablePayload(t *testing.T) {
 	a.turn.asm = s
 
 	// Through the seam the drain loop uses: setting the field directly cannot see the wiring go missing.
-	staged := store.Entry[message.Message]{Payload: message.Message{
+	staged := arialog.Entry[message.Message]{Payload: message.Message{
 		Role:       message.RoleOutput,
 		Content:    []message.Content{{Type: message.ContentProse, Text: "durable"}},
 		StopReason: message.StopEnd}}

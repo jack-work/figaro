@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/hierarchy"
@@ -132,11 +134,11 @@ type Backend interface {
 	// OpenFigIR returns the canonical IR log. Every call returns the same
 	// shared instance, so a live agent and a concurrent reader see the same
 	// entries with lock-free reads.
-	OpenFigIR(ariaID string) (Log[message.Message], error)
+	OpenFigIR(ariaID string) (arialog.Log[message.Message], error)
 
 	// OpenTranslator returns one provider's derived translation of the IR;
 	// each entry names the IR entry it translates.
-	OpenTranslator(ariaID, providerName string) (Log[[]json.RawMessage], error)
+	OpenTranslator(ariaID, providerName string) (arialog.Log[[]json.RawMessage], error)
 
 	// CloseOpenToolCalls closes every outstanding tool invoke with an error
 	// result and reports how many. The IR write path does this on its next

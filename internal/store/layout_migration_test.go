@@ -3,12 +3,14 @@ package store
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/api/form"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/arialog"
 
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/figwal/xwal"
@@ -43,7 +45,7 @@ func seedForkedArias(t *testing.T, root string) (ids []string, boundForms map[st
 			m := message.Message{Role: message.RoleInput, Content: []message.Content{
 				{Type: message.ContentProse, Text: fmt.Sprintf("gen%d msg%d", gen, i)},
 			}}
-			if _, err := lg.Append(Entry[message.Message]{Payload: m}); err != nil {
+			if _, err := lg.Append(arialog.Entry[message.Message]{Payload: m}); err != nil {
 				t.Fatal(err)
 			}
 		}

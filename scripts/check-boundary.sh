@@ -183,6 +183,25 @@ grep -l "\"$MOD/internal/sandbox" internal/cli/*.go | grep -v '_test\.go$' | whi
 	esac
 done >>"$found"
 
+NRULES=$((NRULES + 1))
+while IFS= read -r line; do
+	importer=${line%% *}
+	if under "$importer" "$MOD/internal/provider" || under "$importer" "$MOD/internal/decide"; then
+		for dep in ${line#"$importer"}; do
+			if under "$dep" "$MOD/internal/store"; then
+				echo "$importer $dep provider-store-imports"
+			fi
+		done
+	fi
+	if under "$importer" "$MOD/internal/arialog"; then
+		for dep in ${line#"$importer"}; do
+			if under "$dep" "$MOD" && ! under "$dep" "$MOD/internal/arialog" && ! under "$dep" "$MOD/figwal"; then
+				echo "$importer $dep typed-log-imports"
+			fi
+		done
+	fi
+done <"$direct" >>"$found"
+
 sort -u -o "$found" "$found"
 cut -d' ' -f1,2 "$found" | sort -u >"$tmp/pairs"
 

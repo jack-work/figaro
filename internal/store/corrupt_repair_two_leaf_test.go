@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 )
@@ -42,14 +44,14 @@ func TestTheCrashRepairQuarantinesOneLeafAndRepairsTheOther(t *testing.T) {
 			t.Fatal(err)
 		}
 		for i := 0; i < 5; i++ {
-			e, err := lg.Append(Entry[message.Message]{Payload: message.Message{
+			e, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 				Role: message.RoleInput, Content: []message.Content{message.TextContent(fmt.Sprintf("%s-msg-%d", tag, i))},
 			}})
 			if err != nil {
 				t.Fatal(err)
 			}
 			row, _ := json.Marshal(map[string]string{"role": "user", "content": fmt.Sprintf("%s-row-%d", tag, i)})
-			if _, err := tr.Append(Entry[[]json.RawMessage]{FigaroLT: e.LT, Payload: []json.RawMessage{row}}); err != nil {
+			if _, err := tr.Append(arialog.Entry[[]json.RawMessage]{FigaroLT: e.LT, Payload: []json.RawMessage{row}}); err != nil {
 				t.Fatal(err)
 			}
 			v, _ := json.Marshal(fmt.Sprintf("%s-patch-%d", tag, i))

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -21,8 +23,8 @@ func sameRaw(a, b json.RawMessage) bool {
 	return len(a) == len(b) && len(a) > 0 && unsafe.SliceData(a) == unsafe.SliceData(b)
 }
 
-func transRow(lt uint64, fp, text string) Entry[[]json.RawMessage] {
-	return Entry[[]json.RawMessage]{
+func transRow(lt uint64, fp, text string) arialog.Entry[[]json.RawMessage] {
+	return arialog.Entry[[]json.RawMessage]{
 		LT: lt, FigaroLT: lt, Fingerprint: fp,
 		Payload: []json.RawMessage{json.RawMessage(`{"text":"` + text + `"}`)},
 	}
@@ -32,7 +34,7 @@ func transRow(lt uint64, fp, text string) Entry[[]json.RawMessage] {
 // records the log actually holds. The seam check is the place that can see it:
 // it reads the last donated record back out of the log and compares.
 func TestATranslationSeedWithAForeignFingerprintIsRefused(t *testing.T) {
-	inner := NewMemLog[[]json.RawMessage]()
+	inner := arialog.NewMemLog[[]json.RawMessage]()
 	for i := 1; i <= 6; i++ {
 		if _, err := inner.Append(transRow(uint64(i), "fp-A", "row")); err != nil {
 			t.Fatal(err)
@@ -42,7 +44,7 @@ func TestATranslationSeedWithAForeignFingerprintIsRefused(t *testing.T) {
 
 	// The same rows, relabelled as another encoder's output: what an ancestor
 	// that re-translated under a new fingerprint would be holding.
-	foreign := make([]Entry[[]json.RawMessage], 0, 3)
+	foreign := make([]arialog.Entry[[]json.RawMessage], 0, 3)
 	for _, e := range rows[:3] {
 		e.Fingerprint = "fp-B"
 		foreign = append(foreign, e)
@@ -64,7 +66,7 @@ func TestATranslationSeedWithAForeignFingerprintIsRefused(t *testing.T) {
 // And the positive direction, so the refusal is not simply "refuse everything":
 // a donation whose fingerprint matches is used.
 func TestATranslationSeedWithAMatchingFingerprintIsUsed(t *testing.T) {
-	inner := NewMemLog[[]json.RawMessage]()
+	inner := arialog.NewMemLog[[]json.RawMessage]()
 	for i := 1; i <= 6; i++ {
 		if _, err := inner.Append(transRow(uint64(i), "fp-A", "row")); err != nil {
 			t.Fatal(err)
@@ -102,7 +104,7 @@ func translatedTrunk(t *testing.T, namespaces ...string) (b *XwalBackend, parent
 	parent, _ = b.CreateConversation(l)
 
 	ir, _ := b.OpenFigIR(parent)
-	trans := map[string]Log[[]json.RawMessage]{}
+	trans := map[string]arialog.Log[[]json.RawMessage]{}
 	for _, ns := range namespaces {
 		tl, terr := b.OpenTranslator(parent, ns)
 		if terr != nil {
@@ -111,14 +113,14 @@ func translatedTrunk(t *testing.T, namespaces ...string) (b *XwalBackend, parent
 		trans[ns] = tl
 	}
 	for i := 0; i < 60; i++ {
-		e, aerr := ir.Append(Entry[message.Message]{Payload: message.Message{
+		e, aerr := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    message.RoleInput,
 			Content: []message.Content{message.TextContent("an IR record worth translating")}}})
 		if aerr != nil {
 			t.Fatal(aerr)
 		}
 		for _, ns := range namespaces {
-			if _, terr := trans[ns].Append(Entry[[]json.RawMessage]{
+			if _, terr := trans[ns].Append(arialog.Entry[[]json.RawMessage]{
 				FigaroLT:    e.LT, // the coordinate production stamps
 				Fingerprint: "fp-" + ns,
 				Payload: []json.RawMessage{json.RawMessage(
@@ -191,7 +193,7 @@ func TestSeededTranslationEqualsAnUnseededOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 40; i++ {
-		if _, err := pl.Append(Entry[[]json.RawMessage]{
+		if _, err := pl.Append(arialog.Entry[[]json.RawMessage]{
 			Fingerprint: "fp-A",
 			Payload:     []json.RawMessage{json.RawMessage(`{"i":` + string(rune('0'+i%10)) + `}`)},
 		}); err != nil {
@@ -325,7 +327,7 @@ func TestTheFingerprintCheckBlocksOnlyAfterADialectChange(t *testing.T) {
 	// (2) The drift case refuses. Relabel the donation as another dialect --
 	// what an ancestor that re-encoded would hold -- and confirm the seeded
 	// log falls back to the durable rows rather than serving them.
-	foreign := make([]Entry[[]json.RawMessage], len(donated))
+	foreign := make([]arialog.Entry[[]json.RawMessage], len(donated))
 	copy(foreign, donated)
 	for i := range foreign {
 		foreign[i].Fingerprint = "fp-OTHER-DIALECT"
@@ -364,13 +366,13 @@ func TestAForkServesItsOwnRowsAboveTheChannelsForkBase(t *testing.T) {
 	// The parent keeps writing, and so does the child: from here their
 	// coordinates collide and their contents must not.
 	for i := 0; i < 3; i++ {
-		if _, err := pl.Append(Entry[[]json.RawMessage]{
+		if _, err := pl.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: uint64(900 + i),
 			Payload:  []json.RawMessage{json.RawMessage(`{"role":"user","content":"PARENT ONLY"}`)},
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := cl.Append(Entry[[]json.RawMessage]{
+		if _, err := cl.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: uint64(900 + i),
 			Payload:  []json.RawMessage{json.RawMessage(`{"role":"user","content":"CHILD ONLY"}`)},
 		}); err != nil {

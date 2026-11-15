@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
@@ -28,7 +30,7 @@ func TestAQuarantineReleaseRecordsWhoReleasedIt(t *testing.T) {
 	id, _ := be.CreateConversation(label)
 	lg, _ := be.OpenFigIR(id)
 	for i := 0; i < 4; i++ {
-		if _, err := lg.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent(fmt.Sprintf("record-%d", i))},
 		}}); err != nil {
 			t.Fatal(err)
@@ -89,14 +91,14 @@ func quarantinedTranslator(t *testing.T) (dir, id string, at int64) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 4; i++ {
-		e, err := lg.Append(store.Entry[message.Message]{Payload: message.Message{
+		e, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent(fmt.Sprintf("record-%d", i))},
 		}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		row, _ := json.Marshal(map[string]string{"role": "user", "content": fmt.Sprintf("row-%d", i)})
-		if _, err := tr.Append(store.Entry[[]json.RawMessage]{FigaroLT: e.LT, Payload: []json.RawMessage{row}}); err != nil {
+		if _, err := tr.Append(arialog.Entry[[]json.RawMessage]{FigaroLT: e.LT, Payload: []json.RawMessage{row}}); err != nil {
 			t.Fatal(err)
 		}
 	}

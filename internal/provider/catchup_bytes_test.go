@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/store"
@@ -58,7 +60,7 @@ func TestCatchUpOf8000RecordsStaysUnderItsByteCeiling(t *testing.T) {
 		if i%2 == 1 {
 			role = message.RoleOutput
 		}
-		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{Role: role, Content: []message.Content{message.TextContent(fmt.Sprintf("record %d", i))}}}); err != nil {
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: role, Content: []message.Content{message.TextContent(fmt.Sprintf("record %d", i))}}}); err != nil {
 			t.Fatal(err)
 		}
 	}

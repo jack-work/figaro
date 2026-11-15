@@ -9,8 +9,8 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 // InputView is read-only: the bound form, the log, and the settings.
@@ -23,7 +23,7 @@ type InputView struct {
 
 // LogReader is narrow on purpose: a rewrite that appended would be a second write path.
 type LogReader interface {
-	Lookup(figaroLT uint64) (store.Entry[message.Message], bool)
+	Lookup(figaroLT uint64) (arialog.Entry[message.Message], bool)
 }
 
 type InputRewrite interface {

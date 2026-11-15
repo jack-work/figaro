@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/models"
@@ -49,7 +51,7 @@ func NewAriaReaderBounded(backend store.Backend, proj Projector, uiCache *aria.C
 
 // messages also returns the entries: they carry the cursor stamps the
 // payload does not, and form-delta assembly reads them.
-func (r *AriaReader) messages(id string) ([]message.Message, []store.Entry[message.Message], error) {
+func (r *AriaReader) messages(id string) ([]message.Message, []arialog.Entry[message.Message], error) {
 	if r == nil || r.backend == nil {
 		return nil, nil, errors.New("no backend")
 	}

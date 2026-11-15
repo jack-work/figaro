@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
@@ -81,10 +83,10 @@ func TestAzureSendsTheResolvedTokenAsABearer(t *testing.T) {
 	loaded := loadedWith(t, `base_url = "`+srv.URL+`/openai/v1/"`+"\ntenant = \"contoso.onmicrosoft.com\"\n")
 	be, aria := store.NewTestAria(t, "az", message.Patch{})
 	p, err := provider.Lookup("azure").Build(provider.BuildContext{
-		Loaded:   loaded,
-		Knobs:    provider.Knobs{Model: "gpt-5-deployment", MaxTokens: 64},
-		Resolver: staticToken("eyJ0eXAiOiJKV1Qi"),
-		Backend:  be,
+		Loaded:         loaded,
+		Knobs:          provider.Knobs{Model: "gpt-5-deployment", MaxTokens: 64},
+		Resolver:       staticToken("eyJ0eXAiOiJKV1Qi"),
+		OpenTranslator: be.OpenTranslator,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +95,7 @@ func TestAzureSendsTheResolvedTokenAsABearer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+	if _, err := figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")},
 	}}); err != nil {
 		t.Fatal(err)

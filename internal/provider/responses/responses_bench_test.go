@@ -7,21 +7,21 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 type copyingBenchLog[T any] struct {
-	*store.MemLog[T]
+	*arialog.MemLog[T]
 }
 
 func newCopyingBenchLog[T any]() *copyingBenchLog[T] {
-	return &copyingBenchLog[T]{MemLog: store.NewMemLog[T]()}
+	return &copyingBenchLog[T]{MemLog: arialog.NewMemLog[T]()}
 }
 
-func (l *copyingBenchLog[T]) Read() []store.Entry[T] {
+func (l *copyingBenchLog[T]) Read() []arialog.Entry[T] {
 	entries := l.MemLog.Read()
-	out := make([]store.Entry[T], len(entries))
+	out := make([]arialog.Entry[T], len(entries))
 	copy(out, entries)
 	return out
 }
@@ -38,7 +38,7 @@ func responsesBenchLog(b *testing.B, n int) *copyingBenchLog[message.Message] {
 		if role == message.RoleOutput {
 			usage = &message.Usage{InputTokens: i + 100, OutputTokens: 20}
 		}
-		_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		_, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    role,
 			Content: []message.Content{message.TextContent("turn body " + strconv.Itoa(i))},
 			Usage:   usage,
@@ -50,10 +50,10 @@ func responsesBenchLog(b *testing.B, n int) *copyingBenchLog[message.Message] {
 	return log
 }
 
-func appendResponsesBenchSuffix(b *testing.B, log store.Log[message.Message]) {
+func appendResponsesBenchSuffix(b *testing.B, log arialog.Log[message.Message]) {
 	b.Helper()
 	for _, role := range []message.Role{message.RoleInput, message.RoleOutput} {
-		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    role,
 			Content: []message.Content{message.TextContent("warm " + string(role))},
 		}}); err != nil {
@@ -62,10 +62,10 @@ func appendResponsesBenchSuffix(b *testing.B, log store.Log[message.Message]) {
 	}
 }
 
-func responsesBenchProvider(cache store.Log[[]json.RawMessage]) *Provider {
-	var cacheOpen func(string) (store.Log[[]json.RawMessage], error)
+func responsesBenchProvider(cache arialog.Log[[]json.RawMessage]) *Provider {
+	var cacheOpen func(string) (arialog.Log[[]json.RawMessage], error)
 	if cache != nil {
-		cacheOpen = func(string) (store.Log[[]json.RawMessage], error) { return cache, nil }
+		cacheOpen = func(string) (arialog.Log[[]json.RawMessage], error) { return cache, nil }
 	}
 	p := New(
 		provider.Knobs{Model: "gpt-test"},
@@ -178,7 +178,7 @@ func BenchmarkCacheValidation(b *testing.B) {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			for i := 0; i < n; i++ {
-				_, _ = cache.Append(store.Entry[[]json.RawMessage]{
+				_, _ = cache.Append(arialog.Entry[[]json.RawMessage]{
 					FigaroLT: uint64(i + 1), Payload: []json.RawMessage{json.RawMessage(`{}`)}, Fingerprint: testFingerprint("gpt-test"),
 				})
 			}

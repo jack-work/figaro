@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/websocket"
 )
@@ -56,7 +56,7 @@ func TestResponsesTerminalEventsDoNotWaitForSocketClose(t *testing.T) {
 				var next any
 				_ = websocket.JSON.Receive(conn, &next)
 			})
-			p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
+			p := newResponsesTestProvider(server, arialog.NewMemLog[[]json.RawMessage]())
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			bus := &responseTestBus{}
@@ -144,7 +144,7 @@ func TestResponsesBrokenSocketRetainsNativeItemsAndReadyCalls(t *testing.T) {
 		_ = websocket.JSON.Send(conn, map[string]any{"type": "response.function_call_arguments.done", "output_index": 1, "arguments": `{"value":"done"}`})
 		_ = websocket.JSON.Send(conn, map[string]any{"type": "response.output_text.delta", "output_index": 2, "delta": "tail"})
 	})
-	p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
+	p := newResponsesTestProvider(server, arialog.NewMemLog[[]json.RawMessage]())
 	bus := &responseTestBus{}
 	err := p.Send(context.Background(), provider.SendInput{AriaID: "broken", FigLog: newResponsesInputLog(t)}, bus)
 	require.Error(t, err)
@@ -178,7 +178,7 @@ func TestResponsesUnauthorizedRetryOnlyBeforeAssistantOutput(t *testing.T) {
 					_ = websocket.JSON.Send(conn, map[string]any{"type": "response.completed", "response": map[string]any{"status": "completed", "output": []any{}}})
 				}
 			})
-			p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
+			p := newResponsesTestProvider(server, arialog.NewMemLog[[]json.RawMessage]())
 			bus := &responseTestBus{}
 			err := p.Send(context.Background(), provider.SendInput{AriaID: "retry", FigLog: newResponsesInputLog(t)}, bus)
 			if started {
@@ -272,7 +272,7 @@ func TestResponsesTextFreeAssistantItemNeverEntersTheCache(t *testing.T) {
 			"status": "completed", "output": []any{reasoning, empty, call},
 		}})
 	})
-	cache := store.NewMemLog[[]json.RawMessage]()
+	cache := arialog.NewMemLog[[]json.RawMessage]()
 	p := newResponsesTestProvider(server, cache)
 	bus := &responseTestBus{}
 	require.NoError(t, p.Send(context.Background(), provider.SendInput{AriaID: "blank", FigLog: newResponsesInputLog(t)}, bus))

@@ -6,6 +6,8 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 )
@@ -47,7 +49,7 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	}
 	say := func(text string) {
 		t.Helper()
-		if _, err := lg.Append(Entry[message.Message]{Payload: message.Message{
+		if _, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{{Type: message.ContentProse, Text: text}},
 		}}); err != nil {
 			t.Fatal(err)
@@ -140,7 +142,7 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := lg.Append(Entry[message.Message]{Payload: message.Message{
+		if _, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{{Type: message.ContentProse, Text: text}},
 		}}); err != nil {
 			t.Fatal(err)

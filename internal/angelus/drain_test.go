@@ -8,6 +8,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -93,11 +95,11 @@ model = "mock-model"
 	require.NoError(t, err)
 	ir, err := backend.OpenFigIR(conv)
 	require.NoError(t, err)
-	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err = ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")},
 	}})
 	require.NoError(t, err)
-	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
+	_, err = ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:       message.RoleOutput,
 		StopReason: message.StopToolInvoke,
 		Content: []message.Content{{

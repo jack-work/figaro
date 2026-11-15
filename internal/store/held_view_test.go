@@ -3,25 +3,27 @@ package store
 import (
 	"fmt"
 	"testing"
+
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // A reader holds an immutable published view; hollowing a run must publish a
 // successor rather than edit what readers hold. Permanent, not migration
 // scaffolding.
 
-func heldEntry(i int) Entry[string] {
-	return Entry[string]{Payload: fmt.Sprintf("row-%04d", i)}
+func heldEntry(i int) arialog.Entry[string] {
+	return arialog.Entry[string]{Payload: fmt.Sprintf("row-%04d", i)}
 }
 
 func heldLog(t *testing.T, n int) *treeLog[string] {
 	t.Helper()
-	inner := NewMemLog[string]()
+	inner := arialog.NewMemLog[string]()
 	for i := 1; i <= n; i++ {
 		if _, err := inner.Append(heldEntry(i)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return newWindowedLog[string](inner, 0, 0, 1, 1, func(e Entry[string]) int { return len(e.Payload) + 48 })
+	return newWindowedLog[string](inner, 0, 0, 1, 1, func(e arialog.Entry[string]) int { return len(e.Payload) + 48 })
 }
 
 // A Read() taken before a Trim must still read correctly after it.

@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 type refusingTokenSource struct{ resolves int }
@@ -136,8 +136,8 @@ func TestCapabilityErrorNamesEveryIncompatibleSetting(t *testing.T) {
 func TestSendRejectsAstraSamplingBeforeResolvingCredentials(t *testing.T) {
 	tokenSource := &refusingTokenSource{}
 	p := New(provider.Knobs{Model: "gpt-6-astra"}, tokenSource, testConfig,
-		func(string) (store.Log[[]json.RawMessage], error) {
-			return store.NewMemLog[[]json.RawMessage](), nil
+		func(string) (arialog.Log[[]json.RawMessage], error) {
+			return arialog.NewMemLog[[]json.RawMessage](), nil
 		})
 	p.baseURL = func(string) string { return "http://127.0.0.1:1" }
 	p.dial = func(context.Context, string, http.Header) (*websocket.Conn, error) {

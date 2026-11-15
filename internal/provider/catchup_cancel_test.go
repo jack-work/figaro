@@ -9,7 +9,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 const cancelTestTurns = 6
@@ -17,9 +17,9 @@ const cancelTestTurns = 6
 // A conversation whose form moves on every turn, with one change landing
 // mid-stream and one record that encodes to nothing: the shapes a resumed
 // derivation has to seed correctly.
-func cancelTestLog(t *testing.T) (store.Log[message.Message], Form) {
+func cancelTestLog(t *testing.T) (arialog.Log[message.Message], Form) {
 	t.Helper()
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	var bound versionedForm
 	version := uint64(0)
 	for turn := range cancelTestTurns {
@@ -31,7 +31,7 @@ func cancelTestLog(t *testing.T) (store.Log[message.Message], Form) {
 			ask = "silent"
 		}
 		call := "c" + n
-		for _, e := range []store.Entry[message.Message]{
+		for _, e := range []arialog.Entry[message.Message]{
 			{FormChannelVersion: version, Payload: message.Message{Role: message.RoleInput,
 				Content: []message.Content{message.TextContent(ask)}}},
 			{FormChannelVersion: version + 1, Payload: message.Message{Role: message.RoleOutput, StopReason: message.StopToolInvoke,
@@ -49,7 +49,7 @@ func cancelTestLog(t *testing.T) (store.Log[message.Message], Form) {
 	return log, bound
 }
 
-func cancelTestConfig(log store.Log[message.Message], bound Form, rows store.Log[[]json.RawMessage]) CatchUpConfig {
+func cancelTestConfig(log arialog.Log[message.Message], bound Form, rows arialog.Log[[]json.RawMessage]) CatchUpConfig {
 	return CatchUpConfig{
 		Log:         log,
 		Translator:  rows,
@@ -76,7 +76,7 @@ func cancelTestConfig(log store.Log[message.Message], bound Form, rows store.Log
 	}
 }
 
-func rowBytes(t *testing.T, rows store.Log[[]json.RawMessage]) string {
+func rowBytes(t *testing.T, rows arialog.Log[[]json.RawMessage]) string {
 	t.Helper()
 	b, err := json.Marshal(rows.Read())
 	if err != nil {
@@ -91,7 +91,7 @@ func rowBytes(t *testing.T, rows store.Log[[]json.RawMessage]) string {
 // writes: the rows are a cache the model's prompt cache is keyed on.
 func TestACancelledCatchUpStopsAndResumesToTheSameRows(t *testing.T) {
 	log, bound := cancelTestLog(t)
-	whole := store.NewMemLog[[]json.RawMessage]()
+	whole := arialog.NewMemLog[[]json.RawMessage]()
 	full, err := CatchUp(cancelTestConfig(log, bound, whole))
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestACancelledCatchUpStopsAndResumesToTheSameRows(t *testing.T) {
 	}
 
 	for stopAfter := 0; stopAfter < full.Visited; stopAfter++ {
-		rows := store.NewMemLog[[]json.RawMessage]()
+		rows := arialog.NewMemLog[[]json.RawMessage]()
 		ctx, cancel := context.WithCancel(context.Background())
 		cfg := cancelTestConfig(log, bound, rows)
 		cfg.Context = ctx
@@ -141,7 +141,7 @@ func TestACancelledCatchUpStopsAndResumesToTheSameRows(t *testing.T) {
 // Without a context catch-up runs to the end, as every caller outside a turn does.
 func TestCatchUpWithoutAContextRunsToTheEnd(t *testing.T) {
 	log, bound := cancelTestLog(t)
-	rows := store.NewMemLog[[]json.RawMessage]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	stats, err := CatchUp(cancelTestConfig(log, bound, rows))
 	if err != nil {
 		t.Fatal(err)

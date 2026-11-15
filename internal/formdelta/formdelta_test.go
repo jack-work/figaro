@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 
 	"github.com/jack-work/figaro/api/livedoc"
@@ -34,9 +36,9 @@ func patchOf(kv map[string]string) message.Patch {
 	return form.Build(form.Snapshot{}, set, nil)
 }
 
-func appendRecord(t *testing.T, log store.Log[message.Message], role message.Role) store.Entry[message.Message] {
+func appendRecord(t *testing.T, log arialog.Log[message.Message], role message.Role) arialog.Entry[message.Message] {
 	t.Helper()
-	e, err := log.Append(store.Entry[message.Message]{Payload: message.Message{Role: role}})
+	e, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: role}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +216,7 @@ func TestDeletedSourceRendersAsDeleted(t *testing.T) {
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if raw, ok := lib.State().Get(store.KeyLibrettoAlive); ok && string(raw) == "false" {
+		if raw, ok := lib.State().Get(form.KeyLibrettoAlive); ok && string(raw) == "false" {
 			break
 		}
 		if time.Now().After(deadline) {

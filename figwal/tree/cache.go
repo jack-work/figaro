@@ -243,7 +243,7 @@ func (c *Cache[U]) Range(lineage []Ref, from, to uint64) ([]U, error) {
 	if len(lineage) == 1 {
 		return c.rangeInNode(Coord{Node: lineage[0].Node, From: from, To: to})
 	}
-	cuts := c.split(lineage, from, to)
+	cuts := Split(lineage, from, to)
 	if len(cuts) == 1 {
 		return c.rangeInNode(cuts[0])
 	}
@@ -431,8 +431,7 @@ func (c *Cache[U]) DropNode(node string) {
 	}
 }
 
-// split maps (from..to] onto per-node coords by fork base; lineage is root-first.
-func (c *Cache[U]) split(lineage []Ref, from, to uint64) []Coord {
+func Split(lineage []Ref, from, to uint64) []Coord {
 	var cuts []Coord
 	lo := from
 	for i, ref := range lineage {

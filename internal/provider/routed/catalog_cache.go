@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
 	apimodels "github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/catalog"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 var routeWait = 3 * time.Second
@@ -131,23 +131,10 @@ func (c *catalogCache) failure() error {
 	return c.lastErr
 }
 
-type modelsFormer interface {
-	ModelsForm() (*store.Form, error)
-}
-
-func (p *Provider) seedFromIR(backend any) {
+func (p *Provider) seedFromIR(snap form.Snapshot) {
 	if p.spec.Catalog == "" {
 		return
 	}
-	b, ok := backend.(modelsFormer)
-	if !ok {
-		return
-	}
-	f, err := b.ModelsForm()
-	if err != nil {
-		return
-	}
-	snap, _ := f.Snapshot()
 	provs, err := apimodels.Providers(snap)
 	if err != nil {
 		return

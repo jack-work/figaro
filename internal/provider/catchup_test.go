@@ -8,10 +8,10 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
-func catchUpTestConfig(log store.Log[message.Message], rows store.Log[[]json.RawMessage]) CatchUpConfig {
+func catchUpTestConfig(log arialog.Log[message.Message], rows arialog.Log[[]json.RawMessage]) CatchUpConfig {
 	return CatchUpConfig{
 		Log:        log,
 		Translator: rows,
@@ -28,8 +28,8 @@ func catchUpTestConfig(log store.Log[message.Message], rows store.Log[[]json.Raw
 // Synchronisation is O(new): a second pass visits only the records appended
 // since the first.
 func TestCatchUpVisitsOnlyWhatIsNew(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	rows := store.NewMemLog[[]json.RawMessage]()
+	log := arialog.NewMemLog[message.Message]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	for i := 0; i < 20; i++ {
 		appendProjectionMessage(t, log, "body "+strconv.Itoa(i))
 	}
@@ -70,7 +70,7 @@ func TestCatchUpVisitsOnlyWhatIsNew(t *testing.T) {
 }
 
 func TestCatchUpWithoutRowsIsAnError(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	appendProjectionMessage(t, log, "body")
 	if _, err := CatchUp(catchUpTestConfig(log, nil)); !errors.Is(err, ErrNoTranslator) {
 		t.Fatalf("err=%v, want ErrNoTranslator", err)
@@ -80,17 +80,17 @@ func TestCatchUpWithoutRowsIsAnError(t *testing.T) {
 // A row whose record hash does not match was adopted by a reissued LT; the
 // channel is re-derived.
 func TestARowWhoseFigaroHashDoesNotMatchIsRefused(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	rows := store.NewMemLog[[]json.RawMessage]()
+	log := arialog.NewMemLog[message.Message]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	first := appendProjectionMessage(t, log, "the real one")
 
-	wrongHash, err := store.FigaroHash(message.Message{
+	wrongHash, err := arialog.FigaroHash(message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("a message that never landed")},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rows.Append(store.Entry[[]json.RawMessage]{
+	if _, err := rows.Append(arialog.Entry[[]json.RawMessage]{
 		FigaroLT:   first.LT,
 		Payload:    []json.RawMessage{json.RawMessage(`{"orphan":true}`)},
 		FigaroHash: wrongHash,
@@ -119,8 +119,8 @@ func TestARowWhoseFigaroHashDoesNotMatchIsRefused(t *testing.T) {
 }
 
 func TestAMatchingFigaroHashLeavesTheChannelAlone(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	rows := store.NewMemLog[[]json.RawMessage]()
+	log := arialog.NewMemLog[message.Message]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	appendProjectionMessage(t, log, "one")
 	cfg := catchUpTestConfig(log, rows)
 	if _, err := CatchUp(cfg); err != nil {
@@ -146,8 +146,8 @@ func TestAMatchingFigaroHashLeavesTheChannelAlone(t *testing.T) {
 // A record with no row below the watermark (a crash between the canonical
 // and derived appends) is found and repaired.
 func TestCatchUpFillsAHoleBelowTheWatermark(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	rows := store.NewMemLog[[]json.RawMessage]()
+	log := arialog.NewMemLog[message.Message]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	for i := range 6 {
 		appendProjectionMessage(t, log, "body "+strconv.Itoa(i))
 	}
@@ -162,13 +162,13 @@ func TestCatchUpFillsAHoleBelowTheWatermark(t *testing.T) {
 	}
 	missing := all[3].FigaroLT
 	// A fresh handle stands in for a restart: the once flag lives on it.
-	rows = store.NewMemLog[[]json.RawMessage]()
+	rows = arialog.NewMemLog[[]json.RawMessage]()
 	cfg = catchUpTestConfig(log, rows)
 	for _, r := range all {
 		if r.FigaroLT == missing {
 			continue
 		}
-		if _, err := rows.Append(store.Entry[[]json.RawMessage]{
+		if _, err := rows.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: r.FigaroLT, Payload: r.Payload,
 			Fingerprint: r.Fingerprint, FigaroHash: r.FigaroHash,
 		}); err != nil {
@@ -197,8 +197,8 @@ func TestCatchUpFillsAHoleBelowTheWatermark(t *testing.T) {
 // half of this test gets its own log.
 func TestCatchUpChecksForHolesOncePerLog(t *testing.T) {
 	t.Run("an empty translator is not checked", func(t *testing.T) {
-		log := store.NewMemLog[message.Message]()
-		rows := store.NewMemLog[[]json.RawMessage]()
+		log := arialog.NewMemLog[message.Message]()
+		rows := arialog.NewMemLog[[]json.RawMessage]()
 		for i := range 4 {
 			appendProjectionMessage(t, log, "body "+strconv.Itoa(i))
 		}
@@ -206,14 +206,14 @@ func TestCatchUpChecksForHolesOncePerLog(t *testing.T) {
 		if _, err := CatchUp(cfg); err != nil {
 			t.Fatal(err)
 		}
-		if !store.VerifyOnce(cfg.Translator) {
+		if !arialog.VerifyOnce(cfg.Translator) {
 			t.Fatal("an empty translator was checked for holes")
 		}
 	})
 
 	t.Run("a translator with rows is checked once", func(t *testing.T) {
-		log := store.NewMemLog[message.Message]()
-		rows := store.NewMemLog[[]json.RawMessage]()
+		log := arialog.NewMemLog[message.Message]()
+		rows := arialog.NewMemLog[[]json.RawMessage]()
 		for i := range 4 {
 			appendProjectionMessage(t, log, "body "+strconv.Itoa(i))
 		}
@@ -224,7 +224,7 @@ func TestCatchUpChecksForHolesOncePerLog(t *testing.T) {
 		if _, err := CatchUp(cfg); err != nil {
 			t.Fatal(err)
 		}
-		if store.VerifyOnce(cfg.Translator) {
+		if arialog.VerifyOnce(cfg.Translator) {
 			t.Fatal("the log was not marked checked")
 		}
 		appendProjectionMessage(t, log, "another")

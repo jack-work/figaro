@@ -3,6 +3,8 @@ package store
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -12,11 +14,11 @@ import (
 // --- MemLog[T] tests (ephemeral) ---
 
 func TestMemLog_Standalone(t *testing.T) {
-	s := NewMemLog[message.Message]()
+	s := arialog.NewMemLog[message.Message]()
 
 	assert.Empty(t, s.Read())
 
-	entry, err := s.Append(Entry[message.Message]{
+	entry, err := s.Append(arialog.Entry[message.Message]{
 		Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")}},
 	})
 	require.NoError(t, err)

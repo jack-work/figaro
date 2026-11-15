@@ -9,19 +9,19 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 // freshHandle is a reopened log: the once-per-handle hole check fires again
 // over the same rows.
 type freshHandle struct {
-	*store.MemLog[[]json.RawMessage]
+	*arialog.MemLog[[]json.RawMessage]
 	verified atomic.Bool
 }
 
 func (l *freshHandle) VerifyOnce() bool { return l.verified.CompareAndSwap(false, true) }
 
-func countingConfig(log store.Log[message.Message], rows store.Log[[]json.RawMessage], calls *int) CatchUpConfig {
+func countingConfig(log arialog.Log[message.Message], rows arialog.Log[[]json.RawMessage], calls *int) CatchUpConfig {
 	cfg := catchUpTestConfig(log, rows)
 	inner := cfg.Encode
 	cfg.Encode = func(msg message.Message, snap form.Snapshot) ([]json.RawMessage, error) {
@@ -34,9 +34,9 @@ func countingConfig(log store.Log[message.Message], rows store.Log[[]json.RawMes
 // Coverage is a count, not a derivation: a complete channel opened afresh
 // costs no encode.
 func TestACleanCatchUpEncodesNothing(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	rows := store.NewMemLog[[]json.RawMessage]()
-	if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleGenesis}}); err != nil {
+	log := arialog.NewMemLog[message.Message]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
+	if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleGenesis}}); err != nil {
 		t.Fatal(err)
 	}
 	for i := range 50 {
@@ -66,8 +66,8 @@ func TestACleanCatchUpEncodesNothing(t *testing.T) {
 // A record that translates to nothing owns an empty row, so the next pass
 // has nothing to revisit and the send path has nothing to send.
 func TestEmptyEncodesOwnEmptyRows(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	rows := store.NewMemLog[[]json.RawMessage]()
+	log := arialog.NewMemLog[message.Message]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	for i := range 8 {
 		appendProjectionMessage(t, log, "body "+strconv.Itoa(i))
 	}
@@ -109,8 +109,8 @@ func TestEmptyEncodesOwnEmptyRows(t *testing.T) {
 // The window of an entry that encodes to nothing rides the next entry that
 // carries bytes, across a reseed from the log.
 func TestAnEmptyRowCommitsNoCursor(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	rows := store.NewMemLog[[]json.RawMessage]()
+	log := arialog.NewMemLog[message.Message]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	stamp(t, log, "one", 2)
 	stamp(t, log, "two", 4)
 	stamp(t, log, "three", 6)
@@ -132,7 +132,7 @@ func TestAnEmptyRowCommitsNoCursor(t *testing.T) {
 		return []json.RawMessage{json.RawMessage(`"x"`)}, nil
 	}
 	entries := log.Read()
-	one := store.NewMemLog[message.Message]()
+	one := arialog.NewMemLog[message.Message]()
 	for _, e := range entries[:2] {
 		if _, err := one.Append(e); err != nil {
 			t.Fatal(err)

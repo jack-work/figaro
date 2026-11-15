@@ -7,10 +7,10 @@ import (
 
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/quote"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
-func focusText(log store.Log[message.Message], r quote.Range) (string, error) {
+func focusText(log arialog.Log[message.Message], r quote.Range) (string, error) {
 	if log == nil {
 		return "", fmt.Errorf("%s names a passage, and there is no aria to read it from", quote.Format(r))
 	}
@@ -73,7 +73,7 @@ func focusText(log store.Log[message.Message], r quote.Range) (string, error) {
 	return strings.Join(parts, "\n"), nil
 }
 
-func lookup(log store.Log[message.Message], lt uint64) (message.Message, error) {
+func lookup(log arialog.Log[message.Message], lt uint64) (message.Message, error) {
 	e, ok := log.Lookup(lt)
 	if !ok {
 		return message.Message{}, fmt.Errorf("no message at lt %d", lt)

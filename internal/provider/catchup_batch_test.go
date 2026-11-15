@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/store"
@@ -27,7 +29,7 @@ func perRowCatchUp(t *testing.T, cfg CatchUpConfig, limit int) {
 	if tail, ok := cfg.Translator.PeekTail(); ok {
 		watermark = tail.FigaroLT
 	}
-	entries, _ := store.TailAfter(cfg.Log, watermark)
+	entries, _ := arialog.TailAfter(cfg.Log, watermark)
 	d := NewDeriver(cfg.Form, cfg.Studies)
 	d.SeedAt(cfg.Log, cfg.Translator)
 	written := 0
@@ -48,11 +50,11 @@ func perRowCatchUp(t *testing.T, cfg CatchUpConfig, limit int) {
 		if empty {
 			encoded = []json.RawMessage{}
 		}
-		hash, err := store.FigaroHash(entry.Payload)
+		hash, err := arialog.FigaroHash(entry.Payload)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := cfg.Translator.Append(store.Entry[[]json.RawMessage]{
+		if _, err := cfg.Translator.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: entry.LT, Payload: encoded, Fingerprint: cfg.Fingerprint, FigaroHash: hash,
 		}); err != nil {
 			t.Fatal(err)
@@ -69,7 +71,7 @@ type batchFixture struct {
 	backend *store.XwalBackend
 	aria    string
 	studied string
-	log     store.Log[message.Message]
+	log     arialog.Log[message.Message]
 }
 
 func openBatchFixture(t *testing.T, root string, segmentSize int) *batchFixture {
@@ -116,7 +118,7 @@ func (f *batchFixture) appendRecord(t *testing.T, i int) {
 	if i%5 == 0 {
 		content = append(content, message.TextContent("second block"))
 	}
-	if _, err := f.log.Append(store.Entry[message.Message]{Payload: message.Message{
+	if _, err := f.log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: role, Content: content, Timestamp: int64(1000 + i),
 	}}); err != nil {
 		t.Fatal(err)
@@ -179,9 +181,9 @@ func (f *batchFixture) config(t *testing.T, channel string) CatchUpConfig {
 // rowDump is everything a row is, payload bytes included: LT, FigaroLT,
 // fingerprint, record hash, the form and study versions stamped on the row,
 // payload.
-func rowDump(rows store.Log[[]json.RawMessage]) []string {
+func rowDump(rows arialog.Log[[]json.RawMessage]) []string {
 	var out []string
-	store.ScanAll(rows, func(e store.Entry[[]json.RawMessage]) bool {
+	arialog.ScanAll(rows, func(e arialog.Entry[[]json.RawMessage]) bool {
 		payload, _ := json.Marshal(e.Payload)
 		out = append(out, fmt.Sprintf("%d %d %s %s form=%d studies=%v %s",
 			e.LT, e.FigaroLT, e.Fingerprint, e.FigaroHash, e.FormChannelVersion, e.StudyVersions, payload))
@@ -370,7 +372,7 @@ func (f *batchFixture) newAriaWithChangingForms(t *testing.T, n int) {
 // carry.
 func (f *batchFixture) stampedVersions() (bound, studied int) {
 	forms, studies := map[uint64]bool{}, map[uint64]bool{}
-	entries, _ := store.TailAfter(f.log, 0)
+	entries, _ := arialog.TailAfter(f.log, 0)
 	for _, e := range entries {
 		forms[e.FormChannelVersion] = true
 		if v, ok := e.StudyVersions[f.studied]; ok {
@@ -521,17 +523,17 @@ func TestCatchUpResumedUnderChangingFormsWritesThePerRowRows(t *testing.T) {
 // refusingRows is a row log whose batch write can be made to fail whole, as
 // the store's does when its sync fails: none of the batch's rows remain.
 type refusingRows struct {
-	*store.MemLog[[]json.RawMessage]
+	*arialog.MemLog[[]json.RawMessage]
 	refuse  func(batch int) bool
 	batches int
 }
 
-func (r *refusingRows) AppendBatch(rows []store.Entry[[]json.RawMessage]) ([]store.Entry[[]json.RawMessage], error) {
+func (r *refusingRows) AppendBatch(rows []arialog.Entry[[]json.RawMessage]) ([]arialog.Entry[[]json.RawMessage], error) {
 	r.batches++
 	if r.refuse != nil && r.refuse(r.batches) {
 		return nil, errors.New("sync: input/output error")
 	}
-	out := make([]store.Entry[[]json.RawMessage], 0, len(rows))
+	out := make([]arialog.Entry[[]json.RawMessage], 0, len(rows))
 	for _, e := range rows {
 		stamped, err := r.MemLog.Append(e)
 		if err != nil {
@@ -546,16 +548,16 @@ func (r *refusingRows) AppendBatch(rows []store.Entry[[]json.RawMessage]) ([]sto
 // failed batch, so no request can be built from rows that are not on disk;
 // the next catch-up writes them.
 func TestACatchUpWhoseSyncFailsFailsTheSendAndLeavesNoRow(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	for i := 0; i < 30; i++ {
 		appendProjectionMessage(t, log, fmt.Sprintf("body %d", i))
 	}
-	reference := store.NewMemLog[[]json.RawMessage]()
+	reference := arialog.NewMemLog[[]json.RawMessage]()
 	if _, err := CatchUp(catchUpTestConfig(log, reference)); err != nil {
 		t.Fatal(err)
 	}
 
-	rows := &refusingRows{MemLog: store.NewMemLog[[]json.RawMessage](), refuse: func(int) bool { return true }}
+	rows := &refusingRows{MemLog: arialog.NewMemLog[[]json.RawMessage](), refuse: func(int) bool { return true }}
 	cfg := catchUpTestConfig(log, rows)
 	var reportedAt uint64
 	cfg.ReportWriteError = func(lt uint64, _ error) { reportedAt = lt }
@@ -584,16 +586,16 @@ func TestACatchUpWhoseSyncFailsFailsTheSendAndLeavesNoRow(t *testing.T) {
 // batches before it are a durable prefix and stay; the failed one leaves
 // nothing; the send fails; the next catch-up resumes after the prefix.
 func TestAFailedLaterBatchKeepsTheDurablePrefix(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	for i := 0; i < 30; i++ {
 		appendProjectionMessage(t, log, fmt.Sprintf("body %d", i))
 	}
-	reference := store.NewMemLog[[]json.RawMessage]()
+	reference := arialog.NewMemLog[[]json.RawMessage]()
 	if _, err := CatchUp(catchUpTestConfig(log, reference)); err != nil {
 		t.Fatal(err)
 	}
 
-	rows := &refusingRows{MemLog: store.NewMemLog[[]json.RawMessage](), refuse: func(batch int) bool { return batch == 3 }}
+	rows := &refusingRows{MemLog: arialog.NewMemLog[[]json.RawMessage](), refuse: func(batch int) bool { return batch == 3 }}
 	cfg := catchUpTestConfig(log, rows)
 	one, _ := cfg.Encode(message.Message{Role: message.RoleInput, LogicalTime: 1}, form.Snapshot{})
 	cfg.BatchBytes = 5 * len(one[0])
@@ -617,11 +619,11 @@ func TestAFailedLaterBatchKeepsTheDurablePrefix(t *testing.T) {
 // An encode failure part way through still writes the rows before it, as the
 // per-row path did, and reports the encode error.
 func TestRowsBeforeAnEncodeFailureAreWritten(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
+	log := arialog.NewMemLog[message.Message]()
 	for i := 0; i < 10; i++ {
 		appendProjectionMessage(t, log, fmt.Sprintf("body %d", i))
 	}
-	rows := store.NewMemLog[[]json.RawMessage]()
+	rows := arialog.NewMemLog[[]json.RawMessage]()
 	cfg := catchUpTestConfig(log, rows)
 	encode := cfg.Encode
 	cfg.Encode = func(msg message.Message, snap form.Snapshot) ([]json.RawMessage, error) {
@@ -655,7 +657,7 @@ func TestACatchUpThatFailedOnDiskResumesAfterReopen(t *testing.T) {
 	}
 	before := f.config(t, batchedChannel).Translator.Len()
 	for i := 2; i < 120; i++ {
-		if _, err := f.log.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := f.log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:      message.RoleInput,
 			Content:   []message.Content{message.TextContent(fmt.Sprintf("late record %d %s", i, strings.Repeat("y", 150)))},
 			Timestamp: int64(1000 + i),
@@ -732,7 +734,7 @@ func (f *batchFixture) otherFigaro(t *testing.T, n int) string {
 		t.Fatal(err)
 	}
 	for i := 0; i < n; i++ {
-		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent(fmt.Sprintf("other %d", i))}, Timestamp: int64(5000 + i),
 		}}); err != nil {
 			t.Fatal(err)

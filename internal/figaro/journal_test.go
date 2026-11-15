@@ -6,6 +6,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -13,11 +15,11 @@ import (
 func TestAppendingAlwaysAnnounces(t *testing.T) {
 	published := 0
 	j := &journal{
-		log:     store.GuardIR(store.NewMemLog[message.Message]()),
+		log:     store.GuardIR(arialog.NewMemLog[message.Message]()),
 		publish: func() { published++ },
 	}
 	for i := 0; i < 3; i++ {
-		if _, err := j.Append(store.Entry[message.Message]{
+		if _, err := j.Append(arialog.Entry[message.Message]{
 			Payload: message.Message{Role: message.RoleInput},
 		}); err != nil {
 			t.Fatalf("append: %v", err)
@@ -38,7 +40,7 @@ func TestAFailedAppendAnnouncesNothing(t *testing.T) {
 		log:     failingLog{},
 		publish: func() { published++ },
 	}
-	if _, err := j.Append(store.Entry[message.Message]{
+	if _, err := j.Append(arialog.Entry[message.Message]{
 		Payload: message.Message{Role: message.RoleInput},
 	}); err == nil {
 		t.Fatal("a failing log reported success")
@@ -49,8 +51,8 @@ func TestAFailedAppendAnnouncesNothing(t *testing.T) {
 	}
 }
 
-type failingLog struct{ store.Log[message.Message] }
+type failingLog struct{ arialog.Log[message.Message] }
 
-func (failingLog) Append(store.Entry[message.Message]) (store.Entry[message.Message], error) {
-	return store.Entry[message.Message]{}, errors.New("disk is on fire")
+func (failingLog) Append(arialog.Entry[message.Message]) (arialog.Entry[message.Message], error) {
+	return arialog.Entry[message.Message]{}, errors.New("disk is on fire")
 }

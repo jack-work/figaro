@@ -2,8 +2,10 @@ package store
 
 import (
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/arialog"
 
 	"github.com/stretchr/testify/require"
 
@@ -53,11 +55,11 @@ func restartRange(t *testing.T, openLibrettoFirst bool) uint64 {
 	// A first turn: a prompt and a reply, both translated, as a real send
 	// leaves the channel.
 	for _, role := range []message.Role{message.RoleInput, message.RoleOutput} {
-		e, aerr := ir.Append(Entry[message.Message]{Payload: message.Message{
+		e, aerr := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role: role, Content: []message.Content{message.TextContent("turn one")},
 		}})
 		require.NoError(t, aerr)
-		_, aerr = rows.Append(Entry[[]json.RawMessage]{
+		_, aerr = rows.Append(arialog.Entry[[]json.RawMessage]{
 			FigaroLT: e.LT, Payload: []json.RawMessage{json.RawMessage(`{"role":"user"}`)},
 		})
 		require.NoError(t, aerr)
@@ -85,7 +87,7 @@ func restartRange(t *testing.T, openLibrettoFirst bool) uint64 {
 	coldRows, err := cold.OpenTranslator(aria, "anthropic")
 	require.NoError(t, err)
 
-	next, err := coldIR.Append(Entry[message.Message]{Payload: message.Message{
+	next, err := coldIR.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("turn two")},
 	}})
 	require.NoError(t, err)

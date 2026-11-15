@@ -9,23 +9,23 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/toolout"
 )
 
 type benchmarkLog struct {
-	rows []store.Entry[message.Message]
+	rows []arialog.Entry[message.Message]
 }
 
-func (l *benchmarkLog) Read() []store.Entry[message.Message] {
-	out := make([]store.Entry[message.Message], len(l.rows))
+func (l *benchmarkLog) Read() []arialog.Entry[message.Message] {
+	out := make([]arialog.Entry[message.Message], len(l.rows))
 	copy(out, l.rows)
 	return out
 }
 
 func (l *benchmarkLog) Len() int { return len(l.rows) }
 
-func (l *benchmarkLog) ReadFrom(figaroLT uint64, n int) []store.Entry[message.Message] {
+func (l *benchmarkLog) ReadFrom(figaroLT uint64, n int) []arialog.Entry[message.Message] {
 	start := 0
 	if figaroLT > 1 {
 		start = int(figaroLT - 1)
@@ -37,10 +37,10 @@ func (l *benchmarkLog) ReadFrom(figaroLT uint64, n int) []store.Entry[message.Me
 	if n > 0 && start+n < end {
 		end = start + n
 	}
-	return append([]store.Entry[message.Message](nil), l.rows[start:end]...)
+	return append([]arialog.Entry[message.Message](nil), l.rows[start:end]...)
 }
 
-func (l *benchmarkLog) ReadPage(from, before uint64, n int) ([]store.Entry[message.Message], int) {
+func (l *benchmarkLog) ReadPage(from, before uint64, n int) ([]arialog.Entry[message.Message], int) {
 	if before > 0 {
 		if n <= 0 {
 			return nil, len(l.rows)
@@ -53,26 +53,26 @@ func (l *benchmarkLog) ReadPage(from, before uint64, n int) ([]store.Entry[messa
 		if start < 0 {
 			start = 0
 		}
-		return append([]store.Entry[message.Message](nil), l.rows[start:end]...), len(l.rows)
+		return append([]arialog.Entry[message.Message](nil), l.rows[start:end]...), len(l.rows)
 	}
 	return l.ReadFrom(from, n), len(l.rows)
 }
 
-func (l *benchmarkLog) Lookup(figaroLT uint64) (store.Entry[message.Message], bool) {
+func (l *benchmarkLog) Lookup(figaroLT uint64) (arialog.Entry[message.Message], bool) {
 	if figaroLT == 0 || figaroLT > uint64(len(l.rows)) {
-		return store.Entry[message.Message]{}, false
+		return arialog.Entry[message.Message]{}, false
 	}
 	return l.rows[figaroLT-1], true
 }
 
-func (l *benchmarkLog) PeekTail() (store.Entry[message.Message], bool) {
+func (l *benchmarkLog) PeekTail() (arialog.Entry[message.Message], bool) {
 	if len(l.rows) == 0 {
-		return store.Entry[message.Message]{}, false
+		return arialog.Entry[message.Message]{}, false
 	}
 	return l.rows[len(l.rows)-1], true
 }
 
-func (l *benchmarkLog) Append(e store.Entry[message.Message]) (store.Entry[message.Message], error) {
+func (l *benchmarkLog) Append(e arialog.Entry[message.Message]) (arialog.Entry[message.Message], error) {
 	e.LT = uint64(len(l.rows) + 1)
 	e.FigaroLT = e.LT
 	l.rows = append(l.rows, e)
@@ -87,14 +87,14 @@ func (l *benchmarkLog) Clear() error {
 }
 
 func syntheticBenchmarkLog(n int) *benchmarkLog {
-	rows := make([]store.Entry[message.Message], n)
+	rows := make([]arialog.Entry[message.Message], n)
 	for i := range rows {
 		lt := uint64(i + 1)
 		role := message.RoleInput
 		if i%2 == 1 {
 			role = message.RoleOutput
 		}
-		rows[i] = store.Entry[message.Message]{
+		rows[i] = arialog.Entry[message.Message]{
 			LT:       lt,
 			FigaroLT: lt,
 			Payload: message.Message{

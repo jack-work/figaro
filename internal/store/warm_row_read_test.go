@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/message"
@@ -23,7 +25,7 @@ func TestAnAppendedRowIsVisibleToTheNextWarmRead(t *testing.T) {
 
 	ir, err := be.OpenFigIR(id)
 	require.NoError(t, err)
-	rec, err := ir.Append(Entry[message.Message]{Payload: message.Message{
+	rec, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{{Type: message.ContentProse, Text: "reply with exactly: one"}},
 	}})
@@ -33,7 +35,7 @@ func TestAnAppendedRowIsVisibleToTheNextWarmRead(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, rows.Read(), "a fresh aria has no rows")
 
-	_, err = rows.Append(Entry[[]json.RawMessage]{
+	_, err = rows.Append(arialog.Entry[[]json.RawMessage]{
 		FigaroLT: rec.LT,
 		Payload:  []json.RawMessage{json.RawMessage(`{"role":"user"}`)},
 	})
@@ -56,7 +58,7 @@ func TestARowWrittenThroughOneHandleIsVisibleThroughAnother(t *testing.T) {
 
 	ir, err := be.OpenFigIR(id)
 	require.NoError(t, err)
-	rec, err := ir.Append(Entry[message.Message]{Payload: message.Message{
+	rec, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{{Type: message.ContentProse, Text: "reply with exactly: one"}},
 	}})
@@ -68,7 +70,7 @@ func TestARowWrittenThroughOneHandleIsVisibleThroughAnother(t *testing.T) {
 
 	writer, err := be.OpenTranslator(id, "anthropic")
 	require.NoError(t, err)
-	_, err = writer.Append(Entry[[]json.RawMessage]{
+	_, err = writer.Append(arialog.Entry[[]json.RawMessage]{
 		FigaroLT: rec.LT,
 		Payload:  []json.RawMessage{json.RawMessage(`{"role":"user"}`)},
 	})
@@ -96,9 +98,9 @@ func TestATranslatorRowIsReadableOnAnAriaWhoseForkBaseIsAboveOne(t *testing.T) {
 
 	ir, err := be.OpenFigIR(id)
 	require.NoError(t, err)
-	var last Entry[message.Message]
+	var last arialog.Entry[message.Message]
 	for i := 0; i < 3; i++ {
-		last, err = ir.Append(Entry[message.Message]{Payload: message.Message{
+		last, err = ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
 			Role:    message.RoleInput,
 			Content: []message.Content{{Type: message.ContentProse, Text: "turn"}},
 		}})
@@ -108,7 +110,7 @@ func TestATranslatorRowIsReadableOnAnAriaWhoseForkBaseIsAboveOne(t *testing.T) {
 
 	rows, err := be.OpenTranslator(id, "anthropic")
 	require.NoError(t, err)
-	written, err := rows.Append(Entry[[]json.RawMessage]{
+	written, err := rows.Append(arialog.Entry[[]json.RawMessage]{
 		FigaroLT: last.LT,
 		Payload:  []json.RawMessage{json.RawMessage(`{"role":"user"}`)},
 	})

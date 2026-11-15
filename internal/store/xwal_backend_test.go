@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/arialog"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 )
@@ -40,11 +42,11 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	um := message.Message{Role: message.RoleInput}
-	e, err := ir.Append(Entry[message.Message]{Payload: um})
+	e, err := ir.Append(arialog.Entry[message.Message]{Payload: um})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tr.Append(Entry[[]json.RawMessage]{FigaroLT: e.LT, Payload: []json.RawMessage{json.RawMessage(`{"x":1}`)}, Fingerprint: "fp"}); err != nil {
+	if _, err := tr.Append(arialog.Entry[[]json.RawMessage]{FigaroLT: e.LT, Payload: []json.RawMessage{json.RawMessage(`{"x":1}`)}, Fingerprint: "fp"}); err != nil {
 		t.Fatal(err)
 	}
 	// re-Open returns the SAME memoized instance -> sees the append
@@ -76,7 +78,7 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 	// Commit a turn so the set is below the fork point. A set with no
 	// intervening turn sits at the fork boundary and rides only with the
 	// continuation.
-	if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleOutput}}); err != nil {
+	if _, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleOutput}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -156,7 +158,7 @@ func TestXwalBackendForkKeepsLiveLogUsable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := live.Append(Entry[message.Message]{Payload: userText("before")}); err != nil {
+	if _, err := live.Append(arialog.Entry[message.Message]{Payload: userText("before")}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -167,7 +169,7 @@ func TestXwalBackendForkKeepsLiveLogUsable(t *testing.T) {
 	if cont != conv {
 		t.Fatalf("continuation = %q, want stable trunk %q", cont, conv)
 	}
-	if _, err := live.Append(Entry[message.Message]{Payload: userText("after")}); err != nil {
+	if _, err := live.Append(arialog.Entry[message.Message]{Payload: userText("after")}); err != nil {
 		t.Fatalf("append through pre-fork live handle: %v", err)
 	}
 	if got := message.CountMessages(messages(live.Read())); got != 2 {
@@ -198,7 +200,7 @@ func TestXwalBackendOpenUnknownDoesNotCreateTrunk(t *testing.T) {
 	}
 }
 
-func messages(entries []Entry[message.Message]) []message.Message {
+func messages(entries []arialog.Entry[message.Message]) []message.Message {
 	out := make([]message.Message, len(entries))
 	for i, entry := range entries {
 		out[i] = entry.Payload
@@ -217,7 +219,7 @@ func TestXwalBackend_ForkAtInterior(t *testing.T) {
 
 	ir, _ := b.OpenFigIR(conv)
 	for _, r := range []message.Role{message.RoleInput, message.RoleOutput, message.RoleInput} {
-		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: r}}); err != nil {
+		if _, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: r}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -244,7 +246,7 @@ func TestXwalBackend_ForkAtInterior(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := altIR.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
+	if _, err := altIR.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 		t.Fatalf("send to forked alt: %v", err)
 	}
 }
@@ -261,7 +263,7 @@ func TestXwalBackend_CauterizedOutfitFork(t *testing.T) {
 	// inherited, ceremonial LT.
 	ir, _ := b.OpenFigIR(conv)
 	for i := 0; i < 2; i++ {
-		ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
+		ir.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
 	}
 	// Fork conv at LT 2: owned by the OUTFIT. Cauterized => a NEW conversation
 	// sharing the outfit, NOT a re-split of the outfit into a continuation.
@@ -284,7 +286,7 @@ func TestXwalBackend_CauterizedOutfitFork(t *testing.T) {
 		t.Fatalf("sib lost the shared outfit model: %q", str(cbGet(snap, "system.model")))
 	}
 	sibIR, _ := b.OpenFigIR(sib)
-	if _, err := sibIR.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
+	if _, err := sibIR.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 		t.Fatalf("send to cauterized sibling: %v", err)
 	}
 	// And the outfit still has NO live head of its own (stays ceremonial).
@@ -304,7 +306,7 @@ func TestXwalBackend_TreeVectors(t *testing.T) {
 	c2, _ := b.CreateConversation(l) // root [1]
 	// give c1 a turn so it's interior-forkable, then fork it -> a branch [0,0]
 	ir, _ := b.OpenFigIR(c1)
-	ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
+	ir.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
 	_, alt, err := b.Fork(c1)
 	if err != nil {
 		t.Fatal(err)
@@ -351,7 +353,7 @@ func TestNoStranding_SiblingPromoteDoesNotInvalidate(t *testing.T) {
 	}
 	// Warm up.
 	for i := 0; i < 3; i++ {
-		if _, err := logA.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
+		if _, err := logA.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 			t.Fatalf("warm append: %v", err)
 		}
 	}
@@ -361,7 +363,7 @@ func TestNoStranding_SiblingPromoteDoesNotInvalidate(t *testing.T) {
 	_, _ = b.Promote(convB, 1)
 
 	// A can still append.
-	if _, err := logA.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
+	if _, err := logA.Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 		t.Fatalf("post-promote-on-sibling append: %v", err)
 	}
 }
@@ -380,7 +382,7 @@ func TestNoStranding_ConcurrentAppendsAcrossArias(t *testing.T) {
 	const perWriter = 20
 
 	arias := make([]string, numArias)
-	logs := make([]Log[message.Message], numArias)
+	logs := make([]arialog.Log[message.Message], numArias)
 	for i := range arias {
 		id, _ := b.CreateConversation(l)
 		arias[i] = id
@@ -397,7 +399,7 @@ func TestNoStranding_ConcurrentAppendsAcrossArias(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < perWriter; j++ {
-				if _, err := logs[i].Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
+				if _, err := logs[i].Append(arialog.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 					errCh <- fmt.Errorf("aria %d append %d: %w", i, j, err)
 					return
 				}
