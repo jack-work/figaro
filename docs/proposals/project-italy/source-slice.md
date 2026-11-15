@@ -1,6 +1,8 @@
 # Italy: first source slice and existing identities
 
-Prepared 2026-11-15 for King XV. Source preparation only: no runtime role creation, cast, outfit update, topology write, host switch or deployment performed. The agreed charters and missing-position identities still come from the King. The HTML review stays with b6926f81; this note does not replace it.
+Approved by Gluck on 2026-11-15, with naming amendments: use `--managed`, and call the rou2 staff officer Quartermaster. Existing role ID `@f48f567a727d703effa5e2fa13ebd625` is retained. Officer titles have no Italian or other language requirement; prefer memorable names that describe the work.
+
+Source implementation is authorized. No runtime role creation, cast, outfit update, topology write, host switch or deployment has been performed. The agreed charters and missing-position identities still come from the King. The HTML review stays with b6926f81; this note does not replace it.
 
 ## What changed after review
 
@@ -34,7 +36,7 @@ The smallest useful change is a generic existing-ID outfit apply/check path, not
 Proposed source footprint:
 
 1. A small owned-value planner behind one daemon entry, independent of node names and our kingdom. Inputs are the exact target ID, named outfits, explicit owned leaf paths, expected role version and check/apply mode. The daemon folds outfits, validates owned paths, and submits a patch through its existing single writer with the expected version. Output is the desired change/check report. No stored formation object, no role registry and no machine-specific IDs in the implementation. Reuse authorization and refusal checks from form.set; this is not an alternate privileged write path.
-2. One CLI entry beside the form verbs, using `internal/cmdkit` and the SDK. Suggested shape: `figaro form apply --id @FULL-ID -O ROLE-OUTFIT --owned charter,supervisor,projects --check -j`. This is a proposed interface, not a command available today. The final owned paths come from the agreed outfits, not this illustrative invocation. `--check` never writes. Apply reports changed/unchanged/missing/conflict/refused, with diagnostics on stderr. It never sends a prompt or silently mints a target. The new method needs a capability entry and minor release; a missing capability refuses explicitly. Do not bolt ownership enforcement onto optimistic browser edits.
+2. One CLI entry beside the form verbs, using `internal/cmdkit` and the SDK. Suggested shape: `figaro form apply --id @FULL-ID -O ROLE-OUTFIT --managed charter,supervisor,projects --check -j`. This is a proposed interface, not a command available today. The final owned paths come from the agreed outfits, not this illustrative invocation. `--check` never writes. Apply reports changed/unchanged/missing/conflict/refused, with diagnostics on stderr. It never sends a prompt or silently mints a target. The new method needs a capability entry and minor release; a missing capability refuses explicitly. Do not bolt ownership enforcement onto optimistic browser edits.
 3. Shared Nix position submodules `staff`, `colonel`, `commander`: compose outfits and explicit full role-ID bindings, generate bounded apply invocations after outfit installation. Package the mechanism in figaro, compose our actual hierarchy in the host flake. No private data or credentials enter a Nix derivation.
 4. A separately visible topology step for the reviewed edges, with exact role IDs and no broad normalize/reparent sweep. A failed or parked edge remains pending in the report. Report partial application across roles; do not promise a multi-form transaction.
 
@@ -78,7 +80,7 @@ Adopt in place:
 | Figaro Engineer | `@ee9271497f3823d7f50922bec4899818` | Keep software/releases owner; not the new Italy Engineer. |
 | Il Zanni | `@62c5c9bf8794ec5b8d1d00d05dd26c69` | Existing UI owner for the merged staff, subject to agreed charter. |
 | El Formista | `@fbcfb5141604ef50e5c8dce0ef570711` | Keep headless state-client owner beneath Figaro Engineer. |
-| El Aduanero | `@f48f567a727d703effa5e2fa13ebd625` | Remain beneath King; capacity/router owner. |
+| Quartermaster (rou2; currently El Aduanero) | `@f48f567a727d703effa5e2fa13ebd625` | Remain beneath King; capacity/router owner. Rename the existing seat, never mint a replacement. |
 | El Zapador | `@662ee4fedbd0fdbad7ad6adef20cdeee` | Existing Spain executor; no new executor. |
 | Spain Inspector | `@53c6b72b` | Keep its narrow auth/secrets/router/deploy responsibility. |
 
