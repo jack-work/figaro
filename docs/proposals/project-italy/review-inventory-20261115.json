@@ -24,6 +24,7 @@
       "state": "form",
       "kind": "form",
       "holder": "buckle-selected",
+      "approvedName": "Quartermaster",
       "holderPresent": "6a2a5d694665e751f5533e46ecbec399",
       "classification": "Operational position represented in chart"
     },
@@ -2377,7 +2378,7 @@
     },
     {
       "id": "aduanero",
-      "title": "El Aduanero",
+      "title": "Quartermaster",
       "detail": "rou2 routing and capacity",
       "rank": "staff",
       "roleIds": [
@@ -2385,7 +2386,7 @@
       ],
       "holder": "buckle-selected",
       "holderId": "2473273288811ac1d995563334f82e83",
-      "note": "rou2 routing and capacity",
+      "note": "Quartermaster is Gluck's approved name for the existing rou2 officer, same @f48f567a identity. Captured runtime name was El Aduanero; this page changes only its display label, not the role or holder.",
       "liveParent": "king",
       "liveKind": "command",
       "targetParent": "king"
