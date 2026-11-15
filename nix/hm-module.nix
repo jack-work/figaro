@@ -7,6 +7,7 @@
 let
   cfg = config.programs.figaro;
   inherit (lib) mkOption types;
+  toml = pkgs.formats.toml { };
   figaro = "${cfg.package}/bin/figaro";
   restart = "${figaro} upgrade --to ${figaro} --if-changed --wait ${toString cfg.restartWait}";
 in
@@ -17,6 +18,12 @@ in
     package = mkOption {
       type = types.package;
       description = "The figaro package.";
+    };
+
+    outfits = mkOption {
+      type = types.attrsOf toml.type;
+      default = { };
+      description = "Declared outfits rendered under figaro/outfits. Never put credentials here; the Nix store is public.";
     };
 
     restartOnSwitch = mkOption {
@@ -45,7 +52,12 @@ in
 
   config = lib.mkIf cfg.enable (
     lib.mkMerge [
-      { home.packages = [ cfg.package ]; }
+      {
+        home.packages = [ cfg.package ];
+        xdg.configFile = lib.mapAttrs' (name: spec: lib.nameValuePair "figaro/outfits/${name}.toml" {
+          source = toml.generate "figaro-outfit-${name}.toml" spec;
+        }) cfg.outfits;
+      }
       (lib.mkIf cfg.restartOnSwitch {
         home.activation.figaroRestartOnSwitch = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
           if [ -n "''${DRY_RUN:-}" ]; then
