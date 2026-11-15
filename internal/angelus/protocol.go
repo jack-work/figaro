@@ -106,6 +106,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	methods := map[string]jkrpc.HandlerFunc{
 		rpc.MethodCreate:             h.create,
 		rpc.MethodFormCreate:         h.formCreate,
+		rpc.MethodFormApply:          h.formApply,
 		rpc.MethodFormBind:           h.formBind,
 		rpc.MethodOutfitReload:       h.outfitReload,
 		rpc.MethodFork:               h.fork,
