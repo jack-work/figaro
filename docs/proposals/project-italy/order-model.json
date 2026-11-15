@@ -1,0 +1,96 @@
+{
+  "title": "Spain · Root order",
+  "status": "Target formation. Runtime consolidation is pending.",
+  "root": "king",
+  "expandedTeam": "engineer",
+  "roles": [
+    {
+      "id": "king", "title": "King of Spain", "initials": "K", "rank": "Commander", "manager": null,
+      "summary": "Coordination, policy and escalation", "roleId": "@96447061",
+      "owns": ["Coordinate the standing officers", "Own production-capacity policy", "Keep Gluck informed and carry decisions", "Commission long-term-memory compaction"],
+      "boundary": "Officers coordinate directly. Work without an assigned owner escalates here instead of acquiring another hidden standing role.",
+      "fanout": ["Log compaction", "Bounded investigations"],
+      "keywords": ["command", "coordination", "policy", "memory", "captains log", "unassigned"], "uiTo": null
+    },
+    {
+      "id": "engineer", "title": "Engineer", "initials": "E", "rank": "Colonel", "manager": "king",
+      "summary": "Project Italy and evaluation unification", "roleId": null,
+      "owns": ["Project Italy", "Coordinate Major and Zanni / Topo", "Unify evaluation environments and instrumentation", "Commission research before implementation when needed"],
+      "boundary": "This is the systems Engineer, not the Figaro Engineer. Its only standing staff here are Major and Zanni / Topo.",
+      "fanout": ["Unification research", "Evaluation-environment work"],
+      "keywords": ["italy", "unification", "evaluation environment", "research", "systems"], "uiTo": "zanni"
+    },
+    {
+      "id": "major", "title": "Major", "initials": "M", "rank": "Staff", "manager": "engineer",
+      "summary": "Sys1 automation and prediction methods", "roleId": null,
+      "owns": ["Build and maintain volts", "Cache-expiry and autocompaction prediction", "Reasoning-effort methods", "Research techniques and file evaluation requirements through Engineer"],
+      "boundary": "Volts are automations, not officers. Major builds and maintains the mechanism rather than manually making every prediction.",
+      "fanout": ["Prediction research", "Method experiments"],
+      "keywords": ["sys1", "volts", "predictions", "reasoning", "cache", "autosuccession", "autocompaction", "methods"], "uiTo": "zanni"
+    },
+    {
+      "id": "zanni", "title": "Zanni / Topo", "initials": "Z", "rank": "Staff", "manager": "engineer",
+      "summary": "All UI, shared components and system maps", "roleId": "@62c5c9bf8794ec5b8d1d00d05dd26c69",
+      "owns": ["All UI changes across the platform", "Shared components and visualization patterns", "Order, Scope and capacity presentation", "Keel UI, TV UI and site UI coordination", "Topographical views and metrics integration"],
+      "boundary": "One UI owner. Backend and infrastructure officers keep their systems; Zanni commissions and integrates their interface work.",
+      "fanout": ["UI features", "Component work", "Dashboard integration", "Ad-hoc design and implementation"],
+      "keywords": ["ui", "ux", "design", "components", "visualization", "topography", "maps", "order", "dashboards", "keel ui", "tv ui", "site ui"], "uiTo": null
+    },
+    {
+      "id": "figeng", "title": "Figaro Engineer", "initials": "FE", "rank": "Colonel", "manager": "king",
+      "summary": "Figaro, ebac, forms and figscope", "roleId": "@ee9271497f3823d7f50922bec4899818",
+      "owns": ["Figaro runtime and releases", "The terminal pager and input system", "ebac maintenance", "figaro-forms state library", "figscope instrumentation"],
+      "boundary": "Forms, ebac and figscope are bodies of work handled by transient tail forks, not extra standing staff. UI changes go through Zanni.",
+      "fanout": ["Figaro runtime work", "ebac maintenance", "figaro-forms", "figscope"],
+      "keywords": ["figaro", "terminal pager", "keyboard", "input", "runtime", "ebac", "figaro forms", "figscope", "instrumentation"], "uiTo": "zanni"
+    },
+    {
+      "id": "quartermaster", "title": "Quartermaster", "initials": "Q", "rank": "Staff", "manager": "king",
+      "summary": "Provider routing and capacity", "roleId": "@f48f567a727d703effa5e2fa13ebd625",
+      "owns": ["rou2", "Provider and account attribution", "Capacity adapters and observations", "Routing and admission telemetry"],
+      "boundary": "Supply sourced capacity data, not invented balances. King owns production-threshold policy; Zanni owns its UI.",
+      "fanout": ["Provider adapters", "Capacity collection", "Routing investigations"],
+      "keywords": ["rou2", "provider", "capacity", "balance", "routing", "tokens", "subscription"], "uiTo": "zanni"
+    },
+    {
+      "id": "ig", "title": "Inspector General", "initials": "IG", "rank": "Staff", "manager": "king",
+      "summary": "Nix coherence, security and corrections", "roleId": null,
+      "owns": ["Periodic Nix and Home Manager coherence audits", "Security validation", "Commission corrective work and refactors", "Prepare appropriate rollback work under existing deployment authority"],
+      "boundary": "Audit and commission fixes without becoming a second deployment lane or a review gate on every routine change.",
+      "fanout": ["Coherence audits", "Security reviews", "Corrective work"],
+      "keywords": ["audit", "nix", "home manager", "security", "coherence", "refactor", "rollback"], "uiTo": "zanni"
+    },
+    {
+      "id": "zapador", "title": "El Zapador", "initials": "EZ", "rank": "Staff", "manager": "king",
+      "summary": "Deployments, health and thermals", "roleId": "@662ee4fedbd0fdbad7ad6adef20cdeee",
+      "owns": ["Named Spain deployment windows", "Service health and monitoring", "Thermal policy and resource observations", "Service alerting and incident escalation"],
+      "boundary": "Health alerting is not the Figaro terminal pager. Monitoring and thermal work use transient forks, not a separate standing Vigía. Existing deployment and no-reboot rules still apply.",
+      "fanout": ["Deployment windows", "Health checks and alerting", "Thermal work"],
+      "keywords": ["deploy", "spain", "health", "monitoring", "thermals", "temperature", "alerting", "netmon"], "uiTo": "zanni"
+    },
+    {
+      "id": "taller", "title": "El Taller", "initials": "ET", "rank": "Staff", "manager": "king",
+      "summary": "Keel infrastructure and capabilities", "roleId": "@2b443573385ce498dc40d0f5a672dd2a",
+      "owns": ["Keel CI infrastructure", "Keel API and CLI capabilities", "Review and artifact capabilities", "Infrastructure work around Keel"],
+      "boundary": "Keel UI belongs to Zanni. Split CI work from API/CLI and review-capability work using separate transient tail forks.",
+      "fanout": ["CI infrastructure", "API / CLI capabilities", "Review capabilities"],
+      "keywords": ["keel", "ci", "api", "cli", "reviews", "artifacts", "infrastructure"], "uiTo": "zanni"
+    },
+    {
+      "id": "tv", "title": "Big TV", "initials": "TV", "rank": "Staff", "manager": "king",
+      "summary": "Media backends and infrastructure", "roleId": "@2e0bb68c36211dbd2023bc693b4c682c",
+      "owns": ["Media backend and infrastructure tasks", "Playback and receiver integration", "Coordinate backend verification and device evidence", "Parallelize bounded implementation tasks"],
+      "boundary": "Backend, infrastructure and QA work use transient tail forks. All player, receiver and remote UI changes go through Zanni.",
+      "fanout": ["Media backends", "Receiver integration", "Infrastructure tasks", "Bounded QA"],
+      "keywords": ["tv", "media", "video", "playback", "receiver", "subtitles", "captions", "movies"], "uiTo": "zanni"
+    },
+    {
+      "id": "escribano", "title": "El Escribano", "initials": "ES", "rank": "Staff", "manager": "king",
+      "summary": "Content, publishing and résumé", "roleId": "@c204f2a0188fa5864b75db09e06dd266",
+      "owns": ["Gluck's site content and publishing", "Résumé and editorial work", "Commission bounded writing or publishing tasks"],
+      "boundary": "Keep this standing officer. Site UI changes go through Zanni; content and publishing stay here.",
+      "fanout": ["Editorial work", "Publishing tasks"],
+      "keywords": ["site", "content", "writing", "resume", "résumé", "publishing", "editorial"], "uiTo": "zanni"
+    }
+  ]
+}
