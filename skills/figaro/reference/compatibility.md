@@ -44,6 +44,11 @@ capabilities.
   daemon gets no overlay and draws that daemon's two keys as plain values.
   Writing `@topology` (a `set` on it)
   needs `set` on each figaro moved and `read` on each figaro it is drawn under.
+- **`@arias-global`** is a caller-computed, read-only form with the same
+  view as `@arias`, including the null and outfit anchors visible through
+  that caller's global listing. Pager `:ls -g` mounts it and reports
+  `ls -g requires @arias-global` if the daemon lacks it. Other list scopes
+  keep using `@arias`; no request fields or disk formats change.
 - **`figaro.normalize` changed shape in 0.56.** The request takes
   `dry_run` (`segments` is gone); the response lists `detached` figaros and
   `dropped` overrides (`id`, `handle`, `under`, `reason`) instead of a

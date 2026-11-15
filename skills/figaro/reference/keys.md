@@ -98,6 +98,13 @@ figaro doctor keys                   # what the file asked that figaro refused
 effect says so on stderr at startup, as a line in the help pit, and in `doctor
 keys`, which exits nonzero.
 
+The `more` action controls transcript metadata and status details together.
+A custom binding naming `bar-verbose` must name `more` instead. At upgrade,
+replace that action value in `keys.toml`, or run `figaro keys bind <key>
+more <layer>` for each affected binding. `figaro doctor keys` checks the
+result. Text editors keep literal `m`; custom bindings for `more` belong in
+reading modes.
+
 ## What is refused
 
 - `^C`, in every layer: it is the guaranteed way out.
