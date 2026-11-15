@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Project Italy: an order of battle for the programming system</title>
+<style>
+:root{--paper:#f5efe1;--ink:#26343b;--muted:#66645b;--rule:#c8bda6;--accent:#82462f;--light:#eae1cc;--link:#204f61;--body:Georgia,"Times New Roman",serif;--mono:"DejaVu Sans Mono","Liberation Mono",monospace}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:1.5rem}body{margin:0;background:var(--paper);color:var(--ink);font:18px/1.65 var(--body)}a{color:var(--link);text-underline-offset:.18em}a:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:5px}a:hover{color:var(--accent)}p,ul,ol,dl{margin:.8rem 0 1.15rem}li+li{margin-top:.4rem}h1,h2,h3,h4{font-weight:400;line-height:1.12;text-wrap:balance}h1{font-size:clamp(2.6rem,5vw,4.7rem);max-width:14ch;margin:.8rem 0 1.4rem;letter-spacing:-.035em}h2{font-size:2.2rem;margin:0 0 1.1rem}h3{font-size:1.45rem;margin:2rem 0 .8rem}h4{font-size:1.12rem;font-weight:700;margin:1.5rem 0 .6rem}strong{font-weight:700}.shell{max-width:1240px;margin:auto;display:grid;grid-template-columns:232px minmax(0,1fr);gap:3.5rem;padding:2.4rem 2.5rem 4rem}.nav{position:sticky;top:2rem;align-self:start;font:12px/1.6 var(--mono);padding-top:.4rem}.nav .title{font-size:15px;margin-bottom:1.3rem}.nav ol{list-style:none;margin:1.2rem 0;padding:0}.nav a{display:block;padding:.4rem 0;text-decoration:none}.nav summary{min-height:44px;display:flex;align-items:center;cursor:pointer;border-bottom:1px solid var(--rule)}main{min-width:0}.meta,.eyebrow,.section-label,.caption{font:12px/1.55 var(--mono);letter-spacing:.025em}.eyebrow{color:var(--accent);text-transform:uppercase}.meta{border-top:1px solid var(--ink);padding-top:.75rem;margin:2rem 0 0;color:var(--muted)}.lede{font-size:1.35rem;line-height:1.48;max-width:38ch}.status{border-block:1px solid var(--rule);padding:1.2rem 0;margin:2rem 0}.status p{margin:0}.section{padding:2.6rem 0;border-top:1px solid var(--rule)}.section-label{color:var(--accent);margin-bottom:.7rem}.note{font-size:.94rem;color:var(--muted)}.callout{border-block:2px solid var(--ink);padding:.85rem 0;margin:1.5rem 0;font-size:1.2rem}.table-wrap{overflow:auto;margin:1.4rem 0}table{width:100%;border-collapse:collapse;font-size:.95rem;min-width:520px}th,td{text-align:left;vertical-align:top;padding:.75rem .7rem .75rem 0;border-bottom:1px solid var(--rule)}th{font:12px/1.5 var(--mono);color:var(--muted)}th:first-child,td:first-child{width:25%}code{font: .78em/1.5 var(--mono);overflow-wrap:anywhere}pre{font:13px/1.7 var(--mono);margin:1.4rem 0;padding:1.15rem;background:var(--light);overflow:auto;tab-size:2;max-width:100%}pre code{font:inherit;overflow-wrap:normal}blockquote{margin:1.4rem 0;padding-left:1.2rem;border-left:2px solid var(--rule);font-size:1.15rem}dl dt{font-weight:700;margin-top:1.15rem}dl dd{margin:.3rem 0 1rem}.pair{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}.pair h3{margin-top:.5rem}details.evidence{border-top:1px solid var(--rule);padding:.7rem 0;margin:1rem 0}details.evidence summary{cursor:pointer;min-height:44px;display:flex;align-items:center}.decisions{counter-reset:decision;list-style:none;padding:0}.decisions li{padding:1rem 0;border-bottom:1px solid var(--rule);counter-increment:decision}.decisions li::before{content:counter(decision,decimal-leading-zero)" / ";font:12px var(--mono);color:var(--accent)}.footer{font:12px/1.7 var(--mono);color:var(--muted);margin-top:2rem;overflow-wrap:anywhere}.small{font-size:.93rem}.tree{line-height:1.85}.key{font:12px/1.7 var(--mono);color:var(--muted);margin-top:-.6rem}svg{display:block;max-width:100%;height:auto}section[id]{scroll-margin-top:2rem}
+@media(max-width:850px){.shell{display:block;padding:1.3rem 1.2rem 3rem}.nav{position:static;margin-bottom:2.3rem}.nav ol{columns:2;column-gap:1.5rem}.nav .title{margin-bottom:.4rem}.pair{grid-template-columns:1fr;gap:.2rem}.section{padding:2rem 0}h2{font-size:1.9rem}pre{font-size:12px}body{font-size:17px}.meta{font-size:11px}th,td{padding-right:1rem}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+@media print{body{background:white;font-size:11pt}.shell{display:block;max-width:none;padding:0}.nav{display:none}h1{font-size:36pt}h2{font-size:22pt}.section{break-inside:auto}h2,h3{break-after:avoid}pre{white-space:pre-wrap;background:none;border:1px solid #bbb;font-size:8pt}a{color:inherit}.table-wrap{overflow:visible}table{min-width:0}.footer{font-size:8pt}}
+</style>
+</head>
+<body>
+<div class="shell">
+<aside class="nav" aria-label="Document contents">
+<div class="title">PROJECT ITALY<br>Formation review / 15 Nov 2026</div>
+<details open><summary>In this document</summary><ol>
+<li><a href="#mandate">The mandate</a></li><li><a href="#formation">Order of battle</a></li><li><a href="#charters">The new charters</a></li><li><a href="#declaration">Bricks in the flake</a></li><li><a href="#visibility">A living kingdom</a></li><li><a href="#capacity">Capacity and production</a></li><li><a href="#replica">The replica, explained</a></li><li><a href="#memory">Memory and replacement</a></li><li><a href="#repositories">Code and configuration</a></li><li><a href="#rollout">Sequence and estimates</a></li><li><a href="#decisions">Your review</a></li><li><a href="#sources">Sources and limits</a></li>
+</ol></details>
+<p>PROPOSAL ONLY<br>No new roles, grants,<br>timers or routes applied.</p>
+</aside>
+<main>
+<header>
+<div class="eyebrow">To Gluck / from the King of Spain</div>
+<h1>An order of battle for a system that can learn.</h1>
+<p class="lede">Give engineering one commander, join the maps to the instruments, and keep decisions close to the work.</p>
+<div class="meta">PROJECT ITALY · REVIEW EDITION · 15 NOVEMBER 2026<br>Scope: formation, capacity, replay and long-term memory<br>Visual system: warm paper, ink rules, serif text, monospaced structures. No external assets or scripts.</div>
+</header>
+<div class="status"><p>This is the requested HTML review, not a rollout. Gluck has authorized planning and the start of capacity work. Creating the revised formation and enabling its automation follow approval of this document. The Merlin migration proceeds in parallel with its existing owner.</p></div>
+<section class="section" id="mandate">
+<div class="section-label">MANDATE</div><h2>Fewer intermediaries. Better instruments.</h2>
+<p>The King brokers work and speaks to Gluck. Officers speak directly to one another. A routine acknowledgement is not a task; it should not cross three desks before work proceeds.</p>
+<p>Project Italy now belongs to a new Engineer colonel. It joins the evaluation environment, the system's UI and the measurements needed to judge both. Topographical engineering and Zanni become one staff position beneath that colonel. Rou2 remains a separate staff position under the King, supplying capacity and routing data without owning the presentation.</p>
+<p>Gluck's latest allowance instruction replaces the old 50%-used stop: use the OAI subscription until it is exhausted, with no paid fallback. The current human reading is below 57% capacity remaining. That is a report from Gluck, not a number yet measured by rou2.</p>
+<blockquote>“You should also track metrics on hierarchical performance and ensure that we are not bottlenecking the system by requiring too much agent to agent verification.”</blockquote>
+</section>
+<section class="section" id="formation">
+<div class="section-label">FORMATION / PROPOSED</div><h2>The King commands positions, not inbox chains.</h2>
+<pre class="tree" aria-label="Proposed organization chart"><code>GLUCK / JACK / THE BOSS
+└─ King of Spain · commander
+   ├─ Engineer · new colonel, Project Italy
+   │  ├─ Topo / Zanni · staff, UI and metrics unification
+   │  └─ Le Voltigeur · staff, sys1 and reasoning methods
+   ├─ Figaro Engineer · existing software regiment
+   │  └─ El Formista · existing staff, figaro-forms client
+   ├─ El Aduanero · staff, rou2 and capacity adapters
+   ├─ Spain deployments · staff, existing executor
+   ├─ Inspector-General · light, asynchronous audit
+   └─ Other existing staff
+      Big TV · identity · Keel · monitoring · messaging
+
+Transient detachments: research, audits, replay, log rollups.
+Peer coordination crosses branches; authority stays explicit.</code></pre>
+<p class="key">Solid indentation means supervision. It does not imply a new runtime permission. New positions are marked new; existing positions are adopted, not duplicated.</p>
+<p>The new Engineer is not a rename of the existing Figaro Engineer. One coordinates experiments and Italy; the other owns the figaro codebase, provider integration, releases and its state-client library. This distinction avoids two colonels both believing they own the same release.</p>
+<p><em>Le Voltigeur</em> is the proposed name for the sys1 officer: a Napoleonic light-infantry title for a small, quick-moving detachment. It runs the cache-break/autosuccession and reasoning-effort jobs as separate tasks, without creating a regiment for each. El Formista already owns figaro-forms beneath the Figaro Engineer (<code>@fbcfb514</code>); adopt that position rather than creating another library owner.</p>
+<p>Big TV and the other single-purpose seats are staff, not regiments. Existing useful workers need not be destroyed to make the picture tidy. Their standing-role status is reconciled during the approved handoff, and future routine fan-out is transient. The Spain executor keeps its current identity while a French or Italian title is settled; a cosmetic rename must not mint another role.</p>
+</section>
+<section class="section" id="charters">
+<div class="section-label">CHARTERS / TEXT TO INSCRIBE AFTER APPROVAL</div><h2>Each position has an output and a boundary.</h2>
+<dl>
+<dt>Engineer colonel · Project Italy</dt><dd>Own the unified evaluation environment and its observable interfaces. Coordinate Topo/Zanni and Le Voltigeur. Turn useful questions into small empirical experiments on our own prompts and past activity. Commission transient research and replica work. Publish proposals on Keel; send Gluck short links through the King or the agreed review thread. No production deployment without the King's go.</dd>
+<dt>Topo / Zanni · one staff officer</dt><dd>Own UI unification, shared web components and visualizations, and the limited server work needed to join metrics. Build the live order of battle at <code>order.kelliher.info</code>. Derive it from declared charter forms and <code>@topology</code>, then enrich it with figscope and rou2. Commission backend work through the Engineer and work directly with Aduanero. Keep figaro-forms headless; bind Zanni components to its state rather than hiding state in widgets.</dd>
+<dt>Le Voltigeur · sys1 staff</dt><dd>Improve early succession before cache expiry and the reasoning-effort method using our recorded prompts, gaps and outcomes. Keep model/provider lifetimes distinct. Calibrate and compare a simple baseline before promoting a new rule. Own the existing warm-cache succession proposal; do not pretend one provider's five-minute expiry evidence establishes the OAI subscription's lifetime. No repeated inference to make a benchmark look busy.</dd>
+<dt>El Aduanero · rou2 staff</dt><dd>Own provider routing, account attribution, passive capacity adapters and the normalized capacity feed. Supply real values, source, window, reset, freshness and failure state. Coordinate presentation with Topo/Zanni. Never turn a missing balance into a synthetic one, and never spend other providers' inference allowance to discover capacity.</dd>
+<dt>El Formista · existing staff beneath the Figaro Engineer</dt><dd>Own the subscribable figaro-forms state client, patch/version semantics and UI bindings as a state library. Keep rendering in Zanni. Expose only authorized form projections; a live chart must not ship secrets, private prompts or blanket write access to the browser.</dd>
+<dt>Inspector-General · asynchronous staff</dt><dd>Audit the Engineer's outcomes lightly and after the fact. Report a finding with evidence, not another approval staircase. The existing Spain Inspector remains the narrow gate for Spain auth, secrets, router and deploy changes; ordinary local refactors and UI do not inherit that gate.</dd>
+</dl>
+<p>Project Italy is a small, typed project entry on both the King's role and the new Engineer's role: purpose, owner role ID, participating roles, proposal link, status and next decision. Updates reference stable role IDs, not whichever aria holds the seat this week.</p>
+</section>
+<section class="section" id="declaration">
+<div class="section-label">FORMATION AS DATA</div><h2>Compose the bricks. Adopt the people.</h2>
+<p>The reusable units are <code>staff</code>, <code>colonel</code> and <code>commander</code>. Our kingdom is one application of those units in the host flake. A charter is composed from typed parts: purpose, responsibilities, boundaries, supervision, projects and optional suggested cadence. Conflicting part keys fail evaluation rather than silently concatenating contradictory orders.</p>
+<pre><code>formation.positions = {
+  king = {
+    kind = "commander";
+    roleId = existing.king;
+    charter.parts = [ rootCommand capacityResponsibility ];
+  };
+  engineer = {
+    kind = "colonel";
+    supervisor = "king";
+    roleId = bindings.engineer;
+    charter.parts = [ engineering projectItaly ];
+  };
+  topo = {
+    kind = "staff";
+    supervisor = "engineer";
+    roleId = existing.zanni;
+    charter.parts = [ topography sharedUI metrics ];
+  };
+};</code></pre>
+<p class="caption">Illustrative module interface, not existing Nix syntax offered as a runnable configuration. Role-ID bindings are an explicit inventory, not UUIDs minted during evaluation.</p>
+<h3>No double pope</h3>
+<ol>
+<li>Export and review the full existing role IDs. Adopt King, Zanni, Aduanero and the Figaro Engineer in place. Names are not identity; short IDs in this document are display labels only.</li>
+<li>Render one deterministic manifest in the Nix store. A daemon-backed reconcile operation updates only declaration-owned fields, using versioned writes. It preserves <code>target-aria</code>, handoff, comments, credentials, inference settings and runtime state.</li>
+<li>Default to <code>autoCreate = false</code>. Missing IDs and ambiguous bindings fail clearly. Optional new-position creation needs one atomic daemon binding from a stable declaration key to a role. A retry cannot mint a second form.</li>
+<li>Show drift with a dry-run. The proposal is to restore managed charter fields on apply while preserving unowned notes. Removing a declaration stops management; it does not delete a role or reap its holder.</li>
+<li>Move or succeed holders separately. The formation apply is not an inference call, a cast or a daemon restart. A stopped or incompatible daemon leaves a deferred apply, not a shell read-then-mint fallback.</li>
+</ol>
+<p>New staff role forms derive at turn zero from their supervisor role. Their initial figaros use the agreed turn-zero supervisor fork; successors retain the stable role identity and receive a fresh context through <code>succeed</code>. Historical ancestry, the drawn <code>@topology</code> tree and the declared supervisor are different things. The reconciler must not rewrite history, infer TTL or grant authority from a visual tree.</p>
+<p>Heartbeats stay manual. The charter may suggest the earlier Engineer cadence (hourly for three hours, then 02:00 and 14:00), but a flake switch does not arm, change or cancel those timers. The specific memory-maintenance schedules below are separate approved services, not an accidental return to flake-controlled officer heartbeats.</p>
+<p>Future fork and role-creation policies attach to these units once Gluck defines them and the daemon enforces them. For now they describe scope, not imaginary access control.</p>
+</section>
+<section class="section" id="visibility">
+<div class="section-label">TOPOGRAPHY AND PERFORMANCE</div><h2>A live chart, not a second registry.</h2>
+<p><code>order.kelliher.info</code> is a proposed authenticated view, not a site deployed by this document. Its target is within seven days of approval and a stable post-migration deployment window. Topo/Zanni owns it through the Engineer. The review copy is temporary; the real view is data-driven.</p>
+<pre><code>host flake → formation manifest → managed role forms
+                                      │
+@topology ─────────────────────────────┤
+figscope spans ────────────────────────┤
+rou2 capacity / request metrics ───────┤
+                                      ↓
+                         figaro-forms state client
+                                      ↓
+                         shared Zanni components
+                                      ↓
+                          order.kelliher.info</code></pre>
+<p>Charter and topology disagreement is visible as drift, not silently reconciled by the renderer. Every node shows its stable role, holder, work state, current task age and the source time of its metrics. Stale and unavailable stay visible. The first release is read-only and follows existing auth boundaries; no unauthenticated form dump or browser-held administration key.</p>
+<div class="table-wrap"><table><thead><tr><th>Measure</th><th>What it separates</th></tr></thead><tbody>
+<tr><td>Request to first work</td><td>Time queued at a seat, model first output and actual execution start. Long model queues are accepted; a review queue is a different problem.</td></tr>
+<tr><td>Task dwell by node</td><td>Time working, waiting for a peer, or blocked on Gluck. A human-blocked task is not a stalled agent to wake repeatedly.</td></tr>
+<tr><td>Coordination cost</td><td>Hops per completed task, duplicate acknowledgements, repeat approval requests and time waiting for each review gate.</td></tr>
+<tr><td>Inference efficiency</td><td>Cache-read share, first-output p50/p95, errors and token attribution by provider and cohort. A cold succession is not proof of a provider regression.</td></tr>
+<tr><td>Missing evidence</td><td>Unknown parent links, uninstrumented queue depth and absent task spans. No zeroes in place of missing data.</td></tr>
+</tbody></table></div>
+<p>The King reviews the critical path and removes redundant handoffs. A deterministic collector can publish bounded load context without prompting every seat; this already exists locally for <code>fleet.load</code>. Extend that pattern to task and capacity data. Do not create an autonomous manager to manage the managers. Changes to production admission follow explicit policy, not a model guessing from a chart.</p>
+</section>
+<section class="section" id="capacity">
+<div class="section-label">THE KING'S CAPACITY DUTY</div><h2>Measure per provider. Act once.</h2>
+<p>The sparse Scope rou2 tab is not complete. Aduanero supplies the data; Topo/Zanni makes it usable. Priority sources are the OAI subscription, Explabs, Anthropic and Copilot; Modelflare is lower priority. Passive headers and account-status endpoints are preferable to inference probes. Some providers may not expose a balance at all.</p>
+<p>Extend the existing dashboard snapshot, do not invent a second schema. It already separates <code>reported</code>, <code>observed</code> and <code>local_usage</code> per provider/upstream/account, with value, unit, window, reset, source, availability, staleness and fetch timestamps on each observation. A production form projects only the allowed opaque account reference and required metrics. Provider-reported capacity and locally counted usage remain different fields. A model-reported percentage is neither.</p>
+<p>Aduanero confirms the native OAI response path already forwards sanitized numeric <code>x-codex-primary/secondary-used-percent</code> and related reset/window headers. The missing slice is retaining those observations into the snapshot consumed by the UI; production currently has <code>snapshotFile = null</code>. Use natural requests as evidence without extra inference probes. A derived remaining percentage keeps its original window and source, and a missing header remains unknown.</p>
+<p>One form holds bounded per-provider observations fetched periodically through an authorized adapter, including an ebac-backed adapter if appropriate. The cadence is chosen per source and rate limit. It contains no credentials. Rou2 may export one derived production-state metric, but dollars, tokens and weekly percentages must not be added into a fictional fleet balance.</p>
+<pre><code>capacity observations + King's explicit rules
+                      ↓
+          production state: run | trickle | stop
+                      ↓
+          new model-work admission only
+
+unknown ≠ exhausted
+stale ≠ zero
+human report ≠ live telemetry</code></pre>
+<p>Current rule: permit OAI subscription use until verified exhaustion or an upstream exhaustion response, then park new model work and notify Gluck once. No paid fallback and no old 50%-used stop. The report “below 57% remaining” records its source and age; it does not establish a throttle threshold.</p>
+<p>Later thresholds and the definition of trickle belong on the King's role form, as Gluck's explicit rules. Those could reserve a small recovery budget or lower concurrent admissions, but this document invents no percentage. The deterministic watcher applies the rule and records the decision idempotently. Stop production means stop admitting new inference, not shut down Spain, kill an encode, sever the router, or stop the gateway needed for recovery. In-flight operations reach a coherent stopping point.</p>
+<p>If capacity is unknown, report the gap and keep the current permitted policy; do not assume exhaustion. If the upstream rejects for exhaustion, do not turn that into a retry loop. Reset or renewed allowance permits a controlled resume. Rate limits and transient deploy failures are recorded separately.</p>
+</section>
+<section class="section" id="replica">
+<div class="section-label">THE REPLICA, EXPLAINED</div><h2>Replay a setting, not the live house.</h2>
+<p>The replica is a repeatable test environment for past situations. Capture an allowed, compact description of an event and the relevant system configuration. Restore it into an isolated setting, ask a figaro to act, and classify the outcome with the selected <code>figaro decide</code> or sys1 method. It tests whether a rule or prompt changes behavior, not whether an officer can remember the expected answer.</p>
+<p>Project Italy makes the components uniform enough to replay: declared roles and charters, versioned service configuration, typed observations, a selected task, and recorded outcome criteria. Fixtures exclude production credentials and real sessions. Synthetic identity and test data stand in for accounts. An experiment records the environment revision, prompt/method/model version, resource limit and result under a namespaced captains-log handle.</p>
+<div class="pair"><div><h3>Recommended first: gluck, then Merlin</h3><p>A small isolated local prototype before cutover. After Merlin is accepted, move the same pinned fixture to NixOS. It avoids spending Spain's router and thermal budget while the design is still changing.</p></div><div><h3>Alternative: a VM on Spain</h3><p>The requested shape is one QEMU VM running NixOS with one nspawn container per service. It is viable as a later constrained target, not a reason to test router changes on the house. Explicit CPU, memory and I/O caps, isolated networking and a named Spain deployment are prerequisites.</p></div></div>
+<p>The host choice remains a review decision. Prototype preparation needs no partitioning or migration authority. No live workload is cloned by copying its private state. Neither option implies paid inference, fleet-wide simulation or a new always-on regiment.</p>
+</section>
+<section class="section" id="memory">
+<div class="section-label">LONG-TERM MEMORY</div><h2>One captains-log. A smaller working history.</h2>
+<p>Use the current captains-log and its namespaced index. Create another instance only when there is a demonstrated need. New facts continue to land in dated entries at <code>YYYY/MM/DD/slug.md</code>; officers retrieve them by subject handle instead of rereading a giant handoff. Personal-life material remains outside this programming log.</p>
+<h3>Rollups and retention are two jobs</h3>
+<div class="table-wrap"><table><thead><tr><th>Job</th><th>Schedule and output</th></tr></thead><tbody>
+<tr><td>Weekly rollup</td><td>Once a week, summarize the completed Monday–Sunday week. File <code>YYYY/MM/DD.summary.md</code>, where DD is its Sunday. Example: <code>2026/11/15.summary.md</code>.</td></tr>
+<tr><td>Monthly rollup</td><td>In the first weekly run of a new month, summarize the previous complete month to <code>YYYY/MM/.summary.md</code>. Example: <code>2026/11/.summary.md</code> for November.</td></tr>
+<tr><td>Yearly rollup</td><td>On January 1, summarize the previous complete year from its monthlies to <code>YYYY/.summary.md</code>. Keep yearlies indefinitely.</td></tr>
+<tr><td>Retention sweep</td><td>Every six months, replace sufficiently old source entries only after their covering summaries and index transfers are verified. First sweep is report-only.</td></tr>
+</tbody></table></div>
+<p class="note">Proposed calendar convention for review: UTC, weeks ending Sunday, retention sweeps January 1 and July 1. A one-time catch-up can create a partial current-week summary, clearly marked incomplete; it is never used to remove sources. These conventions are not yet timers.</p>
+<h3>The age rules, precisely</h3>
+<p>At retention time <code>C</code>, use each source period's end, not file mtime. Daily entries become eligible when older than <code>C − 182 days 12 hours</code> (Gluck's <code>365/2</code> days), and are replaced by prewritten covering weeklies. Weeklies older than one calendar year are replaced by prewritten covering monthlies. Monthlies older than eighteen calendar months are replaced by prewritten covering yearlies. A source on the boundary is retained until it is strictly older.</p>
+<p>A week can cross a month or year. Its content is partitioned by the dates of the underlying daily facts; both monthly summaries must cover those parts before the weekly source is eligible. The same principle applies to a yearly handoff. Never assign a whole cross-month week to whichever month contains its filename.</p>
+<p>The replacement intervals are not permissions to erase unrepresented history. A recent partial summary, a missing January rollup or an unresolved citation prevents the relevant deletion. Active decisions and unresolved obligations survive in the summary even if their origin is old. Git history is retained: this is replacement in the current tree, not history rewriting or a storage-purge promise.</p>
+<h3>A run that can prove it did not lose a decision</h3>
+<ol>
+<li>Freeze a source inventory: paths, period, revision, content digests and namespaced citations. Exclude dirty or concurrently edited sources. One writer owns the publication lock; workers can read independently.</li>
+<li>Have bounded transient top-level figaros produce summaries, starting from existing dated entries and index handles. Preserve decisions, reasons, measured findings, open questions, ownership changes and operational warnings. Each summary lists its source revisions and coverage.</li>
+<li>Commit and verify the summaries first. They remain inspectable on Keel before any source replacement. Output paths are stable; rerunning the same period updates or skips its record, never creates competing summaries.</li>
+<li>Transfer each live namespaced citation to the matching passage in a summary. Keep a source-to-summary mapping so historical references resolve. <code>cl update</code> alone is insufficient: it can drop a deleted-file citation, not invent its replacement. Build that transfer explicitly and run <code>cl validate</code> and the appropriate stale-citation check.</li>
+<li>Only after coverage, transferred citations and committed remote revisions verify, remove eligible source files and publish the replacement/index change as one reviewed change. On any missing summary, dangling reference, changed source or failed push: keep the source and record the blocked run. Do not rewrite generated indexes by hand.</li>
+<li>Record every run in a dated captains-log entry: periods, source/output revisions, replacement counts, blocked paths, actor and outcome. A no-op and a failed attempt also leave a record.</li>
+</ol>
+<p>The hidden <code>.summary.md</code> names are intentional. Before scheduling removal, the captains-log tooling must discover, cite, display and summarize those paths correctly. Retention is not switched on until that and cross-month coverage work. The first run makes summaries and a deletion plan only.</p>
+<h3>Missing work is visible</h3>
+<p>A deterministic calendar check compares expected summary documents and completion records with the log. Persistent timers catch a missed host wake; they do not make a lost model job succeed. Missing, partial or failed periods become a backlog. The King raises the gap to Gluck and can commission ad-hoc catch-up forks when authorized. No repeated human ping, no silent deletion on an incomplete run, no concurrent duplicate compaction.</p>
+</section>
+<section class="section" id="repositories">
+<div class="section-label">WHERE THE BRICKS LIVE</div><h2>The host flake composes; libraries implement.</h2>
+<div class="table-wrap"><table><thead><tr><th>Repository</th><th>Responsibility</th></tr></thead><tbody>
+<tr><td><code>figaro</code></td><td>Generic formation manifest/reconcile support, stable role adoption and state semantics. Reusable modules and typed charter parts may be exported here. No hardcoded King of Spain registry.</td></tr>
+<tr><td><code>cheroot-config</code> / Merlin host flake</td><td>Our formation, bindings, charter composition, package pins, authorized adapters and memory timer declarations. A selective migration, not an assumption that Arch paths work on Merlin.</td></tr>
+<tr><td><code>spain-flake</code></td><td>Spain services, capacity exporter exposure and authenticated order/Scope routes. Serial named deployments, no router reboot implied.</td></tr>
+<tr><td><code>rou2</code></td><td>Capacity adapters and normalized account/provider windows, passive collection and production admission state. It owns gateway facts, not the Zanni component tree.</td></tr>
+<tr><td><code>figaro-forms</code></td><td>Headless form replica, subscriptions, typed readers and bindings. Its staff officer reports to the Figaro Engineer; the library stays independent of visual components.</td></tr>
+<tr><td><code>Zanni</code></td><td>One component and visualization home. Topo/Zanni consolidates UI here and composes forms, figscope and rou2 into authenticated views.</td></tr>
+<tr><td><code>captains-log</code> tooling</td><td>Summary discovery, period coverage, citation transfer and retention planning. Ships generic rollup commands/modules, not our private memories.</td></tr>
+<tr><td><code>~/.captains-log</code> data</td><td>Dated facts, weekly/monthly/yearly summaries, indexes and run receipts, backed on Keel. The private corpus stays out of the Nix store.</td></tr>
+<tr><td>Steward/runtime tools</td><td>Warm-cache succession policy and model-free collectors. Package the existing tools rather than spawning rival scripts per officer.</td></tr>
+</tbody></table></div>
+<p>The flake installs a deterministic planner/dispatcher and its weekly, monthly, annual and six-month services. It does not evaluate the private log or run a model during Nix evaluation or a host switch. At runtime, each due period gets a stable job identity, a single-writer lease and a bounded transient worker budget. No new model daemon is started for a missed service. The generic library exports the mechanism; the Merlin flake declares our schedule and data directory.</p>
+<p>The same division applies to capacity: generic rou2 observation code, host-declared source cadence and King-owned policy. Officer heartbeats remain manually armed. This separates a routine maintenance calendar from a declaration that every flake switch should schedule every officer.</p>
+</section>
+<section class="section" id="rollout">
+<div class="section-label">AFTER APPROVAL</div><h2>Start the useful part before Merlin. Move the machinery afterward.</h2>
+<div class="table-wrap"><table><thead><tr><th>Stage</th><th>Deliverable and estimate</th></tr></thead><tbody>
+<tr><td>Today, approval</td><td>Reconcile the proposed chart with full role identities; inscribe the Engineer and staff charters, transfer Zanni once, and mark Italy on the King/Engineer forms. Roughly 1–2 working hours after review, queue-dependent. No second King or replacement Figaro Engineer.</td></tr>
+<tr><td>Today, in parallel</td><td>Aduanero inventories provider capacity sources and publishes the first honest observation schema. Topo sketches the empty/known/stale states and organization view. First source/adaptor checkpoint in 2–4 working hours; a genuine OAI balance depends on an available passive source.</td></tr>
+<tr><td>Before cutover</td><td>Prepare manifests, package boundaries and a read-only local replica fixture. No partitioning, daemon-store move or automatic retention. Merlin owner and King agree a quiescent migration handoff.</td></tr>
+<tr><td>After Merlin acceptance</td><td>Enable formation reconcile in check mode, then apply reviewed managed-field changes. Move collectors and memory planners under pinned modules. First summary-only memory run within a day; removal remains disabled pending its reviewed plan.</td></tr>
+<tr><td>Within seven days</td><td>Read-only <code>order.kelliher.info</code>, live form charter view and the first available metrics/capacity overlays. Target, not a promise that provider APIs exist or the migration cannot slip. Announce any dependency that moves it.</td></tr>
+<tr><td>Following slices</td><td>Promote a calibrated warm-cache rule, add reasoning-method evaluation, run a small replay, and review the first log-retention plan. Each is useful alone; no giant platform prerequisite.</td></tr>
+</tbody></table></div>
+<p>Merlin's owner remains the migration owner. No new partitioning, installation, wipe, hostname cutover or credential transfer is authorized by Italy. Before the disk switch, capture current role IDs, bindings, daemon version, log revisions and pending jobs; pause scheduled writers; restore and verify on Merlin; then resume one writer. Never run two active commanders against copied state.</p>
+<p>The King reports actual progress and proposals on Telegram, with long reviews on Keel. When a decision is blocked on Gluck, ask once and wait for the reply. The current OAI route may be slow; long queues are accepted, not a trigger for poll storms or paid fallbacks.</p>
+</section>
+<section class="section" id="decisions">
+<div class="section-label">REVIEW</div><h2>What this approval would authorize.</h2>
+<ol class="decisions">
+<li>The revised formation: a new Engineer colonel; merged Topo/Zanni and Le Voltigeur staff beneath it; independent Aduanero under the King; existing El Formista retained beneath the Figaro Engineer. Existing identities are adopted and handoffs precede retirement.</li>
+<li>Stable-ID adoption, managed-charter reconciliation and dry-run as the first flake slice. Auto-create remains off unless explicitly enabled for a genuinely new position. Runtime occupancy is never flake-owned.</li>
+<li>UTC/Sunday memory periods, the stated summary paths and January/July retention planning. Summary creation may be automated after Merlin acceptance; the first deletion plan is reviewed before removal is enabled.</li>
+<li>Local replica preparation first, with Merlin as the preferred host after acceptance. Spain remains a later explicit alternative, not the default experimental machine.</li>
+<li>The week-one target for <code>order.kelliher.info</code> and capacity integration. The King owns admission policy; until Gluck supplies thresholds, the OAI subscription runs to verified exhaustion without paid fallback.</li>
+</ol>
+<p>These are separate choices if Gluck wants to change one. In particular, the replica host and the log calendar have been proposed here rather than smuggled in as earlier approvals. Production routes, destructive retention and new enforcement policies still need their own named steps.</p>
+</section>
+<section class="section" id="sources">
+<div class="section-label">SOURCE AND SCOPE</div><h2>What this document knows.</h2>
+<p>Source: Gluck's full comments on King XV turn 130, read from the role-holder's board, plus the later order to begin the HTML review. The recovered first comment includes the hierarchy, <code>order.kelliher.info</code>, figaro-forms ownership, coordination metrics, temporary seven-day publication and estimates; it was not shortened to the truncated injected text.</p>
+<details class="evidence"><summary>Existing material used</summary><ul>
+<li><code>charter-flake-modules-proposal.md</code>: the existing Engineer proposal on adoption, managed fields and manual heartbeats.</li>
+<li><code>figaro-forms/README.md</code>: headless TypeScript state client, subscriptions and React/Jotai bindings already exist. The Engineer confirmed El Formista's existing ownership.</li>
+<li><code>rou2-dashboard/internal/dashboard/snapshot.go</code> and <code>docs/dashboard.md</code>: existing capacity evidence schema, confirmed by Aduanero. No new live balance was fetched for this review.</li>
+<li>The captains-log skill and tooling layout: dated entries, generated indexes, typed handles, <code>cl update</code>/<code>cl validate</code>.</li>
+<li>The current warm-cache succession proposal: <code>docs/proposals/warm-cache-succession/README.md</code>, review only.</li>
+<li>Spain baseline in the King's current record: signer release <code>b5c2b323</code>, box <code>fsajb02i</code>. This review did not probe the box.</li>
+</ul></details>
+<p>No live provider balance, exact OAI cache TTL, inference queue depth, replica host, new authorization grant or deployed organization site is claimed. All Nix options and reconcile interfaces here are proposed, not commands to paste into production.</p>
+<div class="footer">PREPARED BY A TRANSIENT TAIL FORK OF KING XV<br>15 November 2026 · review artifact only<br>Permanent source and comments: pinned Keel branch revision. Temporary files copy: seven-day lifecycle; authenticated HTML may download rather than execute. This page contains no scripts, remote fonts or live calls.</div>
+</section>
+</main>
+</div>
+</body>
+</html>
