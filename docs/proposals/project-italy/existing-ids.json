@@ -1,0 +1,123 @@
+{
+  "purpose": "Read-only identity evidence, not an apply manifest or runtime authority",
+  "node": "gluck",
+  "captured_at": "2026-11-15T18:15:03.127654+00:00",
+  "source": "figaro form ls -j",
+  "roles": [
+    {
+      "id": "@53c6b72b",
+      "name": "El Inspector de Spain",
+      "target_aria": "26e960201f14200b7db3dd4605edbcc8",
+      "parent": "@96447061",
+      "present": "@96447061"
+    },
+    {
+      "id": "@f48f567a727d703effa5e2fa13ebd625",
+      "name": "El Aduanero",
+      "target_aria": "2473273288811ac1d995563334f82e83",
+      "parent": "@96447061",
+      "present": "@96447061"
+    },
+    {
+      "id": "@ee9271497f3823d7f50922bec4899818",
+      "name": "Figaro Engineer",
+      "target_aria": "353c99537778cf7f8dbe1f3f807f7fa6",
+      "parent": "@96447061",
+      "present": "@96447061"
+    },
+    {
+      "id": "@b906c598b1857b6bfe350e077cf67ff6",
+      "name": "edge",
+      "target_aria": "deac06a7a0277d9e29176be1227e9b9b",
+      "parent": "@96447061",
+      "present": "@96447061"
+    },
+    {
+      "id": "@662ee4fedbd0fdbad7ad6adef20cdeee",
+      "name": "El Zapador",
+      "target_aria": "deac06a7a0277d9e29176be1227e9b9b",
+      "parent": "@96447061",
+      "present": "@96447061"
+    },
+    {
+      "id": "@042d641e",
+      "name": "Coordinador de Spain",
+      "target_aria": "6a2a5d694665e751f5533e46ecbec399",
+      "parent": "@96447061",
+      "present": "@96447061"
+    },
+    {
+      "id": "@96447061",
+      "name": "King of Spain",
+      "target_aria": "6a2a5d694665e751f5533e46ecbec399",
+      "parent": "null",
+      "present": "null"
+    },
+    {
+      "id": "@a06b145cf1a6169789065ff3aae90646",
+      "name": "El Llavero",
+      "target_aria": "1664998896e51fefba0953ba8d60a437",
+      "parent": "@96447061",
+      "present": "@96447061"
+    },
+    {
+      "id": "@d5f7bac004e16a8adf52a73ea21c6910",
+      "name": "El Francotirador",
+      "target_aria": "dbadc02ec039499da24aafed41595e6c",
+      "parent": "@ee9271497f3823d7f50922bec4899818",
+      "present": "@ee9271497f3823d7f50922bec4899818"
+    },
+    {
+      "id": "@664085f77da3b482349b627bce9e576a",
+      "name": "El Vig\u00eda",
+      "target_aria": "66f55e85c68735bfea8b78e7a5ae5f8f",
+      "parent": "@96447061",
+      "present": "@96447061"
+    },
+    {
+      "id": "@62c5c9bf8794ec5b8d1d00d05dd26c69",
+      "name": "Il Zanni",
+      "target_aria": "2d4075e8e1827f3336859daae4f0d055",
+      "parent": "@96447061",
+      "present": "@96447061"
+    },
+    {
+      "id": "@0e3305315544cd50fac67c489d4df4f6",
+      "name": "El Z\u00f3calo",
+      "target_aria": "e474d5d1233fdb159e9524f2b72806de",
+      "parent": "@96447061",
+      "present": "@96447061"
+    },
+    {
+      "id": "@2c1645942f894dd40d9dfcfb97619c58",
+      "name": "El Pregonero",
+      "target_aria": "ec348a68538f454be216d06f72081245",
+      "parent": "@96447061",
+      "present": "@96447061"
+    },
+    {
+      "id": "@2b443573385ce498dc40d0f5a672dd2a",
+      "name": "El Taller",
+      "target_aria": "2ae87e4a515755039f2610d5c664b734",
+      "parent": "@96447061",
+      "present": "@96447061"
+    },
+    {
+      "id": "@fbcfb5141604ef50e5c8dce0ef570711",
+      "name": "El Formista",
+      "target_aria": "1bbd3bc0df08fb40628e735e206965d3",
+      "parent": "null",
+      "present": "null"
+    }
+  ],
+  "unresolved": [
+    "Italy Engineer identity",
+    "sys1 officer identity and title",
+    "Inspector-General identity"
+  ],
+  "limits": [
+    "This node inventory does not establish absence on another node",
+    "No runtime forms or topology were changed",
+    "Current holders are observations, never desired occupancy"
+  ]
+}
