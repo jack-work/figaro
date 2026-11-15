@@ -1,0 +1,11 @@
+cohort,predicted_probability,n,observed_breaks
+anthropic,0.1318,380,98
+anthropic,0.26,618,146
+anthropic,0.3098,1064,286
+anthropic,0.3784,63,27
+anthropic,0.4362,576,212
+anthropic,0.5696,341,177
+anthropic,0.6219,112,50
+anthropic,0.771,236,114
+gpt_0699,0.26,2,0
+gpt_0699,0.6219,3,2
