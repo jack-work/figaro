@@ -233,13 +233,26 @@ type guideWalk struct {
 	through  map[string]bool
 	unfolded map[string]bool
 	mounting bool
+	topology *pagerTopology
 }
 
 func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, row *viewRowKey) {
 	kids := n.kids()
+	if w.topology != nil && !w.topology.more && w.shape != nil && w.shape.hint.RowAria != "" {
+		if n.path == "" {
+			kids = onlyChild(kids, "arias")
+		} else if _, head := w.shape.head(n.path); head {
+			if forks := formChild(n, w.shape.hint.Through); forks != nil {
+				kids = forks.kids()
+				labels = append(labels[:len(labels):len(labels)], w.shape.hint.Through)
+			} else {
+				kids = nil
+			}
+		}
+	}
 	if w.shape != nil {
 		kids = w.shape.order(labels, kids, w.open)
-		if w.through[n.path] && w.shape.hint.Through != "" {
+		if w.through[n.path] && w.shape.hint.Through != "" && w.topology == nil {
 			kids = onlyChild(kids, w.shape.hint.Through)
 		}
 	}
@@ -280,7 +293,7 @@ func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, ro
 		c.peek, c.aside, c.summary = "", nil, false
 		if w.shape != nil {
 			under = w.shape.note(c, segs, row)
-			if !c.open || w.through[c.path] {
+			if !c.open || w.through[c.path] || w.topology != nil {
 				c.peek = w.shape.peek(c)
 			}
 			c.aside, c.summary = w.shape.aside(c)
@@ -293,7 +306,7 @@ func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, ro
 
 func (w *guideWalk) pointer(n *formNode) bool {
 	mount := w.shape.mountKey()
-	if !w.mounting || mount == "" {
+	if !w.mounting || mount == "" || w.topology != nil && !w.topology.more && w.shape.hint.RowAria != "" {
 		return false
 	}
 	if _, head := w.shape.head(n.path); !head {
@@ -307,7 +320,7 @@ func (w *guideWalk) ownKids(n *formNode, kids []*formNode) []*formNode {
 	mount := w.shape.mountKey()
 	out := make([]*formNode, 0, len(kids))
 	for _, c := range kids {
-		if c.label == mount || c.leaf() && !w.unfolded[n.path] {
+		if c.label == mount && (w.topology == nil || !w.topology.more) || c.leaf() && !w.unfolded[n.path] && (w.topology == nil || !w.topology.more) {
 			continue
 		}
 		out = append(out, c)

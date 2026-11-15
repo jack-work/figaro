@@ -170,7 +170,14 @@ func mountIndents(inner []pitRow, cont string) []string {
 }
 
 func (v *formView) openMount(path string, m *viewMount) {
-	view, send, closeFn, done, err := v.opener(m.addr)
+	addr := m.addr
+	if v.topology != nil && v.topology.global {
+		node, id := rpc.SplitNode(addr)
+		if id == rpc.AriasFormID {
+			addr = qualifiedIn(node, rpc.GlobalAriasFormID)
+		}
+	}
+	view, send, closeFn, done, err := v.opener(addr)
 	v.mu.Lock()
 	if v.mounts[path] != m {
 		v.mu.Unlock()
@@ -181,6 +188,9 @@ func (v *formView) openMount(path string, m *viewMount) {
 	}
 	if err != nil {
 		m.note = err.Error()
+		if addr != m.addr {
+			m.note = "ls -g requires " + rpc.GlobalAriasFormID + ": " + m.note
+		}
 	} else {
 		view.repaint = func() { v.changed() }
 		view.act = func(a rpc.ViewAction) {
@@ -203,6 +213,9 @@ func (v *formView) openMount(path string, m *viewMount) {
 			view.subject = v.subject
 		}
 		view.opener, view.node = v.opener, m.node
+		if view.view != nil && view.view.RowAria != "" {
+			view.topology = v.topology
+		}
 		m.view, m.send, m.close = view, send, closeFn
 	}
 	seek := err == nil && v.seeking == path

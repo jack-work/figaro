@@ -246,6 +246,9 @@ type formView struct {
 	search    *formSearch
 	clear     func() bool
 
+	topology   *pagerTopology
+	projection *topologyProjection
+
 	openOverlay    overlayOpener
 	overlay        *formView
 	overlayClose   func()
@@ -370,6 +373,7 @@ func (v *formView) Items(width int) []pitRow {
 		snap = src.Shown()
 	}
 	snap, merge := v.overlaid(snap)
+	snap = v.topologySnapshot(snap)
 	if merge != nil && pending > 0 {
 		confirmed = mergeOverlay(merge.view, confirmed, merge.from).snap
 	}
@@ -414,7 +418,7 @@ func (v *formView) Items(width int) []pitRow {
 			shape.subject = v.subject()
 		}
 	}
-	w := guideWalk{open: v.open, out: v.rows[:0], shape: shape, through: v.through, unfolded: v.unfolded, mounting: v.opener != nil}
+	w := guideWalk{open: v.open, out: v.rows[:0], shape: shape, through: v.through, unfolded: v.unfolded, mounting: v.opener != nil, topology: v.topology}
 	w.walk(v.root, "", true, nil, nil)
 	v.rows = w.out
 	v.rowKeys = nil
@@ -460,7 +464,7 @@ func (v *formView) Items(width int) []pitRow {
 		if _, head := shape.head(n.path); head && shape.mountKey() != "" {
 			pointers[n.path] = true
 		}
-		if mount := shape.mountKey(); mount != "" && v.open[n.path] && !v.through[n.path] {
+		if mount := shape.mountKey(); mount != "" && v.open[n.path] && !v.through[n.path] && (v.topology == nil || v.topology.more || shape.hint.RowAria == "") {
 			if _, head := shape.head(n.path); head {
 				held = append(held, heldMount{under: n.path, rows: v.mountRowsLocked(n.path, leafText(n, mount), n.cont, width)})
 			}
@@ -645,7 +649,11 @@ func (v *formView) Collapse(id string) string {
 			return path
 		}
 		if len(path) > len(n.label) {
-			return path[:len(path)-len(n.label)-1]
+			parent := path[:len(path)-len(n.label)-1]
+			if v.topology != nil && !v.topology.more && strings.HasSuffix(parent, ".forks") {
+				parent = strings.TrimSuffix(parent, ".forks")
+			}
+			return parent
 		}
 		return path
 	}

@@ -99,8 +99,9 @@ func formPitFor(verb string) (formPit, bool) {
 		return formPit{name: "models", form: models.FormID, opening: func(in *interactiveInput) { in.models.ensure() }}, true
 	case "reaped":
 		return formPit{name: "reaped", form: rpc.ReapedFormID, bare: true}, true
-	case "ls", "list":
-		return formPit{name: "troupe", form: rpc.TroupeFormID, bare: true, ready: (*interactiveInput).troupeAtAttended}, true
+	case "ls", "list", "lsh":
+		p, ok, _ := topologyFormPit([]string{verb})
+		return p, ok
 	case "troupe":
 		return formPit{name: "troupe", form: rpc.TroupeFormID, bare: true, ready: (*interactiveInput).withMounts}, true
 	case "recent":
@@ -114,7 +115,7 @@ func opensPit(line string) bool {
 	if len(argv) == 0 || isCommentVerb(line) || overlayVerbs[argv[0]] {
 		return false
 	}
-	if p, ok := formPitFor(argv[0]); ok && (len(argv) == 1 || !p.bare) {
+	if _, ok, _ := topologyFormPit(argv); ok {
 		return true
 	}
 	_, _, ok := liveForm(argv)
@@ -215,7 +216,11 @@ func (in *interactiveInput) execCommand(line string) {
 		in.runOverlay(verb, argv[1:])
 		return
 	}
-	if p, ok := formPitFor(verb); ok && (len(argv) == 1 || !p.bare) {
+	if p, ok, err := topologyFormPit(argv); ok {
+		if err != nil {
+			in.pitFailed(err.Error())
+			return
+		}
 		in.openFormPit(p)
 		return
 	}

@@ -21,12 +21,9 @@ func (r *restartRig) forkOf(id string) string {
 	return out.Alternative
 }
 
-// :ls opens the attended figaro wherever it sits, a fork of a top-level
-// figaro or a fork of that fork: its forks, then its own form, with system
-// folded, while the figaros above it open only far enough to reach it.
-func TestLsOpensTheAttendedForkWithItsForm(t *testing.T) {
+func TestLsHierarchyAndMoreInTheTerminal(t *testing.T) {
 	if testing.Short() {
-		t.Skip("spawns daemons; skipped under -short")
+		t.Skip("spawns isolated daemons")
 	}
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not available")
@@ -41,41 +38,62 @@ func TestLsOpensTheAttendedForkWithItsForm(t *testing.T) {
 	r.run("set", "--id", leaf, "plan.next", "write the test")
 	kid := r.forkOf(leaf)
 	name := func(id string) string { return r.ariaField(id, "handle") }
-
+	names := map[string]string{}
+	for _, id := range []string{top, mid, leaf, kid} {
+		names[id] = name(id)
+	}
+	p := newPane(t, r.env, r.bin, 150, 48)
+	p.tmux("resize-window", "-x", "150", "-y", "48")
+	if h := strings.TrimSpace(p.tmuxOut("display", "-p", "#{pane_height}")); h != "48" {
+		t.Fatalf("pane height %s, want 48", h)
+	}
+	p.send(r.bin + " attend " + leaf + " && " + r.bin + " listen")
+	p.key("Enter")
+	waitVisible(t, p, "pager never painted", "live")
+	fullscreen := false
 	for _, tc := range []struct {
-		depth            string
-		attended, fork   string
-		mantra, notShown string
+		key, command string
+		more         bool
 	}{
-		{"a fork of a top-level figaro", mid, leaf, "the middle", `mantra:  "the top"`},
-		{"a fork of that fork", leaf, kid, "the leaf", `mantra:  "the middle"`},
+		{key: "l"}, {key: "L", more: true},
+		{command: "ls -H"}, {command: "ls -H --more", more: true},
+		{command: "ls -a"}, {command: "ls -a --more", more: true},
+		{command: "ls ^ -n 3"}, {command: "ls ^ -n 3 --more", more: true},
+		{command: "ls -g"}, {command: "ls -g --more", more: true},
 	} {
-		t.Run(tc.depth, func(t *testing.T) {
-			p := newPane(t, r.env, r.bin, 110, 40)
-			p.send(r.bin + " attend " + tc.attended + " && " + r.bin + " listen")
-			p.key("Enter")
-			waitVisible(t, p, "the pager never painted", "live")
-			p.send(":ls")
-			p.key("Enter")
-			waitVisible(t, p, ":ls never opened", name(tc.attended))
-			p.key("F")
-			screen := waitVisible(t, p, ":ls did not open the attended figaro's form",
-				`mantra:  "`+tc.mantra+`"`, "system (")
-			t.Logf("%s:\n%s", tc.depth, screen)
-			at, fork := lineWith(screen, name(tc.attended)), lineWith(screen, name(tc.fork))
-			form := lineWith(screen, `mantra:  "`+tc.mantra+`"`)
-			if !strings.Contains(strings.Split(screen, "\n")[at], "●") {
-				t.Errorf("the row for %s is not the marked one", name(tc.attended))
+		label := tc.key + tc.command
+		t.Run(label, func(t *testing.T) {
+			if tc.key != "" {
+				p.typeSlowly(tc.key)
+			} else {
+				p.typeSlowly(":" + tc.command)
+				p.key("Enter")
 			}
-			if !(at < fork && fork < form) {
-				t.Errorf("want %s, then its fork %s, then its form: rows %d, %d, %d", name(tc.attended), name(tc.fork), at, fork, form)
+			waitVisible(t, p, label+" did not open", names[leaf])
+			if !fullscreen {
+				p.key("F")
+				fullscreen = true
 			}
-			if tc.attended == leaf && !strings.Contains(screen, "plan") {
-				t.Errorf("the leaf's own keys are missing")
+			screen := waitVisible(t, p, label+" lost expanded fork", names[kid])
+			if tc.more {
+				screen = waitVisible(t, p, label+" did not show form details", "system (", "write the test")
 			}
-			if strings.Contains(screen, tc.notShown) {
-				t.Errorf("an ancestor's form is drawn (%s)", tc.notShown)
+			if !strings.Contains(screen, "? help") && !strings.Contains(screen, "Enter attend") {
+				t.Fatalf("no pager chrome:\n%s", screen)
 			}
+			at := lineWith(screen, names[leaf])
+			row := strings.Split(screen, "\n")[at]
+			if !strings.Contains(row, `"the leaf"`) || !strings.Contains(row, "●") {
+				t.Errorf("attended row lost mantra/mark: %s", row)
+			}
+			if !tc.more && (strings.Contains(screen, "forks (") || strings.Contains(screen, "system (") || strings.Contains(screen, "mantra:")) {
+				t.Errorf("hierarchy contains form keys:\n%s", screen)
+			}
+			if tc.more && !strings.Contains(screen, "forks (") {
+				t.Errorf("full topology has no forks key:\n%s", screen)
+			}
+			t.Logf("%s, 150x48:\n%s", label, screen)
+			p.key("Escape")
 		})
 	}
 }

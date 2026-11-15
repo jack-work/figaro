@@ -267,11 +267,14 @@ func (s *viewShape) actionHint() string {
 	return strings.Join(hints, " · ")
 }
 
-func (v *formView) revealMarked() string {
+func (v *formView) revealMarked() string { return v.revealRow("") }
+
+func (v *formView) revealRow(wanted string) string {
 	if v.view == nil || v.view.Mark == nil {
 		return ""
 	}
 	snap, _ := v.overlaid(v.source().Shown())
+	snap = v.topologySnapshot(snap)
 	var subject form.Snapshot
 	if v.subject != nil {
 		subject = v.subject()
@@ -294,7 +297,7 @@ func (v *formView) revealMarked() string {
 			}
 			segs := append(labels[:len(labels):len(labels)], c.label)
 			chain = append(chain, c.path)
-			if k, ok := s.row(segs); ok && s.marked(c, k) {
+			if k, ok := s.row(segs); ok && (wanted == "" && s.marked(c, k) || wanted != "" && leafText(c, v.view.RowAria) == wanted) {
 				return true
 			}
 			if find(c, segs) {

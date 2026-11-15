@@ -263,7 +263,7 @@ var helpRows = []helpRow{
 	{helpDecisionPit, "D", "the last decision (a ?? draft or :decide) in the pit; with none yet it says so on the bar"},
 	{helpFocus, "T", "read the conversation without closing the pit (again to go back)"},
 	{helpPinned, "p", "expand the pinned question: j/k page it, F fullscreen, T reads on below it, Esc folds it"},
-	{helpListPit, "l / L", "the topology open at the attended aria / at its root, in the pit (Enter attends, x kills)"},
+	{helpListPit, "l / L", "hierarchy / full topology (:ls / :ls --more; Enter attends, x kills)"},
 	{helpRecentPit, "M-l", "every figaro, most recently active first, in the pit (Enter attends, x kills)"},
 	{helpConfirm, "y / n", "answer a confirmation (Esc is no); X on a row kills with no question"},
 	{helpHelpPanel, "h", "close help"},

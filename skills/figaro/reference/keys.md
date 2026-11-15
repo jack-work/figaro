@@ -113,6 +113,20 @@ reading modes.
 - A prefix arming another prefix.
 - An action that means nothing in any mode its layer covers.
 
+## The topology pit
+
+`l` runs `:ls`: hierarchy only, with forks directly under each figaro.
+`L` runs `:ls --more`: the full form tree, including `forks` and each
+figaro's other keys. Both open on the attended figaro, expanded, and keep
+its mantra beside its handle. Enter attends, `x` kills after confirmation,
+`y` copies the handle, and `M-y` copies the id.
+
+Pager `:ls` accepts `-H`, `-a`, `-n N`, `/`, a handle or id, and relative
+scopes such as `^2`. Each composes with `--more`. `-g` includes null and
+outfit anchors and requires the daemon's `@arias-global` form. The pager
+has no JSON stdout view: `-j` is a shell command option, not a pager flag.
+Explicit `:troupe` still opens at the topology root.
+
 ## The help pit
 
 Its key column is prose about the defaults ("j/k · u/d · gg/G") until you move

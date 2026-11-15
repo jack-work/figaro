@@ -11,15 +11,16 @@ import (
 
 func (in *interactiveInput) withMounts(v *formView) { v.opener = in.mountForm }
 
-func (in *interactiveInput) troupeAtAttended(v *formView) { seekAttended(v, in.mountForm) }
-
 func seekAttended(v *formView, open mountOpener) {
 	v.opener = open
 	v.seeks = true
 	at := v.revealMarked()
 	v.loadMount(at)
 	if inner := v.mountedView(at); inner != nil {
-		inner.loadMount(inner.revealOpen())
+		marked := inner.revealOpen()
+		if inner.topology == nil || inner.topology.more {
+			inner.loadMount(marked)
+		}
 	}
 }
 

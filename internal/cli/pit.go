@@ -171,7 +171,24 @@ func (d *pit) refreshLive(w int) {
 	if !ok || d.list() == nil {
 		return
 	}
+	selected, _ := d.list().selected()
+	v, topology := d.live.(*formView)
+	topology = topology && v.topology != nil && selected.aria != ""
+	expanded := topology && v.topologyRowOpen(selected.id)
 	rows := iv.Items(w)
+	keep := ""
+	if topology {
+		found := false
+		for _, row := range rows {
+			found = found || row.id == selected.id
+		}
+		if !found {
+			keep = v.revealTopologyAria(selected.aria, expanded)
+			if keep != "" {
+				rows = iv.Items(w)
+			}
+		}
+	}
 	if rv, ok := d.live.(revisioned); ok {
 		rev := rv.Revision()
 		if rev == d.liveRev && w == d.liveWidth {
@@ -179,7 +196,7 @@ func (d *pit) refreshLive(w int) {
 		}
 		d.liveRev, d.liveWidth = rev, w
 	}
-	d.list().setRows(rows, "")
+	d.list().setRows(rows, keep)
 }
 
 func (d *pit) showNote(text string) {

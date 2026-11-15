@@ -13,6 +13,7 @@ func yankTopology(t *testing.T, f *fakeMounts) (*interactiveInput, *recordingTer
 	f.forms["@things"] = ariasLike()
 	f.forms["far/@things"] = ariasLike()
 	v := indexView(f)
+	v.topology = &pagerTopology{}
 	v.subject = attending("ccc")
 	seekAttended(v, f.open)
 	in.enterTranscript()
