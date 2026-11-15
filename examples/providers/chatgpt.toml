@@ -16,8 +16,10 @@ codex_cli_simplified_flow = "true"
 originator = "codex_cli_rs"
 prompt = "login"
 
+[oauth.claim_headers]
+chatgpt-account-id = ["https://api.openai.com/auth", "chatgpt_account_id"]
+
 [headers]
-chatgpt-account-id = "REPLACE_WITH_YOUR_ACCOUNT_ID"
 OpenAI-Beta = "responses=experimental"
 originator = "experiential"
 

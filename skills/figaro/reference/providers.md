@@ -390,8 +390,13 @@ still start the next ordinary generation. Subscription configurations should
 set this policy even when the gateway itself never retries.
 
 A credential-free ChatGPT subscription example is in
-`examples/providers/chatgpt.toml`. Its account header is an explicit owner
-setting, not an authorization grant. Mint an independent login chain: never
+`examples/providers/chatgpt.toml`. `oauth.claim_headers` maps public request
+headers to arrays of claim keys in the ID token returned by this login's
+HTTPS token exchange. Login checks issuer, audience, expiry and bounded header
+values, then saves only the configured public header in the provider file.
+The ID token is not written to that file. This metadata is routing attribution,
+not an authorization grant or an independently verified bearer. No manual
+account header is needed. Mint an independent login chain: never
 copy a rotating refresh token from another process or the temporary proxy.
 Do not configure a paid API key or fallback in a subscription-only provider.
 Until subscription decision endpoints exist, set

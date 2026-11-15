@@ -23,6 +23,7 @@ type DeviceCodeConfig struct {
 }
 
 type DeviceTokens struct {
+	IDToken      string
 	AccessToken  string
 	RefreshToken string
 	ExpiresIn    int

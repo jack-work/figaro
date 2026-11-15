@@ -138,7 +138,7 @@ func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout t
 			"check that the client may refresh, or that its scopes ask for it (some IdPs want offline_access)")
 	}
 	c.Done("Authorized by " + cfg.AuthorizeURL)
-	return DeviceTokens{AccessToken: tr.AccessToken, RefreshToken: tr.RefreshToken, ExpiresIn: tr.ExpiresIn}, nil
+	return DeviceTokens{IDToken: tr.IDToken, AccessToken: tr.AccessToken, RefreshToken: tr.RefreshToken, ExpiresIn: tr.ExpiresIn}, nil
 }
 
 func authorizeURL(cfg PKCEConfig, redirect, state, challenge string) string {

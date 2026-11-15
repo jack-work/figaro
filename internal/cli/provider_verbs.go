@@ -168,7 +168,7 @@ func signIn(ctx context.Context, loaded *config.Loaded, name string, reg *provid
 	case reg.Login != nil:
 		err = reg.Login(ctx, loaded, c)
 	case reg.OAuth != nil:
-		err = runOAuthLogin(ctx, name, name, *reg.OAuth,
+		err = runOAuthLogin(ctx, loaded, name, name, *reg.OAuth,
 			"figaro set system.provider "+name+"; figaro set system.model <model>", c)
 	default:
 		err = runAPIKeyInline(ctx, loaded, name, c)

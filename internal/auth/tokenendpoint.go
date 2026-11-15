@@ -77,6 +77,7 @@ func discover(client *http.Client, issuer string) (oidcConfiguration, *url.URL, 
 }
 
 type tokenResponse struct {
+	IDToken      string
 	AccessToken  string
 	RefreshToken string
 	ExpiresIn    int
@@ -109,6 +110,7 @@ func requestTokenContext(ctx context.Context, client *http.Client, endpoint, cli
 		return tokenResponse{}, err
 	}
 	var out struct {
+		IDToken      string `json:"id_token"`
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
 		TokenType    string `json:"token_type"`
@@ -124,5 +126,5 @@ func requestTokenContext(ctx context.Context, client *http.Client, endpoint, cli
 	if out.TokenType != "" && !strings.EqualFold(out.TokenType, "bearer") {
 		return tokenResponse{}, fmt.Errorf("client %s: token endpoint returned an unsupported token type", clientID)
 	}
-	return tokenResponse{AccessToken: out.AccessToken, RefreshToken: out.RefreshToken, ExpiresIn: out.ExpiresIn}, nil
+	return tokenResponse{IDToken: out.IDToken, AccessToken: out.AccessToken, RefreshToken: out.RefreshToken, ExpiresIn: out.ExpiresIn}, nil
 }
