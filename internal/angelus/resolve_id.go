@@ -30,6 +30,9 @@ func (h *handlers) resolvingIDs(method string, next jkrpc.HandlerFunc) jkrpc.Han
 		if err := h.refuseIDsFromWhoNamesNoFigaro(ctx, method, params); err != nil {
 			return nil, err
 		}
+		if method == rpc.MethodFormApply {
+			ctx = context.WithValue(ctx, formApplyIDKey{}, rpc.AriaOf(params))
+		}
 		params, node, ref, err := h.placeParams(ctx, method, params)
 		if err != nil {
 			return nil, err
