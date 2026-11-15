@@ -61,3 +61,46 @@ outputs. The applied role forms remain runtime authority. This command does
 not introduce a parallel role registry, a reconciler service or automatic
 missing-role provisioning. Startup ownership and operator-approved activation
 belong to the host configuration.
+
+## Home Manager declarations
+
+The Home Manager module renders `programs.figaro.outfits` into individual
+`figaro/outfits/<name>.toml` files. These are public Nix store outputs: never
+put credentials in an outfit.
+
+Declare existing-role applications separately from daemon startup. Substitute
+the exact existing ID and the intended local daemon's runtime directory:
+
+```nix
+programs.figaro = {
+  enable = true;
+  outfits.example-charter = {
+    name = "Example maintainer";
+    charter = "Maintain the example library.";
+  };
+  roleApplicationRuntimeDir = "/run/user/1000/figaro-example";
+  roleApplications.example = {
+    roleId = "@0123456789abcdef0123456789abcdef";
+    outfits = [ "example-charter" ];
+    managed = [ "name" "charter" ];
+    mode = "check";
+  };
+  applyRolesOnSwitch = false;
+};
+```
+
+A nonempty declaration installs `figaro-apply-roles`. Each application defaults
+to `mode = "check"`; changing it to `"apply"` is explicit. Running the generated
+command with `--check` forces every entry to check, including entries configured
+to apply. No declaration creates an occupant or adopts a role by display name.
+The destination daemon must advertise `form.apply`.
+
+`applyRolesOnSwitch` is off by default. If enabled, its activation step follows
+outfit installation, forces check mode for a dry activation, and reports failures
+without retrying or starting a daemon. It does not enable `restartOnSwitch`.
+The generated command addresses the explicitly selected local runtime without
+borrowing a configured remote endpoint; caller attribution remains intact.
+
+Live roles remain the authority consumed by the order site. The Nix declarations
+and generated command are desired values and build intermediates, not another
+runtime hierarchy. There is no standing staff tree embedded in this module.
