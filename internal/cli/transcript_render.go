@@ -88,7 +88,12 @@ func (t *transcript) renderMsg(m aria.Message, memo *openMemo) cachedMessage {
 	for i := 0; i < len(composed); {
 		r := composed[i]
 		if r.Block == ldrender.BlockChrome {
-			rows = append(rows, transcriptRow{text: r.Text, more: r.More})
+			row := transcriptRow{text: r.Text, more: r.More}
+			if i == 0 && strings.TrimSpace(m.Inquiry) != "" {
+				row.mark = term.Dim(coordLabel(m.Turn, inquiryNode, 0, t.coordFormat()))
+				row.gutter = r.Gutter
+			}
+			rows = append(rows, row)
 			i++
 			continue
 		}
@@ -143,10 +148,11 @@ func (t *transcript) rowComposer(m aria.Message) ldrender.Composer {
 		},
 		Quote: quoteRows,
 	}
-	// The address is composed always and drawn only under M-m: the toggle is a
-	// paint-time decision and the row cache does not know it.
 	layout := t.coordFormat()
 	c.Mark = func(block int, n livedoc.Node) string {
+		if block == ldrender.BlockInquiry {
+			return ""
+		}
 		ref := blockRef(m, block)
 		return term.Dim(coordLabel(ref.turn, ref.index, nodeCoordAt(n), layout))
 	}

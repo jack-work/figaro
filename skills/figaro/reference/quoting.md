@@ -30,7 +30,7 @@ From a shell, quote the token so your shell does not eat the `<`, `>` or `!`:
 fig send --id 90ec6584 -- '<412.0:23-1180>! why did this branch return early?'
 ```
 
-Where the numbers come from: `M-m` in the pager draws every node's address, or
+Where the numbers come from: `m` in the pager draws every node's address, or
 read them from `figaro show <id> -v`.
 
 ## What it looks like afterwards
@@ -136,7 +136,7 @@ Moving between figaros:
 | `f j` / `f k` | next / previous fork point |
 | `c j` / `c k` | next / previous comment |
 | `^O` / `^I` | back / forward through the figaros this shell attended (`:back`, `:forward`) |
-| `M-m` | more: each name beside its other spelling, every node's address in its spare columns |
+| `m` | more: each name beside its other spelling, every node's address in its spare columns |
 | `S` | the form in the pit |
 | `D` | the last decision in the pit, again to close (see [decisions.md](decisions.md)) |
 

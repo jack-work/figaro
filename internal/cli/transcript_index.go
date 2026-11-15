@@ -454,6 +454,10 @@ func (t *transcript) rowLine(r transcriptRow, hl string, sel selectionSpan, cur 
 	if t.more() && (r.mark != "" || len(r.more) > 0) {
 		line = ldrender.Annotate(line, r.more, r.mark, r.gutter, t.w)
 	}
+	if r.mark != "" && !r.ref.valid() {
+		line = ldrender.OverlayRight(line, r.mark+" ", t.w-ldrender.GutterCols)
+		line = ldrender.OverlayGutter(line, r.gutter, t.w)
+	}
 	// The snake's head follows the cursor, so it is resolved here and not
 	// baked into the cache.
 	if r.spine.Kind != ldrender.SpineNone {

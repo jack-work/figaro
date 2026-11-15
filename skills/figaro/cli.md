@@ -48,7 +48,7 @@ These hold across the whole CLI:
 | `-S`, `--set <k=v>` | Form keys, the other axis: `k=v` or a JSON literal, comma-separated. Repeats append (`-S a=1 -S b=2` = `-S a=1,b=2`), a later key winning. Folded AFTER `-O`, so your key beats the outfit's. |
 | `-D`, `--delete <paths>` | Form key paths to remove, comma-separated. Repeats append. Folded last. |
 | `-r`, `--raw` | Plain text on stdout: no ANSI, no markdown. Streamed, not buffered. |
-| `-o`, `--verbose` | Start with more on: names beside their other spelling, node addresses. `M-m` toggles it live. |
+| `-o`, `--verbose` | Start with more on: alternate name spellings, node addresses and verbose status. `m` toggles it in reading modes. |
 | `-l`, `--listen` | Open the transcript pager at startup. |
 | `-v`, `--verbatim` | Dump raw wire frames as JSON, one object per line. |
 | `-x`, `--exec` | Treat the reply as a bash script and run it. `-n` prints without running, `-y` skips the confirmation. |

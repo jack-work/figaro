@@ -1236,11 +1236,3 @@ func termWidth() int {
 }
 
 const metricsPollHz = 2
-
-func inputToggleBarVerbose(in *interactiveInput, _ keyEvent) keyVerdict {
-	in.mu.Lock()
-	in.lt.status.toggleVerbose()
-	in.lt.render()
-	in.mu.Unlock()
-	return keyHandled
-}

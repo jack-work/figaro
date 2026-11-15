@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func morePager(t *testing.T) (*interactiveInput, *livelogTurn, *paneWriter) {
 	return in, lt, out
 }
 
-// M-m through the real input loop: the other name joins the sender, the
+// m through the real input loop: the other name joins the sender, the
 // address fills the blank columns, and nothing is laid out again: no row is
 // added, no row cache is dropped, and only rows that changed are written.
 func TestMoreRepaintsOnlyTheRowsItChanges(t *testing.T) {
@@ -47,30 +48,36 @@ func TestMoreRepaintsOnlyTheRowsItChanges(t *testing.T) {
 	tr := lt.tr
 	total, rev := tr.index.total, tr.rowRev
 	before := stripANSIAll(tr.lines())
+	beforeScreen := append([]string(nil), tr.prev...)
 
 	clock := time.Unix(100, 0)
 	tr.now = func() time.Time { return clock }
 	tr.lastFull = clock
 	clock = clock.Add(time.Minute)
 
-	feed(t, in, "\x1bm")
+	feed(t, in, "m")
 	if !in.set.more {
-		t.Fatal("M-m did not turn more on")
+		t.Fatal("m did not turn more on")
 	}
 	frame := out.take()
 	after := stripANSIAll(tr.lines())
 	if tr.index.total != total || tr.rowRev != rev {
 		t.Fatalf("more laid the transcript out again: total %d -> %d, rowRev %d -> %d", total, tr.index.total, rev, tr.rowRev)
 	}
-	changed := map[int]bool{}
-	for i := range before {
-		if before[i] != after[i] {
-			changed[i+1] = true
+	changed := map[string]bool{}
+	for i := range beforeScreen {
+		if beforeScreen[i] != tr.prev[i] {
+			changed[strconv.Itoa(i+1)] = true
 		}
 	}
 	written := rowsWritten(frame)
 	if len(written) == 0 || len(written) > len(changed) {
-		t.Fatalf("more wrote %d rows for %d that changed (a resync repaints them all):\n%q", len(written), len(changed), frame)
+		t.Fatalf("more wrote %d rows for %d screen changes (a resync repaints them all):\n%q", len(written), len(changed), frame)
+	}
+	for row := range written {
+		if !changed[row] {
+			t.Fatalf("more repainted unchanged row %s", row)
+		}
 	}
 	head := after[findLine(after, "> figaro")]
 	if want := ariaHandle(moreSender) + " (" + shortHex(moreSender) + ")"; !strings.Contains(head, want) {
@@ -85,21 +92,20 @@ func TestMoreRepaintsOnlyTheRowsItChanges(t *testing.T) {
 		t.Fatalf("an address was painted over text:\nbefore %q\nafter  %q", before[findLine(before, "runs to the edge")], long)
 	}
 
-	feed(t, in, "\x1bm")
+	feed(t, in, "m")
 	if got := stripANSIAll(tr.lines()); strings.Join(got, "\n") != strings.Join(before, "\n") {
 		t.Fatalf("more off did not restore the screen:\n%s", strings.Join(got, "\n"))
 	}
 }
 
-// M-m in the incipit stays in the incipit.
-func TestMoreDoesNotOpenThePager(t *testing.T) {
+func TestMoreOpensThePager(t *testing.T) {
 	in, lt := navInput(t, &countingWriter{}, false)
-	feed(t, in, "\x1bm")
-	if lt.transcriptActive() {
-		t.Fatal("M-m opened the pager")
+	feed(t, in, "m")
+	if !lt.transcriptActive() {
+		t.Fatal("m did not open the pager")
 	}
-	if !in.set.more {
-		t.Fatal("M-m did not turn more on")
+	if !in.set.more || !lt.status.barVerbose() {
+		t.Fatal("m did not turn transcript and status details on")
 	}
 }
 

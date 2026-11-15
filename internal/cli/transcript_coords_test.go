@@ -48,8 +48,8 @@ func plainRows(rows []string) []string {
 func TestAddressesAppearOnlyUnderVerbose(t *testing.T) {
 	off := plainRows(coordFixture(t, false).lines())
 	for _, r := range off {
-		if addressRE.MatchString(r) {
-			t.Fatalf("an address appeared with ^O off: %q\n%s", r, strings.Join(off, "\n"))
+		if addressRE.MatchString(r) && !strings.HasPrefix(r, "> input") {
+			t.Fatalf("a node address appeared with more off: %q\n%s", r, strings.Join(off, "\n"))
 		}
 	}
 
@@ -68,7 +68,7 @@ func TestAddressesAppearOnlyUnderVerbose(t *testing.T) {
 	for i, r := range on {
 		if m := addressRE.FindString(r); m != "" {
 			got = append(got, m)
-			if strings.TrimSpace(strings.TrimSuffix(r, m)) != strings.TrimSpace(off[i]) {
+			if !strings.HasPrefix(r, "> input") && strings.TrimSpace(strings.TrimSuffix(r, m)) != strings.TrimSpace(off[i]) {
 				t.Fatalf("row %d changed under ^O:\n on  %q\n off %q", i, r, off[i])
 			}
 		}
@@ -140,11 +140,11 @@ func TestAddressesLeaveTheChromeAlone(t *testing.T) {
 	if i < 1 {
 		t.Fatalf("no question in:\n%s", strings.Join(rows, "\n"))
 	}
-	if got := rows[i-1]; got != "> input" {
-		t.Fatalf("question chrome under ^O: %q, want the heading on the line above", got)
+	if got := rows[i-1]; !strings.HasPrefix(got, "> input") || !strings.HasSuffix(got, " 8") {
+		t.Fatalf("question heading does not carry its turn: %q", got)
 	}
-	if !strings.HasSuffix(rows[i], "8") {
-		t.Fatalf("the question does not carry its turn: %q", rows[i])
+	if rows[i] != "QUESTIONEIGHT" {
+		t.Fatalf("the question text repeats its heading's coordinate: %q", rows[i])
 	}
 }
 

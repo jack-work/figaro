@@ -6,9 +6,8 @@ import (
 	"time"
 )
 
-// Gluck: the double bar separates the header and nothing else; a message in
-// the body is bordered by single rules.
-func TestRule_OnlyTheHeadersEdgeIsDouble(t *testing.T) {
+// The pinned header's edge is double; message separators inside the body stay single.
+func TestRule_OnlyTheHeadersEdgeIsDoubleWithinTheBody(t *testing.T) {
 	tr := stickyPager(t, 1, 4, 6, 24)
 	_, maxOff := tr.layoutNow()
 	pinned := 0

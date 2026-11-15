@@ -174,7 +174,6 @@ const (
 	helpCmdComplete
 	helpCmdEdit
 	helpCmdPaste
-	helpBarVerbose
 	helpCmdAbort
 	helpPitDrop
 	helpLeavePit
@@ -231,9 +230,8 @@ var helpRows = []helpRow{
 	{helpListScroll, "(in a list) ^E / ^Y", "scroll down / up a line; the selection stays"},
 	{helpSendTo, "(in a list) >", "send a line to the selected figaro or role without attending it"},
 	{helpYank, "y · M-y", "copy the selection, else the aria's name · its full id"},
-	{helpMore, "M-m", "more: every name beside its other spelling, and addresses in the spare columns"},
+	{helpMore, "m", "more: names, addresses, state, model, last interaction"},
 	{helpSticky, "s", "pin the question of the turn you are inside"},
-	{helpBarVerbose, "m", "more: state names, model, last interaction"},
 	{helpCmdPaste, "(in :) ^V", "paste the clipboard"},
 	{helpSelect, "^N/^P", "select next/previous node (each form delta is one)"},
 	{helpForkJump, "f j / f k", "next / previous fork point"},

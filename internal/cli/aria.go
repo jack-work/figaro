@@ -133,8 +133,6 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		u := turns[i]
 		fmt.Fprintln(stdout, term.Dim(fmt.Sprintf("[%d]", u.ID)))
 		fmt.Fprintln(stdout)
-		// The default is what `figaro listen` draws; -o adds the metadata M-m
-		// shows in the pager.
 		rows := renderTurnRows(aria.Message{
 			Turn: int(u.ID), Role: livedoc.RoleOutput,
 			Inquiry: u.Inquiry, InquirySegments: u.InquirySegments,

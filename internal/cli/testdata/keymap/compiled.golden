@@ -9,7 +9,6 @@ incipit    csi-u ctrl-l       input inputEnterTranscript
 incipit    csi-u ctrl-n       input inputSelectNext
 incipit    csi-u ctrl-p       input inputSelectPrev
 incipit    csi-u ctrl-t       input inputEnterTranscript
-incipit    M-m                input inputToggleMore
 incipit    M-y                input inputYankID
 transcript 0x03               input inputInterrupt
 transcript 0x04               input inputDisconnect
@@ -49,7 +48,7 @@ transcript "h"                pager pagerHelpPanel
 transcript "j"                pager pagerLineDown
 transcript "k"                pager pagerLineUp
 transcript "l"                pager pagerListPit
-transcript "m"                input inputToggleBarVerbose
+transcript "m"                input inputToggleMore
 transcript "n"                pager pagerFindNextVisual
 transcript "o"                input inputOpenEditor
 transcript "p"                pager pagerExpandHead
@@ -74,7 +73,6 @@ transcript csi-u ctrl-o       pager pagerAriaBack
 transcript csi-u ctrl-p       input inputSelectPrev
 transcript csi-u ctrl-t       input inputEnterTranscript
 transcript M-l                pager pagerRecentPit
-transcript M-m                input inputToggleMore
 transcript M-n                input inputQuestionNext
 transcript M-p                input inputQuestionPrev
 transcript M-y                input inputYankID
@@ -98,7 +96,6 @@ search     csi-u ctrl-l       input inputEnterTranscript
 search     csi-u ctrl-n       input inputSearchHitNext
 search     csi-u ctrl-p       input inputSearchHitPrev
 search     csi-u ctrl-t       input inputEnterTranscript
-search     M-m                input inputToggleMore
 jump       0x01               pager cmdHome
 jump       0x02               pager cmdLeft
 jump       0x03               pager cmdAbort
@@ -163,7 +160,6 @@ jump       M-c                pager cmdCapitalize
 jump       M-d                pager cmdKillWordFwd
 jump       M-f                pager cmdWordRight
 jump       M-l                pager cmdDowncase
-jump       M-m                input inputToggleMore
 jump       M-n                pager cmdPrefixNext
 jump       M-p                pager cmdPrefixPrev
 jump       M-r                pager cmdRevert
@@ -193,7 +189,7 @@ panel      "X"                pager pagerPitDropNow
 panel      "a"                pager pagerAttendRow
 panel      "h"                pager panelToggleHelp
 panel      "l"                pager pagerListPit
-panel      "m"                input inputToggleBarVerbose
+panel      "m"                input inputToggleMore
 panel      "n"                pager pagerFindRowNext
 panel      "p"                pager pagerExpandHead
 panel      "q"                input inputLeavePit
@@ -207,7 +203,6 @@ panel      csi-u ctrl-n       input inputSelectNext
 panel      csi-u ctrl-p       input inputSelectPrev
 panel      csi-u ctrl-t       input inputEnterTranscript
 panel      M-l                pager pagerRecentPit
-panel      M-m                input inputToggleMore
 panel      M-n                input inputQuestionNext
 panel      M-p                input inputQuestionPrev
 panel      M-y                input inputYankID
@@ -242,7 +237,7 @@ visual     "h"                pager pagerVisualLeft
 visual     "j"                pager pagerVisualDown
 visual     "k"                pager pagerVisualUp
 visual     "l"                pager pagerVisualRight
-visual     "m"                input inputToggleBarVerbose
+visual     "m"                input inputToggleMore
 visual     "n"                pager pagerFindNext
 visual     "o"                input inputOpenEditor
 visual     "q"                input inputLeavePit
@@ -267,7 +262,6 @@ visual     csi-u ctrl-n       input inputSelectNext
 visual     csi-u ctrl-p       input inputSelectPrev
 visual     csi-u ctrl-t       input inputEnterTranscript
 visual     M-                pager pagerVisualOpenPath
-visual     M-m                input inputToggleMore
 visual     M-y                input inputYankID
 confirm    0x03               input inputInterrupt
 confirm    0x04               input inputDisconnect
@@ -284,7 +278,6 @@ confirm    csi-u ctrl-l       input inputEnterTranscript
 confirm    csi-u ctrl-n       input inputSelectNext
 confirm    csi-u ctrl-p       input inputSelectPrev
 confirm    csi-u ctrl-t       input inputEnterTranscript
-confirm    M-m                input inputToggleMore
 composer   0x03               input inputInterrupt
 composer   0x04               input inputDisconnect
 composer   0x0c               input inputEnterTranscript
@@ -332,7 +325,6 @@ composer   csi-u ctrl-p       input inputSelectPrev
 composer   csi-u ctrl-s       pager composerSubmit
 composer   csi-u ctrl-t       input inputEnterTranscript
 composer   M-                pager composerSubmit
-composer   M-m                input inputToggleMore
 composer   M-y                input inputYankID
 list       0x03               input inputInterrupt
 list       0x04               input inputDisconnect
@@ -368,7 +360,7 @@ list       "h"                pager pagerBranchClose
 list       "j"                pager listDown
 list       "k"                pager listUp
 list       "l"                pager pagerBranchOpen
-list       "m"                input inputToggleBarVerbose
+list       "m"                input inputToggleMore
 list       "n"                pager pagerFindRowNext
 list       "p"                pager pagerExpandHead
 list       "q"                input inputLeavePit
@@ -393,7 +385,6 @@ list       csi-u ctrl-p       input inputSelectPrev
 list       csi-u ctrl-t       input inputEnterTranscript
 list       csi-u ctrl-y       pager listScrollUp
 list       M-l                pager pagerRecentPit
-list       M-m                input inputToggleMore
 list       M-n                input inputQuestionNext
 list       M-p                input inputQuestionPrev
 list       M-y                input inputYankID
@@ -483,14 +474,11 @@ csi-u      ctrl-u
 csi-u      ctrl-v
 csi-u      ctrl-w
 csi-u      ctrl-y
-meta       incipit    M-m
 meta       incipit    M-y
 meta       transcript M-l
-meta       transcript M-m
 meta       transcript M-n
 meta       transcript M-p
 meta       transcript M-y
-meta       search     M-m
 meta       jump       M-
 meta       jump       M-*
 meta       jump       M-.
@@ -504,7 +492,6 @@ meta       jump       M-c
 meta       jump       M-d
 meta       jump       M-f
 meta       jump       M-l
-meta       jump       M-m
 meta       jump       M-n
 meta       jump       M-p
 meta       jump       M-r
@@ -513,19 +500,14 @@ meta       jump       M-u
 meta       jump       M-y
 meta       jump       M-DEL
 meta       panel      M-l
-meta       panel      M-m
 meta       panel      M-n
 meta       panel      M-p
 meta       panel      M-y
 meta       visual     M-
-meta       visual     M-m
 meta       visual     M-y
-meta       confirm    M-m
 meta       composer   M-
-meta       composer   M-m
 meta       composer   M-y
 meta       list       M-l
-meta       list       M-m
 meta       list       M-n
 meta       list       M-p
 meta       list       M-y

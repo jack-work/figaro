@@ -190,7 +190,7 @@ fig IR, but it is not an address: turns are.`,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (alias for the positional)"},
-			{Long: "details", Short: "o", IsBool: true, Description: "Block addresses and timestamps, as M-m shows in the pager"},
+			{Long: "details", Short: "o", IsBool: true, Description: "Block addresses and timestamps, as m shows in the pager"},
 			{Long: "verbose", Short: "v", IsBool: true, Description: "Raw IR with patches, thinking, usage, transitions"},
 			{Long: "literal", Short: "l", IsBool: true, Description: "No ANSI / markdown rendering"},
 			{Long: "all", Short: "a", IsBool: true, Description: "Show every turn, not just last N"},
@@ -274,8 +274,8 @@ Flags:
   -v, --verbatim Dump the raw wire frames as JSON (one {"method","params"}
                  per line): the literal protocol stream, no formatting,
                  no delta application.
-  -o, --verbose  Verbose: expand full tool inputs (else truncated). Thinking
-                 blocks are always shown (muted). M-m toggles live.
+  -o, --verbose  Start with more on: transcript metadata and verbose status.
+                 Thinking blocks are always shown (muted). m toggles in the pager.
   -l, --listen   Open the transcript pager at startup. The transcript always
                  stays open until Ctrl-D/Ctrl-C/q; Ctrl-L or Ctrl-T open it
                  mid-stream.
@@ -309,7 +309,7 @@ Keys while streaming:
   Ctrl-C         Interrupt the turn (sends figaro.interrupt).
   Ctrl-D         Disconnect this CLI; leave the turn running.
   Ctrl-T         Open the full-screen transcript pager.
-  M-m            Toggle verbose tool-input expansion.
+  m              Open the pager and toggle transcript and status details.
 
   figaro send -- <prompt>              prompt the pid-bound aria, rich
   figaro send --id myid -- <prompt>    prompt a named aria (rich)
@@ -441,7 +441,7 @@ Keys:
   Esc      Cancel what is open (a selection, a pit, a search, visual
            mode). It does not end listen.
   Ctrl-T   Nothing: the pager is already open.
-  M-m      Toggle verbose tool-input expansion.
+  m        Toggle transcript metadata and verbose status.
   h        The pager's key help.
 
 TESTING: --record <file> writes a wire tape: every JSON-RPC message
@@ -1033,14 +1033,14 @@ so anything already addressing it keeps working. Only an INTERIOR fork
   figaro fork <id>:12         interior fork: history before turn 12 is shared,
                               the original suffix becomes the continuation
   figaro fork <id>:12.10      inside turn 12: node 10 and everything after it
-                              is replaced (the number the pager draws under M-m)
+                              is replaced (the number the pager draws under m)
   figaro fork <id>:12.-1      turn 12's question: the same as <id>:12
   figaro fork <id>.842        the same, at an LT instead of a turn
   figaro fork --stay          branch but do not rebind this shell
 
 THREE COORDINATES. :N is a TURN -- one exchange, the number show prints,
 and what you normally want. :N.K is a NODE inside that turn -- the address
-the pager shows under M-m, so what you can point at you can branch at. .N is
+the pager shows under m, so what you can point at you can branch at. .N is
 an LT -- one step of the model's experience, the number show -v prints.
 Prefer the colon: most LTs sit mid-tool, where a fork strands a tool_invoke
 without its result. Reach for the dot when you already hold an LT, or need a
@@ -2036,7 +2036,7 @@ error of its last attempt if that failed.
 		Usage: "keys [layers | actions | init | bind <keys> <action> [<layer>] | unbind <keys> [<layer>] | reset [<keys> [<layer>]] | path]",
 		Long: `The live key map, and the file behind it.
 
-A key is written the way the help panel prints it: a letter, ^D, M-m, Tab,
+A key is written the way the help panel prints it: a letter, ^D, M-y, Tab,
 Esc, Enter, Up, PgDn, Space. ^X claims both encodings a terminal may send.
 
 Bindings live in LAYERS, highest first; a layer covers some modes, and a

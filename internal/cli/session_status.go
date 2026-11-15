@@ -86,7 +86,6 @@ type sessionStatus struct {
 	limit     int
 	turn      turnStatus
 	tick      uint64
-	verbose   bool
 	more      bool
 	lastAt    time.Time // when the conversation last moved, in either direction
 	model     string
@@ -439,7 +438,7 @@ func (s *sessionStatus) turnLabel(verbose bool) string {
 func (s *sessionStatus) ruleLine(width int, label, pos string) string {
 	left, right := "", ""
 	if label != "" {
-		left = "── " + label + " "
+		left = "══ " + label + " "
 	}
 	if pos != "" {
 		right = " " + pos
@@ -451,7 +450,7 @@ func (s *sessionStatus) ruleLine(width int, label, pos string) string {
 	if fill < 3 {
 		fill = 3
 	}
-	return clipToWidth(left+strings.Repeat("─", fill)+right, width)
+	return clipToWidth(left+strings.Repeat("═", fill)+right, width)
 }
 
 func (s *sessionStatus) panelLines() []string {
@@ -554,25 +553,6 @@ func (s *sessionStatus) retireAlert(now time.Time) bool {
 	return retired
 }
 
-func (s *sessionStatus) toggleVerbose() bool {
-	if s == nil {
-		return false
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.verbose = !s.verbose
-	return s.verbose
-}
-
-func (s *sessionStatus) setVerbose(v bool) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	s.verbose = v
-	s.mu.Unlock()
-}
-
 func (s *sessionStatus) setMore(v bool) {
 	if s == nil {
 		return
@@ -588,7 +568,7 @@ func (s *sessionStatus) barVerbose() bool {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.verbose
+	return s.more
 }
 
 func (s *sessionStatus) turnLabelForTest() turnStatus {

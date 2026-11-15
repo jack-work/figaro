@@ -172,7 +172,8 @@ suffix and is not in the store's window, so a walk of the window alone prunes
 it as though it had scrolled out of history. That dropped a live expansion on
 `Esc` and on every frame while following the tail.)
 
-`M-m` is **more**, and it never adds a row. Every name gets its other
+`m` is **more** in reading modes. It toggles transcript metadata and verbose
+status together. Every name gets its other
 spelling beside it (`atom-factory (1756f)`, or `1756f (atom-factory)` under
 `ids = "short"`), and every block's address fills the blank columns at the
 right of its first row, ending in the same column as the gutter marker, which
@@ -180,8 +181,9 @@ sits over its last cell. An address that does not fit is cut, never painted over
 text. In an open metadata section (below) it labels the first row of each kind
 (`meta`, `delta`, `comment`) and gives a figaro id its other spelling, the same
 way. Toggling it repaints only the rows that changed, and it is exempt from the
-painter's two-second resync, so an idle pager does not flash. It stays inline:
-pressed in the incipit it does not open the pager.
+painter's two-second resync, so an idle pager does not flash. It adds no
+transcript rows; the status can wrap on a narrow terminal. Pressed in the
+incipit it opens the pager. In insert, search and command boxes, `m` is text.
 
 A folded multi-line value names its fold on its **label**: `content (…last 5
 of 41 lines)`, and `(…first 2 of 41 lines)` once settled, because a reader
@@ -471,7 +473,7 @@ Inline keybindings while a turn streams:
 
 | Key | Action |
 | --- | --- |
-| `M-m` | more: each name beside its other spelling, addresses in the spare columns |
+| `m` | open the pager and toggle transcript metadata and verbose status |
 | `Ctrl-T` | open the transcript pager (below) |
 | `Ctrl-D` | end the turn |
 
@@ -541,7 +543,7 @@ pit follows a remap, so it shows your map rather than this one.
 | `h` | the help panel |
 | `v` / `V` | visual mode: a cursor, then a highlight by character / by line. In it, Enter selects the node under the cursor (then `e` expands it); `e` itself stays the word-end motion; `a` attends the highlighted id or the word under the cursor, and hands anything else to your editor (`editor` under `[cli]`) when it is a file |
 | `y` / `Y` | copy the selection / copy its coordinate `<lt.block:a-b>!` |
-| `M-m` | more: each name beside its other spelling, every node's address in its spare columns |
+| `m` | more: each name beside its other spelling, every node's address in its spare columns |
 | `Ctrl-O` / `Ctrl-I` | back / forward through this shell's history of attended figaros (`:back [n]`, `:forward [n]`, or `:aria-back`/`:aria-forward`; `:history` lists it). The daemon keeps it with the shell's attendance, so every pager on the shell and `figaro back`/`forward` share one cursor, and it outlives the pager. Every attend is an entry, an attend after a back drops what was ahead, the newest 50 are kept, and a figaro killed or reaped since is passed over |
 | `q` | close the open pit; with none open, end the session (a send or a listen). The turn keeps running |
 
@@ -571,8 +573,8 @@ The sigil is the whole indicator: `>` insert, `✎` normal.
 
 There are no editing verbs (`d`, `c`, `x`, `p`, `r`): a draft is written in
 insert mode, and this mode is for reading one, marking part of it and
-searching it. `M-m` writes the drawer's gestures into the rule above it,
-which is the only place they are spelled out on screen.
+searching it. With more already enabled, the drawer's gestures appear in
+the rule above it.
 
 **A search targets whatever drawer is open.** `/` with the composer up
 moves the draft's cursor; with a list up it walks that list's rows, and `n`/`N`
@@ -589,12 +591,12 @@ session only when there is none of the three.
 
 ### Coordinates and the `:` jump
 
-**`M-m` in the pager also draws every node's address** in the spare columns
+**`m` in the pager also draws every node's address** in the spare columns
 of its first row: `12.3 · 01:23:45`: turn id, node id, and when the node was
 written. Every open metadata section carries it as its first row. The
-turn's opening question gets the same row at its virtual node id, `-1`, because
-the question selects, copies and highlights exactly as a node does and is
-addressable the same way.
+turn's opening question is addressable at virtual node id `-1`. Its turn
+number is always visible at the right of the input heading, including the
+sticky and expanded headings, regardless of more.
 
 **`:` opens a command line that accepts one of those addresses.**
 

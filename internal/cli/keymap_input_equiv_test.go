@@ -150,9 +150,7 @@ func inputSweepKeys() []struct {
 	add("csiu ^l", "\x1b[108;5u")
 	add("csiu ^t", "\x1b[116;5u")
 	add("csiu ^o", "\x1b[111;5u")
-	// M-m is verbose tool output (it was ^O). A meta chord, so the byte
-	// sweep above cannot reach it, and a binding no sweep reaches is a
-	// binding this oracle does not defend.
+	// Unbound legacy Meta chords fall back to Escape followed by the byte.
 	add("alt m", "\x1bm")
 	add("alt y", "\x1by")
 	add("alt ^n fallback", "\x1b\x0e")

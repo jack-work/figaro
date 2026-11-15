@@ -134,7 +134,7 @@ func TestSticky_HandsRowsBackAcrossATurnBoundary(t *testing.T) {
 		}
 		body := plain(bodyRows(tr))
 		if above < len(q.rows) && len(body) > 0 {
-			if body[0] != strings.TrimRight(stripANSI(q.rows[above].text), " ") {
+			if body[0] != strings.TrimRight(stripANSI(tr.rowLine(q.rows[above], "", selectionSpan{}, -1)), " ") {
 				t.Fatalf("at offset %d the body starts at %q, want %q: the header and the body must meet",
 					tr.offset, body[0], q.rows[above].text)
 			}
@@ -663,7 +663,7 @@ func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
 			}
 		}
 		if body := plain(bodyRows(tr)); above < len(q.rows) && len(body) > 0 {
-			if got, want := body[0], strings.TrimRight(stripANSI(q.rows[above].text), " "); got != want {
+			if got, want := body[0], strings.TrimRight(stripANSI(tr.rowLine(q.rows[above], "", selectionSpan{}, -1)), " "); got != want {
 				t.Fatalf("at %d rows above the body starts at %q, want %q", above, got, want)
 			}
 		}
