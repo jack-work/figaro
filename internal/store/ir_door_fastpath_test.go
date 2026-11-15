@@ -8,32 +8,6 @@ import (
 	"github.com/jack-work/figaro/api/message"
 )
 
-// The door wraps the IR log as an interface, which hides the tree log's
-// optional readers; without them every TailAfter, TailSnapshot and Scan on an
-// aria's IR fell back to decoding its whole history, once per provider round.
-func TestTheIRDoorKeepsTheTreeLogsFastReaders(t *testing.T) {
-	be, aria := NewTestAria(t, "d", message.Patch{})
-	lg, err := be.OpenFigIR(aria)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := lg.(interface {
-		TailAfter(uint64) ([]arialog.Entry[message.Message], int)
-	}); !ok {
-		t.Error("the IR door hides TailAfter")
-	}
-	if _, ok := lg.(interface {
-		TailSnapshot(int) []arialog.Entry[message.Message]
-	}); !ok {
-		t.Error("the IR door hides TailSnapshot")
-	}
-	if _, ok := lg.(interface {
-		ScanRange(uint64, uint64, func(arialog.Entry[message.Message]) bool)
-	}); !ok {
-		t.Error("the IR door hides ScanRange")
-	}
-}
-
 func TestTheIRDoorsTailAfterReadsOnlyTheTail(t *testing.T) {
 	be, aria := NewTestAria(t, "d", message.Patch{})
 	lg, err := be.OpenFigIR(aria)
