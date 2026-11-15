@@ -239,6 +239,10 @@ func (p *Provider) sendWithToken(
 	if len(input) == 0 {
 		return fmt.Errorf("responses: empty context")
 	}
+	input, err = separateInputTextParts(input)
+	if err != nil {
+		return fmt.Errorf("responses: separate input text parts: %w", err)
+	}
 	breakpoints := 0
 	if !p.disablePromptCacheBreakpoints {
 		input, breakpoints = markPromptCacheBreakpoint(input)
