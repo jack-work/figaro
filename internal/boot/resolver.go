@@ -21,6 +21,12 @@ import (
 )
 
 func BuildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolver, error) {
+	if cred, err := CredOf(loaded, providerName); err != nil || cred != nil {
+		if err != nil {
+			return nil, err
+		}
+		return CredResolver(*cred)
+	}
 	r, err := buildResolver(loaded, providerName)
 	if err != nil {
 		return nil, err

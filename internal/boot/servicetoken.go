@@ -101,6 +101,9 @@ func ServiceTokenOf(loaded *config.Loaded, provider string) (string, error) {
 	if err := loaded.LoadProviderAuth(provider, &pa); err != nil {
 		return "", err
 	}
+	if err := pa.ValidateAuthSources(); err != nil {
+		return "", fmt.Errorf("%s: %w", loaded.ProviderAuthPath(provider), err)
+	}
 	return strings.TrimSpace(pa.ServiceToken), nil
 }
 

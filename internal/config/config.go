@@ -730,17 +730,72 @@ func (l *Loaded) UpdateCheckTTLHours() int {
 	return *l.cfg().CLI.UpdateCheckTTLHours
 }
 
-// ProviderAuth lives at providers/<name>.toml. Secret fields are
-// AGE-encrypted at rest (AGE-ENC[...]) and must be decrypted through hush.
+type CredConfig struct {
+	Socket string `toml:"socket"`
+	Name   string `toml:"name"`
+}
+
+func (c CredConfig) Normalized() CredConfig {
+	return CredConfig{
+		Socket: strings.TrimSpace(c.Socket),
+		Name:   strings.TrimSpace(c.Name),
+	}
+}
+
+func (c CredConfig) Validate() error {
+	n := c.Normalized()
+	if n.Socket == "" {
+		return fmt.Errorf("[cred] socket is required")
+	}
+	if !filepath.IsAbs(n.Socket) || strings.HasSuffix(n.Socket, "/") {
+		return fmt.Errorf("[cred] socket %q must be an absolute file path", c.Socket)
+	}
+	if n.Name == "" {
+		return fmt.Errorf("[cred] name is required")
+	}
+	if n.Name == "." || n.Name == ".." || !validCredName(n.Name) {
+		return fmt.Errorf("[cred] name %q must be a bare credential name without '/' or query characters", c.Name)
+	}
+	return nil
+}
+
+func validCredName(s string) bool {
+	for _, r := range s {
+		if r <= 0x20 || r == 0x7f || strings.ContainsRune("/\\?&#%:@", r) {
+			return false
+		}
+	}
+	return true
+}
+
 type ProviderAuth struct {
-	APIKey       string `toml:"api_key"`
-	APIKeyFile   string `toml:"api_key_file"`
-	ServiceToken string `toml:"service_token"`
-	SendFigaroID bool   `toml:"send_figaro_id"`
+	APIKey       string         `toml:"api_key"`
+	APIKeyFile   string         `toml:"api_key_file"`
+	ServiceToken string         `toml:"service_token"`
+	SendFigaroID bool           `toml:"send_figaro_id"`
+	Cred         *CredConfig    `toml:"cred"`
+	OAuth        map[string]any `toml:"oauth"`
 
 	AccessToken  string `toml:"access_token"`
 	RefreshToken string `toml:"refresh_token"`
 	ExpiresAt    int64  `toml:"expires_at"`
+}
+
+func (pa ProviderAuth) ValidateAuthSources() error {
+	hasService := strings.TrimSpace(pa.ServiceToken) != ""
+	if hasService && pa.OAuth != nil {
+		return fmt.Errorf("[oauth] and service_token both name the credential; keep one")
+	}
+	if pa.Cred == nil {
+		return nil
+	}
+	if hasService {
+		return fmt.Errorf("[cred] and service_token both name the credential; keep one")
+	}
+	if pa.OAuth != nil {
+		return fmt.Errorf("[cred] and [oauth] both name the credential; keep one")
+	}
+	return pa.Cred.Validate()
 }
 
 type Loaded struct {

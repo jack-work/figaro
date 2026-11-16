@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,11 +12,14 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/internal/arialog"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -285,6 +289,131 @@ func TestCatalogOffListsConfiguredModelsAndUnconfiguredPresetsAreOmitted(t *test
 	}
 	if hits != 0 {
 		t.Fatalf("catalog = off made %d upstream requests", hits)
+	}
+}
+
+func TestCredSocketRejectsCoexistenceAndBadFieldsInDeclaredProviders(t *testing.T) {
+	cases := map[string]string{
+		"cred and oauth":         "preset = \"gateway\"\nbase_url = \"http://127.0.0.1:1/v1\"\n[oauth]\nissuer = \"https://auth.example\"\nclient_id = \"house\"\n[cred]\nsocket = \"/run/hush-cred/inst.sock\"\nname = \"inst\"\n",
+		"cred and service_token": "preset = \"gateway\"\nbase_url = \"http://127.0.0.1:1/v1\"\nservice_token = \"rou2\"\n[cred]\nsocket = \"/run/hush-cred/inst.sock\"\nname = \"inst\"\n",
+		"non-abs socket":         "preset = \"gateway\"\nbase_url = \"http://127.0.0.1:1/v1\"\n[cred]\nsocket = \"relative/inst.sock\"\nname = \"inst\"\n",
+		"bad name":               "preset = \"gateway\"\nbase_url = \"http://127.0.0.1:1/v1\"\n[cred]\nsocket = \"/run/hush-cred/inst.sock\"\nname = \"bad/name\"\n",
+	}
+	for label, doc := range cases {
+		t.Run(label, func(t *testing.T) {
+			loaded := declaredDir(t, map[string]string{"badcred": doc})
+			if got := RegisterDeclared(loaded); len(got) != 0 {
+				t.Fatalf("%s: registered %v", label, got)
+			}
+		})
+	}
+}
+
+// A gateway with [cred] requires auth, never sends a keyless request when the
+// socket fails, and re-fetches once from the socket on an upstream 401.
+func TestACredSocketMakesTheGatewayRequireAuthAndRefetchesOn401(t *testing.T) {
+	var upstreamHits atomic.Int32
+	var seenAuth []string
+	var authMu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits.Add(1)
+		hdr := r.Header.Get("Authorization")
+		authMu.Lock()
+		seenAuth = append(seenAuth, hdr)
+		authMu.Unlock()
+		if hdr != "Bearer fresh-tok" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = io.WriteString(w, `{"error":{"message":"revoked"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	sockDir, err := os.MkdirTemp("", "routedcred-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
+	sock := filepath.Join(sockDir, "inst.sock")
+	var sockMode atomic.Int32
+	var sockHits atomic.Int32
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credSrv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if sockMode.Load() == 0 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = io.WriteString(w, `{"error":"credential_stale","reason":"sign-in needed"}`)
+			return
+		}
+		tok := "stale-tok"
+		if sockHits.Add(1) > 1 {
+			tok = "fresh-tok"
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"name":       "inst",
+			"token":      tok,
+			"expires_at": time.Now().Add(time.Hour).Unix(),
+		})
+	})}
+	go func() { _ = credSrv.Serve(ln) }()
+	t.Cleanup(func() { _ = credSrv.Close() })
+
+	loaded := declaredDir(t, map[string]string{
+		"credgw":  "preset = \"gateway\"\nbase_url = \"" + srv.URL + "/v1\"\n[routing]\ncatalog = \"off\"\ndefault = \"chat\"\n[cred]\nsocket = \"" + sock + "\"\nname = \"inst\"\n",
+		"gemcred": "preset = \"gateway\"\napi = \"gemini\"\n[cred]\nsocket = \"/run/hush-cred/gem.sock\"\nname = \"gem\"\n",
+	})
+	if got := RegisterDeclared(loaded); strings.Join(got, ",") != "credgw,gemcred" {
+		t.Fatalf("registered = %v", got)
+	}
+	p, err := provider.Lookup("credgw").Build(provider.BuildContext{
+		Loaded:   loaded,
+		Resolver: &auth.CredSocket{Socket: sock, Name: "inst"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rp := p.(*Provider)
+	if rp.spec.AuthOptional {
+		t.Fatal("credgw built with AuthOptional = true")
+	}
+
+	gp, err := provider.Lookup("gemcred").Build(provider.BuildContext{
+		Loaded:   loaded,
+		Resolver: staticToken("tok"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gp.(*Provider).spec.AuthOptional || gp.(*Provider).spec.AuthStyle != provider.AuthBearer {
+		t.Fatalf("gemcred spec AuthOptional=%v AuthStyle=%v", gp.(*Provider).spec.AuthOptional, gp.(*Provider).spec.AuthStyle)
+	}
+
+	be, aria := store.NewTestAria(t, "d", message.Patch{})
+	figLog, _ := be.OpenFigIR(aria)
+	_, _ = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
+		Role: message.RoleInput, Content: []message.Content{message.TextContent("hi")},
+	}})
+	rp.translators = func(aria, ns string) (arialog.Log[[]json.RawMessage], error) { return be.OpenTranslator(aria, ns) }
+	rp.SetModel("llama")
+	if err := rp.Send(context.Background(), provider.SendInput{AriaID: aria, FigLog: figLog, MaxTokens: 64}, &nullBus{}); err == nil || !strings.Contains(err.Error(), "sign-in needed") {
+		t.Fatalf("expected Send to fail with sign-in needed when cred socket returns 503, got %v", err)
+	}
+	if upstreamHits.Load() != 0 {
+		t.Fatalf("sent %d upstream requests despite failed cred socket", upstreamHits.Load())
+	}
+
+	sockMode.Store(1)
+	if err := rp.Send(context.Background(), provider.SendInput{AriaID: aria, FigLog: figLog, MaxTokens: 64}, &nullBus{}); err != nil {
+		t.Fatalf("expected Send to recover after 401 re-fetch, got %v", err)
+	}
+	authMu.Lock()
+	defer authMu.Unlock()
+	if strings.Join(seenAuth, ",") != "Bearer stale-tok,Bearer fresh-tok" {
+		t.Fatalf("seenAuth = %v", seenAuth)
 	}
 }
 
