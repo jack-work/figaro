@@ -213,11 +213,34 @@ func encodeMessage(msg message.Message, reminders []string) ([]Content, error) {
 		return []Content{{Role: "user", Parts: parts}}, nil
 
 	case message.RoleOutput:
+		hasStepSig := false
+		for _, c := range msg.Content {
+			switch c.Type {
+			case message.ContentThinking:
+				if c.Signature != "" {
+					hasStepSig = true
+				}
+			case message.ContentProse:
+				if c.Signature != "" {
+					hasStepSig = true
+				}
+			case message.ContentToolInvoke:
+				if _, bad := message.MalformedArgsOf(c); !bad && c.ToolCallID != "" && c.ToolName != "" && c.Signature != "" {
+					hasStepSig = true
+				}
+			}
+		}
 		var parts []Part
 		for _, c := range msg.Content {
 			switch c.Type {
 			case message.ContentThinking:
-				continue
+				if c.Signature != "" {
+					parts = append(parts, Part{
+						Text:             c.Text,
+						Thought:          true,
+						ThoughtSignature: c.Signature,
+					})
+				}
 			case message.ContentProse:
 				if strings.TrimSpace(c.Text) != "" || c.Signature != "" {
 					parts = append(parts, Part{
@@ -237,8 +260,9 @@ func encodeMessage(msg message.Message, reminders []string) ([]Content, error) {
 					args = map[string]any{}
 				}
 				sig := c.Signature
-				if sig == "" {
+				if sig == "" && !hasStepSig {
 					sig = skipThoughtSigValidator
+					hasStepSig = true
 				}
 				parts = append(parts, Part{
 					FunctionCall: &FuncCall{
@@ -430,6 +454,13 @@ func pairAndCollectSystem(rows provider.RowSeq, baseCredo string) (provider.RowS
 						pendingLT = lt
 					}
 				}
+				turnHasSig := false
+				for i := range turn.Parts {
+					if turn.Parts[i].ThoughtSignature != "" {
+						turnHasSig = true
+						break
+					}
+				}
 				var made []FuncCall
 				for i := range turn.Parts {
 					fc := turn.Parts[i].FunctionCall
@@ -438,8 +469,9 @@ func pairAndCollectSystem(rows provider.RowSeq, baseCredo string) (provider.RowS
 							toolNames[fc.ID] = fc.Name
 						}
 						made = append(made, *fc)
-						if turn.Parts[i].ThoughtSignature == "" {
+						if !turnHasSig {
 							turn.Parts[i].ThoughtSignature = skipThoughtSigValidator
+							turnHasSig = true
 						}
 					}
 				}
@@ -576,7 +608,7 @@ func projectTools(tools []provider.Tool) []ToolGroup {
 	return []ToolGroup{{FunctionDeclarations: decls}}
 }
 
-func buildGenerationConfig(snap form.Snapshot, maxTokens int) (GenerationConfig, error) {
+func buildGenerationConfig(snap form.Snapshot, maxTokens int, modelReasons bool) (GenerationConfig, error) {
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxOutputTokens
 	}
@@ -592,21 +624,67 @@ func buildGenerationConfig(snap form.Snapshot, maxTokens int) (GenerationConfig,
 		cfg.TopP = &topP
 	}
 	if raw, ok := snap.Get("system.thinking_budget"); ok && string(raw) != "null" {
-		var budget int
-		if json.Unmarshal(raw, &budget) != nil {
-			var s string
-			if json.Unmarshal(raw, &s) == nil {
-				budget, _ = strconv.Atoi(strings.TrimSpace(s))
+		budget, parsed := parseBudget(raw)
+		if parsed {
+			if budget > 0 {
+				cfg.ThinkingConfig = &ThinkingConfig{
+					IncludeThoughts: true,
+					ThinkingBudget:  budget,
+				}
 			}
-		}
-		if budget > 0 {
-			cfg.ThinkingConfig = &ThinkingConfig{
-				IncludeThoughts: true,
-				ThinkingBudget:  budget,
-			}
+			return cfg, nil
 		}
 	}
+	if effort, ok := parseEffort(snap); ok {
+		if effort != "none" && effort != "0" {
+			cfg.ThinkingConfig = &ThinkingConfig{IncludeThoughts: true}
+		}
+		return cfg, nil
+	}
+	if modelReasons {
+		cfg.ThinkingConfig = &ThinkingConfig{IncludeThoughts: true}
+	}
 	return cfg, nil
+}
+
+func parseBudget(raw json.RawMessage) (int, bool) {
+	var budget int
+	if json.Unmarshal(raw, &budget) == nil {
+		return budget, true
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+func parseEffort(snap form.Snapshot) (string, bool) {
+	raw, ok := snap.Get("system.thinking_effort")
+	if !ok || string(raw) == "null" {
+		return "", false
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if s == "" {
+			return "", false
+		}
+		if n, err := strconv.ParseFloat(s, 64); err == nil && n <= 0 {
+			return "0", true
+		}
+		return s, true
+	}
+	var n float64
+	if json.Unmarshal(raw, &n) == nil {
+		if n <= 0 {
+			return "0", true
+		}
+		return strconv.FormatFloat(n, 'f', -1, 64), true
+	}
+	return "", false
 }
 
 func optionalFloat(snap form.Snapshot, key string) (float64, bool, error) {

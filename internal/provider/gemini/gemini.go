@@ -82,7 +82,7 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, route provider.Route
 func (p *Provider) Name() string { return p.Route.Name }
 
 func (p *Provider) Fingerprint() string {
-	return string(p.Route.Dialect) + "/" + p.Route.Name + "/v1"
+	return string(p.Route.Dialect) + "/" + p.Route.Name + "/v2"
 }
 
 func (p *Provider) SetModel(model string) {
@@ -180,7 +180,7 @@ func (p *Provider) codeAssistModels(ctx context.Context, reader *catalog.Reader)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return nil, fmt.Errorf("%s models API %d: %s", p.Route.Name, resp.StatusCode, body)
+		return nil, fmt.Errorf("%s models: %s", p.Route.Name, apiErrorMessage(resp.StatusCode, body))
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
@@ -235,11 +235,13 @@ func (p *Provider) generativeModels(ctx context.Context, reader *catalog.Reader)
 		if err != nil {
 			return nil, err
 		}
+		if resp.StatusCode != http.StatusOK {
+			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+			resp.Body.Close()
+			return nil, fmt.Errorf("%s models: %s", p.Route.Name, apiErrorMessage(resp.StatusCode, errBody))
+		}
 		raw, rerr := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("%s models API %d: %s", p.Route.Name, resp.StatusCode, raw)
-		}
 		if rerr != nil {
 			return nil, rerr
 		}
@@ -291,7 +293,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if maxTokens <= 0 {
 		maxTokens = p.MaxTokens
 	}
-	genCfg, err := buildGenerationConfig(in.Snapshot, maxTokens)
+	genCfg, err := buildGenerationConfig(in.Snapshot, maxTokens, p.supportsReasoning(model))
 	if err != nil {
 		return err
 	}
@@ -464,9 +466,21 @@ func (p *Provider) EncodeMessage(msg message.Message, prev form.Snapshot) ([]jso
 
 func (p *Provider) TranslatorChannel() string { return p.CacheNamespace }
 
+func (p *Provider) supportsReasoning(model string) bool {
+	if e, ok := p.SeedModel(model); ok && e.Reasoning != nil {
+		return *e.Reasoning
+	}
+	m := strings.ToLower(strings.TrimSpace(model))
+	return strings.HasSuffix(m, "-thinking") ||
+		strings.Contains(m, "gemini-2.5") ||
+		strings.Contains(m, "gemini-2-5") ||
+		strings.Contains(m, "gemini-3") ||
+		strings.Contains(m, "gemini-4")
+}
+
 func (p *Provider) cacheFor(aria string) (arialog.Log[[]json.RawMessage], error) {
 	if aria == "" || p.CacheOpen == nil {
-		return nil, nil
+		return arialog.NewMemLog[[]json.RawMessage](), nil
 	}
 	p.mu.Lock()
 	cached := p.cache
@@ -474,7 +488,7 @@ func (p *Provider) cacheFor(aria string) (arialog.Log[[]json.RawMessage], error)
 	p.mu.Unlock()
 	if cached != nil && sameAria {
 		if !p.invalidateIfStale(cached) {
-			return nil, nil
+			return arialog.NewMemLog[[]json.RawMessage](), nil
 		}
 		return cached, nil
 	}
@@ -483,7 +497,7 @@ func (p *Provider) cacheFor(aria string) (arialog.Log[[]json.RawMessage], error)
 		return nil, fmt.Errorf("gemini open translator log: %w", err)
 	}
 	if s == nil {
-		return nil, nil
+		return arialog.NewMemLog[[]json.RawMessage](), nil
 	}
 	if !p.invalidateIfStale(s) {
 		return nil, fmt.Errorf("gemini translator log invalidation failed")
@@ -537,7 +551,14 @@ func (p *Provider) catchUp(ctx context.Context, figLog arialog.Log[message.Messa
 	return provider.TranslationRows(rows, to), nil
 }
 
-var imageTooBig = regexp.MustCompile(`image exceeds [0-9.]+ MB maximum: [0-9]+ bytes > ([0-9]+) bytes`)
+var (
+	imageTooBig = regexp.MustCompile(`image exceeds [0-9.]+ MB maximum: [0-9]+ bytes > ([0-9]+) bytes`)
+	secretToken = regexp.MustCompile(`(?i)(bearer\s+[A-Za-z0-9._~+/=-]+|ya29\.[A-Za-z0-9._-]+|AIza[0-9A-Za-z_-]{10,})`)
+)
+
+func redactErrorText(s string) string {
+	return secretToken.ReplaceAllString(s, "[REDACTED]")
+}
 
 func refusalOf(status int, body []byte, err error) error {
 	if status != http.StatusBadRequest {
@@ -572,13 +593,18 @@ func apiErrorMessage(status int, body []byte) string {
 		} `json:"error"`
 	}
 	if json.Unmarshal(body, &parsed) == nil && parsed.Error.Message != "" {
+		msg := redactErrorText(parsed.Error.Message)
 		if parsed.Error.Status != "" {
-			return fmt.Sprintf("%s: %s (%d)", parsed.Error.Status, parsed.Error.Message, status)
+			return fmt.Sprintf("%s: %s (%d)", parsed.Error.Status, msg, status)
 		}
-		return fmt.Sprintf("%s (%d)", parsed.Error.Message, status)
+		return fmt.Sprintf("%s (%d)", msg, status)
 	}
-	if len(body) == 0 {
+	snippet := redactErrorText(strings.TrimSpace(string(body)))
+	if len(snippet) > 512 {
+		snippet = snippet[:512] + "..."
+	}
+	if snippet == "" {
 		return fmt.Sprintf("HTTP %d", status)
 	}
-	return fmt.Sprintf("HTTP %d: %s", status, strings.TrimSpace(string(body)))
+	return fmt.Sprintf("HTTP %d: %s", status, snippet)
 }

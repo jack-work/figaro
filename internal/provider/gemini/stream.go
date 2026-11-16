@@ -2,8 +2,10 @@ package gemini
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,6 +15,8 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
 )
+
+const maxSSEEventBytes = 32 << 20
 
 var callSeq atomic.Uint64
 
@@ -64,38 +68,26 @@ func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled,
 		events    int
 		sawFinish bool
 		done      bool
+		eventBuf  bytes.Buffer
+		hasData   bool
 	)
 
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			out.Usage = usageToIR(lastUsage)
-			return out, ctx.Err()
-		default:
-		}
-		provider.SawByte(ctx)
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+	handleEvent := func(payload string) error {
+		payload = strings.TrimSpace(payload)
 		if payload == "" {
-			continue
+			return nil
 		}
 		if payload == "[DONE]" {
 			done = true
-			break
+			return nil
 		}
 		events++
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-			continue
+			return nil
 		}
 		if chunk.Error != nil {
-			out.Usage = usageToIR(lastUsage)
-			return out, fmt.Errorf("upstream %s (%d): %s", chunk.Error.Status, chunk.Error.Code, chunk.Error.Message)
+			return fmt.Errorf("upstream %s (%d): %s", chunk.Error.Status, chunk.Error.Code, redactErrorText(chunk.Error.Message))
 		}
 
 		inner := generatePayload{
@@ -113,58 +105,39 @@ func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled,
 			lastUsage = &cp
 		}
 
-		for _, cand := range inner.Candidates {
-			for _, p := range cand.Content.Parts {
-				if p.FunctionCall != nil {
-					out.HasCalls = true
-					callID := p.FunctionCall.ID
-					if callID == "" {
-						callID = fmt.Sprintf("call_%d_%d", time.Now().UnixNano(), callSeq.Add(1))
-					}
-					args := p.FunctionCall.Args
-					if args == nil {
-						args = map[string]any{}
-					}
-					bus.PushToolInvokeStart(callID, p.FunctionCall.Name)
-					if argBytes, err := json.Marshal(args); err == nil {
-						bus.PushToolInvokeDelta(callID, string(argBytes))
-					}
-					block := message.Content{
-						Type:       message.ContentToolInvoke,
-						ToolCallID: callID,
-						ToolName:   p.FunctionCall.Name,
-						Arguments:  args,
-						Signature:  p.ThoughtSignature,
-					}
-					out.Blocks = append(out.Blocks, block)
-					bus.PushToolReady(block)
-					continue
+		if len(inner.Candidates) == 0 {
+			return nil
+		}
+		cand := inner.Candidates[0]
+		for _, p := range cand.Content.Parts {
+			if p.FunctionCall != nil {
+				out.HasCalls = true
+				callID := p.FunctionCall.ID
+				if callID == "" {
+					callID = fmt.Sprintf("call_%d_%d", time.Now().UnixNano(), callSeq.Add(1))
 				}
-				if p.Thought {
-					if p.Text != "" || p.ThoughtSignature != "" {
-						if n := len(out.Blocks); n > 0 && out.Blocks[n-1].Type == message.ContentThinking {
-							b := &out.Blocks[n-1]
-							b.Text += p.Text
-							if p.ThoughtSignature != "" {
-								b.Signature = p.ThoughtSignature
-							}
-						} else {
-							out.Blocks = append(out.Blocks, message.Content{
-								Type:      message.ContentThinking,
-								Text:      p.Text,
-								Signature: p.ThoughtSignature,
-							})
-						}
-						bus.PushDelta(message.Content{
-							Type:      message.ContentThinking,
-							Text:      p.Text,
-							Signature: p.ThoughtSignature,
-						})
-					}
-					continue
+				args := p.FunctionCall.Args
+				if args == nil {
+					args = map[string]any{}
 				}
+				bus.PushToolInvokeStart(callID, p.FunctionCall.Name)
+				if argBytes, err := json.Marshal(args); err == nil {
+					bus.PushToolInvokeDelta(callID, string(argBytes))
+				}
+				block := message.Content{
+					Type:       message.ContentToolInvoke,
+					ToolCallID: callID,
+					ToolName:   p.FunctionCall.Name,
+					Arguments:  args,
+					Signature:  p.ThoughtSignature,
+				}
+				out.Blocks = append(out.Blocks, block)
+				bus.PushToolReady(block)
+				continue
+			}
+			if p.Thought {
 				if p.Text != "" || p.ThoughtSignature != "" {
-					if n := len(out.Blocks); n > 0 && out.Blocks[n-1].Type == message.ContentProse {
+					if n := len(out.Blocks); n > 0 && out.Blocks[n-1].Type == message.ContentThinking {
 						b := &out.Blocks[n-1]
 						b.Text += p.Text
 						if p.ThoughtSignature != "" {
@@ -172,35 +145,107 @@ func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled,
 						}
 					} else {
 						out.Blocks = append(out.Blocks, message.Content{
-							Type:      message.ContentProse,
+							Type:      message.ContentThinking,
 							Text:      p.Text,
 							Signature: p.ThoughtSignature,
 						})
 					}
-					if p.Text != "" {
-						bus.PushDelta(message.Content{
-							Type:      message.ContentProse,
-							Text:      p.Text,
-							Signature: p.ThoughtSignature,
-						})
+					bus.PushDelta(message.Content{
+						Type:      message.ContentThinking,
+						Text:      p.Text,
+						Signature: p.ThoughtSignature,
+					})
+				}
+				continue
+			}
+			if p.Text != "" || p.ThoughtSignature != "" {
+				if n := len(out.Blocks); n > 0 && out.Blocks[n-1].Type == message.ContentProse {
+					b := &out.Blocks[n-1]
+					b.Text += p.Text
+					if p.ThoughtSignature != "" {
+						b.Signature = p.ThoughtSignature
 					}
+				} else {
+					out.Blocks = append(out.Blocks, message.Content{
+						Type:      message.ContentProse,
+						Text:      p.Text,
+						Signature: p.ThoughtSignature,
+					})
+				}
+				if p.Text != "" {
+					bus.PushDelta(message.Content{
+						Type:      message.ContentProse,
+						Text:      p.Text,
+						Signature: p.ThoughtSignature,
+					})
 				}
 			}
-			if cand.FinishReason != "" {
-				sawFinish = true
-				out.WireFinish = cand.FinishReason
+		}
+		if cand.FinishReason != "" {
+			sawFinish = true
+			out.WireFinish = cand.FinishReason
+		}
+		return nil
+	}
+
+	flushEvent := func() error {
+		if !hasData {
+			return nil
+		}
+		payload := eventBuf.String()
+		eventBuf.Reset()
+		hasData = false
+		return handleEvent(payload)
+	}
+
+	reader := bufio.NewReaderSize(body, 64*1024)
+	for !done {
+		select {
+		case <-ctx.Done():
+			out.Usage = usageToIR(lastUsage)
+			return out, ctx.Err()
+		default:
+		}
+		rawLine, readErr := reader.ReadBytes('\n')
+		if len(rawLine) > 0 {
+			provider.SawByte(ctx)
+			line := strings.TrimRight(string(rawLine), "\r\n")
+			if line == "" {
+				if err := flushEvent(); err != nil {
+					out.Usage = usageToIR(lastUsage)
+					return out, err
+				}
+			} else if after, ok := strings.CutPrefix(line, "data:"); ok {
+				part := strings.TrimPrefix(after, " ")
+				if eventBuf.Len()+len(part)+1 > maxSSEEventBytes {
+					out.Usage = usageToIR(lastUsage)
+					return out, fmt.Errorf("gemini sse event exceeds %d bytes", maxSSEEventBytes)
+				}
+				if hasData {
+					eventBuf.WriteByte('\n')
+				}
+				eventBuf.WriteString(part)
+				hasData = true
 			}
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				if err := flushEvent(); err != nil {
+					out.Usage = usageToIR(lastUsage)
+					return out, err
+				}
+				break
+			}
+			out.Usage = usageToIR(lastUsage)
+			if ctx.Err() != nil {
+				return out, ctx.Err()
+			}
+			return out, &provider.StreamCut{Awaited: "finishReason", Events: events, Err: readErr}
 		}
 	}
 
 	out.Usage = usageToIR(lastUsage)
 
-	if err := scanner.Err(); err != nil {
-		if ctx.Err() != nil {
-			return out, ctx.Err()
-		}
-		return out, &provider.StreamCut{Awaited: "finishReason", Events: events, Err: err}
-	}
 	if !sawFinish && !done {
 		if ctx.Err() != nil {
 			return out, ctx.Err()
