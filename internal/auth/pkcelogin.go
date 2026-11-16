@@ -186,7 +186,7 @@ func parsePastedPKCE(provider, wantState, raw string) pkceRedirect {
 			return pkceRedirect{err: fmt.Errorf("%s: invalid pasted callback URL", provider)}
 		}
 		q := u.Query()
-		if gotState := q.Get("state"); gotState != "" && subtle.ConstantTimeCompare([]byte(gotState), []byte(wantState)) != 1 {
+		if len(q["state"]) != 1 || subtle.ConstantTimeCompare([]byte(q.Get("state")), []byte(wantState)) != 1 {
 			return pkceRedirect{err: fmt.Errorf("%s: pasted callback state does not match active sign-in", provider)}
 		}
 		if q.Get("error") != "" {
@@ -197,7 +197,8 @@ func parsePastedPKCE(provider, wantState, raw string) pkceRedirect {
 		}
 		return pkceRedirect{err: fmt.Errorf("%s: pasted URL carries no code parameter", provider)}
 	}
-	code := strings.TrimSpace(strings.SplitN(raw, "#", 2)[0])
+	codePart, _, _ := strings.Cut(raw, "#")
+	code := strings.TrimSpace(codePart)
 	if code == "" {
 		return pkceRedirect{err: fmt.Errorf("%s: empty authorization code", provider)}
 	}

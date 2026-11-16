@@ -146,7 +146,7 @@ func (d *DeclaredProvider) Models(ctx context.Context) ([]provider.ModelInfo, er
 	rungs := make(map[string][]string)
 	for _, m := range listed {
 		id := m.ID
-		if sub := d.mapRe.FindStringSubmatch(m.ID); sub != nil && sub[d.modelIdx] != "" {
+		if sub := d.mapRe.FindStringSubmatch(m.ID); sub != nil && d.modelIdx >= 0 && sub[d.modelIdx] != "" {
 			id = sub[d.modelIdx]
 			matched[id] = true
 			if d.effortIdx >= 0 {
@@ -200,7 +200,7 @@ func (d *DeclaredProvider) Send(ctx context.Context, in provider.SendInput, bus 
 	}
 	inlineEffort := ""
 	rungs, matched := d.shared.lookup(model)
-	if d.mapRe != nil {
+	if d.mapRe != nil && d.modelIdx >= 0 {
 		if sub := d.mapRe.FindStringSubmatch(model); sub != nil && sub[d.modelIdx] != "" {
 			model = sub[d.modelIdx]
 			if d.effortIdx >= 0 {

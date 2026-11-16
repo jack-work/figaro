@@ -64,9 +64,28 @@ func readClientSecret(rawPath string) (string, error) {
 			p = filepath.Join(dir, p)
 		}
 	}
-	b, err := os.ReadFile(p)
+	f, err := os.Open(p)
 	if err != nil {
 		return "", fmt.Errorf("client_secret_file %s: %w", p, err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return "", fmt.Errorf("client_secret_file %s: %w", p, err)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("client_secret_file %s is a directory", p)
+	}
+	if info.Mode().Perm()&0o004 != 0 {
+		slog.Warn("client_secret_file is world-readable", "path", p)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, (64<<10)+1))
+	if err != nil {
+		return "", fmt.Errorf("client_secret_file %s: %w", p, err)
+	}
+	if len(b) > 64<<10 {
+		clear(b)
+		return "", fmt.Errorf("client_secret_file %s exceeds 64 KiB", p)
 	}
 	secret := strings.TrimSpace(string(b))
 	clear(b)
@@ -94,8 +113,15 @@ func confidentialDir(stateDir string) string {
 	return filepath.Join(stateDir, "oauth")
 }
 
-func confidentialPath(stateDir, name string) string {
-	return filepath.Join(confidentialDir(stateDir), name+".toml")
+func validCredentialName(name string) bool {
+	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, "/\\\x00")
+}
+
+func confidentialPath(stateDir, name string) (string, error) {
+	if !validCredentialName(name) {
+		return "", fmt.Errorf("invalid oauth credential name %q", name)
+	}
+	return filepath.Join(confidentialDir(stateDir), name+".toml"), nil
 }
 
 func RegisterOAuth(h *hush.Client, name string, in OIDCSignIn) error {
@@ -103,9 +129,13 @@ func RegisterOAuth(h *hush.Client, name string, in OIDCSignIn) error {
 }
 
 func RegisterOAuthIn(h *hush.Client, stateDir, name string, in OIDCSignIn) error {
+	path, err := confidentialPath(stateDir, name)
+	if err != nil {
+		return err
+	}
 	secretFile := strings.TrimSpace(in.ClientSecretFile)
 	if secretFile == "" {
-		_ = os.Remove(confidentialPath(stateDir, name))
+		_ = os.Remove(path)
 		return h.OAuthRegister(hush.OAuthRegisterRequest{
 			Name:         name,
 			TokenURL:     in.TokenURL,
@@ -116,6 +146,9 @@ func RegisterOAuthIn(h *hush.Client, stateDir, name string, in OIDCSignIn) error
 			ExpiresIn:    in.Tokens.ExpiresIn,
 			Grant:        hush.GrantRefreshToken,
 		})
+	}
+	if err := validateHTTPSTokenEndpoint(in.TokenURL); err != nil {
+		return fmt.Errorf("token endpoint: %w", err)
 	}
 	_ = h.OAuthDelete(name)
 	now := time.Now()
@@ -133,7 +166,7 @@ func RegisterOAuthIn(h *hush.Client, stateDir, name string, in OIDCSignIn) error
 		issuedAt:         now,
 		expiresAt:        now.Add(ttl),
 	}
-	return saveConfidential(h, confidentialPath(stateDir, name), st)
+	return saveConfidential(h, path, st)
 }
 
 func ConfidentialOAuthList() ([]string, error) {
@@ -146,7 +179,7 @@ func ConfidentialOAuthList() ([]string, error) {
 	}
 	var names []string
 	for _, e := range entries {
-		if n, ok := strings.CutSuffix(e.Name(), ".toml"); ok && !e.IsDir() && n != "" {
+		if n, ok := strings.CutSuffix(e.Name(), ".toml"); ok && !e.IsDir() && validCredentialName(n) {
 			names = append(names, n)
 		}
 	}
@@ -154,7 +187,11 @@ func ConfidentialOAuthList() ([]string, error) {
 }
 
 func ConfidentialOAuthRemove(name string) (bool, error) {
-	err := os.Remove(confidentialPath("", name))
+	path, err := confidentialPath("", name)
+	if err != nil {
+		return false, err
+	}
+	err = os.Remove(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
@@ -190,11 +227,27 @@ func saveConfidential(h *hush.Client, path string, st *confidentialCache) error 
 	if err := toml.NewEncoder(&buf).Encode(doc); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, buf.Bytes(), 0o600); err != nil {
+	tmpFile, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := tmpFile.Name()
+	if err := tmpFile.Chmod(0o600); err != nil {
+		tmpFile.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if _, err := tmpFile.Write(buf.Bytes()); err != nil {
+		tmpFile.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -252,7 +305,10 @@ func (o *OAuth) loadConfidentialLocked(path string, info fs.FileInfo) error {
 }
 
 func (o *OAuth) tryResolveConfidential() (string, bool, error) {
-	path := confidentialPath(o.StateDir, o.Name)
+	path, err := confidentialPath(o.StateDir, o.Name)
+	if err != nil {
+		return "", false, err
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -280,7 +336,10 @@ func (o *OAuth) tryResolveConfidential() (string, bool, error) {
 }
 
 func (o *OAuth) invalidateConfidential(token string) (bool, error) {
-	path := confidentialPath(o.StateDir, o.Name)
+	path, err := confidentialPath(o.StateDir, o.Name)
+	if err != nil {
+		return false, err
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -347,6 +406,9 @@ func (o *OAuth) refreshConfidentialLocked(path string) (string, error) {
 }
 
 func mintRefreshWithSecret(ctx context.Context, client *http.Client, endpoint, clientID, secret, refreshToken string) (tokenResponse, bool, error) {
+	if err := validateHTTPSTokenEndpoint(endpoint); err != nil {
+		return tokenResponse{}, false, fmt.Errorf("token endpoint: %w", err)
+	}
 	form := url.Values{
 		"grant_type":    {"refresh_token"},
 		"client_id":     {clientID},

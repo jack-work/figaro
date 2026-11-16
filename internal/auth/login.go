@@ -1,9 +1,11 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,11 +13,12 @@ import (
 	hush "github.com/jack-work/hush/client"
 )
 
-// Login runs the PKCE flow and registers the result with the hush agent,
-// which owns refresh from then on.
 func Login(ctx context.Context, hushClient *hush.Client, cfg OAuthConfig, c Console) error {
 	if err := hushClient.Ping(); err != nil {
 		return fmt.Errorf("hush agent is not running. Start it: hush up -d")
+	}
+	if err := validateHTTPSTokenEndpoint(cfg.TokenURL); err != nil {
+		return fmt.Errorf("token endpoint: %w", err)
 	}
 
 	pkce, err := GeneratePKCE()
@@ -69,17 +72,30 @@ func Login(ctx context.Context, hushClient *hush.Client, cfg OAuthConfig, c Cons
 		exchangeReq["client_secret"] = secret
 	}
 	tokenBody, _ := json.Marshal(exchangeReq)
+	defer clear(tokenBody)
 
-	resp, err := http.Post(cfg.TokenURL, "application/json", strings.NewReader(string(tokenBody)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.TokenURL, bytes.NewReader(tokenBody))
+	if err != nil {
+		return fmt.Errorf("token exchange: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", UserAgent)
+
+	resp, err := oauthClient().Do(req)
 	if err != nil {
 		return fmt.Errorf("token exchange: %w", err)
 	}
 	defer resp.Body.Close()
 
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("token exchange: %w", err)
+	}
+	defer clear(body)
+
 	if resp.StatusCode != http.StatusOK {
-		var errBody json.RawMessage
-		json.NewDecoder(resp.Body).Decode(&errBody)
-		return fmt.Errorf("token exchange failed (%d): %s", resp.StatusCode, string(errBody))
+		return fmt.Errorf("token exchange failed: HTTP %d", resp.StatusCode)
 	}
 
 	var tokenResp struct {
@@ -87,11 +103,25 @@ func Login(ctx context.Context, hushClient *hush.Client, cfg OAuthConfig, c Cons
 		RefreshToken string `json:"refresh_token"`
 		ExpiresIn    int    `json:"expires_in"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
 		return fmt.Errorf("parse token response: %w", err)
 	}
 
-	if err := hushClient.OAuthRegister(hush.OAuthRegisterRequest{
+	if strings.TrimSpace(cfg.ClientSecretFile) != "" {
+		if err := RegisterOAuth(hushClient, cfg.ProviderName, OIDCSignIn{
+			TokenURL:         cfg.TokenURL,
+			ClientID:         cfg.ClientID,
+			ClientSecretFile: cfg.ClientSecretFile,
+			Scope:            cfg.Scopes,
+			Tokens: DeviceTokens{
+				AccessToken:  tokenResp.AccessToken,
+				RefreshToken: tokenResp.RefreshToken,
+				ExpiresIn:    tokenResp.ExpiresIn,
+			},
+		}); err != nil {
+			return fmt.Errorf("register with hush: %w", err)
+		}
+	} else if err := hushClient.OAuthRegister(hush.OAuthRegisterRequest{
 		Name:         cfg.ProviderName,
 		AuthorizeURL: cfg.AuthorizeURL,
 		TokenURL:     cfg.TokenURL,
