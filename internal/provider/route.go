@@ -16,6 +16,7 @@ type Dialect string
 const (
 	DialectAnthropicMessages Dialect = "anthropic-messages"
 	DialectOpenAIChat        Dialect = "openai-chat"
+	DialectFigIR             Dialect = "fig-ir"
 )
 
 type AuthStyle string
@@ -208,9 +209,31 @@ func (r Route) MessagesURL() string {
 	switch r.Dialect {
 	case DialectOpenAIChat:
 		return r.BaseURL + "/chat/completions"
+	case DialectFigIR:
+		return r.FigIRURL()
 	default:
 		return r.BaseURL + "/messages"
 	}
+}
+
+func (r Route) FigIRURL() string { return strings.TrimRight(r.BaseURL, "/") + "/fig-ir" }
+
+var FigIRImages = ImageDialect{
+	Is:   func(p map[string]any) bool { return p["type"] == "image" },
+	Text: func(note string) map[string]any { return map[string]any{"type": "prose", "text": note} },
+	data: func(p map[string]any) (wireImage, bool) {
+		data, _ := p["data"].(string)
+		mime, _ := p["mime_type"].(string)
+		return wireImage{Data: data, Mime: mime}, data != ""
+	},
+	withData: func(p map[string]any, img wireImage) map[string]any {
+		out := make(map[string]any, len(p))
+		for k, v := range p {
+			out[k] = v
+		}
+		out["data"], out["mime_type"] = img.Data, img.Mime
+		return out
+	},
 }
 
 func (r Route) ModelsURL() string { return r.BaseURL + "/models" }

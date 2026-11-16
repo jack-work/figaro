@@ -58,6 +58,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/chat/completions", s.routeByModel(routed.Chat))
 	mux.HandleFunc("POST /v1/responses", s.routeByModel(routed.Responses))
 	mux.HandleFunc("POST /v1/messages", s.routeByModel(routed.Messages))
+	mux.HandleFunc("POST /v1/fig-ir", s.routeByModelTo(routed.Transport("fig-ir"), figIR))
+	mux.HandleFunc("POST /fig-ir", s.routeByModelTo(routed.Transport("fig-ir"), figIR))
 	mux.HandleFunc("POST /v1/systemone", s.routeByModelTo("", systemOne))
 	mux.HandleFunc("POST /v1/decisions", s.routeByModelTo("", openAIDecisions))
 	mux.HandleFunc("/u/{provider}/{rest...}", s.passthrough)
@@ -137,8 +139,14 @@ func (s *Server) passthrough(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusRequestEntityTooLarge, err.Error())
 		return
 	}
-	s.relay(w, r, name, up, routed.TransportForPath(rest), target, body)
+	t := routed.TransportForPath(rest)
+	if t == "" && strings.HasSuffix(strings.TrimRight(rest, "/"), "/fig-ir") {
+		t = routed.Transport("fig-ir")
+	}
+	s.relay(w, r, name, up, t, target, body)
 }
+
+func figIR(up Upstream) string { return strings.TrimRight(up.Base(), "/") + "/fig-ir" }
 
 func systemOne(up Upstream) string { return up.Base() + "/systemone" }
 

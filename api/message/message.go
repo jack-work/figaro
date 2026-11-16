@@ -132,6 +132,9 @@ type Content struct {
 	Principal string `json:"principal,omitempty"`
 
 	Delivery string `json:"delivery,omitempty"`
+
+	Signature string                     `json:"signature,omitempty"`
+	Meta      map[string]json.RawMessage `json:"meta,omitempty"`
 }
 
 type Usage struct {
