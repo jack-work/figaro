@@ -1,6 +1,7 @@
 package boot
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,6 +16,7 @@ type CredentialSource struct {
 	Kind  string `json:"kind"`
 	Where string `json:"where"`
 	Owned bool   `json:"owned"`
+	Name  string `json:"-"`
 }
 
 const (
@@ -25,6 +27,7 @@ const (
 	SourceSealedKey = "sealed_api_key"
 	SourceOAuth     = "oauth"
 	SourceService   = "service_token"
+	SourceCred      = "cred"
 )
 
 func exchanges(loaded *config.Loaded, reg *providerPkg.Registration) bool {
@@ -32,7 +35,16 @@ func exchanges(loaded *config.Loaded, reg *providerPkg.Registration) bool {
 }
 
 func ConsultsHushOAuth(loaded *config.Loaded, reg *providerPkg.Registration) bool {
-	return reg != nil && (reg.HasOAuth || exchanges(loaded, reg))
+	if reg == nil {
+		return false
+	}
+	if st, err := ServiceTokenOf(loaded, reg.Name); err == nil && st != "" {
+		return false
+	}
+	if cred, err := CredOf(loaded, reg.Name); err == nil && cred != nil {
+		return false
+	}
+	return reg.HasOAuth || exchanges(loaded, reg)
 }
 
 func CredentialSources(loaded *config.Loaded, reg *providerPkg.Registration, oauthNames []string) ([]CredentialSource, error) {
@@ -43,6 +55,13 @@ func CredentialSources(loaded *config.Loaded, reg *providerPkg.Registration, oau
 	}
 	if name != "" {
 		out = append(out, CredentialSource{Kind: SourceService, Where: serviceTokenWhere(loaded, name)})
+	}
+	cred, err := CredOf(loaded, reg.Name)
+	if err != nil {
+		return nil, err
+	}
+	if cred != nil {
+		out = append(out, CredentialSource{Kind: SourceCred, Where: credWhere(*cred), Name: cred.Name})
 	}
 	for _, env := range reg.CredentialEnvs() {
 		if strings.TrimSpace(os.Getenv(env)) != "" {
@@ -115,6 +134,11 @@ func serviceTokenWhere(loaded *config.Loaded, name string) string {
 		where += " (" + kind + " " + path + " empty: not provisioned)"
 	}
 	return where
+}
+
+func credWhere(cred config.CredConfig) string {
+	probe := &auth.CredSocket{Socket: cred.Socket, Name: cred.Name}
+	return fmt.Sprintf("cred socket %s (%s: %s)", cred.Socket, cred.Name, probe.ProbeStatus())
 }
 
 func notSignedIn(loaded *config.Loaded, name string) error {

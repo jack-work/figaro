@@ -460,6 +460,27 @@ renewal and the retry on 401 are client_credentials'. systemd copies a
 `LoadCredential=` file when the unit starts, so a rotated subject reaches the
 daemon at its next restart.
 
+### An external credential socket
+
+A daemon with no user session can take a provider's bearer from an external
+minter (`hush cred serve`) over a unix socket:
+
+```toml
+# providers/anthropic.toml
+[cred]
+socket = "/run/hush-cred/anthropic-work.sock"
+name   = "anthropic-work"
+```
+
+`[cred]` works on built-in and declared providers alike and replaces every
+other source: a socket that does not answer or refuses is an error, never a
+keyless request, and `[cred]` cannot sit beside `[oauth]` or `service_token`.
+Figaro caches the access token until 30 s before the expiry the socket reports,
+never holds a refresh token, and re-fetches once on an upstream 401.
+`provider ls` probes the socket and reports whether it answers or why it
+refused; `provider login` points to `hush cred login <name>`; `provider logout`
+leaves it in place.
+
 ## Credentials
 
 ```sh
@@ -488,6 +509,7 @@ next time that credential is missing.
 | a plaintext `api_key` | kept: you wrote it |
 | `api_key_file`, `$CREDENTIALS_DIRECTORY/<name>` | kept: the file or the service manager owns it |
 | `service_token` | kept: the daemon mints it from config |
+| `[cred]` | kept: the external minter owns it |
 | the environment | kept: figaro cannot unset its parent's variables |
 
 It names each source it kept and exits 1 while one would still sign figaro in.

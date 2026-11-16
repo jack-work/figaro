@@ -47,6 +47,7 @@ type File struct {
 	APIKey           string                       `toml:"api_key"`
 	APIKeyEnv        string                       `toml:"api_key_env,omitempty"`
 	ServiceToken     string                       `toml:"service_token,omitempty"`
+	Cred             *config.CredConfig           `toml:"cred,omitempty"`
 	BaseURL          string                       `toml:"base_url,omitempty"`
 	CacheMarkers     string                       `toml:"cache_markers,omitempty"`
 	MessagesPath     string                       `toml:"messages_path,omitempty"`
@@ -63,7 +64,7 @@ type File struct {
 		UserAgent   string `toml:"user_agent,omitempty"`
 		RequestType string `toml:"request_type,omitempty"`
 	} `toml:"code_assist"`
-	Responses        struct {
+	Responses struct {
 		OmitFields []string `toml:"omit_fields,omitempty"`
 		NoReplay   bool     `toml:"no_replay,omitempty"`
 	} `toml:"responses"`
@@ -104,7 +105,27 @@ func notTOML(path string, err error) error {
 	return fmt.Errorf("%s is not valid for this file", path)
 }
 
+func (f File) validateAuth() error {
+	hasService := strings.TrimSpace(f.ServiceToken) != ""
+	if f.OAuth != nil && hasService {
+		return fmt.Errorf("[oauth] and service_token both name the credential; keep one")
+	}
+	if f.Cred == nil {
+		return nil
+	}
+	if hasService {
+		return fmt.Errorf("[cred] and service_token both name the credential; keep one")
+	}
+	if f.OAuth != nil {
+		return fmt.Errorf("[cred] and [oauth] both name the credential; keep one")
+	}
+	return f.Cred.Validate()
+}
+
 func (f File) Apply(spec Spec) (Spec, error) {
+	if err := f.validateAuth(); err != nil {
+		return spec, fmt.Errorf("%s: %w", spec.Name, err)
+	}
 	if b := strings.TrimRight(strings.TrimSpace(f.BaseURL), "/"); b != "" {
 		spec.BaseURL = func() string { return b }
 	}

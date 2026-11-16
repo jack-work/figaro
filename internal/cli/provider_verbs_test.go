@@ -1,9 +1,15 @@
 package cli
 
 import (
+	"bytes"
+	"encoding/json"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/stretchr/testify/require"
@@ -182,4 +188,103 @@ func TestLogoutKeepsAServiceToken(t *testing.T) {
 	require.Empty(t, rep.Removed)
 	require.Equal(t, []string{boot.SourceService}, kinds(rep.Remaining))
 	require.Contains(t, leaveHint(rep.Remaining[0]), "service_token")
+}
+
+func testCredUnixServer(t *testing.T, handler http.HandlerFunc) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "clicred-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "inst.sock")
+	ln, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+	srv := &http.Server{Handler: handler}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	return sock
+}
+
+func captureProviderVerb(t *testing.T, loaded *config.Loaded, args []string, jsonOut bool) (out, errOut string, code int) {
+	t.Helper()
+	var outBuf, errBuf bytes.Buffer
+	prevOut, prevErr := stdout, stderrw
+	stdout, stderrw = &outBuf, &errBuf
+	defer func() {
+		stdout, stderrw = prevOut, prevErr
+	}()
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				if c, ok := rec.(exitPanic); ok {
+					code = int(c)
+					return
+				}
+				panic(rec)
+			}
+		}()
+		_ = runProviderVerb(loaded, args, jsonOut)
+	}()
+	return outBuf.String(), errBuf.String(), code
+}
+
+// provider ls probes [cred] without exposing the bearer token, login points to
+// hush cred login <inst>, and logout leaves [cred] untouched.
+func TestProviderVerbsWithCredSocket(t *testing.T) {
+	const secret = "sk-ant-oat01-do-not-print-in-cli"
+	loaded := providerRig(t)
+
+	var mode atomic.Int32
+	sock := testCredUnixServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch mode.Load() {
+		case 0:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"name":       "anthropic-work",
+				"token":      secret,
+				"expires_at": time.Now().Add(time.Hour).Unix(),
+			})
+		case 1:
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":"forbidden","reason":"peer not allowed"}`))
+		default:
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":"credential_stale","reason":"sign-in needed"}`))
+		}
+	})
+
+	body := "[cred]\nsocket = \"" + sock + "\"\nname = \"anthropic-work\"\n"
+	path := writeProviderFile(t, loaded, "anthropic", body)
+
+	out, errOut, code := captureProviderVerb(t, loaded, []string{"ls", "anthropic"}, false)
+	require.Equal(t, 0, code)
+	require.Contains(t, out, sock)
+	require.Contains(t, out, "anthropic-work: ready")
+	require.Contains(t, out, "the external minter owns anthropic-work")
+	require.NotContains(t, out, secret)
+	require.NotContains(t, errOut, secret)
+
+	mode.Store(1)
+	out, _, code = captureProviderVerb(t, loaded, []string{"ls", "anthropic"}, false)
+	require.Equal(t, 0, code)
+	require.Contains(t, out, "peer not allowed")
+
+	mode.Store(2)
+	out, _, code = captureProviderVerb(t, loaded, []string{"ls", "anthropic"}, true)
+	require.Equal(t, 0, code)
+	require.Contains(t, out, "sign-in needed")
+	require.NotContains(t, out, secret)
+
+	_, err := loginTarget(loaded, "anthropic")
+	require.ErrorContains(t, err, "hush cred login anthropic-work")
+
+	_, loginErr, loginCode := captureProviderVerb(t, loaded, []string{"login", "anthropic"}, false)
+	require.Equal(t, 1, loginCode)
+	require.Contains(t, loginErr, "hush cred login anthropic-work")
+
+	out, logoutErr, logoutCode := captureProviderVerb(t, loaded, []string{"logout", "anthropic"}, false)
+	require.Equal(t, 1, logoutCode)
+	require.Contains(t, out, "the external minter owns anthropic-work")
+	require.Contains(t, logoutErr, "still signed in")
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, body, string(after))
 }

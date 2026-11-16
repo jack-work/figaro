@@ -119,9 +119,10 @@ func buildGatewayAs(ctx provider.BuildContext, name, envPrefix string) (provider
 		(name == gatewayName && strings.EqualFold(strings.TrimSpace(os.Getenv("FIGARO_GATEWAY_CACHING")), "1")) {
 		caps = provider.GatewayRoute(f.BaseURL).Caps
 	}
+	hasManagedAuth := f.OAuth != nil || strings.TrimSpace(f.ServiceToken) != "" || f.Cred != nil
 	baseSpec := Spec{
 		Name:         name,
-		AuthOptional: f.OAuth == nil && f.ServiceToken == "",
+		AuthOptional: !hasManagedAuth,
 		Catalog:      "/models",
 		Mapping:      catalogmaps.Builtin("generic"),
 		Default:      Chat,
@@ -130,8 +131,8 @@ func buildGatewayAs(ctx provider.BuildContext, name, envPrefix string) (provider
 	if isGemini || isCodeAssist {
 		baseSpec.Catalog = ""
 		baseSpec.Mapping = catalogmaps.Builtin("gemini")
-		baseSpec.AuthOptional = f.OAuth == nil && f.ServiceToken == "" && strings.TrimSpace(f.APIKey) == "" && strings.TrimSpace(f.APIKeyEnv) == ""
-		if isGemini && f.OAuth == nil && f.ServiceToken == "" {
+		baseSpec.AuthOptional = !hasManagedAuth && strings.TrimSpace(f.APIKey) == "" && strings.TrimSpace(f.APIKeyEnv) == ""
+		if isGemini && !hasManagedAuth {
 			baseSpec.AuthStyle = provider.AuthGoogleKey
 		} else {
 			baseSpec.AuthStyle = provider.AuthBearer

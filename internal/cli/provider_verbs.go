@@ -112,7 +112,7 @@ func describeSource(s boot.CredentialSource) string {
 		return "plaintext api_key in " + s.Where
 	case boot.SourceSealedKey:
 		return "sealed api_key in " + s.Where
-	case boot.SourceOAuth, boot.SourceService:
+	case boot.SourceOAuth, boot.SourceService, boot.SourceCred:
 		return s.Where
 	}
 	return s.Kind + " " + s.Where
@@ -130,6 +130,11 @@ func leaveHint(s boot.CredentialSource) string {
 		return "you wrote it; delete the api_key line"
 	case boot.SourceService:
 		return "the daemon mints it; delete the service_token line"
+	case boot.SourceCred:
+		if s.Name != "" {
+			return "the external minter owns " + s.Name + "; remove [cred] from the provider file"
+		}
+		return "the external minter owns it; remove [cred] from the provider file"
 	}
 	return ""
 }
@@ -158,6 +163,12 @@ func loginTarget(loaded *config.Loaded, name string) (*providerPkg.Registration,
 			return nil, err
 		}
 		return nil, fmt.Errorf("%s authenticates as service token %s ([service_tokens.%s] in config.toml); there is nothing to log in", name, st, st)
+	}
+	if cred, err := boot.CredOf(loaded, name); err != nil || cred != nil {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%s reads credential %s from %s; sign in through the minter instead: hush cred login %s", name, cred.Name, cred.Socket, cred.Name)
 	}
 	return reg, nil
 }
