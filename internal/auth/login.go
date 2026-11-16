@@ -53,14 +53,22 @@ func Login(ctx context.Context, hushClient *hush.Client, cfg OAuthConfig, c Cons
 		state = parts[1]
 	}
 
-	tokenBody, _ := json.Marshal(map[string]string{
+	exchangeReq := map[string]string{
 		"grant_type":    "authorization_code",
 		"client_id":     cfg.ClientID,
 		"code":          code,
 		"state":         state,
 		"redirect_uri":  cfg.RedirectURI,
 		"code_verifier": pkce.Verifier,
-	})
+	}
+	if cfg.ClientSecretFile != "" {
+		secret, err := readClientSecret(cfg.ClientSecretFile)
+		if err != nil {
+			return err
+		}
+		exchangeReq["client_secret"] = secret
+	}
+	tokenBody, _ := json.Marshal(exchangeReq)
 
 	resp, err := http.Post(cfg.TokenURL, "application/json", strings.NewReader(string(tokenBody)))
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -21,13 +22,14 @@ const (
 )
 
 type PKCEConfig struct {
-	ProviderName    string
-	ClientID        string
-	Scope           string
-	AuthorizeURL    string
-	TokenURL        string
-	RedirectURI     string
-	AuthorizeParams map[string]string
+	ProviderName     string
+	ClientID         string
+	ClientSecretFile string
+	Scope            string
+	AuthorizeURL     string
+	TokenURL         string
+	RedirectURI      string
+	AuthorizeParams  map[string]string
 }
 
 func (s OAuthSettings) PKCEConfig(provider string) (PKCEConfig, error) {
@@ -57,18 +59,19 @@ func (s OAuthSettings) PKCEConfig(provider string) (PKCEConfig, error) {
 		}
 	}
 	return PKCEConfig{
-		ProviderName:    provider,
-		ClientID:        strings.TrimSpace(s.ClientID),
-		Scope:           strings.Join(scopes, " "),
-		AuthorizeURL:    oc.AuthorizationEndpoint,
-		TokenURL:        oc.TokenEndpoint,
-		RedirectURI:     s.RedirectURI,
-		AuthorizeParams: maps.Clone(s.AuthorizeParams),
+		ProviderName:     provider,
+		ClientID:         strings.TrimSpace(s.ClientID),
+		ClientSecretFile: strings.TrimSpace(s.ClientSecretFile),
+		Scope:            strings.Join(scopes, " "),
+		AuthorizeURL:     oc.AuthorizationEndpoint,
+		TokenURL:         oc.TokenEndpoint,
+		RedirectURI:      s.RedirectURI,
+		AuthorizeParams:  maps.Clone(s.AuthorizeParams),
 	}, nil
 }
 
 func LoginPKCE(ctx context.Context, cfg PKCEConfig, c Console) (DeviceTokens, error) {
-	return loginPKCE(ctx, cfg, func(u string) { c.Open(u) }, pkceTimeout, c)
+	return loginPKCEWithOpen(ctx, cfg, c.Open, pkceTimeout, c)
 }
 
 type pkceRedirect struct {
@@ -77,6 +80,10 @@ type pkceRedirect struct {
 }
 
 func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout time.Duration, c Console) (DeviceTokens, error) {
+	return loginPKCEWithOpen(ctx, cfg, func(u string) bool { open(u); return true }, timeout, c)
+}
+
+func loginPKCEWithOpen(ctx context.Context, cfg PKCEConfig, open func(string) bool, timeout time.Duration, c Console) (DeviceTokens, error) {
 	if err := cfg.validate(); err != nil {
 		return DeviceTokens{}, err
 	}
@@ -93,43 +100,73 @@ func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout t
 	if err != nil {
 		return DeviceTokens{}, err
 	}
+	done := make(chan pkceRedirect, 2)
 	ln, redirect, err := pkceListener(cfg.RedirectURI)
 	if err != nil {
-		return DeviceTokens{}, fmt.Errorf("%s: loopback listener: %w", cfg.ProviderName, err)
+		if cfg.RedirectURI == "" || !errors.Is(err, syscall.EACCES) {
+			return DeviceTokens{}, fmt.Errorf("%s: loopback listener: %w", cfg.ProviderName, err)
+		}
+		redirect = cfg.RedirectURI
+	} else {
+		defer ln.Close()
+		back, _ := url.Parse(redirect)
+		srv := &http.Server{Handler: pkceCallback(cfg.ProviderName, state, back, done), ReadHeaderTimeout: 10 * time.Second}
+		go srv.Serve(ln)
+		defer srv.Close()
+		stop := context.AfterFunc(ctx, func() { srv.Close() })
+		defer stop()
 	}
-	defer ln.Close()
-	back, _ := url.Parse(redirect)
-	done := make(chan pkceRedirect, 1)
-	srv := &http.Server{Handler: pkceCallback(cfg.ProviderName, state, back, done), ReadHeaderTimeout: 10 * time.Second}
-	go srv.Serve(ln)
-	defer srv.Close()
-	stop := context.AfterFunc(ctx, func() { srv.Close() })
-	defer stop()
 
 	authorize := authorizeURL(cfg, redirect, state, pkce.Challenge)
 	c.Note(cfg.ProviderName + " signs in through your browser (authorization code with PKCE) at this link:")
 	c.Link(authorize)
-	open(authorize)
+	opened := open(authorize)
 
 	var got pkceRedirect
-	select {
-	case got = <-done:
-	case <-ctx.Done():
-		if ctx.Err() == context.Canceled {
-			return DeviceTokens{}, ctx.Err()
+	if ln == nil {
+		line, askErr := c.Ask(ctx, "Paste redirect URL or authorization code: ")
+		if askErr != nil {
+			return DeviceTokens{}, fmt.Errorf("%s: read callback: %w", cfg.ProviderName, askErr)
 		}
-		return DeviceTokens{}, fmt.Errorf("%s: no sign-in came back within %s", cfg.ProviderName, timeout)
+		got = parsePastedPKCE(cfg.ProviderName, state, line)
+	} else {
+		if !opened {
+			go func() {
+				if line, askErr := c.Ask(ctx, "Paste redirect URL or code (or finish in browser): "); askErr == nil && strings.TrimSpace(line) != "" {
+					select {
+					case done <- parsePastedPKCE(cfg.ProviderName, state, line):
+					default:
+					}
+				}
+			}()
+		}
+		select {
+		case got = <-done:
+		case <-ctx.Done():
+			if ctx.Err() == context.Canceled {
+				return DeviceTokens{}, ctx.Err()
+			}
+			return DeviceTokens{}, fmt.Errorf("%s: no sign-in came back within %s", cfg.ProviderName, timeout)
+		}
 	}
 	if got.err != nil {
 		return DeviceTokens{}, got.err
 	}
-	tr, err := requestTokenContext(ctx, oauthClient(), cfg.TokenURL, cfg.ClientID, url.Values{
+	form := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {got.code},
 		"redirect_uri":  {redirect},
 		"client_id":     {cfg.ClientID},
 		"code_verifier": {pkce.Verifier},
-	}, nil)
+	}
+	if cfg.ClientSecretFile != "" {
+		secret, err := readClientSecret(cfg.ClientSecretFile)
+		if err != nil {
+			return DeviceTokens{}, fmt.Errorf("%s: %w", cfg.ProviderName, err)
+		}
+		form.Set("client_secret", secret)
+	}
+	tr, err := requestTokenContext(ctx, oauthClient(), cfg.TokenURL, cfg.ClientID, form, nil)
 	if err != nil {
 		return DeviceTokens{}, fmt.Errorf("%s: %w", cfg.ProviderName, err)
 	}
@@ -139,6 +176,32 @@ func loginPKCE(ctx context.Context, cfg PKCEConfig, open func(string), timeout t
 	}
 	c.Done("Authorized by " + cfg.AuthorizeURL)
 	return DeviceTokens{IDToken: tr.IDToken, AccessToken: tr.AccessToken, RefreshToken: tr.RefreshToken, ExpiresIn: tr.ExpiresIn}, nil
+}
+
+func parsePastedPKCE(provider, wantState, raw string) pkceRedirect {
+	raw = strings.TrimSpace(raw)
+	if strings.Contains(raw, "://") || strings.HasPrefix(raw, "?") {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return pkceRedirect{err: fmt.Errorf("%s: invalid pasted callback URL", provider)}
+		}
+		q := u.Query()
+		if gotState := q.Get("state"); gotState != "" && subtle.ConstantTimeCompare([]byte(gotState), []byte(wantState)) != 1 {
+			return pkceRedirect{err: fmt.Errorf("%s: pasted callback state does not match active sign-in", provider)}
+		}
+		if q.Get("error") != "" {
+			return pkceRedirect{err: fmt.Errorf("%s: the IdP refused the sign-in", provider)}
+		}
+		if code := strings.TrimSpace(q.Get("code")); code != "" {
+			return pkceRedirect{code: code}
+		}
+		return pkceRedirect{err: fmt.Errorf("%s: pasted URL carries no code parameter", provider)}
+	}
+	code := strings.TrimSpace(strings.SplitN(raw, "#", 2)[0])
+	if code == "" {
+		return pkceRedirect{err: fmt.Errorf("%s: empty authorization code", provider)}
+	}
+	return pkceRedirect{code: code}
 }
 
 func authorizeURL(cfg PKCEConfig, redirect, state, challenge string) string {
@@ -217,10 +280,11 @@ func loginPage(w http.ResponseWriter, status int, msg string) {
 }
 
 type OIDCSignIn struct {
-	TokenURL string
-	ClientID string
-	Scope    string
-	Tokens   DeviceTokens
+	TokenURL         string
+	ClientID         string
+	ClientSecretFile string
+	Scope            string
+	Tokens           DeviceTokens
 }
 
 func (s OAuthSettings) SignIn(ctx context.Context, provider string, c Console) (OIDCSignIn, error) {
@@ -231,14 +295,14 @@ func (s OAuthSettings) SignIn(ctx context.Context, provider string, c Console) (
 			return OIDCSignIn{}, err
 		}
 		tok, err := LoginOIDCDevice(ctx, cfg, s.Issuer, c)
-		return OIDCSignIn{TokenURL: cfg.TokenURL, ClientID: cfg.ClientID, Scope: cfg.Scope, Tokens: tok}, err
+		return OIDCSignIn{TokenURL: cfg.TokenURL, ClientID: cfg.ClientID, ClientSecretFile: strings.TrimSpace(s.ClientSecretFile), Scope: cfg.Scope, Tokens: tok}, err
 	case FlowPKCE:
 		cfg, err := s.PKCEConfig(provider)
 		if err != nil {
 			return OIDCSignIn{}, err
 		}
 		tok, err := LoginPKCE(ctx, cfg, c)
-		return OIDCSignIn{TokenURL: cfg.TokenURL, ClientID: cfg.ClientID, Scope: cfg.Scope, Tokens: tok}, err
+		return OIDCSignIn{TokenURL: cfg.TokenURL, ClientID: cfg.ClientID, ClientSecretFile: cfg.ClientSecretFile, Scope: cfg.Scope, Tokens: tok}, err
 	}
 	return OIDCSignIn{}, fmt.Errorf("%s: oauth flow %q is not %q or %q", provider, s.Flow, FlowDevice, FlowPKCE)
 }
