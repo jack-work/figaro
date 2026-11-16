@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"encoding/json"
+	"maps"
 	"strings"
 )
 
@@ -34,15 +35,18 @@ func NormalizeToolParameters(schema any) any {
 		return map[string]any{"type": "object", "properties": map[string]any{}}
 	}
 	defs := extractSchemaDefs(root)
-	cleaned := cleanSchemaNode(root, defs, 0)
+	cleaned := cleanSchemaNode(root, defs, nil, 0)
 	if len(cleaned) == 0 {
 		return map[string]any{"type": "object", "properties": map[string]any{}}
 	}
 	if _, hasType := cleaned["type"]; !hasType {
 		if _, hasAnyOf := cleaned["anyOf"]; !hasAnyOf {
-			if _, hasProps := cleaned["properties"]; hasProps {
-				cleaned["type"] = "object"
-			}
+			cleaned["type"] = "object"
+		}
+	}
+	if cleaned["type"] == "object" {
+		if _, hasProps := cleaned["properties"]; !hasProps {
+			cleaned["properties"] = map[string]any{}
 		}
 	}
 	return cleaned
@@ -62,16 +66,27 @@ func extractSchemaDefs(root map[string]any) map[string]map[string]any {
 	return out
 }
 
-func cleanSchemaNode(node map[string]any, defs map[string]map[string]any, depth int) map[string]any {
+func cleanSchemaNode(node map[string]any, defs map[string]map[string]any, seenRefs map[string]bool, depth int) map[string]any {
 	if node == nil || depth > 24 {
-		return map[string]any{}
+		return map[string]any{"type": "object"}
 	}
 	if ref, ok := node["$ref"].(string); ok {
 		for _, prefix := range []string{"#/$defs/", "#/definitions/"} {
-			if strings.HasPrefix(ref, prefix) {
-				name := strings.TrimPrefix(ref, prefix)
+			if name, found := strings.CutPrefix(ref, prefix); found {
+				if seenRefs[name] {
+					fallback := map[string]any{"type": "object"}
+					if desc, ok := node["description"].(string); ok && desc != "" {
+						fallback["description"] = desc
+					}
+					return fallback
+				}
 				if target, exists := defs[name]; exists {
-					resolved := cleanSchemaNode(target, defs, depth+1)
+					nextSeen := maps.Clone(seenRefs)
+					if nextSeen == nil {
+						nextSeen = make(map[string]bool, 1)
+					}
+					nextSeen[name] = true
+					resolved := cleanSchemaNode(target, defs, nextSeen, depth+1)
 					if desc, ok := node["description"].(string); ok && desc != "" {
 						resolved["description"] = desc
 					}
@@ -84,7 +99,18 @@ func cleanSchemaNode(node map[string]any, defs map[string]map[string]any, depth 
 	out := make(map[string]any)
 
 	if constVal, hasConst := node["const"]; hasConst {
-		out["enum"] = []any{constVal}
+		switch cv := constVal.(type) {
+		case nil:
+			out["type"] = "string"
+			out["nullable"] = true
+		case string:
+			out["type"] = "string"
+			out["enum"] = []string{cv}
+		case bool:
+			out["type"] = "boolean"
+		case float64:
+			out["type"] = "number"
+		}
 	}
 
 	if rawType, hasType := node["type"]; hasType {
@@ -137,7 +163,7 @@ func cleanSchemaNode(node map[string]any, defs map[string]map[string]any, depth 
 					nullable = true
 					continue
 				}
-				cv := cleanSchemaNode(im, defs, depth+1)
+				cv := cleanSchemaNode(im, defs, seenRefs, depth+1)
 				if len(cv) > 0 {
 					cleanedVariants = append(cleanedVariants, cv)
 				}
@@ -163,7 +189,7 @@ func cleanSchemaNode(node map[string]any, defs map[string]map[string]any, depth 
 		cleanProps := make(map[string]any, len(props))
 		for propName, propVal := range props {
 			if pm, ok := propVal.(map[string]any); ok {
-				cleanProps[propName] = cleanSchemaNode(pm, defs, depth+1)
+				cleanProps[propName] = cleanSchemaNode(pm, defs, seenRefs, depth+1)
 			}
 		}
 		out["properties"] = cleanProps
@@ -172,8 +198,26 @@ func cleanSchemaNode(node map[string]any, defs map[string]map[string]any, depth 
 		}
 	}
 
-	if items, ok := node["items"].(map[string]any); ok {
-		out["items"] = cleanSchemaNode(items, defs, depth+1)
+	switch items := node["items"].(type) {
+	case map[string]any:
+		out["items"] = cleanSchemaNode(items, defs, seenRefs, depth+1)
+		if _, hasType := out["type"]; !hasType {
+			out["type"] = "array"
+		}
+	case []any:
+		var tupleVariants []any
+		for _, elem := range items {
+			if em, ok := elem.(map[string]any); ok {
+				if cv := cleanSchemaNode(em, defs, seenRefs, depth+1); len(cv) > 0 {
+					tupleVariants = append(tupleVariants, cv)
+				}
+			}
+		}
+		if len(tupleVariants) == 1 {
+			out["items"] = tupleVariants[0]
+		} else if len(tupleVariants) > 1 {
+			out["items"] = map[string]any{"anyOf": tupleVariants}
+		}
 		if _, hasType := out["type"]; !hasType {
 			out["type"] = "array"
 		}
@@ -195,20 +239,35 @@ func cleanSchemaNode(node map[string]any, defs map[string]map[string]any, depth 
 	}
 
 	if enumVals, ok := node["enum"].([]any); ok && len(enumVals) > 0 {
-		var filtered []any
+		var strVals []string
 		nullable := false
+		sawBool, sawNum := false, false
 		for _, ev := range enumVals {
-			if ev == nil {
+			switch v := ev.(type) {
+			case nil:
 				nullable = true
-				continue
+			case string:
+				strVals = append(strVals, v)
+			case bool:
+				sawBool = true
+			case float64:
+				sawNum = true
 			}
-			filtered = append(filtered, ev)
 		}
 		if nullable {
 			out["nullable"] = true
 		}
-		if len(filtered) > 0 {
-			out["enum"] = filtered
+		if len(strVals) > 0 {
+			out["enum"] = strVals
+			if _, hasType := out["type"]; !hasType {
+				out["type"] = "string"
+			}
+		} else if _, hasType := out["type"]; !hasType {
+			if sawBool && !sawNum {
+				out["type"] = "boolean"
+			} else if sawNum && !sawBool {
+				out["type"] = "number"
+			}
 		}
 	}
 
@@ -218,10 +277,11 @@ func cleanSchemaNode(node map[string]any, defs map[string]map[string]any, depth 
 		}
 	}
 
-	if out["type"] == "object" {
-		if _, hasProps := out["properties"]; !hasProps {
-			out["properties"] = map[string]any{}
-		}
+	if out["type"] == "array" && out["items"] == nil {
+		out["items"] = map[string]any{"type": "string"}
+	}
+	if _, hasAnyOf := out["anyOf"]; hasAnyOf {
+		delete(out, "type")
 	}
 
 	return out

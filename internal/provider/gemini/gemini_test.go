@@ -198,7 +198,7 @@ func TestCodeAssistXWALRoundTripPreservesCacheSignaturesAndReminders(t *testing.
 	})
 	require.NoError(t, err)
 
-	notePatch := form.Build(snap, map[string]json.RawMessage{"status": json.RawMessage(`"read"`)} , nil)
+	notePatch := form.Build(snap, map[string]json.RawMessage{"status": json.RawMessage(`"read"`)}, nil)
 	_, err = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleToolResult,
 		Patches: []message.Patch{notePatch},
@@ -340,4 +340,155 @@ func TestDrainSSEReturnsStreamCutWhenTruncated(t *testing.T) {
 	var cut *provider.StreamCut
 	require.ErrorAs(t, err, &cut)
 	assert.Equal(t, "finishReason", cut.Awaited)
+}
+
+func TestThinkingConfigStreamsThoughtsForEffortAndReasoningModels(t *testing.T) {
+	cfg, err := buildGenerationConfig(form.FromMap(map[string]json.RawMessage{
+		"system.thinking_effort": json.RawMessage(`"high"`),
+	}), 4096, false)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.ThinkingConfig)
+	assert.True(t, cfg.ThinkingConfig.IncludeThoughts)
+	assert.Zero(t, cfg.ThinkingConfig.ThinkingBudget)
+
+	cfg, err = buildGenerationConfig(form.Snapshot{}, 4096, true)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.ThinkingConfig)
+	assert.True(t, cfg.ThinkingConfig.IncludeThoughts)
+
+	cfg, err = buildGenerationConfig(form.FromMap(map[string]json.RawMessage{
+		"system.thinking_effort": json.RawMessage(`"none"`),
+	}), 4096, true)
+	require.NoError(t, err)
+	assert.Nil(t, cfg.ThinkingConfig)
+
+	cfg, err = buildGenerationConfig(form.FromMap(map[string]json.RawMessage{
+		"system.thinking_budget": json.RawMessage(`0`),
+	}), 4096, true)
+	require.NoError(t, err)
+	assert.Nil(t, cfg.ThinkingConfig)
+
+	cfg, err = buildGenerationConfig(form.Snapshot{}, 4096, false)
+	require.NoError(t, err)
+	assert.Nil(t, cfg.ThinkingConfig)
+}
+
+func TestParallelFunctionCallsKeepOnlyFirstSignatureAndSignedThoughtSurvives(t *testing.T) {
+	signedParallel := message.Message{
+		Role: message.RoleOutput,
+		Content: []message.Content{
+			{Type: message.ContentThinking, Text: "unsigned summary"},
+			{Type: message.ContentToolInvoke, ToolCallID: "c1", ToolName: "read", Arguments: map[string]any{"path": "a"}, Signature: "real-sig"},
+			{Type: message.ContentToolInvoke, ToolCallID: "c2", ToolName: "read", Arguments: map[string]any{"path": "b"}},
+		},
+	}
+	turns, err := encodeMessage(signedParallel, nil)
+	require.NoError(t, err)
+	require.Len(t, turns, 1)
+	require.Len(t, turns[0].Parts, 2)
+	assert.Equal(t, "real-sig", turns[0].Parts[0].ThoughtSignature)
+	assert.Empty(t, turns[0].Parts[1].ThoughtSignature, "sibling parallel functionCall must omit thoughtSignature")
+
+	unsignedImported := message.Message{
+		Role: message.RoleOutput,
+		Content: []message.Content{
+			{Type: message.ContentToolInvoke, ToolCallID: "c1", ToolName: "read", Arguments: map[string]any{"path": "a"}},
+			{Type: message.ContentToolInvoke, ToolCallID: "c2", ToolName: "read", Arguments: map[string]any{"path": "b"}},
+		},
+	}
+	turns, err = encodeMessage(unsignedImported, nil)
+	require.NoError(t, err)
+	require.Len(t, turns[0].Parts, 2)
+	assert.Equal(t, skipThoughtSigValidator, turns[0].Parts[0].ThoughtSignature)
+	assert.Empty(t, turns[0].Parts[1].ThoughtSignature)
+
+	sigOnThought := message.Message{
+		Role: message.RoleOutput,
+		Content: []message.Content{
+			{Type: message.ContentThinking, Text: "deliberating", Signature: "thought-sig-1"},
+			{Type: message.ContentToolInvoke, ToolCallID: "c1", ToolName: "bash", Arguments: map[string]any{"command": "pwd"}},
+		},
+	}
+	turns, err = encodeMessage(sigOnThought, nil)
+	require.NoError(t, err)
+	require.Len(t, turns[0].Parts, 2)
+	assert.True(t, turns[0].Parts[0].Thought)
+	assert.Equal(t, "thought-sig-1", turns[0].Parts[0].ThoughtSignature)
+	assert.Empty(t, turns[0].Parts[1].ThoughtSignature)
+}
+
+func TestDrainSSEHandlesMultilineAndLargePayloads(t *testing.T) {
+	bigArg := strings.Repeat("x", 128*1024)
+	stream := "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\n" +
+		"data: \"parts\":[{\"functionCall\":{\"id\":\"big_1\",\"name\":\"write\",\"args\":{\"content\":\"" + bigArg + "\"}}}]}}]}\n\n" +
+		"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[]},\"finishReason\":\"STOP\"}]}\n\n"
+	bus := &captureBus{}
+	out, err := drainSSE(context.Background(), strings.NewReader(stream), bus)
+	require.NoError(t, err)
+	require.Len(t, out.Blocks, 1)
+	assert.Equal(t, bigArg, out.Blocks[0].Arguments["content"])
+}
+
+func TestNormalizeToolParametersHandlesCyclesUnionsAndNonStringEnums(t *testing.T) {
+	schema := map[string]any{
+		"$defs": map[string]any{
+			"Node": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"child": map[string]any{"$ref": "#/$defs/Node"},
+				},
+			},
+		},
+		"type":                 "object",
+		"additionalProperties": false,
+		"properties": map[string]any{
+			"tree":    map[string]any{"$ref": "#/$defs/Node"},
+			"freeMap": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+			"count":   map[string]any{"enum": []any{1.0, 2.0, nil}},
+			"flag":    map[string]any{"const": true},
+			"bareArr": map[string]any{"type": "array"},
+			"choice": map[string]any{
+				"type": "object",
+				"oneOf": []any{
+					map[string]any{"type": "object", "properties": map[string]any{"a": map[string]any{"type": "string"}}},
+					map[string]any{"type": "object", "properties": map[string]any{"b": map[string]any{"type": "number"}}},
+				},
+			},
+		},
+	}
+	norm, ok := NormalizeToolParameters(schema).(map[string]any)
+	require.True(t, ok)
+	props := norm["properties"].(map[string]any)
+
+	freeMap := props["freeMap"].(map[string]any)
+	assert.Equal(t, "object", freeMap["type"])
+	assert.NotContains(t, freeMap, "properties", "nested free-form map must not force empty properties")
+
+	count := props["count"].(map[string]any)
+	assert.Equal(t, "number", count["type"])
+	assert.Equal(t, true, count["nullable"])
+	assert.NotContains(t, count, "enum", "non-string enum values must not be sent to Gemini")
+
+	flag := props["flag"].(map[string]any)
+	assert.Equal(t, "boolean", flag["type"])
+	assert.NotContains(t, flag, "enum")
+
+	bareArr := props["bareArr"].(map[string]any)
+	assert.Contains(t, bareArr, "items")
+
+	choice := props["choice"].(map[string]any)
+	assert.Contains(t, choice, "anyOf")
+	assert.NotContains(t, choice, "type", "anyOf node must not also carry type")
+}
+
+func TestAPIErrorMessageRedactsTokensAndCapsBody(t *testing.T) {
+	body := []byte(`{"error":{"status":"UNAUTHENTICATED","message":"bad Bearer secret-jwt-tok or ya29.oauth-tok or AIzaSySecretKey123456"}}`)
+	got := apiErrorMessage(401, body)
+	assert.NotContains(t, got, "secret-jwt-tok")
+	assert.NotContains(t, got, "ya29.oauth-tok")
+	assert.NotContains(t, got, "AIzaSySecretKey123456")
+	assert.Contains(t, got, "[REDACTED]")
+
+	huge := []byte(strings.Repeat("z", 2048))
+	assert.LessOrEqual(t, len(apiErrorMessage(502, huge)), 530)
 }
