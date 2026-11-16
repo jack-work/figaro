@@ -11,8 +11,8 @@ visible    = ["model_picker_enabled"]
 endpoints  = ["supported_endpoints"]
 
 [catalog.facts]
-"gemini-*" = { context = 1048576, max_output = 65536, images = true, tools = true }
-"gemini-2-5*" = { context = 1048576, max_output = 65536, images = true, tools = true, reasoning = true }
+"gemini*" = { context = 1048576, max_output = 65536, images = true, tools = true }
+"gemini-2.5*" = { context = 1048576, max_output = 65536, images = true, tools = true, reasoning = true }
 "gemini-3*" = { context = 1048576, max_output = 65536, images = true, tools = true, reasoning = true }
 "gemini-4*" = { context = 1048576, max_output = 65536, images = true, tools = true, reasoning = true }
-"claude-*" = { context = 1000000, max_output = 65536, images = true, tools = true }
+"claude*" = { context = 1000000, max_output = 65536, images = true, tools = true }

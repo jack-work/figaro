@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/upstream"
 )
 
 const FirstByteTimeoutKey = "system.first_byte_timeout"
@@ -82,7 +83,7 @@ func WatchFirstByte(ctx context.Context, d time.Duration) (context.Context, func
 	if d <= 0 {
 		return ctx, func(err error) error { return err }
 	}
-	reqCtx, cancel := context.WithCancelCause(ctx)
+	reqCtx, cancel := context.WithCancelCause(upstream.WithInitialStall(ctx, d))
 	fb := &firstByte{after: d, cancel: cancel}
 	reqCtx = context.WithValue(reqCtx, firstByteKey{}, fb)
 	reqCtx = httptrace.WithClientTrace(reqCtx, &httptrace.ClientTrace{

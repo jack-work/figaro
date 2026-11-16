@@ -42,12 +42,13 @@ func NormalizeCatalogJSON(raw []byte, endpoint string) ([]byte, error) {
 
 func normalizeCodeAssistModels(raw json.RawMessage, endpoint string) ([]byte, error) {
 	var byID map[string]struct {
-		DisplayName    string `json:"displayName"`
-		SupportsImages *bool  `json:"supportsImages"`
-		SupportsVideo  *bool  `json:"supportsVideo"`
-		ThinkingLevel  int    `json:"thinkingLevel"`
-		MaxTokens      int    `json:"maxTokens"`
-		MaxInputTokens int    `json:"maxInputTokens"`
+		DisplayName     string `json:"displayName"`
+		SupportsImages  *bool  `json:"supportsImages"`
+		SupportsVideo   *bool  `json:"supportsVideo"`
+		ThinkingLevel   int    `json:"thinkingLevel"`
+		MaxTokens       int    `json:"maxTokens"`
+		MaxInputTokens  int    `json:"maxInputTokens"`
+		MaxOutputTokens int    `json:"maxOutputTokens"`
 	}
 	if err := json.Unmarshal(raw, &byID); err != nil {
 		return nil, err
@@ -63,11 +64,20 @@ func normalizeCodeAssistModels(raw json.RawMessage, endpoint string) ([]byte, er
 	data := make([]normalizedModel, 0, len(ids))
 	for _, id := range ids {
 		entry := byID[id]
+		maxIn := entry.MaxInputTokens
+		maxOut := entry.MaxOutputTokens
+		if maxIn > 0 {
+			if maxOut == 0 {
+				maxOut = entry.MaxTokens
+			}
+		} else {
+			maxIn = entry.MaxTokens
+		}
 		nm := normalizedModel{
 			ID:                 id,
 			DisplayName:        entry.DisplayName,
-			MaxInputTokens:     entry.MaxInputTokens,
-			MaxOutputTokens:    entry.MaxTokens,
+			MaxInputTokens:     maxIn,
+			MaxOutputTokens:    maxOut,
 			SupportsTools:      true,
 			SupportedEndpoints: []string{endpoint},
 		}

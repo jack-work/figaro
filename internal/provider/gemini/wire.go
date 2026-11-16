@@ -72,8 +72,9 @@ type ToolGroup struct {
 }
 
 type ThinkingConfig struct {
-	IncludeThoughts bool `json:"includeThoughts,omitempty"`
-	ThinkingBudget  int  `json:"thinkingBudget,omitempty"`
+	IncludeThoughts bool   `json:"includeThoughts,omitempty"`
+	ThinkingBudget  int    `json:"thinkingBudget,omitempty"`
+	ThinkingLevel   string `json:"thinkingLevel,omitempty"`
 }
 
 type GenerationConfig struct {
@@ -608,7 +609,7 @@ func projectTools(tools []provider.Tool) []ToolGroup {
 	return []ToolGroup{{FunctionDeclarations: decls}}
 }
 
-func buildGenerationConfig(snap form.Snapshot, maxTokens int, modelReasons bool) (GenerationConfig, error) {
+func buildGenerationConfig(snap form.Snapshot, model string, maxTokens int, modelReasons bool) (GenerationConfig, error) {
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxOutputTokens
 	}
@@ -637,7 +638,7 @@ func buildGenerationConfig(snap form.Snapshot, maxTokens int, modelReasons bool)
 	}
 	if effort, ok := parseEffort(snap); ok {
 		if effort != "none" && effort != "0" {
-			cfg.ThinkingConfig = &ThinkingConfig{IncludeThoughts: true}
+			cfg.ThinkingConfig = thinkingForEffort(model, effort)
 		}
 		return cfg, nil
 	}
@@ -645,6 +646,88 @@ func buildGenerationConfig(snap form.Snapshot, maxTokens int, modelReasons bool)
 		cfg.ThinkingConfig = &ThinkingConfig{IncludeThoughts: true}
 	}
 	return cfg, nil
+}
+
+func thinkingForEffort(model, effort string) *ThinkingConfig {
+	m := strings.ToLower(strings.TrimSpace(model))
+	if i := strings.LastIndex(m, "/"); i >= 0 {
+		m = m[i+1:]
+	}
+	tier := canonicalEffortTier(effort)
+	if strings.HasPrefix(m, "gemini-3") || strings.HasPrefix(m, "gemini-4") {
+		return &ThinkingConfig{
+			IncludeThoughts: true,
+			ThinkingLevel:   clampThinkingLevel(m, tier),
+		}
+	}
+	if strings.HasPrefix(m, "gemini-2.5") || strings.HasPrefix(m, "gemini-2-5") {
+		return &ThinkingConfig{
+			IncludeThoughts: true,
+			ThinkingBudget:  budgetForTier(tier),
+		}
+	}
+	return &ThinkingConfig{IncludeThoughts: true}
+}
+
+func canonicalEffortTier(effort string) string {
+	switch effort {
+	case "minimal", "low", "medium", "high":
+		return effort
+	case "max", "xhigh":
+		return "xhigh"
+	}
+	n, err := strconv.ParseFloat(effort, 64)
+	if err != nil {
+		return "medium"
+	}
+	switch {
+	case n <= 0.15:
+		return "minimal"
+	case n <= 0.35:
+		return "low"
+	case n <= 0.65:
+		return "medium"
+	case n <= 0.90:
+		return "high"
+	default:
+		return "xhigh"
+	}
+}
+
+func clampThinkingLevel(model, tier string) string {
+	supportsMinimal := strings.HasPrefix(model, "gemini-3.1-flash-lite") ||
+		strings.HasPrefix(model, "gemini-3-1-flash-lite") ||
+		strings.HasPrefix(model, "gemini-3.5-flash-lite") ||
+		strings.HasPrefix(model, "gemini-3-5-flash-lite") ||
+		strings.HasPrefix(model, "gemini-3.6-flash") ||
+		strings.HasPrefix(model, "gemini-3-6-flash") ||
+		strings.HasPrefix(model, "gemini-3-flash")
+	supportsXHigh := strings.HasPrefix(model, "gemini-4-hydrogen")
+	if tier == "minimal" && !supportsMinimal {
+		return "low"
+	}
+	if tier == "xhigh" && !supportsXHigh {
+		return "high"
+	}
+	if strings.HasPrefix(model, "gemini-3-pro") && tier == "medium" {
+		return "high"
+	}
+	return tier
+}
+
+func budgetForTier(tier string) int {
+	switch tier {
+	case "minimal":
+		return 1024
+	case "low":
+		return 2048
+	case "medium":
+		return 8192
+	case "high":
+		return 16384
+	default:
+		return 24576
+	}
 }
 
 func parseBudget(raw json.RawMessage) (int, bool) {

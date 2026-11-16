@@ -293,7 +293,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if maxTokens <= 0 {
 		maxTokens = p.MaxTokens
 	}
-	genCfg, err := buildGenerationConfig(in.Snapshot, maxTokens, p.supportsReasoning(model))
+	genCfg, err := buildGenerationConfig(in.Snapshot, model, maxTokens, p.supportsReasoning(model))
 	if err != nil {
 		return err
 	}
