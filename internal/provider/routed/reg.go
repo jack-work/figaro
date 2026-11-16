@@ -102,6 +102,15 @@ func buildGatewayAs(ctx provider.BuildContext, name, envPrefix string) (provider
 	if v := strings.TrimSpace(os.Getenv(envBase)); v != "" {
 		f.BaseURL = v
 	}
+	effAPI := strings.ToLower(strings.TrimSpace(f.API))
+	if effAPI == "" {
+		effAPI = strings.ToLower(strings.TrimSpace(f.Routing.Default))
+	}
+	isGemini := effAPI == "gemini"
+	isCodeAssist := effAPI == "code-assist" || effAPI == "code_assist"
+	if isGemini && strings.TrimSpace(f.BaseURL) == "" {
+		f.BaseURL = "https://generativelanguage.googleapis.com/v1beta"
+	}
 	if strings.TrimSpace(f.BaseURL) == "" {
 		return nil, fmt.Errorf("%s: no base_url: set %s or base_url in providers/%s.toml", name, envBase, name)
 	}
@@ -110,14 +119,28 @@ func buildGatewayAs(ctx provider.BuildContext, name, envPrefix string) (provider
 		(name == gatewayName && strings.EqualFold(strings.TrimSpace(os.Getenv("FIGARO_GATEWAY_CACHING")), "1")) {
 		caps = provider.GatewayRoute(f.BaseURL).Caps
 	}
-	spec, err := f.Apply(Spec{
+	baseSpec := Spec{
 		Name:         name,
 		AuthOptional: f.OAuth == nil && f.ServiceToken == "",
 		Catalog:      "/models",
 		Mapping:      catalogmaps.Builtin("generic"),
 		Default:      Chat,
 		Caps:         caps,
-	})
+	}
+	if isGemini || isCodeAssist {
+		baseSpec.Catalog = ""
+		baseSpec.Mapping = catalogmaps.Builtin("gemini")
+		baseSpec.AuthOptional = f.OAuth == nil && f.ServiceToken == "" && strings.TrimSpace(f.APIKey) == "" && strings.TrimSpace(f.APIKeyEnv) == ""
+		if isGemini && f.OAuth == nil && f.ServiceToken == "" {
+			baseSpec.AuthStyle = provider.AuthGoogleKey
+		} else {
+			baseSpec.AuthStyle = provider.AuthBearer
+		}
+		if f.SendFigaroID {
+			baseSpec.Caps.SessionKey = true
+		}
+	}
+	spec, err := f.Apply(baseSpec)
 	if err != nil {
 		return nil, err
 	}

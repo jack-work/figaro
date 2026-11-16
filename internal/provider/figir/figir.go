@@ -174,12 +174,8 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if arialog.ViewHidesOwnRows(in.FigLog) {
 		return arialog.ErrViewHidesOwnRows
 	}
-	entries, _ := arialog.TailAfter(in.FigLog, 0)
-	if len(entries) == 0 {
-		return fmt.Errorf("empty context")
-	}
 
-	rows, hasRows, err := p.deriveRows(entries, in.Form, in.Studies)
+	rows, hasRows, err := p.deriveRows(in.FigLog, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}
@@ -307,7 +303,7 @@ func (p *Provider) assembleFrame(snap form.Snapshot, tools []provider.Tool, maxT
 	return req, nil
 }
 
-func (p *Provider) deriveRows(entries []arialog.Entry[message.Message], bound provider.Form, studies map[string]provider.Form) (provider.RowSeq, bool, error) {
+func (p *Provider) deriveRows(figLog arialog.Log[message.Message], bound provider.Form, studies map[string]provider.Form) (provider.RowSeq, bool, error) {
 	tmpls := p.templates()
 	encodeOne := func(msg message.Message, prev form.Snapshot) ([]byte, error) {
 		var reminders []string
@@ -328,21 +324,19 @@ func (p *Provider) deriveRows(entries []arialog.Entry[message.Message], bound pr
 
 	seq := func(yield func(json.RawMessage, uint64) bool) {
 		d := provider.NewDeriver(bound, studies)
-		for _, entry := range entries {
+		arialog.ScanAll(figLog, func(entry arialog.Entry[message.Message]) bool {
 			msg, snap, translatable := d.Next(entry)
 			if !translatable {
-				continue
+				return true
 			}
 			msg, _ = provider.SendableImages(msg)
 			raw, err := encodeOne(msg, snap)
 			if err != nil || len(raw) == 0 {
-				continue
+				return true
 			}
 			d.Commit(entry, msg)
-			if !yield(json.RawMessage(raw), entry.LT) {
-				return
-			}
-		}
+			return yield(json.RawMessage(raw), entry.LT)
+		})
 	}
 
 	hasRows := false

@@ -1,0 +1,15 @@
+[catalog]
+list       = "data"
+id         = ["id"]
+name       = ["name", "display_name"]
+context    = ["context_length", "context_window", "max_input_tokens", "inputTokenLimit"]
+max_output = ["max_output_tokens", "max_tokens", "outputTokenLimit"]
+images     = ["capabilities.image_input.supported"]
+tools      = ["supports_tools"]
+reasoning  = ["supports_reasoning", "capabilities.reasoning_effort nonempty"]
+visible    = ["model_picker_enabled"]
+endpoints  = ["supported_endpoints"]
+
+[catalog.facts]
+"gemini-*" = { context = 1048576, max_output = 65536, images = true, tools = true }
+"claude-*" = { context = 1000000, max_output = 65536, images = true, tools = true }

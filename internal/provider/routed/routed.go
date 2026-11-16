@@ -27,6 +27,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropic"
 	"github.com/jack-work/figaro/internal/provider/figir"
+	"github.com/jack-work/figaro/internal/provider/gemini"
 	"github.com/jack-work/figaro/internal/provider/openaichat"
 	"github.com/jack-work/figaro/internal/provider/responses"
 	"github.com/jack-work/figaro/internal/upstream"
@@ -48,12 +49,14 @@ type Provider struct {
 	templates *template.Template
 	reader    *catalog.Reader
 	cat       *catalogCache
-	now       func() time.Time
-	messages  *anthropic.Anthropic
-	chat      *openaichat.Provider
-	figIR     *figir.Provider
-	responses *responses.Provider
-	knownAuto sync.Map
+	now        func() time.Time
+	messages   *anthropic.Anthropic
+	chat       *openaichat.Provider
+	figIR      *figir.Provider
+	gemini     *gemini.Provider
+	codeAssist *gemini.Provider
+	responses  *responses.Provider
+	knownAuto  sync.Map
 }
 
 func New(spec Spec, knobs provider.Knobs, resolver auth.TokenResolver, translators Translators) (*Provider, error) {
@@ -102,7 +105,7 @@ func (p *Provider) opener(t Transport) func(string) (arialog.Log[[]json.RawMessa
 func (p *Provider) SetModel(model string) {
 	p.mu.Lock()
 	p.model = model
-	m, c, f, r := p.messages, p.chat, p.figIR, p.responses
+	m, c, f, g, ca, r := p.messages, p.chat, p.figIR, p.gemini, p.codeAssist, p.responses
 	p.mu.Unlock()
 	if m != nil {
 		m.SetModel(model)
@@ -113,6 +116,12 @@ func (p *Provider) SetModel(model string) {
 	if f != nil {
 		f.SetModel(model)
 	}
+	if g != nil {
+		g.SetModel(model)
+	}
+	if ca != nil {
+		ca.SetModel(model)
+	}
 	if r != nil {
 		r.SetModel(model)
 	}
@@ -121,7 +130,7 @@ func (p *Provider) SetModel(model string) {
 func (p *Provider) SetTemplates(t *template.Template) {
 	p.mu.Lock()
 	p.templates = t
-	m, c, f, r := p.messages, p.chat, p.figIR, p.responses
+	m, c, f, g, ca, r := p.messages, p.chat, p.figIR, p.gemini, p.codeAssist, p.responses
 	p.mu.Unlock()
 	if m != nil {
 		m.Templates = t
@@ -131,6 +140,12 @@ func (p *Provider) SetTemplates(t *template.Template) {
 	}
 	if f != nil {
 		f.SetTemplates(t)
+	}
+	if g != nil {
+		g.SetTemplates(t)
+	}
+	if ca != nil {
+		ca.SetTemplates(t)
 	}
 	if r != nil {
 		r.SetTemplates(t)
@@ -219,6 +234,67 @@ func (p *Provider) figIRBackend() (*figir.Provider, error) {
 	f.Catalog = p.reader
 	p.figIR = f
 	return f, nil
+}
+
+func (p *Provider) geminiBackend() (*gemini.Provider, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.gemini != nil {
+		return p.gemini, nil
+	}
+	authStyle := p.spec.AuthStyle
+	if authStyle == "" {
+		authStyle = provider.AuthBearer
+	}
+	route := provider.Route{
+		Name:            p.spec.Name,
+		BaseURL:         p.base(),
+		Dialect:         provider.DialectGemini,
+		Auth:            authStyle,
+		ModelPrefix:     p.spec.ModelPrefix,
+		Caps:            p.spec.Caps,
+		Headers:         p.spec.headersFor(Gemini),
+		AuthOptional:    p.spec.AuthOptional,
+		MaxRequestBytes: p.spec.MaxRequestBytes,
+	}
+	g, err := gemini.New(p.knobsNow(), p.resolver, route, p.opener(Gemini))
+	if err != nil {
+		return nil, err
+	}
+	g.CacheNamespace = p.spec.namespace(Gemini)
+	g.SetTemplates(p.templates)
+	g.Catalog = p.reader
+	p.gemini = g
+	return g, nil
+}
+
+func (p *Provider) codeAssistBackend() (*gemini.Provider, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.codeAssist != nil {
+		return p.codeAssist, nil
+	}
+	route := provider.Route{
+		Name:            p.spec.Name,
+		BaseURL:         p.base(),
+		Dialect:         provider.DialectCodeAssist,
+		Auth:            provider.AuthBearer,
+		ModelPrefix:     p.spec.ModelPrefix,
+		Caps:            p.spec.Caps,
+		Headers:         p.spec.headersFor(CodeAssist),
+		AuthOptional:    p.spec.AuthOptional,
+		MaxRequestBytes: p.spec.MaxRequestBytes,
+	}
+	ca, err := gemini.New(p.knobsNow(), p.resolver, route, p.opener(CodeAssist))
+	if err != nil {
+		return nil, err
+	}
+	ca.CacheNamespace = p.spec.namespace(CodeAssist)
+	ca.CodeAssist = p.spec.CodeAssist
+	ca.SetTemplates(p.templates)
+	ca.Catalog = p.reader
+	p.codeAssist = ca
+	return ca, nil
 }
 
 func (p *Provider) responsesBackend() *responses.Provider {
@@ -475,6 +551,20 @@ func (p *Provider) sendVia(ctx context.Context, t Transport, model string, in pr
 			return err
 		}
 		return f.Send(ctx, in, bus)
+	case Gemini:
+		g, err := p.geminiBackend()
+		if err != nil {
+			return err
+		}
+		g.SetModel(model)
+		return g.Send(ctx, in, bus)
+	case CodeAssist:
+		ca, err := p.codeAssistBackend()
+		if err != nil {
+			return err
+		}
+		ca.SetModel(model)
+		return ca.Send(ctx, in, bus)
 	}
 	return fmt.Errorf("%s: model %q routed to unknown transport %q", p.spec.Name, model, t)
 }
@@ -636,12 +726,47 @@ func (p *Provider) Fingerprint() string {
 		if f, err := p.figIRBackend(); err == nil {
 			return f.Fingerprint()
 		}
+	case Gemini:
+		if g, err := p.geminiBackend(); err == nil {
+			return g.Fingerprint()
+		}
+	case CodeAssist:
+		if ca, err := p.codeAssistBackend(); err == nil {
+			return ca.Fingerprint()
+		}
 	}
 	return p.spec.Name + "/unrouted/" + model
 }
 
 func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	if p.spec.Catalog == "" {
+		if p.spec.Default == Gemini || p.spec.Default == CodeAssist {
+			var (
+				b   *gemini.Provider
+				err error
+			)
+			if p.spec.Default == CodeAssist {
+				b, err = p.codeAssistBackend()
+			} else {
+				b, err = p.geminiBackend()
+			}
+			if err != nil {
+				return nil, err
+			}
+			listed, err := b.Models(ctx)
+			if err != nil {
+				return nil, err
+			}
+			byID := make(map[string]apimodels.Entry, len(listed))
+			catModels := make([]catalog.Model, 0, len(listed))
+			for i := range listed {
+				byID[listed[i].ID] = listed[i].Entry
+				catModels = append(catModels, catalog.Model{ID: listed[i].ID, Entry: listed[i].Entry})
+				listed[i].Entry, _ = p.withRefusals(listed[i].ID, listed[i].Entry, true)
+			}
+			p.cat.store(byID, catModels, "", p.now())
+			return listed, nil
+		}
 		if p.spec.Default == FigIR {
 			f, err := p.figIRBackend()
 			if err != nil {
@@ -694,6 +819,14 @@ func (p *Provider) staticEncoder() provider.EntryEncoder {
 	case Messages:
 		if m, err := p.messagesBackend(); err == nil {
 			return m
+		}
+	case Gemini:
+		if g, err := p.geminiBackend(); err == nil {
+			return g
+		}
+	case CodeAssist:
+		if ca, err := p.codeAssistBackend(); err == nil {
+			return ca
 		}
 	}
 	return nil

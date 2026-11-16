@@ -12,6 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/catalog"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/provider/gemini"
 )
 
 const CatalogOff = "off"
@@ -22,13 +23,21 @@ type EffortFile struct {
 	Round                 string             `toml:"round,omitempty"`
 	DefaultRung           string             `toml:"default_rung,omitempty"`
 	MapModel              string             `toml:"map_model,omitempty"`
+	ModelTemplate         string             `toml:"model_template,omitempty"`
 	OutboundModelTemplate string             `toml:"outbound_model_template,omitempty"`
+}
+
+func (e EffortFile) template() string {
+	if s := strings.TrimSpace(e.OutboundModelTemplate); s != "" {
+		return s
+	}
+	return strings.TrimSpace(e.ModelTemplate)
 }
 
 func (e EffortFile) empty() bool {
 	return !e.KeepCache && len(e.Ladder) == 0 && strings.TrimSpace(e.Round) == "" &&
 		strings.TrimSpace(e.DefaultRung) == "" && strings.TrimSpace(e.MapModel) == "" &&
-		strings.TrimSpace(e.OutboundModelTemplate) == ""
+		e.template() == ""
 }
 
 type File struct {
@@ -49,6 +58,11 @@ type File struct {
 	TransportHeaders map[string]map[string]string `toml:"transport_headers,omitempty"`
 	SendFigaroID     bool                         `toml:"send_figaro_id,omitempty"`
 	Effort           EffortFile                   `toml:"effort"`
+	CodeAssist       struct {
+		Project     string `toml:"project,omitempty"`
+		UserAgent   string `toml:"user_agent,omitempty"`
+		RequestType string `toml:"request_type,omitempty"`
+	} `toml:"code_assist"`
 	Responses        struct {
 		OmitFields []string `toml:"omit_fields,omitempty"`
 		NoReplay   bool     `toml:"no_replay,omitempty"`
@@ -107,6 +121,13 @@ func (f File) Apply(spec Spec) (Spec, error) {
 	spec.ResponsesNoReplay = f.Responses.NoReplay
 	if f.SendFigaroID {
 		spec.SendFigaroID = true
+	}
+	if f.CodeAssist.Project != "" || f.CodeAssist.UserAgent != "" || f.CodeAssist.RequestType != "" {
+		spec.CodeAssist = gemini.CodeAssistConfig{
+			Project:     strings.TrimSpace(f.CodeAssist.Project),
+			UserAgent:   strings.TrimSpace(f.CodeAssist.UserAgent),
+			RequestType: strings.TrimSpace(f.CodeAssist.RequestType),
+		}
 	}
 	spec.Mapping = spec.Mapping.With(f.Catalog)
 	if len(f.Models) > 0 {
@@ -174,7 +195,7 @@ func (f File) Apply(spec Spec) (Spec, error) {
 			Round:                 RoundMode(strings.ToLower(strings.TrimSpace(f.Effort.Round))),
 			DefaultRung:           strings.ToLower(strings.TrimSpace(f.Effort.DefaultRung)),
 			MapModel:              strings.TrimSpace(f.Effort.MapModel),
-			OutboundModelTemplate: strings.TrimSpace(f.Effort.OutboundModelTemplate),
+			OutboundModelTemplate: f.Effort.template(),
 		}
 	}
 	return spec, spec.Validate()

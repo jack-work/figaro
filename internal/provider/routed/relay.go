@@ -16,6 +16,10 @@ func (p *Provider) Endpoint(t Transport) string {
 		return p.base() + "/chat/completions"
 	case FigIR:
 		return p.base() + "/fig-ir"
+	case CodeAssist:
+		return p.base() + "/v1internal:streamGenerateContent?alt=sse"
+	case Gemini:
+		return p.base() + "/models"
 	}
 	return p.base() + "/responses"
 }
@@ -35,6 +39,10 @@ func TransportForPath(path string) Transport {
 		return Responses
 	case strings.HasSuffix(path, "/fig-ir"):
 		return FigIR
+	case strings.Contains(path, "v1internal:"):
+		return CodeAssist
+	case strings.Contains(path, ":streamGenerateContent") || strings.Contains(path, ":generateContent"):
+		return Gemini
 	}
 	return ""
 }

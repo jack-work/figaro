@@ -17,6 +17,8 @@ const (
 	DialectAnthropicMessages Dialect = "anthropic-messages"
 	DialectOpenAIChat        Dialect = "openai-chat"
 	DialectFigIR             Dialect = "fig-ir"
+	DialectGemini            Dialect = "gemini"
+	DialectCodeAssist        Dialect = "code-assist"
 )
 
 type AuthStyle string
@@ -25,6 +27,7 @@ const (
 	// AuthAnthropicKey sends x-api-key, or a Bearer for OAuth tokens.
 	AuthAnthropicKey AuthStyle = "x-api-key"
 	AuthBearer       AuthStyle = "bearer"
+	AuthGoogleKey    AuthStyle = "x-goog-api-key"
 )
 
 // CacheCaps is what a route advertises; nothing is guessed at request time.
@@ -211,12 +214,54 @@ func (r Route) MessagesURL() string {
 		return r.BaseURL + "/chat/completions"
 	case DialectFigIR:
 		return r.FigIRURL()
+	case DialectCodeAssist:
+		return r.CodeAssistStreamURL()
+	case DialectGemini:
+		return strings.TrimRight(r.BaseURL, "/") + "/models"
 	default:
 		return r.BaseURL + "/messages"
 	}
 }
 
 func (r Route) FigIRURL() string { return strings.TrimRight(r.BaseURL, "/") + "/fig-ir" }
+
+func (r Route) CodeAssistStreamURL() string {
+	return strings.TrimRight(r.BaseURL, "/") + "/v1internal:streamGenerateContent?alt=sse"
+}
+
+func (r Route) CodeAssistModelsURL() string {
+	return strings.TrimRight(r.BaseURL, "/") + "/v1internal:fetchAvailableModels"
+}
+
+func (r Route) GeminiStreamURL(model string) string {
+	m := strings.TrimPrefix(strings.TrimSpace(model), "models/")
+	return strings.TrimRight(r.BaseURL, "/") + "/models/" + m + ":streamGenerateContent?alt=sse"
+}
+
+var GeminiImages = ImageDialect{
+	Is: func(p map[string]any) bool {
+		_, ok := p["inlineData"].(map[string]any)
+		return ok
+	},
+	Text: func(note string) map[string]any { return map[string]any{"text": note} },
+	data: func(p map[string]any) (wireImage, bool) {
+		in, _ := p["inlineData"].(map[string]any)
+		if in == nil {
+			return wireImage{}, false
+		}
+		data, _ := in["data"].(string)
+		mime, _ := in["mimeType"].(string)
+		return wireImage{Data: data, Mime: mime}, data != ""
+	},
+	withData: func(p map[string]any, img wireImage) map[string]any {
+		return map[string]any{
+			"inlineData": map[string]any{
+				"mimeType": img.Mime,
+				"data":     img.Data,
+			},
+		}
+	},
+}
 
 var FigIRImages = ImageDialect{
 	Is:   func(p map[string]any) bool { return p["type"] == "image" },
