@@ -16,6 +16,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/mark"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/figaro/internal/telemetrydir"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -98,6 +99,7 @@ func Run(progName string, args []string) {
 		figOtel.SetOTLPEndpoint(loaded.TelemetryOTLPEndpoint())
 		telemetryDir = loaded.TelemetryDir(boot.StateDir())
 	}
+	telemetryDir = telemetrydir.For(telemetryDir, os.Getenv)
 	figOtel.SetServiceVersion(boot.ServiceVersion())
 	shutdown, err := figOtel.Init(ctx, telemetryDir)
 	if err != nil {
