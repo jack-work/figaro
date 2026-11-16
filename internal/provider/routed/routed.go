@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -693,7 +694,27 @@ func (p *Provider) Fingerprint() string {
 	return p.spec.Name + "/unrouted/" + model
 }
 
+func (p *Provider) CatalogOff() bool { return p.spec.CatalogOff }
+
 func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
+	if p.spec.CatalogOff {
+		if len(p.spec.Overrides) == 0 {
+			return nil, nil
+		}
+		ids := make([]string, 0, len(p.spec.Overrides))
+		for id := range p.spec.Overrides {
+			if id != "" {
+				ids = append(ids, id)
+			}
+		}
+		sort.Strings(ids)
+		out := make([]provider.ModelInfo, 0, len(ids))
+		for _, id := range ids {
+			e, _ := p.SeedModel(id)
+			out = append(out, provider.ModelInfo{ID: id, Provider: p.spec.Name, Entry: e})
+		}
+		return out, nil
+	}
 	if p.spec.Catalog == "" {
 		if p.spec.Default == Gemini || p.spec.Default == CodeAssist {
 			var (

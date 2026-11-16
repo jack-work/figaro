@@ -19,6 +19,7 @@ type modelRow struct {
 
 type providerListing struct {
 	Provider    string     `json:"provider"`
+	CatalogOff  bool       `json:"catalog_off,omitempty"`
 	RefreshedAt int64      `json:"refreshed_at,omitempty"`
 	AttemptedAt int64      `json:"attempted_at,omitempty"`
 	Error       string     `json:"error,omitempty"`
@@ -32,10 +33,11 @@ func catalogListings(catalog form.Snapshot, now time.Time) []providerListing {
 	for name, p := range provs {
 		l := providerListing{
 			Provider:    name,
+			CatalogOff:  p.CatalogOff,
 			RefreshedAt: p.RefreshedAt,
 			AttemptedAt: p.AttemptedAt,
 			Error:       p.Error,
-			Stale:       p.RefreshedAt == 0 || now.Sub(time.UnixMilli(p.RefreshedAt)) >= modelcat.DefaultTTL,
+			Stale:       !p.CatalogOff && (p.RefreshedAt == 0 || now.Sub(time.UnixMilli(p.RefreshedAt)) >= modelcat.DefaultTTL),
 			Models:      make([]modelRow, 0, len(p.Models)),
 		}
 		for id, e := range p.Models {
@@ -61,6 +63,9 @@ func (l providerListing) pickable() []modelRow {
 func (l providerListing) failed() bool { return l.Error != "" }
 
 func (l providerListing) status(now time.Time) string {
+	if l.CatalogOff && !l.failed() {
+		return "catalog off"
+	}
 	since := func(ms int64) string { return ago(now.Sub(time.UnixMilli(ms))) }
 	var parts []string
 	switch {

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -222,11 +223,68 @@ func TestAGatewayWithoutACatalogRoutesByRulesAndDefault(t *testing.T) {
 // catalog off.
 func TestCatalogOffKeepsAGatewayStatic(t *testing.T) {
 	p := gatewayAt(t, "staticgw", "preset = \"gateway\"\nbase_url = \"http://127.0.0.1:1/v1\"\n[routing]\ncatalog = \"off\"\n")
-	if p.spec.Catalog != "" || p.TranslatorChannel() != "staticgw" {
-		t.Fatalf("catalog %q, channel %q", p.spec.Catalog, p.TranslatorChannel())
+	if p.spec.Catalog != "" || !p.CatalogOff() || p.TranslatorChannel() != "staticgw" {
+		t.Fatalf("catalog %q, off %v, channel %q", p.spec.Catalog, p.CatalogOff(), p.TranslatorChannel())
 	}
-	if p := gatewayAt(t, "dynamicgw", "preset = \"gateway\"\nbase_url = \"http://127.0.0.1:1/v1\"\n"); p.TranslatorChannel() != "" {
-		t.Fatalf("a gateway with its catalog on translated on append under %q", p.TranslatorChannel())
+	if p := gatewayAt(t, "dynamicgw", "preset = \"gateway\"\nbase_url = \"http://127.0.0.1:1/v1\"\n"); p.TranslatorChannel() != "" || p.CatalogOff() {
+		t.Fatalf("a gateway with its catalog on translated on append under %q (off=%v)", p.TranslatorChannel(), p.CatalogOff())
+	}
+}
+
+// Defends #118: catalog = "off" never fails listing or calls /models, and
+// unconfigured built-in presets (gateway, azure) are omitted from ConfiguredNames.
+func TestCatalogOffListsConfiguredModelsAndUnconfiguredPresetsAreOmitted(t *testing.T) {
+	t.Setenv("FIGARO_GATEWAY_BASE_URL", "")
+	t.Setenv("AZURE_BASE_URL", "")
+
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	loaded := declaredDir(t, map[string]string{
+		"tdf-claude":  "preset = \"gateway\"\nbase_url = \"" + srv.URL + "/v1\"\n[routing]\ncatalog = \"off\"\ndefault = \"messages\"\n[models.\"claude-sonnet-4-6\"]\ncontext = 200000\nmax_output = 64000\n",
+		"silent-chat": "preset = \"gateway\"\nbase_url = \"" + srv.URL + "/v1\"\n[routing]\ncatalog = \"off\"\n",
+	})
+	RegisterDeclared(loaded)
+
+	cfgNames := provider.ConfiguredNames(loaded)
+	if slices.Contains(cfgNames, "gateway") || slices.Contains(cfgNames, "azure") {
+		t.Fatalf("unconfigured built-in presets appeared in ConfiguredNames: %v", cfgNames)
+	}
+	if !slices.Contains(cfgNames, "tdf-claude") {
+		t.Fatalf("declared provider missing from ConfiguredNames: %v", cfgNames)
+	}
+
+	t.Setenv("FIGARO_GATEWAY_BASE_URL", srv.URL+"/v1")
+	if !slices.Contains(provider.ConfiguredNames(loaded), "gateway") {
+		t.Fatal("gateway with FIGARO_GATEWAY_BASE_URL set must be reported configured")
+	}
+
+	pMsg, err := provider.Lookup("tdf-claude").Build(provider.BuildContext{Loaded: loaded, Resolver: staticToken("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := pMsg.Models(context.Background())
+	if err != nil {
+		t.Fatalf("catalog = off failed listing: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != "claude-sonnet-4-6" || listed[0].Window("") != 200000 {
+		t.Fatalf("listed = %+v, want configured claude-sonnet-4-6", listed)
+	}
+
+	pChat, err := provider.Lookup("silent-chat").Build(provider.BuildContext{Loaded: loaded, Resolver: staticToken("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listedChat, err := pChat.Models(context.Background())
+	if err != nil || len(listedChat) != 0 {
+		t.Fatalf("silent-chat Models = (%+v, %v), want empty without error", listedChat, err)
+	}
+	if hits != 0 {
+		t.Fatalf("catalog = off made %d upstream requests", hits)
 	}
 }
 

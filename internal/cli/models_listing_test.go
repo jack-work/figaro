@@ -121,3 +121,36 @@ func TestPrintModelsSanitisesWhatAProviderSays(t *testing.T) {
 		}
 	}
 }
+
+// Defends #118: catalog = "off" renders as "catalog off" (never "failed") and
+// still surfaces any configured or outfit-used models.
+func TestPrintModelsShowsCatalogOffWithoutFailedLines(t *testing.T) {
+	snap := catalogFixture(t, map[string]models.Provider{
+		"tdf-claude": {
+			CatalogOff:  true,
+			RefreshedAt: modelsNow.Add(-48 * time.Hour).UnixMilli(),
+			Models: map[string]models.Entry{
+				"claude-sonnet-4-6": {Name: "Claude Sonnet 4.6", Context: models.Context{Default: 200_000}, MaxOutput: 64_000, Src: map[string]string{"context": "config", "max_output": "config"}},
+			},
+		},
+	})
+	var buf bytes.Buffer
+	old := stdout
+	stdout = &buf
+	defer func() { stdout = old }()
+	printModels(catalogListings(snap, modelsNow), modelsNow)
+	out := buf.String()
+	if strings.Contains(out, "failed") {
+		t.Fatalf("catalog-off provider printed failed:\n%s", out)
+	}
+	want := strings.Join([]string{
+		"tdf-claude  catalog off",
+		"",
+		"PROVIDER    MODEL              NAME               CONTEXT  PROMPT  MAX OUT  SRC",
+		"tdf-claude  claude-sonnet-4-6  Claude Sonnet 4.6     200k       -      64k  config",
+		"",
+	}, "\n")
+	if out != want {
+		t.Fatalf("got\n%s\nwant\n%s", out, want)
+	}
+}

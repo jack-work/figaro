@@ -153,8 +153,10 @@ func (f File) Apply(spec Spec) (Spec, error) {
 	case "":
 	case CatalogOff:
 		spec.Catalog = ""
+		spec.CatalogOff = true
 	default:
 		spec.Catalog = "/" + strings.TrimLeft(c, "/")
+		spec.CatalogOff = false
 	}
 	if f.API != "" && f.Routing.Default == "" {
 		t, err := ParseTransport(f.API)

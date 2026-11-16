@@ -561,3 +561,52 @@ func TestPreIREntriesAreDroppedAtBootAndRelisted(t *testing.T) {
 	require.Equal(t, 1_047_576, limitOf(c, "openai", "gpt-4.1"))
 	require.True(t, models.Current(c.Snapshot(), "openai"))
 }
+
+type catalogOffProvider struct {
+	*fakeProvider
+}
+
+func (catalogOffProvider) CatalogOff() bool { return true }
+
+// Defends #118: a catalog-off provider records CatalogOff without error,
+// preserves wanted models, and unconfigured presets are pruned by Known.
+func TestCatalogOffProviderRecordsStateAndUnconfiguredPresetIsPruned(t *testing.T) {
+	root := t.TempDir()
+	st, f := openModelsStore(t, root)
+	staleGateway, _ := json.Marshal(models.Provider{
+		IR:          models.IRVersion,
+		AttemptedAt: 1000,
+		Error:       "gateway: no base_url: set FIGARO_GATEWAY_BASE_URL or base_url in providers/gateway.toml",
+	})
+	snap, _ := f.Snapshot()
+	_, _, err := f.ApplyEffect(form.Build(snap, map[string]json.RawMessage{"gateway": staleGateway}, nil), 0)
+	require.NoError(t, err)
+
+	offProv := catalogOffProvider{fakeProvider: &fakeProvider{
+		calls: new(atomic.Int32),
+		list: []provider.ModelInfo{
+			{ID: "claude-sonnet-4-6", Entry: models.Entry{Context: models.Context{Default: 200_000}}},
+		},
+	}}
+	c := New(Config{
+		Form:      st.reopen(t),
+		Build:     func(name string) (provider.Provider, error) { return offProv, nil },
+		Providers: func() []string { return []string{"tdf-claude"} },
+		Known:     func(name string) bool { return name == "tdf-claude" },
+	})
+	_, hasGateway := c.Snapshot().Get("gateway")
+	require.False(t, hasGateway, "unconfigured preset must be pruned from @models")
+
+	c.Want("tdf-claude", "custom-outfit-model")
+	require.NoError(t, c.Refresh(context.Background(), "tdf-claude"))
+
+	status, ok := models.ProviderStatus(c.Snapshot(), "tdf-claude")
+	require.True(t, ok)
+	require.True(t, status.CatalogOff)
+	require.Empty(t, status.Error)
+
+	_, hasConfigured := models.Lookup(c.Snapshot(), "tdf-claude", "claude-sonnet-4-6")
+	require.True(t, hasConfigured)
+	_, hasWanted := models.Lookup(c.Snapshot(), "tdf-claude", "custom-outfit-model")
+	require.True(t, hasWanted)
+}

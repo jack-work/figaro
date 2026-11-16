@@ -116,6 +116,10 @@ type ModelSeeder interface {
 	SeedModel(model string) (models.Entry, bool)
 }
 
+type CatalogStatus interface {
+	CatalogOff() bool
+}
+
 // StreamRequestBodyKey, default on; false buffers the whole conversation.
 const StreamRequestBodyKey = "system.stream_request_body"
 
