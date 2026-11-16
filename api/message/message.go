@@ -133,8 +133,7 @@ type Content struct {
 
 	Delivery string `json:"delivery,omitempty"`
 
-	Signature string                     `json:"signature,omitempty"`
-	Meta      map[string]json.RawMessage `json:"meta,omitempty"`
+	Signature string `json:"signature,omitempty"`
 }
 
 type Usage struct {

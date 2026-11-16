@@ -16,7 +16,6 @@ type Dialect string
 const (
 	DialectAnthropicMessages Dialect = "anthropic-messages"
 	DialectOpenAIChat        Dialect = "openai-chat"
-	DialectFigIR             Dialect = "fig-ir"
 	DialectGemini            Dialect = "gemini"
 	DialectCodeAssist        Dialect = "code-assist"
 )
@@ -212,8 +211,6 @@ func (r Route) MessagesURL() string {
 	switch r.Dialect {
 	case DialectOpenAIChat:
 		return r.BaseURL + "/chat/completions"
-	case DialectFigIR:
-		return r.FigIRURL()
 	case DialectCodeAssist:
 		return r.CodeAssistStreamURL()
 	case DialectGemini:
@@ -222,8 +219,6 @@ func (r Route) MessagesURL() string {
 		return r.BaseURL + "/messages"
 	}
 }
-
-func (r Route) FigIRURL() string { return strings.TrimRight(r.BaseURL, "/") + "/fig-ir" }
 
 func (r Route) CodeAssistStreamURL() string {
 	return strings.TrimRight(r.BaseURL, "/") + "/v1internal:streamGenerateContent?alt=sse"
@@ -260,24 +255,6 @@ var GeminiImages = ImageDialect{
 				"data":     img.Data,
 			},
 		}
-	},
-}
-
-var FigIRImages = ImageDialect{
-	Is:   func(p map[string]any) bool { return p["type"] == "image" },
-	Text: func(note string) map[string]any { return map[string]any{"type": "prose", "text": note} },
-	data: func(p map[string]any) (wireImage, bool) {
-		data, _ := p["data"].(string)
-		mime, _ := p["mime_type"].(string)
-		return wireImage{Data: data, Mime: mime}, data != ""
-	},
-	withData: func(p map[string]any, img wireImage) map[string]any {
-		out := make(map[string]any, len(p))
-		for k, v := range p {
-			out[k] = v
-		}
-		out["data"], out["mime_type"] = img.Data, img.Mime
-		return out
 	},
 }
 

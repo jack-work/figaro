@@ -16,19 +16,22 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/provider/figir"
 	"github.com/jack-work/figaro/internal/store"
 )
 
-func TestTransportForEndpointsPrefersFigIR(t *testing.T) {
-	got := transportForEndpoints([]string{"/v1/chat/completions", "/v1/messages", "/v1/responses", "/v1/fig-ir"})
-	assert.Equal(t, FigIR, got)
+func TestTransportForEndpointsPrefersGeminiAndCodeAssist(t *testing.T) {
+	assert.Equal(t, Gemini, transportForEndpoints([]string{"/v1/chat/completions", "/v1/messages", "/v1/responses", "/models/m:streamGenerateContent"}))
+	assert.Equal(t, CodeAssist, transportForEndpoints([]string{"/models/m:streamGenerateContent", "/v1internal:streamGenerateContent"}))
 }
 
-func TestDeclaredFigIRAndEffortRouting(t *testing.T) {
+func TestDeclaredEffortRouting(t *testing.T) {
+	type chatReq struct {
+		Model           string `json:"model"`
+		ReasoningEffort string `json:"reasoning_effort"`
+	}
 	var (
 		mu       sync.Mutex
-		outbound []figir.Request
+		outbound []chatReq
 	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -38,23 +41,23 @@ func TestDeclaredFigIRAndEffortRouting(t *testing.T) {
 				{"id":"gemini-3-pro-high","name":"Gemini 3 Pro (high)","context_window":1048576},
 				{"id":"gemini-2.5-flash","name":"Gemini 2.5 Flash","context_window":1048576}
 			]}`)
-		case "/v1/fig-ir":
+		case "/v1/chat/completions":
 			body, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
-			var req figir.Request
+			var req chatReq
 			require.NoError(t, json.Unmarshal(body, &req))
 			mu.Lock()
 			outbound = append(outbound, req)
 			mu.Unlock()
 			w.Header().Set("Content-Type", "text/event-stream")
-			io.WriteString(w, "data: {\"type\":\"prose_delta\",\"text\":\"ok\"}\n\ndata: {\"type\":\"message_end\",\"stop_reason\":\"stop\",\"usage\":{\"input_tokens\":10,\"output_tokens\":2}}\n\ndata: [DONE]\n\n")
+			io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2}}\n\ndata: [DONE]\n\n")
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer srv.Close()
 
-	tomlBody := `api = "fig-ir"
+	tomlBody := `api = "chat"
 base_url = "` + srv.URL + `/v1"
 
 [effort]
@@ -73,7 +76,12 @@ high = 75
 	got := RegisterDeclared(loaded)
 	require.Contains(t, got, "gemgw")
 
-	built, err := provider.Lookup("gemgw").Build(provider.BuildContext{Loaded: loaded, Resolver: staticToken("tok")})
+	be, ariaID := store.NewTestAria(t, "d", message.Patch{})
+	built, err := provider.Lookup("gemgw").Build(provider.BuildContext{
+		Loaded:         loaded,
+		Resolver:       staticToken("tok"),
+		OpenTranslator: be.OpenTranslator,
+	})
 	require.NoError(t, err)
 	dp, ok := built.(*DeclaredProvider)
 	require.True(t, ok)
@@ -91,7 +99,6 @@ high = 75
 	assert.Equal(t, "gemini-2.5-flash", models[1].ID)
 
 	// Numeric score 60 on gemini-3-pro (observed rungs: low=25, high=75) rounds nearest -> high -> outbound gemini-3-pro-high.
-	be, ariaID := store.NewTestAria(t, "d", message.Patch{})
 	figLog, err := be.OpenFigIR(ariaID)
 	require.NoError(t, err)
 	_, err = figLog.Append(arialog.Entry[message.Message]{Payload: message.Message{
@@ -126,7 +133,6 @@ high = 75
 	defer mu.Unlock()
 	require.Len(t, outbound, 2)
 	assert.Equal(t, "gemini-3-pro-high", outbound[0].Model)
-	assert.Equal(t, "high", outbound[0].ThinkingEffort)
 	assert.Equal(t, "gemini-2.5-flash", outbound[1].Model)
 }
 
