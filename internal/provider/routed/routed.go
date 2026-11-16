@@ -26,7 +26,6 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropic"
-	"github.com/jack-work/figaro/internal/provider/figir"
 	"github.com/jack-work/figaro/internal/provider/gemini"
 	"github.com/jack-work/figaro/internal/provider/openaichat"
 	"github.com/jack-work/figaro/internal/provider/responses"
@@ -44,15 +43,14 @@ type Provider struct {
 	resolver    auth.TokenResolver
 	translators Translators
 
-	mu        sync.RWMutex
-	model     string
-	templates *template.Template
-	reader    *catalog.Reader
-	cat       *catalogCache
+	mu         sync.RWMutex
+	model      string
+	templates  *template.Template
+	reader     *catalog.Reader
+	cat        *catalogCache
 	now        func() time.Time
 	messages   *anthropic.Anthropic
 	chat       *openaichat.Provider
-	figIR      *figir.Provider
 	gemini     *gemini.Provider
 	codeAssist *gemini.Provider
 	responses  *responses.Provider
@@ -105,16 +103,13 @@ func (p *Provider) opener(t Transport) func(string) (arialog.Log[[]json.RawMessa
 func (p *Provider) SetModel(model string) {
 	p.mu.Lock()
 	p.model = model
-	m, c, f, g, ca, r := p.messages, p.chat, p.figIR, p.gemini, p.codeAssist, p.responses
+	m, c, g, ca, r := p.messages, p.chat, p.gemini, p.codeAssist, p.responses
 	p.mu.Unlock()
 	if m != nil {
 		m.SetModel(model)
 	}
 	if c != nil {
 		c.SetModel(model)
-	}
-	if f != nil {
-		f.SetModel(model)
 	}
 	if g != nil {
 		g.SetModel(model)
@@ -130,16 +125,13 @@ func (p *Provider) SetModel(model string) {
 func (p *Provider) SetTemplates(t *template.Template) {
 	p.mu.Lock()
 	p.templates = t
-	m, c, f, g, ca, r := p.messages, p.chat, p.figIR, p.gemini, p.codeAssist, p.responses
+	m, c, g, ca, r := p.messages, p.chat, p.gemini, p.codeAssist, p.responses
 	p.mu.Unlock()
 	if m != nil {
 		m.Templates = t
 	}
 	if c != nil {
 		c.Templates = t
-	}
-	if f != nil {
-		f.SetTemplates(t)
 	}
 	if g != nil {
 		g.SetTemplates(t)
@@ -207,33 +199,6 @@ func (p *Provider) chatBackend() (*openaichat.Provider, error) {
 	}
 	p.chat = c
 	return c, nil
-}
-
-func (p *Provider) figIRBackend() (*figir.Provider, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.figIR != nil {
-		return p.figIR, nil
-	}
-	route := provider.Route{
-		Name:            p.spec.Name,
-		BaseURL:         p.base(),
-		Dialect:         provider.DialectFigIR,
-		Auth:            provider.AuthBearer,
-		ModelPrefix:     p.spec.ModelPrefix,
-		Caps:            p.spec.Caps,
-		Headers:         p.spec.headersFor(FigIR),
-		AuthOptional:    p.spec.AuthOptional,
-		MaxRequestBytes: p.spec.MaxRequestBytes,
-	}
-	f, err := figir.New(p.knobsNow(), p.resolver, route)
-	if err != nil {
-		return nil, err
-	}
-	f.SetTemplates(p.templates)
-	f.Catalog = p.reader
-	p.figIR = f
-	return f, nil
 }
 
 func (p *Provider) geminiBackend() (*gemini.Provider, error) {
@@ -545,12 +510,6 @@ func (p *Provider) sendVia(ctx context.Context, t Transport, model string, in pr
 			return err
 		}
 		return c.Send(ctx, in, bus)
-	case FigIR:
-		f, err := p.figIRBackend()
-		if err != nil {
-			return err
-		}
-		return f.Send(ctx, in, bus)
 	case Gemini:
 		g, err := p.geminiBackend()
 		if err != nil {
@@ -722,10 +681,6 @@ func (p *Provider) Fingerprint() string {
 		if m, err := p.messagesBackend(); err == nil {
 			return m.Fingerprint()
 		}
-	case FigIR:
-		if f, err := p.figIRBackend(); err == nil {
-			return f.Fingerprint()
-		}
 	case Gemini:
 		if g, err := p.geminiBackend(); err == nil {
 			return g.Fingerprint()
@@ -766,17 +721,6 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 			}
 			p.cat.store(byID, catModels, "", p.now())
 			return listed, nil
-		}
-		if p.spec.Default == FigIR {
-			f, err := p.figIRBackend()
-			if err != nil {
-				return nil, err
-			}
-			listed, err := f.Models(ctx)
-			for i := range listed {
-				listed[i].Entry, _ = p.withRefusals(listed[i].ID, listed[i].Entry, true)
-			}
-			return listed, err
 		}
 		if p.spec.Default == Chat {
 			c, err := p.chatBackend()

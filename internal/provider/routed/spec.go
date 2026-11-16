@@ -20,26 +20,24 @@ type Transport string
 type Dialect = Transport
 
 const (
-	Messages     Transport = "messages"
-	Chat         Transport = "chat"
-	Responses    Transport = "responses"
-	ResponsesWS  Transport = "responses-ws"
-	FigIR        Transport = "fig-ir"
-	Gemini       Transport = "gemini"
-	CodeAssist   Transport = "code-assist"
-	DialectFigIR Transport = FigIR
+	Messages    Transport = "messages"
+	Chat        Transport = "chat"
+	Responses   Transport = "responses"
+	ResponsesWS Transport = "responses-ws"
+	Gemini      Transport = "gemini"
+	CodeAssist  Transport = "code-assist"
 )
 
 func ParseTransport(s string) (Transport, error) {
 	switch t := Transport(strings.ToLower(strings.TrimSpace(s))); t {
-	case Messages, Chat, Responses, ResponsesWS, FigIR, Gemini, CodeAssist:
+	case Messages, Chat, Responses, ResponsesWS, Gemini, CodeAssist:
 		return t, nil
 	case "code_assist":
 		return CodeAssist, nil
 	case "":
 		return "", nil
 	}
-	return "", fmt.Errorf("unknown transport %q (want messages, chat, responses, responses-ws, fig-ir, gemini or code-assist)", s)
+	return "", fmt.Errorf("unknown transport %q (want messages, chat, responses, responses-ws, gemini or code-assist)", s)
 }
 
 type RoundMode string
@@ -188,8 +186,6 @@ func (s Spec) namespace(t Transport) string {
 		return s.Name
 	case Messages:
 		return s.Name + "-messages"
-	case FigIR:
-		return s.Name + "-fig-ir"
 	case Gemini:
 		return s.Name + "-gemini"
 	case CodeAssist:
@@ -210,7 +206,7 @@ func (s Spec) headersFor(t Transport) map[string]string {
 }
 
 func transportForEndpoints(endpoints []string) Transport {
-	rank := map[Transport]int{CodeAssist: 7, Gemini: 6, FigIR: 5, ResponsesWS: 4, Responses: 3, Messages: 2, Chat: 1}
+	rank := map[Transport]int{CodeAssist: 6, Gemini: 5, ResponsesWS: 4, Responses: 3, Messages: 2, Chat: 1}
 	best := Transport("")
 	for _, e := range endpoints {
 		e = strings.ToLower(strings.TrimSpace(e))
@@ -220,8 +216,6 @@ func transportForEndpoints(endpoints []string) Transport {
 			t = CodeAssist
 		case strings.Contains(e, ":streamgeneratecontent") || e == "gemini":
 			t = Gemini
-		case strings.Contains(e, "fig-ir") || e == "fig_ir":
-			t = FigIR
 		case strings.Contains(e, "responses") && (strings.HasPrefix(e, "ws:") || strings.HasPrefix(e, "wss:")):
 			t = ResponsesWS
 		case strings.Contains(e, "responses"):
