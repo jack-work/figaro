@@ -3,7 +3,6 @@ package store
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	"github.com/jack-work/figaro/api/form"
 )
@@ -47,7 +46,9 @@ func (f *Form) Tombstoned() bool {
 	return snap.Has(TombstoneKey)
 }
 
-var errSealed = fmt.Errorf("form is tombstoned: no further patches")
+var ErrFormSealed = errors.New("form is tombstoned: no further patches")
+
+var errSealed = ErrFormSealed
 
 func (f *Form) Subscribed() bool { return len(*f.subs.Load()) > 0 }
 

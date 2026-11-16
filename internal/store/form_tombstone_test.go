@@ -111,3 +111,38 @@ func TestReclaimableWaitsForReaders(t *testing.T) {
 		t.Fatal("the last reader left and the form is still held")
 	}
 }
+
+// Defends #119: an unburied aria whose bound form is already tombstoned still
+// refuses ordinary patches, while lifetime and reap patches mirror into its
+// _meta sidecar so kill and TTL sweep can reap it.
+func TestSealedAriaAllowsLifetimeAndReapMetadataWritesOnly(t *testing.T) {
+	be, outfit := burialFixture(t)
+	id, err := be.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := be.form(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Tombstone("interrupted delete"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := be.ApplyForm(id, kv("brief", "after")); err == nil {
+		t.Fatal("ordinary patch succeeded on a tombstoned bound form")
+	}
+	if _, err := be.ApplyForm(id, kv(SystemTTLKey, "1h")); err != nil {
+		t.Fatalf("system.ttl refused on a tombstoned bound form: %v", err)
+	}
+	if got := be.TTLEntries(); len(got) != 1 || got[0].ID != id {
+		t.Fatalf("TTLEntries = %+v, want %s", got, id)
+	}
+
+	if _, err := be.ApplyForm(id, kv(SystemReapedKey, id)); err != nil {
+		t.Fatalf("system.reaped refused on a tombstoned bound form: %v", err)
+	}
+	if got := be.Reaped(); len(got) != 1 || got[0].ID != id || got[0].Root != id {
+		t.Fatalf("Reaped = %+v, want %s", got, id)
+	}
+}
