@@ -41,3 +41,16 @@ func TestAnUnexplainedHushFailureIsLeftToTheCaller(t *testing.T) {
 		t.Fatalf("wrote %q for an unrelated failure", out.String())
 	}
 }
+
+func TestNonTTYHushFailurePointsAtNonInteractiveCredentials(t *testing.T) {
+	var out bytes.Buffer
+	err := errors.New("set up figaro secrets vault: needs a controlling terminal, but stdin is not a TTY")
+	if !explainHushFailure(&out, err) {
+		t.Fatal("stdin-not-TTY failure was not explained")
+	}
+	for _, want := range []string{"api_key_file", "$CREDENTIALS_DIRECTORY", "[service_tokens]"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("explanation %q missing %q", out.String(), want)
+		}
+	}
+}

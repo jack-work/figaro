@@ -45,6 +45,9 @@ var pagerHoldsTerminal atomic.Bool
 // bounded retry.
 func promptVaultPassphrase(h *managed.Hush, appName string) ([]byte, error) {
 	if pagerHoldsTerminal.Load() {
+		if h == nil || !h.HasIdentity() {
+			return nil, errNoVaultYet
+		}
 		return nil, errHushAsleep
 	}
 	if h == nil {
@@ -127,6 +130,12 @@ func explainHushFailure(w io.Writer, err error) bool {
 		fmt.Fprintln(w, "The saved passphrase does not decrypt this vault.")
 		fmt.Fprintln(w, "  figaro vault status    inspect it")
 		fmt.Fprintln(w, "  figaro vault forget    clear it and be prompted again")
+		return true
+	case strings.Contains(err.Error(), "stdin is not a TTY"):
+		fmt.Fprintf(w, "figaro: hush: %s\n\n", err)
+		fmt.Fprintln(w, "Interactive vault setup and unlock need a terminal.")
+		fmt.Fprintln(w, "  run figaro provider login <name> in an interactive shell, or")
+		fmt.Fprintln(w, "  configure non-interactive credentials: api_key_file, $CREDENTIALS_DIRECTORY, or [service_tokens]")
 		return true
 	}
 	return false

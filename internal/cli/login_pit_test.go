@@ -5,10 +5,15 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	hushconfig "github.com/jack-work/hush/config"
+	"github.com/jack-work/hush/managed"
 
 	"github.com/jack-work/figaro/internal/auth"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
@@ -308,5 +313,109 @@ func TestRemoteTextInTheQuestionBoxAndTheBarPaintsNoEscape(t *testing.T) {
 	in.mu.Unlock()
 	if strings.Contains(sink.everything(), "]52;") {
 		t.Fatal("an OSC 52 from remote text reached the terminal")
+	}
+}
+
+// On a fresh install (!HasIdentity()), pager login must say there is no vault
+// yet rather than blaming a sleeping hush agent or naming a passphrase that
+// does not exist; once an identity exists and hush is stopped, errHushAsleep
+// still distinguishes the unlock case.
+func TestPagerLoginDistinguishesMissingVaultFromSleepingHush(t *testing.T) {
+	h := newTestVault(t)
+	if h.HasIdentity() {
+		t.Fatal("fresh test vault already has an identity")
+	}
+
+	if err := checkPagerHush(h); !errors.Is(err, errNoVaultYet) {
+		t.Fatalf("fresh install checkPagerHush = %v, want errNoVaultYet", err)
+	}
+	if strings.Contains(errNoVaultYet.Error(), "passphrase") {
+		t.Fatalf("errNoVaultYet mentions a nonexistent passphrase: %q", errNoVaultYet.Error())
+	}
+
+	pagerHoldsTerminal.Store(true)
+	t.Cleanup(func() { pagerHoldsTerminal.Store(false) })
+
+	if _, err := promptVaultPassphrase(h, "figaro"); !errors.Is(err, errNoVaultYet) {
+		t.Fatalf("fresh install promptVaultPassphrase under pager = %v, want errNoVaultYet", err)
+	}
+	if _, err := promptVaultPassphrase(nil, "figaro"); !errors.Is(err, errNoVaultYet) {
+		t.Fatalf("nil vault promptVaultPassphrase under pager = %v, want errNoVaultYet", err)
+	}
+
+	if _, err := h.Init([]byte("correct-horse-battery-staple")); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if !h.HasIdentity() {
+		t.Fatal("initialized vault reports no identity")
+	}
+	if err := checkPagerHush(h); !errors.Is(err, errHushAsleep) {
+		t.Fatalf("existing vault asleep checkPagerHush = %v, want errHushAsleep", err)
+	}
+	if _, err := promptVaultPassphrase(h, "figaro"); !errors.Is(err, errHushAsleep) {
+		t.Fatalf("existing vault asleep promptVaultPassphrase under pager = %v, want errHushAsleep", err)
+	}
+}
+
+func newHeadlessTestVault(t *testing.T) *managed.Hush {
+	t.Helper()
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "hush.toml"), []byte("[unlock]\nmethod = \"passphrase\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h, err := managed.New(managed.Options{
+		AppName: "figaro-test",
+		Mode:    managed.ModeEmbedded,
+		Dirs: &hushconfig.Dirs{
+			ConfigDir:  cfgDir,
+			StateDir:   filepath.Join(root, "state"),
+			RuntimeDir: filepath.Join(root, "run"),
+		},
+		PromptPassphrase: func() ([]byte, error) {
+			return nil, errors.New("unlock figaro-test vault: needs a controlling terminal, but stdin is not a TTY")
+		},
+	})
+	if err != nil {
+		t.Fatalf("managed.New: %v", err)
+	}
+	return h
+}
+
+func TestNonTTYProviderLoginPointsToNonInteractiveCredentials(t *testing.T) {
+	loaded := providerRig(t)
+	reg, err := loginTarget(loaded, "anthropic")
+	if err != nil {
+		t.Fatalf("loginTarget: %v", err)
+	}
+
+	h := newHeadlessTestVault(t)
+	err = prepareProviderLogin(loaded, "anthropic", reg, h, false)
+	if err == nil {
+		t.Fatal("non-TTY login with no vault succeeded")
+	}
+	if h.HasIdentity() {
+		t.Fatal("non-TTY login silently created a vault identity")
+	}
+	for _, want := range []string{"api_key_file", "CREDENTIALS_DIRECTORY", "[service_tokens]"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("fresh non-TTY error %q missing %q", err.Error(), want)
+		}
+	}
+
+	if _, err := h.Init([]byte("correct-horse-battery-staple")); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	err = prepareProviderLogin(loaded, "anthropic", reg, h, false)
+	if err == nil {
+		t.Fatal("non-TTY login with sleeping vault succeeded")
+	}
+	for _, want := range []string{"api_key_file", "CREDENTIALS_DIRECTORY", "[service_tokens]"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("sleeping-vault non-TTY error %q missing %q", err.Error(), want)
+		}
 	}
 }
