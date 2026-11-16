@@ -85,6 +85,17 @@ func (e Entry) Window(tier string) int {
 	return e.Context.Default
 }
 
+func (e Entry) Limit(tier string) int {
+	if e.Auto != nil {
+		return e.Auto.Capacity()
+	}
+	win := e.Window(tier)
+	if e.MaxPrompt > 0 && (win == 0 || e.MaxPrompt < win) {
+		return e.MaxPrompt
+	}
+	return win
+}
+
 func (e Entry) TakesImages() (takes bool, src string) {
 	if e.Images == nil {
 		return false, ""
@@ -191,12 +202,20 @@ func Subject(bound form.Snapshot) (provider, model string) {
 
 func ContextLimit(catalog, bound form.Snapshot) int {
 	provider, model := Subject(bound)
-	if e, ok := Lookup(catalog, provider, model); ok && e.Auto != nil {
-		capacity := e.Auto.Capacity()
-		if n, ok := Override(bound); ok && capacity > 0 && n < capacity {
-			return n
+	if provider != "" && model != "" && Current(catalog, provider) {
+		if raw, ok := catalog.Get(provider + ".models." + model + ".rou2_auto"); ok {
+			var auto *AutoRoute
+			if json.Unmarshal(raw, &auto) != nil {
+				return 0
+			}
+			if auto != nil {
+				capacity := auto.Capacity()
+				if n, ok := Override(bound); ok && capacity > 0 && n < capacity {
+					return n
+				}
+				return capacity
+			}
 		}
-		return capacity
 	}
 	if n, ok := Override(bound); ok {
 		return n
@@ -208,19 +227,26 @@ func EntryLimit(catalog form.Snapshot, provider, model, tier string) int {
 	if provider == "" || model == "" || !Current(catalog, provider) {
 		return 0
 	}
-	if raw, ok := catalog.Get(provider + ".models." + model + ".rou2_auto"); ok {
-		var auto AutoRoute
+	base := provider + ".models." + model
+	if raw, ok := catalog.Get(base + ".rou2_auto"); ok {
+		var auto *AutoRoute
 		if json.Unmarshal(raw, &auto) != nil {
 			return 0
 		}
-		return auto.Capacity()
+		if auto != nil {
+			return auto.Capacity()
+		}
 	}
-	raw, ok := catalog.Get(provider + ".models." + model + ".context")
-	var c Context
-	if !ok || json.Unmarshal(raw, &c) != nil {
-		return 0
+	var e Entry
+	if raw, ok := catalog.Get(base + ".context"); ok {
+		if json.Unmarshal(raw, &e.Context) != nil {
+			return 0
+		}
 	}
-	return Entry{Context: c}.Window(tier)
+	if maxPrompt, ok := intAt(catalog, base+".max_prompt"); ok && maxPrompt > 0 {
+		e.MaxPrompt = maxPrompt
+	}
+	return e.Limit(tier)
 }
 
 func intAt(s form.Snapshot, key string) (int, bool) {

@@ -115,6 +115,41 @@ func TestContextLimitPrecedence(t *testing.T) {
 		"a pin needs no catalog")
 }
 
+// When a catalog entry declares max_prompt below the context window, the
+// effective prompt limit is max_prompt unless system.max_context_tokens pins it.
+func TestContextLimitHonorsSmallerMaxPrompt(t *testing.T) {
+	cat := catalogOf(t, map[string]Provider{
+		"copilot": {IR: IRVersion, Models: map[string]Entry{
+			"gpt-6.1-sol": {Context: Context{Default: 1_050_000}, MaxPrompt: 922_000},
+			"gpt-6-astra": {Context: Context{Default: 1_050_000}, MaxPrompt: 1_050_000},
+			"tiered":      {Context: Context{Default: 200_000, Long: 1_000_000}, MaxPrompt: 872_000},
+			"wider-cap":   {Context: Context{Default: 200_000}, MaxPrompt: 300_000},
+			"prompt-only": {MaxPrompt: 32_000},
+		}},
+	})
+	bound := func(model string, extra map[string]string) form.Snapshot {
+		kv := map[string]string{"system.provider": `"copilot"`, "system.model": `"` + model + `"`}
+		for k, v := range extra {
+			kv[k] = v
+		}
+		return boundFormOf(kv)
+	}
+
+	require.Equal(t, 922_000, ContextLimit(cat, bound("gpt-6.1-sol", nil)))
+	require.Equal(t, 922_000, EntryLimit(cat, "copilot", "gpt-6.1-sol", ""))
+	require.Equal(t, 1_000_000, ContextLimit(cat, bound("gpt-6.1-sol", map[string]string{"system.max_context_tokens": `1000000`})),
+		"system.max_context_tokens overrides max_prompt too")
+	require.Equal(t, 500_000, ContextLimit(cat, bound("gpt-6.1-sol", map[string]string{"system.max_context_tokens": `500000`})))
+
+	require.Equal(t, 1_050_000, ContextLimit(cat, bound("gpt-6-astra", nil)))
+	require.Equal(t, 200_000, ContextLimit(cat, bound("tiered", nil)),
+		"default window below max_prompt stays at default window")
+	require.Equal(t, 872_000, ContextLimit(cat, bound("tiered", map[string]string{"system.context_tier": `"long_context"`})),
+		"long_context window above max_prompt clamps at max_prompt")
+	require.Equal(t, 200_000, ContextLimit(cat, bound("wider-cap", nil)))
+	require.Equal(t, 32_000, ContextLimit(cat, bound("prompt-only", nil)))
+}
+
 func TestProviderStatus(t *testing.T) {
 	cat := catalogOf(t, map[string]Provider{
 		"anthropic": {RefreshedAt: 1_700_000_000_000, AttemptedAt: 1_700_000_100_000, Error: "401"},
