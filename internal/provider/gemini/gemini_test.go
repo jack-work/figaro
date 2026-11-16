@@ -1,6 +1,7 @@
 package gemini
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -345,32 +347,79 @@ func TestDrainSSEReturnsStreamCutWhenTruncated(t *testing.T) {
 func TestThinkingConfigStreamsThoughtsForEffortAndReasoningModels(t *testing.T) {
 	cfg, err := buildGenerationConfig(form.FromMap(map[string]json.RawMessage{
 		"system.thinking_effort": json.RawMessage(`"high"`),
-	}), 4096, false)
+	}), "gemini-4-carbon", 4096, false)
 	require.NoError(t, err)
 	require.NotNil(t, cfg.ThinkingConfig)
 	assert.True(t, cfg.ThinkingConfig.IncludeThoughts)
+	assert.Equal(t, "high", cfg.ThinkingConfig.ThinkingLevel)
 	assert.Zero(t, cfg.ThinkingConfig.ThinkingBudget)
 
-	cfg, err = buildGenerationConfig(form.Snapshot{}, 4096, true)
+	cfg, err = buildGenerationConfig(form.FromMap(map[string]json.RawMessage{
+		"system.thinking_effort": json.RawMessage(`0.15`),
+	}), "gemini-4-carbon", 4096, true)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.ThinkingConfig)
+	assert.Equal(t, "low", cfg.ThinkingConfig.ThinkingLevel)
+
+	cfg, err = buildGenerationConfig(form.FromMap(map[string]json.RawMessage{
+		"system.thinking_effort": json.RawMessage(`"max"`),
+	}), "gemini-4-hydrogen", 4096, true)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.ThinkingConfig)
+	assert.Equal(t, "xhigh", cfg.ThinkingConfig.ThinkingLevel)
+
+	cfg, err = buildGenerationConfig(form.FromMap(map[string]json.RawMessage{
+		"system.thinking_effort": json.RawMessage(`"medium"`),
+	}), "gemini-2.5-pro", 4096, true)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.ThinkingConfig)
+	assert.Empty(t, cfg.ThinkingConfig.ThinkingLevel)
+	assert.Equal(t, 8192, cfg.ThinkingConfig.ThinkingBudget)
+
+	cfg, err = buildGenerationConfig(form.Snapshot{}, "gemini-4-carbon", 4096, true)
 	require.NoError(t, err)
 	require.NotNil(t, cfg.ThinkingConfig)
 	assert.True(t, cfg.ThinkingConfig.IncludeThoughts)
+	assert.Empty(t, cfg.ThinkingConfig.ThinkingLevel)
 
 	cfg, err = buildGenerationConfig(form.FromMap(map[string]json.RawMessage{
 		"system.thinking_effort": json.RawMessage(`"none"`),
-	}), 4096, true)
+	}), "gemini-4-carbon", 4096, true)
 	require.NoError(t, err)
 	assert.Nil(t, cfg.ThinkingConfig)
 
 	cfg, err = buildGenerationConfig(form.FromMap(map[string]json.RawMessage{
 		"system.thinking_budget": json.RawMessage(`0`),
-	}), 4096, true)
+	}), "gemini-4-carbon", 4096, true)
 	require.NoError(t, err)
 	assert.Nil(t, cfg.ThinkingConfig)
 
-	cfg, err = buildGenerationConfig(form.Snapshot{}, 4096, false)
+	cfg, err = buildGenerationConfig(form.Snapshot{}, "custom-nonreasoning", 4096, false)
 	require.NoError(t, err)
 	assert.Nil(t, cfg.ThinkingConfig)
+}
+
+func TestCodeAssistCatalogMapsMaxTokensToWindowAndAppliesBuiltinFacts(t *testing.T) {
+	raw := []byte(`{"models":{
+		"gemini-4-carbon":{"displayName":"Gemini 4 Carbon","supportsImages":true,"thinkingLevel":2,"maxTokens":1048576},
+		"claude-opus-5-5-high":{"displayName":"Claude Opus 5.5 (High)","supportsImages":true,"thinkingLevel":2,"maxTokens":1000000}
+	}}`)
+	norm, err := NormalizeCatalogJSON(raw, "/v1internal:streamGenerateContent")
+	require.NoError(t, err)
+	reader, err := (&Provider{}).catalogReader()
+	require.NoError(t, err)
+	listed, _, err := reader.Page(bytes.NewReader(norm))
+	require.NoError(t, err)
+	require.Len(t, listed, 2)
+
+	byID := map[string]models.Entry{}
+	for _, m := range listed {
+		byID[m.ID] = m.Entry
+	}
+	assert.Equal(t, 1048576, byID["gemini-4-carbon"].Window(""))
+	assert.Equal(t, 65536, byID["gemini-4-carbon"].MaxOutput)
+	assert.Equal(t, 1000000, byID["claude-opus-5-5-high"].Window(""))
+	assert.Equal(t, 65536, byID["claude-opus-5-5-high"].MaxOutput)
 }
 
 func TestParallelFunctionCallsKeepOnlyFirstSignatureAndSignedThoughtSurvives(t *testing.T) {

@@ -257,3 +257,43 @@ func TestTheWallClockWatchdogFires(t *testing.T) {
 		t.Fatalf("%v does not name the window", err)
 	}
 }
+
+func TestWithInitialStallExtendsPreBodyWindowThenRevertsToSteadyStall(t *testing.T) {
+	headersSent := make(chan struct{})
+	sendFirst := make(chan struct{})
+	rt, clk, url := stallTransport(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		close(headersSent)
+		<-sendFirst
+		w.Write([]byte("chunk1"))
+		w.(http.Flusher).Flush()
+		hold(t, r)
+	}))
+
+	ctx := WithInitialStall(context.Background(), 4*window)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	<-headersSent
+
+	clk.Advance(3 * window)
+	close(sendFirst)
+	buf := make([]byte, len("chunk1"))
+	if _, err := io.ReadFull(resp.Body, buf); err != nil {
+		t.Fatalf("read after 3x steady stall within initial window failed: %v", err)
+	}
+
+	readRest := make(chan error, 1)
+	go func() {
+		_, err := io.ReadAll(resp.Body)
+		readRest <- err
+	}()
+	clk.Advance(window)
+	if err := within(t, "post-first-byte steady stall", readRest); !errors.Is(err, ErrStalled) {
+		t.Fatalf("got %v, want ErrStalled after steady window", err)
+	}
+}
