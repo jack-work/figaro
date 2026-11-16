@@ -37,7 +37,7 @@ func (a *Agent) runInquiryMethods(ctx context.Context, inquiry string) {
 	}
 	inquiries := append([]string{inquiry}, a.inquiriesBefore(methods.Depth(ms))...)
 	set := map[string]json.RawMessage{}
-	for _, o := range methods.RunAll(ctx, a.decider, decide.Source{BoundForm: snap}, ms, inquiries) {
+	for _, o := range methods.RunAll(ctx, a.decider, decide.Source{FigaroID: a.id, Node: a.nodeLabel(), BoundForm: snap}, ms, inquiries) {
 		level := slog.LevelInfo
 		if errors.Is(o.Err, methods.ErrResting) {
 			level = slog.LevelDebug

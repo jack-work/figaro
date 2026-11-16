@@ -244,14 +244,19 @@ func buildDecider(loaded *config.Loaded) (*decide.Engine, error) {
 		if err != nil {
 			return decide.Target{}, err
 		}
-		return decideTarget(up), nil
+		return decideTarget(up, loaded.ProviderSendsFigaroID(provider)), nil
 	}), nil
 }
 
-func decideTarget(up relay.Upstream) decide.Target {
-	return decide.Target{BaseURL: up.Base(), Auth: up.Credential(), Headers: func(path string) map[string]string {
-		return up.Headers(routed.TransportForPath(path))
-	}}
+func decideTarget(up relay.Upstream, sendFigaroID bool) decide.Target {
+	return decide.Target{
+		BaseURL:      up.Base(),
+		Auth:         up.Credential(),
+		SendFigaroID: sendFigaroID,
+		Headers: func(path string) map[string]string {
+			return up.Headers(routed.TransportForPath(path))
+		},
+	}
 }
 
 func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {

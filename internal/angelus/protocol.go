@@ -307,6 +307,11 @@ func (h *handlers) nodeID() string {
 	return h.angelus.Backend.NodeID()
 }
 
+func (h *handlers) nodeLabel() string {
+	loaded, _ := h.settings()
+	return loaded.TelemetryNodeLabel(h.nodeID())
+}
+
 // Restore wakes ariaID; wokeBy lands on FigaroInfo.WokeBy.
 func (hs *Handlers) Restore(ctx context.Context, ariaID, wokeBy string) (figaro.Figaro, error) {
 	return hs.h.restoreByID(ctx, ariaID, wokeBy)

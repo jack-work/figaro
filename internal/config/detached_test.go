@@ -10,6 +10,7 @@ const liveNode = `default_outfit = "mock"
 [telemetry]
 otlp_endpoint = "http://127.0.0.1:4380"
 dir = "/home/node/.local/state/figaro"
+node_label = "spain-west"
 [cli]
 troupe = "kelliher"
 [troupe]
@@ -61,6 +62,7 @@ func TestADetachedConfigIsNotTheNode(t *testing.T) {
 	require.Empty(t, l.TroupesDir())
 	require.Empty(t, l.TelemetryOTLPEndpoint(), "the live node's collector")
 	require.Empty(t, l.Config.Telemetry.Dir, "the live node's telemetry files")
+	require.Equal(t, "detached-node", l.TelemetryNodeLabel("detached-node"), "the live node's label")
 }
 
 func TestWithoutTheEnvTheConfigIsTheNode(t *testing.T) {
@@ -76,6 +78,17 @@ func TestWithoutTheEnvTheConfigIsTheNode(t *testing.T) {
 	require.NotEmpty(t, l.BoxDoors())
 	require.NotEmpty(t, l.TroupesDir())
 	require.Equal(t, "http://127.0.0.1:4380", l.TelemetryOTLPEndpoint())
+	require.Equal(t, "spain-west", l.TelemetryNodeLabel("fallback-node"))
+}
+
+func TestTelemetryNodeLabelFallbackAndValidation(t *testing.T) {
+	t.Setenv(DetachedEnv, "")
+	l, err := loadWith(t, "default_outfit = \"mock\"\n")
+	require.NoError(t, err)
+	require.Equal(t, "store-node-uuid", l.TelemetryNodeLabel("store-node-uuid"))
+
+	_, err = loadWith(t, "[telemetry]\nnode_label = \"bad\\r\\nInjected: 1\"\n")
+	require.ErrorContains(t, err, "node_label")
 }
 
 // Dev runs exported pager latency into the live figscope and spoiled its

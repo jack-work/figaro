@@ -378,6 +378,14 @@ func (a *Agent) contextLimit() int {
 	return models.ContextLimit(a.models.Snapshot(), a.Snapshot())
 }
 
+func (a *Agent) nodeLabel() string {
+	var id string
+	if a.backend != nil {
+		id = a.backend.NodeID()
+	}
+	return a.settings.TelemetryNodeLabel(id)
+}
+
 // refreshMetrics runs at durable message boundaries, never on streaming deltas.
 func (a *Agent) refreshMetrics() {
 	a.mu.RLock()

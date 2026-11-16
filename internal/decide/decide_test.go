@@ -666,3 +666,59 @@ func TestTheProvidersHeadersRideEveryDecision(t *testing.T) {
 		t.Fatalf("headers were chosen for %q, the request went to %q", askedFor, path)
 	}
 }
+
+// Defends #110 and #117: when the decision provider opts in with
+// send_figaro_id, both Decide and Ask stamp Figaro-Id and Figaro-Node and
+// overwrite static forged headers; when it does not, neither is stamped.
+func TestDecisionsStampFigaroIdAndNodeWhenOptedIn(t *testing.T) {
+	for _, optIn := range []bool{false, true} {
+		t.Run(fmt.Sprint("send_figaro_id=", optIn), func(t *testing.T) {
+			var gotID, gotNode []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotID = r.Header.Values("Figaro-Id")
+				gotNode = r.Header.Values("Figaro-Node")
+				io.WriteString(w, liveChoice)
+			}))
+			defer srv.Close()
+
+			e := New(func(string) (Target, error) {
+				return Target{
+					BaseURL:      srv.URL,
+					Auth:         fixedToken("k"),
+					SendFigaroID: optIn,
+					Headers: func(string) map[string]string {
+						return map[string]string{
+							"Figaro-Id":   "forged-id",
+							"Figaro-Node": "forged-node",
+						}
+					},
+				}, nil
+			})
+
+			src := Source{
+				FigaroID: "aria-decide-42",
+				Node:     "node-spain",
+				Defaults: defaultsOf(t, "rou2", "jev-latest"),
+			}
+			decide(t, e, src, rpc.DecideRequest{Question: "pick one\n?? idempotency-key queue nothing"})
+			wantID, wantNode := []string{"forged-id"}, []string{"forged-node"}
+			if optIn {
+				wantID, wantNode = []string{"aria-decide-42"}, []string{"node-spain"}
+			}
+			if fmt.Sprint(gotID) != fmt.Sprint(wantID) || fmt.Sprint(gotNode) != fmt.Sprint(wantNode) {
+				t.Fatalf("Decide headers id=%q node=%q, want id=%q node=%q", gotID, gotNode, wantID, wantNode)
+			}
+
+			gotID, gotNode = nil, nil
+			if _, err := e.Ask(context.Background(), src, Question{
+				Ask:     "method ask",
+				Options: []Option{{Label: "idempotency-key"}, {Label: "queue"}},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if fmt.Sprint(gotID) != fmt.Sprint(wantID) || fmt.Sprint(gotNode) != fmt.Sprint(wantNode) {
+				t.Fatalf("Ask headers id=%q node=%q, want id=%q node=%q", gotID, gotNode, wantID, wantNode)
+			}
+		})
+	}
+}

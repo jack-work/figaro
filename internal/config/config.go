@@ -20,6 +20,7 @@ type TelemetryConfig struct {
 	Level string `toml:"level"`
 
 	OTLPEndpoint string `toml:"otlp_endpoint"`
+	NodeLabel    string `toml:"node_label"`
 }
 
 type Config struct {
@@ -395,6 +396,22 @@ func (l *Loaded) TelemetryOTLPEndpoint() string {
 	return l.cfg().Telemetry.OTLPEndpoint
 }
 
+func (l *Loaded) TelemetryNodeLabel(fallback string) string {
+	if l != nil {
+		if label := strings.TrimSpace(l.cfg().Telemetry.NodeLabel); label != "" {
+			return label
+		}
+	}
+	return fallback
+}
+
+func (c *Config) validateTelemetry() error {
+	if strings.ContainsAny(c.Telemetry.NodeLabel, "\r\n\x00") {
+		return fmt.Errorf("[telemetry] node_label may not contain control characters")
+	}
+	return nil
+}
+
 // SegmentCacheBytes has the same unset/explicit-zero contract as IRWindowBytes.
 func (l *Loaded) SegmentCacheBytes() (int64, bool) {
 	if l.cfg().Memory.SegmentCacheMB == nil {
@@ -719,6 +736,7 @@ type ProviderAuth struct {
 	APIKey       string `toml:"api_key"`
 	APIKeyFile   string `toml:"api_key_file"`
 	ServiceToken string `toml:"service_token"`
+	SendFigaroID bool   `toml:"send_figaro_id"`
 
 	AccessToken  string `toml:"access_token"`
 	RefreshToken string `toml:"refresh_token"`
@@ -811,6 +829,17 @@ func (l *Loaded) serviceTokenOf(provider string) string {
 		return ""
 	}
 	return pa.ServiceToken
+}
+
+func (l *Loaded) ProviderSendsFigaroID(provider string) bool {
+	if l == nil || provider == "" {
+		return false
+	}
+	var pa ProviderAuth
+	if err := l.LoadProviderAuth(provider, &pa); err != nil {
+		return false
+	}
+	return pa.SendFigaroID
 }
 
 // LoadProviderAuth returns nil, nil when the file is absent.
@@ -925,6 +954,9 @@ func load(configDir string) (*Loaded, error) {
 		}
 	}
 
+	if err := cfg.validateTelemetry(); err != nil {
+		return nil, fmt.Errorf("%s: %w", configPath, err)
+	}
 	if err := cfg.validateWire(); err != nil {
 		return nil, err
 	}
