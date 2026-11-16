@@ -108,6 +108,9 @@ func (f File) Apply(spec Spec) (Spec, error) {
 	if f.SendFigaroID {
 		spec.SendFigaroID = true
 	}
+	if f.OAuth != nil && f.OAuth.ClientSecretFile != "" {
+		spec.ClientSecretFile = strings.TrimSpace(f.OAuth.ClientSecretFile)
+	}
 	spec.Mapping = spec.Mapping.With(f.Catalog)
 	if len(f.Models) > 0 {
 		spec.Overrides = make(map[string]catalog.Override, len(f.Models))

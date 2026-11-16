@@ -109,6 +109,7 @@ type Spec struct {
 	TransportHeaders map[Transport]map[string]string
 	IdentityHeaders  func(responses.IDs) map[string]string
 	SendFigaroID     bool
+	ClientSecretFile string
 
 	Catalog      string
 	Mapping      catalog.Mapping

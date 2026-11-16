@@ -193,8 +193,8 @@ func (d *DeclaredProvider) Send(ctx context.Context, in provider.SendInput, bus 
 		model = d.model
 		d.mu.RUnlock()
 	}
-	if d.mapRe != nil && !d.shared.populated() && d.spec.Catalog != "" {
-		cctx, cancel := context.WithTimeout(ctx, routeWait)
+	if ((d.mapRe != nil && !d.shared.populated()) || (d.outTmpl != nil && d.cat.empty())) && d.spec.Catalog != "" {
+		cctx, cancel := context.WithTimeout(ctx, catalogTimeout)
 		_, _ = d.Models(cctx)
 		cancel()
 	}
