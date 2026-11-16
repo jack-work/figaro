@@ -459,7 +459,7 @@ func Run() {
 	a.Models = modelcat.New(modelcat.Config{
 		Build:     func(name string) (providerPkg.Provider, error) { return build(name, providerPkg.Knobs{}) },
 		Providers: func() []string { return catalogProviders(loaded) },
-		Known:     func(name string) bool { return providerPkg.Lookup(name) != nil },
+		Known:     func(name string) bool { reg := providerPkg.Lookup(name); return reg != nil && reg.IsConfigured(loaded) },
 		Poll:      loaded.ModelsPoll(),
 		Form:      modelsForm(backend),
 	})
@@ -614,7 +614,13 @@ func warmRoutes(build angelus.ProviderFactory, names []string) {
 
 func catalogProviders(loaded *config.Loaded) []string {
 	if names := loaded.ListProviders(); len(names) > 0 {
-		return names
+		out := make([]string, 0, len(names))
+		for _, name := range names {
+			if reg := providerPkg.Lookup(name); reg != nil && reg.IsConfigured(loaded) {
+				out = append(out, name)
+			}
+		}
+		return out
 	}
-	return providerPkg.Names()
+	return providerPkg.ConfiguredNames(loaded)
 }

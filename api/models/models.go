@@ -103,6 +103,7 @@ func (e *Entry) Mark(field, src string) {
 
 type Provider struct {
 	IR          int              `json:"ir,omitempty"`
+	CatalogOff  bool             `json:"catalog_off,omitempty"`
 	Models      map[string]Entry `json:"models,omitempty"`
 	RefreshedAt int64            `json:"refreshed_at,omitempty"`
 	AttemptedAt int64            `json:"attempted_at,omitempty"`
@@ -110,6 +111,7 @@ type Provider struct {
 }
 
 type Status struct {
+	CatalogOff  bool
 	RefreshedAt time.Time
 	AttemptedAt time.Time
 	Error       string
@@ -156,6 +158,12 @@ func ProviderStatus(catalog form.Snapshot, provider string) (Status, bool) {
 	}
 	var st Status
 	found := false
+	if raw, ok := catalog.Get(provider + ".catalog_off"); ok {
+		_ = json.Unmarshal(raw, &st.CatalogOff)
+		if st.CatalogOff {
+			found = true
+		}
+	}
 	if ms, ok := intAt(catalog, provider+".refreshed_at"); ok {
 		st.RefreshedAt, found = time.UnixMilli(int64(ms)), true
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/catalogmaps"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 )
 
@@ -31,18 +32,39 @@ func init() {
 		EnvVar:       "FIGARO_GATEWAY_API_KEY",
 		LoginHint:    "OpenAI-compatible gateway: base_url in providers/gateway.toml, then figaro provider login gateway",
 		Build:        buildGateway,
+		Configured:   gatewayConfigured,
 	})
 	registerAzure()
 }
 
 func registerAzure() {
 	provider.Register(&provider.Registration{
-		Name:      azureName,
-		EnvVar:    "AZURE_OPENAI_API_KEY",
-		HasOAuth:  true,
-		LoginHint: "Azure AI Foundry (Microsoft Entra device code):  figaro provider login azure",
-		Build:     buildAzure,
+		Name:       azureName,
+		EnvVar:     "AZURE_OPENAI_API_KEY",
+		HasOAuth:   true,
+		LoginHint:  "Azure AI Foundry (Microsoft Entra device code):  figaro provider login azure",
+		Build:      buildAzure,
+		Configured: azureConfigured,
 	})
+}
+
+func gatewayConfigured(loaded *config.Loaded) bool {
+	return hasProviderConfig(loaded, gatewayName, "figaro_gateway")
+}
+
+func azureConfigured(loaded *config.Loaded) bool {
+	return hasProviderConfig(loaded, azureName, azureName)
+}
+
+func hasProviderConfig(loaded *config.Loaded, name, envPrefix string) bool {
+	if strings.TrimSpace(os.Getenv(provider.BaseURLEnv(envPrefix))) != "" {
+		return true
+	}
+	if loaded == nil {
+		return false
+	}
+	_, err := os.Stat(loaded.ProviderAuthPath(name))
+	return err == nil
 }
 
 func buildAzure(ctx provider.BuildContext) (provider.Provider, error) {

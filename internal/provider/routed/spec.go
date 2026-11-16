@@ -116,6 +116,7 @@ type Spec struct {
 	CodeAssist       gemini.CodeAssistConfig
 
 	Catalog      string
+	CatalogOff   bool
 	Mapping      catalog.Mapping
 	Overrides    map[string]catalog.Override
 	Default      Transport

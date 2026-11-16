@@ -354,20 +354,30 @@ func (c *Catalog) fetch(ctx context.Context, providerName string, wanted []strin
 	prov, err := c.cfg.Build(providerName)
 	if err != nil {
 		if list {
-			c.record(providerName, nil, nil, now, err)
+			c.record(providerName, nil, nil, false, now, err)
 		}
 		return
 	}
+	catalogOff := false
+	if cs, ok := prov.(provider.CatalogStatus); ok && cs.CatalogOff() {
+		catalogOff = true
+	}
 	seeder, _ := prov.(provider.ModelSeeder)
-	if seeder != nil {
+	if seeder != nil || catalogOff {
 		seeded := map[string]models.Entry{}
 		snap := c.Snapshot()
 		for _, m := range wanted {
 			if _, have := models.Lookup(snap, providerName, m); have {
 				continue
 			}
-			if e, ok := seeder.SeedModel(m); ok {
-				seeded[m] = e
+			if seeder != nil {
+				if e, ok := seeder.SeedModel(m); ok {
+					seeded[m] = e
+					continue
+				}
+			}
+			if catalogOff {
+				seeded[m] = models.Entry{}
 			}
 		}
 		if len(seeded) > 0 {
@@ -381,7 +391,7 @@ func (c *Catalog) fetch(ctx context.Context, providerName string, wanted []strin
 	fctx, cancel := context.WithTimeout(ctx, c.cfg.FetchTimeout)
 	listed, err := prov.Models(fctx)
 	cancel()
-	c.record(providerName, seeder, listed, now, err)
+	c.record(providerName, seeder, listed, catalogOff, now, err)
 }
 
 func (c *Catalog) merge(providerName string, seeded map[string]models.Entry) {
@@ -395,8 +405,9 @@ func (c *Catalog) merge(providerName string, seeded map[string]models.Entry) {
 	c.publish(providerName, cur)
 }
 
-func (c *Catalog) record(providerName string, seeder provider.ModelSeeder, listed []provider.ModelInfo, now time.Time, err error) {
+func (c *Catalog) record(providerName string, seeder provider.ModelSeeder, listed []provider.ModelInfo, catalogOff bool, now time.Time, err error) {
 	cur := c.current(providerName)
+	cur.CatalogOff = catalogOff
 	cur.AttemptedAt = now.UnixMilli()
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
@@ -413,14 +424,18 @@ func (c *Catalog) record(providerName string, seeder provider.ModelSeeder, liste
 		}
 		next[info.ID] = withoutEchoedName(info.ID, info.Entry)
 	}
-	if seeder != nil {
-		for id := range cur.Models {
-			if _, listed := next[id]; listed {
-				continue
-			}
+	for id, prev := range cur.Models {
+		if _, listed := next[id]; listed {
+			continue
+		}
+		if seeder != nil {
 			if e, ok := seeder.SeedModel(id); ok {
 				next[id] = withoutEchoedName(id, e)
+				continue
 			}
+		}
+		if catalogOff {
+			next[id] = prev
 		}
 	}
 	cur.Models = next

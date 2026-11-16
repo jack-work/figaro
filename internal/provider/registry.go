@@ -28,6 +28,8 @@ type Registration struct {
 
 	Build func(BuildContext) (Provider, error)
 
+	Configured func(*config.Loaded) bool
+
 	// ExchangeGrant names the hush grant that derives the bearer from the
 	// stored secret; empty means the stored credential is the bearer.
 	ExchangeGrant string
@@ -65,10 +67,25 @@ func (r *Registration) CredentialEnvs() []string {
 
 func Lookup(name string) *Registration { return registry[name] }
 
+func (r *Registration) IsConfigured(loaded *config.Loaded) bool {
+	return r != nil && (r.Configured == nil || r.Configured(loaded))
+}
+
 func Names() []string {
 	out := make([]string, 0, len(registry))
 	for k := range registry {
 		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func ConfiguredNames(loaded *config.Loaded) []string {
+	out := make([]string, 0, len(registry))
+	for k, r := range registry {
+		if r.IsConfigured(loaded) {
+			out = append(out, k)
+		}
 	}
 	sort.Strings(out)
 	return out
