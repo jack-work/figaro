@@ -14,6 +14,8 @@ func (p *Provider) Endpoint(t Transport) string {
 		return p.base() + p.spec.MessagesPath
 	case Chat:
 		return p.base() + "/chat/completions"
+	case FigIR:
+		return p.base() + "/fig-ir"
 	}
 	return p.base() + "/responses"
 }
@@ -31,6 +33,8 @@ func TransportForPath(path string) Transport {
 		return Messages
 	case strings.HasSuffix(path, "/responses"):
 		return Responses
+	case strings.HasSuffix(path, "/fig-ir"):
+		return FigIR
 	}
 	return ""
 }

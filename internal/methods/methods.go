@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jack-work/figaro/api/form"
@@ -37,7 +38,7 @@ type spec struct {
 	Options   json.RawMessage `json:"options"`
 	Score     json.RawMessage `json:"score"`
 	KeepCache json.RawMessage `json:"keep_cache"`
-	Default   *string         `json:"default"`
+	Default   json.RawMessage `json:"default"`
 }
 
 func Read(snap form.Snapshot) ([]Method, []error) {
@@ -117,13 +118,48 @@ func readMethod(name string, raw json.RawMessage) (Method, bool, error) {
 	if m.Score && !ordered {
 		return m, false, errors.New("score reads the options as a scale, so they must be an array, lowest first")
 	}
-	if s.Default != nil {
-		if !hasOption(m.Options, *s.Default) {
-			return m, false, fmt.Errorf("default %q is not one of the options", *s.Default)
-		}
-		m.Default = s.Default
+	if def, err := readDefault(s.Default, m.Options, m.Score); err != nil {
+		return m, false, err
+	} else if def != nil {
+		m.Default = def
 	}
 	return m, true, nil
+}
+
+func canonNumber(n float64) string {
+	if n == 0 {
+		n = 0
+	}
+	return strconv.FormatFloat(n, 'f', -1, 64)
+}
+
+func readDefault(raw json.RawMessage, opts []decide.Option, score bool) (*string, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return nil, nil
+	}
+	var s string
+	if json.Unmarshal(trimmed, &s) == nil {
+		s = strings.TrimSpace(s)
+		if !hasOption(opts, s) && score {
+			if n, err := strconv.ParseFloat(s, 64); err == nil {
+				s = canonNumber(n)
+			}
+		}
+		if !hasOption(opts, s) {
+			return nil, fmt.Errorf("default %q is not one of the options", s)
+		}
+		return &s, nil
+	}
+	var n float64
+	if json.Unmarshal(trimmed, &n) == nil {
+		s = canonNumber(n)
+		if !hasOption(opts, s) {
+			return nil, fmt.Errorf("default %q is not one of the options", s)
+		}
+		return &s, nil
+	}
+	return nil, fmt.Errorf("default: want string or number, got %s", trimmed)
 }
 
 func readOptions(raw json.RawMessage) ([]decide.Option, bool, error) {
@@ -135,11 +171,18 @@ func readOptions(raw json.RawMessage) ([]decide.Option, bool, error) {
 	ordered := trimmed[0] == '['
 	if ordered {
 		var labels []string
-		if err := json.Unmarshal(trimmed, &labels); err != nil {
-			return nil, false, errors.New("an array must hold strings")
-		}
-		for _, l := range labels {
-			opts = append(opts, decide.Option{Label: strings.TrimSpace(l)})
+		if err := json.Unmarshal(trimmed, &labels); err == nil {
+			for _, l := range labels {
+				opts = append(opts, decide.Option{Label: strings.TrimSpace(l)})
+			}
+		} else {
+			var nums []float64
+			if err := json.Unmarshal(trimmed, &nums); err != nil {
+				return nil, false, errors.New("an array must hold strings or numbers")
+			}
+			for _, n := range nums {
+				opts = append(opts, decide.Option{Label: canonNumber(n)})
+			}
 		}
 	} else {
 		var named map[string]string
