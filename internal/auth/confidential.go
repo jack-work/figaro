@@ -20,8 +20,6 @@ import (
 	hush "github.com/jack-work/hush/client"
 )
 
-// TODO(testing): verify cross-origin Google PKCE validation, client_secret_file code exchange + hush-sealed refresh rotation (preserving unrotated Google refresh_token), and headless callback paste against an ephemeral loopback TLS token server without touching live credentials.
-
 type confidentialTOML struct {
 	TokenURL         string `toml:"token_url"`
 	ClientID         string `toml:"client_id"`
@@ -155,11 +153,16 @@ func ConfidentialOAuthList() ([]string, error) {
 	return names, nil
 }
 
-func ConfidentialOAuthDelete(name string) error {
+func ConfidentialOAuthRemove(name string) (bool, error) {
 	err := os.Remove(confidentialPath("", name))
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+		return false, nil
 	}
+	return err == nil, err
+}
+
+func ConfidentialOAuthDelete(name string) error {
+	_, err := ConfidentialOAuthRemove(name)
 	return err
 }
 

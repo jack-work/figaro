@@ -198,3 +198,26 @@ func TestTheAriaOverridesTheDefaultOutfitLeafByLeaf(t *testing.T) {
 		t.Fatal("the aria's off switch did not override the outfit's on")
 	}
 }
+
+func TestNumericOrdinalOptionsAndDefault(t *testing.T) {
+	raw := `{
+		"effort-scale": {
+			"key": "system.thinking_effort",
+			"context": "{{inquiry}}",
+			"options": [0, 25, 50, 75, 100],
+			"score": true,
+			"default": 50
+		}
+	}`
+	m := method(t, raw)
+	if len(m.Options) != 5 || m.Options[0].Label != "0" || m.Options[4].Label != "100" {
+		t.Fatalf("options = %+v", m.Options)
+	}
+	if m.Default == nil || *m.Default != "50" {
+		t.Fatalf("default = %v", m.Default)
+	}
+	o := Run(context.Background(), chose("75"), decide.Source{}, m, []string{"hard proof"})
+	if o.Verdict != Decided || o.Value != "75" {
+		t.Fatalf("outcome = %+v", o)
+	}
+}

@@ -37,8 +37,19 @@ organization_prompt = "true"
 
 func TestDeclaredPKCERejectsUnsafeOverrides(t *testing.T) {
 	p := newPKCEIdP(t)
+	badBoth := []string{
+		"http://example.invalid/token",
+		p.srv.URL + "/token#fragment",
+		strings.Replace(p.srv.URL, "https://", "https://user@", 1) + "/token",
+		"/relative",
+		p.srv.URL + "/token?state=wrong",
+	}
 	for _, field := range []string{"authorize_url", "token_url"} {
-		for _, raw := range []string{"http://example.invalid/token", "https://other.invalid/token", p.srv.URL + "/token#fragment", strings.Replace(p.srv.URL, "https://", "https://user@", 1) + "/token", "/relative", p.srv.URL + "/token?state=wrong"} {
+		cases := badBoth
+		if field == "authorize_url" {
+			cases = append(cases, "https://other.invalid/authorize")
+		}
+		for _, raw := range cases {
 			t.Run(field+"/"+raw, func(t *testing.T) {
 				var file struct {
 					OAuth OAuthSettings `toml:"oauth"`
@@ -50,6 +61,28 @@ func TestDeclaredPKCERejectsUnsafeOverrides(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestDeclaredPKCEAllowsExplicitCrossOriginHTTPSTokenURLButRejectsDiscoveredOffOrigin(t *testing.T) {
+	p := newPKCEIdP(t)
+	cfg, err := OAuthSettings{
+		Issuer:       p.srv.URL,
+		ClientID:     "google-client",
+		Flow:         FlowPKCE,
+		AuthorizeURL: p.srv.URL + "/o/oauth2/v2/auth",
+		TokenURL:     "https://oauth2.googleapis.com/token",
+	}.PKCEConfig("google")
+	require.NoError(t, err)
+	require.Equal(t, "https://oauth2.googleapis.com/token", cfg.TokenURL)
+
+	// Device flow must still require token_url to stay on the issuer origin.
+	_, err = OAuthSettings{
+		Issuer:   p.srv.URL,
+		ClientID: "c",
+		Flow:     FlowDevice,
+		TokenURL: "https://oauth2.googleapis.com/token",
+	}.DeviceConfig("declared")
+	require.Error(t, err)
 }
 
 func TestPKCERejectsReservedAuthorizationParameters(t *testing.T) {

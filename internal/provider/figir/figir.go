@@ -46,7 +46,6 @@ type Provider struct {
 	Catalog    *catalog.Reader
 }
 
-// TODO(testing): loopback /v1/fig-ir SSE test covering Deriver patch/study folding without translations-v2, Signature/Meta round-trip, ShapeRequest image fit/cap, 401 SendRenewing, and relay /v1/fig-ir routing.
 func New(knobs provider.Knobs, resolver auth.TokenResolver, route provider.Route) (*Provider, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("figir: nil token resolver")

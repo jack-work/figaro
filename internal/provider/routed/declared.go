@@ -91,7 +91,6 @@ func declared(loaded *config.Loaded, name string) (*provider.Registration, error
 	return reg, nil
 }
 
-// TODO(testing): verify ordinal numeric methods options, DialectFigIR endpoint priority, and DeclaredProvider [effort] (keep_cache, map_model catalog collapsing + rung clamping, ladder nearest/down/up rounding, and outbound_model_template snapshot derivation).
 type DeclaredProvider struct {
 	*Provider
 	mapRe     *regexp.Regexp

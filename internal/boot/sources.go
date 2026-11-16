@@ -122,6 +122,13 @@ func notSignedIn(loaded *config.Loaded, name string) error {
 	if h := startedHushClient(); h != nil {
 		oauth, _ = h.OAuthList()
 	}
+	if conf, err := auth.ConfidentialOAuthList(); err == nil {
+		for _, n := range conf {
+			if !slices.Contains(oauth, n) {
+				oauth = append(oauth, n)
+			}
+		}
+	}
 	return &auth.NotSignedInError{Provider: name, Elsewhere: signedInElsewhere(loaded, name, oauth)}
 }
 

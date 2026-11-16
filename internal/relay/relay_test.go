@@ -388,3 +388,41 @@ func TestDecisionsRoutesByModelPrefix(t *testing.T) {
 		t.Fatalf("body = %s", s.body)
 	}
 }
+
+func TestFigIRRoutesByModelPrefixAndPassthrough(t *testing.T) {
+	got := make(chan seen, 2)
+	up := recorder(t, got, ok)
+	fr := front(t, map[string]Upstream{"gemgw": &fakeUpstream{
+		base: up.URL + "/v1",
+		headers: map[routed.Transport]map[string]string{
+			routed.FigIR: {"X-Transport": "fig-ir"},
+		},
+		cred: &rotatingToken{tokens: []string{"gem-tok"}},
+	}})
+
+	resp, err := http.Post(fr.URL+"/v1/fig-ir", "application/json", strings.NewReader(`{"model":"gemgw/gemini-3-pro","stream":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	s := within(t, got)
+	if s.path != "/v1/fig-ir" || s.auth != "Bearer gem-tok" || s.transportHeader != "fig-ir" {
+		t.Fatalf("upstream saw %+v", s)
+	}
+	if !strings.Contains(string(s.body), `"model":"gemini-3-pro"`) {
+		t.Fatalf("body = %s", s.body)
+	}
+
+	resp, err = http.Post(fr.URL+"/u/gemgw/fig-ir", "application/json", strings.NewReader(`{"model":"gemini-3-pro"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	s2 := within(t, got)
+	if s2.path != "/v1/fig-ir" || s2.transportHeader != "fig-ir" {
+		t.Fatalf("passthrough saw %+v", s2)
+	}
+}
