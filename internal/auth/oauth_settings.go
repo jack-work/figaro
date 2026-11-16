@@ -41,10 +41,25 @@ func (s OAuthSettings) endpoints() (oidcConfiguration, *url.URL, error) {
 	if s.TokenURL != "" {
 		oc.TokenEndpoint = s.TokenURL
 	}
-	if err = validateOAuthEndpoint(oc.TokenEndpoint, issuer, false); err != nil {
+	if s.Flow == FlowPKCE && s.TokenURL != "" {
+		if err = validateHTTPSTokenEndpoint(oc.TokenEndpoint); err != nil {
+			return oc, nil, fmt.Errorf("token endpoint: %w", err)
+		}
+	} else if err = validateOAuthEndpoint(oc.TokenEndpoint, issuer, false); err != nil {
 		return oc, nil, fmt.Errorf("token endpoint: %w", err)
 	}
 	return oc, issuer, nil
+}
+
+func validateHTTPSTokenEndpoint(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Fragment != "" || u.Opaque != "" {
+		return fmt.Errorf("must be an https URL without userinfo or fragment")
+	}
+	if u.RawQuery != "" || u.ForceQuery {
+		return fmt.Errorf("query parameters are not allowed")
+	}
+	return nil
 }
 
 func validateOAuthEndpoint(raw string, issuer *url.URL, authorize bool) error {
@@ -164,7 +179,7 @@ func (c PKCEConfig) validate() error {
 	if err := validateOAuthEndpoint(c.AuthorizeURL, origin, true); err != nil {
 		return fmt.Errorf("authorization endpoint: %w", err)
 	}
-	if err := validateOAuthEndpoint(c.TokenURL, origin, false); err != nil {
+	if err := validateHTTPSTokenEndpoint(c.TokenURL); err != nil {
 		return fmt.Errorf("token endpoint: %w", err)
 	}
 	if c.RedirectURI != "" {

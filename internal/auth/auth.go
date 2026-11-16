@@ -4,10 +4,11 @@ package auth
 
 // OAuthConfig describes an OAuth provider's endpoints.
 type OAuthConfig struct {
-	ProviderName string
-	AuthorizeURL string
-	TokenURL     string
-	RedirectURI  string
-	ClientID     string
-	Scopes       string
+	ProviderName     string
+	AuthorizeURL     string
+	TokenURL         string
+	RedirectURI      string
+	ClientID         string
+	ClientSecretFile string
+	Scopes           string
 }

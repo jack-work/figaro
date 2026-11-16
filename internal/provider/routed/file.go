@@ -16,8 +16,24 @@ import (
 
 const CatalogOff = "off"
 
+type EffortFile struct {
+	KeepCache             bool               `toml:"keep_cache,omitempty"`
+	Ladder                map[string]float64 `toml:"ladder,omitempty"`
+	Round                 string             `toml:"round,omitempty"`
+	DefaultRung           string             `toml:"default_rung,omitempty"`
+	MapModel              string             `toml:"map_model,omitempty"`
+	OutboundModelTemplate string             `toml:"outbound_model_template,omitempty"`
+}
+
+func (e EffortFile) empty() bool {
+	return !e.KeepCache && len(e.Ladder) == 0 && strings.TrimSpace(e.Round) == "" &&
+		strings.TrimSpace(e.DefaultRung) == "" && strings.TrimSpace(e.MapModel) == "" &&
+		strings.TrimSpace(e.OutboundModelTemplate) == ""
+}
+
 type File struct {
 	Preset           string                       `toml:"preset,omitempty"`
+	API              string                       `toml:"api,omitempty"`
 	OAuth            *auth.OAuthSettings          `toml:"oauth,omitempty"`
 	APIKey           string                       `toml:"api_key"`
 	APIKeyEnv        string                       `toml:"api_key_env,omitempty"`
@@ -32,6 +48,7 @@ type File struct {
 	Headers          map[string]string            `toml:"headers,omitempty"`
 	TransportHeaders map[string]map[string]string `toml:"transport_headers,omitempty"`
 	SendFigaroID     bool                         `toml:"send_figaro_id,omitempty"`
+	Effort           EffortFile                   `toml:"effort"`
 	Responses        struct {
 		OmitFields []string `toml:"omit_fields,omitempty"`
 		NoReplay   bool     `toml:"no_replay,omitempty"`
@@ -118,6 +135,13 @@ func (f File) Apply(spec Spec) (Spec, error) {
 	default:
 		spec.Catalog = "/" + strings.TrimLeft(c, "/")
 	}
+	if f.API != "" && f.Routing.Default == "" {
+		t, err := ParseTransport(f.API)
+		if err != nil {
+			return spec, fmt.Errorf("%s: api: %w", spec.Name, err)
+		}
+		spec.Default = t
+	}
 	if f.Routing.Default != "" {
 		t, err := ParseTransport(f.Routing.Default)
 		if err != nil {
@@ -138,6 +162,20 @@ func (f File) Apply(spec Spec) (Spec, error) {
 	}
 	if mode := strings.TrimSpace(f.CacheMarkers); mode != "" && !strings.EqualFold(mode, "trusted") {
 		spec.MarkMode = ParseMarkMode(mode)
+	}
+	if !f.Effort.empty() {
+		ladder := make(map[string]float64, len(f.Effort.Ladder))
+		for k, v := range f.Effort.Ladder {
+			ladder[strings.ToLower(strings.TrimSpace(k))] = v
+		}
+		spec.Effort = EffortSpec{
+			KeepCache:             f.Effort.KeepCache,
+			Ladder:                ladder,
+			Round:                 RoundMode(strings.ToLower(strings.TrimSpace(f.Effort.Round))),
+			DefaultRung:           strings.ToLower(strings.TrimSpace(f.Effort.DefaultRung)),
+			MapModel:              strings.TrimSpace(f.Effort.MapModel),
+			OutboundModelTemplate: strings.TrimSpace(f.Effort.OutboundModelTemplate),
+		}
 	}
 	return spec, spec.Validate()
 }

@@ -1,9 +1,13 @@
 package routed
 
 import (
+	"bytes"
 	"fmt"
+	"math"
 	"path"
+	"regexp"
 	"strings"
+	"text/template"
 
 	"github.com/jack-work/figaro/internal/catalog"
 	"github.com/jack-work/figaro/internal/provider"
@@ -12,21 +16,83 @@ import (
 
 type Transport string
 
+type Dialect = Transport
+
 const (
-	Messages    Transport = "messages"
-	Chat        Transport = "chat"
-	Responses   Transport = "responses"
-	ResponsesWS Transport = "responses-ws"
+	Messages     Transport = "messages"
+	Chat         Transport = "chat"
+	Responses    Transport = "responses"
+	ResponsesWS  Transport = "responses-ws"
+	FigIR        Transport = "fig-ir"
+	DialectFigIR Transport = FigIR
 )
 
 func ParseTransport(s string) (Transport, error) {
 	switch t := Transport(strings.ToLower(strings.TrimSpace(s))); t {
-	case Messages, Chat, Responses, ResponsesWS:
+	case Messages, Chat, Responses, ResponsesWS, FigIR:
 		return t, nil
 	case "":
 		return "", nil
 	}
-	return "", fmt.Errorf("unknown transport %q (want messages, chat, responses or responses-ws)", s)
+	return "", fmt.Errorf("unknown transport %q (want messages, chat, responses, responses-ws or fig-ir)", s)
+}
+
+type RoundMode string
+
+const (
+	RoundNearest RoundMode = "nearest"
+	RoundDown    RoundMode = "down"
+	RoundUp      RoundMode = "up"
+)
+
+type EffortSpec struct {
+	KeepCache             bool
+	Ladder                map[string]float64
+	Round                 RoundMode
+	DefaultRung           string
+	MapModel              string
+	OutboundModelTemplate string
+}
+
+func (e EffortSpec) Empty() bool {
+	return !e.KeepCache && len(e.Ladder) == 0 && e.Round == "" &&
+		e.DefaultRung == "" && e.MapModel == "" && e.OutboundModelTemplate == ""
+}
+
+func (e EffortSpec) Validate() error {
+	switch e.Round {
+	case "", RoundNearest, RoundDown, RoundUp:
+	default:
+		return fmt.Errorf("effort.round %q: want nearest, down or up", e.Round)
+	}
+	for rung, val := range e.Ladder {
+		if strings.TrimSpace(rung) == "" {
+			return fmt.Errorf("effort.ladder: empty rung name")
+		}
+		if math.IsNaN(val) || math.IsInf(val, 0) || val < 0 || val > 100 {
+			return fmt.Errorf("effort.ladder.%s: %v must be in 0..100", rung, val)
+		}
+	}
+	if e.MapModel != "" {
+		re, err := regexp.Compile(e.MapModel)
+		if err != nil {
+			return fmt.Errorf("effort.map_model: %w", err)
+		}
+		if re.SubexpIndex("model") < 0 {
+			return fmt.Errorf("effort.map_model %q must name (?P<model>...)", e.MapModel)
+		}
+	}
+	if e.OutboundModelTemplate != "" {
+		tmpl, err := template.New("outbound_model").Option("missingkey=error").Parse(e.OutboundModelTemplate)
+		if err != nil {
+			return fmt.Errorf("effort.outbound_model_template: %w", err)
+		}
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, struct{ Model, Effort string }{Model: "m", Effort: "high"}); err != nil {
+			return fmt.Errorf("effort.outbound_model_template: %w", err)
+		}
+	}
+	return nil
 }
 
 type Rule struct {
@@ -55,6 +121,7 @@ type Spec struct {
 	Caps        provider.CacheCaps
 	MarkMode    provider.MarkMode
 	TextOnly    bool
+	Effort      EffortSpec
 
 	MaxRequestBytes                 int
 	ResponsesOmitFields             []string
@@ -86,6 +153,9 @@ func (s Spec) Validate() error {
 	if _, err := catalog.New(s.Mapping, s.Overrides); err != nil {
 		return fmt.Errorf("%s: %w", s.Name, err)
 	}
+	if err := s.Effort.Validate(); err != nil {
+		return fmt.Errorf("%s: %w", s.Name, err)
+	}
 	return nil
 }
 
@@ -111,6 +181,8 @@ func (s Spec) namespace(t Transport) string {
 		return s.Name
 	case Messages:
 		return s.Name + "-messages"
+	case FigIR:
+		return s.Name + "-fig-ir"
 	}
 	return s.Name + "-responses"
 }
@@ -127,12 +199,14 @@ func (s Spec) headersFor(t Transport) map[string]string {
 }
 
 func transportForEndpoints(endpoints []string) Transport {
-	rank := map[Transport]int{ResponsesWS: 4, Responses: 3, Messages: 2, Chat: 1}
+	rank := map[Transport]int{FigIR: 5, ResponsesWS: 4, Responses: 3, Messages: 2, Chat: 1}
 	best := Transport("")
 	for _, e := range endpoints {
 		e = strings.ToLower(strings.TrimSpace(e))
 		var t Transport
 		switch {
+		case strings.Contains(e, "fig-ir") || e == "fig_ir":
+			t = FigIR
 		case strings.Contains(e, "responses") && (strings.HasPrefix(e, "ws:") || strings.HasPrefix(e, "wss:")):
 			t = ResponsesWS
 		case strings.Contains(e, "responses"):

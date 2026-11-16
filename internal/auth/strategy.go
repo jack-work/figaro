@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	hush "github.com/jack-work/hush/client"
@@ -125,9 +126,14 @@ type OAuth struct {
 	Hush *hush.Client
 	Name string
 
+	ClientSecretFile string
+	StateDir         string
+
 	// endpoint is published atomically: Resolve runs on provider goroutines.
 	endpoint atomic.Pointer[string]
 	dead     atomic.Pointer[deadGrant]
+	confMu   sync.Mutex
+	conf     *confidentialCache
 }
 
 type deadGrant struct {
@@ -194,6 +200,9 @@ func (o *OAuth) TryResolve() (string, bool, error) {
 	if o.Hush == nil || o.Name == "" {
 		return "", false, nil
 	}
+	if tok, handled, err := o.tryResolveConfidential(); handled {
+		return tok, err == nil && tok != "", err
+	}
 	tok, meta, err := o.Hush.OAuthGetFull(o.Name)
 	if err != nil {
 		if errors.Is(err, hush.ErrOAuthNotFound) {
@@ -246,6 +255,9 @@ func (o *OAuth) Invalidate(token string) error {
 	}
 	if d := o.dead.Load(); d != nil && d.token == token {
 		return d.err
+	}
+	if handled, err := o.invalidateConfidential(token); handled {
+		return err
 	}
 	_, meta, err := o.Hush.OAuthRefreshFull(o.Name)
 	if err == nil {
