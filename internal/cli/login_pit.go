@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jack-work/hush/managed"
+
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
@@ -88,12 +90,22 @@ type loginSession struct {
 	rev       uint64
 }
 
-var errHushAsleep = errors.New("hush is not running, and the pager cannot ask for the vault passphrase: run figaro provider login <name> in a shell")
+var (
+	errNoVaultYet = errors.New("no vault yet: run figaro provider login <name> once in a shell to create it")
+	errHushAsleep = errors.New("hush is not running, and the pager cannot ask for the vault passphrase: run figaro provider login <name> in a shell")
+)
 
 func pagerHush() error {
 	h, err := boot.Hush()
 	if err != nil {
 		return err
+	}
+	return checkPagerHush(h)
+}
+
+func checkPagerHush(h *managed.Hush) error {
+	if !h.HasIdentity() {
+		return errNoVaultYet
 	}
 	if h.Client().Ping() != nil {
 		return errHushAsleep

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/jack-work/hush/managed"
+
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/boot"
@@ -142,10 +144,39 @@ func runProviderLogin(loaded *config.Loaded, name string) {
 	if err != nil {
 		die("%s", err)
 	}
-	ensureHush()
+	h := MustHush()
+	if err := prepareProviderLogin(loaded, name, reg, h, isStdinTTY()); err != nil {
+		die("%s", err)
+	}
+	if isStdinTTY() {
+		if err := h.EnsureReady(); err != nil {
+			dieHush(err)
+		}
+	}
 	if err := signIn(context.Background(), loaded, name, reg, stderrConsole{}); err != nil {
 		die("%s", err)
 	}
+}
+
+func prepareProviderLogin(loaded *config.Loaded, name string, reg *providerPkg.Registration, h *managed.Hush, tty bool) error {
+	if tty {
+		return nil
+	}
+	hint := fmt.Sprintf(
+		"run figaro provider login %s in an interactive shell, or configure non-interactive credentials (api_key_file in %s, $CREDENTIALS_DIRECTORY, or [service_tokens] in %s)",
+		name, loaded.ProviderAuthPath(name), loaded.ConfigPath)
+	if !h.HasIdentity() {
+		return fmt.Errorf("cannot create a vault for %s without a TTY: %s", name, hint)
+	}
+	if h.Client().Ping() != nil {
+		if err := h.EnsureReady(); err != nil {
+			return fmt.Errorf("%w\n  %s", err, hint)
+		}
+	}
+	if reg.Login == nil && reg.OAuth == nil {
+		return fmt.Errorf("cannot prompt for %s API key without a TTY: %s", name, hint)
+	}
+	return nil
 }
 
 func loginTarget(loaded *config.Loaded, name string) (*providerPkg.Registration, error) {
