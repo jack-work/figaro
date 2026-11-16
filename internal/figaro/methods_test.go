@@ -56,14 +56,16 @@ func (p *effortProvider) sends() []string {
 }
 
 type scriptedAsker struct {
-	mu    sync.Mutex
-	asked []string
-	pick  func(ask string) (string, error)
+	mu      sync.Mutex
+	asked   []string
+	sources []decide.Source
+	pick    func(ask string) (string, error)
 }
 
-func (s *scriptedAsker) Ask(ctx context.Context, _ decide.Source, q decide.Question) (rpc.DecideResponse, error) {
+func (s *scriptedAsker) Ask(ctx context.Context, src decide.Source, q decide.Question) (rpc.DecideResponse, error) {
 	s.mu.Lock()
 	s.asked = append(s.asked, q.Ask)
+	s.sources = append(s.sources, src)
 	s.mu.Unlock()
 	label, err := s.pick(q.Ask)
 	if err != nil {

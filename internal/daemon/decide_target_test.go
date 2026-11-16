@@ -26,7 +26,10 @@ func (headerUpstream) Headers(t routed.Transport) map[string]string {
 // Fixes #55: the daemon hands decide the provider's headers, chosen for the
 // transport the request path names, as the relay does.
 func TestDecideTargetCarriesTheProvidersHeaders(t *testing.T) {
-	target := decideTarget(headerUpstream{})
+	target := decideTarget(headerUpstream{}, true)
+	if !target.SendFigaroID {
+		t.Fatal("SendFigaroID was not propagated to decide target")
+	}
 	if target.Headers == nil {
 		t.Fatal("no headers on the decide target")
 	}

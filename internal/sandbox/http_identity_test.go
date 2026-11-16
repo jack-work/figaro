@@ -17,7 +17,7 @@ import (
 type httpProvider struct{ url string }
 
 func (p httpProvider) Open(ctx context.Context, spec api.Spec) (api.Sandbox, error) {
-	b := &httpBox{url: p.url, client: &http.Client{Transport: api.FigaroTransport(spec.Figaro, nil)}}
+	b := &httpBox{url: p.url, client: &http.Client{Transport: api.FigaroNodeTransport(spec.Figaro, spec.Node, nil)}}
 	if _, err := b.do(ctx, http.MethodPost, "/open", nil); err != nil {
 		return nil, err
 	}
@@ -116,5 +116,44 @@ func TestAnHTTPProviderSeesTheFigaroOnEveryRequest(t *testing.T) {
 	defer s.mu.Unlock()
 	if strings.Join(s.reqs, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("server saw\n%s\nwant\n%s", strings.Join(s.reqs, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestFigaroNodeTransportStampsAndOverwritesNodeHeader(t *testing.T) {
+	var mu sync.Mutex
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got = append(got, fmt.Sprintf("%s id=%q node=%q", r.URL.Path, r.Header.Values(api.FigaroHeader), r.Header.Values(api.FigaroNodeHeader)))
+		mu.Unlock()
+	}))
+	defer srv.Close()
+
+	withNode := &http.Client{Transport: api.FigaroNodeTransport("aria-1", "node-alpha", nil)}
+	forged, _ := http.NewRequest(http.MethodGet, srv.URL+"/stamped", nil)
+	forged.Header.Set(api.FigaroHeader, "forged-aria")
+	forged.Header.Set(api.FigaroNodeHeader, "forged-node")
+	if _, err := withNode.Do(forged); err != nil {
+		t.Fatal(err)
+	}
+	if forged.Header.Get(api.FigaroNodeHeader) != "forged-node" {
+		t.Fatalf("transport mutated caller request: %q", forged.Header.Get(api.FigaroNodeHeader))
+	}
+
+	withoutNode := &http.Client{Transport: api.FigaroTransport("aria-2", nil)}
+	unamped, _ := http.NewRequest(http.MethodGet, srv.URL+"/stripped", nil)
+	unamped.Header.Set(api.FigaroNodeHeader, "forged-node")
+	if _, err := withoutNode.Do(unamped); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{
+		`/stamped id=["aria-1"] node=["node-alpha"]`,
+		`/stripped id=["aria-2"] node=[]`,
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("server saw\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }

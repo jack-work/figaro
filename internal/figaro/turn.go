@@ -367,6 +367,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		attribute.String("provider", prov.Name()),
 		attribute.String("model", a.currentModel()),
 	))
+	roundCtx = provider.WithDaemonNode(roundCtx, a.nodeLabel())
 	bus.clock = newRoundClock(started)
 	var roundOut *message.Message
 	go func() {

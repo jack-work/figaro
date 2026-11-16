@@ -53,6 +53,7 @@ type Provider interface {
 type Spec struct {
 	// Figaro is the id of the figaro the box is opened for.
 	Figaro string
+	Node   string
 	// Workspace is the one path the box sees read-write, and the root
 	// every FS path resolves against. Absolute, on the host.
 	Workspace string
@@ -64,25 +65,38 @@ type Spec struct {
 
 // FigaroHeader carries Spec.Figaro on every request to a provider reached
 // over HTTP.
-const FigaroHeader = "Figaro-Id"
+const (
+	FigaroHeader     = "Figaro-Id"
+	FigaroNodeHeader = "Figaro-Node"
+)
 
 // FigaroTransport sets FigaroHeader to figaro on every request it carries,
 // replacing any value the caller set. A nil base is http.DefaultTransport.
 func FigaroTransport(figaro string, base http.RoundTripper) http.RoundTripper {
+	return FigaroNodeTransport(figaro, "", base)
+}
+
+func FigaroNodeTransport(figaro, node string, base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	return figaroTransport{figaro: figaro, base: base}
+	return figaroTransport{figaro: figaro, node: node, base: base}
 }
 
 type figaroTransport struct {
 	figaro string
+	node   string
 	base   http.RoundTripper
 }
 
 func (t figaroTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
 	r.Header.Set(FigaroHeader, t.figaro)
+	if t.node != "" {
+		r.Header.Set(FigaroNodeHeader, t.node)
+	} else {
+		r.Header.Del(FigaroNodeHeader)
+	}
 	return t.base.RoundTrip(r)
 }
 

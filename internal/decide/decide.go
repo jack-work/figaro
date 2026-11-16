@@ -20,6 +20,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/provider"
 )
 
 const (
@@ -40,6 +41,8 @@ const (
 )
 
 type Source struct {
+	FigaroID  string
+	Node      string
 	Log       arialog.Log[message.Message]
 	BoundForm form.Snapshot
 	Defaults  form.Snapshot
@@ -48,9 +51,10 @@ type Source struct {
 }
 
 type Target struct {
-	BaseURL string
-	Auth    auth.TokenResolver
-	Headers func(path string) map[string]string
+	BaseURL      string
+	Auth         auth.TokenResolver
+	Headers      func(path string) map[string]string
+	SendFigaroID bool
 }
 
 type Targets func(provider string) (Target, error)
@@ -246,6 +250,10 @@ func (e *Engine) run(ctx context.Context, src Source, req rpc.DecideRequest, p p
 	}
 	client := NewClient(firstOf(set.baseURL, target.BaseURL), target.Auth)
 	client.headers = target.Headers
+	if target.SendFigaroID {
+		ctx = provider.WithFigaroID(ctx, firstOf(src.FigaroID, req.FigaroID))
+		ctx = provider.WithFigaroNode(ctx, src.Node)
+	}
 
 	var resp response
 	var w built

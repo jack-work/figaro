@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/upstream"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
@@ -77,6 +78,7 @@ func (c *Client) post(ctx context.Context, path string, body any) ([]byte, error
 			req.Header.Set("Authorization", "Bearer "+key)
 		}
 	}
+	provider.StampCaller(ctx, req.Header)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err

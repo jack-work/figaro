@@ -8,6 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/decide"
 	"github.com/jack-work/figaro/internal/methods"
 )
@@ -23,7 +24,12 @@ func (h *handlers) decide(ctx context.Context, params json.RawMessage) (any, err
 	if req.FigaroID != "" && req.Outfit != "" {
 		return nil, fmt.Errorf("decide: name an aria or an outfit, not both")
 	}
-	src := decide.Source{Context: req.Context, Defaults: h.defaultForm()}
+	src := decide.Source{
+		FigaroID: authz.FigaroOf(ctx),
+		Node:     h.nodeLabel(),
+		Context:  req.Context,
+		Defaults: h.defaultForm(),
+	}
 	if req.Outfit != "" {
 		if err := h.refuseBoxOutfits(ctx, []string{req.Outfit}, false); err != nil {
 			return nil, err
@@ -50,6 +56,7 @@ func (h *handlers) decide(ctx context.Context, params json.RawMessage) (any, err
 		if !ok {
 			return nil, fmt.Errorf("decide: form of %s: unexpected %T", req.FigaroID, v)
 		}
+		src.FigaroID = req.FigaroID
 		src.Log, src.BoundForm = log, bound.Snapshot
 	}
 	src.Allowed = h.decisionProvidersFor(ctx, src.BoundForm)
@@ -67,6 +74,9 @@ func (h *handlers) defaultForm() form.Snapshot {
 type defaultedAsker struct{ h *handlers }
 
 func (d defaultedAsker) Ask(ctx context.Context, src decide.Source, q decide.Question) (rpc.DecideResponse, error) {
+	if src.Node == "" {
+		src.Node = d.h.nodeLabel()
+	}
 	src.Defaults = d.h.defaultForm()
 	src.Allowed = d.h.decisionProvidersFor(ctx, src.BoundForm)
 	return d.h.breaker.Guard(d.h.decider).Ask(ctx, src, q)
