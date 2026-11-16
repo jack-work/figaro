@@ -118,7 +118,7 @@ func readMethod(name string, raw json.RawMessage) (Method, bool, error) {
 	if m.Score && !ordered {
 		return m, false, errors.New("score reads the options as a scale, so they must be an array, lowest first")
 	}
-	if def, err := readDefault(s.Default, m.Options, m.Score); err != nil {
+	if def, err := readDefault(s.Default, m.Options); err != nil {
 		return m, false, err
 	} else if def != nil {
 		m.Default = def
@@ -133,7 +133,7 @@ func canonNumber(n float64) string {
 	return strconv.FormatFloat(n, 'f', -1, 64)
 }
 
-func readDefault(raw json.RawMessage, opts []decide.Option, score bool) (*string, error) {
+func readDefault(raw json.RawMessage, opts []decide.Option) (*string, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || string(trimmed) == "null" {
 		return nil, nil
@@ -141,7 +141,7 @@ func readDefault(raw json.RawMessage, opts []decide.Option, score bool) (*string
 	var s string
 	if json.Unmarshal(trimmed, &s) == nil {
 		s = strings.TrimSpace(s)
-		if !hasOption(opts, s) && score {
+		if !hasOption(opts, s) {
 			if n, err := strconv.ParseFloat(s, 64); err == nil {
 				s = canonNumber(n)
 			}

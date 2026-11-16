@@ -902,11 +902,15 @@ func (p *Provider) KeepsCacheOnChange(key string, snap form.Snapshot) bool {
 		model = p.model
 		p.mu.RUnlock()
 	}
-	if p.cachedRoute(model) != Messages {
+	switch p.cachedRoute(model) {
+	case Gemini, CodeAssist:
+		return key == "system.thinking_effort" || key == "system.thinking_budget"
+	case Messages:
+		m, err := p.messagesBackend()
+		return err == nil && m.KeepsCacheOnChange(key, snap)
+	default:
 		return false
 	}
-	m, err := p.messagesBackend()
-	return err == nil && m.KeepsCacheOnChange(key, snap)
 }
 
 type watchBus struct {

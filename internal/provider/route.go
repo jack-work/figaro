@@ -9,8 +9,6 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// Dialect is the wire format a route speaks, independent of the provider:
-// Copilot speaks Anthropic Messages with GitHub auth.
 type Dialect string
 
 const (
@@ -23,42 +21,26 @@ const (
 type AuthStyle string
 
 const (
-	// AuthAnthropicKey sends x-api-key, or a Bearer for OAuth tokens.
 	AuthAnthropicKey AuthStyle = "x-api-key"
 	AuthBearer       AuthStyle = "bearer"
 	AuthGoogleKey    AuthStyle = "x-goog-api-key"
 )
 
-// CacheCaps is what a route advertises; nothing is guessed at request time.
 type CacheCaps struct {
-	// BlockMarkers requires content to be a block list.
 	BlockMarkers bool
-
-	// TopLevel: one request-level cache_control, the gateway advances the
-	// breakpoint; no message changes shape between turns.
-	TopLevel bool
-
-	// TTL false omits the ttl field rather than sending one to be rejected.
-	TTL bool
-
-	// MaxMarkers zero means the route takes none.
-	MaxMarkers int
-
-	// SessionKey: session_id body field, x-session-id header, prompt_cache_key.
-	SessionKey bool
+	TopLevel     bool
+	TTL          bool
+	MaxMarkers   int
+	SessionKey   bool
 }
 
-// MarkTail is the auto-mode answer; MarkPlan honours the configured mode.
 func (c CacheCaps) MarkTail() bool { return c.BlockMarkers && !c.TopLevel }
 
-// CacheMarkersKey selects how a route is marked; system.cache_control
-// selects whether.
 const CacheMarkersKey = "system.cache_markers"
 
 type MarkMode string
 
 const (
-	// MarkAuto: top-level where the route advances the breakpoint, else blocks.
 	MarkAuto     MarkMode = "auto"
 	MarkBlocks   MarkMode = "blocks"
 	MarkTopLevel MarkMode = "top-level"
@@ -79,11 +61,7 @@ func ResolveMarkMode(snap form.Snapshot) MarkMode {
 	return MarkAuto
 }
 
-// MarkPlan is a function of route capabilities and configured mode only,
-// never of a message's position, so a message's shape is byte-stable
-// across turns.
 type MarkPlan struct {
-	// Blocks: content is a block list and the static prefix carries markers.
 	Blocks   bool
 	Tail     bool
 	TopLevel bool
@@ -116,20 +94,16 @@ func (r Route) MarkPlan(mode MarkMode) MarkPlan {
 	}
 }
 
-// Route is one endpoint: where to send, dialect, auth, and what it honours.
 type Route struct {
-	Name        string
-	BaseURL     string
-	Dialect     Dialect
-	Auth        AuthStyle
-	ModelPrefix string // e.g. "anthropic/" for OpenRouter model ids
-	Caps        CacheCaps
-	Headers     map[string]string
-
+	Name            string
+	BaseURL         string
+	Dialect         Dialect
+	Auth            AuthStyle
+	ModelPrefix     string
+	Caps            CacheCaps
+	Headers         map[string]string
 	MaxRequestBytes int
-
-	// AuthOptional: a local gateway holds the real keys itself.
-	AuthOptional bool
+	AuthOptional    bool
 }
 
 func AnthropicDirect() Route {
@@ -146,8 +120,6 @@ func AnthropicDirect() Route {
 	}
 }
 
-// OpenRouterRoute honours Anthropic-style block markers, a top-level
-// directive, ttl, and a session key.
 func OpenRouterRoute() Route {
 	return Route{
 		Name:        "openrouter",
@@ -165,7 +137,6 @@ func OpenRouterRoute() Route {
 	}
 }
 
-// GatewayRoute is a local gateway speaking the OpenRouter dialect.
 func GatewayRoute(baseURL string) Route {
 	return Route{
 		Name:         "gateway",
@@ -183,8 +154,6 @@ func GatewayRoute(baseURL string) Route {
 	}
 }
 
-// UncachedRoute never marks: an unpatched gateway hard-fails on a content
-// block list.
 func UncachedRoute(baseURL string) Route {
 	return Route{
 		Name:         "gateway",
@@ -195,7 +164,6 @@ func UncachedRoute(baseURL string) Route {
 	}
 }
 
-// BaseURLEnv names the per-provider endpoint override (ANTHROPIC_BASE_URL).
 func BaseURLEnv(provider string) string {
 	return strings.ToUpper(provider) + "_BASE_URL"
 }
@@ -260,7 +228,6 @@ var GeminiImages = ImageDialect{
 
 func (r Route) ModelsURL() string { return r.BaseURL + "/models" }
 
-// QualifyModel adds the route's namespace unless the id already has a slash.
 func (r Route) QualifyModel(model string) string {
 	if r.ModelPrefix == "" || model == "" || strings.Contains(model, "/") {
 		return model
@@ -268,7 +235,6 @@ func (r Route) QualifyModel(model string) string {
 	return r.ModelPrefix + model
 }
 
-// sessionKeyMaxLen is OpenRouter's ceiling for session_id.
 const sessionKeyMaxLen = 256
 
 func SessionKey(ariaID string) string {

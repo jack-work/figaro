@@ -63,7 +63,7 @@ type File struct {
 		UserAgent   string `toml:"user_agent,omitempty"`
 		RequestType string `toml:"request_type,omitempty"`
 	} `toml:"code_assist"`
-	Responses        struct {
+	Responses struct {
 		OmitFields []string `toml:"omit_fields,omitempty"`
 		NoReplay   bool     `toml:"no_replay,omitempty"`
 	} `toml:"responses"`

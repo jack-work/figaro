@@ -16,11 +16,9 @@ import (
 
 type CredentialStrategy interface {
 	TryResolve() (token string, ok bool, err error)
-	// Invalidate: a non-nil error means invalidation itself failed.
 	Invalidate(token string) error
 }
 
-// Aggregate walks strategies in priority order on every call.
 type Aggregate struct {
 	Strategies []CredentialStrategy
 	Unsigned   func() error
@@ -120,8 +118,6 @@ func (c *ConfigValue) TryResolve() (string, bool, error) {
 
 func (*ConfigValue) Invalidate(string) error { return nil }
 
-// OAuth fetches a named credential from the hush agent, which owns minting
-// and renewal; Invalidate forces a mint.
 type OAuth struct {
 	Hush *hush.Client
 	Name string
@@ -129,7 +125,6 @@ type OAuth struct {
 	ClientSecretFile string
 	StateDir         string
 
-	// endpoint is published atomically: Resolve runs on provider goroutines.
 	endpoint atomic.Pointer[string]
 	dead     atomic.Pointer[deadGrant]
 	confMu   sync.Mutex
@@ -222,8 +217,6 @@ func (o *OAuth) TryResolve() (string, bool, error) {
 	return tok, true, nil
 }
 
-// Resolve makes OAuth a TokenResolver on its own, for a provider whose bearer
-// only hush mints.
 func (o *OAuth) Resolve() (string, error) {
 	tok, ok, err := o.TryResolve()
 	if err != nil {
@@ -235,7 +228,6 @@ func (o *OAuth) Resolve() (string, error) {
 	return tok, nil
 }
 
-// Endpoint is the API host the current token must be spent at, or "".
 func (o *OAuth) Endpoint() string {
 	if p := o.endpoint.Load(); p != nil {
 		return *p
@@ -274,8 +266,6 @@ func (o *OAuth) Invalidate(token string) error {
 	return fmt.Errorf("oauth refresh for %q: %w", o.Name, err)
 }
 
-// EndpointCarrier is a resolver whose credential also names the API host.
-// Only Copilot's exchange does, so callers type-assert.
 type EndpointCarrier interface {
 	Endpoint() string
 }

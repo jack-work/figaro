@@ -284,7 +284,37 @@ func TestParsePastedPKCEValidatesStateAndExtractsCode(t *testing.T) {
 	require.Error(t, mismatch.err)
 	assert.Contains(t, mismatch.err.Error(), "state does not match")
 
+	missingState := parsePastedPKCE("google", "expected-state", "http://127.0.0.1:43210/callback?code=abc123")
+	require.Error(t, missingState.err)
+	assert.Contains(t, missingState.err.Error(), "state does not match")
+
 	bare := parsePastedPKCE("google", "expected-state", "  raw-auth-code#frame ")
 	require.NoError(t, bare.err)
 	assert.Equal(t, "raw-auth-code", bare.code)
+}
+
+func TestConfidentialOAuthEnforcesHTTPSAndCredentialNames(t *testing.T) {
+	stateDir := t.TempDir()
+	h := fakeSealingHush(t)
+	secretPath := filepath.Join(t.TempDir(), "secret")
+	require.NoError(t, os.WriteFile(secretPath, []byte("s3cr3t"), 0o600))
+
+	err := RegisterOAuthIn(h, stateDir, "../escape", OIDCSignIn{
+		TokenURL:         "https://oauth2.googleapis.com/token",
+		ClientID:         "cid",
+		ClientSecretFile: secretPath,
+		Tokens:           DeviceTokens{AccessToken: "a", RefreshToken: "r", ExpiresIn: 60},
+	})
+	require.ErrorContains(t, err, "invalid oauth credential name")
+
+	err = RegisterOAuthIn(h, stateDir, "plain-http", OIDCSignIn{
+		TokenURL:         "http://oauth2.example/token",
+		ClientID:         "cid",
+		ClientSecretFile: secretPath,
+		Tokens:           DeviceTokens{AccessToken: "a", RefreshToken: "r", ExpiresIn: 60},
+	})
+	require.ErrorContains(t, err, "https")
+
+	_, _, err = mintRefreshWithSecret(context.Background(), oauthClient(), "http://oauth2.example/token", "cid", "s3cr3t", "rt")
+	require.ErrorContains(t, err, "https")
 }
