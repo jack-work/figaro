@@ -533,7 +533,57 @@ func (b *XwalBackend) ApplyFormWrite(ariaID string, w FormWrite) (FormVerdict, e
 	if err != nil {
 		return FormVerdict{}, err
 	}
-	return f.ApplyWrite(w)
+	v, err := f.ApplyWrite(w)
+	if errors.Is(err, ErrFormSealed) {
+		if mirrored, ok, merr := b.applySealedLifetimeWrite(ariaID, v.Version, w); ok {
+			return mirrored, merr
+		}
+	}
+	return v, err
+}
+
+func (b *XwalBackend) applySealedLifetimeWrite(ariaID string, version uint64, w FormWrite) (FormVerdict, bool, error) {
+	if b.Buried(ariaID) || !isLifetimeOnlyPatch(w.Patch) {
+		return FormVerdict{}, false, nil
+	}
+	n, ok := b.store.Node(ariaID)
+	if !ok || (n.Kind != KindConversation && n.Kind != KindForm) {
+		return FormVerdict{}, false, nil
+	}
+	if w.Origin.Seq != 0 && (w.Intent == Assert || w.IfVersion != 0) {
+		return FormVerdict{Version: version}, true, ErrSeqConditional
+	}
+	if w.IfVersion != 0 && version != w.IfVersion {
+		return FormVerdict{Version: version}, true, fmt.Errorf("%w: at version %d, not %d: re-read and retry",
+			ErrFormMoved, version, w.IfVersion)
+	}
+	if err := form.CheckWritable(w.Patch, false); err != nil {
+		return FormVerdict{Version: version}, true, err
+	}
+	b.ttlCommitted(ariaID, w.Patch)
+	return FormVerdict{Version: version, Applied: w.Patch}, true, nil
+}
+
+func isLifetimeOnlyPatch(patch message.Patch) bool {
+	ents := patch.Entries()
+	if len(ents) == 0 {
+		return false
+	}
+	for _, ent := range ents {
+		if !isLifetimeKey(ent.Key) {
+			return false
+		}
+	}
+	return true
+}
+
+func isLifetimeKey(key string) bool {
+	switch key {
+	case SystemTTLKey, SystemKeepaliveKey, SystemRetiredKey, SystemReapIfEmptyKey,
+		SystemReapedKey, SystemReapedUntilKey, SystemReapedByKey:
+		return true
+	}
+	return false
 }
 
 func (b *XwalBackend) FormLastSeq(ariaID, principal, client string) (uint64, error) {
