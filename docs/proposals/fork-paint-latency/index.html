@@ -1,0 +1,1385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fork &amp; Fork-to-Paint Latency Anatomy · Figaro 27b36ef37</title>
+<style>
+:root {
+  --ground: #0c0e11;
+  --surface: #13171d;
+  --surface-2: #181d25;
+  --rule: #252b35;
+  --rule-strong: #363f4e;
+  --ink: #e8ecf1;
+  --ink-soft: #c5cdd8;
+  --muted: #848e9c;
+  --brass: #d9a94e;
+  --amber: #c98b32;
+  --plum: #b57edc;
+  --teal: #5fb3be;
+  --vermilion: #df6a57;
+  --sage: #82bc74;
+  --indigo: #8ca2d6;
+  --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden;
+  background: var(--ground);
+  color: var(--ink);
+  font: 15px/1.55 var(--sans);
+  font-variant-numeric: lining-nums tabular-nums;
+  -webkit-text-size-adjust: 100%;
+}
+a { color: var(--brass); text-decoration: none; border-bottom: 1px solid rgba(217,169,78,0.35); }
+a:hover { border-bottom-color: var(--brass); }
+code, .mono {
+  font-family: var(--mono);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+p code, li code, td code {
+  font-size: 0.88em;
+  background: #171c24;
+  border: 1px solid #262e3a;
+  padding: 1px 5px;
+  border-radius: 2px;
+  color: #e4ebf3;
+}
+.proscenio {
+  border-bottom: 2px solid var(--brass);
+  background-color: #111419;
+  background-image: repeating-conic-gradient(rgba(232,236,241,0.04) 0% 25%, transparent 0% 50%);
+  background-size: 6px 6px;
+  padding: 10px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.proscenio-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 600 13px/1.2 var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+.proscenio-mark {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  background: var(--brass);
+  display: inline-block;
+  box-shadow: 0 0 0 2px #111419, 0 0 0 3px var(--brass);
+}
+.proscenio-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font: 12px/1.2 var(--mono);
+}
+.proscenio-nav a {
+  color: var(--ink-soft);
+  border: none;
+  padding: 3px 0;
+}
+.proscenio-nav a:hover { color: var(--brass); }
+.proscenio-meta {
+  font: 11.5px/1.2 var(--mono);
+  color: var(--muted);
+}
+.wrap {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 28px 20px 72px;
+}
+section, .panel, .trace-deck, .kpi, .cause-card { min-width: 0; }
+.hero {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 24px;
+  margin-bottom: 26px;
+}
+.eyebrow {
+  font: 600 11.5px/1.3 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--brass);
+  margin: 0 0 8px;
+}
+h1 {
+  font: 400 clamp(25px, 3.6vw, 40px)/1.14 var(--serif);
+  letter-spacing: -0.015em;
+  margin: 0 0 12px;
+  color: #f3f6f9;
+  max-width: 28ch;
+}
+.lede {
+  color: var(--ink-soft);
+  max-width: 74ch;
+  margin: 0 0 20px;
+  font-size: 15.5px;
+}
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  margin-top: 18px;
+}
+.kpi {
+  background: var(--surface);
+  padding: 13px 15px;
+  border-left: 3px solid var(--brass);
+}
+.kpi.warn { border-left-color: var(--vermilion); }
+.kpi.teal { border-left-color: var(--teal); }
+.kpi.sage { border-left-color: var(--sage); }
+.kpi .val {
+  display: block;
+  font: 600 21px/1.15 var(--mono);
+  color: #f4f7fa;
+  margin-bottom: 4px;
+}
+.kpi .lbl {
+  display: block;
+  font: 600 11px/1.25 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.kpi .sub {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 4px;
+}
+section { margin-top: 42px; }
+.sec-head {
+  border-top: 2px solid var(--brass);
+  padding-top: 12px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sec-head h2 {
+  font: 400 clamp(20px, 2.5vw, 28px)/1.2 var(--serif);
+  margin: 0;
+  color: #f3f6f9;
+}
+.sec-tag {
+  font: 11.5px/1.2 var(--mono);
+  color: var(--brass);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 16px;
+  margin-bottom: 18px;
+}
+.panel h3 {
+  font: 600 13px/1.3 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  margin: 0 0 6px;
+}
+.panel .subhead {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 14px;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 8px 0 12px;
+  font: 11.5px/1.3 var(--mono);
+  color: var(--ink-soft);
+}
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sw {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  display: inline-block;
+  border-radius: 2px;
+}
+.trace-deck {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.trace-radio {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.trace-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 12px;
+}
+.trace-tabs label {
+  cursor: pointer;
+  font: 12px/1.25 var(--mono);
+  padding: 7px 11px;
+  border: 1px solid var(--rule-strong);
+  background: #0f1217;
+  color: var(--ink-soft);
+  border-radius: 2px;
+  user-select: none;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.trace-tabs label:hover {
+  border-color: var(--brass);
+  color: var(--ink);
+}
+.trace-pane { display: none; }
+#tr-1:checked ~ .trace-tabs label[for="tr-1"],
+#tr-2:checked ~ .trace-tabs label[for="tr-2"],
+#tr-3:checked ~ .trace-tabs label[for="tr-3"],
+#tr-4:checked ~ .trace-tabs label[for="tr-4"],
+#tr-5:checked ~ .trace-tabs label[for="tr-5"] {
+  background: var(--brass);
+  color: #0c0e11;
+  border-color: var(--brass);
+  font-weight: 600;
+}
+#tr-1:checked ~ .panes #pane-1,
+#tr-2:checked ~ .panes #pane-2,
+#tr-3:checked ~ .panes #pane-3,
+#tr-4:checked ~ .panes #pane-4,
+#tr-5:checked ~ .panes #pane-5 {
+  display: block;
+}
+.pane-caption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.pane-caption strong {
+  font: 600 13.5px/1.35 var(--mono);
+  color: #f4f7fa;
+}
+.pane-caption span {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.svg-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid #1e242e;
+  border-radius: 3px;
+  background: #101318;
+}
+.wf-svg {
+  display: block;
+  width: 100%;
+  min-width: 680px;
+  height: auto;
+}
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--rule);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 12.5px/1.4 var(--mono);
+  background: var(--surface);
+}
+th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  background: #10141a;
+  border-bottom: 1px solid var(--rule-strong);
+  padding: 8px 10px;
+  white-space: nowrap;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+td {
+  padding: 7px 10px;
+  border-bottom: 1px solid #1d222b;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+tr:hover td { background: var(--surface-2); }
+th.num, td.num { text-align: right; }
+td.strong { color: #f5f8fb; font-weight: 600; }
+td.warn-cell { color: #f29b8c; font-weight: 600; }
+.muted { color: var(--muted); }
+.badge {
+  display: inline-block;
+  font: 600 10px/1.1 var(--mono);
+  padding: 2px 5px;
+  border-radius: 2px;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+.badge.bad { background: rgba(223,106,87,0.18); color: #f49b8d; border: 1px solid rgba(223,106,87,0.45); }
+.badge.ok { background: rgba(130,188,116,0.16); color: #9cd390; border: 1px solid rgba(130,188,116,0.4); }
+.badge.brass { background: rgba(217,169,78,0.15); color: var(--brass); border: 1px solid rgba(217,169,78,0.4); }
+.cause-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 14px;
+}
+.cause-card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-top: 2px solid var(--rule-strong);
+  padding: 15px 16px;
+}
+.cause-card.hot { border-top-color: var(--vermilion); }
+.cause-card.brass { border-top-color: var(--brass); }
+.cause-card.teal { border-top-color: var(--teal); }
+.cause-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.cause-head h3 {
+  font: 600 14px/1.3 var(--sans);
+  color: #f3f6f9;
+  margin: 0;
+}
+.cost-pill {
+  font: 600 11.5px/1.2 var(--mono);
+  padding: 3px 7px;
+  background: #0e1116;
+  border: 1px solid var(--rule-strong);
+  color: var(--brass);
+  white-space: nowrap;
+  border-radius: 2px;
+}
+.cause-card.hot .cost-pill { color: #f49b8d; border-color: rgba(223,106,87,0.5); }
+.cite-line {
+  font: 11.5px/1.35 var(--mono);
+  color: var(--teal);
+  margin-bottom: 8px;
+  word-break: break-word;
+}
+.cause-card p {
+  margin: 0;
+  font-size: 13.8px;
+  color: var(--ink-soft);
+}
+.two-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+}
+pre {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  background: #0d1015;
+  border: 1px solid var(--rule);
+  overflow-x: auto;
+  font: 11.8px/1.48 var(--mono);
+  color: #dce3ec;
+  border-radius: 2px;
+}
+.callout {
+  background: #171315;
+  border: 1px solid rgba(223,106,87,0.45);
+  border-left: 3px solid var(--vermilion);
+  padding: 13px 16px;
+  margin-bottom: 16px;
+}
+.callout h4 {
+  margin: 0 0 5px;
+  font: 600 13px/1.3 var(--mono);
+  color: #f49b8d;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.callout p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+footer {
+  margin-top: 48px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+  font: 12px/1.5 var(--mono);
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+}
+@media (max-width: 640px) {
+  .wrap { padding: 18px 12px 52px; }
+  .proscenio { padding: 10px 12px; }
+  .kpi-strip, .cause-grid, .two-col { grid-template-columns: 1fr; }
+  .panel, .trace-deck, .cause-card { padding: 12px; }
+  .trace-tabs label { width: 100%; text-align: left; font-size: 11.5px; }
+}
+</style>
+</head>
+<body>
+
+<header class="proscenio">
+  <div class="proscenio-brand">
+    <span class="proscenio-mark" aria-hidden="true"></span>
+    <span>Figaro Systems Ledger · Fork-to-Paint</span>
+  </div>
+  <nav class="proscenio-nav" aria-label="Sections">
+    <a href="#sec-waterfalls">I. Waterfalls</a>
+    <a href="#sec-causes">II. Root Causes</a>
+    <a href="#sec-figscope">III. Figscope Spec</a>
+    <a href="#sec-fixes">IV. Fix Roadmap</a>
+  </nav>
+  <div class="proscenio-meta">rev 27b36ef37 · 120x40 tmux PTY · HEAVY_CLASS=bench</div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <p class="eyebrow">Real-Store End-to-End Latency Anatomy · 2,032 Figaros / 2.5 GB Snapshot</p>
+    <h1>Where every millisecond goes from fork to first painted terminal frame</h1>
+    <p class="lede">
+      Measured uncontaminated on an isolated btrfs clone of the live store across five real conversations
+      (194 to 2,866 IR messages, 189k to 988k context tokens, 0 to 4 studied forms) driving the stamped
+      <code>27b36ef37</code> binary inside a real <code>120x40</code> <code>tmux</code> PTY with zero model API calls.
+      Forking and painting a 988k-context figaro takes <strong>159.8 ms</strong> at head, <strong>239.4 to 325.1 ms</strong>
+      on an interior <code>:N</code> cut in the pager, and up to <strong>339.1 ms</strong> across CLI <code>fork</code> + <code>listen</code>.
+      Three distinct O(history) walks, synchronous per-study WAL syncs, and 1,000+ rows of off-screen Glamour markdown
+      rendering explain 82% of the wall clock.
+    </p>
+
+    <div class="kpi-strip">
+      <div class="kpi">
+        <span class="val">159.8 ms <small class="muted" style="font-size:13px">p50</small></span>
+        <span class="lbl">Pager :fork Head (988k ctx)</span>
+        <span class="sub">90.3ms daemon RPC + 51.7ms AriaReader rebuild on 2,774 msgs</span>
+      </div>
+      <div class="kpi warn">
+        <span class="val">259.6 ms <small class="muted" style="font-size:13px">p50</small></span>
+        <span class="lbl">Pager :fork :387 Interior</span>
+        <span class="sub">325.1ms cold Glamour; triple IR scan + @topology fsync (36.8ms)</span>
+      </div>
+      <div class="kpi warn">
+        <span class="val">151.1 ms <small class="muted" style="font-size:13px">fake</small></span>
+        <span class="lbl">key_to_paint Clamp Trap</span>
+        <span class="sub">150ms progressDelay repaints old figaro &amp; drains keypaint early</span>
+      </div>
+      <div class="kpi teal">
+        <span class="val">92 to 129 ms</span>
+        <span class="lbl">Cold Glamour Tail Layout</span>
+        <span class="sub">Renders 984..1,225 rows (2x Goldmark AST parse) for 37-row PTY</span>
+      </div>
+      <div class="kpi sage">
+        <span class="val">~64 to 82 ms</span>
+        <span class="lbl">Projected Post-Fix (P0-P3)</span>
+        <span class="sub">Viewport-first 6-msg paint + AriaReader prefix share + 1x scan</span>
+      </div>
+    </div>
+  </div>
+
+  <section id="sec-waterfalls">
+    <div class="sec-head">
+      <h2>I. End-to-End Phase Waterfalls &amp; Measured Matrix</h2>
+      <span class="sec-tag">CLI / Keystroke (t0) to Painted 120x40 PTY</span>
+    </div>
+
+    <div class="trace-deck">
+      <input class="trace-radio" type="radio" name="trace-sel" id="tr-1">
+      <input class="trace-radio" type="radio" name="trace-sel" id="tr-2" checked>
+      <input class="trace-radio" type="radio" name="trace-sel" id="tr-3">
+      <input class="trace-radio" type="radio" name="trace-sel" id="tr-4">
+      <input class="trace-radio" type="radio" name="trace-sel" id="tr-5">
+
+      <div class="trace-tabs" role="tablist" aria-label="Measured trace selector">
+        <label for="tr-1">1. Pager :fork Head (159.8ms)</label>
+        <label for="tr-2">2. Pager :fork :228 Interior (323.0ms cold / 239.4ms p50)</label>
+        <label for="tr-3">3. Cold CLI fork + listen :336 (328.8ms)</label>
+        <label for="tr-4">4. Discovered Bug: :fork :104 Blank Landing (215.8ms)</label>
+        <label for="tr-5">5. Live Agent Fork + NewAgent Wake (150.6ms)</label>
+      </div>
+
+      <div class="legend">
+        <span><i class="sw" style="background:#d9a94e"></i>XWAL branch &amp; birth fsync</span>
+        <span><i class="sw" style="background:#b57edc"></i>IR turn/meta scans &amp; study Retain</span>
+        <span><i class="sw" style="background:#5fb3be"></i>AriaReader / NewAgent projection &amp; formdelta</span>
+        <span><i class="sw" style="background:#df6a57"></i>Glamour markdown / UI bottleneck</span>
+        <span><i class="sw" style="background:#8ca2d6"></i>IPC / socket / PTY ANSI write</span>
+        <span><i class="sw" style="background:#82bc74"></i>Optimistic paint / post-fix target</span>
+      </div>
+
+      <div class="panes">
+        <div class="trace-pane" id="pane-1">
+          <div class="pane-caption">
+            <strong>Trace 1 · Interactive Pager :fork (Head) on 1068ad21 (antelope-nextdoor · 2,774 msgs · 988k ctx)</strong>
+            <span>Optimistic hop.paint at 92.9ms; settled seed frame at 159.8ms</span>
+          </div>
+          <div class="svg-scroll"><svg class="wf-svg" viewBox="0 0 920 312" role="img" aria-label="Pager :fork Head on 1068ad21 (988k ctx, 2,774 msgs)">
+  <rect x="0" y="0" width="920" height="312" fill="#101318" rx="3"/>
+  <line x1="232.0" y1="32" x2="232.0" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="232.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">0ms</text>
+  <line x1="382.0" y1="32" x2="382.0" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="382.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">50ms</text>
+  <line x1="532.0" y1="32" x2="532.0" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="532.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">100ms</text>
+  <line x1="682.0" y1="32" x2="682.0" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="682.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">150ms</text>
+  <line x1="832.0" y1="32" x2="832.0" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="832.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">200ms</text>
+  <text x="14" y="22" fill="#8b95a3" font-size="10.5" class="mono">STAGE / SUBSYSTEM</text>
+  <text x="908" y="22" fill="#8b95a3" font-size="10.5" text-anchor="end" class="mono">DUR</text>
+  <line x1="0" y1="31" x2="920" y2="31" stroke="#262c36" stroke-width="1"/>
+  <text x="14" y="58" fill="#d5dce4" font-size="11.5" class="mono">1. Pager :fork dispatch + bind</text>
+  <rect x="232.0" y="46" width="6.3" height="16" fill="#8ca2d6" rx="2"/>
+  <text x="246.3" y="58" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">commandFork -&gt; resolveBinding</text>
+  <text x="908" y="58" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">2.1ms</text>
+  <rect x="0" y="70" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="88" fill="#d5dce4" font-size="11.5" class="mono">2. XWAL ForkTail (branch dir)</text>
+  <rect x="238.3" y="76" width="153.9" height="16" fill="#d9a94e" rx="2"/>
+  <text x="400.2" y="88" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">xwal_store.go:466 (2,479-node tree)</text>
+  <text x="908" y="88" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">51.3ms</text>
+  <text x="14" y="118" fill="#d5dce4" font-size="11.5" class="mono">3. writeBirth + SyncCoherent</text>
+  <rect x="392.2" y="106" width="72.5" height="16" fill="#c98b32" rx="2"/>
+  <text x="472.6" y="118" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">fsync form + IR genesis</text>
+  <text x="908" y="118" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">24.1ms</text>
+  <rect x="0" y="130" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="148" fill="#d5dce4" font-size="11.5" class="mono">4. inheritStudies + stamp</text>
+  <rect x="464.6" y="136" width="22.3" height="16" fill="#b57edc" rx="2"/>
+  <text x="494.9" y="148" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">1 libretto Retain + dropForm</text>
+  <text x="908" y="148" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">7.4ms</text>
+  <text x="14" y="178" fill="#d5dce4" font-size="11.5" class="mono">5. Client bind + dial + lineage</text>
+  <rect x="506.4" y="166" width="7.2" height="16" fill="#8ca2d6" rx="2"/>
+  <text x="521.6" y="178" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">CloneBelow(456) retains tail</text>
+  <text x="908" y="178" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">2.4ms</text>
+  <rect x="0" y="190" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="208" fill="#d5dce4" font-size="11.5" class="mono">6. AriaReader.serverFor(child)</text>
+  <rect x="513.6" y="196" width="147.4" height="16" fill="#5fb3be" rx="2"/>
+  <text x="669.0" y="208" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">2,774 msgs + 455 turns</text>
+  <text x="908" y="208" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">49.1ms</text>
+  <text x="14" y="238" fill="#d5dce4" font-size="11.5" class="mono">7. Glamour tail diff + PTY write</text>
+  <rect x="669.3" y="226" width="41.9" height="16" fill="#df6a57" rx="2"/>
+  <text x="661.3" y="238" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">shared prefix cached; frame</text>
+  <text x="908" y="238" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">14.0ms</text>
+  <line x1="510.6" y1="38" x2="510.6" y2="264" stroke="#82bc74" stroke-width="1.3" stroke-dasharray="3,3"/>
+  <text x="516.6" y="269" fill="#82bc74" font-size="10" text-anchor="start" class="mono">optimistic hop.paint: 92.9ms</text>
+  <line x1="0" y1="278" x2="920" y2="278" stroke="#222832" stroke-width="1"/>
+  <text x="14" y="296" fill="#82bc74" font-size="11" class="mono">Projected (P0-P3 fixes)</text>
+  <rect x="232" y="285" width="479.3" height="13" fill="#232a35" rx="2"/>
+  <rect x="232" y="285" width="192.0" height="13" fill="#82bc74" rx="2"/>
+  <text x="432.0" y="295" fill="#82bc74" font-size="10.5" class="mono">~64ms (-60% vs 159.8ms)</text>
+</svg></div>
+        </div>
+
+        <div class="trace-pane" id="pane-2">
+          <div class="pane-caption">
+            <strong>Trace 2 · Interactive Pager :fork 1068ad21:228 (Interior 50% Cut · 2,774 msgs · 988k ctx)</strong>
+            <span>Cold Glamour trial: 323.0ms (warm proseHot p50: 239.4ms) · Notice false key.paint clamp at 150.9ms!</span>
+          </div>
+          <div class="svg-scroll"><svg class="wf-svg" viewBox="0 0 920 358" role="img" aria-label="Pager :fork 1068ad21:228 Interior Cut (Cold Glamour Cache: 323.0ms; Warm p50: 239.4ms)">
+  <rect x="0" y="0" width="920" height="358" fill="#101318" rx="3"/>
+  <line x1="232.0" y1="32" x2="232.0" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="232.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">0ms</text>
+  <line x1="317.7" y1="32" x2="317.7" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="317.7" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">50ms</text>
+  <line x1="403.4" y1="32" x2="403.4" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="403.4" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">100ms</text>
+  <line x1="489.1" y1="32" x2="489.1" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="489.1" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">150ms</text>
+  <line x1="574.9" y1="32" x2="574.9" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="574.9" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">200ms</text>
+  <line x1="660.6" y1="32" x2="660.6" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="660.6" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">250ms</text>
+  <line x1="746.3" y1="32" x2="746.3" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="746.3" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">300ms</text>
+  <line x1="832.0" y1="32" x2="832.0" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="832.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">350ms</text>
+  <text x="14" y="22" fill="#8b95a3" font-size="10.5" class="mono">STAGE / SUBSYSTEM</text>
+  <text x="908" y="22" fill="#8b95a3" font-size="10.5" text-anchor="end" class="mono">DUR</text>
+  <line x1="0" y1="31" x2="920" y2="31" stroke="#262c36" stroke-width="1"/>
+  <text x="14" y="58" fill="#d5dce4" font-size="11.5" class="mono">1. forkPointOf(:228) IR scan</text>
+  <rect x="235.4" y="46" width="45.7" height="16" fill="#b57edc" rx="2"/>
+  <text x="289.1" y="58" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">log.Read() all 2,774 msgs -&gt; LT</text>
+  <text x="908" y="58" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">26.6ms</text>
+  <rect x="0" y="70" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="88" fill="#d5dce4" font-size="11.5" class="mono">2. XWAL forkAtLocked + birth</text>
+  <rect x="281.1" y="76" width="160.7" height="16" fill="#d9a94e" rx="2"/>
+  <text x="449.8" y="88" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">branch cut + SyncCoherent fsync</text>
+  <text x="908" y="88" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">93.7ms</text>
+  <text x="14" y="118" fill="#d5dce4" font-size="11.5" class="mono">3. inheritStudies + dropForm</text>
+  <rect x="441.8" y="106" width="13.1" height="16" fill="#b57edc" rx="2"/>
+  <text x="462.9" y="118" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">libretto Retain fsync</text>
+  <text x="908" y="118" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">7.6ms</text>
+  <rect x="0" y="130" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="148" fill="#d5dce4" font-size="11.5" class="mono">4. handlers.place (@topology)</text>
+  <rect x="454.9" y="136" width="71.4" height="16" fill="#c98b32" rx="2"/>
+  <text x="534.3" y="148" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">stumpFormLog append + fsync</text>
+  <text x="908" y="148" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">41.7ms</text>
+  <text x="14" y="178" fill="#d5dce4" font-size="11.5" class="mono">5. seedForkMeta -&gt; heldBy()</text>
+  <rect x="526.3" y="166" width="24.2" height="16" fill="#b57edc" rx="2"/>
+  <text x="558.5" y="178" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">2nd log.Read() (1145 entries)</text>
+  <text x="908" y="178" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">14.1ms</text>
+  <rect x="0" y="190" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="208" fill="#d5dce4" font-size="11.5" class="mono">6. AriaReader.serverFor(child)</text>
+  <rect x="554.8" y="196" width="42.6" height="16" fill="#5fb3be" rx="2"/>
+  <text x="546.8" y="208" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">3rd log.Read() + projTurns + deltas</text>
+  <text x="908" y="208" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">24.9ms</text>
+  <text x="14" y="238" fill="#d5dce4" font-size="11.5" class="mono">7. Glamour render (tuneTail)</text>
+  <rect x="600.0" y="226" width="174.8" height="16" fill="#df6a57" rx="2"/>
+  <text x="592.0" y="238" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">75 misses / 1351 rows (37-row PTY)</text>
+  <text x="908" y="238" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">102.0ms</text>
+  <rect x="0" y="250" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="268" fill="#d5dce4" font-size="11.5" class="mono">8. ANSI diff + PTY write</text>
+  <rect x="778.5" y="256" width="7.2" height="16" fill="#8ca2d6" rx="2"/>
+  <text x="770.5" y="268" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">5098B to tmux PTY</text>
+  <text x="908" y="268" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">4.2ms</text>
+  <line x1="490.6" y1="36" x2="490.6" y2="296" stroke="#df6a57" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <rect x="406.6" y="288" width="168" height="16" rx="2" fill="#2b1716" stroke="#df6a57" stroke-width="0.8"/>
+  <text x="490.6" y="299.5" fill="#f39c8e" font-size="10" text-anchor="middle" class="mono">key.paint clamp: 150.9ms</text>
+  <line x1="564.8" y1="38" x2="564.8" y2="313" stroke="#82bc74" stroke-width="1.3" stroke-dasharray="3,3"/>
+  <text x="570.8" y="318" fill="#82bc74" font-size="10" text-anchor="start" class="mono">optimistic hop.paint: 194.1ms</text>
+  <line x1="0" y1="324" x2="920" y2="324" stroke="#222832" stroke-width="1"/>
+  <text x="14" y="342" fill="#82bc74" font-size="11" class="mono">Projected (P0-P3 fixes)</text>
+  <rect x="232" y="331" width="553.7" height="13" fill="#232a35" rx="2"/>
+  <rect x="232" y="331" width="140.6" height="13" fill="#82bc74" rx="2"/>
+  <text x="380.6" y="341" fill="#82bc74" font-size="10.5" class="mono">~82ms (-75% vs 323.0ms)</text>
+</svg></div>
+        </div>
+
+        <div class="trace-pane" id="pane-3">
+          <div class="pane-caption">
+            <strong>Trace 3 · Cold Store CLI figaro fork b7f1f42c:336 + PTY figaro listen (2,866 msgs · 597k ctx · 3 studies)</strong>
+            <span>CLI fork: 162.3ms + PTY listen to painted screen: 166.6ms = 328.8ms E2E</span>
+          </div>
+          <div class="svg-scroll"><svg class="wf-svg" viewBox="0 0 920 326" role="img" aria-label="Cold Store CLI fork b7f1f42c:336 + PTY figaro listen &lt;alt&gt; (328.8ms E2E)">
+  <rect x="0" y="0" width="920" height="326" fill="#101318" rx="3"/>
+  <line x1="232.0" y1="32" x2="232.0" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="232.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">0ms</text>
+  <line x1="317.7" y1="32" x2="317.7" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="317.7" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">50ms</text>
+  <line x1="403.4" y1="32" x2="403.4" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="403.4" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">100ms</text>
+  <line x1="489.1" y1="32" x2="489.1" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="489.1" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">150ms</text>
+  <line x1="574.9" y1="32" x2="574.9" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="574.9" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">200ms</text>
+  <line x1="660.6" y1="32" x2="660.6" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="660.6" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">250ms</text>
+  <line x1="746.3" y1="32" x2="746.3" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="746.3" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">300ms</text>
+  <line x1="832.0" y1="32" x2="832.0" y2="284" stroke="#202630" stroke-width="1"/>
+  <text x="832.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">350ms</text>
+  <text x="14" y="22" fill="#8b95a3" font-size="10.5" class="mono">STAGE / SUBSYSTEM</text>
+  <text x="908" y="22" fill="#8b95a3" font-size="10.5" text-anchor="end" class="mono">DUR</text>
+  <line x1="0" y1="31" x2="920" y2="31" stroke="#262c36" stroke-width="1"/>
+  <text x="14" y="58" fill="#d5dce4" font-size="11.5" class="mono">1. CLI boot + angelus dial</text>
+  <rect x="232.0" y="46" width="27.9" height="16" fill="#8ca2d6" rx="2"/>
+  <text x="267.9" y="58" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">process start + resolveBinding</text>
+  <text x="908" y="58" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">16.3ms</text>
+  <rect x="0" y="70" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="88" fill="#d5dce4" font-size="11.5" class="mono">2. forkPointOf(:336) cold IR</text>
+  <rect x="259.4" y="76" width="53.3" height="16" fill="#b57edc" rx="2"/>
+  <text x="320.8" y="88" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">cold XWAL open + 2,866 msgs</text>
+  <text x="908" y="88" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">31.1ms</text>
+  <text x="14" y="118" fill="#d5dce4" font-size="11.5" class="mono">3. XWAL branch + SyncCoherent</text>
+  <rect x="312.8" y="106" width="142.1" height="16" fill="#d9a94e" rx="2"/>
+  <text x="462.9" y="118" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">branch dir + birth fsync</text>
+  <text x="908" y="118" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">82.9ms</text>
+  <rect x="0" y="130" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="148" fill="#d5dce4" font-size="11.5" class="mono">4. 3x study Retain + heldBy</text>
+  <rect x="454.9" y="136" width="41.3" height="16" fill="#b57edc" rx="2"/>
+  <text x="504.2" y="148" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">3 sequential libretto fsyncs + meta</text>
+  <text x="908" y="148" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">24.1ms</text>
+  <text x="14" y="178" fill="#d5dce4" font-size="11.5" class="mono">5. listen CLI start + dial</text>
+  <rect x="510.2" y="166" width="27.1" height="16" fill="#8ca2d6" rx="2"/>
+  <text x="545.3" y="178" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">raw PTY setup + DialAria + follow</text>
+  <text x="908" y="178" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">15.8ms</text>
+  <rect x="0" y="190" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="208" fill="#d5dce4" font-size="11.5" class="mono">6. AriaReader.Page (cold child)</text>
+  <rect x="537.3" y="196" width="87.0" height="16" fill="#5fb3be" rx="2"/>
+  <text x="529.3" y="208" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">load 12.0ms + fd 13.7ms + restore</text>
+  <text x="908" y="208" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">50.8ms</text>
+  <text x="14" y="238" fill="#d5dce4" font-size="11.5" class="mono">7. Glamour cold 1,176-row layout</text>
+  <rect x="624.3" y="226" width="163.9" height="16" fill="#df6a57" rx="2"/>
+  <text x="616.3" y="238" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">29 misses (2x Goldmark AST parse)</text>
+  <text x="908" y="238" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">95.6ms</text>
+  <rect x="0" y="250" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="268" fill="#d5dce4" font-size="11.5" class="mono">8. SGR compact + PTY frame</text>
+  <rect x="788.2" y="256" width="7.5" height="16" fill="#8ca2d6" rx="2"/>
+  <text x="780.2" y="268" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">191 KB wire rx -&gt; 120x40 screen</text>
+  <text x="908" y="268" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">4.4ms</text>
+  <line x1="0" y1="292" x2="920" y2="292" stroke="#222832" stroke-width="1"/>
+  <text x="14" y="310" fill="#82bc74" font-size="11" class="mono">Projected (P0-P3 fixes)</text>
+  <rect x="232" y="299" width="563.7" height="13" fill="#232a35" rx="2"/>
+  <rect x="232" y="299" width="164.6" height="13" fill="#82bc74" rx="2"/>
+  <text x="404.6" y="309" fill="#82bc74" font-size="10.5" class="mono">~96ms (-71% vs 328.8ms)</text>
+</svg></div>
+        </div>
+
+        <div class="trace-pane" id="pane-4">
+          <div class="pane-caption">
+            <strong>Trace 4 · Production Bug Caught in PTY: Pager :fork ace9cc9f:104 Renders Empty Landing Page</strong>
+            <span>CloneBelow(104) retains 0 msgs, yet livelog_bridge.go:863 requests ReadBeforeFloor(floor=104) -&gt; 0 parts!</span>
+          </div>
+          <div class="svg-scroll"><svg class="wf-svg" viewBox="0 0 920 312" role="img" aria-label="Discovered Bug: Pager :fork ace9cc9f:104 Strands User on Blank Landing Page (215.8ms)">
+  <rect x="0" y="0" width="920" height="312" fill="#101318" rx="3"/>
+  <line x1="232.0" y1="32" x2="232.0" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="232.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">0ms</text>
+  <line x1="347.4" y1="32" x2="347.4" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="347.4" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">50ms</text>
+  <line x1="462.8" y1="32" x2="462.8" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="462.8" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">100ms</text>
+  <line x1="578.2" y1="32" x2="578.2" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="578.2" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">150ms</text>
+  <line x1="693.5" y1="32" x2="693.5" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="693.5" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">200ms</text>
+  <line x1="808.9" y1="32" x2="808.9" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="808.9" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">250ms</text>
+  <text x="14" y="22" fill="#8b95a3" font-size="10.5" class="mono">STAGE / SUBSYSTEM</text>
+  <text x="908" y="22" fill="#8b95a3" font-size="10.5" text-anchor="end" class="mono">DUR</text>
+  <line x1="0" y1="31" x2="920" y2="31" stroke="#262c36" stroke-width="1"/>
+  <text x="14" y="58" fill="#d5dce4" font-size="11.5" class="mono">1. forkPointOf(:104) -&gt; LT 485</text>
+  <rect x="236.2" y="46" width="43.0" height="16" fill="#b57edc" rx="2"/>
+  <text x="287.2" y="58" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">2,318 msgs scanned</text>
+  <text x="908" y="58" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">18.6ms</text>
+  <rect x="0" y="70" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="88" fill="#d5dce4" font-size="11.5" class="mono">2. XWAL forkAtLocked + birth</text>
+  <rect x="279.2" y="76" width="224.1" height="16" fill="#d9a94e" rx="2"/>
+  <text x="511.2" y="88" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">branch minted (103 turns, ~200.6k ctx)</text>
+  <text x="908" y="88" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">97.1ms</text>
+  <text x="14" y="118" fill="#d5dce4" font-size="11.5" class="mono">3. 4x study Retain (4 librettos)</text>
+  <rect x="503.2" y="106" width="29.0" height="16" fill="#b57edc" rx="2"/>
+  <text x="540.3" y="118" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">4 sequential Retain fsyncs (21.8ms)</text>
+  <text x="908" y="118" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">12.6ms</text>
+  <rect x="0" y="130" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="148" fill="#d5dce4" font-size="11.5" class="mono">4. handlers.place + heldBy(486)</text>
+  <rect x="532.3" y="136" width="123.5" height="16" fill="#c98b32" rx="2"/>
+  <text x="663.8" y="148" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">@topology fsync (39.4ms)</text>
+  <text x="908" y="148" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">53.5ms</text>
+  <text x="14" y="178" fill="#d5dce4" font-size="11.5" class="mono">5. CloneBelow(104) -&gt; kept=0!</text>
+  <rect x="659.1" y="166" width="2.8" height="16" fill="#df6a57" rx="2"/>
+  <text x="651.1" y="178" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">BUG: livelog_bridge.go:863 sets floor=104</text>
+  <text x="908" y="178" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">1.2ms</text>
+  <rect x="0" y="190" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="208" fill="#d5dce4" font-size="11.5" class="mono">6. AriaReader builds 103 turns</text>
+  <rect x="661.9" y="196" width="46.6" height="16" fill="#5fb3be" rx="2"/>
+  <text x="653.9" y="208" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">80x patchesFromLog, returns 0 parts!</text>
+  <text x="908" y="208" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">20.2ms</text>
+  <text x="14" y="238" fill="#d5dce4" font-size="11.5" class="mono">7. Paints empty === landing page</text>
+  <rect x="721.8" y="226" width="8.1" height="16" fill="#df6a57" rx="2"/>
+  <text x="713.8" y="238" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">window_msgs=0 despite 200.6k ctx on disk</text>
+  <text x="908" y="238" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">3.5ms</text>
+  <line x1="580.4" y1="36" x2="580.4" y2="266" stroke="#df6a57" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <rect x="496.4" y="258" width="168" height="16" rx="2" fill="#2b1716" stroke="#df6a57" stroke-width="0.8"/>
+  <text x="580.4" y="269.5" fill="#f39c8e" font-size="10" text-anchor="middle" class="mono">key.paint clamp: 151.0ms</text>
+  <line x1="0" y1="278" x2="920" y2="278" stroke="#222832" stroke-width="1"/>
+  <text x="14" y="296" fill="#82bc74" font-size="11" class="mono">Projected (P0-P3 fixes)</text>
+  <rect x="232" y="285" width="497.9" height="13" fill="#232a35" rx="2"/>
+  <rect x="232" y="285" width="170.8" height="13" fill="#82bc74" rx="2"/>
+  <text x="410.8" y="295" fill="#82bc74" font-size="10.5" class="mono">~74ms (-66% vs 215.8ms)</text>
+</svg></div>
+        </div>
+
+        <div class="trace-pane" id="pane-5">
+          <div class="pane-caption">
+            <strong>Trace 5 · Forking Live Resident Parent + Waking Fork into NewAgent (b7f1f42c · 2,866 msgs)</strong>
+            <span>92.7ms fork RPC + 57.9ms restoreOne/NewAgent duplicate full-history projection = 150.6ms before provider round</span>
+          </div>
+          <div class="svg-scroll"><svg class="wf-svg" viewBox="0 0 920 296" role="img" aria-label="Forking Live Resident Parent + Waking Fork into NewAgent (b7f1f42c, 2,866 msgs: 150.6ms pre-LLM)">
+  <rect x="0" y="0" width="920" height="296" fill="#101318" rx="3"/>
+  <line x1="232.0" y1="32" x2="232.0" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="232.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">0ms</text>
+  <line x1="382.0" y1="32" x2="382.0" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="382.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">50ms</text>
+  <line x1="532.0" y1="32" x2="532.0" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="532.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">100ms</text>
+  <line x1="682.0" y1="32" x2="682.0" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="682.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">150ms</text>
+  <line x1="832.0" y1="32" x2="832.0" y2="254" stroke="#202630" stroke-width="1"/>
+  <text x="832.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">200ms</text>
+  <text x="14" y="22" fill="#8b95a3" font-size="10.5" class="mono">STAGE / SUBSYSTEM</text>
+  <text x="908" y="22" fill="#8b95a3" font-size="10.5" text-anchor="end" class="mono">DUR</text>
+  <line x1="0" y1="31" x2="920" y2="31" stroke="#262c36" stroke-width="1"/>
+  <text x="14" y="58" fill="#d5dce4" font-size="11.5" class="mono">1. forkMetaSnapshot (live Info)</text>
+  <rect x="232.0" y="46" width="2.5" height="16" fill="#8ca2d6" rx="2"/>
+  <text x="242.5" y="58" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">reads resident Agent.Info()</text>
+  <text x="908" y="58" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">0.4ms</text>
+  <rect x="0" y="70" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="88" fill="#d5dce4" font-size="11.5" class="mono">2. XWAL ForkTail + SyncCoherent</text>
+  <rect x="233.5" y="76" width="332.5" height="16" fill="#d9a94e" rx="2"/>
+  <text x="574.0" y="88" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">branch dir + birth fsync</text>
+  <text x="908" y="88" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">110.8ms</text>
+  <text x="14" y="118" fill="#d5dce4" font-size="11.5" class="mono">3. 3x study Retain + stamp</text>
+  <rect x="566.0" y="106" width="52.5" height="16" fill="#b57edc" rx="2"/>
+  <text x="626.5" y="118" fill="#9aa4b2" font-size="10.5" text-anchor="start" class="mono">3 libretto fsyncs</text>
+  <text x="908" y="118" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">17.5ms</text>
+  <rect x="0" y="130" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="148" fill="#d5dce4" font-size="11.5" class="mono">4. NewAgent: a.figLog.Read()</text>
+  <rect x="639.2" y="136" width="64.4" height="16" fill="#5fb3be" rx="2"/>
+  <text x="631.2" y="148" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">agent.go:239 unwraps 2,867 entries</text>
+  <text x="908" y="148" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">21.5ms</text>
+  <text x="14" y="178" fill="#d5dce4" font-size="11.5" class="mono">5. NewAgent: projTurns + deltas</text>
+  <rect x="703.7" y="166" width="39.6" height="16" fill="#5fb3be" rx="2"/>
+  <text x="695.7" y="178" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">re-runs PerRecord on 2,867 entries</text>
+  <text x="908" y="178" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">13.2ms</text>
+  <rect x="0" y="190" width="920" height="30" fill="#141820" opacity="0.65"/>
+  <text x="14" y="208" fill="#d5dce4" font-size="11.5" class="mono">6. NewAgent: ariaSrv.Commit loop</text>
+  <rect x="743.2" y="196" width="59.6" height="16" fill="#df6a57" rx="2"/>
+  <text x="735.2" y="208" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">commits 671 turns one-by-one</text>
+  <text x="908" y="208" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">19.9ms</text>
+  <text x="14" y="238" fill="#d5dce4" font-size="11.5" class="mono">7. WatchForm + resumeStudies</text>
+  <rect x="803.9" y="226" width="9.0" height="16" fill="#82bc74" rx="2"/>
+  <text x="795.9" y="238" fill="#9aa4b2" font-size="10.5" text-anchor="end" class="mono">intrinsics + meta sidecar</text>
+  <text x="908" y="238" fill="#e8ecf1" font-size="11.5" text-anchor="end" class="mono">3.0ms</text>
+  <line x1="0" y1="262" x2="920" y2="262" stroke="#222832" stroke-width="1"/>
+  <text x="14" y="280" fill="#82bc74" font-size="11" class="mono">Projected (P0-P3 fixes)</text>
+  <rect x="232" y="269" width="580.9" height="13" fill="#232a35" rx="2"/>
+  <rect x="232" y="269" width="216.0" height="13" fill="#82bc74" rx="2"/>
+  <text x="456.0" y="279" fill="#82bc74" font-size="10.5" class="mono">~72ms (-63% vs 193.6ms)</text>
+</svg></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Cross-Scenario Stacked Phase Comparison</h3>
+      <p class="subhead">Median trial phase decomposition across medium (189k) and large (524k..988k) conversations in a 120x40 tmux PTY.</p>
+      <div class="svg-scroll"><svg class="wf-svg" viewBox="0 0 920 366" role="img" aria-label="Stacked end-to-end latency breakdown across scenarios">
+  <rect x="0" y="0" width="920" height="366" fill="#101318" rx="3"/>
+  <line x1="268.0" y1="28" x2="268.0" y2="348" stroke="#202630" stroke-width="1"/>
+  <text x="268.0" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">0ms</text>
+  <line x1="342.7" y1="28" x2="342.7" y2="348" stroke="#202630" stroke-width="1"/>
+  <text x="342.7" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">50ms</text>
+  <line x1="417.5" y1="28" x2="417.5" y2="348" stroke="#202630" stroke-width="1"/>
+  <text x="417.5" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">100ms</text>
+  <line x1="492.2" y1="28" x2="492.2" y2="348" stroke="#202630" stroke-width="1"/>
+  <text x="492.2" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">150ms</text>
+  <line x1="566.9" y1="28" x2="566.9" y2="348" stroke="#202630" stroke-width="1"/>
+  <text x="566.9" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">200ms</text>
+  <line x1="641.7" y1="28" x2="641.7" y2="348" stroke="#202630" stroke-width="1"/>
+  <text x="641.7" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">250ms</text>
+  <line x1="716.4" y1="28" x2="716.4" y2="348" stroke="#202630" stroke-width="1"/>
+  <text x="716.4" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">300ms</text>
+  <line x1="791.2" y1="28" x2="791.2" y2="348" stroke="#202630" stroke-width="1"/>
+  <text x="791.2" y="22" fill="#7c8796" font-size="10.5" text-anchor="middle" class="mono">350ms</text>
+  <text x="14" y="22" fill="#8b95a3" font-size="10.5" class="mono">SCENARIO (120x40 TMUX PTY)</text>
+  <text x="908" y="22" fill="#8b95a3" font-size="10.5" text-anchor="end" class="mono">TOTAL</text>
+  <line x1="0" y1="29" x2="920" y2="29" stroke="#262c36" stroke-width="1"/>
+  <text x="14" y="53" fill="#d5dce4" font-size="11.2" class="mono">Pager :fork head · 04890755 (189k)</text>
+  <rect x="268.0" y="41" width="75.4" height="16" fill="#d9a94e"/>
+  <rect x="343.4" y="41" width="13.6" height="16" fill="#b57edc"/>
+  <rect x="357.0" y="41" width="14.8" height="16" fill="#5fb3be"/>
+  <rect x="371.9" y="41" width="19.5" height="16" fill="#8ca2d6"/>
+  <text x="908" y="53" fill="#e8ecf1" font-size="11.5" font-weight="600" text-anchor="end" class="mono">82.7ms</text>
+  <rect x="0" y="66" width="920" height="31" fill="#141820" opacity="0.65"/>
+  <text x="14" y="84" fill="#d5dce4" font-size="11.2" class="mono">Pager :fork head · 1068ad21 (988k)</text>
+  <rect x="268.0" y="72" width="112.8" height="16" fill="#d9a94e"/>
+  <rect x="380.8" y="72" width="22.2" height="16" fill="#b57edc"/>
+  <rect x="402.9" y="72" width="60.1" height="16" fill="#5fb3be"/>
+  <rect x="463.0" y="72" width="17.2" height="16" fill="#df6a57"/>
+  <rect x="480.2" y="72" width="26.6" height="16" fill="#8ca2d6"/>
+  <text x="908" y="84" fill="#e8ecf1" font-size="11.5" font-weight="600" text-anchor="end" class="mono">159.8ms</text>
+  <text x="14" y="115" fill="#d5dce4" font-size="11.2" class="mono">Pager :fork :336 · b7f1f42c (597k)</text>
+  <rect x="268.0" y="103" width="105.9" height="16" fill="#d9a94e"/>
+  <rect x="373.9" y="103" width="79.6" height="16" fill="#b57edc"/>
+  <rect x="453.5" y="103" width="36.1" height="16" fill="#5fb3be"/>
+  <rect x="489.6" y="103" width="48.4" height="16" fill="#df6a57"/>
+  <rect x="538.0" y="103" width="19.5" height="16" fill="#8ca2d6"/>
+  <text x="908" y="115" fill="#e8ecf1" font-size="11.5" font-weight="600" text-anchor="end" class="mono">193.7ms</text>
+  <rect x="0" y="128" width="920" height="31" fill="#141820" opacity="0.65"/>
+  <text x="14" y="146" fill="#d5dce4" font-size="11.2" class="mono">Pager :fork :228 · 1068ad21 (988k)</text>
+  <rect x="268.0" y="134" width="131.3" height="16" fill="#d9a94e"/>
+  <rect x="399.3" y="134" width="137.7" height="16" fill="#b57edc"/>
+  <rect x="537.0" y="134" width="40.5" height="16" fill="#5fb3be"/>
+  <rect x="577.5" y="134" width="40.8" height="16" fill="#df6a57"/>
+  <rect x="618.3" y="134" width="7.6" height="16" fill="#8ca2d6"/>
+  <text x="908" y="146" fill="#e8ecf1" font-size="11.5" font-weight="600" text-anchor="end" class="mono">239.4ms</text>
+  <text x="14" y="177" fill="#d5dce4" font-size="11.2" class="mono">Pager :fork :387 · 1068ad21 (988k)</text>
+  <rect x="268.0" y="165" width="122.2" height="16" fill="#d9a94e"/>
+  <rect x="390.2" y="165" width="156.8" height="16" fill="#b57edc"/>
+  <rect x="547.0" y="165" width="51.9" height="16" fill="#5fb3be"/>
+  <rect x="598.9" y="165" width="35.3" height="16" fill="#df6a57"/>
+  <rect x="634.2" y="165" width="21.9" height="16" fill="#8ca2d6"/>
+  <text x="908" y="177" fill="#e8ecf1" font-size="11.5" font-weight="600" text-anchor="end" class="mono">259.6ms</text>
+  <rect x="0" y="190" width="920" height="31" fill="#141820" opacity="0.65"/>
+  <text x="14" y="208" fill="#d5dce4" font-size="11.2" class="mono">Pager :fork :259 cold · ace9cc9f</text>
+  <rect x="268.0" y="196" width="163.0" height="16" fill="#d9a94e"/>
+  <rect x="431.0" y="196" width="129.5" height="16" fill="#b57edc"/>
+  <rect x="560.6" y="196" width="34.5" height="16" fill="#5fb3be"/>
+  <rect x="595.0" y="196" width="193.4" height="16" fill="#df6a57"/>
+  <rect x="788.4" y="196" width="17.2" height="16" fill="#8ca2d6"/>
+  <text x="908" y="208" fill="#e8ecf1" font-size="11.5" font-weight="600" text-anchor="end" class="mono">359.6ms</text>
+  <text x="14" y="239" fill="#d5dce4" font-size="11.2" class="mono">Warm CLI+listen head · 1068ad21</text>
+  <rect x="268.0" y="227" width="79.6" height="16" fill="#d9a94e"/>
+  <rect x="347.6" y="227" width="41.4" height="16" fill="#b57edc"/>
+  <rect x="389.0" y="227" width="79.7" height="16" fill="#5fb3be"/>
+  <rect x="468.7" y="227" width="51.2" height="16" fill="#df6a57"/>
+  <rect x="519.8" y="227" width="35.2" height="16" fill="#8ca2d6"/>
+  <text x="908" y="239" fill="#e8ecf1" font-size="11.5" font-weight="600" text-anchor="end" class="mono">192.1ms</text>
+  <rect x="0" y="252" width="920" height="31" fill="#141820" opacity="0.65"/>
+  <text x="14" y="270" fill="#d5dce4" font-size="11.2" class="mono">Warm CLI+listen :387 · 1068ad21</text>
+  <rect x="268.0" y="258" width="88.7" height="16" fill="#d9a94e"/>
+  <rect x="356.7" y="258" width="164.2" height="16" fill="#b57edc"/>
+  <rect x="520.9" y="258" width="60.1" height="16" fill="#5fb3be"/>
+  <rect x="581.0" y="258" width="161.4" height="16" fill="#df6a57"/>
+  <rect x="742.4" y="258" width="32.5" height="16" fill="#8ca2d6"/>
+  <text x="908" y="270" fill="#e8ecf1" font-size="11.5" font-weight="600" text-anchor="end" class="mono">339.1ms</text>
+  <text x="14" y="301" fill="#d5dce4" font-size="11.2" class="mono">Cold CLI+listen head · b7f1f42c</text>
+  <rect x="268.0" y="289" width="118.2" height="16" fill="#d9a94e"/>
+  <rect x="386.2" y="289" width="59.3" height="16" fill="#b57edc"/>
+  <rect x="445.5" y="289" width="106.3" height="16" fill="#5fb3be"/>
+  <rect x="551.8" y="289" width="23.9" height="16" fill="#df6a57"/>
+  <rect x="575.7" y="289" width="34.1" height="16" fill="#8ca2d6"/>
+  <text x="908" y="301" fill="#e8ecf1" font-size="11.5" font-weight="600" text-anchor="end" class="mono">228.7ms</text>
+  <rect x="0" y="314" width="920" height="31" fill="#141820" opacity="0.65"/>
+  <text x="14" y="332" fill="#d5dce4" font-size="11.2" class="mono">Cold CLI+listen :336 · b7f1f42c</text>
+  <rect x="268.0" y="320" width="123.9" height="16" fill="#d9a94e"/>
+  <rect x="391.9" y="320" width="118.7" height="16" fill="#b57edc"/>
+  <rect x="510.6" y="320" width="75.9" height="16" fill="#5fb3be"/>
+  <rect x="586.4" y="320" width="142.9" height="16" fill="#df6a57"/>
+  <rect x="729.3" y="320" width="30.2" height="16" fill="#8ca2d6"/>
+  <text x="908" y="332" fill="#e8ecf1" font-size="11.5" font-weight="600" text-anchor="end" class="mono">328.8ms</text>
+</svg></div>
+    </div>
+
+    <div class="panel">
+      <h3>Matrix A · Interactive Pager :fork and :fork &lt;id&gt;:&lt;turn&gt; (120x40 tmux PTY, N=5 Trials/Cell)</h3>
+      <p class="subhead">
+        Red <code>key.paint</code> cells mark where <code>figaro.pager.key_to_paint</code> answered prematurely on the 150ms progress timer frame
+        while still displaying the parent figaro. Glamour column shows Trial 0 (cold <code>proseHot</code> cache) vs p50 (warm cache).
+      </p>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Target Figaro</th>
+              <th class="num">Msgs</th>
+              <th class="num">Ctx</th>
+              <th>Cut</th>
+              <th class="num">PTY Paint p50</th>
+              <th class="num">Min..Max</th>
+              <th class="num">key.paint</th>
+              <th class="num">fork RPC</th>
+              <th class="num">Pager hop</th>
+              <th class="num">Glamour (Cold / Warm)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>04890755</code> <span class='muted'>aerosol-bubblegum</span></td><td class='num'>194</td><td class='num'>189k</td><td><code>head</code></td><td class='num strong'>82.7 ms</td><td class='num muted'>74.1..92.3</td><td class="num">70.4 ms</td><td class='num'>59.6 ms</td><td class='num'>10.1 ms</td><td class='num'>0.2 / 0.2 ms</td></tr><tr><td><code>04890755</code> <span class='muted'>aerosol-bubblegum</span></td><td class='num'>194</td><td class='num'>189k</td><td><code>:3</code></td><td class='num strong'>89.5 ms</td><td class='num muted'>78.1..89.9</td><td class="num">75.5 ms</td><td class='num'>68.5 ms</td><td class='num'>6.4 ms</td><td class='num'>0.0 / 0.0 ms</td></tr><tr><td><code>04890755</code> <span class='muted'>aerosol-bubblegum</span></td><td class='num'>194</td><td class='num'>189k</td><td><code>:6</code></td><td class='num strong'>90.0 ms</td><td class='num muted'>86.1..92.8</td><td class="num">76.1 ms</td><td class='num'>67.9 ms</td><td class='num'>7.7 ms</td><td class='num'>0.0 / 0.0 ms</td></tr><tr><td><code>04890755</code> <span class='muted'>aerosol-bubblegum</span></td><td class='num'>194</td><td class='num'>189k</td><td><code>:11</code></td><td class='num strong'>88.3 ms</td><td class='num muted'>84.2..89.8</td><td class="num">75.0 ms</td><td class='num'>66.0 ms</td><td class='num'>8.3 ms</td><td class='num'>0.0 / 0.0 ms</td></tr><tr><td><code>ace9cc9f</code> <span class='muted'>osmosis-obtain</span></td><td class='num'>2,318</td><td class='num'>523k</td><td><code>head</code></td><td class='num strong'>164.7 ms</td><td class='num muted'>164.2..196.5</td><td class="num">152.2 ms</td><td class='num'>102.9 ms</td><td class='num'>48.7 ms</td><td class='num'>4.9 / 5.4 ms</td></tr><tr><td><code>ace9cc9f</code> <span class='muted'>osmosis-obtain</span></td><td class='num'>2,318</td><td class='num'>523k</td><td><code>:104</code> <span class="badge bad">trial0 empty</span></td><td class='num strong'>219.4 ms</td><td class='num muted'>215.8..253.2</td><td class="num warn-cell">151.2 ms</td><td class='num'>178.3 ms</td><td class='num'>28.2 ms</td><td class='num'>0.0 / 17.1 ms</td></tr><tr><td><code>ace9cc9f</code> <span class='muted'>osmosis-obtain</span></td><td class='num'>2,318</td><td class='num'>523k</td><td><code>:259</code></td><td class='num strong'>241.7 ms</td><td class='num muted'>231.1..359.6</td><td class="num warn-cell">151.1 ms</td><td class='num'>180.8 ms</td><td class='num'>47.4 ms</td><td class='num'>129.4 / 24.7 ms</td></tr><tr><td><code>ace9cc9f</code> <span class='muted'>osmosis-obtain</span></td><td class='num'>2,318</td><td class='num'>523k</td><td><code>:440</code></td><td class='num strong'>247.5 ms</td><td class='num muted'>234.7..282.0</td><td class="num warn-cell">150.9 ms</td><td class='num'>183.0 ms</td><td class='num'>51.1 ms</td><td class='num'>57.9 / 17.4 ms</td></tr><tr><td><code>b7f1f42c</code> <span class='muted'>popcorn-rulebook</span></td><td class='num'>2,866</td><td class='num'>597k</td><td><code>head</code></td><td class='num strong'>159.5 ms</td><td class='num muted'>155.6..163.6</td><td class="num">144.4 ms</td><td class='num'>92.7 ms</td><td class='num'>51.1 ms</td><td class='num'>6.5 / 6.5 ms</td></tr><tr><td><code>b7f1f42c</code> <span class='muted'>popcorn-rulebook</span></td><td class='num'>2,866</td><td class='num'>597k</td><td><code>:134</code> <span class="badge bad">trial0 empty</span></td><td class='num strong'>166.0 ms</td><td class='num muted'>163.7..180.8</td><td class="num">146.4 ms</td><td class='num'>117.1 ms</td><td class='num'>28.6 ms</td><td class='num'>0.0 / 26.3 ms</td></tr><tr><td><code>b7f1f42c</code> <span class='muted'>popcorn-rulebook</span></td><td class='num'>2,866</td><td class='num'>597k</td><td><code>:336</code></td><td class='num strong'>193.7 ms</td><td class='num muted'>181.9..282.9</td><td class="num">181.3 ms</td><td class='num'>124.1 ms</td><td class='num'>56.5 ms</td><td class='num'>119.7 / 32.4 ms</td></tr><tr><td><code>b7f1f42c</code> <span class='muted'>popcorn-rulebook</span></td><td class='num'>2,866</td><td class='num'>597k</td><td><code>:570</code></td><td class='num strong'>199.5 ms</td><td class='num muted'>189.4..222.8</td><td class="num">193.2 ms</td><td class='num'>135.2 ms</td><td class='num'>57.4 ms</td><td class='num'>50.8 / 21.3 ms</td></tr><tr><td><code>e8e5c2fa</code> <span class='muted'>unmarked-makeover</span></td><td class='num'>2,528</td><td class='num'>834k</td><td><code>head</code></td><td class='num strong'>160.1 ms</td><td class='num muted'>152.5..172.9</td><td class="num">145.9 ms</td><td class='num'>86.1 ms</td><td class='num'>59.2 ms</td><td class='num'>0.2 / 0.2 ms</td></tr><tr><td><code>e8e5c2fa</code> <span class='muted'>unmarked-makeover</span></td><td class='num'>2,528</td><td class='num'>834k</td><td><code>:56</code> <span class="badge bad">trial0 empty</span></td><td class='num strong'>145.3 ms</td><td class='num muted'>137.7..159.1</td><td class="num">133.8 ms</td><td class='num'>113.1 ms</td><td class='num'>20.1 ms</td><td class='num'>0.0 / 0.8 ms</td></tr><tr><td><code>e8e5c2fa</code> <span class='muted'>unmarked-makeover</span></td><td class='num'>2,528</td><td class='num'>834k</td><td><code>:140</code></td><td class='num strong'>168.5 ms</td><td class='num muted'>156.3..208.3</td><td class="num">155.8 ms</td><td class='num'>119.5 ms</td><td class='num'>35.6 ms</td><td class='num'>54.5 / 5.3 ms</td></tr><tr><td><code>e8e5c2fa</code> <span class='muted'>unmarked-makeover</span></td><td class='num'>2,528</td><td class='num'>834k</td><td><code>:237</code></td><td class='num strong'>185.8 ms</td><td class='num muted'>175.8..218.1</td><td class="num">176.0 ms</td><td class='num'>126.8 ms</td><td class='num'>48.6 ms</td><td class='num'>18.9 / 4.5 ms</td></tr><tr><td><code>1068ad21</code> <span class='muted'>antelope-nextdoor</span></td><td class='num'>2,774</td><td class='num'>987k</td><td><code>head</code></td><td class='num strong'>159.8 ms</td><td class='num muted'>152.8..170.9</td><td class="num">142.6 ms</td><td class='num'>90.3 ms</td><td class='num'>51.7 ms</td><td class='num'>12.2 / 11.5 ms</td></tr><tr><td><code>1068ad21</code> <span class='muted'>antelope-nextdoor</span></td><td class='num'>2,774</td><td class='num'>987k</td><td><code>:91</code> <span class="badge bad">trial0 empty</span></td><td class='num strong'>215.9 ms</td><td class='num muted'>201.3..246.4</td><td class="num warn-cell">151.0 ms</td><td class='num'>173.0 ms</td><td class='num'>22.6 ms</td><td class='num'>0.0 / 20.3 ms</td></tr><tr><td><code>1068ad21</code> <span class='muted'>antelope-nextdoor</span></td><td class='num'>2,774</td><td class='num'>987k</td><td><code>:228</code></td><td class='num strong'>239.4 ms</td><td class='num muted'>230.6..323.0</td><td class="num warn-cell">151.1 ms</td><td class='num'>180.0 ms</td><td class='num'>54.4 ms</td><td class='num'>102.0 / 27.3 ms</td></tr><tr><td><code>1068ad21</code> <span class='muted'>antelope-nextdoor</span></td><td class='num'>2,774</td><td class='num'>987k</td><td><code>:387</code></td><td class='num strong'>259.6 ms</td><td class='num muted'>248.3..325.1</td><td class="num warn-cell">151.0 ms</td><td class='num'>186.6 ms</td><td class='num'>58.4 ms</td><td class='num'>97.3 / 23.6 ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Matrix B · CLI figaro fork + PTY figaro listen &lt;alt&gt; &amp; CLI figaro show (Cold vs Warm Store)</h3>
+      <p class="subhead">
+        Every fresh <code>figaro listen &lt;alt&gt;</code> starts with an empty process-local <code>proseHot</code> cache and hits a cold
+        <code>AriaReader.serverFor(alt)</code> entry on the daemon, paying both full-history IR projection and 600..1,225-row Glamour rendering.
+      </p>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Target</th>
+              <th>Cut</th>
+              <th class="num">Cold E2E p50</th>
+              <th class="num">Warm E2E p50</th>
+              <th class="num">CLI fork p50</th>
+              <th class="num">PTY listen</th>
+              <th class="num">Daemon Reader</th>
+              <th class="num">Glamour (Rows)</th>
+              <th class="num">Wire RX</th>
+              <th class="num">show -n 10</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>04890755</code> <span class='muted'>189k</span></td><td><code>head</code></td><td class='num'>149.4 ms</td><td class='num strong'>136.6 ms</td><td class='num'>76.1 ms</td><td class='num'>60.5 ms</td><td class='num'>7.3 ms</td><td class='num warn-cell'>25.9 ms <span class='muted'>(734r)</span></td><td class='num'>155 KB</td><td class='num'>39.4 ms</td></tr><tr><td><code>04890755</code> <span class='muted'>189k</span></td><td><code>:3</code></td><td class='num'><span class='muted'>n/a</span></td><td class='num strong'>131.6 ms</td><td class='num'>83.2 ms</td><td class='num'>44.3 ms</td><td class='num'>5.7 ms</td><td class='num warn-cell'>13.9 ms <span class='muted'>(480r)</span></td><td class='num'>144 KB</td><td class='num'>41.0 ms</td></tr><tr><td><code>04890755</code> <span class='muted'>189k</span></td><td><code>:6</code></td><td class='num'>143.3 ms</td><td class='num strong'>124.1 ms</td><td class='num'>84.4 ms</td><td class='num'>41.5 ms</td><td class='num'>6.2 ms</td><td class='num warn-cell'>11.2 ms <span class='muted'>(473r)</span></td><td class='num'>135 KB</td><td class='num'>45.4 ms</td></tr><tr><td><code>04890755</code> <span class='muted'>189k</span></td><td><code>:11</code></td><td class='num'><span class='muted'>n/a</span></td><td class='num strong'>133.3 ms</td><td class='num'>84.0 ms</td><td class='num'>48.5 ms</td><td class='num'>6.3 ms</td><td class='num warn-cell'>16.4 ms <span class='muted'>(611r)</span></td><td class='num'>129 KB</td><td class='num'>48.1 ms</td></tr><tr><td><code>ace9cc9f</code> <span class='muted'>523k</span></td><td><code>head</code></td><td class='num'><span class='muted'>n/a</span></td><td class='num strong'>212.2 ms</td><td class='num'>119.6 ms</td><td class='num'>86.5 ms</td><td class='num'>48.5 ms</td><td class='num warn-cell'>10.8 ms <span class='muted'>(614r)</span></td><td class='num'>170 KB</td><td class='num'>43.8 ms</td></tr><tr><td><code>ace9cc9f</code> <span class='muted'>523k</span></td><td><code>:104</code></td><td class='num'><span class='muted'>n/a</span></td><td class='num strong'>338.8 ms</td><td class='num'>195.6 ms</td><td class='num'>137.2 ms</td><td class='num'>18.0 ms</td><td class='num warn-cell'>91.9 ms <span class='muted'>(1148r)</span></td><td class='num'>208 KB</td><td class='num'>62.9 ms</td></tr><tr><td><code>ace9cc9f</code> <span class='muted'>523k</span></td><td><code>:259</code></td><td class='num'><span class='muted'>n/a</span></td><td class='num strong'>326.1 ms</td><td class='num'>195.8 ms</td><td class='num'>130.3 ms</td><td class='num'>27.4 ms</td><td class='num warn-cell'>75.3 ms <span class='muted'>(1001r)</span></td><td class='num'>227 KB</td><td class='num'>48.3 ms</td></tr><tr><td><code>ace9cc9f</code> <span class='muted'>523k</span></td><td><code>:440</code></td><td class='num'><span class='muted'>n/a</span></td><td class='num strong'>296.2 ms</td><td class='num'>192.5 ms</td><td class='num'>108.7 ms</td><td class='num'>43.4 ms</td><td class='num warn-cell'>38.2 ms <span class='muted'>(928r)</span></td><td class='num'>217 KB</td><td class='num'>35.4 ms</td></tr><tr><td><code>b7f1f42c</code> <span class='muted'>597k</span></td><td><code>head</code></td><td class='num'>228.7 ms</td><td class='num strong'>203.2 ms</td><td class='num'>133.6 ms</td><td class='num'>97.6 ms</td><td class='num'>52.2 ms</td><td class='num warn-cell'>19.5 ms <span class='muted'>(552r)</span></td><td class='num'>166 KB</td><td class='num'>40.3 ms</td></tr><tr><td><code>b7f1f42c</code> <span class='muted'>597k</span></td><td><code>:134</code></td><td class='num'><span class='muted'>n/a</span></td><td class='num strong'>287.0 ms</td><td class='num'>132.7 ms</td><td class='num'>147.4 ms</td><td class='num'>17.5 ms</td><td class='num warn-cell'>104.9 ms <span class='muted'>(1180r)</span></td><td class='num'>193 KB</td><td class='num'>55.4 ms</td></tr><tr><td><code>b7f1f42c</code> <span class='muted'>597k</span></td><td><code>:336</code></td><td class='num'>328.8 ms</td><td class='num strong'>291.5 ms</td><td class='num'>145.2 ms</td><td class='num'>154.9 ms</td><td class='num'>27.9 ms</td><td class='num warn-cell'>99.7 ms <span class='muted'>(1176r)</span></td><td class='num'>186 KB</td><td class='num'>50.0 ms</td></tr><tr><td><code>b7f1f42c</code> <span class='muted'>597k</span></td><td><code>:570</code></td><td class='num'><span class='muted'>n/a</span></td><td class='num strong'>236.2 ms</td><td class='num'>147.6 ms</td><td class='num'>93.5 ms</td><td class='num'>40.2 ms</td><td class='num warn-cell'>25.1 ms <span class='muted'>(732r)</span></td><td class='num'>237 KB</td><td class='num'>37.0 ms</td></tr><tr><td><code>e8e5c2fa</code> <span class='muted'>834k</span></td><td><code>head</code></td><td class='num'>226.7 ms</td><td class='num strong'>200.3 ms</td><td class='num'>99.9 ms</td><td class='num'>101.3 ms</td><td class='num'>59.2 ms</td><td class='num warn-cell'>13.7 ms <span class='muted'>(413r)</span></td><td class='num'>167 KB</td><td class='num'>39.2 ms</td></tr><tr><td><code>e8e5c2fa</code> <span class='muted'>834k</span></td><td><code>:56</code></td><td class='num'><span class='muted'>n/a</span></td><td class='num strong'>261.1 ms</td><td class='num'>134.5 ms</td><td class='num'>111.4 ms</td><td class='num'>11.8 ms</td><td class='num warn-cell'>66.7 ms <span class='muted'>(1037r)</span></td><td class='num'>201 KB</td><td class='num'>52.0 ms</td></tr><tr><td><code>e8e5c2fa</code> <span class='muted'>834k</span></td><td><code>:140</code></td><td class='num'><span class='muted'>n/a</span></td><td class='num strong'>246.3 ms</td><td class='num'>136.3 ms</td><td class='num'>111.4 ms</td><td class='num'>25.6 ms</td><td class='num warn-cell'>57.8 ms <span class='muted'>(735r)</span></td><td class='num'>168 KB</td><td class='num'>74.6 ms</td></tr><tr><td><code>e8e5c2fa</code> <span class='muted'>834k</span></td><td><code>:237</code></td><td class='num'><span class='muted'>n/a</span></td><td class='num strong'>228.4 ms</td><td class='num'>152.7 ms</td><td class='num'>85.4 ms</td><td class='num'>41.4 ms</td><td class='num warn-cell'>19.8 ms <span class='muted'>(603r)</span></td><td class='num'>159 KB</td><td class='num'>50.9 ms</td></tr><tr><td><code>1068ad21</code> <span class='muted'>987k</span></td><td><code>head</code></td><td class='num'>217.6 ms</td><td class='num strong'>192.1 ms</td><td class='num'>80.1 ms</td><td class='num'>111.1 ms</td><td class='num'>49.7 ms</td><td class='num warn-cell'>34.2 ms <span class='muted'>(747r)</span></td><td class='num'>162 KB</td><td class='num'>53.4 ms</td></tr><tr><td><code>1068ad21</code> <span class='muted'>987k</span></td><td><code>:91</code></td><td class='num'><span class='muted'>n/a</span></td><td class='num strong'>268.5 ms</td><td class='num'>167.6 ms</td><td class='num'>96.6 ms</td><td class='num'>12.0 ms</td><td class='num warn-cell'>57.6 ms <span class='muted'>(984r)</span></td><td class='num'>188 KB</td><td class='num'>59.4 ms</td></tr><tr><td><code>1068ad21</code> <span class='muted'>987k</span></td><td><code>:228</code></td><td class='num'>323.6 ms</td><td class='num strong'>307.9 ms</td><td class='num'>165.1 ms</td><td class='num'>141.3 ms</td><td class='num'>24.3 ms</td><td class='num warn-cell'>91.8 ms <span class='muted'>(1225r)</span></td><td class='num'>196 KB</td><td class='num'>92.1 ms</td></tr><tr><td><code>1068ad21</code> <span class='muted'>987k</span></td><td><code>:387</code></td><td class='num'><span class='muted'>n/a</span></td><td class='num strong'>339.1 ms</td><td class='num'>165.6 ms</td><td class='num'>169.9 ms</td><td class='num'>36.7 ms</td><td class='num warn-cell'>108.0 ms <span class='muted'>(1128r)</span></td><td class='num'>196 KB</td><td class='num'>91.5 ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Matrix C · Waking Dormant vs Forked Figaros into Live NewAgent (Zero-LLM Queue Probe)</h3>
+      <p class="subhead">
+        Measured via <code>figaro queue --id &lt;id&gt; -j</code>, which triggers <code>restoreByID -&gt; restoreOne -&gt; figaro.NewAgent</code> without
+        calling any provider endpoint. This is the exact pre-provider tax paid on the first prompt to a newly forked figaro.
+      </p>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Target Figaro</th>
+              <th class="num">Parent Wake</th>
+              <th class="num">Fork Wake p50</th>
+              <th class="num">read_ir</th>
+              <th class="num">projTurns</th>
+              <th class="num">formDeltas</th>
+              <th class="num">ariaSrv.Commit</th>
+              <th class="num">Live Fork (Head)</th>
+              <th class="num">Live Fork (:mid)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>04890755</code> <span class='muted'>(194m, 189k)</span></td><td class='num'>10.5 ms</td><td class='num strong'>8.9 ms</td><td class='num'>3.8 ms</td><td class='num'>0.5 ms</td><td class='num'>0.4 ms</td><td class='num'>2.0 ms</td><td class='num'>101.5 ms</td><td class='num'>114.1 ms</td></tr><tr><td><code>ace9cc9f</code> <span class='muted'>(2,318m, 523k)</span></td><td class='num'>65.2 ms</td><td class='num strong'>62.1 ms</td><td class='num'>19.3 ms</td><td class='num'>1.9 ms</td><td class='num'>17.6 ms</td><td class='num'>19.6 ms</td><td class='num'>180.5 ms</td><td class='num'>241.4 ms</td></tr><tr><td><code>b7f1f42c</code> <span class='muted'>(2,866m, 597k)</span></td><td class='num'>69.2 ms</td><td class='num strong'>57.9 ms</td><td class='num'>21.5 ms</td><td class='num'>2.4 ms</td><td class='num'>10.8 ms</td><td class='num'>19.9 ms</td><td class='num'>151.5 ms</td><td class='num'>182.2 ms</td></tr><tr><td><code>e8e5c2fa</code> <span class='muted'>(2,528m, 834k)</span></td><td class='num'>79.8 ms</td><td class='num strong'>60.7 ms</td><td class='num'>24.1 ms</td><td class='num'>2.5 ms</td><td class='num'>10.2 ms</td><td class='num'>20.4 ms</td><td class='num'>137.8 ms</td><td class='num'>177.3 ms</td></tr><tr><td><code>1068ad21</code> <span class='muted'>(2,774m, 987k)</span></td><td class='num'>62.8 ms</td><td class='num strong'>58.5 ms</td><td class='num'>24.0 ms</td><td class='num'>2.3 ms</td><td class='num'>7.1 ms</td><td class='num'>22.3 ms</td><td class='num'>111.6 ms</td><td class='num'>189.0 ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="sec-causes">
+    <div class="sec-head">
+      <h2>II. Root-Cause Code Walkthrough (file:line)</h2>
+      <span class="sec-tag">Algorithmic Complexity &amp; I/O Multipliers</span>
+    </div>
+
+    <div class="callout">
+      <h4>Correctness Bug Uncovered in Real PTY: Empty Landing Page on Deep Interior :fork &lt;id&gt;:&lt;turn&gt;</h4>
+      <p>
+        In <code>internal/cli/livelog_bridge.go:840-874</code>, <code>livelogTurn.retarget</code> calls <code>t.client = t.client.CloneBelow(base)</code>.
+        When viewing the live tail of a 518-turn figaro (which retains only the last ~30 messages, turns 506..518) and running
+        <code>:fork ace9cc9f:104</code>, <code>CloneBelow(104)</code> retains <strong>zero messages</strong> (<code>kept == 0</code>).
+        Lines 863-866 then set <code>floor := base</code> (104) and check <code>if first, ok := t.client.FirstMissing(); ok &amp;&amp; first &lt; floor</code>.
+        On an empty <code>aria.Client</code>, <code>FirstMissing()</code> returns <code>(0, false)</code>, leaving <code>floor = 104</code> and returning
+        <code>seedPlan{kind: seedTail, from: 104}</code>. <code>seedRead</code> (<code>internal/cli/command.go:878</code>) calls
+        <code>ReadBeforeFloor(tail, floor=104)</code> on a child whose turns run <code>1..103</code>, receiving <strong>0 parts</strong>,
+        skipping <code>setMoreBefore</code> (only run for <code>seedWindow</code> at <code>command.go:1086</code>), and painting the blank
+        new-conversation landing page (<code>===</code>) over a 200.6k-token fork. Reproduce: open any 100+ turn figaro at tail and run <code>:fork :20</code>.
+      </p>
+    </div>
+
+    <div class="cause-grid">
+      <article class="cause-card hot">
+        <div class="cause-head">
+          <h3>1. Off-Screen Glamour Layout + Double Goldmark AST Parse</h3>
+          <span class="cost-pill">55 to 129 ms</span>
+        </div>
+        <div class="cite-line">internal/cli/transcript_window.go:411-419 · transcript_index.go:175 · internal/render/markdown.go:84-105</div>
+        <p>
+          Before emitting a single PTY frame, <code>renderFrame()</code> calls <code>t.settle()</code>, which runs <code>buildIndex()</code>
+          up to 4 times while <code>tuneTail()</code> expands the window until it fills <code>pageRowBudget() = 800</code> rows (up to 30 messages).
+          On large engineering turns, that synchronously renders <strong>984 to 1,225 terminal rows</strong> (22 to 36 messages) through Glamour
+          even though the <code>120x40</code> viewport displays only <strong>37 body rows</strong>. Worse, <code>markdownRenderer.Render</code>
+          calls <code>holdHyphens(source)</code> (<code>markdown.go:85, 99</code>), which runs a full <code>md.Parser().Parse</code> AST walk
+          whenever the markdown contains <code>-</code> (virtually every assistant message), and then parses the full AST a <strong>second time</strong>
+          on line 86.
+        </p>
+      </article>
+
+      <article class="cause-card brass">
+        <div class="cause-head">
+          <h3>2. XWAL Multi-Channel Branch + Coherent Birth fsync</h3>
+          <span class="cost-pill">53 to 98 ms</span>
+        </div>
+        <div class="cite-line">internal/store/xwal_store.go:447-518 · figwal/xwal</div>
+        <p>
+          <code>XwalStore.forkWithKind</code> acquires the store-wide <code>s.mu</code> mutex across both <code>s.trunks.ForkTail</code> /
+          <code>forkAtLocked</code> (39 to 83 ms creating branch directories and updating layout metadata across a 2,479-node store) and
+          <code>writeBirth</code> (<code>xwal_store.go:484-518</code>), which writes the birth form patch, genesis input IR message, and
+          <code>stampBirth</code> (<code>aria_id</code>) before blocking on <code>x.SyncCoherent()</code> (14 to 17 ms NVMe <code>fsync</code>).
+        </p>
+      </article>
+
+      <article class="cause-card hot">
+        <div class="cause-head">
+          <h3>3. Interior :N Triple History Read + @topology fsync</h3>
+          <span class="cost-pill">+80 to 108 ms</span>
+        </div>
+        <div class="cite-line">internal/angelus/topology_handlers.go:205-229, 296, 391, 447-457 · store/topology_form.go:23</div>
+        <p>
+          An interior <code>:N</code> fork reads and decodes the conversation's IR history <strong>three separate times</strong>:
+          (a) <code>forkPointOf</code> (line 205) calls <code>log.Read()</code> on all 2,500..2,866 parent records to map turn <code>N</code> to
+          <code>atMainLT</code> (21..33 ms); (b) <code>heldBy(child)</code> (line 447) calls <code>log.Read()</code> over <code>1..atMainLT</code>
+          to fold token/message counts into <code>_meta</code> (8..24 ms); and (c) <code>AriaReader.serverFor(child)</code> reads <code>1..atMainLT</code>
+          again on attach. When <code>atMainLT</code> sits in an ancestor trunk, <code>handlers.place</code> (line 296) also mutates
+          <code>@topology</code> and waits for a second synchronous WAL <code>fsync</code> (36.5..50.5 ms).
+        </p>
+      </article>
+
+      <article class="cause-card teal">
+        <div class="cause-head">
+          <h3>4. Cold AriaReader Full-History Projection &amp; Missing Singleflight</h3>
+          <span class="cost-pill">33 to 83 ms</span>
+        </div>
+        <div class="cite-line">internal/angelus/reader.go:103-146 · internal/cli/command.go:689-692 · figaro/agent.go:239-250</div>
+        <p>
+          Even when the parent is warm in <code>AriaReader.servers</code>, a newly forked child has a fresh ID, so <code>serverFor(child)</code>
+          starts cold: it loads all 2,866 IR entries (20..31 ms, sharing decoded segments via <code>irCache</code> when warm), runs
+          <code>proj.Turns(msgs)</code> over all 279..671 turns (2..9 ms), runs <code>formdelta.PerRecord</code> (7..17 ms), calls
+          <code>ra.srv.Restore(turns)</code> (15..24 ms), and recomputes <code>metrics</code>, sending 166..201 KB of JSON over the socket just
+          to populate a 30-message tail window. Furthermore, <code>serverFor</code> unlocks <code>r.mu</code> at line 112 with no per-figaro lock,
+          while <code>retarget</code> fires <code>seedMetrics</code> and <code>seedSubject</code> concurrently. Waking the fork into
+          <code>NewAgent</code> repeats the entire O(msgs) projection a second time (+58..62 ms).
+        </p>
+      </article>
+
+      <article class="cause-card brass">
+        <div class="cause-head">
+          <h3>5. Sequential Per-Study Libretto fsync + Form Drop/Re-open</h3>
+          <span class="cost-pill">5 to 22 ms</span>
+        </div>
+        <div class="cite-line">internal/store/xwal_backend.go:561-568, 656-672 · internal/store/libretto.go:116-143</div>
+        <p>
+          <code>XwalBackend.ForkWith</code> calls <code>inheritStudies(child)</code>, which opens <code>child</code>'s bound form and iterates
+          sequentially over <code>studiesOf(snap)</code>, calling <code>lib.Retain(child)</code> on each studied form. Every <code>Retain</code>
+          submits a privileged patch to <code>@libretto::&lt;id&gt;</code> and blocks on <code>SyncThrough</code> (~4.5 ms per study: 15.4..21.8 ms
+          for 3..4 studies). Next, line 564 calls <code>b.dropForm(child)</code> and line 565 calls <code>stampCommitted(child, stamped)</code>,
+          immediately reopening and replaying <code>child</code>'s form channel from disk a second time.
+        </p>
+      </article>
+
+      <article class="cause-card teal">
+        <div class="cause-head">
+          <h3>6. O(history) stumpFormLog Replays &amp; Watermark Patch Fallback</h3>
+          <span class="cost-pill">10 to 176 ms</span>
+        </div>
+        <div class="cite-line">internal/store/topology_form.go:49-75 · internal/store/form.go:173-180, 269-284</div>
+        <p>
+          <code>xwalFormLog</code> implements <code>FormBaseLog</code> (watermarked segment headers), but <code>stumpFormLog</code>
+          (backing <code>@topology</code> and every <code>@libretto::*</code>) does not: cold open of <code>@libretto::b349567d</code> (1,985 records)
+          takes <strong>176.5 ms</strong> of single-record <code>ReadAt</code> calls during daemon boot (<code>list.warm</code> p50: 814 ms).
+          Conversely, on forms that <em>do</em> have a segment watermark (<code>st.trimmed &gt; 0</code>), <code>Form.PatchesBetween</code>
+          (<code>form.go:273</code>) falls back to <code>patchesFromLog</code> on every historical record below <code>st.trimmed</code>, causing
+          <code>formdelta.PerRecord</code> to issue 70..90 separate XWAL open+read cycles in a single page build.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section id="sec-figscope">
+    <div class="sec-head">
+      <h2>III. Instrumenting Fork &amp; Fork-to-Paint in figscope</h2>
+      <span class="sec-tag">OTLP Spans, Metrics &amp; Clock-Skew Invariants</span>
+    </div>
+
+    <div class="two-col">
+      <div class="panel">
+        <h3>Why Existing Telemetry Is Blind to Fork Latency</h3>
+        <ul style="margin:8px 0 0; padding-left:18px; color:var(--ink-soft); font-size:14px;">
+          <li style="margin-bottom:8px;">
+            <strong>The 151.1 ms <code>key_to_paint</code> Clamp (<code>internal/cli/keypaint.go:86</code>):</strong>
+            <code>opensPit("fork")</code> returns <code>false</code> because <code>"fork"</code> is in <code>overlayVerbs</code>
+            (<code>command_router.go:73, 95</code>). Thus <code>t.awaiting</code> stays <code>false</code>. Whenever <code>:fork</code>
+            takes longer than <code>progressDelay = 150ms</code> (<code>command_router.go:539</code>), an intermediate frame paints on the
+            <em>outgoing</em> parent figaro at 151.0..151.2 ms and calls <code>t.answerKeys()</code>, recording ~151 ms in
+            <code>figaro.pager.key_to_paint</code> even when the fork actually paints at 260..360 ms!
+          </li>
+          <li style="margin-bottom:8px;">
+            <strong>No Daemon Span on <code>angelus.fork</code> (<code>topology_handlers.go:235</code>):</strong>
+            <code>handlers.create</code> opens <code>figOtel.Start(ctx, "angelus.create")</code>, whereas <code>handlers.fork</code> emits zero
+            OTel spans and carries no <code>traceparent</code> field on <code>rpc.ForkRequest</code> or <code>rpc.ReadRequest</code>.
+          </li>
+          <li>
+            <strong><code>figscope</code> Ingest Drop Filter (<code>~/dev/figscope/model.go:54</code>):</strong>
+            <code>keptSpans</code> only admits <code>figaro.qua</code>, <code>figaro.round</code>, <code>figaro.methods</code>,
+            <code>cli.submit</code>, and <code>decide</code>. All other spans are dropped at ingest in <code>otlp.go:58</code>,
+            <code>tail.go:66</code>, and <code>forward.go:61</code>.
+          </li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h3>Pitfalls to Avoid in Production Telemetry</h3>
+        <ul style="margin:8px 0 0; padding-left:18px; color:var(--ink-soft); font-size:14px;">
+          <li style="margin-bottom:8px;">
+            <strong>Clock Skew Across CLI &amp; Remote Door:</strong> Never subtract a daemon span timestamp from a CLI span timestamp when
+            assembling waterfall layers in <code>derive.go</code>. Stamp <code>fork.rpc_sent</code> and <code>fork.rpc_acked</code> on
+            <code>cli.fork</code> using the client's monotonic clock, and scale <code>angelus.fork</code> internal sub-events proportionally
+            inside that bracket (or relative to <code>angelus.fork.StartN</code>).
+          </li>
+          <li style="margin-bottom:8px;">
+            <strong>Optimistic vs Contentful Paint:</strong> Record both <code>hop.optimistic_paint</code> (from <code>CloneBelow</code>) and
+            <code>fork.first_paint</code> (after <code>seedSubject</code> + <code>renderFrame</code> with <code>t.index.total &gt; 0 || t.landing()</code>),
+            tagged with <code>cli.empty_landing: bool</code> so regressions like the <code>:104</code> bug trigger an immediate alert.
+          </li>
+          <li>
+            <strong>Series Cardinality in SQLite <code>points</code> (<code>figscope/store.go:387</code>):</strong>
+            Bucketize size attributes on histograms (<code>size_bucket: "lt200" | "200_1k" | "gt1k"</code>, <code>interior: bool</code>,
+            <code>cache: "cold" | "warm"</code>) rather than attaching raw <code>figaro.id</code> to metric points! Keep raw <code>figaro.id</code>
+            and <code>wire_bytes</code> on <code>cli.fork</code> / <code>angelus.fork</code> spans only.
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="panel">
+        <h3>1. Figaro OTLP Span &amp; Histogram Contract</h3>
+        <p class="subhead">Add <code>internal/cli/fork_trace.go</code> (mirroring <code>submit_trace.go</code>) + daemon span in <code>topology_handlers.go:235</code>.</p>
+<pre>Span: cli.fork (KindClient, SimpleSpanProcessor)
+  Start: keystroke in.readAt (pager) or runForkCmd entry (cli)
+  Attrs:
+    figaro.parent_id   string   "1068ad21..."
+    figaro.id          string   "9f41c02b..."
+    fork.surface       string   "pager" | "cli_listen" | "cli_only"
+    fork.interior      bool     true
+    fork.at_turn       int64    228
+    cli.wire_rx_bytes  int64    201520
+    cli.rendered_rows  int64    1225
+    cli.glamour_misses int64    32
+    cli.painted        bool     true
+  Events (client monotonic clock):
+    fork.rpc_sent        {}
+    fork.rpc_acked       {alt_id}
+    hop.optimistic_paint {kept_msgs}
+    hop.read_done        {parts, wire_bytes}
+    ui.markdown_done     {render_ms, misses, rows}
+    fork.first_paint     {pty_bytes, contentful}
+
+Span: angelus.fork (Parent: cli.fork via ForkRequest.TraceParent)
+  Attrs:
+    figaro.parent_id   string
+    figaro.id          string
+    fork.interior      bool
+    fork.at_lt         int64
+    fork.parent_live   bool
+    fork.studies       int64
+  Events:
+    fork.turn_resolved · fork.xwal_branched · fork.birth_synced
+    fork.studies_retained · fork.placed · fork.meta_seeded
+
+Histograms (internal/otel/otel.go, bounds = subMS):
+  figaro.fork.duration  unit="ms" attrs={interior, parent_live}
+  figaro.fork.to_paint  unit="ms" attrs={surface, interior}</pre>
+      </div>
+
+      <div class="panel">
+        <h3>2. Exact figscope &amp; keypaint.go Wiring</h3>
+        <p class="subhead">Minimal surgical edits in <code>~/dev/figscope</code> and <code>internal/cli/keypaint.go</code>.</p>
+<pre>// 1. ~/dev/figscope/model.go:54
+var keptSpans = map[string]bool{
+    "figaro.qua":     true,
+    "figaro.round":   true,
+    "figaro.methods": true,
+    "cli.submit":     true,
+    "cli.fork":       true, // + retain client fork-to-paint span
+    "angelus.fork":   true, // + retain daemon store/XWAL breakdown
+    "decide":         true,
+}
+
+// 2. ~/dev/figscope/otlp.go:150 &amp; 349
+// Add "figaro.fork." to keptMetricPrefixes and stamp service.version
+// in pointAttrs() alongside "figaro.pager." so regressions show by build.
+
+// 3. ~/dev/figscope/derive.go + api.go
+// Add assembleForks(spans []Span) []ForkRow joining angelus.fork onto
+// cli.fork by ParentID, exposing GET /api/forks + Scope waterfall tab.
+
+// 4. internal/cli/keypaint.go:86 (fix the 151ms clamp!)
+// Add awaitSubjectGen uint64 on transcript: when runOverlay dispatches
+// fork/attend/listen/new, set t.awaitSubjectGen = in.subjectGeneration()+1
+// and hold t.answerKeys() until subjectGen &gt;= awaitSubjectGen &amp;&amp; caughtUp
+// (or command error), so progressDelay frames never drain key_to_paint.</pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="sec-fixes">
+    <div class="sec-head">
+      <h2>IV. Prioritized Engineering Fixes (ms Saved vs Risk)</h2>
+      <span class="sec-tag">Cutting 260..339 ms Fork-to-Paint Down to ~65..95 ms</span>
+    </div>
+
+    <div class="panel">
+      <h3>Ranked Optimization &amp; Bug-Fix Backlog</h3>
+      <p class="subhead">Ordered by user-visible impact per line of complexity and risk.</p>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Change</th>
+              <th>Exact Code Seam</th>
+              <th class="num">Measured Savings</th>
+              <th>Complexity / Risk</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="badge bad">P0</span></td>
+              <td><strong>Fix <code>kept == 0</code> empty-landing bug on interior <code>:fork :N</code></strong><br><span class="muted">Return <code>seedWindow</code> when <code>t.client.Count() == 0</code> after <code>CloneBelow(base)</code></span></td>
+              <td><code>internal/cli/livelog_bridge.go:863-873</code></td>
+              <td class="num strong">Fixes blank screen</td>
+              <td>3 lines · Zero risk; unit + PTY smoke test</td>
+            </tr>
+            <tr>
+              <td><span class="badge brass">P1a</span></td>
+              <td><strong>Viewport-first lazy Glamour rendering</strong><br><span class="muted">Render only bottom <code>transcriptMinPageSize</code> (6 msgs / ~45 rows) for first PTY paint; run <code>tuneTail()</code> 800-row fill after paint</span></td>
+              <td><code>internal/cli/transcript_window.go:411-419</code><br><code>internal/cli/transcript_render.go:286</code></td>
+              <td class="num strong">-55 to -85 ms</td>
+              <td>Low · Isolated to client viewport settle loop</td>
+            </tr>
+            <tr>
+              <td><span class="badge brass">P1b</span></td>
+              <td><strong>Eliminate double Goldmark AST parse in <code>markdownRenderer</code></strong><br><span class="muted">Fold hyphen non-breaking transform into AST walk before <code>Renderer().Render</code> instead of parsing twice in <code>holdHyphens</code></span></td>
+              <td><code>internal/render/markdown.go:84-131</code></td>
+              <td class="num strong">-15 to -30 ms</td>
+              <td>Low · Pure function; verify against existing render goldens</td>
+            </tr>
+            <tr>
+              <td><span class="badge ok">P2</span></td>
+              <td><strong>Seed child <code>AriaReader</code> &amp; <code>NewAgent</code> from parent prefix + per-figaro singleflight</strong><br><span class="muted">Clone sealed <code>aria.Turn</code> slice below <code>atMainLT</code> from warm parent/UICache; guard <code>serverFor</code> with per-figaro mutex</span></td>
+              <td><code>internal/angelus/reader.go:103-146</code><br><code>internal/figaro/agent.go:246-250</code></td>
+              <td class="num strong">-40 to -55 ms (read)<br>-50 ms (wake)</td>
+              <td>Medium · Safe because sealed turns below fork cut are immutable</td>
+            </tr>
+            <tr>
+              <td><span class="badge ok">P3</span></td>
+              <td><strong>Single IR pass on interior fork + parallel study <code>Retain</code> + keep child <code>Form</code></strong><br><span class="muted">Compute <code>atMainLT</code> and <code>AriaMeta</code> prefix fold in one walk; fan out <code>lib.Retain</code>; apply stamp to open <code>Form</code> instead of <code>dropForm</code></span></td>
+              <td><code>internal/angelus/topology_handlers.go:205,447</code><br><code>internal/store/xwal_backend.go:561-672</code></td>
+              <td class="num strong">-35 to -55 ms</td>
+              <td>Medium · Preserve study refcount &amp; stamp commit ordering</td>
+            </tr>
+            <tr>
+              <td><span class="badge ok">P4</span></td>
+              <td><strong>Add <code>FormBaseLog</code> watermarks to <code>stumpFormLog</code> &amp; batch historical patch reads</strong><br><span class="muted">Checkpoint <code>@topology</code> / <code>@libretto::*</code> segment headers; load historical form range in one pass in <code>PerRecord</code></span></td>
+              <td><code>internal/store/topology_form.go:49</code><br><code>internal/store/form.go:273</code></td>
+              <td class="num strong">-10 to -20 ms (fork)<br>-500+ ms (boot)</td>
+              <td>Medium · Segment header watermark already proven in <code>xwalFormLog</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Figaro <code>27b36ef37</code> · Proposal <code>docs/proposals/fork-paint-latency/</code> · Raw data in <a href="./data.json">data.json</a></span>
+    <span>Isolated btrfs snapshot benchmark · Zero live store mutation · Zero provider calls</span>
+  </footer>
+</main>
+</body>
+</html>
