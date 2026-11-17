@@ -162,17 +162,17 @@ func figaroRowName(n *formNode, id string) string {
 	return id
 }
 
-func (s *viewShape) peek(n *formNode) string {
+func (s *viewShape) peek(n *formNode) (string, int) {
 	if n.leaf() {
-		return ""
+		return "", 0
 	}
 	if _, ok := s.heads[n.path]; !ok {
-		return ""
+		return "", 0
 	}
 	return rowPeekOf(s.hint, n)
 }
 
-func rowPeekOf(view *rpc.FormView, n *formNode) string {
+func rowPeekOf(view *rpc.FormView, n *formNode) (string, int) {
 	label := ""
 	if view.Label != "" {
 		if c := formChild(n, view.Label); c != nil && c.leaf() {
@@ -185,11 +185,11 @@ func rowPeekOf(view *rpc.FormView, n *formNode) string {
 	}
 	switch {
 	case badge == "":
-		return label
+		return label, 0
 	case label == "":
-		return badge
+		return badge, len(badge)
 	}
-	return badge + "  " + label
+	return badge + "  " + label, len(badge)
 }
 
 func (s *viewShape) asides(segs []string) bool {
