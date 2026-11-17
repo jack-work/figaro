@@ -90,3 +90,30 @@ func TestSticky_QuotedQuestionTooTallIsClipped(t *testing.T) {
 		t.Fatalf("a one-row question is marked as clipped: %q", head[1])
 	}
 }
+
+// Defends against the doubled line: the header pins the asker's first row,
+// so it must not do so while the block still draws that row below it.
+func TestSticky_QuotedQuestionNeverShowsTheAskTwice(t *testing.T) {
+	long := strings.TrimSpace(strings.Repeat("a very long question that will wrap across several rows ", 4))
+	for _, ask := range []string{"what do you make of this passage?", long} {
+		tr := quotedQuestionPager(t, ask)
+		q := tr.stickyBlockOf(1)
+		first := strings.TrimSpace(pitText(q.rows[q.ownWords].text))
+		for off := 0; off <= len(q.rows)+1; off++ {
+			tr.offset = off
+			tr.buildIndex()
+			screen := plain(screenRows(tr))
+			seen := 0
+			for _, row := range screen {
+				row = strings.TrimSuffix(row, strings.TrimSpace(stickyEllipsis))
+				row = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(row), quoteMark))
+				if row != "" && strings.HasPrefix(first, row) {
+					seen++
+				}
+			}
+			if seen > 1 {
+				t.Fatalf("offset %d shows the asker's first row %d times:\n%s", off, seen, strings.Join(screen, "\n"))
+			}
+		}
+	}
+}
