@@ -344,7 +344,8 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 		}
 		return &figtree.Node{
 			Marker: marker(f),
-			Label:  withLifeNote(label, 44, f, now),
+			Label:  withLifeNote(label, 44-badgeRoom(f), f, now),
+			Badge:  roleBadge(f),
 			Fields: map[string]string{
 				fieldID:     short[f.ID],
 				fieldAriaID: f.ID,
@@ -441,7 +442,8 @@ func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundI
 		}
 		n := &figtree.Node{
 			Marker: mark(f),
-			Label:  withLifeNote(label, 46, f, now),
+			Label:  withLifeNote(label, 46-badgeRoom(f), f, now),
+			Badge:  roleBadge(f),
 			Fields: map[string]string{
 				fieldID:     short[f.ID],
 				fieldAriaID: f.ID,
@@ -757,6 +759,19 @@ func hasVecPrefix(v, prefix []int) bool {
 		}
 	}
 	return true
+}
+
+const roleBadgeMax = 20
+
+func roleBadge(f rpc.FigaroInfoResponse) string {
+	return truncRunes(strings.Join(f.Roles, " "), roleBadgeMax)
+}
+
+func badgeRoom(f rpc.FigaroInfoResponse) int {
+	if len(f.Roles) == 0 {
+		return 0
+	}
+	return len([]rune(roleBadge(f))) + 2
 }
 
 func truncRunes(s string, n int) string {
