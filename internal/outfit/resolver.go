@@ -216,6 +216,7 @@ func (r *reader) pinned(path string) (string, bool) {
 
 type dep struct {
 	path   string
+	target string
 	exists bool
 	size   int64
 	mod    int64
@@ -267,11 +268,15 @@ func statDep(path string) dep {
 	if err != nil {
 		return dep{path: path}
 	}
-	return dep{path: path, exists: true, size: info.Size(), mod: info.ModTime().UnixNano()}
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		target = path
+	}
+	return dep{path: path, target: target, exists: true, size: info.Size(), mod: info.ModTime().UnixNano()}
 }
 
 func (d dep) sameFile(other dep) bool {
-	return d.exists == other.exists && d.size == other.size && d.mod == other.mod
+	return d.exists == other.exists && d.target == other.target && d.size == other.size && d.mod == other.mod
 }
 
 // current revalidates once the stale window has passed, turning the epoch over if anything moved.
