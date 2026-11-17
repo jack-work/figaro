@@ -224,6 +224,9 @@ func (a *Agent) Cast(ctx context.Context, roleID string, rolePatch *form.Patch) 
 	if err := ctx.Err(); err != nil {
 		return castResult{}, fmt.Errorf("cast: %w", err)
 	}
+	if rec, ok := form.ReadReplay(a.form.Snapshot()); ok {
+		return castResult{}, fmt.Errorf("cast: %s replays turn %d of %s and holds no role", a.id, rec.Turn, rec.Of)
+	}
 	res := a.serviceCast(&castOp{roleID: roleID, rolePatch: rolePatch, mintedBy: authz.PrincipalText(authz.PrincipalOf(ctx))})
 	return res, res.err
 }

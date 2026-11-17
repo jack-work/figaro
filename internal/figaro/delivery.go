@@ -3,6 +3,9 @@ package figaro
 import "github.com/jack-work/figaro/api/rpc"
 
 func (a *Agent) SubmitDelivery(principal, delivery, text string) error {
+	if err := a.refuseAsReplay(); err != nil {
+		return err
+	}
 	evt := event{
 		typ:      eventUserPrompt,
 		text:     text,
