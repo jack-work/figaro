@@ -89,10 +89,27 @@ programs.figaro = {
 };
 ```
 
-A nonempty declaration installs `figaro-apply-roles`. Each application defaults
-to `mode = "check"`; changing it to `"apply"` is explicit. Running the generated
-command with `--check` forces every entry to check, including entries configured
-to apply. No declaration creates an occupant or adopts a role by display name.
+A nonempty declaration renders a TOML manifest into the store and installs
+`figaro-apply-roles`, which runs `figaro form apply --manifest <file>` against
+the selected runtime. Each application defaults to `mode = "check"`; changing it
+to `"apply"` is explicit. Running the generated command with `--check` forces
+every entry to check, including entries configured to apply, and prints the
+plan; `-j` prints one JSON result per role.
+
+The manifest is also usable by hand:
+
+```toml
+[roles.example]
+id = "@0123456789abcdef0123456789abcdef"
+outfits = ["example-charter"]
+managed = ["name", "charter"]
+mode = "check"
+```
+
+Roles run in name order, each checked first and then written by CAS on the
+version it checked. A failing role does not stop the others; the command exits
+nonzero when any role failed. Unknown keys, duplicate IDs and IDs that are not
+exact `@<hex>` are refused before the daemon is contacted. No declaration creates an occupant or adopts a role by display name.
 The destination daemon must advertise `form.apply`.
 
 `applyRolesOnSwitch` is off by default. If enabled, its activation step follows
