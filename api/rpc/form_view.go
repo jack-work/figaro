@@ -12,6 +12,7 @@ type FormView struct {
 	Open    []string     `json:"open,omitempty"`
 	Sort    string       `json:"sort,omitempty"`
 	Label   string       `json:"label,omitempty"`
+	Badge   string       `json:"badge,omitempty"`
 	Aside   string       `json:"aside,omitempty"`
 	Through string       `json:"through,omitempty"`
 	Skip    string       `json:"skip,omitempty"`
