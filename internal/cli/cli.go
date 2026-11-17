@@ -1020,7 +1020,7 @@ printed id yourself. See ` + "`figaro help form`" + ` for the form family.`,
 		Name:  "fork",
 		Group: "Session",
 		Short: "Branch a conversation: keep this id, mint an alternative",
-		Usage: "fork [--id <id> | <id>[:<turn>[.<node>]]] [--stay] [-r|-v|-o|-l|-x|-n|-y|-f|-j] [-- <prompt>]",
+		Usage: "fork [--id <id> | <id>[:<turn>[.<node>]]] [--stay] [--no-studies] [-r|-v|-o|-l|-x|-n|-y|-f|-j] [-- <prompt>]",
 		Long: `Branch a conversation. A HEAD fork keeps the target's id on the
 continuation line and mints ONE new aria, the alternative. The target is
 NOT frozen and does NOT become read-only: it stays live at the same id,
@@ -1083,6 +1083,8 @@ With a prompt: ` + "`figaro fork [flags] -- <prompt>`" + `: it also sends, the w
                  and sends to the original trunk; under fork the branch is
                  always the thing you just made, so it is always the thing
                  that gets prompted.)
+  --no-studies: the branch studies no form. Without it a branch studies
+                 what its parent studied at the fork point.
   -O/--outfit: dresses the ALTERNATIVE, in the same call that mints it: the
                  fold lands on the new branch's form before anything is
                  said to it, so the first turn is answered wearing it. Legal
@@ -1092,6 +1094,7 @@ With a prompt: ` + "`figaro fork [flags] -- <prompt>`" + `: it also sends, the w
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (defaults to this shell's); :<turn> for an interior fork"},
 			{Long: "stay", IsBool: true, Description: "Do not rebind this shell to the new branch/continuation"},
+			{Long: "no-studies", IsBool: true, Description: "The new branch studies no form"},
 			{Long: "outfit", Short: "O", Description: "Dress the new branch (see `figaro help outfits`)"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit machine-readable result on stdout (parent, continuation, alternative, ...)"},
 		},
