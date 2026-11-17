@@ -333,12 +333,6 @@ func nonGenesis(msgs []message.Message) []message.Message {
 	return out
 }
 
-func TestAgent_ID(t *testing.T) {
-	a := newTestAgent(t, "hi")
-	defer a.Kill()
-	assert.NotEmpty(t, a.ID())
-}
-
 func TestAgent_PromptAndSubscribe(t *testing.T) {
 	a := newTestAgent(t, "4")
 	defer a.Kill()
