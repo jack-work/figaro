@@ -172,9 +172,6 @@ func buildGatewayAs(ctx provider.BuildContext, name, envPrefix string) (provider
 
 func Build(ctx provider.BuildContext, spec Spec, apiKey string) (*Provider, error) {
 	knobs := ctx.Knobs
-	if knobs.MaxTokens == 0 {
-		knobs.MaxTokens = 16000
-	}
 	if knobs.Model == "" {
 		if reg := provider.Lookup(spec.Name); reg != nil {
 			knobs.Model = reg.DefaultModel

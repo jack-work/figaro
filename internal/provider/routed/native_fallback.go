@@ -36,9 +36,26 @@ func (p *Provider) nativeFallback(ctx context.Context, original string, from Tra
 		return refuse("target is not an eligible concrete candidate")
 	}
 	entry, _ := p.entry(fallback.Model)
-	if err := fallbackCompatible(in, entry, candidate); err != nil {
+	capacity := fallbackCapacity(entry, candidate)
+	used, err := fallbackCompatible(in, entry, capacity)
+	if err != nil {
 		return refuse(err.Error())
 	}
+	output := p.explicitMaxTokens(in)
+	if output <= 0 {
+		prompt := used
+		if capacity > 0 {
+			prompt = max(used, promptEstimate(in, capacity))
+		}
+		output = defaultOutput(entry.MaxOutput, capacity, prompt)
+	}
+	if entry.MaxOutput > 0 && output > entry.MaxOutput {
+		return refuse("target cannot satisfy the output limit")
+	}
+	if capacity > 0 && used > capacity-output {
+		return refuse("target context capacity is too small")
+	}
+	in.MaxTokens = output
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -65,36 +82,7 @@ func (p *Provider) restoreAttemptModel(model string) {
 	}
 }
 
-func fallbackCompatible(in provider.SendInput, entry apimodels.Entry, candidate *apimodels.RouteCandidate) error {
-	for _, key := range []string{"system.thinking_effort", "system.thinking_budget", "system.reasoning_context", "system.reasoning_summary", "system.verbosity", "system.temperature", "system.top_p", "system.parallel_tool_calls", "system.context_tier"} {
-		if in.Snapshot.Has(key) {
-			return fmt.Errorf("%s is not portable across native APIs", key)
-		}
-	}
-	if len(in.Tools) > 0 && (entry.Tools == nil || !*entry.Tools) {
-		return fmt.Errorf("target tool support is not established")
-	}
-	if in.FigLog == nil {
-		return fmt.Errorf("canonical history is unavailable")
-	}
-	used := 0
-	for _, row := range in.FigLog.Read() {
-		used += tokens.EstimateMessage(row.Payload)
-		for _, c := range row.Payload.Content {
-			switch c.Type {
-			case message.ContentThinking:
-				return fmt.Errorf("reasoning continuation cannot cross native APIs")
-			case message.ContentImage:
-				if entry.Images == nil || !*entry.Images {
-					return fmt.Errorf("target image support is not established")
-				}
-			case message.ContentToolInvoke, message.ContentToolResult:
-				if entry.Tools == nil || !*entry.Tools {
-					return fmt.Errorf("target tool continuation support is not established")
-				}
-			}
-		}
-	}
+func fallbackCapacity(entry apimodels.Entry, candidate *apimodels.RouteCandidate) int {
 	capacity := 0
 	if candidate.ContextLength != nil {
 		capacity = *candidate.ContextLength
@@ -102,24 +90,47 @@ func fallbackCompatible(in provider.SendInput, entry apimodels.Entry, candidate 
 	if entry.Context.Default > 0 && (capacity <= 0 || entry.Context.Default < capacity) {
 		capacity = entry.Context.Default
 	}
+	return capacity
+}
+
+func fallbackCompatible(in provider.SendInput, entry apimodels.Entry, capacity int) (int, error) {
+	for _, key := range []string{"system.thinking_effort", "system.thinking_budget", "system.reasoning_context", "system.reasoning_summary", "system.verbosity", "system.temperature", "system.top_p", "system.parallel_tool_calls", "system.context_tier"} {
+		if in.Snapshot.Has(key) {
+			return 0, fmt.Errorf("%s is not portable across native APIs", key)
+		}
+	}
+	if len(in.Tools) > 0 && (entry.Tools == nil || !*entry.Tools) {
+		return 0, fmt.Errorf("target tool support is not established")
+	}
+	if in.FigLog == nil {
+		return 0, fmt.Errorf("canonical history is unavailable")
+	}
+	used := 0
+	for _, row := range in.FigLog.Read() {
+		used += tokens.EstimateMessage(row.Payload)
+		for _, c := range row.Payload.Content {
+			switch c.Type {
+			case message.ContentThinking:
+				return 0, fmt.Errorf("reasoning continuation cannot cross native APIs")
+			case message.ContentImage:
+				if entry.Images == nil || !*entry.Images {
+					return 0, fmt.Errorf("target image support is not established")
+				}
+			case message.ContentToolInvoke, message.ContentToolResult:
+				if entry.Tools == nil || !*entry.Tools {
+					return 0, fmt.Errorf("target tool continuation support is not established")
+				}
+			}
+		}
+	}
 	if raw, ok := in.Snapshot.Get("system.max_context_tokens"); ok {
 		var requested int
 		if json.Unmarshal(raw, &requested) != nil || requested <= 0 || (capacity > 0 && requested > capacity) {
-			return fmt.Errorf("target cannot satisfy the requested context limit")
+			return 0, fmt.Errorf("target cannot satisfy the requested context limit")
 		}
 	}
 	extra, _ := json.Marshal(in.Snapshot)
 	tools, _ := json.Marshal(in.Tools)
 	used += (len(extra) + len(tools) + 3) / 4
-	output := in.MaxTokens
-	if output <= 0 {
-		output = 8192
-	}
-	if entry.MaxOutput > 0 && output > entry.MaxOutput {
-		return fmt.Errorf("target cannot satisfy the output limit")
-	}
-	if capacity > 0 && used > capacity-output {
-		return fmt.Errorf("target context capacity is too small")
-	}
-	return nil
+	return used, nil
 }
