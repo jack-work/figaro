@@ -115,7 +115,7 @@ func (t *transcript) stickyRows() []transcriptRow {
 		return nil
 	}
 	turn, above := t.stickyTurn()
-	q := t.stickyBlockOf(turn)
+	q := t.stickyBlockOf(turn).pinnedFor(above)
 	if q.empty() || above <= 0 {
 		return nil
 	}
@@ -160,6 +160,13 @@ func ownWordsRow(q stickyQuestion, inq aria.Inquiry) int {
 	return 0
 }
 
+func (q stickyQuestion) pinnedFor(above int) stickyQuestion {
+	if q.ownWords >= above+stickyText {
+		q.ownWords = 0
+	}
+	return q
+}
+
 func (q stickyQuestion) shownThrough(rows int) int {
 	if q.ownWords > 0 {
 		return q.ownWords + rows - 1
@@ -175,7 +182,7 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 		return nil
 	}
 	turn, above := t.stickyTurn()
-	q := t.stickyBlockOf(turn)
+	q := t.stickyBlockOf(turn).pinnedFor(above)
 	out := make([]string, 0, len(rows)+1)
 	for i, r := range rows {
 		line := t.rowLine(r, hl, sel, -1)
