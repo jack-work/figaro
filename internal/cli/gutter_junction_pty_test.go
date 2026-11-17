@@ -145,11 +145,11 @@ func TestFencedDiffAndFloorJunctionPTY(t *testing.T) {
 	if styled[del] == styled[add] {
 		t.Fatalf("both sides of the diff painted the same: %q", styled[del])
 	}
-	if rule := floorRuleRow(t, p); !strings.Contains(rule, "╧") {
+	if rule := floorRuleRow(t, p); !strings.Contains(rule, "┴") {
 		t.Fatalf("a block that outruns the pane must be cut by the floor: %q\n%s", rule, p.dump())
 	}
 	p.key("G")
-	if rule := floorRuleRow(t, p); strings.Contains(rule, "╧") {
+	if rule := floorRuleRow(t, p); strings.Contains(rule, "┴") {
 		t.Fatalf("the last row of a block joined the floor: %q\n%s", rule, p.dump())
 	}
 }
@@ -159,7 +159,7 @@ func floorRuleRow(t *testing.T, p *adornPane) string {
 	t.Helper()
 	rows := p.rows()
 	for i := len(rows) - 1; i >= 0; i-- {
-		if strings.HasPrefix(rows[i], "═") {
+		if strings.HasPrefix(rows[i], "═") || strings.HasPrefix(rows[i], "─") {
 			return rows[i]
 		}
 	}

@@ -125,7 +125,7 @@ func (t *transcript) releasedRule(screen []string, top, body int) {
 func (t *transcript) handoffRunning() bool {
 	_, pin := t.handoffRadius(t.handoff.pinAt)
 	_, release := t.handoffRadius(t.handoff.releaseAt)
-	return pin || release
+	return pin || release || t.floorRuleRunning()
 }
 
 func (t *transcript) wakeForHandoff() {

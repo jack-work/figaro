@@ -237,11 +237,11 @@ func (v statusView) height(w int) int { return len(v.render(w)) }
 
 // footerStanza is the one footer the pager and the incipit share: the rule, then
 // the bar, dimmed here.
-func footerStanza(s *sessionStatus, w int, pos string, pit pitID, verbose bool) []string {
+func footerStanza(s *sessionStatus, w int, pos string, pit pitID, verbose bool, double func(int) bool) []string {
 	if s == nil || w <= 0 {
 		return nil
 	}
-	rows := []string{term.Dim(s.ruleLine(w, "", pos))}
+	rows := []string{term.Dim(s.ruleLineOf(w, "", pos, double))}
 	for _, r := range s.viewOf(pit, verbose, clk.Now()).render(w) {
 		rows = append(rows, term.Dim(r))
 	}

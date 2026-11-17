@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mattn/go-runewidth"
 )
@@ -38,7 +39,40 @@ func (t *transcript) transcriptRuleFor(body int) string {
 	if t.follow {
 		pos = strings.TrimSpace(pos + " live")
 	}
-	return "\x1b[2m" + t.status.ruleLine(t.w, t.composerHints(), pos) + "\x1b[0m"
+	return "\x1b[2m" + t.status.ruleLineOf(t.w, t.composerHints(), pos, t.floorRuleCells()) + "\x1b[0m"
+}
+
+type floorRuleState struct {
+	expanded bool
+	at       time.Time
+}
+
+func (t *transcript) chromeExpanded() bool {
+	return t.pit.open() || t.boxOpen() || t.inSearch
+}
+
+func (t *transcript) floorRuleCells() func(int) bool {
+	want := t.chromeExpanded()
+	if want != t.floorRule.expanded {
+		t.floorRule.expanded, t.floorRule.at = want, t.clock()
+	}
+	r, running := t.handoffRadius(t.floorRule.at)
+	if !running {
+		if want {
+			return ruleAllDouble
+		}
+		return ruleNeverDouble
+	}
+	n := max(t.w, 3)
+	if want {
+		return func(i int) bool { return dyadicDouble(handoffLevel, i, n, r) }
+	}
+	return func(i int) bool { return !dyadicDouble(handoffLevel, i, n, r) }
+}
+
+func (t *transcript) floorRuleRunning() bool {
+	_, running := t.handoffRadius(t.floorRule.at)
+	return running
 }
 
 type pitFocus uint8
@@ -158,7 +192,7 @@ func (t *transcript) footerRows(total, body int) (rule string, bar []string) {
 		pos = strings.TrimSpace(pos + " live")
 	}
 	// One footer, shared with the incipit's bookend (footerStanza).
-	stanza := footerStanza(t.status, t.w, pos, t.openPit(), t.status.barVerbose())
+	stanza := footerStanza(t.status, t.w, pos, t.openPit(), t.status.barVerbose(), t.floorRuleCells())
 	if len(stanza) == 0 {
 		return "", []string{""}
 	}
