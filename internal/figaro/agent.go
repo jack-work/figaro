@@ -125,6 +125,7 @@ type Agent struct {
 	// turnFirstLT is the LT of the record that opened the current turn; zero between turns.
 	turnFirstLT uint64
 	streamCuts  int
+	lengthCuts  int
 	backend     store.Backend // nil = ephemeral
 	form        *form.State
 	settings    *config.Loaded // wire budget policy; nil-safe
