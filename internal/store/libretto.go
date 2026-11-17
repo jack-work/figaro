@@ -100,6 +100,10 @@ func (l *Libretto) PatchesBetween(after, upTo uint64) []VersionedPatch {
 	return l.form.PatchesBetween(after, upTo)
 }
 
+func (l *Libretto) PatchesBetweenChecked(after, upTo uint64) ([]VersionedPatch, bool) {
+	return l.form.PatchesBetweenChecked(after, upTo)
+}
+
 // At is the source version last folded in.
 func (l *Libretto) At() uint64 { return uint64(intOf(l.formState(), KeyLibrettoAt)) }
 
