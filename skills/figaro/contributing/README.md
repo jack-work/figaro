@@ -14,6 +14,7 @@ subject is in play.
 |---|---|
 | [maintaining.md](maintaining.md) | Always, before the first change. Worktrees, dev shells, the loop, how to commit (constantly) and how to present (deliberately), handing work back, and cutting a release, which goes through `scripts/release.sh` because a tag alone ships to nobody. |
 | [updating-docs.md](updating-docs.md) | You are about to edit any file in the skill tree. Before, not after. |
+| [perf-gate.md](perf-gate.md) | The release gate's perf step failed, you changed a path it measures on purpose, or you add a bench to it. How to read it and how to move the baseline. |
 
 ## Testing what paints
 
