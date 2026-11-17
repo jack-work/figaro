@@ -164,6 +164,7 @@ func (d *Deriver) Next(entry arialog.Entry[message.Message]) (msg message.Messag
 				continue
 			}
 			ps, ok := resync(acc, d.lastStudy[fid], upTo, form.Snapshot{}, false)
+			ps = collapseStudyWindow(acc, d.lastStudy[fid], upTo, ps)
 			if !ok {
 				if d.heldStudy == nil {
 					d.heldStudy = map[string]bool{}
@@ -241,4 +242,38 @@ func (d *Deriver) Skip(entry arialog.Entry[message.Message]) {
 	for fid, upTo := range entry.StudyVersions {
 		d.lastStudy[fid] = maxVersion(d.lastStudy[fid], upTo)
 	}
+}
+
+const studyCollapseFrom = 32
+
+func collapseStudyWindow(f Form, after, upTo uint64, ps []message.Patch) []message.Patch {
+	if len(ps) < studyCollapseFrom {
+		return ps
+	}
+	s, ok := f.(formStater)
+	if !ok {
+		return ps
+	}
+	to, ok := s.StateAt(upTo)
+	if !ok {
+		return ps
+	}
+	from := form.Snapshot{}
+	if after > 0 {
+		if from, ok = s.StateAt(after); !ok {
+			return ps
+		}
+	}
+	diff := to.Diff(from)
+	if diff.IsIdentity() {
+		return nil
+	}
+	fold := 0
+	for _, p := range ps {
+		fold += p.ApproxBytes()
+	}
+	if diff.ApproxBytes() >= fold {
+		return ps
+	}
+	return []message.Patch{diff}
 }
