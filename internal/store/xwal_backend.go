@@ -1442,7 +1442,7 @@ func (b *XwalBackend) SweepSegmentCache(keep int64) (int, int64) {
 	return SweepSegmentCache(keep)
 }
 
-// SweepCacheBudgets rides the daemon's standing sweep rather than a clock of
+// SweepCacheBudgets rides a daemon sweep rather than a clock of
 // its own: a read must never block on eviction.
 func (b *XwalBackend) SweepCacheBudgets() (dropped int, freed int64) {
 	d1, f1 := b.irTree.Sweep()

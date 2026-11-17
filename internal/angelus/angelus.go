@@ -204,7 +204,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 
 	_ = a.StartPprof(ctx)
 
-	a.Go("pid monitor", func() { a.pidMonitor(ctx) })
+	a.startSweeps(ctx)
 	a.Go("reachability", func() { a.keepReachable(ctx, pidPath) })
 	a.Go("reclaimer", func() { a.reclaims().run(ctx) })
 	a.Go("retention", func() { a.retention(ctx) })
@@ -219,6 +219,24 @@ func (a *Angelus) Run(ctx context.Context) error {
 	return err
 }
 
+func (a *Angelus) startSweeps(ctx context.Context) {
+	a.Go("pid monitor", func() { a.pidMonitor(ctx) })
+	a.Go("cache budgets", func() { a.cacheBudgets(ctx) })
+}
+
+func (a *Angelus) cacheBudgets(ctx context.Context) {
+	ticker := time.NewTicker(cacheBudgetInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep(ctx, "cache_budgets", a.sweepCacheBudgets)
+		}
+	}
+}
+
 func (a *Angelus) pidMonitor(ctx context.Context) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -231,7 +249,6 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 			return
 		case <-ticker.C:
 			a.reapDeadPIDs()
-			sweep(ctx, "cache_budgets", a.sweepCacheBudgets)
 		case <-evict.C:
 			// Reclaim agents before sweeping caches: an aria hibernated on this
 			// tick is eligible for eviction on the next.
@@ -328,6 +345,7 @@ func (a *Angelus) dormantAfter() time.Duration {
 
 const (
 	defaultSweepInterval = 2 * time.Minute
+	cacheBudgetInterval  = 2 * time.Second
 	defaultDormantAfter  = 15 * time.Minute
 )
 
