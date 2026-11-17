@@ -143,6 +143,15 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 			}
 		}
 	}
+	if tail, ok := cfg.Translator.PeekTail(); ok && tail.FigaroLT > watermark {
+		slog.Warn("translator rows lie above the catch-up watermark; re-deriving from the fig IR",
+			"provider", cfg.Provider, "watermark", watermark, "tail_figaro_lt", tail.FigaroLT)
+		if err := cfg.Translator.Clear(); err != nil {
+			return stats, fmt.Errorf("clear rows above the watermark %d: %w", watermark, err)
+		}
+		watermark = 0
+		entries, total = arialog.TailAfter(cfg.Log, watermark)
+	}
 	cfg.phase("verified")
 	stats.Entries = total
 	stats.Visited = len(entries)
