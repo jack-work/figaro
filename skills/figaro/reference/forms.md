@@ -228,7 +228,11 @@ fig succeed @role --turn 9 --title "warden II" -- go # fork later; the title is 
 fig succeed @role --successor <figaro> -- you're up    # a figaro that exists; no fork
 fig succeed @role --ttl 0 -- go                      # kill the predecessor outright
 fig succeed @role --abdication linger -- go          # it keeps taking prompts until reaped
+fig succeed @role --no-studies -- go                 # study only what it studied at the fork turn
 ```
+
+The fork studies what the predecessor studies now, with the same `--keys`,
+however early it was cut; `--no-studies` keeps the studies of the fork turn.
 
 The steps, each landing before the next runs: fork (or take
 `--successor`); `demote` the predecessor beneath the successor, so its
