@@ -429,6 +429,17 @@ func (b *XwalBackend) registerForm(ariaID string, opened *Form) (*Form, error) {
 	return opened, nil
 }
 
+func (b *XwalBackend) holdMarks(id string) func() {
+	b.mu.Lock()
+	f := b.forms[id]
+	b.mu.Unlock()
+	if f == nil {
+		return func() {}
+	}
+	f.ckptMu.Lock()
+	return f.ckptMu.Unlock
+}
+
 func (b *XwalBackend) openForkedForm(child, parent string, inherited uint64) {
 	if parent == "" {
 		return
@@ -641,8 +652,10 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	if pm, _ := b.Meta(parent); pm != nil && pm.ReapedAtMS > 0 {
 		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemReapedKey, SystemReapedUntilKey, SystemReapedByKey}))
 	}
+	release := b.holdMarks(parent)
 	child, version, stamped, err := b.store.ForkWith(parent, atMainLT, patch, opts...)
 	if err != nil {
+		release()
 		return "", 0, err
 	}
 	b.mirrorMintedBy(child, births(opts))
@@ -657,6 +670,7 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	if atMainLT == 0 && version >= own {
 		b.openForkedForm(child, parent, version-own)
 	}
+	release()
 	b.inheritStudies(child)
 	b.stampCommitted(child, stamped)
 	b.lifetimeAtBirth(child)

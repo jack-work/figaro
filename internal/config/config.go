@@ -142,6 +142,10 @@ type StoreConfig struct {
 	GC string `toml:"gc"`
 
 	NodeSweep string `toml:"node_sweep"`
+
+	CheckpointEveryPatches *int `toml:"checkpoint_every_patches"`
+	CheckpointEverySeconds *int `toml:"checkpoint_every_seconds"`
+	CheckpointMaxMarks     *int `toml:"checkpoint_max_marks"`
 }
 
 // MemoryConfig tunes when the daemon reclaims an idle aria.
@@ -470,6 +474,26 @@ func (l *Loaded) HandleIdle() time.Duration {
 		return 0
 	}
 	return time.Duration(*l.cfg().Memory.HandleIdleMinutes) * time.Minute
+}
+
+const (
+	defaultCheckpointEveryPatches = 512
+	defaultCheckpointMaxMarks     = 5
+)
+
+func (l *Loaded) Checkpoints() (everyPatches, everySeconds, maxMarks int) {
+	st := l.cfg().Store
+	everyPatches, maxMarks = defaultCheckpointEveryPatches, defaultCheckpointMaxMarks
+	if st.CheckpointEveryPatches != nil {
+		everyPatches = max(*st.CheckpointEveryPatches, 0)
+	}
+	if st.CheckpointEverySeconds != nil {
+		everySeconds = max(*st.CheckpointEverySeconds, 0)
+	}
+	if st.CheckpointMaxMarks != nil && *st.CheckpointMaxMarks > 0 {
+		maxMarks = *st.CheckpointMaxMarks
+	}
+	return everyPatches, everySeconds, maxMarks
 }
 
 func (l *Loaded) FormPatchWindow() int {
