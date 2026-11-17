@@ -120,6 +120,21 @@ func (b *XwalBackend) RoleForms() (map[string]string, bool) {
 	return out, b.roles.ready
 }
 
+func (b *XwalBackend) RoleNamesByTarget() map[string][]string {
+	b.rolesMu.Lock()
+	defer b.rolesMu.Unlock()
+	out := map[string][]string{}
+	for formID, target := range b.roles.byForm {
+		if name := b.roles.names[formID]; name != "" {
+			out[target] = append(out[target], name)
+		}
+	}
+	for _, names := range out {
+		sort.Strings(names)
+	}
+	return out
+}
+
 func (b *XwalBackend) SeedRoles(ctx context.Context, pace time.Duration) {
 	start := time.Now()
 	forms := b.Forms()

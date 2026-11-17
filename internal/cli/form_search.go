@@ -432,17 +432,13 @@ func (v *formView) searchRows(snap form.Snapshot, width int) []pitRow {
 }
 
 func (v *formView) rowPeek(n *formNode, keys []string) string {
-	if v.view == nil || v.view.Label == "" || n.leaf() {
+	if v.view == nil || n.leaf() {
 		return ""
 	}
 	if _, ok := rpc.MatchPath(v.view.Rows, keys); !ok {
 		return ""
 	}
-	c := formChild(n, v.view.Label)
-	if c == nil || !c.leaf() {
-		return ""
-	}
-	return leafPreview(c.label, c.value)
+	return rowPeekOf(v.view, n)
 }
 
 func (v *formView) rowAside(n *formNode, keys []string) (*formNode, bool) {
