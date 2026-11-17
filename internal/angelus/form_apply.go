@@ -9,7 +9,6 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/formapply"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -26,9 +25,6 @@ func (h *handlers) formApply(ctx context.Context, params json.RawMessage) (any, 
 	}
 	if !req.Check && (req.IfVersion == 0 || req.ExpectedOutfit == "") {
 		return nil, fmt.Errorf("form apply: check first, then supply its version and outfit identity")
-	}
-	if err := h.allowed(ctx, rpc.VerbRead, authz.Aria(req.FigaroID)); err != nil {
-		return nil, err
 	}
 	if declared, _ := ctx.Value(formApplyIDKey{}).(string); declared != req.FigaroID {
 		return nil, fmt.Errorf("form apply: supply the exact existing role ID, not an alias or prefix")
@@ -47,15 +43,12 @@ func (h *handlers) formApply(ctx context.Context, params json.RawMessage) (any, 
 	if holder := current.Snapshot.Lookup("target-aria"); holder == nil || *holder == "" {
 		return nil, fmt.Errorf("form apply: %s has no role holder", req.FigaroID)
 	}
-	if req.IfVersion != 0 && req.IfVersion != current.Version {
-		return nil, fmt.Errorf("form apply: %s moved on: at version %d, not %d", req.FigaroID, current.Version, req.IfVersion)
-	}
 	outfit, err := h.dress(req.Outfits, nil)
 	if err != nil {
 		return nil, err
 	}
 	desired := form.Snapshot{}.Apply(outfit)
-	patch, err := formapply.Plan(current.Snapshot, desired, req.Managed)
+	patch, err := formapply.Plan(current.Snapshot, desired, req.Managed, managedHeldKeys(current.Snapshot))
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +59,11 @@ func (h *handlers) formApply(ctx context.Context, params json.RawMessage) (any, 
 	if req.ExpectedOutfit != "" && req.ExpectedOutfit != identity {
 		return nil, fmt.Errorf("form apply: managed outfit values changed; check again")
 	}
-	setParams, err := json.Marshal(rpc.SetRequest{Patch: patch, IfVersion: current.Version})
+	ifVersion := current.Version
+	if !req.Check {
+		ifVersion = req.IfVersion
+	}
+	setParams, err := json.Marshal(rpc.SetRequest{Patch: patch, IfVersion: ifVersion})
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +95,7 @@ func (h *handlers) formApply(ctx context.Context, params json.RawMessage) (any, 
 		return result, nil
 	}
 	if patch.IsIdentity() {
-		write, err := h.angelus.Backend.ApplyFormWrite(req.FigaroID, store.FormWrite{Patch: patch, IfVersion: current.Version})
+		write, err := h.angelus.Backend.ApplyFormWrite(req.FigaroID, store.FormWrite{Patch: patch, IfVersion: ifVersion})
 		if err != nil {
 			return nil, err
 		}
@@ -135,4 +132,16 @@ func managedOutfitIdentity(desired form.Snapshot, managed []string) (string, err
 		return "", err
 	}
 	return fmt.Sprintf("%x", sha256.Sum256(raw)), nil
+}
+
+func managedHeldKeys(role form.Snapshot) []string {
+	held := form.ProtectedKeys()
+	for _, k := range boxHeldKeys {
+		held = append(held, k.key)
+	}
+	handoff := nested(role, successionPolicyKey, "handoff-key")
+	if handoff == "" {
+		handoff = successionDefaultHandoff
+	}
+	return append(held, handoff)
 }

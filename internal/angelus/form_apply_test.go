@@ -134,3 +134,39 @@ func TestManagedRoleConcurrentCASHasOneWinner(t *testing.T) {
 		t.Fatalf("got %d winners and %d conflicts", wins, conflicts)
 	}
 }
+
+func TestManagedRoleApplyRefusesARoleThatMovedSinceItsCheck(t *testing.T) {
+	r, id := managedRole(t)
+	checked := checkManagedRole(t, r, id)
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{"charter.note": json.RawMessage(`"moved"`)}, nil)
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, id, rpc.SetRequest{Patch: patch})); err != nil {
+		t.Fatal(err)
+	}
+	_, err := r.call(asOwner(), rpc.MethodFormApply, rpc.FormApplyRequest{FigaroID: id, Outfits: []string{"role"}, Managed: []string{"charter.purpose"}, IfVersion: checked.Version, ExpectedOutfit: checked.Outfit})
+	if err == nil {
+		t.Fatal("an apply against a stale check was written")
+	}
+	if keyOnForm(t, r, id, "charter.purpose") != "old" {
+		t.Fatal("a refused apply changed the role")
+	}
+}
+
+func TestManagedRoleRefusesDaemonHeldKeysAndTheRoleHandoffKey(t *testing.T) {
+	r, id := managedRole(t)
+	if err := os.WriteFile(filepath.Join(r.a.Settings.ConfigDir, "outfits", "held.toml"), []byte("[succession-policy]\noutfit = \"anything\"\n[worker]\npool = \"p\"\n[charter]\nhandoff = \"other.md\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	policy := form.Build(form.Snapshot{}, map[string]json.RawMessage{"succession-policy.handoff-key": json.RawMessage(`"charter.handoff"`)}, nil)
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, id, rpc.SetRequest{Patch: policy})); err != nil {
+		t.Fatal(err)
+	}
+	for _, managed := range [][]string{{"succession-policy"}, {"succession-policy.outfit"}, {"worker"}, {"worker.pool"}, {"charter"}, {"charter.handoff"}} {
+		_, err := r.call(asOwner(), rpc.MethodFormApply, rpc.FormApplyRequest{FigaroID: id, Outfits: []string{"held"}, Managed: managed, Check: true})
+		if err == nil || !strings.Contains(err.Error(), "holds") {
+			t.Fatalf("managed %v was planned: %v", managed, err)
+		}
+	}
+	if keyOnForm(t, r, id, "succession-policy.handoff-key") != "charter.handoff" {
+		t.Fatal("the role's handoff key moved")
+	}
+}

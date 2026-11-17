@@ -13,8 +13,8 @@ let
   applicationType = types.submodule {
     options = {
       roleId = mkOption {
-        type = types.strMatching "@[0-9a-f]+";
-        description = "Exact existing role ID, not a name or prefix.";
+        type = types.strMatching "@([0-9a-f]{8}|[0-9a-f]{32})";
+        description = "Exact existing role ID (@ and 32 hex digits, or 8 for a legacy role), not a name or prefix.";
       };
       outfits = mkOption {
         type = types.listOf types.str;
@@ -122,7 +122,7 @@ in
         ) cfg.outfits;
       }
       (lib.mkIf cfg.applyRolesOnSwitch {
-        home.activation.figaroApplyRoles = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+        home.activation.figaroApplyRoles = lib.hm.dag.entryAfter [ "linkGeneration" "figaroRestartOnSwitch" ] ''
           figaro_role_check_args=()
           if [ -n "''${DRY_RUN:-}" ]; then
             figaro_role_check_args=(--check)

@@ -9,7 +9,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-func Plan(current, desired form.Snapshot, managed []string) (form.Patch, error) {
+func Plan(current, desired form.Snapshot, managed, held []string) (form.Patch, error) {
 	if len(managed) == 0 {
 		return form.Patch{}, fmt.Errorf("form apply: name at least one managed path")
 	}
@@ -19,6 +19,11 @@ func Plan(current, desired form.Snapshot, managed []string) (form.Patch, error) 
 	for _, path := range paths {
 		if err := validatePath(path); err != nil {
 			return form.Patch{}, err
+		}
+		for _, key := range held {
+			if overlaps(path, key) {
+				return form.Patch{}, fmt.Errorf("form apply: %q covers %q, which the daemon holds", path, key)
+			}
 		}
 		parts := strings.Split(path, ".")
 		for n := 1; n <= len(parts); n++ {
@@ -68,4 +73,8 @@ func validatePath(path string) error {
 		return fmt.Errorf("form apply: %q is runtime-owned", path)
 	}
 	return nil
+}
+
+func overlaps(path, key string) bool {
+	return path == key || strings.HasPrefix(path, key+".") || strings.HasPrefix(key, path+".")
 }

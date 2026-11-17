@@ -28,7 +28,7 @@ pkgs.writeShellScriptBin "figaro-apply-roles" ''
       *) printf '%s\n' 'Usage: figaro-apply-roles [--check] [-j]' >&2; exit 2 ;;
     esac
   done
-  unset FIGARO_TROUPE
+  unset FIGARO_TROUPE FIGARO_ARIA
   export FIGARO_CONFIG_DIR=${lib.escapeShellArg (toString pkgs.emptyDirectory)}
   export FIGARO_RUNTIME_DIR=${lib.escapeShellArg runtimeDir}
   export FIGARO_NO_SELF_SPAWN=1

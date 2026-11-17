@@ -22,7 +22,7 @@ func TestManagedLeavesPreserveOccupancyAndUnmanagedValues(t *testing.T) {
 	current := snapshot(t, `{"charter":{"purpose":"old","note":"keep"},"target-aria":"holder","handoff":"keep.md","system":{"provider":"keep"},"comment_1":{"body":"keep"}}`)
 	desired := snapshot(t, `{"charter":{"purpose":"new"},"target-aria":"wrong","system":{"provider":"wrong"}}`)
 	managed := []string{"charter.purpose"}
-	patch, err := Plan(current, desired, managed)
+	patch, err := Plan(current, desired, managed, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestManagedLeavesPreserveOccupancyAndUnmanagedValues(t *testing.T) {
 	if !got.Diff(want).IsIdentity() {
 		t.Fatalf("wrong managed result: %s", got.Root().Raw())
 	}
-	repeated, err := Plan(got, desired, managed)
+	repeated, err := Plan(got, desired, managed, nil)
 	if err != nil || !repeated.IsIdentity() {
 		t.Fatalf("second application must be a no-op: %v, %v", repeated, err)
 	}
@@ -43,7 +43,7 @@ func TestManagedLeavesPreserveOccupancyAndUnmanagedValues(t *testing.T) {
 func TestOnlyExplicitlyManagedMissingValuesAreRemoved(t *testing.T) {
 	current := snapshot(t, `{"charter":{"purpose":"old","obsolete":"remove","note":"keep"}}`)
 	desired := snapshot(t, `{"charter":{"purpose":"new"}}`)
-	patch, err := Plan(current, desired, []string{"charter.purpose", "charter.obsolete", "charter.absent"})
+	patch, err := Plan(current, desired, []string{"charter.purpose", "charter.obsolete", "charter.absent"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestManagedPathsCannotClaimRuntimeStateOrOverlap(t *testing.T) {
 		{"charter.purpose", "charter.purpose"},
 	} {
 		t.Run(strings.Join(paths, ","), func(t *testing.T) {
-			if p, err := Plan(form.Snapshot{}, form.Snapshot{}, paths); err == nil || !p.IsIdentity() {
+			if p, err := Plan(form.Snapshot{}, form.Snapshot{}, paths, nil); err == nil || !p.IsIdentity() {
 				t.Fatalf("managed paths %q accepted: %v", paths, err)
 			}
 		})
@@ -77,8 +77,22 @@ func TestManagedChildCannotReplaceAnUnmanagedScalarAncestor(t *testing.T) {
 		{`{"charter":null}`, `{}`},
 		{`{"charter":[]}`, `{}`},
 	} {
-		if _, err := Plan(snapshot(t, pair[0]), snapshot(t, pair[1]), []string{"charter.purpose"}); err == nil {
+		if _, err := Plan(snapshot(t, pair[0]), snapshot(t, pair[1]), []string{"charter.purpose"}, nil); err == nil {
 			t.Fatalf("accepted a scalar/list ancestor: %v", pair)
+		}
+	}
+}
+
+func TestManagedPathsCannotCoverOrEnterAHeldKey(t *testing.T) {
+	held := []string{"succession-policy", "worker.pool", "charter.handoff"}
+	for _, path := range []string{"succession-policy", "succession-policy.outfit", "worker", "worker.pool", "charter", "charter.handoff", "charter.handoff.file"} {
+		if p, err := Plan(form.Snapshot{}, form.Snapshot{}, []string{path}, held); err == nil || !p.IsIdentity() {
+			t.Fatalf("managed path %q touches a held key and was accepted: %v", path, err)
+		}
+	}
+	for _, path := range []string{"charter.purpose", "worker-notes", "workers.pool", "charter.handoffs"} {
+		if _, err := Plan(form.Snapshot{}, form.Snapshot{}, []string{path}, held); err != nil {
+			t.Fatalf("managed path %q is beside the held keys, not on them: %v", path, err)
 		}
 	}
 }

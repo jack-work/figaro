@@ -49,7 +49,7 @@ let
     test "''${FIGARO_RUNTIME_DIR:-}" = /fixture/roles
     test "''${FIGARO_CONFIG_DIR:-}" = ${pkgs.emptyDirectory}
     test "''${FIGARO_NO_SELF_SPAWN:-}" = 1
-    test "''${FIGARO_ARIA:-}" = fixture-caller
+    test -z "''${FIGARO_ARIA:-}"
     test -z "''${FIGARO_TROUPE:-}"
     test "$1" = form
     test "$2" = apply
@@ -66,19 +66,19 @@ let
     printf 'check=%s\n' "$check"
     cat "$manifest"
   '';
-  roles = eval {
+  rolesModule = {
     programs.figaro = {
       package = fakeFigaro;
       outfits.fixture.charter.purpose = "Fixture purpose";
       roleApplicationRuntimeDir = "/fixture/roles";
       roleApplications = {
         preview = {
-          roleId = "@11111111";
+          roleId = "@11111111111111111111111111111111";
           outfits = [ "fixture" ];
           managed = [ "charter" ];
         };
         reviewed = {
-          roleId = "@22222222";
+          roleId = "@22222222222222222222222222222222";
           outfits = [ "fixture" ];
           managed = [ "charter" ];
           mode = "apply";
@@ -87,6 +87,22 @@ let
       applyRolesOnSwitch = true;
     };
   };
+  roles = eval rolesModule;
+  rolesAndRestart = eval {
+    imports = [ rolesModule ];
+    programs.figaro.restartOnSwitch = true;
+  };
+  shortId = builtins.tryEval (
+    builtins.deepSeq
+      (eval {
+        programs.figaro.roleApplications.short = {
+          roleId = "@1111111111";
+          outfits = [ "fixture" ];
+          managed = [ "charter" ];
+        };
+      }).programs.figaro.roleApplications
+      true
+  );
   rolesPackage = lib.findFirst (p: (p.name or "") == "figaro-apply-roles") null roles.home.packages;
   checks = [
     {
@@ -103,9 +119,22 @@ let
     }
     {
       ok =
-        roles.home.activation.figaroApplyRoles.after == [ "linkGeneration" ]
+        roles.home.activation.figaroApplyRoles.after == [
+          "linkGeneration"
+          "figaroRestartOnSwitch"
+        ]
         && !(roles.home.activation ? figaroRestartOnSwitch);
       why = "role application follows file installation without starting a restart owner";
+    }
+    {
+      ok =
+        rolesAndRestart.home.activation ? figaroRestartOnSwitch
+        && builtins.elem "figaroRestartOnSwitch" rolesAndRestart.home.activation.figaroApplyRoles.after;
+      why = "with both enabled, roles are applied after the restart so the new daemon answers";
+    }
+    {
+      ok = !shortId.success;
+      why = "a role id that is neither 8 nor 32 hex digits is refused at evaluation";
     }
     {
       ok = lib.all (a: a.assertion) roles.assertions;
@@ -160,8 +189,8 @@ pkgs.runCommand "figaro-hm-module"
         ${pkgs.remarshal}/bin/toml2json manifest.toml > manifest.json
         ${pkgs.jq}/bin/jq -e '
           .roles == {
-            preview: {id: "@11111111", outfits: ["fixture"], managed: ["charter"], mode: "check"},
-            reviewed: {id: "@22222222", outfits: ["fixture"], managed: ["charter"], mode: "apply"}
+            preview: {id: "@11111111111111111111111111111111", outfits: ["fixture"], managed: ["charter"], mode: "check"},
+            reviewed: {id: "@22222222222222222222222222222222", outfits: ["fixture"], managed: ["charter"], mode: "apply"}
           }' manifest.json > /dev/null
         ${rolesPackage}/bin/figaro-apply-roles --help > help
         grep -q '^Usage:' help

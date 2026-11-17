@@ -6,14 +6,14 @@ starts a missing daemon or changes topology.
 
 ```sh
 figaro form apply --id @FULL-EXISTING-ID -O role-charter \
-  --managed name,charter,supervisor,projects --check -j
+  --managed charter --check -j
 figaro form apply --id @FULL-EXISTING-ID -O role-charter \
-  --managed name,charter,supervisor,projects -j
+  --managed charter -j
 ```
 
-The paths above are an example, not a mandatory role schema. Names and ID
-prefixes are refused; use the exact existing role ID, including canonical
-legacy IDs that are shorter than 32 hexadecimal characters. A bound form or
+The managed path is an example, not a mandatory role schema. Names and ID
+prefixes are refused; use the exact existing role ID: `@` and 32 hexadecimal
+digits, or 8 for a canonical legacy role. A bound form or
 an unbound form without a holder is not an adoption target.
 
 ## Ownership and preservation
@@ -26,7 +26,10 @@ unmanaged scalar, list or null ancestor.
 A managed path absent from the desired outfit removes that value. An absent
 unmanaged path changes nothing. Runtime identity, holder, handoff, comments,
 inference configuration and security/credential paths cannot be managed by
-this operation. Ordinary caller read/set authorization and outfit restrictions
+this operation, nor can any path that covers or enters a key the daemon holds
+for a box (`succession-policy`, `worker.pool`, `target-aria` and the rest of
+that list), a protected key, or the key the role's `succession-policy.handoff-key`
+names. Ordinary caller read/set authorization and outfit restrictions
 still apply; `--managed` is not an authorization grant.
 
 ## Check, apply and uncertain outcomes
@@ -74,15 +77,14 @@ the exact existing ID and the intended local daemon's runtime directory:
 ```nix
 programs.figaro = {
   enable = true;
-  outfits.example-charter = {
-    name = "Example maintainer";
-    charter = "Maintain the example library.";
+  outfits.example-charter.charter = {
+    purpose = "Maintain the example library.";
   };
   roleApplicationRuntimeDir = "/run/user/1000/figaro-example";
   roleApplications.example = {
     roleId = "@0123456789abcdef0123456789abcdef";
     outfits = [ "example-charter" ];
-    managed = [ "name" "charter" ];
+    managed = [ "charter" ];
     mode = "check";
   };
   applyRolesOnSwitch = false;
@@ -102,21 +104,23 @@ The manifest is also usable by hand:
 [roles.example]
 id = "@0123456789abcdef0123456789abcdef"
 outfits = ["example-charter"]
-managed = ["name", "charter"]
+managed = ["charter"]
 mode = "check"
 ```
 
 Roles run in name order, each checked first and then written by CAS on the
 version it checked. A failing role does not stop the others; the command exits
 nonzero when any role failed. Unknown keys, duplicate IDs and IDs that are not
-exact `@<hex>` are refused before the daemon is contacted. No declaration creates an occupant or adopts a role by display name.
+`@` and 8 or 32 hex digits are refused before the daemon is contacted. One
+deadline covers the whole invocation. No declaration creates an occupant or adopts a role by display name.
 The destination daemon must advertise `form.apply`.
 
 `applyRolesOnSwitch` is off by default. If enabled, its activation step follows
-outfit installation, forces check mode for a dry activation, and reports failures
+outfit installation and, when `restartOnSwitch` is also enabled, the restart, forces check mode for a dry activation, and reports failures
 without retrying or starting a daemon. It does not enable `restartOnSwitch`.
 The generated command addresses the explicitly selected local runtime without
-borrowing a configured remote endpoint; caller attribution remains intact.
+borrowing a configured remote endpoint, with `FIGARO_ARIA` and `FIGARO_TROUPE`
+unset so the outcome does not depend on whose shell ran the switch.
 
 Live role forms remain runtime authority for consumers. The Nix declarations
 and generated command are desired values and build intermediates, not another

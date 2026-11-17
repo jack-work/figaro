@@ -43,11 +43,16 @@ type manifestResult struct {
 	Error string `json:"error,omitempty"`
 }
 
-var exactRoleID = regexp.MustCompile(`^@[0-9a-f]+$`)
+var exactRoleID = regexp.MustCompile(`^@([0-9a-f]{8}|[0-9a-f]{32})$`)
+
+const formApplyDeadline = 30 * time.Second
 
 func runFormApply(id, outfits, managed string, check, asJSON bool) error {
 	if id == "" || outfits == "" || strings.TrimSpace(managed) == "" {
 		return fmt.Errorf("form apply requires --id, --outfit and --managed; it never creates a role")
+	}
+	if !exactRoleID.MatchString(id) {
+		return fmt.Errorf("form apply: --id %q is not an exact role id (@ and 32 hex digits, or 8 for a legacy role)", id)
 	}
 	dress, err := parseDress(outfits, "", "")
 	if err != nil {
@@ -57,12 +62,14 @@ func runFormApply(id, outfits, managed string, check, asJSON bool) error {
 	for i := range paths {
 		paths[i] = strings.TrimSpace(paths[i])
 	}
-	client, err := dialFormApply()
+	ctx, cancel := context.WithTimeout(context.Background(), formApplyDeadline)
+	defer cancel()
+	client, err := dialFormApply(ctx)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
-	result, err := applyRole(client, rpc.FormApplyRequest{FigaroID: id, Outfits: dress.names, Managed: paths}, check)
+	result, err := applyRole(ctx, client, rpc.FormApplyRequest{FigaroID: id, Outfits: dress.names, Managed: paths}, check)
 	if err != nil {
 		return err
 	}
@@ -78,7 +85,9 @@ func runFormApplyManifest(path string, check, asJSON bool) error {
 	if err != nil {
 		return err
 	}
-	client, err := dialFormApply()
+	ctx, cancel := context.WithTimeout(context.Background(), formApplyDeadline)
+	defer cancel()
+	client, err := dialFormApply(ctx)
 	if err != nil {
 		return err
 	}
@@ -86,7 +95,7 @@ func runFormApplyManifest(path string, check, asJSON bool) error {
 	failed := 0
 	enc := json.NewEncoder(stdout)
 	for _, role := range roles {
-		result, err := applyRole(client, role.request, role.check)
+		result, err := applyRole(ctx, client, role.request, role.check)
 		row := manifestResult{Role: role.name, FormApplyResponse: result}
 		if err != nil {
 			failed++
@@ -138,7 +147,7 @@ func loadRoleManifest(path string, forceCheck bool) ([]plannedRole, error) {
 	for _, name := range names {
 		role := manifest.Roles[name]
 		if !exactRoleID.MatchString(role.ID) {
-			return nil, fmt.Errorf("form apply manifest: %s: id %q is not an exact role id", name, role.ID)
+			return nil, fmt.Errorf("form apply manifest: %s: id %q is not an exact role id (@ and 32 hex digits, or 8 for a legacy role)", name, role.ID)
 		}
 		if other, dup := seen[role.ID]; dup {
 			return nil, fmt.Errorf("form apply manifest: %s and %s both declare %s", other, name, role.ID)
@@ -167,13 +176,11 @@ func loadRoleManifest(path string, forceCheck bool) ([]plannedRole, error) {
 	return planned, nil
 }
 
-func dialFormApply() (*sdk.Angelus, error) {
+func dialFormApply(ctx context.Context) (*sdk.Angelus, error) {
 	client, err := sdk.DialAngelus(doorEndpoint())
 	if err != nil {
 		return nil, fmt.Errorf("form apply: daemon unavailable; application deferred: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 	hello, err := client.Hello(ctx)
 	if err != nil {
 		client.Close()
@@ -186,9 +193,7 @@ func dialFormApply() (*sdk.Angelus, error) {
 	return client, nil
 }
 
-func applyRole(client *sdk.Angelus, req rpc.FormApplyRequest, check bool) (rpc.FormApplyResponse, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+func applyRole(ctx context.Context, client *sdk.Angelus, req rpc.FormApplyRequest, check bool) (rpc.FormApplyResponse, error) {
 	req.Check, req.IfVersion, req.ExpectedOutfit = true, 0, ""
 	checked, err := client.FormApply(ctx, req)
 	if err != nil {

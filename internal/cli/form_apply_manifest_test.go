@@ -19,7 +19,7 @@ func writeManifest(t *testing.T, body string) string {
 func TestRoleManifestDefaultsToCheckAndOrdersByName(t *testing.T) {
 	path := writeManifest(t, `
 [roles.zeta]
-id = "@22222222"
+id = "@22222222222222222222222222222222"
 outfits = ["role", "extra"]
 managed = ["charter.purpose"]
 mode = "apply"
@@ -56,13 +56,15 @@ managed = ["charter"]
 func TestRoleManifestRefusesAnythingThatCouldTargetTheWrongRole(t *testing.T) {
 	for name, body := range map[string]string{
 		"empty":        ``,
+		"prefix":       "[roles.a]\nid = \"@1111111111\"\noutfits = [\"r\"]\nmanaged = [\"charter\"]\n",
+		"short-id":     "[roles.a]\nid = \"@1111111111111111111111111111111\"\noutfits = [\"r\"]\nmanaged = [\"charter\"]\n",
 		"name":         "[roles.a]\nid = \"engineer\"\noutfits = [\"r\"]\nmanaged = [\"charter\"]\n",
 		"no-at":        "[roles.a]\nid = \"11111111\"\noutfits = [\"r\"]\nmanaged = [\"charter\"]\n",
-		"no-outfits":   "[roles.a]\nid = \"@11\"\noutfits = []\nmanaged = [\"charter\"]\n",
-		"no-managed":   "[roles.a]\nid = \"@11\"\noutfits = [\"r\"]\n",
-		"bad-mode":     "[roles.a]\nid = \"@11\"\noutfits = [\"r\"]\nmanaged = [\"charter\"]\nmode = \"create\"\n",
-		"unknown-key":  "[roles.a]\nid = \"@11\"\noutfits = [\"r\"]\nmanaged = [\"charter\"]\nholder = \"x\"\n",
-		"duplicate-id": "[roles.a]\nid = \"@11\"\noutfits = [\"r\"]\nmanaged = [\"charter\"]\n[roles.b]\nid = \"@11\"\noutfits = [\"r\"]\nmanaged = [\"charter\"]\n",
+		"no-outfits":   "[roles.a]\nid = \"@11111111111111111111111111111111\"\noutfits = []\nmanaged = [\"charter\"]\n",
+		"no-managed":   "[roles.a]\nid = \"@11111111111111111111111111111111\"\noutfits = [\"r\"]\n",
+		"bad-mode":     "[roles.a]\nid = \"@11111111111111111111111111111111\"\noutfits = [\"r\"]\nmanaged = [\"charter\"]\nmode = \"create\"\n",
+		"unknown-key":  "[roles.a]\nid = \"@11111111111111111111111111111111\"\noutfits = [\"r\"]\nmanaged = [\"charter\"]\nholder = \"x\"\n",
+		"duplicate-id": "[roles.a]\nid = \"@11111111111111111111111111111111\"\noutfits = [\"r\"]\nmanaged = [\"charter\"]\n[roles.b]\nid = \"@11111111111111111111111111111111\"\noutfits = [\"r\"]\nmanaged = [\"charter\"]\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if roles, err := loadRoleManifest(writeManifest(t, body), false); err == nil {
