@@ -124,11 +124,36 @@ func (h *handlers) outfitReload(ctx context.Context, params json.RawMessage) (in
 }
 
 // forkDress guarantees a non-empty birth patch; aria_id is re-stamped by
-// the boot patch once the child exists.
-func forkDress(dress form.Patch, parent string) form.Patch {
-	return form.Merge(dress, form.Build(form.Snapshot{}, map[string]json.RawMessage{
+// the boot patch once the child exists. selfOK and selfValue are the
+// forking figaro's own max_children, read only when it forks itself (a
+// succession's fork-then-demote swap); a figaro forking another aria never
+// passes its own value through here.
+func forkDress(dress form.Patch, parent string, capByDefault bool, selfValue int, selfOK bool) form.Patch {
+	withFanout := dress
+	if capByDefault {
+		withFanout = form.Merge(fanoutBirthDefault(dress, selfValue, selfOK), dress)
+	}
+	return form.Merge(withFanout, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		form.ForkedFromKey: json.RawMessage(`"` + parent + `"`),
 	}, nil))
+}
+
+// fanoutBirthDefault: a fork is born unable to fan out unless the forking
+// caller grants more in the same patch. A removal entry in the dress does
+// not count as a grant: it still gets the default, the same as naming
+// nothing. A figaro forking itself inherits its own current value instead
+// of 0, which is what lets it demote under its own successor without
+// first needing a separate grant.
+func fanoutBirthDefault(dress form.Patch, selfValue int, selfOK bool) form.Patch {
+	if e, ok := dress.Entry(form.FanoutMaxChildrenKey); ok && !e.IsRemoval() {
+		return form.Patch{}
+	}
+	n := 0
+	if selfOK {
+		n = selfValue
+	}
+	raw, _ := json.Marshal(n)
+	return form.Build(form.Snapshot{}, map[string]json.RawMessage{form.FanoutMaxChildrenKey: raw}, nil)
 }
 
 func mergePatches(a, b form.Patch) form.Patch {

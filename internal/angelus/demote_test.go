@@ -27,7 +27,7 @@ func demoteHandlers(t *testing.T) (*Handlers, *store.XwalBackend, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &Angelus{Registry: NewRegistry(), Backend: b}
+	a := &Angelus{Registry: NewRegistry(), Backend: b, Hubs: newHubs()}
 	return NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())}), b, outfit
 }
 

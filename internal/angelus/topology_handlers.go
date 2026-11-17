@@ -247,6 +247,13 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.refuseUnheldSandbox(ctx, req.Patch); err != nil {
 		return nil, fmt.Errorf("fork: %w", err)
 	}
+	if max, ok, ferr := form.FanoutMaxChildren(inherited); ferr != nil {
+		return nil, fmt.Errorf("fork: %w", ferr)
+	} else if ok {
+		if n := len(h.angelus.liveChildrenOf(req.FigaroID)); n >= max {
+			return nil, fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one or fork elsewhere", req.FigaroID, n, max)
+		}
+	}
 	var cont, alt string
 	note := ""
 	var forkOwner store.OwnerInfo
@@ -303,10 +310,34 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		if interior {
 			at = atMainLT
 		}
-		var ferr error
-		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID), mintedBy(ctx), ariaIDStamp())
-		if ferr != nil {
-			return ferr
+		f := authz.FigaroOf(ctx)
+		// The count and the birth run under the topology's own lock, so a
+		// concurrent fork or reparent of the same parent cannot land
+		// between the count and the write: both see the live count the
+		// other leaves behind.
+		if err := h.angelus.topology().WithLock(func() error {
+			fresh, ferr := h.angelus.Backend.FormState(req.FigaroID)
+			if ferr != nil {
+				return fmt.Errorf("fork: the board of %s cannot be read to admit the fork: %w", req.FigaroID, ferr)
+			}
+			max, ok, ferr := form.FanoutMaxChildren(fresh)
+			if ferr != nil {
+				return fmt.Errorf("fork: %w", ferr)
+			}
+			if ok {
+				if n := len(h.angelus.liveChildrenOf(req.FigaroID)); n >= max {
+					return fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one or fork elsewhere", req.FigaroID, n, max)
+				}
+			}
+			selfValue, selfOK := 0, false
+			if f != "" && f == req.FigaroID {
+				selfValue, selfOK = max, ok
+			}
+			var cerr error
+			alt, _, cerr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID, f != "", selfValue, selfOK), mintedBy(ctx), ariaIDStamp())
+			return cerr
+		}); err != nil {
+			return err
 		}
 		if interior && forkOwner.Trunk != "" && forkOwner.Trunk != req.FigaroID {
 			if merr := h.place(ctx, alt, req.FigaroID); merr != nil {

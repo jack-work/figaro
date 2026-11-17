@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/hierarchy"
@@ -34,9 +35,62 @@ func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
 			}
 			return nil, false
 		},
-		Empty:      a.ownsNoMessages,
-		MintPlaces: a.mintPlaces,
+		Empty:        a.ownsNoMessages,
+		MintPlaces:   a.mintPlaces,
+		FanoutLimit:  a.fanoutLimitOf,
+		LiveChildren: a.liveChildrenOf,
+		Live:         a.isLiveAria,
 	}
+}
+
+func (a *Angelus) fanoutLimitOf(id string) (int, bool) {
+	if a.Backend == nil {
+		return 0, false
+	}
+	snap, err := a.Backend.FormState(id)
+	if err != nil {
+		return 0, false
+	}
+	best, bestOK, err := form.FanoutMaxChildren(snap)
+	if err != nil {
+		return 0, false
+	}
+	// A role form's own max_children is the default for whoever holds the
+	// role, through every succession: it applies alongside the holder's
+	// own value, and the tighter of the two governs.
+	roles, _ := a.roles()
+	for _, roleID := range roles.holding(id) {
+		rsnap, rerr := a.Backend.FormState(roleID)
+		if rerr != nil {
+			continue
+		}
+		n, ok, nerr := form.FanoutMaxChildren(rsnap)
+		if nerr != nil || !ok {
+			continue
+		}
+		if !bestOK || n < best {
+			best, bestOK = n, true
+		}
+	}
+	return best, bestOK
+}
+
+func (a *Angelus) liveChildrenOf(id string) []string {
+	var out []string
+	for _, kid := range a.topology().Children(id) {
+		if a.isLiveAria(kid) {
+			out = append(out, kid)
+		}
+	}
+	return out
+}
+
+func (a *Angelus) isLiveAria(id string) bool {
+	if a.Backend == nil {
+		return true
+	}
+	meta, _ := a.Backend.Meta(id)
+	return meta == nil || (meta.RetiredAtMS == 0 && meta.ReapedAtMS == 0)
 }
 
 func (a *Angelus) ownsNoMessages(id string) bool {

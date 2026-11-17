@@ -10,9 +10,11 @@ const (
 	ScopesKey = "system.scopes"
 
 	RetiredGrantsKey = "system.grants"
+
+	FanoutMaxChildrenKey = "system.fanout.max_children"
 )
 
-var protectedKeys = []string{ScopesKey, RetiredGrantsKey, "system.sandbox"}
+var protectedKeys = []string{ScopesKey, RetiredGrantsKey, "system.sandbox", FanoutMaxChildrenKey}
 
 func ProtectedKeys() []string { return append([]string(nil), protectedKeys...) }
 
@@ -54,6 +56,17 @@ func CheckScopes(s Snapshot) error {
 		}
 	}
 	return nil
+}
+
+func FanoutMaxChildren(s Snapshot) (n int, ok bool, err error) {
+	raw, has := s.Get(FanoutMaxChildrenKey)
+	if !has {
+		return 0, false, nil
+	}
+	if err := json.Unmarshal(raw, &n); err != nil || n < 0 {
+		return 0, false, fmt.Errorf("%s must be a non-negative integer, got %s", FanoutMaxChildrenKey, raw)
+	}
+	return n, true, nil
 }
 
 func RefuseRetiredGrantsWrite(before, after Snapshot) error {
