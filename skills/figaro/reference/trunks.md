@@ -172,27 +172,35 @@ with no credentials and no tokens.
   A figaro may fork itself from inside its own running turn: `figaro fork
   --stay -f -- go` from a tool call returns at once with the new ids, and the
   running turn carries on.
-- **`fork <id>:<turn> --replay [-O ..] [-S ..] [-j]`**: re-run a past turn
-  as it was asked, for evals. The fork cuts before turn `<turn>` and the
-  daemon re-sends that turn's recorded inquiry to the branch: its words with
-  their senders and principals, its images, and the non-system form changes
-  that rode in with it (datetime among them). There is no prompt; system keys
-  are the caller's, so `-S system.thinking_effort=high` picks the rung. The
-  branch carries `system.replay` `{of, turn, lt, aria_id, studies}` and:
-  - **reads as the original.** What the provider is sent shows the
-    original's `aria_id` (so its handle) and no fork reminder. Only that
-    projection is masked: the store, `ls`, `kill` and the Figaro-Id header
-    keep the branch's own id.
-  - **keeps the original's clock.** datetime is the inquiry's, and every
-    studied form reads as it stood at the inquiry.
-  - **runs no tool.** A call matching one the turn made (same tool, same
-    arguments) gets the recorded answer, in order. An outward verb (figaro,
-    fig, figla, gh, git writes, file writes and redirects; write, edit, say)
-    gets a quiet success in the tool's own shape. Anything else fails
+- **Replay: `system.replay`** re-runs a past turn as it was asked, for evals.
+  The key holds `{of, turn, lt}` and is read at the start of every turn.
+  Setting it (owner only) wakes the figaro and re-sends that turn's recorded
+  inquiry: its words with their senders and principals, its images, and the
+  non-system form changes that rode in with it. While it is set the figaro
+  takes no prompts, deliveries or casts; unsetting it returns the figaro to
+  ordinary turns, and setting it again replays again. Four masks sit under
+  it, each on unless set to `false`:
+  - **`system.replay.notice`**: the model is not shown a fork mark it had
+    not already seen.
+  - **`system.replay.clock`**: datetime is the recorded inquiry's and every
+    studied form reads as it stood then. Off, a replay reads today.
+  - **`system.replay.identity`**: the model reads the original's `aria_id`
+    (so its handle). Only the provider's view is masked; the store, `ls`,
+    `kill` and the Figaro-Id header keep the real id.
+  - **`system.replay.tools`**: no tool runs. A call matching one the turn
+    made (same tool, same arguments) gets the recorded answer, in order; an
+    outward verb (figaro, fig, figla, gh, git writes, file writes and
+    redirects; write, edit, say) gets a quiet success; anything else fails
     neutrally.
-  - **is unaddressable.** Prompts, deliveries and casts are refused. It is
-    born with `system.ttl` 1h unless `-S` gives one.
 
+  Each replayed turn carries its mark in the IR, and show and the pager open
+  it with `[replay of <id>:<turn>; masked: ...]`. The first turn after the
+  unset shows the model its real id and fork. Only the owner sets or unsets
+  the key: a box, a non-owner and the figaro itself are refused. A plain
+  fork of a replaying figaro does not inherit it, and replay sets no ttl.
+- **`fork <id>:<turn> --replay [-O ..] [-S ..] [-j]`**: shorthand for a fork
+  cut before `<turn>` with `system.replay` set on the branch. `-S` picks the
+  rung (`system.thinking_effort=high`) or a mask (`system.replay.tools=false`).
   The call submits and exits; `figaro listen <branch>` follows the reply.
 - **`attend <id>` / `<id>:<turn>` / `:<turn>`** (alias **`at`**): bind this shell,
   like `cd`. CLI-native attendance: the pid↔trunk map (the angelus binding
