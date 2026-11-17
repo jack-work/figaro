@@ -764,7 +764,20 @@ func hasVecPrefix(v, prefix []int) bool {
 const roleBadgeMax = 20
 
 func roleBadge(f rpc.FigaroInfoResponse) string {
-	return truncRunes(strings.Join(f.Roles, " "), roleBadgeMax)
+	var b strings.Builder
+	for i, a := range f.Roles {
+		if i == 0 {
+			b.WriteString(rpc.QuoteRoleAddress(truncRunes(a, roleBadgeMax-2)))
+			continue
+		}
+		q := rpc.QuoteRoleAddress(a)
+		if len([]rune(b.String()))+1+len([]rune(q)) > roleBadgeMax {
+			fmt.Fprintf(&b, " +%d", len(f.Roles)-i)
+			break
+		}
+		b.WriteString(" " + q)
+	}
+	return b.String()
 }
 
 func badgeRoom(f rpc.FigaroInfoResponse) int {
