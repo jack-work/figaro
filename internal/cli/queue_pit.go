@@ -142,6 +142,7 @@ func (t *transcript) showQueuedAuto(on bool) {
 			return
 		}
 		t.openQueuePit()
+		t.focusAppeared(pitQueue)
 		return
 	}
 	t.queueDismissed = false
@@ -172,6 +173,7 @@ func (t *transcript) openQueueFromKey() {
 	}
 	t.queuedByKey = true
 	t.openQueuePit()
+	t.focused = focusPit
 	if t.queuedFetch != nil {
 		t.queuedFetch()
 	}
@@ -190,7 +192,6 @@ func (t *transcript) noteQueueEmpty() { t.setCommandNoteAt(queueEmptyNote, alert
 func (t *transcript) openQueuePit() {
 	// No title: the bar already says "queue".
 	t.pit.showList(pitQueue, "", t.queuedPitRows())
-	t.focused = focusPit
 }
 
 // Keeps the selection: a queue that re-sorts under the cursor on every poll is one

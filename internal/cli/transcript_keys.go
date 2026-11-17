@@ -156,6 +156,9 @@ func (t *transcript) dispatch(ev keyEvent) {
 		}
 		t.closePanels()
 	case modePanel:
+		if t.focused == focusTranscript && !pitCancels(ev) {
+			break
+		}
 		if t.viewTakesKey(ev) {
 			t.render()
 			return
@@ -164,18 +167,6 @@ func (t *transcript) dispatch(ev keyEvent) {
 			act(t)
 			t.render()
 			return
-		}
-		// A hosted verb with a list: the pit owns every motion and the
-		// view keeps only its own verbs; without a list the view gets
-		// first refusal.
-		if t.focused == focusTranscript {
-			// The conversation has the keys until `T` hands them back;
-			// Esc still closes the pit.
-			if act := pagerAct.pager(modeTranscript, ev); act != nil {
-				act(t)
-				t.render()
-				return
-			}
 		}
 		if kv, ok := t.pit.live.(cmdkit.KeyView); ok && ev.nav == navNone && kv.Key(ev.b) {
 			t.render()
@@ -257,12 +248,17 @@ func pagerFormPit(t *transcript) {
 
 func pagerFocusTranscript(t *transcript) { focusTranscriptKey(t) }
 
-// ^N/^P move the pit's selection when one is up, the node selection otherwise.
+func pitCancels(ev keyEvent) bool {
+	bd := pagerIndex.lookup(modePanel, ev)
+	return bd != nil && bd.action == "cancel"
+}
+
+// ^N/^P move the selection of a focused pit, the node selection otherwise.
 func pagerSelectNext(t *transcript) { t.selectDown(1) }
 func pagerSelectPrev(t *transcript) { t.selectDown(-1) }
 
 func (t *transcript) selectDown(dir int) {
-	if p := t.pit.list(); p != nil && p.hasCursor() {
+	if p := t.pit.list(); p != nil && p.hasCursor() && t.focused == focusPit {
 		t.pit.moveSelection(dir)
 		return
 	}
