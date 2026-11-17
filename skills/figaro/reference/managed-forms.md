@@ -43,7 +43,7 @@ the durable version. An empty patch still checks the expected version.
 
 There is no automatic retry. A timeout or disconnect after submission can
 mean an unknown outcome: read/check again before deciding what remains.
-This is a per-role operation, not a transaction over a formation.
+This is a per-role operation, not a transaction over multiple forms.
 
 ## Wire and compatibility
 
@@ -101,6 +101,7 @@ without retrying or starting a daemon. It does not enable `restartOnSwitch`.
 The generated command addresses the explicitly selected local runtime without
 borrowing a configured remote endpoint; caller attribution remains intact.
 
-Live roles remain the authority consumed by the order site. The Nix declarations
+Live role forms remain runtime authority for consumers. The Nix declarations
 and generated command are desired values and build intermediates, not another
-runtime hierarchy. There is no standing staff tree embedded in this module.
+runtime hierarchy. No organization-specific tree or deployment policy is embedded
+in this module.
