@@ -67,14 +67,15 @@ func (h *handlers) refuseReplayFork(ctx context.Context, req rpc.ForkRequest) er
 	return nil
 }
 
-func (h *handlers) planReplay(parent string, turn uint64) (form.Replay, message.Replay, error) {
+func (h *handlers) planReplay(parent string, turn uint64, dress form.Patch) (form.Replay, message.Replay, error) {
 	r := form.Replay{Of: parent, Turn: turn}
 	rec, err := figaro.ResolveReplay(h.angelus.Backend, r)
 	if err != nil {
 		return form.Replay{}, message.Replay{}, fmt.Errorf("fork: %w", err)
 	}
 	r.LT = rec.LT
-	return r, rec.Mark(r), nil
+	masks := form.ReadReplayMasks(form.Snapshot{}.Apply(r.Patch(form.Snapshot{})).Apply(dress))
+	return r, rec.Mark(r, masks), nil
 }
 
 func (h *handlers) startReplay(ctx context.Context, id, wokeBy string) error {
