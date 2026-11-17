@@ -1471,6 +1471,8 @@ Status: in development; cross-node moves are not settled yet.`,
                                    never nothing: a form is born of its patch
   figaro form fork @id -S k=v      duplicate a form's state into a fresh @id
   figaro form ls                   list unbound forms (scoped by attendance)
+  figaro form apply --id @id -O role --managed charter --check -j
+                                   check declared fields on an existing role
   figaro form rm @id               remove an unbound form
   figaro state outfit focus        fold an outfit onto this aria, now
   figaro state outfit a,b          fold both, b winning
@@ -1503,7 +1505,10 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON output (new/fork/ls emit machine-readable ids)"},
-			{Long: "outfit", Short: "O", Subwords: []string{"new", "fork"}, Description: "new/fork: outfit NAMES for the birth patch (required for new)"},
+			{Long: "outfit", Short: "O", Subwords: []string{"new", "fork", "apply"}, Description: "new/fork/apply: outfit NAMES"},
+			{Long: "managed", Subwords: []string{"apply"}, Description: "apply: comma-separated paths managed by the outfit"},
+			{Long: "check", IsBool: true, Subwords: []string{"apply"}, Description: "apply: report changes without writing"},
+			{Long: "manifest", Subwords: []string{"apply"}, Description: "apply: TOML file of declared roles; replaces --id, --outfit and --managed"},
 			{Long: "set", Short: "S", Repeats: true, Subwords: []string{"new", "fork"}, Description: "new/fork: birth keys, k=v or a JSON literal; repeats"},
 			{Long: "delete", Short: "D", Repeats: true, Subwords: []string{"new", "fork"}, Description: "new/fork: key paths the birth patch removes; repeats"},
 			{Long: "list", IsBool: true, Subwords: []string{"outfit"}, Description: "outfit: list available outfits and exit"},
@@ -1519,6 +1524,17 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 				sub = args[0]
 			}
 			switch sub {
+			case "apply":
+				if len(args) != 1 {
+					return fmt.Errorf("form apply takes --id, --outfit and --managed, not positional arguments")
+				}
+				if manifest := ctx.Flag("manifest"); manifest != "" {
+					if ctx.Flag("id") != "" || ctx.Flag("outfit") != "" || ctx.Flag("managed") != "" {
+						return fmt.Errorf("form apply --manifest declares its roles; drop --id, --outfit and --managed")
+					}
+					return runFormApplyManifest(manifest, ctx.BoolFlag("check"), ctx.BoolFlag("json"))
+				}
+				return runFormApply(ctx.Flag("id"), ctx.Flag("outfit"), ctx.Flag("managed"), ctx.BoolFlag("check"), ctx.BoolFlag("json"))
 			case "outfit":
 				return runStateOutfit(ld, ctx, args[1:])
 			case "listen":

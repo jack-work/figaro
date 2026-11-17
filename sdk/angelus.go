@@ -105,6 +105,12 @@ func (c *Angelus) Create(ctx context.Context, outfits []string, patch *rpc.FormP
 	return &resp, err
 }
 
+func (c *Angelus) FormApply(ctx context.Context, req rpc.FormApplyRequest) (*rpc.FormApplyResponse, error) {
+	var resp rpc.FormApplyResponse
+	err := c.call(ctx, rpc.MethodFormApply, req, &resp)
+	return &resp, err
+}
+
 // FormCreate mints an unbound form. Parent "" spawns under the null root; a form id
 // duplicates that form. The response's endpoint is live before the call returns.
 func (c *Angelus) FormCreate(ctx context.Context, parent string, outfits []string, patch *rpc.FormPatch) (*rpc.FormCreateResponse, error) {
