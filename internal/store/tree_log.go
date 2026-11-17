@@ -104,7 +104,7 @@ func (l *treeLog[T]) span(from, to uint64) []arialog.Entry[T] {
 	if to <= from {
 		return nil
 	}
-	out, err := l.cache.Range(l.refs(), from, to)
+	out, err := l.cache.Range(l.servingRefs(), from, to)
 	if err != nil {
 		return nil
 	}
@@ -297,11 +297,15 @@ func (l *treeLog[T]) substrateOf(node string) arialog.Log[T] {
 // cuts splits (from..to] across the lineage by fork base, root first: the same
 // division tree.Range makes, so a peek and a materializing read see one shape.
 func (l *treeLog[T]) cuts(from, to uint64) []fwtree.Coord {
+	return fwtree.Split(l.servingRefs(), from, to)
+}
+
+func (l *treeLog[T]) servingRefs() []fwtree.Ref {
 	refs := l.refs()
 	if l.seedOnAppend && len(refs) > 1 {
 		refs = l.rebase(refs)
 	}
-	return fwtree.Split(refs, from, to)
+	return refs
 }
 
 // substrate reads a bracket from the durable log of ONE node, never the cache.
