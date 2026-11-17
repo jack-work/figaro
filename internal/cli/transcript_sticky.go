@@ -69,7 +69,7 @@ func (t *transcript) stickyBlockOf(turn int) stickyQuestion {
 		q.textHigh--
 	}
 	for i, r := range q.rows {
-		if r.ref.valid() {
+		if r.ref.valid() && !r.chrome {
 			q.textLo = i
 			break
 		}

@@ -123,6 +123,7 @@ type transcriptRow struct {
 	// (ldrender.Row.Chrome).
 	chrome bool
 	more   []ldrender.Spot
+	sender string
 }
 
 func (r transcriptRow) searchText() string {

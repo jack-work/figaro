@@ -48,9 +48,17 @@ func headMore(n livedoc.Node) []ldrender.Spot {
 	return spots
 }
 
-func senderOther(sender, name string) string {
+func senderAria(sender string) string {
 	id, _ := strings.CutPrefix(sender, rpc.AriaLabelPrefix)
 	if !rpc.IsHexID(id) || len(strings.TrimPrefix(id, "@")) < rpc.OldIDLen {
+		return ""
+	}
+	return id
+}
+
+func senderOther(sender, name string) string {
+	id := senderAria(sender)
+	if id == "" {
 		return ""
 	}
 	if shownIDs == idsAsShortHex && name != "" {

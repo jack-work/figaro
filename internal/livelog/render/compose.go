@@ -30,8 +30,9 @@ type Row struct {
 	Chrome bool
 	// Spine is the row's place in the adornment's snake, drawn into Text at
 	// rest; a surface with a cursor resolves it again at paint time.
-	Spine SpineSlot
-	More  []Spot
+	Spine  SpineSlot
+	More   []Spot
+	Sender string
 }
 
 // SpineKind is what a row contributes to an adornment's snake.
@@ -197,6 +198,9 @@ func (c Composer) block(n livedoc.Node, w, k int) []Row {
 		if len(rows) > 0 && c.HeadMore != nil {
 			rows[0].More = c.HeadMore(n)
 		}
+		if len(rows) > 0 && n.Type == livedoc.NodeSteering {
+			rows[0].Sender = n.Sender
+		}
 		if len(rows) > 0 {
 			if c.Mark != nil {
 				rows[0].Mark = c.Mark(k, n)
@@ -261,7 +265,7 @@ func (c Composer) Inquiry(inquiry string, segments []aria.InquirySegment, w int,
 				}
 			}
 			head := chrome(clip(h, w))
-			head.More = more
+			head.More, head.Sender = more, seg.Sender
 			if k == 0 {
 				head.Text = OverlayGutter(head.Text, adorn.Gutter, w)
 				head.Gutter = adorn.Gutter
