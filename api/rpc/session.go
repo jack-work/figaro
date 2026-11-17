@@ -59,6 +59,9 @@ type FigaroInfoResponse struct {
 	Name       string `json:"name,omitempty"`
 	TargetAria string `json:"target_aria,omitempty"`
 	Sandbox    string `json:"sandbox,omitempty"`
+
+	// Roles names the role forms whose target-aria is this figaro.
+	Roles []string `json:"roles,omitempty"`
 }
 
 // AttachRequest restores a dormant aria without binding a pid.
