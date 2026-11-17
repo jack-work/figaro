@@ -20,6 +20,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 	_ "github.com/jack-work/figaro/internal/provider/routed"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/sdk"
 )
 
@@ -188,4 +189,47 @@ func TestAReplayKeepsItsRealIdOffTheWire(t *testing.T) {
 	form, err := acli.Form(t.Context(), resp.Alternative)
 	require.NoError(t, err)
 	require.Equal(t, resp.Alternative, *form.Snapshot.Lookup("aria_id"), "the store keeps the branch's real id")
+}
+
+func postNews(t *testing.T, a *angelus.Angelus, other *sdk.Aria, id, news string) {
+	t.Helper()
+	_, err := other.Set(t.Context(), *rawPatch(map[string]string{"news": fmt.Sprintf("%q", news)}), 0)
+	require.NoError(t, err)
+	lib, err := a.Backend.(*store.XwalBackend).Libretto(id)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		v := lib.State().Lookup("news")
+		return v != nil && *v == news
+	}, 5*time.Second, 5*time.Millisecond, "the libretto never folded %q", news)
+}
+
+func TestAReplayReadsStudiedFormsAsTheyStoodAtTheTurn(t *testing.T) {
+	tap := &wireTap{}
+	a, acli := gatewayDaemon(t, tap)
+	created, err := acli.Create(t.Context(), dress(t, "gw"), nil)
+	require.NoError(t, err)
+	subject := created.FigaroID
+	studied, err := acli.Create(t.Context(), dress(t, "gw"), nil)
+	require.NoError(t, err)
+	other, err := sdk.DialAria(ariaAddr(a, studied.FigaroID), nil)
+	require.NoError(t, err)
+	defer other.Close()
+	me, err := sdk.DialAria(ariaAddr(a, subject), nil)
+	require.NoError(t, err)
+	defer me.Close()
+	_, err = me.Study(t.Context(), studied.FigaroID)
+	require.NoError(t, err)
+
+	postNews(t, a, other, studied.FigaroID, "rehearsal booked")
+	askAt(t, a, subject, "first question", "Thursday, November 12, 2026, 9AM EST")
+	postNews(t, a, other, studied.FigaroID, "curtain at eight")
+	askAt(t, a, subject, "second question", "Thursday, November 12, 2026, 2PM EST")
+	require.Contains(t, tap.last(subject), "curtain at eight", "the probe must see a study reminder")
+	postNews(t, a, other, studied.FigaroID, "the run is over")
+
+	resp, err := acli.Replay(t.Context(), subject, 2, nil, nil)
+	require.NoError(t, err)
+	body := awaitWire(t, a, tap, resp.Alternative, 1)
+	require.Contains(t, body, "curtain at eight")
+	require.NotContains(t, body, "the run is over")
 }

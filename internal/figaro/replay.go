@@ -84,3 +84,27 @@ func (v replayView) StateAt(version uint64) (form.Snapshot, bool) {
 	}
 	return v.rec.MaskSnapshot(v.id, snap), true
 }
+
+type frozenStudy struct {
+	provider.Form
+	at uint64
+}
+
+func (f frozenStudy) PatchesBetween(after, upTo uint64) []message.Patch {
+	upTo = min(upTo, f.at)
+	if upTo <= after {
+		return nil
+	}
+	return f.Form.PatchesBetween(after, upTo)
+}
+
+func freezeStudies(snap form.Snapshot, studies map[string]provider.Form) map[string]provider.Form {
+	rec, ok := form.ReadReplay(snap)
+	if !ok {
+		return studies
+	}
+	for id, acc := range studies {
+		studies[id] = frozenStudy{Form: acc, at: rec.Studies[id]}
+	}
+	return studies
+}

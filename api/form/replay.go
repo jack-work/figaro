@@ -8,10 +8,11 @@ import (
 const ReplayKey = "system.replay"
 
 type Replay struct {
-	Of     string `json:"of"`
-	Turn   uint64 `json:"turn"`
-	LT     uint64 `json:"lt"`
-	AriaID string `json:"aria_id,omitempty"`
+	Of      string            `json:"of"`
+	Turn    uint64            `json:"turn"`
+	LT      uint64            `json:"lt"`
+	AriaID  string            `json:"aria_id,omitempty"`
+	Studies map[string]uint64 `json:"studies,omitempty"`
 }
 
 func ReadReplay(s Snapshot) (Replay, bool) {
