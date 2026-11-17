@@ -66,6 +66,8 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "system.checkpoint.every_patches", Short: "Move the tail checkpoint every N records (floor 64); unset takes [store] checkpoint_every_patches", Mode: KeyUserSettable},
 		{Key: "system.checkpoint.every_seconds", Short: "Move the tail checkpoint every N seconds when something was written (floor 5); unset takes [store] checkpoint_every_seconds", Mode: KeyUserSettable},
 		{Key: "system.checkpoint.max_marks", Short: "How many checkpoints the form keeps (floor 2, default 5)", Mode: KeyUserSettable},
+		{Key: "system.retention.mode", Short: `"marks" drops this form's records below its lowest live checkpoint mark, "none" keeps every record; unset takes [store] retention_mode, and with that unset the store-wide sweep decides. Owner-held; refused on a conversation-bound form`, Mode: KeyUserSettable},
+		{Key: "system.retention.writers", Short: "Figaro ids or principals the owner lets set system.retention.* besides itself; only the owner sets this", Mode: KeyUserSettable},
 		{Key: "system.forked_from", Short: "The trunk this branch was forked from (stamped at birth)", Mode: KeySystemManaged},
 		{Key: "system.tombstone", Short: "Set when a form is deleted: the record subscribers hear the death through, after which the form is sealed", Mode: KeySystemManaged},
 		{Key: "system.studies", Short: "The forms this figaro observes. Written by the study verb only: each entry is refcounted on a shared libretto, and a hand-written one would declare a study nothing counted", Mode: KeySystemManaged},

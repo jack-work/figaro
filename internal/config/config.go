@@ -146,6 +146,8 @@ type StoreConfig struct {
 	CheckpointEveryPatches *int `toml:"checkpoint_every_patches"`
 	CheckpointEverySeconds *int `toml:"checkpoint_every_seconds"`
 	CheckpointMaxMarks     *int `toml:"checkpoint_max_marks"`
+
+	RetentionMode string `toml:"retention_mode"`
 }
 
 // MemoryConfig tunes when the daemon reclaims an idle aria.

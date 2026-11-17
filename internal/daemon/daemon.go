@@ -151,6 +151,7 @@ func applyStoreSettings(loaded *config.Loaded) {
 	store.SetPatchWindow(loaded.FormPatchWindow())
 	store.SetPatchWindowBytes(loaded.FormPatchWindowBytes())
 	store.SetCheckpointDefaults(loaded.Checkpoints())
+	store.SetRetentionDefault(loaded.Config.Store.RetentionMode)
 	if n, set := loaded.SegmentCacheBytes(); set {
 		store.SetSegmentCacheBudget(n)
 	}

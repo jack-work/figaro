@@ -31,6 +31,10 @@ func (t *Trunks) MayRetain(node, channel string) (bool, error) {
 }
 
 func (t *Trunks) Retain(node, channel string, dryRun bool) (Retention, error) {
+	return t.RetainBelow(node, channel, 0, dryRun)
+}
+
+func (t *Trunks) RetainBelow(node, channel string, floor uint64, dryRun bool) (Retention, error) {
 	r := Retention{Node: node, Channel: channel}
 	end, err := t.beginTrackedRead()
 	if err != nil {
@@ -60,6 +64,9 @@ func (t *Trunks) Retain(node, channel string, dryRun bool) (Retention, error) {
 		return r, nil
 	}
 	keep := func(first, last uint64) bool {
+		if floor > 0 && last >= floor {
+			return true
+		}
 		for _, p := range r.Pins {
 			if p >= first && p <= last {
 				return true
