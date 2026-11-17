@@ -16,6 +16,7 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/tape"
 	"github.com/jack-work/figaro/internal/term"
+	"github.com/jack-work/figaro/internal/testreap"
 )
 
 // The form-delta adornment in a real pty, driven from a synthetic tape:
@@ -353,6 +354,7 @@ func newAdornPaneFor(t *testing.T, page aria.Page, ready string) *adornPane {
 		}
 	}
 
+	scope := testreap.Scope(t)
 	p := &adornPane{t: t, sock: filepath.Join(dir, "tmux.sock"), w: adornCols, h: adornRows}
 	var panePID int
 	t.Cleanup(func() {
@@ -362,8 +364,10 @@ func newAdornPaneFor(t *testing.T, page aria.Page, ready string) *adornPane {
 
 	cmd := fmt.Sprintf("env FIGARO_STATE_DIR=%s/state FIGARO_RUNTIME_DIR=%s/run FIGARO_CONFIG_DIR=%s/config %s replay %s",
 		dir, dir, dir, bin, tapePath)
-	out, err := exec.Command("tmux", "-S", p.sock, "-f", conf, "new-session", "-d",
-		"-x", fmt.Sprint(p.w), "-y", fmt.Sprint(p.h), "sh", "-c", cmd).CombinedOutput()
+	start := exec.Command("tmux", "-S", p.sock, "-f", conf, "new-session", "-d",
+		"-x", fmt.Sprint(p.w), "-y", fmt.Sprint(p.h), "sh", "-c", cmd)
+	start.Env = append(os.Environ(), "TMUX=", scope)
+	out, err := start.CombinedOutput()
 	if err != nil {
 		t.Skipf("tmux new-session: %v: %s", err, out)
 	}

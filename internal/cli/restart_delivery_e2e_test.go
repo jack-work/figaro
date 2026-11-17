@@ -8,8 +8,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -296,13 +298,14 @@ func TestATurnCutByACrashMidToolResumesOnItsOwnAfterRestart(t *testing.T) {
 		case strings.Contains(last, figaro.ResumeNotice):
 			return false, sseText("resumed")
 		case strings.Contains(last, "long job"):
-			return false, sseBash("toolu_long", fmt.Sprintf("touch %s; sleep 20", started))
+			return false, sseBash("toolu_long", fmt.Sprintf("echo $$ >%s.pid; touch %s; exec sleep 20", started, started))
 		}
 		return false, sseText("ack")
 	})
 	rig := newSendRig(t, prov.srv.URL)
 
 	rig.mint(t, "long job")
+	t.Cleanup(func() { endOrphanedTool(started + ".pid") })
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		if _, err := os.Stat(started); err == nil {
@@ -439,4 +442,16 @@ func TestStopHupHoldsWhenATurnWillNotDie(t *testing.T) {
 	rig.must(t, "stop", "--force", "--hup")
 	rig.start(t)
 	prov.expectQuiet(t, n, 4*time.Second, "a turn stopped with --hup was resumed")
+}
+
+// A crash leaves the tool it cut running, orphaned; the test started it, so
+// the test ends it.
+func endOrphanedTool(pidfile string) {
+	raw, err := os.ReadFile(pidfile)
+	if err != nil {
+		return
+	}
+	if pid, err := strconv.Atoi(strings.TrimSpace(string(raw))); err == nil && pid > 0 {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+	}
 }

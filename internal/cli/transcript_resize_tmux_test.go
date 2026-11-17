@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/testreap"
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
@@ -121,13 +122,14 @@ func TestTranscriptPaint_RealTerminalResize(t *testing.T) {
 // the first half written, `go` the resize complete.
 func tmuxReplayResize(t *testing.T, dir, pre, post string, w0, h0, w1, h1 int) []string {
 	t.Helper()
+	scope := testreap.Scope(t)
 	socket := filepath.Join(dir, "tmux.sock")
 	readyFile := filepath.Join(dir, "ready")
 	goFile := filepath.Join(dir, "go")
 
 	run := func(args ...string) (string, error) {
 		cmd := exec.Command("tmux", append([]string{"-S", socket, "-f", "/dev/null"}, args...)...)
-		cmd.Env = append(os.Environ(), "TMUX=")
+		cmd.Env = append(os.Environ(), "TMUX=", scope)
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
