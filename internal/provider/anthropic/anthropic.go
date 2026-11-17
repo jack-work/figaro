@@ -300,6 +300,7 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 				attribute.String("error.type", wirelog.ErrorClass(err)))
 			continue
 		}
+		recordUnifiedRateLimit(ctx, resp.Header)
 		// The 401 retry does not consume the transient budget.
 		if resp.StatusCode == http.StatusUnauthorized && !authRetried {
 			io.Copy(io.Discard, resp.Body)
