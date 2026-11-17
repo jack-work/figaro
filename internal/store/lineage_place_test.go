@@ -120,8 +120,17 @@ func TestAViewHidingOwnRowsRefusesToTruncate(t *testing.T) {
 	open := func(node string) arialog.Log[message.Message] {
 		return newXwalLog[message.Message](be.store, node, chanIR, true)
 	}
-	hiding := newTreeLog[message.Message](open(c), c, be.irCache, irEntrySize, irKey[message.Message],
+	rebased := newTreeLog[message.Message](open(c), c, be.irCache, irEntrySize, irKey[message.Message],
 		func() []fwtree.Ref { return raw }).withNodeOpener(open).seedingTail()
+	if rebased.HidesOwnRows() {
+		t.Fatalf("the rebased view of a falling lineage %v hides own rows: shadowed ancestors must drop out", raw)
+	}
+	if got, want := len(rebased.Read()), len(cLog.Read()); got != want {
+		t.Fatalf("the rebased view of a falling lineage serves %d records, the pruned lineage %d", got, want)
+	}
+
+	hiding := newTreeLog[message.Message](open(c), c, be.irCache, irEntrySize, irKey[message.Message],
+		func() []fwtree.Ref { return raw }).withNodeOpener(open)
 	if !hiding.HidesOwnRows() {
 		t.Fatalf("a falling lineage %v must report hidden own rows", raw)
 	}

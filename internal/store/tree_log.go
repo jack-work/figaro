@@ -269,7 +269,19 @@ func (l *treeLog[T]) rebase(refs []fwtree.Ref) []fwtree.Ref {
 		}
 		out[i].Base = base
 	}
-	return out
+	return dropShadowedAncestors(out)
+}
+
+func dropShadowedAncestors(refs []fwtree.Ref) []fwtree.Ref {
+	head := len(refs) - 1
+	for i := head - 1; i >= 0; i-- {
+		if i > 0 && refs[i].Base >= refs[head].Base {
+			continue
+		}
+		head--
+		refs[head] = refs[i]
+	}
+	return refs[head:]
 }
 
 func (l *treeLog[T]) substrateOf(node string) arialog.Log[T] {
