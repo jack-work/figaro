@@ -29,6 +29,7 @@ permissions = ["*:*"]
 permissions = [
   "read:owner:self", "listen:owner:self", "send:owner:self",
   "create:*",
+  "mint:*",
 ]
 
 [[bind]]

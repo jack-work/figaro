@@ -23,10 +23,10 @@ const grantPolicy = `
 permissions = ["*:*"]
 
 [roles.box]
-permissions = ["create:*", "fork:*", "use:sandbox:dev-3"]
+permissions = ["create:*", "mint:*", "fork:*", "use:sandbox:dev-3"]
 
 [roles.remote]
-permissions = ["create:*", "use:sandbox:elsewhere"]
+permissions = ["create:*", "mint:*", "use:sandbox:elsewhere"]
 
 [[bind]]
 role = "owner"

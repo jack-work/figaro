@@ -206,13 +206,41 @@ func TestAStarVerbCoversOnlyFigarosVerbs(t *testing.T) {
 	}
 }
 
+// figaro.create needs mint, not create, so a figaro scoped to create (role
+// minting, form.create) still cannot figaro.create (figaro new).
+func TestCreateGrantsRoleMintingNotFigaroCreate(t *testing.T) {
+	m := selectors{}
+	createOnly := jkauthz.Grants{{Verb: "create", Object: "*"}}
+	mintVerb, ok := rpc.VerbOf(rpc.MethodCreate)
+	if !ok || mintVerb != rpc.VerbMint {
+		t.Fatalf("figaro.create's verb = %v, want %v", mintVerb, rpc.VerbMint)
+	}
+	formCreateVerb, ok := rpc.VerbOf(rpc.MethodFormCreate)
+	if !ok || formCreateVerb != rpc.VerbCreate {
+		t.Fatalf("form.create's verb = %v, want %v", formCreateVerb, rpc.VerbCreate)
+	}
+	if m.covered(createOnly, jkauthz.Grant{Verb: string(rpc.VerbMint), Object: "aria:x"}) {
+		t.Error("create:* covers mint")
+	}
+	if !m.covered(createOnly, jkauthz.Grant{Verb: string(rpc.VerbCreate), Object: "aria:x"}) {
+		t.Error("create:* does not cover create")
+	}
+	mintOnly := jkauthz.Grants{{Verb: "mint", Object: "*"}}
+	if !m.covered(mintOnly, jkauthz.Grant{Verb: string(rpc.VerbMint), Object: "aria:x"}) {
+		t.Error("mint:* does not cover mint")
+	}
+	if m.covered(mintOnly, jkauthz.Grant{Verb: string(rpc.VerbCreate), Object: "aria:x"}) {
+		t.Error("mint:* covers create")
+	}
+}
+
 func TestExportedSetsSpellEveryStarVerbOut(t *testing.T) {
 	gs, err := DecodeFigaroGrants(json.RawMessage(`["*:aria:x", "read:*", "egress:*"]`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := ExportGrants(gs)
-	want := "read:*, listen:aria:x, send:aria:x, fork:aria:x, set:aria:x, create:aria:x, kill:aria:x, admin:aria:x, use:aria:x, join:aria:x, decide:aria:x, adopt:aria:x, lease:aria:x, say:aria:x, egress:*"
+	want := "read:*, listen:aria:x, send:aria:x, fork:aria:x, set:aria:x, create:aria:x, mint:aria:x, kill:aria:x, admin:aria:x, use:aria:x, join:aria:x, decide:aria:x, adopt:aria:x, lease:aria:x, say:aria:x, egress:*"
 	if strings.Join(got, ", ") != want {
 		t.Fatalf("got  %s\nwant %s", strings.Join(got, ", "), want)
 	}

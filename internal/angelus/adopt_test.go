@@ -27,7 +27,7 @@ func adoptRig(t *testing.T) (r grantRig, q, x string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grantTo(t, r, "user:mallory", "create:*", "use:sandbox:local")
+	grantTo(t, r, "user:mallory", "create:*", "mint:*", "use:sandbox:local")
 	hers, err := r.create(mallory(), "mock")
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func grantEach(t *testing.T, r grantRig, grants map[string][]string) {
 // shown is one the caller may read.
 func TestParkedProposalsShowOnlyToTheirHoldersAndProposers(t *testing.T) {
 	r, q, x := adoptRig(t)
-	grantTo(t, r, "user:eve", "create:*", "use:sandbox:local")
+	grantTo(t, r, "user:eve", "create:*", "mint:*", "use:sandbox:local")
 	ev, err := r.create(as("user", "eve"), "mock")
 	if err != nil {
 		t.Fatal(err)

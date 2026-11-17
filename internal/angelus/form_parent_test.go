@@ -14,7 +14,7 @@ const creatorPolicy = `
 permissions = ["*:*"]
 
 [roles.creator]
-permissions = ["create:*", "use:sandbox:local", "read:owner:self"]
+permissions = ["create:*", "mint:*", "use:sandbox:local", "read:owner:self"]
 
 [[bind]]
 role = "owner"
