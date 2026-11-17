@@ -1508,6 +1508,7 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 			{Long: "outfit", Short: "O", Subwords: []string{"new", "fork", "apply"}, Description: "new/fork/apply: outfit NAMES"},
 			{Long: "managed", Subwords: []string{"apply"}, Description: "apply: comma-separated paths managed by the outfit"},
 			{Long: "check", IsBool: true, Subwords: []string{"apply"}, Description: "apply: report changes without writing"},
+			{Long: "manifest", Subwords: []string{"apply"}, Description: "apply: TOML file of declared roles; replaces --id, --outfit and --managed"},
 			{Long: "set", Short: "S", Repeats: true, Subwords: []string{"new", "fork"}, Description: "new/fork: birth keys, k=v or a JSON literal; repeats"},
 			{Long: "delete", Short: "D", Repeats: true, Subwords: []string{"new", "fork"}, Description: "new/fork: key paths the birth patch removes; repeats"},
 			{Long: "list", IsBool: true, Subwords: []string{"outfit"}, Description: "outfit: list available outfits and exit"},
@@ -1526,6 +1527,12 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 			case "apply":
 				if len(args) != 1 {
 					return fmt.Errorf("form apply takes --id, --outfit and --managed, not positional arguments")
+				}
+				if manifest := ctx.Flag("manifest"); manifest != "" {
+					if ctx.Flag("id") != "" || ctx.Flag("outfit") != "" || ctx.Flag("managed") != "" {
+						return fmt.Errorf("form apply --manifest declares its roles; drop --id, --outfit and --managed")
+					}
+					return runFormApplyManifest(manifest, ctx.BoolFlag("check"), ctx.BoolFlag("json"))
 				}
 				return runFormApply(ctx.Flag("id"), ctx.Flag("outfit"), ctx.Flag("managed"), ctx.BoolFlag("check"), ctx.BoolFlag("json"))
 			case "outfit":
