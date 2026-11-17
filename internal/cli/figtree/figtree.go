@@ -16,6 +16,8 @@ type Node struct {
 	// Label survives every width fallback.
 	Label string
 
+	Badge string
+
 	// Fields is keyed as Columns and FieldColors name them; a missing field
 	// reads as "".
 	Fields map[string]string
@@ -63,6 +65,7 @@ type Row struct {
 	Branch string
 	Marker string
 	Label  string
+	Badge  string
 	Fields map[string]string
 
 	Color      string
@@ -74,6 +77,9 @@ func (r Row) Cell() string {
 	label := r.Label
 	if r.Color != "" {
 		label = term.Paint(r.Color, label)
+	}
+	if r.Badge != "" {
+		label = term.Holder(r.Badge) + "  " + label
 	}
 	out := r.Branch + r.Marker
 	if r.Marker != "" && label != "" {
@@ -102,6 +108,7 @@ func (t Tree) Rows() []Row {
 			Branch:     branch,
 			Marker:     n.Marker,
 			Label:      n.Label,
+			Badge:      n.Badge,
 			Fields:     n.Fields,
 			Color:      t.colorOf(n),
 			Background: t.backgroundOf(n),
