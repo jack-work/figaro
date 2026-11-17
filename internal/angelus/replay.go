@@ -10,7 +10,6 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/store"
 )
 
 type replaysInquiry interface {
@@ -86,13 +85,12 @@ func (h *handlers) routeReplaying(ctx context.Context, hb *ariaHub, method, id s
 	return resp, nil
 }
 
-const replayTTL = "1h"
-
-func replayBirth(r form.Replay, dress form.Patch) form.Patch {
-	out := r.Patch(form.Snapshot{})
-	if _, set := dress.Entry(store.SystemTTLKey); !set {
-		ttl, _ := json.Marshal(replayTTL)
-		out = form.Merge(out, form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemTTLKey: ttl}, nil))
+func replayBirth(r *form.Replay, inherited form.Snapshot) form.Patch {
+	if r != nil {
+		return r.Patch(form.Snapshot{})
 	}
-	return out
+	if _, ok := inherited.Get(form.ReplayKey); ok {
+		return form.Build(inherited, nil, []string{form.ReplayKey})
+	}
+	return form.Patch{}
 }

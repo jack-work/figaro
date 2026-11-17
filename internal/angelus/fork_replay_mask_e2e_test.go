@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
@@ -336,7 +337,7 @@ func TestAReplayAnswersToolsFromTheRecordNeverTheHost(t *testing.T) {
 	require.True(t, os.IsNotExist(statErr), "a replayed tool ran on the host")
 }
 
-func TestAReplayTakesNoMessagesNoRoleAndExpires(t *testing.T) {
+func TestAReplayingFigaroTakesNoMessagesAndHoldsNoRole(t *testing.T) {
 	a, acli, ctx, parent := replayFixture(t)
 	resp, err := acli.Replay(ctx, parent, 2, nil, nil)
 	require.NoError(t, err)
@@ -357,9 +358,27 @@ func TestAReplayTakesNoMessagesNoRoleAndExpires(t *testing.T) {
 	require.NoError(t, err)
 	_, err = c.Cast(ctx, rpc.CastRequest{FormID: role.FormID})
 	require.ErrorContains(t, err, "holds no role")
-	require.Equal(t, "1h", *boardOf(t, acli, ctx, branch).Lookup("system.ttl"))
+}
 
-	kept, err := acli.Replay(ctx, parent, 2, nil, rawPatch(map[string]string{"system.ttl": `"10m"`}))
+// Defends #114: replay is not for life. It brings no lifetime of its own,
+// and a plain fork of a replaying figaro is an ordinary figaro.
+func TestReplayIsNotInheritedAndSetsNoLifetime(t *testing.T) {
+	a, acli, ctx, parent := replayFixture(t)
+	resp, err := acli.Replay(ctx, parent, 2, nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, "10m", *boardOf(t, acli, ctx, kept.Alternative).Lookup("system.ttl"), "the caller's ttl wins")
+	branch := resp.Alternative
+	require.Eventually(t, func() bool { return answeredTurns(t, acli, ctx, branch) == 2 }, 10*time.Second, 20*time.Millisecond)
+	waitIdle(t, a, branch)
+	board := boardOf(t, acli, ctx, branch)
+	_, replaying := form.ReadReplay(board)
+	require.True(t, replaying)
+	require.False(t, board.Has("system.ttl"), "a replay sets no ttl")
+
+	plain, err := acli.Fork(ctx, branch, 0, 0, nil, nil)
+	require.NoError(t, err)
+	child := boardOf(t, acli, ctx, plain.Alternative)
+	require.False(t, child.Has(form.ReplayKey), "a plain fork inherited the replay")
+	askAt(t, a, plain.Alternative, "a fresh question", "Tuesday, November 17, 2026, 10AM EST")
+	marks := replayMarks(t, acli, plain.Alternative)
+	require.Nil(t, marks[len(marks)-1], "the plain fork's turn ran under replay rules")
 }
