@@ -53,18 +53,18 @@ let
     test -z "''${FIGARO_TROUPE:-}"
     test "$1" = form
     test "$2" = apply
-    shift 2
-    id=
+    test "$3" = --manifest
+    manifest=$4
+    shift 4
     check=false
-    while [ "$#" -gt 0 ]; do
-      case "$1" in
-        --id) id=$2; shift ;;
+    for arg in "$@"; do
+      case "$arg" in
         --check) check=true ;;
+        *) exit 3 ;;
       esac
-      shift
     done
-    test -n "$id"
-    printf '%s %s\n' "$id" "$check"
+    printf 'check=%s\n' "$check"
+    cat "$manifest"
   '';
   roles = eval {
     programs.figaro = {
@@ -153,11 +153,16 @@ pkgs.runCommand "figaro-hm-module"
         export FIGARO_ARIA=fixture-caller
         export FIGARO_TROUPE=must-not-be-forwarded
         ${rolesPackage}/bin/figaro-apply-roles > actual
-        printf '%s\n' '@11111111 true' '@22222222 false' > expected
-        diff -u expected actual
+        head -n1 actual | grep -qx 'check=false'
         ${rolesPackage}/bin/figaro-apply-roles --check > checked
-        printf '%s\n' '@11111111 true' '@22222222 true' > expected-check
-        diff -u expected-check checked
+        head -n1 checked | grep -qx 'check=true'
+        tail -n +2 actual > manifest.toml
+        ${pkgs.remarshal}/bin/toml2json manifest.toml > manifest.json
+        ${pkgs.jq}/bin/jq -e '
+          .roles == {
+            preview: {id: "@11111111", outfits: ["fixture"], managed: ["charter"], mode: "check"},
+            reviewed: {id: "@22222222", outfits: ["fixture"], managed: ["charter"], mode: "apply"}
+          }' manifest.json > /dev/null
         ${rolesPackage}/bin/figaro-apply-roles --help > help
         grep -q '^Usage:' help
         if ${rolesPackage}/bin/figaro-apply-roles unexpected > unexpected 2>/dev/null; then
