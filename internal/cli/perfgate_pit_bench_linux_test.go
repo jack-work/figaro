@@ -152,9 +152,13 @@ func openPitPager(b *testing.B) *pitPager {
 	if err := os.CopyFS(filepath.Join(r.root, "state", "arias"), os.DirFS(src)); err != nil {
 		b.Fatal(err)
 	}
+	raw, err := r.cmd("ls", "-j").Output()
+	if err != nil {
+		b.Fatalf("ls -j: %v", err)
+	}
 	var listed []json.RawMessage
-	if err := json.Unmarshal([]byte(r.run("ls", "-j")), &listed); err != nil {
-		b.Fatal(err)
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		b.Fatalf("ls -j: %v\n%s", err, raw)
 	}
 	if len(listed) < perfPitFigaros {
 		b.Fatalf("the daemon lists %d figaros from the fixture, want >= %d", len(listed), perfPitFigaros)
