@@ -240,6 +240,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := refuseReplayCoordinate(req); err != nil {
 		return nil, err
 	}
+	if err := h.refuseReplayFork(ctx, req); err != nil {
+		return nil, err
+	}
 	inherited, err := h.angelus.Backend.FormState(req.FigaroID)
 	if err != nil {
 		return nil, fmt.Errorf("fork: the board of %s cannot be read to check the patch against it: %w", req.FigaroID, err)
