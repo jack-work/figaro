@@ -63,7 +63,7 @@ func TestInputHeadingKeepsTurnWithoutMore(t *testing.T) {
 	}
 }
 
-func TestPagerFooterHasOneDoubleRangeRuleAndStatus(t *testing.T) {
+func TestPagerFooterHasOneRangeRuleAndStatus(t *testing.T) {
 	tr := coordFixture(t, false)
 	for _, w := range []int{24, 60, 100} {
 		ft := ldrender.NewFakeTerminal(w, 20)
@@ -76,10 +76,10 @@ func TestPagerFooterHasOneDoubleRangeRuleAndStatus(t *testing.T) {
 		if len(screen) != 20 || ldrender.Width(rule) != w {
 			t.Fatalf("w=%d: frame has %d rows, range rule has %d columns", w, len(screen), ldrender.Width(rule))
 		}
-		if !strings.HasPrefix(rule, ruleDouble) || !strings.HasSuffix(rule, "live") || strings.Contains(rule, ruleSingle) {
-			t.Fatalf("w=%d: bottom range rule=%q", w, rule)
+		if !strings.HasPrefix(rule, ruleSingle) || !strings.HasSuffix(rule, "live") || strings.Contains(rule, ruleDouble) {
+			t.Fatalf("w=%d: a resting range rule must be single: %q", w, rule)
 		}
-		if strings.Contains(screen[len(screen)-1], ruleDouble) {
+		if strings.Contains(screen[len(screen)-1], ruleSingle) || strings.Contains(screen[len(screen)-1], ruleDouble) {
 			t.Fatalf("w=%d: extra rule occupies the status row: %q", w, screen[len(screen)-1])
 		}
 	}

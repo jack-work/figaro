@@ -13,8 +13,9 @@ import (
 
 // Gluck, 2026-11-07: toggling a pit drew one wrong frame before the right one.
 // A toggle must go from the old frame straight to the new one. The header's
-// handoff sweep is a designed animation, so its rule rows are masked; every
-// other row of every frame the toggle sends must already be the final frame.
+// and the floor's handoff sweeps are designed animations, so rule rows are
+// masked; every other row of every frame the toggle sends must already be
+// the final frame.
 
 type frameTape struct {
 	vt     *vtScreen
@@ -43,7 +44,7 @@ func (f *frameTape) mark() int { return len(f.frames) }
 func maskSweep(rows []string) []string {
 	out := make([]string, len(rows))
 	for i, r := range rows {
-		if strings.Contains(r, ruleDouble) {
+		if strings.ContainsAny(r, ruleSingle+ruleDouble) {
 			r = "<sweep>"
 		}
 		out[i] = strings.TrimRight(r, " ")

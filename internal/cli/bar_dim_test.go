@@ -69,7 +69,7 @@ func TestTheBarStaysFaintAfterACutMantra(t *testing.T) {
 	s.metrics = aria.Metrics{Mantra: strings.Repeat("a mantra far too long for the bar ", 4), ContextTokens: 105}
 	s.limit = 200_000
 	s.setNoticeAt("provider: 529 overloaded, retrying in a while", alertError)
-	rows := footerStanza(s, 100, "", "", false)
+	rows := footerStanza(s, 100, "", "", false, ruleNeverDouble)
 	assertDimFrom(t, rows[len(rows)-1], "105/")
 }
 
@@ -81,6 +81,6 @@ func TestTheBarStaysFaintAfterAnInterrupt(t *testing.T) {
 	s.metrics = aria.Metrics{Mantra: "short", ContextTokens: 105}
 	s.limit = 200_000
 	s.setTurn(turnStatusInterrupted)
-	rows := footerStanza(s, 100, "", "", true)
+	rows := footerStanza(s, 100, "", "", true, ruleNeverDouble)
 	assertDimFrom(t, rows[len(rows)-1], ariaName("9c898301aaba3ad8d3c747f0b955a600"))
 }

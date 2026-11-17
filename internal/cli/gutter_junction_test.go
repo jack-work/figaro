@@ -232,7 +232,7 @@ func TestFooterRuleJoinsOnlyAGutterItCuts(t *testing.T) {
 		tr.renderFrame()
 		rows := stripANSIAll(ft.Screen())
 		for i := len(rows) - 1; i >= 0; i-- {
-			if strings.HasPrefix(rows[i], "══") || strings.HasPrefix(rows[i], "═╧") {
+			if strings.HasPrefix(rows[i], ruleSingle) || strings.HasPrefix(rows[i], ruleDouble) {
 				return rows[i]
 			}
 		}
@@ -241,12 +241,12 @@ func TestFooterRuleJoinsOnlyAGutterItCuts(t *testing.T) {
 	}
 
 	tr.offset = span.first
-	if rule := floorRule(); !strings.HasPrefix(rule, "══╧═") {
+	if rule := floorRule(); !strings.HasPrefix(rule, "──┴─") {
 		t.Fatalf("a block that runs past the rule must be cut by it, got %q", rule)
 	}
 	// At the tail the block ends against the rule: no junction.
 	tr.offset = maxOff
-	if rule := floorRule(); strings.Contains(rule, "╧") {
+	if rule := floorRule(); strings.ContainsAny(rule, "┬┴┼╤╧╪") {
 		t.Fatalf("the last row of a block joins nothing, got %q", rule)
 	}
 }

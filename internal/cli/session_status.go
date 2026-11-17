@@ -434,11 +434,27 @@ func (s *sessionStatus) turnLabel(verbose bool) string {
 	return s.turn.paint(sym)
 }
 
-// ruleLine is undecorated; the caller dims it.
+// ruleLine is undecorated; the caller dims it. Resting is single, so a caller
+// with no chrome state of its own gets the default weight.
 func (s *sessionStatus) ruleLine(width int, label, pos string) string {
+	return s.ruleLineOf(width, label, pos, ruleNeverDouble)
+}
+
+func ruleAllDouble(int) bool { return true }
+
+func ruleNeverDouble(int) bool { return false }
+
+func ruleCell(double func(int) bool, i int) string {
+	if double(i) {
+		return ruleDouble
+	}
+	return ruleSingle
+}
+
+func (s *sessionStatus) ruleLineOf(width int, label, pos string, double func(int) bool) string {
 	left, right := "", ""
 	if label != "" {
-		left = "══ " + label + " "
+		left = ruleCell(double, 0) + ruleCell(double, 1) + " " + label + " "
 	}
 	if pos != "" {
 		right = " " + pos
@@ -450,7 +466,14 @@ func (s *sessionStatus) ruleLine(width int, label, pos string) string {
 	if fill < 3 {
 		fill = 3
 	}
-	return clipToWidth(left+strings.Repeat("═", fill)+right, width)
+	var b strings.Builder
+	b.WriteString(left)
+	from := runewidth.StringWidth(left)
+	for i := range fill {
+		b.WriteString(ruleCell(double, from+i))
+	}
+	b.WriteString(right)
+	return clipToWidth(b.String(), width)
 }
 
 func (s *sessionStatus) panelLines() []string {
@@ -521,7 +544,7 @@ func formatTokenCount(tokens int) string {
 
 // bookendLines is the pager's footer with no position label, at the same verbosity.
 func bookendLines(status *sessionStatus) []string {
-	return footerStanza(status, termWidth(), "", pitNothing, status.barVerbose())
+	return footerStanza(status, termWidth(), "", pitNothing, status.barVerbose(), ruleNeverDouble)
 }
 
 func formatCtxCell(tokens int) string {
