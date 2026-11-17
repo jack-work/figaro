@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mattn/go-runewidth"
 )
@@ -38,7 +39,43 @@ func (t *transcript) transcriptRuleFor(body int) string {
 	if t.follow {
 		pos = strings.TrimSpace(pos + " live")
 	}
-	return "\x1b[2m" + t.status.ruleLine(t.w, t.composerHints(), pos) + "\x1b[0m"
+	return "\x1b[2m" + t.status.ruleLineOf(t.w, t.composerHints(), pos, t.pitRuleCells()) + "\x1b[0m"
+}
+
+const pitCollapsedRows = 2
+
+type pitRuleState struct {
+	double bool
+	at     time.Time
+}
+
+func (t *transcript) pitRuleDouble() bool {
+	return t.pit.open() && t.focused == focusPit && !t.boxOpen() && !t.inSearch && t.pitHeight() > pitCollapsedRows
+}
+
+func (t *transcript) pitRuleCells() func(int) bool {
+	want := t.pitRuleDouble()
+	if want && !t.pitRule.double {
+		t.pitRule.at = t.clock()
+	}
+	t.pitRule.double = want
+	if !want {
+		return ruleNeverDouble
+	}
+	r, running := t.handoffRadius(t.pitRule.at)
+	if !running {
+		return ruleAllDouble
+	}
+	n := max(t.w, 3)
+	return func(i int) bool { return dyadicDouble(handoffLevel, i, n, r) }
+}
+
+func (t *transcript) pitRuleRunning() bool {
+	if !t.pitRule.double {
+		return false
+	}
+	_, running := t.handoffRadius(t.pitRule.at)
+	return running
 }
 
 type pitFocus uint8
