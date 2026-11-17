@@ -179,6 +179,16 @@ func (t *transcript) openQueueFromKey() {
 	}
 }
 
+func (t *transcript) openQueueFromSend() {
+	t.queueDismissed = false
+	if !t.queueEmpty() {
+		t.showQueuedAuto(true)
+	}
+	if t.queuedFetch != nil {
+		t.queuedFetch()
+	}
+}
+
 // An unreadable queue is not empty.
 func (t *transcript) queueEmpty() bool {
 	return len(t.queued) == 0 && t.queuedErr == ""

@@ -107,7 +107,7 @@ func (in *interactiveInput) execSendComposer(text string, submittedAt time.Time)
 		}
 		if resp != nil && resp.Active {
 			in.mu.Lock()
-			in.lt.tr.openQueueFromKey()
+			in.lt.tr.openQueueFromSend()
 			in.mu.Unlock()
 		}
 		return "sent", nil
@@ -146,7 +146,7 @@ func (in *interactiveInput) commandSend(ctx context.Context, args []string) (str
 	if plan.spec == "" {
 		if resp != nil && resp.Active {
 			in.mu.Lock()
-			in.lt.tr.openQueueFromKey()
+			in.lt.tr.openQueueFromSend()
 			in.mu.Unlock()
 		}
 		return "sent", nil
