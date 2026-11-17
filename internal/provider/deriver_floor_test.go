@@ -101,3 +101,71 @@ func snapJSON(t *testing.T, s form.Snapshot) string {
 	}
 	return string(b)
 }
+
+// #106: a long study window over a few hot keys folds to far more than the
+// state it lands on; the window goes as one diff, and lands on the same state.
+func TestALongStudyWindowGoesAsTheStateDiff(t *testing.T) {
+	study := flooredForm{stated: true, n: 410}
+	d := NewDeriver(nil, map[string]Form{"@s": study})
+	e := inputAt(1, 0)
+	e.StudyVersions = map[string]uint64{"@s": 400}
+	msg, _, _ := d.Next(e)
+	ps := msg.StudyPatches["@s"]
+	if len(ps) != 1 {
+		t.Fatalf("a 400-patch window over 3 keys went as %d patches", len(ps))
+	}
+	want, _ := study.StateAt(400)
+	if g, w := snapJSON(t, form.Fold(form.Snapshot{}, ps)), snapJSON(t, want); g != w {
+		t.Fatalf("the diff lands on %s, the form is %s", g, w)
+	}
+	d.Commit(e, msg)
+	e = inputAt(2, 0)
+	e.StudyVersions = map[string]uint64{"@s": 410}
+	msg, _, _ = d.Next(e)
+	if len(msg.StudyPatches["@s"]) != 10 {
+		t.Fatalf("a short window was collapsed: %d patches", len(msg.StudyPatches["@s"]))
+	}
+}
+
+// countedForm counts its state reads: each one is a replay of the libretto.
+type countedForm struct {
+	flooredForm
+	reads *int
+}
+
+func (f countedForm) StateAt(v uint64) (form.Snapshot, bool) {
+	*f.reads++
+	return f.flooredForm.StateAt(v)
+}
+
+// Consecutive long windows read the studied form's state once: each window
+// starts where the one before ended, and that state is folded, not replayed.
+func TestLongStudyWindowsReadTheStateOnce(t *testing.T) {
+	reads := 0
+	study := countedForm{flooredForm{stated: true, n: 2000}, &reads}
+	d := NewDeriver(nil, map[string]Form{"@s": study})
+	for i, at := range []uint64{400, 800, 810, 1200, 2000} {
+		e := inputAt(uint64(i+1), 0)
+		e.StudyVersions = map[string]uint64{"@s": at}
+		msg, _, _ := d.Next(e)
+		want, _ := study.flooredForm.StateAt(at)
+		d.Commit(e, msg)
+		if got := snapJSON(t, d.studyAt["@s"].snap); got != snapJSON(t, want) {
+			t.Fatalf("the kept state at %d is %s, the form is %s", at, got, snapJSON(t, want))
+		}
+	}
+	if reads != 0 {
+		t.Fatalf("five windows from the start read the state %d times", reads)
+	}
+	d2 := NewDeriver(nil, map[string]Form{"@s": study})
+	d2.lastStudy["@s"] = 400
+	for i, at := range []uint64{800, 1200, 2000} {
+		e := inputAt(uint64(i+1), 0)
+		e.StudyVersions = map[string]uint64{"@s": at}
+		msg, _, _ := d2.Next(e)
+		d2.Commit(e, msg)
+	}
+	if reads != 1 {
+		t.Fatalf("three long windows from a seeded cursor read the state %d times, want 1", reads)
+	}
+}

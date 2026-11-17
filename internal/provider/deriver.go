@@ -22,6 +22,13 @@ type Deriver struct {
 	heldAt    uint64
 	heldForm  bool
 	heldStudy map[string]bool
+
+	studyAt map[string]studyState
+}
+
+type studyState struct {
+	version uint64
+	snap    form.Snapshot
 }
 
 func NewDeriver(bound Form, studies map[string]Form) *Deriver {
@@ -163,7 +170,12 @@ func (d *Deriver) Next(entry arialog.Entry[message.Message]) (msg message.Messag
 			if acc == nil {
 				continue
 			}
-			ps, ok := resync(acc, d.lastStudy[fid], upTo, form.Snapshot{}, false)
+			after := d.lastStudy[fid]
+			from, known := d.studyStateAt(fid, acc, after, false)
+			ps, ok := resync(acc, after, upTo, from, known)
+			if ok {
+				ps = d.collapseStudyWindow(fid, acc, after, upTo, ps)
+			}
 			if !ok {
 				if d.heldStudy == nil {
 					d.heldStudy = map[string]bool{}
@@ -241,4 +253,50 @@ func (d *Deriver) Skip(entry arialog.Entry[message.Message]) {
 	for fid, upTo := range entry.StudyVersions {
 		d.lastStudy[fid] = maxVersion(d.lastStudy[fid], upTo)
 	}
+}
+
+const studyCollapseFrom = 32
+
+func (d *Deriver) collapseStudyWindow(fid string, f Form, after, upTo uint64, ps []message.Patch) []message.Patch {
+	from, known := d.studyStateAt(fid, f, after, len(ps) >= studyCollapseFrom)
+	if !known {
+		return ps
+	}
+	to := form.Fold(from, ps)
+	if d.studyAt == nil {
+		d.studyAt = map[string]studyState{}
+	}
+	d.studyAt[fid] = studyState{version: upTo, snap: to}
+	if len(ps) < studyCollapseFrom {
+		return ps
+	}
+	diff := to.Diff(from)
+	if diff.IsIdentity() {
+		return nil
+	}
+	fold := 0
+	for _, p := range ps {
+		fold += p.ApproxBytes()
+	}
+	if diff.ApproxBytes() >= fold {
+		return ps
+	}
+	return []message.Patch{diff}
+}
+
+func (d *Deriver) studyStateAt(fid string, f Form, at uint64, load bool) (form.Snapshot, bool) {
+	if c, ok := d.studyAt[fid]; ok && c.version == at {
+		return c.snap, true
+	}
+	if !load {
+		return form.Snapshot{}, false
+	}
+	if at == 0 {
+		return form.Snapshot{}, true
+	}
+	s, ok := f.(formStater)
+	if !ok {
+		return form.Snapshot{}, false
+	}
+	return s.StateAt(at)
 }
