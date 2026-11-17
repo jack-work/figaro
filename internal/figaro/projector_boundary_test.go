@@ -30,11 +30,3 @@ func TestEngineDoesNotDependOnTheProjection(t *testing.T) {
 		}
 	}
 }
-
-// The engine must remain constructible with no projection at all.
-func TestNilProjectorIsLegal(t *testing.T) {
-	var p interface{ ResetTools() }
-	if p != nil {
-		t.Fatal("unreachable; this asserts only that a nil projector is expressible")
-	}
-}
