@@ -3,10 +3,13 @@ package store
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 const (
@@ -123,14 +126,24 @@ func (b *XwalBackend) RoleForms() (map[string]string, bool) {
 func (b *XwalBackend) RoleNamesByTarget() map[string][]string {
 	b.rolesMu.Lock()
 	defer b.rolesMu.Unlock()
-	out := map[string][]string{}
-	for formID, target := range b.roles.byForm {
-		if name := b.roles.names[formID]; name != "" {
-			out[target] = append(out[target], name)
+	var unnamed []string
+	for formID := range b.roles.byForm {
+		if b.roles.names[formID] == "" {
+			unnamed = append(unnamed, formID)
 		}
 	}
-	for _, names := range out {
+	short := rpc.ShortIDs(unnamed)
+	out := map[string][]string{}
+	for formID, target := range b.roles.byForm {
+		address := "@" + b.roles.names[formID]
+		if address == "@" {
+			address = "@" + strings.TrimPrefix(short[formID], "@")
+		}
+		out[target] = append(out[target], address)
+	}
+	for target, names := range out {
 		sort.Strings(names)
+		out[target] = slices.Compact(names)
 	}
 	return out
 }
