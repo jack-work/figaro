@@ -21,6 +21,7 @@ principals = ["user:SELF"]
 [roles.box]
 permissions = [
   "create:*",
+  "mint:*",
   "use:sandbox:self",
   "read:sandboxed:self", "listen:sandboxed:self", "send:sandboxed:self", "fork:sandboxed:self", "set:sandboxed:self", "kill:sandboxed:self",
 ]

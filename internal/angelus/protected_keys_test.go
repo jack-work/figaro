@@ -176,7 +176,7 @@ const remoteSetsPolicy = `
 permissions = ["*:*"]
 
 [roles.remote]
-permissions = ["set:*", "read:*", "create:*", "use:*"]
+permissions = ["set:*", "read:*", "create:*", "mint:*", "use:*"]
 
 [[bind]]
 role = "owner"
