@@ -287,7 +287,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		if replay, err = h.planReplay(req.FigaroID, req.AtTurn, atMainLT, dress); err != nil {
 			return nil, err
 		}
-		birth = form.Merge(birth, replay.record.Patch())
+		birth = form.Merge(birth, replay.birth(dress))
 	}
 	// interior is read off the coordinate, not the LT: forking at turn 1 has
 	// LT 0, which is also the head-fork sentinel.

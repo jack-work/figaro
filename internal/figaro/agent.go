@@ -153,6 +153,9 @@ type Agent struct {
 	turnSenders []promptSegment
 	turnFault   error
 
+	replayMu   sync.Mutex
+	replayTape *replayTape
+
 	spool      *Spool
 	spoolMu    sync.Mutex
 	spoolArmed bool
@@ -518,6 +521,9 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 
 // SubmitPromptFrom applies form input synchronously, so the caller learns of a refusal.
 func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender string) error {
+	if err := a.refuseAsReplay(); err != nil {
+		return err
+	}
 	// A refused token leaves the form unpatched and the inbox untouched.
 	text, err := a.rewriteInput(ctx, req.Text)
 	if err != nil {
