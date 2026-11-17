@@ -5,13 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/sdk"
 	"os"
 	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jack-work/figaro/sdk"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cmdkit"
@@ -23,6 +24,7 @@ type sendOpts struct {
 	id       string
 	target   string
 	stay     bool
+	noStudy  bool
 	raw      bool
 	verbatim bool
 	verbose  bool
@@ -227,6 +229,10 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			opts.stay = true
 			i++
 			continue
+		case a == "--no-studies" && bareTarget:
+			opts.noStudy = true
+			i++
+			continue
 		case a == "--attend", a == "--attend=true", a == "--attend=1":
 			opts.stay = false
 			i++
@@ -248,6 +254,13 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 		}
 	}
 	return opts, rest, opts.armOutfit()
+}
+
+func (o sendOpts) forkStudies() rpc.ForkStudies {
+	if o.noStudy {
+		return rpc.ForkStudiesNone
+	}
+	return rpc.ForkStudiesAtCut
 }
 
 // Repeats compose: `-O a -O b` means `-O a,b`.
@@ -709,6 +722,7 @@ var promptFlagDefs = []cmdkit.FlagDef{
 	{Long: "forget", Short: "f", IsBool: true, Description: "Submit the prompt and exit immediately"},
 	{Long: "json", Short: "j", IsBool: true, Description: "Emit a single JSON line on stdout"},
 	{Long: "stay", IsBool: true, Description: "Do not move this shell"},
+	{Long: "no-studies", IsBool: true, Description: "fork only: the branch studies nothing"},
 	{Long: "record", Description: "Record the wire to a tape file"},
 	{Long: "stdin", IsBool: true, Description: "Read the prompt from stdin, never from argv"},
 	{Long: "image", Description: "Attach an image file to the prompt (repeatable)"},

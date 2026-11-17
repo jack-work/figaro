@@ -21,6 +21,7 @@ func waitForFork(
 	ariaID string,
 	at forkPoint,
 	d dressing,
+	studies rpc.ForkStudies,
 	prompt string,
 ) (*rpc.ForkResponse, error) {
 	wireAt, note, err := resolveForkPoint(ctx, client, ariaID, at)
@@ -35,9 +36,13 @@ func waitForFork(
 	if note != "" {
 		report(ctx, "%s", note)
 	}
+	req := rpc.ForkRequest{FigaroID: ariaID, AtTurn: wireAt.turn, AtLT: wireAt.lt, Outfits: d.names, Patch: d.patch, Studies: studies}
+	if err := refuseUnknownFields(req); err != nil {
+		return nil, err
+	}
 	done := make(chan forkCallResult, 1)
 	go func() {
-		response, err := client.Fork(ctx, ariaID, wireAt.turn, wireAt.lt, d.names, d.patch)
+		response, err := client.ForkWith(ctx, req)
 		done <- forkCallResult{response: response, err: err}
 	}()
 

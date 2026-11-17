@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/sdk"
 	"os"
 	"os/signal"
 	"strings"
 	"time"
+
+	"github.com/jack-work/figaro/sdk"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
@@ -141,7 +142,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 
 	// The coordinate goes on the wire as named; the server owns the turn-to-LT
 	// translation.
-	fr, err := waitForFork(ctx, acli, trunkID, at, dressing{}, prompt)
+	fr, err := waitForFork(ctx, acli, trunkID, at, dressing{}, rpc.ForkStudiesAtCut, prompt)
 	if err != nil {
 		die("send: fork %s at %s: %s", trunkID, at, err)
 	}
