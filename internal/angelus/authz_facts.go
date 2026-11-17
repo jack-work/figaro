@@ -61,7 +61,23 @@ func (f storeFacts) DescendsFrom(aria, root string) bool {
 	return false
 }
 
+// sandboxHeld and formLabels are the store's indexes: authz asks SandboxOf for
+// every row a list returns, and a form read there re-opens what the idle
+// sweep dropped (#130).
+type sandboxHeld interface {
+	HeldSandbox(id string) (string, bool)
+}
+
+type formLabels interface {
+	FormLabels(id string) (name, target string, ok bool)
+}
+
 func (f storeFacts) RoleTarget(role string) string {
+	if l, ok := f.backend.(formLabels); ok {
+		if _, target, ready := l.FormLabels(role); ready {
+			return target
+		}
+	}
 	snap, err := f.backend.FormState(role)
 	if err != nil {
 		return ""
@@ -73,6 +89,9 @@ func (f storeFacts) RoleTarget(role string) string {
 }
 
 func (f storeFacts) SandboxOf(aria string) (string, bool) {
+	if h, ok := f.backend.(sandboxHeld); ok {
+		return h.HeldSandbox(aria)
+	}
 	snap, err := f.backend.FormState(aria)
 	if err != nil {
 		return "", false

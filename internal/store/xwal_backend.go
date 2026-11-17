@@ -39,6 +39,7 @@ type XwalBackend struct {
 
 	rolesMu       sync.Mutex
 	roles         roleIndex
+	sandboxes     sandboxIndex
 	roleScanFault map[string]error
 
 	root  string
@@ -428,6 +429,7 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 func (b *XwalBackend) formCommitted(ariaID string, patch message.Patch, f *Form) {
 	b.wroteTo(ariaID, time.Now().UnixMilli())
 	b.roleCommitted(ariaID, patch)
+	b.sandboxCommitted(ariaID, patch, f)
 	b.identityCommitted(ariaID, patch, f)
 	if namesOutfit(patch) {
 		b.labelChanged(ariaID)
@@ -1309,6 +1311,7 @@ func (b *XwalBackend) buryAs(reason string, doomed []string) {
 	}
 	b.ReapedForget(doomed...)
 	b.rolesForgotten(doomed)
+	b.sandboxes.forget(doomed)
 }
 
 // releaseStudies is best-effort: a delete is the recovery path for a broken

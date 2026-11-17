@@ -123,15 +123,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			if n.Kind == string(store.KindForm) {
 				entry.State = "form"
 				entry.LastActive = h.angelus.Backend.LastTS(n.ID)
-				if snap, err := h.angelus.Backend.FormState(n.ID); err == nil {
-					if v := snap.Lookup("name"); v != nil {
-						entry.Name = *v
-					}
-					if v := snap.Lookup("target-aria"); v != nil {
-						entry.TargetAria = *v
-					}
-					entry.Sandbox = h.heldBox(snap)
-				}
+				h.fillFormLabels(&entry)
 			}
 			result = append(result, entry)
 		}
@@ -305,5 +297,34 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, vers map[string
 	if n.Outfit != "" {
 		entry.OutfitName = n.Outfit
 		entry.OutfitVer = h.outfitVer(vers, n.Version, n.Outfit)
+	}
+}
+
+// fillFormLabels names a form row from the store's indexes; only a backend
+// without them opens the form. A list that opened every form replayed each
+// one the idle sweep had dropped (#130).
+func (h *handlers) fillFormLabels(entry *rpc.FigaroInfoResponse) {
+	b := h.angelus.Backend
+	l, labeled := b.(formLabels)
+	sb, boxed := b.(sandboxHeld)
+	if labeled && boxed {
+		if name, target, ready := l.FormLabels(entry.ID); ready {
+			box, read := sb.HeldSandbox(entry.ID)
+			if !read {
+				return
+			}
+			entry.Name, entry.TargetAria = name, target
+			entry.Sandbox = h.configuredBox(box)
+			return
+		}
+	}
+	if snap, err := b.FormState(entry.ID); err == nil {
+		if v := snap.Lookup("name"); v != nil {
+			entry.Name = *v
+		}
+		if v := snap.Lookup("target-aria"); v != nil {
+			entry.TargetAria = *v
+		}
+		entry.Sandbox = h.heldBox(snap)
 	}
 }
