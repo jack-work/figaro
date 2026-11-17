@@ -397,7 +397,7 @@ func TestLibrettoReaderSeesFoldsAfterItWasOpened(t *testing.T) {
 	waitForFold(t, lib, v)
 
 	found := false
-	for _, p := range lib.PatchesBetween(at, lib.Version()) {
+	for _, p := range heldPatches(lib.PatchesBetween(at, lib.Version())) {
 		if _, ok := p.Patch.Entry("afterwards"); ok {
 			found = true
 		}
@@ -444,7 +444,7 @@ func TestLibrettoStopsListeningWhenItsSourceDies(t *testing.T) {
 	// The copy outlives the source: its history is still readable and the
 	// death arrives as an ordinary key transition.
 	sawDeath := false
-	for _, p := range lib.PatchesBetween(before, lib.Version()) {
+	for _, p := range heldPatches(lib.PatchesBetween(before, lib.Version())) {
 		if _, ok := p.Patch.Entry(form.KeyLibrettoAlive); ok {
 			sawDeath = true
 		}
@@ -536,7 +536,7 @@ func TestLibrettoReadersWhileItFolds(t *testing.T) {
 				last = at
 				// The renderer's exact call: an absolute window ending at a
 				// version this reader has observed.
-				for _, p := range lib.PatchesBetween(0, at) {
+				for _, p := range heldPatches(lib.PatchesBetween(0, at)) {
 					if p.Version > at {
 						bad <- fmt.Sprintf("a patch at %d came back for a window ending %d", p.Version, at)
 						return

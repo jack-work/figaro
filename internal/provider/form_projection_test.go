@@ -18,7 +18,7 @@ type fakeBoundForm struct {
 
 func newFakeBoundForm(versions ...uint64) *fakeBoundForm { return &fakeBoundForm{versions: versions} }
 
-func (b *fakeBoundForm) PatchesBetween(after, upTo uint64) []message.Patch {
+func (b *fakeBoundForm) PatchesBetween(after, upTo uint64) ([]message.Patch, error) {
 	for b.i < len(b.versions) && b.versions[b.i] <= after {
 		b.i++
 	}
@@ -29,7 +29,7 @@ func (b *fakeBoundForm) PatchesBetween(after, upTo uint64) []message.Patch {
 		}, nil))
 		b.i++
 	}
-	return out
+	return out, nil
 }
 
 func stamp(t *testing.T, log *arialog.MemLog[message.Message], text string, at uint64) {

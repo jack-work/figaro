@@ -59,7 +59,7 @@ func TestFormPatchesBetweenMatchesOldWalk(t *testing.T) {
 	for after := uint64(0); after <= version+2; after++ {
 		for upTo := uint64(0); upTo <= version+2; upTo++ {
 			want := oldPatchesThenWalk(f, after, upTo)
-			got := f.PatchesBetween(after, upTo)
+			got := heldPatches(f.PatchesBetween(after, upTo))
 			if len(want) != len(got) {
 				t.Fatalf("(%d,%d]: old walk gave %d patches, view gave %d",
 					after, upTo, len(want), len(got))
@@ -79,7 +79,7 @@ func TestFormPatchesBetweenIsAViewNotACopy(t *testing.T) {
 	f := formWithPatches(t, 32)
 	published := f.state.Load().patches
 
-	got := f.PatchesBetween(3, 6)
+	got := heldPatches(f.PatchesBetween(3, 6))
 	if len(got) != 3 {
 		t.Fatalf("want 3 patches, got %d", len(got))
 	}
@@ -110,7 +110,7 @@ func TestFormPatchesBetweenCostIsWindowNotHistory(t *testing.T) {
 		f := formWithPatches(t, history)
 		version := f.Read().Version
 		allocs := testing.AllocsPerRun(200, func() {
-			if got := f.PatchesBetween(version-1, version); len(got) != 1 {
+			if got := heldPatches(f.PatchesBetween(version-1, version)); len(got) != 1 {
 				t.Fatalf("history %d: want 1 patch, got %d", history, len(got))
 			}
 		})
@@ -153,7 +153,7 @@ func TestFormPatchesBetweenUnderConcurrentWrites(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 2000; j++ {
 				v := f.Read().Version
-				for _, p := range f.PatchesBetween(0, v) {
+				for _, p := range heldPatches(f.PatchesBetween(0, v)) {
 					if p.Version > v {
 						t.Errorf("range leaked a patch past its upper bound: %d > %d", p.Version, v)
 						return
@@ -182,7 +182,7 @@ func TestPatchesBelowTheWindowComeFromTheLog(t *testing.T) {
 	}
 
 	// A range entirely below the window.
-	got := f.PatchesBetween(0, 5)
+	got := heldPatches(f.PatchesBetween(0, 5))
 	if len(got) != 5 {
 		t.Fatalf("want 5 patches from the log, got %d", len(got))
 	}
@@ -193,14 +193,14 @@ func TestPatchesBelowTheWindowComeFromTheLog(t *testing.T) {
 	}
 
 	// A range straddling the boundary.
-	straddle := f.PatchesBetween(ps[0].Version-3, ps[0].Version+1)
+	straddle := heldPatches(f.PatchesBetween(ps[0].Version-3, ps[0].Version+1))
 	if len(straddle) != 4 {
 		t.Fatalf("straddling the window edge: want 4, got %d", len(straddle))
 	}
 
 	// And the hot path is still a view.
 	v := f.Read().Version
-	if hot := f.PatchesBetween(v-1, v); len(hot) != 1 {
+	if hot := heldPatches(f.PatchesBetween(v-1, v)); len(hot) != 1 {
 		t.Fatalf("the window must still answer its own range: got %d", len(hot))
 	}
 }
@@ -236,7 +236,7 @@ func TestTheWindowIsBoundedBySize(t *testing.T) {
 	if len(st.patches) == 0 || st.patches[0].Version <= 1 {
 		t.Fatalf("nothing trimmed: %d patches resident", len(st.patches))
 	}
-	got := f.PatchesBetween(0, 3)
+	got := heldPatches(f.PatchesBetween(0, 3))
 	if len(got) != 3 || got[0].Version != 1 {
 		t.Fatalf("a range below the size-bounded window: %d patches", len(got))
 	}

@@ -85,7 +85,10 @@ func TestHeadForkOpensItsFormFromTheParentsAndMatchesAColdReplay(t *testing.T) {
 	writeBoard(t, b, child, 1000, 40)
 
 	wantSnap, wantVer := warm.Snapshot()
-	wantPatches := warm.PatchesBetween(0, wantVer)
+	wantPatches, err := warm.PatchesBetween(0, wantVer)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	b.dropForm(child)
 	cold, err := b.form(child)
@@ -96,7 +99,10 @@ func TestHeadForkOpensItsFormFromTheParentsAndMatchesAColdReplay(t *testing.T) {
 	if gotVer != wantVer || snapJSON(t, gotSnap) != snapJSON(t, wantSnap) {
 		t.Fatalf("warm and cold disagree: version %d vs %d", wantVer, gotVer)
 	}
-	gotPatches := cold.PatchesBetween(0, gotVer)
+	gotPatches, err := cold.PatchesBetween(0, gotVer)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(gotPatches) != len(wantPatches) {
 		t.Fatalf("warm holds %d patches, a cold replay %d", len(wantPatches), len(gotPatches))
 	}

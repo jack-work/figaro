@@ -16,7 +16,7 @@ import (
 
 type noPatches struct{}
 
-func (noPatches) PatchesBetween(after, upTo uint64) []message.Patch { return nil }
+func (noPatches) PatchesBetween(after, upTo uint64) ([]message.Patch, error) { return nil, nil }
 
 // catchUpBytesCeiling: on this fixture lane/startup-figcache's commit 1
 // allocated 124 MiB (105 MiB on the startup-alloc bench), commits 4 and 5

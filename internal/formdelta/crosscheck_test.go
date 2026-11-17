@@ -60,7 +60,11 @@ func perEntryReference(t *testing.T, be *store.XwalBackend, ariaID string, seed 
 			}
 			keys := form.StudyKeys(snap, fid)
 			sf := &studiedForm{lib: lib, role: role}
-			for _, vp := range lib.PatchesBetween(prev, upTo) {
+			ps, err := lib.PatchesBetween(prev, upTo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, vp := range ps {
 				foldStudied(deltas, fid, sf, keys, vp.Patch)
 			}
 		}

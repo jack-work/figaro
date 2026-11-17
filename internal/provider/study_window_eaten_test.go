@@ -79,11 +79,11 @@ func TestAContentlessEntryDoesNotEatTheStudyWindow(t *testing.T) {
 // patchAt is stateless: one patch at version, for any range containing it.
 type patchAt uint64
 
-func (v patchAt) PatchesBetween(after, upTo uint64) []message.Patch {
+func (v patchAt) PatchesBetween(after, upTo uint64) ([]message.Patch, error) {
 	if uint64(v) <= after || uint64(v) > upTo {
-		return nil
+		return nil, nil
 	}
-	return []message.Patch{form.Build(form.Snapshot{}, map[string]json.RawMessage{"role-purpose": json.RawMessage(`"carry the razor"`)}, nil)}
+	return []message.Patch{form.Build(form.Snapshot{}, map[string]json.RawMessage{"role-purpose": json.RawMessage(`"carry the razor"`)}, nil)}, nil
 }
 
 // Stamps 6, 7, 15, 15 where the middle two translate to nothing: the fig IR
@@ -132,14 +132,14 @@ func TestTheDeltaSpansEveryUntranslatedMessageBetween(t *testing.T) {
 
 type patchesEvery struct{}
 
-func (patchesEvery) PatchesBetween(after, upTo uint64) []message.Patch {
+func (patchesEvery) PatchesBetween(after, upTo uint64) ([]message.Patch, error) {
 	var out []message.Patch
 	for v := after + 1; v <= upTo; v++ {
 		out = append(out, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"k": json.RawMessage(`"v"`),
 		}, nil))
 	}
-	return out
+	return out, nil
 }
 
 // The write path's cursor advances when bytes are returned, not when they

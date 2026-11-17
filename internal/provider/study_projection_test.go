@@ -14,14 +14,14 @@ import (
 
 type fakeForm struct{ ps []store.VersionedPatch }
 
-func (f *fakeForm) PatchesBetween(after, upTo uint64) []message.Patch {
+func (f *fakeForm) PatchesBetween(after, upTo uint64) ([]message.Patch, error) {
 	var out []message.Patch
 	for _, p := range f.ps {
 		if p.Version > after && p.Version <= upTo {
 			out = append(out, p.Patch)
 		}
 	}
-	return out
+	return out, nil
 }
 
 func vp(v uint64, key, val string) store.VersionedPatch {
