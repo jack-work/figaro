@@ -180,10 +180,19 @@ func liveForm(argv []string) (name, spec string, ok bool) {
 
 // runCommand is called with the render lock held: it may not take the lock or
 // block, so it hands off.
-func (in *interactiveInput) runCommand(line string) { go in.execCommand(line) }
+func (in *interactiveInput) runCommand(line string) {
+	var switchID uint64
+	if switchesSubject(line) {
+		switchID = in.lt.tr.switching
+	}
+	go in.execCommandAs(line, switchID)
+}
 
-func (in *interactiveInput) execCommand(line string) {
+func (in *interactiveInput) execCommand(line string) { in.execCommandAs(line, 0) }
+
+func (in *interactiveInput) execCommandAs(line string, switchID uint64) {
 	if in.replaying {
+		in.liftSwitch(switchID)
 		in.execOnTape(line)
 		return
 	}
@@ -213,7 +222,7 @@ func (in *interactiveInput) execCommand(line string) {
 		return
 	}
 	if overlayVerbs[verb] {
-		in.runOverlay(verb, argv[1:])
+		in.runOverlay(verb, argv[1:], switchID)
 		return
 	}
 	if p, ok, err := topologyFormPit(argv); ok {
@@ -238,10 +247,10 @@ func (in *interactiveInput) execCommand(line string) {
 	in.runThroughRouter(argv)
 }
 
-func (in *interactiveInput) runOverlay(verb string, args []string) {
+func (in *interactiveInput) runOverlay(verb string, args []string, switchID uint64) {
 	switch verb {
 	case "listen":
-		in.commandAsync(func(ctx context.Context) (string, error) {
+		in.switchAsync(switchID, func(ctx context.Context) (string, error) {
 			spec, err := oneSpec(verb, args)
 			if err != nil {
 				return "", err
@@ -249,7 +258,7 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 			return in.switchSubject(ctx, spec, false)
 		})
 	case "attend", "at":
-		in.commandAsync(func(ctx context.Context) (string, error) {
+		in.switchAsync(switchID, func(ctx context.Context) (string, error) {
 			spec, err := oneSpec("attend", args)
 			if err != nil {
 				return "", err
@@ -279,11 +288,11 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 			return in.commandSend(ctx, args)
 		})
 	case "fork":
-		in.commandAsync(func(ctx context.Context) (string, error) {
+		in.switchAsync(switchID, func(ctx context.Context) (string, error) {
 			return in.commandFork(ctx, args)
 		})
 	case "new":
-		in.commandAsync(func(ctx context.Context) (string, error) {
+		in.switchAsync(switchID, func(ctx context.Context) (string, error) {
 			return in.commandNew(ctx, args)
 		})
 	case "succeed":
