@@ -267,22 +267,46 @@ type FormAt struct {
 
 // PatchesBetween returns (after, upTo] as a view on the published array: no copy.
 func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
+	out, _ := f.PatchesBetweenChecked(after, upTo)
+	return out
+}
+
+func (f *Form) PatchesBetweenChecked(after, upTo uint64) ([]VersionedPatch, bool) {
 	st := f.state.Load()
 	ps := st.patches
+	if upTo <= after {
+		figOtel.RecordFormPatchRead(context.Background(), 0, len(ps))
+		return nil, true
+	}
 	// Only a trim sends a read to disk.
-	if upTo > after && st.trimmed > 0 && after < st.trimmed {
-		if fromLog, ok := f.patchesFromLog(after, upTo); ok {
-			figOtel.RecordFormPatchRead(context.Background(), len(fromLog), len(ps))
-			return fromLog
+	if st.trimmed > 0 && after < st.trimmed {
+		coldEnd := upTo
+		if st.trimmed < coldEnd {
+			coldEnd = st.trimmed
 		}
-		// The log could not answer, so neither can this: a short prefix from the
-		// resident array reads as a complete answer at the call site and
-		// surfaces later as a phantom gap. PatchFloor tells the caller why.
-		return nil
+		fromLog, ok := f.patchesFromLog(after, coldEnd)
+		if !ok {
+			// The log could not answer, so neither can this: a short prefix from the
+			// resident array reads as a complete answer at the call site and
+			// surfaces later as a phantom gap. PatchFloor tells the caller why.
+			return nil, false
+		}
+		if upTo > st.trimmed {
+			tail := patchRange(ps, st.trimmed, upTo)
+			if len(tail) > 0 {
+				fromLog = append(fromLog, tail...)
+			}
+		}
+		figOtel.RecordFormPatchRead(context.Background(), len(fromLog), len(ps))
+		return fromLog[:len(fromLog):len(fromLog)], true
 	}
 	out := patchRange(ps, after, upTo)
 	figOtel.RecordFormPatchRead(context.Background(), len(out), len(ps))
-	return out
+	return out, true
+}
+
+func SlicePatches(ps []VersionedPatch, after, upTo uint64) []VersionedPatch {
+	return patchRange(ps, after, upTo)
 }
 
 type FormSince struct {
@@ -302,9 +326,19 @@ func (f *Form) Since(since uint64) FormSince {
 		return FormSince{Version: st.version, Delta: true}
 	}
 	if st.trimmed > 0 && since < st.trimmed {
-		fromLog, ok := f.patchesFromLog(since, st.version)
+		coldEnd := st.version
+		if st.trimmed < coldEnd {
+			coldEnd = st.trimmed
+		}
+		fromLog, ok := f.patchesFromLog(since, coldEnd)
 		if !ok {
 			return full
+		}
+		if st.version > st.trimmed {
+			tail := patchRange(st.patches, st.trimmed, st.version)
+			if len(tail) > 0 {
+				fromLog = append(fromLog, tail...)
+			}
 		}
 		return FormSince{Version: st.version, Delta: true, Patches: fromLog}
 	}

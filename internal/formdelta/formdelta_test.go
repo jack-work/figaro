@@ -459,3 +459,93 @@ func TestAStudiedBoundFormShowsOnlyItsKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestPerRecordFromAcrossTrimmedBoundAndLibrettoWindows(t *testing.T) {
+	store.SetPatchWindow(8)
+	t.Cleanup(func() { store.SetPatchWindow(2048) })
+
+	be := backend(t)
+	role, _, err := be.CreateForm("", patchOf(map[string]string{"target-aria": `"a1"`, "status": `"boot"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ariaID, _, err := be.ForkWith("", 0, patchOf(map[string]string{"aria_id": `"a1"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decl, err := be.StudyForm(ariaID, role, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	be.SetObservedForms(ariaID, decl.Studies)
+	lib, err := be.Libretto(role)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log, err := be.OpenFigIR(ariaID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var firstRec, lastRec arialog.Entry[message.Message]
+	for i := 0; i < 300; i++ {
+		if _, err := be.ApplyForm(ariaID, patchOf(map[string]string{
+			"slot": `"` + strings.Repeat("b", 4) + `"`,
+			"idx":  `"` + string(rune('a'+(i%26))) + `"`,
+		})); err != nil {
+			t.Fatal(err)
+		}
+		rv, err := be.ApplyForm(role, patchOf(map[string]string{
+			"status": `"` + string(rune('A'+(i%26))) + `"`,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitFold(t, lib, rv)
+		if i == 2 {
+			firstRec = appendRecord(t, log, message.RoleInput)
+		}
+		if i%15 == 0 {
+			appendRecord(t, log, message.RoleOutput)
+		}
+	}
+	lastRec = appendRecord(t, log, message.RoleOutput)
+
+	got := PerRecord(be, ariaID, log.Read())
+	if _, ok := got[firstRec.LT][ariaID+".idx"]; !ok {
+		t.Fatalf("missing trimmed bound delta on early record %d: %+v", firstRec.LT, got[firstRec.LT])
+	}
+	if _, ok := got[firstRec.LT][role+".status"]; !ok {
+		t.Fatalf("missing trimmed libretto delta on early record %d: %+v", firstRec.LT, got[firstRec.LT])
+	}
+	if _, ok := got[lastRec.LT][ariaID+".idx"]; !ok {
+		t.Fatalf("missing resident bound delta on tail record %d: %+v", lastRec.LT, got[lastRec.LT])
+	}
+	if _, ok := got[lastRec.LT][role+".status"]; !ok {
+		t.Fatalf("missing resident libretto delta on tail record %d: %+v", lastRec.LT, got[lastRec.LT])
+	}
+}
+
+func TestAttachSparseLTsSkipsUnpopulatedSpan(t *testing.T) {
+	turns := []aria.Turn{
+		{
+			ID:    1,
+			LTs:   []uint64{1, 1_000_000_000},
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Src: []livedoc.Src{{LT: 500_000_000}}}},
+		},
+		{
+			ID:  2,
+			LTs: []uint64{1_000_000_001, 2_000_000_000},
+		},
+	}
+	Attach(turns, map[uint64]map[string]livedoc.FormDelta{
+		500_000_000: {"a1.mid": {Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1"}},
+		999_999_999: {"a1.seam": {Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1"}},
+	})
+	if _, ok := turns[0].Nodes[0].FormDeltas["a1.mid"]; !ok {
+		t.Fatalf("sparse node delta did not attach: %+v", turns[0].Nodes[0].FormDeltas)
+	}
+	if _, ok := turns[1].FormDeltas["a1.seam"]; !ok {
+		t.Fatalf("sparse seam delta did not move to next turn: %+v", turns[1].FormDeltas)
+	}
+}
