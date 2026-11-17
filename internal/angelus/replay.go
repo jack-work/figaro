@@ -62,10 +62,14 @@ func (h *handlers) planReplay(parent string, turn, cut uint64, dress form.Patch)
 	if err != nil {
 		return replayPlan{}, fmt.Errorf("fork: %s's board at turn %d: %w", parent, turn, err)
 	}
+	seen := parent
+	if id := after.Lookup("aria_id"); id != nil && *id != "" {
+		seen = *id
+	}
 	return replayPlan{
 		inquiry: inq.Payload,
 		window:  replayWindow(before, after, dress),
-		record:  form.Replay{Of: parent, Turn: turn, LT: inq.LT},
+		record:  form.Replay{Of: parent, Turn: turn, LT: inq.LT, AriaID: seen},
 	}, nil
 }
 
