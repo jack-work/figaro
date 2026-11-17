@@ -191,6 +191,13 @@ func (c *Angelus) Fork(ctx context.Context, figaroID string, atTurn, atLT uint64
 	return &resp, err
 }
 
+func (c *Angelus) Replay(ctx context.Context, figaroID string, turn uint64, outfits []string, patch *rpc.FormPatch) (*rpc.ForkResponse, error) {
+	var resp rpc.ForkResponse
+	err := c.call(ctx, rpc.MethodFork,
+		rpc.ForkRequest{FigaroID: figaroID, AtTurn: turn, Outfits: outfits, Patch: patch, Replay: true}, &resp)
+	return &resp, err
+}
+
 func (c *Angelus) Normalize(ctx context.Context, dryRun bool) (*rpc.NormalizeResponse, error) {
 	var resp rpc.NormalizeResponse
 	err := c.cli.Call(ctx, rpc.MethodNormalize, rpc.NormalizeRequest{DryRun: dryRun}, &resp)

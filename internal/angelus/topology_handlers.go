@@ -237,6 +237,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
+	if err := refuseReplayCoordinate(req); err != nil {
+		return nil, err
+	}
 	inherited, err := h.angelus.Backend.FormState(req.FigaroID)
 	if err != nil {
 		return nil, fmt.Errorf("fork: the board of %s cannot be read to check the patch against it: %w", req.FigaroID, err)
@@ -260,6 +263,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		if terr != nil {
 			return nil, terr
 		}
+		if head && req.Replay {
+			return nil, fmt.Errorf("fork: turn %d of %s has not been asked yet; --replay re-runs a past turn", req.AtTurn, req.FigaroID)
+		}
 		if head {
 			req.AtTurn = 0
 		}
@@ -274,6 +280,14 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	dress, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
 		return nil, err
+	}
+	birth := forkDress(dress, req.FigaroID)
+	var replay replayPlan
+	if req.Replay {
+		if replay, err = h.planReplay(req.FigaroID, req.AtTurn, atMainLT, dress); err != nil {
+			return nil, err
+		}
+		birth = form.Merge(birth, replay.record.Patch())
 	}
 	// interior is read off the coordinate, not the LT: forking at turn 1 has
 	// LT 0, which is also the head-fork sentinel.
@@ -304,7 +318,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			at = atMainLT
 		}
 		var ferr error
-		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID), mintedBy(ctx), ariaIDStamp())
+		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, birth, mintedBy(ctx), ariaIDStamp())
 		if ferr != nil {
 			return ferr
 		}
@@ -325,6 +339,12 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 
 	if err := runFork(); err != nil {
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
+	}
+	if req.Replay {
+		if err := h.startReplay(ctx, alt, replay); err != nil {
+			h.discardBirth(alt)
+			return nil, err
+		}
 	}
 	slog.Info("forked figaro", "parent", req.FigaroID, "turn", req.AtTurn, "lt", atMainLT, "continuation", cont, "alternative", alt)
 	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note}, nil

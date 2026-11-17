@@ -56,6 +56,7 @@ type ForkRequest struct {
 	// Patch dresses the alternative in the same call that mints it.
 	Patch   *FormPatch `json:"patch,omitempty"`
 	Outfits []string   `json:"outfits,omitempty"`
+	Replay  bool       `json:"replay,omitempty"`
 }
 
 // ForkResponse: the parent freezes and keeps its id as a read-only index
