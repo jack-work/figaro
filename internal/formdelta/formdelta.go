@@ -43,13 +43,96 @@ func PerRecord(b Backend, ariaID string, entries []arialog.Entry[message.Message
 	return PerRecordFrom(b, ariaID, Seed{}, entries)
 }
 
+type checkedPatchBackend interface {
+	FormPatchesBetweenChecked(ariaID string, after, upTo uint64) ([]store.VersionedPatch, bool, error)
+}
+
+type versionSpan struct {
+	minAfter uint64
+	maxUpTo  uint64
+	seen     bool
+}
+
+func (s *versionSpan) add(after, upTo uint64) {
+	if !s.seen {
+		s.minAfter = after
+		s.maxUpTo = upTo
+		s.seen = true
+		return
+	}
+	if after < s.minAfter {
+		s.minAfter = after
+	}
+	if upTo > s.maxUpTo {
+		s.maxUpTo = upTo
+	}
+}
+
+func scanSpans(seed Seed, entries []arialog.Entry[message.Message]) (versionSpan, map[string]versionSpan) {
+	var bound versionSpan
+	var studies map[string]versionSpan
+	curForm := seed.Form
+	curStudy := make(map[string]uint64, len(seed.Studies))
+	for k, v := range seed.Studies {
+		curStudy[k] = v
+	}
+	for _, entry := range entries {
+		if entry.Payload.Role == message.RoleGenesis {
+			curForm = maxU64(curForm, entry.FormChannelVersion)
+			for fid, upTo := range entry.StudyVersions {
+				curStudy[fid] = maxU64(curStudy[fid], upTo)
+			}
+			continue
+		}
+		if entry.FormChannelVersion > curForm {
+			bound.add(curForm, entry.FormChannelVersion)
+			curForm = entry.FormChannelVersion
+		}
+		for fid, upTo := range entry.StudyVersions {
+			prev := curStudy[fid]
+			curStudy[fid] = maxU64(prev, upTo)
+			if upTo <= prev {
+				continue
+			}
+			if studies == nil {
+				studies = map[string]versionSpan{}
+			}
+			sp := studies[fid]
+			sp.add(prev, upTo)
+			studies[fid] = sp
+		}
+	}
+	return bound, studies
+}
+
+func loadBoundSpan(b Backend, ariaID string, sp versionSpan) ([]store.VersionedPatch, bool) {
+	if !sp.seen {
+		return nil, true
+	}
+	if cb, ok := b.(checkedPatchBackend); ok {
+		ps, complete, err := cb.FormPatchesBetweenChecked(ariaID, sp.minAfter, sp.maxUpTo)
+		if err != nil || !complete {
+			return nil, false
+		}
+		return ps, true
+	}
+	ps, err := b.FormPatchesBetween(ariaID, sp.minAfter, sp.maxUpTo)
+	if err != nil {
+		return nil, false
+	}
+	return ps, len(ps) > 0 || sp.maxUpTo <= sp.minAfter
+}
+
 func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []arialog.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
-	if b == nil || ariaID == "" {
+	if b == nil || ariaID == "" || len(entries) == 0 {
 		return nil
 	}
+	boundSpan, studySpans := scanSpans(seed, entries)
+	boundPatches, boundComplete := loadBoundSpan(b, ariaID, boundSpan)
+
 	out := map[uint64]map[string]livedoc.FormDelta{}
 	lastForm := seed.Form
-	lastStudy := map[string]uint64{}
+	lastStudy := make(map[string]uint64, len(seed.Studies))
 	for k, v := range seed.Studies {
 		lastStudy[k] = v
 	}
@@ -65,14 +148,21 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []arialog.Entry[
 			continue
 		}
 
-		deltas := map[string]livedoc.FormDelta{}
+		var deltas map[string]livedoc.FormDelta
 
 		if entry.FormChannelVersion > lastForm {
-			if ps, err := b.FormPatchesBetween(ariaID, lastForm, entry.FormChannelVersion); err == nil {
-				for _, vp := range ps {
-					foldPatch(deltas, ariaID, livedoc.FormBound, vp.Patch)
-					observer.advance(vp.Patch)
-				}
+			var ps []store.VersionedPatch
+			if boundComplete {
+				ps = store.SlicePatches(boundPatches, lastForm, entry.FormChannelVersion)
+			} else if fetched, err := b.FormPatchesBetween(ariaID, lastForm, entry.FormChannelVersion); err == nil {
+				ps = fetched
+			}
+			if len(ps) > 0 && deltas == nil {
+				deltas = map[string]livedoc.FormDelta{}
+			}
+			for _, vp := range ps {
+				foldPatch(deltas, ariaID, livedoc.FormBound, vp.Patch)
+				observer.advance(vp.Patch)
 			}
 			lastForm = entry.FormChannelVersion
 		}
@@ -87,14 +177,23 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []arialog.Entry[
 			}
 			sf := studied[fid]
 			if sf == nil {
-				sf = openStudied(b, fid)
+				sf = openStudied(b, fid, studySpans[fid])
 				studied[fid] = sf
 			}
 			if sf.lib == nil {
 				continue
 			}
 			keys := observer.keysAt(entry.FormChannelVersion, fid)
-			for _, vp := range sf.lib.PatchesBetween(prev, upTo) {
+			var ps []store.VersionedPatch
+			if sf.complete {
+				ps = store.SlicePatches(sf.patches, prev, upTo)
+			} else {
+				ps = sf.lib.PatchesBetween(prev, upTo)
+			}
+			if len(ps) > 0 && deltas == nil {
+				deltas = map[string]livedoc.FormDelta{}
+			}
+			for _, vp := range ps {
 				foldStudied(deltas, fid, sf, keys, vp.Patch)
 			}
 		}
@@ -112,18 +211,23 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []arialog.Entry[
 // role is decided once per assembly from the copy's current state: a form
 // that became a role mid-history renders as a role throughout.
 type studiedForm struct {
-	lib  *store.Libretto
-	role bool
+	lib      *store.Libretto
+	role     bool
+	patches  []store.VersionedPatch
+	complete bool
 }
 
-func openStudied(b Backend, fid string) *studiedForm {
+func openStudied(b Backend, fid string, sp versionSpan) *studiedForm {
 	lib, err := b.Libretto(fid)
 	if err != nil || lib == nil {
 		return &studiedForm{}
 	}
-	sf := &studiedForm{lib: lib}
+	sf := &studiedForm{lib: lib, complete: true}
 	if _, ok := lib.State().Get("target-aria"); ok {
 		sf.role = true
+	}
+	if sp.seen {
+		sf.patches, sf.complete = lib.PatchesBetweenChecked(sp.minAfter, sp.maxUpTo)
 	}
 	return sf
 }
@@ -194,28 +298,32 @@ func maxU64(a, b uint64) uint64 {
 // Attach folds per-record deltas onto the node projected from the record
 // carrying the stamp; a record that projects no node attaches to the turn.
 func Attach(turns []aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
-	if len(deltas) == 0 {
+	if len(deltas) == 0 || len(turns) == 0 {
 		return
 	}
+	lts := orderedLTs(deltas)
 	for ti := range turns {
 		t := &turns[ti]
-		if len(t.LTs) < 2 {
+		if len(t.LTs) < 2 || t.LTs[1] < t.LTs[0] {
+			continue
+		}
+		start, _ := slices.BinarySearch(lts, t.LTs[0])
+		if start >= len(lts) || lts[start] > t.LTs[1] {
 			continue
 		}
 		// First node to claim an LT wins: one record's state renders once.
 		claimed := map[uint64]int{}
+		var lastClaimed uint64
 		for ni := range t.Nodes {
 			for _, src := range t.Nodes[ni].Src {
 				if _, ok := claimed[src.LT]; !ok {
 					claimed[src.LT] = ni
+					lastClaimed = maxU64(lastClaimed, src.LT)
 				}
 			}
 		}
-		var lastClaimed uint64
-		for lt := range claimed {
-			lastClaimed = maxU64(lastClaimed, lt)
-		}
-		for lt := t.LTs[0]; lt <= t.LTs[1]; lt++ {
+		for i := start; i < len(lts) && lts[i] <= t.LTs[1]; i++ {
+			lt := lts[i]
 			d := deltas[lt]
 			if len(d) == 0 {
 				continue
