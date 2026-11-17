@@ -277,3 +277,33 @@ func mustEntry(p form.Patch, key string) json.RawMessage {
 	}
 	return e.New
 }
+
+func TestCacheSeesARelinkedStoreFileOfTheSameSizeAndMtime(t *testing.T) {
+	dir := t.TempDir()
+	store := t.TempDir()
+	stamp := time.Unix(1, 0)
+	for gen, body := range map[string]string{"a": "[charter]\npurpose = \"v1\"\n", "b": "[charter]\npurpose = \"v2\"\n"} {
+		path := filepath.Join(store, gen, "role.toml")
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(body), 0o444))
+		require.NoError(t, os.Chtimes(path, stamp, stamp))
+	}
+	current := filepath.Join(t.TempDir(), "current")
+	require.NoError(t, os.Symlink(filepath.Join(store, "a"), current))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0o700))
+	require.NoError(t, os.Symlink(filepath.Join(current, "role.toml"), filepath.Join(dir, "outfits", "role.toml")))
+	o := outfit.New(dir)
+	o.SetStaleWindow(0)
+
+	patch, err := o.Load("role")
+	require.NoError(t, err)
+	require.Equal(t, `"v1"`, string(mustEntry(patch, "charter.purpose")))
+
+	next := current + ".new"
+	require.NoError(t, os.Symlink(filepath.Join(store, "b"), next))
+	require.NoError(t, os.Rename(next, current))
+	patch, err = o.Load("role")
+	require.NoError(t, err)
+	assert.Equal(t, `"v2"`, string(mustEntry(patch, "charter.purpose")),
+		"a profile link moved to a store file of the same size and mtime; the new target must invalidate")
+}
