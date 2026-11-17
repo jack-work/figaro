@@ -186,21 +186,32 @@ with no credentials and no tokens.
     studied form reads as it stood then. Off, a replay reads today.
   - **`system.replay.identity`**: the model reads the original's `aria_id`
     (so its handle). Only the provider's view is masked; the store, `ls`,
-    `kill` and the Figaro-Id header keep the real id.
+    `kill` and the Figaro-Id header keep the real id. It is off whenever
+    `tools` is off: a tool that runs for real acts as the real id.
   - **`system.replay.tools`**: no tool runs. A call matching one the turn
     made (same tool, same arguments) gets the recorded answer, in order; an
     outward verb (figaro, fig, figla, gh, git writes, file writes and
     redirects; write, edit, say) gets a quiet success; anything else fails
     neutrally.
 
+  A set that lands while a turn runs replays on the next turn, after any
+  prompt already queued; a prompt cannot carry `system.replay`. A replay
+  queued or cut by a restart still replays afterwards, and is dropped if the
+  key was unset meanwhile.
+
   Each replayed turn carries its mark in the IR, and show and the pager open
   it with `[replay of <id>:<turn>; masked: ...]`. The first turn after the
   unset shows the model its real id and fork. Only the owner sets or unsets
   the key: a box, a non-owner and the figaro itself are refused. A plain
   fork of a replaying figaro does not inherit it, and replay sets no ttl.
+  A replaying figaro is not warned, succeeded or retired at its context
+  threshold, and a set during a succession is refused.
+  When a replayed turn fails, the notice goes to the figaro that set the
+  replay, never to the original turn's senders.
 - **`fork <id>:<turn> --replay [-O ..] [-S ..] [-j]`**: shorthand for a fork
   cut before `<turn>` with `system.replay` set on the branch. `-S` picks the
   rung (`system.thinking_effort=high`) or a mask (`system.replay.tools=false`).
+  Inquiry methods do not run on a replayed turn, so the rung holds.
   The call submits and exits; `figaro listen <branch>` follows the reply.
 - **`attend <id>` / `<id>:<turn>` / `:<turn>`** (alias **`at`**): bind this shell,
   like `cd`. CLI-native attendance: the pid↔trunk map (the angelus binding

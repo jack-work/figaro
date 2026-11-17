@@ -1,9 +1,11 @@
 package angelus_test
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -113,4 +115,71 @@ func TestASetOfAnUnrecordedTurnIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "no turn 9")
 	_, ok := form.ReadReplay(boardOf(t, acli, ctx, parent))
 	require.False(t, ok)
+}
+
+func chatToolCall() string {
+	return `data: {"id":"1","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"true\"}"}}]}}]}` + "\n\n" +
+		`data: {"id":"1","choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":2}}` + "\n\n" +
+		"data: [DONE]\n\n"
+}
+
+// Defends #114: a set that lands while a turn runs replays on the next turn.
+// The running turn must not lift the replay between its rounds as a steer,
+// which swallowed it and left a figaro that refused every message.
+func TestASetDuringATurnReplaysNext(t *testing.T) {
+	tap := &wireTap{}
+	gate := make(chan struct{})
+	a, acli := gatewayDaemon(t, tap)
+	parent := gatewayAria(t, a, acli)
+	created, err := acli.Create(t.Context(), dress(t, "gw"), nil)
+	require.NoError(t, err)
+	b := created.FigaroID
+	tap.reply = func(id, _ string) string {
+		if id == b && tap.count(b) == 1 {
+			<-gate
+			return chatToolCall()
+		}
+		return chatText("ok")
+	}
+	c, err := sdk.DialAria(ariaAddr(a, b), nil)
+	require.NoError(t, err)
+	defer c.Close()
+	_, _, err = c.Qua(t.Context(), "live work", nil)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return tap.count(b) == 1 }, 10*time.Second, 10*time.Millisecond)
+
+	set := make(chan error, 1)
+	go func() {
+		_, err := c.Set(context.Background(), replayPatch(t, parent, 2), 0)
+		set <- err
+	}()
+	require.Eventually(t, func() bool {
+		_, ok := form.ReadReplay(boardOf(t, acli, t.Context(), b))
+		return ok
+	}, 10*time.Second, 10*time.Millisecond)
+	close(gate)
+	require.NoError(t, <-set)
+
+	awaitWire(t, a, tap, b, 3)
+	marks := replayMarks(t, acli, b)
+	require.Len(t, marks, 2, "the live turn, then the replay")
+	require.Nil(t, marks[0])
+	require.NotNil(t, marks[1], "the replay never ran")
+	require.Contains(t, sinceLastAnswer(t, tap.last(b)), "second question")
+}
+
+// Defends #114: only a set runs a replay. A prompt that carried system.replay
+// would land it without the replay, and the prompt itself is not a replay.
+func TestAPromptCannotCarrySystemReplay(t *testing.T) {
+	a, acli, ctx, parent := replayFixture(t)
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	c, err := sdk.DialAria(ariaAddr(a, created.FigaroID), nil)
+	require.NoError(t, err)
+	defer c.Close()
+	patch := replayPatch(t, parent, 2)
+	_, _, err = c.Qua(ctx, "hi", &rpc.FormInput{Patch: &patch})
+	require.ErrorContains(t, err, "figaro set")
+	_, replaying := form.ReadReplay(boardOf(t, acli, ctx, created.FigaroID))
+	require.False(t, replaying)
 }

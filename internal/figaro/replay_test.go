@@ -15,7 +15,7 @@ func TestReplayEventKeepsWhoAskedWhat(t *testing.T) {
 	inquiry := message.Message{Role: message.RoleInput, Content: []message.Content{img, fromFigaro, fromDuke}}
 
 	evt := replayEvent(inquiry)
-	if !evt.replay {
+	if evt.replay != replayRun {
 		t.Fatal("not marked as a replay")
 	}
 	if got := senderRuns(evt.segments); !reflect.DeepEqual(got, []message.Content{fromFigaro, fromDuke}) {

@@ -1092,10 +1092,12 @@ REPLAY. ` + "`figaro fork <id>:<turn> --replay`" + ` cuts before turn N, sets
 system.replay on the branch, and re-sends turn N's recorded inquiry: its
 words, senders and images, and the form changes that rode in with it.
 There is no prompt. System keys are the caller's: -S
-system.thinking_effort=high replays the turn at another rung. Four masks,
+system.thinking_effort=high replays the turn at another rung, and inquiry
+methods do not run to change it. Four masks,
 each on unless -S sets it false: system.replay.notice (no fork notice),
 .clock (the recorded datetime and studied forms), .identity (the
-original's aria_id; ls, kill and the store keep the real one) and .tools
+original's aria_id while .tools masks; ls, kill and the store keep the
+real one) and .tools
 (no tool runs: a call the turn made gets its recorded answer, an outward
 verb a quiet success, anything else a neutral error). While system.replay
 is set the branch takes no messages and holds no role; unset it to talk

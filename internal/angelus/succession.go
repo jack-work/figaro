@@ -362,7 +362,7 @@ func (h *handlers) retirementOf(id string) (store.Retirement, form.Snapshot) {
 
 func (h *handlers) beginSuccession(ctx context.Context, e figaro.TurnEnd) {
 	_, snap := h.retirementOf(e.ID)
-	if snap.Has(store.SystemSuccessionFailedKey) || store.RetiredIn(snap) {
+	if _, replaying := form.ReadReplay(snap); replaying || snap.Has(store.SystemSuccessionFailedKey) || store.RetiredIn(snap) {
 		return
 	}
 	rec := successionRecord{Old: e.ID, Phase: successionHandoff}

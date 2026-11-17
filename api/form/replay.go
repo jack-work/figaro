@@ -43,7 +43,8 @@ func ReadReplayMasks(s Snapshot) ReplayMasks {
 		var b bool
 		return json.Unmarshal(raw, &b) != nil || b
 	}
-	return ReplayMasks{Notice: on("notice"), Clock: on("clock"), Identity: on("identity"), Tools: on("tools")}
+	tools := on("tools")
+	return ReplayMasks{Notice: on("notice"), Clock: on("clock"), Identity: tools && on("identity"), Tools: tools}
 }
 
 func (r Replay) Patch(base Snapshot) Patch {

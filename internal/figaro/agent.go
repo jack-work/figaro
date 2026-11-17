@@ -66,9 +66,12 @@ type event struct {
 	// segments keeps who said what across a fold; text stays the joined form.
 	segments []promptSegment
 	resume   bool
-	replay   bool
+	replay   replayStep
+	replayBy []promptSegment
 	traces   []string
 }
+
+func (e event) foldable() bool { return e.typ == eventUserPrompt && e.replay == replayNone }
 
 // Config is the constructor input for NewAgent.
 type Config struct {
@@ -523,6 +526,9 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 	if err := a.refuseAsReplay(); err != nil {
 		return err
 	}
+	if err := refuseReplayInPrompt(a.form.Snapshot(), a.combineFormInput(req.Form)); err != nil {
+		return err
+	}
 	// A refused token leaves the form unpatched and the inbox untouched.
 	text, err := a.rewriteInput(ctx, req.Text)
 	if err != nil {
@@ -923,6 +929,10 @@ func (a *Agent) act(ctx context.Context) {
 		}
 		switch evt.typ {
 		case eventUserPrompt:
+			if evt.replay != replayNone {
+				a.runTurn(ctx, evt)
+				continue
+			}
 			batch := append([]event{evt}, a.inbox.TakeReadyUserPrompts()...)
 			merged, ok := mergePromptEvents(batch)
 			if !ok {
@@ -1183,7 +1193,7 @@ func (a *Agent) retireIfFull() {
 		slog.Warn("system.retirement ignored", "aria", a.id, "err", err)
 		return
 	}
-	if !r.Set() || r.Succeeds() || store.RetiredIn(snap) {
+	if !r.Set() || r.Succeeds() || store.RetiredIn(snap) || replaying(snap) {
 		return
 	}
 	a.mu.RLock()

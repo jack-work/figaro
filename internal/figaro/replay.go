@@ -1,6 +1,7 @@
 package figaro
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -124,14 +125,27 @@ func inquiryWindow(before, after form.Snapshot) (map[string]json.RawMessage, []s
 	return set, drop
 }
 
+type replayStep uint8
+
+const (
+	replayNone replayStep = iota
+	replayRun
+	replayResume
+)
+
 type replayTurn struct {
 	mark message.Replay
+	by   []promptSegment
 	mu   sync.Mutex
 	tape *replayTape
 }
 
-func (a *Agent) SubmitReplay() error {
-	if !a.inbox.Send(event{typ: eventUserPrompt, replay: true}) {
+func (a *Agent) SubmitReplay(by, principal string) error {
+	evt := event{typ: eventUserPrompt, replay: replayRun}
+	if by != "" {
+		evt.replayBy = []promptSegment{{sender: by, principal: principal}}
+	}
+	if !a.inbox.Send(evt) {
 		return ErrStopping
 	}
 	if !a.turnActive() {
@@ -144,13 +158,13 @@ var errReplayUnset = errors.New("system.replay was unset before the replay ran")
 
 func (a *Agent) beginReplay(prompt event) (event, error) {
 	a.replay.Store(nil)
+	if prompt.replay == replayNone {
+		return prompt, nil
+	}
 	snap := a.form.Snapshot()
 	coord, ok := form.ReadReplay(snap)
 	if !ok {
-		if prompt.replay && prompt.text == "" && len(prompt.images) == 0 {
-			return prompt, errReplayUnset
-		}
-		return prompt, nil
+		return prompt, errReplayUnset
 	}
 	rec, err := ResolveReplay(a.backend, coord)
 	if err != nil {
@@ -158,7 +172,7 @@ func (a *Agent) beginReplay(prompt event) (event, error) {
 	}
 	set := map[string]json.RawMessage{}
 	var drop []string
-	if prompt.replay {
+	if prompt.replay == replayRun {
 		prompt = withInquiry(prompt, rec.Inquiry)
 		for k, v := range rec.Set {
 			set[k] = v
@@ -169,7 +183,7 @@ func (a *Agent) beginReplay(prompt event) (event, error) {
 	switch {
 	case masks.Clock && len(rec.Datetime) > 0:
 		set[form.DatetimeKey] = rec.Datetime
-	case !masks.Clock && prompt.replay:
+	case !masks.Clock && prompt.replay == replayRun:
 		set[form.DatetimeKey] = form.Datetime(time.Now())
 	}
 	if patch := form.Build(a.form.Snapshot(), set, drop); !patch.IsIdentity() {
@@ -178,7 +192,7 @@ func (a *Agent) beginReplay(prompt event) (event, error) {
 		}
 		a.form.Apply(patch)
 	}
-	a.replay.Store(&replayTurn{mark: rec.Mark(coord, masks), tape: recordTape(rec.Turn)})
+	a.replay.Store(&replayTurn{mark: rec.Mark(coord, masks), by: prompt.replayBy, tape: recordTape(rec.Turn)})
 	return prompt, nil
 }
 
@@ -198,7 +212,7 @@ func withInquiry(prompt event, inquiry message.Message) event {
 }
 
 func replayEvent(inquiry message.Message) event {
-	evt := event{typ: eventUserPrompt, replay: true}
+	evt := event{typ: eventUserPrompt, replay: replayRun}
 	var texts []string
 	for _, c := range inquiry.Content {
 		switch c.Type {
@@ -216,6 +230,23 @@ func replayEvent(inquiry message.Message) event {
 	}
 	evt.text = strings.Join(texts, "\n\n")
 	return evt
+}
+
+func replaying(snap form.Snapshot) bool {
+	_, ok := form.ReadReplay(snap)
+	return ok
+}
+
+func refuseReplayInPrompt(snap form.Snapshot, patch form.Patch) error {
+	if patch.IsIdentity() {
+		return nil
+	}
+	was, _ := snap.Get(form.ReplayKey)
+	now, _ := snap.Apply(patch).Get(form.ReplayKey)
+	if bytes.Equal(was, now) {
+		return nil
+	}
+	return fmt.Errorf("%s is set with `figaro set`, not with a prompt", form.ReplayKey)
 }
 
 func (a *Agent) refuseAsReplay() error {

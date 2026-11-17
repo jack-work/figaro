@@ -14,7 +14,7 @@ import (
 )
 
 type replaysInquiry interface {
-	SubmitReplay() error
+	SubmitReplay(by, principal string) error
 }
 
 func refuseReplayCoordinate(req rpc.ForkRequest) error {
@@ -78,7 +78,7 @@ func (h *handlers) planReplay(parent string, turn uint64, dress form.Patch) (for
 	return r, rec.Mark(r, masks), nil
 }
 
-func (h *handlers) startReplay(ctx context.Context, id, wokeBy string) error {
+func (h *handlers) startReplay(ctx context.Context, id, wokeBy, by string) error {
 	f, err := h.restoreByID(ctx, id, wokeBy)
 	if err != nil {
 		return fmt.Errorf("wake %s to replay: %w", id, err)
@@ -87,7 +87,7 @@ func (h *handlers) startReplay(ctx context.Context, id, wokeBy string) error {
 	if !ok {
 		return fmt.Errorf("%s cannot take a replayed inquiry", id)
 	}
-	return r.SubmitReplay()
+	return r.SubmitReplay(by, authz.PrincipalText(authz.PrincipalOf(ctx)))
 }
 
 func (h *handlers) replayOnSet(method, id string, params json.RawMessage) (bool, error) {
@@ -109,6 +109,10 @@ func (h *handlers) replayOnSet(method, id string, params json.RawMessage) (bool,
 	if was, ok := form.ReadReplay(before); ok && was == now {
 		return false, nil
 	}
+	h.succ.load()
+	if h.succ.of(id) != nil || h.succ.succeededBy(id) != nil {
+		return false, fmt.Errorf("set %s: %s is in a succession; replay it once the succession ends", form.ReplayKey, id)
+	}
 	if _, err := figaro.ResolveReplay(h.angelus.Backend, now); err != nil {
 		return false, fmt.Errorf("set %s: %w", form.ReplayKey, err)
 	}
@@ -124,7 +128,7 @@ func (h *handlers) routeReplaying(ctx context.Context, hb *ariaHub, method, id s
 	if err != nil || !start {
 		return resp, err
 	}
-	if err := h.startReplay(ctx, id, method); err != nil {
+	if err := h.startReplay(ctx, id, method, rpc.SenderFrom(params, nil)); err != nil {
 		return nil, fmt.Errorf("set %s landed, but the replay did not start: %w", form.ReplayKey, err)
 	}
 	return resp, nil

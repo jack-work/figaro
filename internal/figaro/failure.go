@@ -111,6 +111,9 @@ func (a *Agent) tellSenders(reason string) {
 }
 
 func (a *Agent) SubmitFailureNotice(from, text string) error {
+	if err := a.refuseAsReplay(); err != nil {
+		return err
+	}
 	evt := event{
 		typ:      eventUserPrompt,
 		text:     text,

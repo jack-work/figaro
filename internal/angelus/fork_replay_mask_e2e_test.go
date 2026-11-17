@@ -22,6 +22,7 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/provider"
 	_ "github.com/jack-work/figaro/internal/provider/routed"
 	"github.com/jack-work/figaro/internal/store"
@@ -379,6 +380,10 @@ func TestAReplayingFigaroTakesNoMessagesAndHoldsNoRole(t *testing.T) {
 	defer c.Close()
 	_, _, err = c.Qua(ctx, "are you there?", nil)
 	require.ErrorContains(t, err, "takes no messages")
+	agent, ok := a.Registry.Get(branch).(*figaro.Agent)
+	require.True(t, ok)
+	require.ErrorContains(t, agent.SubmitDelivery("aria:"+parent, "d1", "a delivered message"), "takes no messages")
+	require.ErrorContains(t, agent.SubmitFailureNotice(parent, "turn 3 failed"), "takes no messages")
 	role, err := acli.FormCreate(ctx, "", nil, rawPatch(map[string]string{"duty": `"answer"`}))
 	require.NoError(t, err)
 	_, err = c.Cast(ctx, rpc.CastRequest{FormID: role.FormID})

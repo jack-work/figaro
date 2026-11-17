@@ -31,7 +31,16 @@ func TestReplayMasksDefaultOn(t *testing.T) {
 		t.Fatalf("no keys: %+v", got)
 	}
 	s := FromMap(map[string]json.RawMessage{ReplayKey: json.RawMessage(`{"of":"abc","turn":2,"clock":false,"tools":false}`)})
-	if got := ReadReplayMasks(s); got != (ReplayMasks{Notice: true, Identity: true}) {
+	if got := ReadReplayMasks(s); got != (ReplayMasks{Notice: true}) {
 		t.Fatalf("clock and tools off: %+v", got)
+	}
+}
+
+// Defends #114: a tool that runs for real acts as the figaro that runs it. With
+// the original's id in view, the model would aim figaro verbs at the original.
+func TestRealToolsUnmaskTheIdentity(t *testing.T) {
+	s := FromMap(map[string]json.RawMessage{ReplayKey: json.RawMessage(`{"of":"abc","turn":2,"identity":true,"tools":false}`)})
+	if got := ReadReplayMasks(s); got.Identity || got.Tools {
+		t.Fatalf("identity held over real tools: %+v", got)
 	}
 }
