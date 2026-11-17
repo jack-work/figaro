@@ -135,7 +135,7 @@ func TestAStorageMoveUnderAParentAnotherMintedIsDrawnOnly(t *testing.T) {
 		}
 		return resp.FigaroID
 	}
-	grantTo(t, r, "user:other", "create:*", "use:sandbox:local")
+	grantTo(t, r, "user:other", "create:*", "mint:*", "use:sandbox:local")
 	a, own := mint(), mint()
 	other, err := r.create(as("user", "other"), "mock")
 	if err != nil {

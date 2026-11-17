@@ -14,6 +14,7 @@ const (
 	VerbFork   Verb = "fork"
 	VerbSet    Verb = "set"
 	VerbCreate Verb = "create"
+	VerbMint   Verb = "mint"
 	VerbKill   Verb = "kill"
 	VerbAdmin  Verb = "admin"
 	VerbUse    Verb = "use"
@@ -25,7 +26,7 @@ const (
 )
 
 func Verbs() []Verb {
-	return []Verb{VerbRead, VerbListen, VerbSend, VerbFork, VerbSet, VerbCreate, VerbKill, VerbAdmin, VerbUse, VerbJoin, VerbDecide, VerbAdopt, VerbLease, VerbSay}
+	return []Verb{VerbRead, VerbListen, VerbSend, VerbFork, VerbSet, VerbCreate, VerbMint, VerbKill, VerbAdmin, VerbUse, VerbJoin, VerbDecide, VerbAdopt, VerbLease, VerbSay}
 }
 
 const VerbNone Verb = ""
@@ -84,7 +85,7 @@ var methodVerbs = map[string]Verb{
 	MethodAccept: VerbAdopt,
 	MethodRefuse: VerbAdopt,
 
-	MethodCreate:     VerbCreate,
+	MethodCreate:     VerbMint,
 	MethodFormCreate: VerbCreate,
 	MethodFormBind:   VerbCreate,
 	MethodImport:     VerbCreate,

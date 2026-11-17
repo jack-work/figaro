@@ -79,7 +79,7 @@ const lentPolicy = `
 permissions = ["*:*"]
 
 [roles.lent]
-permissions = ["create:*", "read:*", "listen:*", "send:*", "fork:*", "set:*", "use:sandbox:local"]
+permissions = ["create:*", "mint:*", "read:*", "listen:*", "send:*", "fork:*", "set:*", "use:sandbox:local"]
 
 [[bind]]
 role = "owner"
