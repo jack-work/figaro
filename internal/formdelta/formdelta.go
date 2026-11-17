@@ -68,11 +68,9 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []arialog.Entry[
 		deltas := map[string]livedoc.FormDelta{}
 
 		if entry.FormChannelVersion > lastForm {
-			if ps, err := b.FormPatchesBetween(ariaID, lastForm, entry.FormChannelVersion); err == nil {
-				for _, vp := range ps {
-					foldPatch(deltas, ariaID, livedoc.FormBound, vp.Patch)
-					observer.advance(vp.Patch)
-				}
+			for _, p := range boundBetween(b, ariaID, lastForm, entry.FormChannelVersion) {
+				foldPatch(deltas, ariaID, livedoc.FormBound, p)
+				observer.advance(p)
 			}
 			lastForm = entry.FormChannelVersion
 		}
@@ -94,8 +92,8 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []arialog.Entry[
 				continue
 			}
 			keys := observer.keysAt(entry.FormChannelVersion, fid)
-			for _, vp := range sf.lib.PatchesBetween(prev, upTo) {
-				foldStudied(deltas, fid, sf, keys, vp.Patch)
+			for _, p := range studiedBetween(sf.lib, prev, upTo) {
+				foldStudied(deltas, fid, sf, keys, p)
 			}
 		}
 
@@ -105,6 +103,51 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []arialog.Entry[
 	}
 	if len(out) == 0 {
 		return nil
+	}
+	return out
+}
+
+func boundBetween(b Backend, ariaID string, after, upTo uint64) []message.Patch {
+	ps, err := b.FormPatchesBetween(ariaID, after, upTo)
+	if err == nil {
+		return patchesOf(ps)
+	}
+	at, ok := b.(formStateAt)
+	if !ok {
+		return nil
+	}
+	return diffBetween(func(v uint64) (form.Snapshot, error) { return at.FormStateAt(ariaID, v) }, after, upTo)
+}
+
+func studiedBetween(lib *store.Libretto, after, upTo uint64) []message.Patch {
+	ps, err := lib.PatchesBetween(after, upTo)
+	if err == nil {
+		return patchesOf(ps)
+	}
+	return diffBetween(lib.StateAt, after, upTo)
+}
+
+func diffBetween(stateAt func(uint64) (form.Snapshot, error), after, upTo uint64) []message.Patch {
+	to, err := stateAt(upTo)
+	if err != nil {
+		return nil
+	}
+	from := form.Snapshot{}
+	if after > 0 {
+		if s, err := stateAt(after); err == nil {
+			from = s
+		}
+	}
+	if p := to.Diff(from); !p.IsIdentity() {
+		return []message.Patch{p}
+	}
+	return nil
+}
+
+func patchesOf(ps []store.VersionedPatch) []message.Patch {
+	out := make([]message.Patch, len(ps))
+	for i := range ps {
+		out[i] = ps[i].Patch
 	}
 	return out
 }

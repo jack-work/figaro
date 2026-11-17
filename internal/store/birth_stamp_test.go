@@ -56,7 +56,7 @@ func lastFormPatch(t *testing.T, be *XwalBackend, id string) message.Patch {
 		t.Fatal(err)
 	}
 	at := f.Read().Version
-	ps := f.PatchesBetween(at-1, at)
+	ps := heldPatches(f.PatchesBetween(at-1, at))
 	if len(ps) != 1 {
 		t.Fatalf("%s: want one patch at version %d, got %d", id, at, len(ps))
 	}

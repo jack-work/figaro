@@ -493,7 +493,7 @@ func (b *XwalBackend) FormPatchesBetween(ariaID string, after, upTo uint64) ([]V
 	if err != nil {
 		return nil, err
 	}
-	return f.PatchesBetween(after, upTo), nil
+	return f.PatchesBetween(after, upTo)
 }
 
 // ApplyForm returns the patch's durable index in the form channel: the append

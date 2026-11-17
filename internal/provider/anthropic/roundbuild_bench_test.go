@@ -35,16 +35,16 @@ type benchForm struct {
 	aria string
 }
 
-func (f benchForm) PatchesBetween(after, upTo uint64) []message.Patch {
+func (f benchForm) PatchesBetween(after, upTo uint64) ([]message.Patch, error) {
 	ps, err := f.be.FormPatchesBetween(f.aria, after, upTo)
 	if err != nil || len(ps) == 0 {
-		return nil
+		return nil, err
 	}
 	out := make([]message.Patch, len(ps))
 	for i := range ps {
 		out[i] = ps[i].Patch
 	}
-	return out
+	return out, nil
 }
 
 func (f benchForm) StateAt(version uint64) (form.Snapshot, bool) {

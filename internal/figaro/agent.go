@@ -1013,15 +1013,26 @@ type librettoBackend interface {
 // librettoView strips the libretto's bookkeeping keys.
 type librettoView struct{ lib *store.Libretto }
 
-func (v librettoView) PatchesBetween(after, upTo uint64) []message.Patch {
-	ps := v.lib.PatchesBetween(after, upTo)
+func (v librettoView) PatchesBetween(after, upTo uint64) ([]message.Patch, error) {
+	ps, err := v.lib.PatchesBetween(after, upTo)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]message.Patch, 0, len(ps))
 	for _, vp := range ps {
 		if p := withoutBookkeeping(vp.Patch); !p.IsIdentity() {
 			out = append(out, p)
 		}
 	}
-	return out
+	return out, nil
+}
+
+func (v librettoView) StateAt(version uint64) (form.Snapshot, bool) {
+	snap, err := v.lib.StateAt(version)
+	if err != nil {
+		return form.Snapshot{}, false
+	}
+	return store.WithoutLibrettoBookkeeping(snap), true
 }
 
 // withoutBookkeeping rebuilds the patch rather than editing it: the input is the
@@ -1064,20 +1075,20 @@ type formView struct {
 	id      string
 }
 
-func (v formView) PatchesBetween(after, upTo uint64) []message.Patch {
+func (v formView) PatchesBetween(after, upTo uint64) ([]message.Patch, error) {
 	ps, err := v.backend.FormPatchesBetween(v.id, after, upTo)
 	if err != nil {
 		slog.Debug("form patches between", "form", v.id, "after", after, "upTo", upTo, "err", err)
-		return nil
+		return nil, err
 	}
 	if len(ps) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make([]message.Patch, len(ps))
 	for i := range ps {
 		out[i] = ps[i].Patch
 	}
-	return out
+	return out, nil
 }
 
 type formStater interface {

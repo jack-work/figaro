@@ -96,8 +96,12 @@ func (l *Libretto) Version() uint64 { return l.form.Read().Version }
 // PatchesBetween must come from this instance: a second Form over the same
 // stump replays once and never hears the fold again, and the per-LT cache
 // makes whichever rendering ran first permanent.
-func (l *Libretto) PatchesBetween(after, upTo uint64) []VersionedPatch {
+func (l *Libretto) PatchesBetween(after, upTo uint64) ([]VersionedPatch, error) {
 	return l.form.PatchesBetween(after, upTo)
+}
+
+func (l *Libretto) StateAt(version uint64) (form.Snapshot, error) {
+	return l.form.StateAt(version)
 }
 
 // At is the source version last folded in.
@@ -367,6 +371,10 @@ func isLibrettoKey(k string) bool {
 // cross-aria noise inside one aria's context.
 func HiddenLibrettoKey(k string) bool {
 	return strings.HasPrefix(k, "system.libretto.") && k != form.KeyLibrettoAlive
+}
+
+func WithoutLibrettoBookkeeping(s form.Snapshot) form.Snapshot {
+	return s.DeletePath(KeyLibrettoRefs).DeletePath(KeyLibrettoAt)
 }
 
 func librettoPatch(kv map[string]any) message.Patch {

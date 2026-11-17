@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
@@ -11,8 +12,13 @@ import (
 
 type compactedForm struct{ state form.Snapshot }
 
-func (compactedForm) PatchesBetween(after, upTo uint64) []message.Patch { return nil }
-func (c compactedForm) StateAt(uint64) (form.Snapshot, bool)            { return c.state, true }
+func (compactedForm) PatchesBetween(after, upTo uint64) ([]message.Patch, error) {
+	return nil, errCompacted
+}
+
+var errCompacted = errors.New("compacted")
+
+func (c compactedForm) StateAt(uint64) (form.Snapshot, bool) { return c.state, true }
 
 // A bound form born under a compacted outfit cannot replay its patches from
 // version 1; a resumed derivation must seed from the state at its cursor, or
@@ -48,12 +54,12 @@ func rowsThrough(t *testing.T, n uint64) arialog.Log[[]json.RawMessage] {
 
 type versionedForm struct{ patches []message.Patch }
 
-func (v versionedForm) PatchesBetween(after, upTo uint64) []message.Patch {
+func (v versionedForm) PatchesBetween(after, upTo uint64) ([]message.Patch, error) {
 	var out []message.Patch
 	for i := after; i < upTo && int(i) < len(v.patches); i++ {
 		out = append(out, v.patches[i])
 	}
-	return out
+	return out, nil
 }
 
 func setKey(key, value string) message.Patch {

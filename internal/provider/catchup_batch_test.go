@@ -286,16 +286,16 @@ func TestCatchUpResumesFromADurablePrefix(t *testing.T) {
 // the state at a version.
 type boundFormOf struct{ f *batchFixture }
 
-func (v boundFormOf) PatchesBetween(after, upTo uint64) []message.Patch {
+func (v boundFormOf) PatchesBetween(after, upTo uint64) ([]message.Patch, error) {
 	ps, err := v.f.backend.FormPatchesBetween(v.f.aria, after, upTo)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	out := make([]message.Patch, len(ps))
 	for i := range ps {
 		out[i] = ps[i].Patch
 	}
-	return out
+	return out, nil
 }
 
 func (v boundFormOf) StateAt(version uint64) (form.Snapshot, bool) {
@@ -305,17 +305,20 @@ func (v boundFormOf) StateAt(version uint64) (form.Snapshot, bool) {
 
 type studiedFormOf struct{ f *batchFixture }
 
-func (v studiedFormOf) PatchesBetween(after, upTo uint64) []message.Patch {
+func (v studiedFormOf) PatchesBetween(after, upTo uint64) ([]message.Patch, error) {
 	lib, err := v.f.backend.Libretto(v.f.studied)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	ps := lib.PatchesBetween(after, upTo)
+	ps, err := lib.PatchesBetween(after, upTo)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]message.Patch, len(ps))
 	for i := range ps {
 		out[i] = ps[i].Patch
 	}
-	return out
+	return out, nil
 }
 
 func waitForFold(t *testing.T, lib *store.Libretto, version uint64) {

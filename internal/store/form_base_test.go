@@ -74,7 +74,7 @@ func TestABoardOpensFromItsWatermark(t *testing.T) {
 		t.Fatalf("Since(3): delta=%v patches=%d, want the %d patches from disk",
 			since.Delta, len(since.Patches), wantVersion-3)
 	}
-	if f.PatchesBetween(1, wantVersion) == nil {
+	if heldPatches(f.PatchesBetween(1, wantVersion)) == nil {
 		t.Fatal("history below the base was not read back from disk")
 	}
 }

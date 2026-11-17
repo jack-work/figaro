@@ -33,7 +33,7 @@ func TestFormSinceCatchesUpOrFallsBackWhole(t *testing.T) {
 
 	for _, since := range []uint64{1, 7, 20, 39} {
 		base := form.Snapshot{}
-		for _, p := range f.PatchesBetween(0, since) {
+		for _, p := range heldPatches(f.PatchesBetween(0, since)) {
 			base = base.Apply(p.Patch)
 		}
 		got := replaySince(t, base, f.Since(since))

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -266,23 +267,20 @@ type FormAt struct {
 }
 
 // PatchesBetween returns (after, upTo] as a view on the published array: no copy.
-func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
+func (f *Form) PatchesBetween(after, upTo uint64) ([]VersionedPatch, error) {
 	st := f.state.Load()
 	ps := st.patches
-	// Only a trim sends a read to disk.
 	if upTo > after && st.trimmed > 0 && after < st.trimmed {
-		if fromLog, ok := f.patchesFromLog(after, upTo); ok {
-			figOtel.RecordFormPatchRead(context.Background(), len(fromLog), len(ps))
-			return fromLog
+		fromLog, err := f.patchesFromLog(after, upTo)
+		if err != nil {
+			return nil, err
 		}
-		// The log could not answer, so neither can this: a short prefix from the
-		// resident array reads as a complete answer at the call site and
-		// surfaces later as a phantom gap. PatchFloor tells the caller why.
-		return nil
+		figOtel.RecordFormPatchRead(context.Background(), len(fromLog), len(ps))
+		return fromLog, nil
 	}
 	out := patchRange(ps, after, upTo)
 	figOtel.RecordFormPatchRead(context.Background(), len(out), len(ps))
-	return out
+	return out, nil
 }
 
 type FormSince struct {
@@ -302,8 +300,8 @@ func (f *Form) Since(since uint64) FormSince {
 		return FormSince{Version: st.version, Delta: true}
 	}
 	if st.trimmed > 0 && since < st.trimmed {
-		fromLog, ok := f.patchesFromLog(since, st.version)
-		if !ok {
+		fromLog, err := f.patchesFromLog(since, st.version)
+		if err != nil {
 			return full
 		}
 		return FormSince{Version: st.version, Delta: true, Patches: fromLog}
@@ -311,9 +309,6 @@ func (f *Form) Since(since uint64) FormSince {
 	return FormSince{Version: st.version, Delta: true, Patches: patchRange(st.patches, since, st.version)}
 }
 
-// PatchFloor: a read at or under it is answered nil by PatchesBetween and the
-// caller must reseed from Snapshot(). Zero means the whole history is
-// available, which is every durable form.
 func (f *Form) PatchFloor() uint64 {
 	if bl, ok := f.log.(FormBaseLog); ok {
 		return bl.Floor()
@@ -345,15 +340,19 @@ func (f *Form) StateAt(version uint64) (form.Snapshot, error) {
 	if sl, ok := f.log.(formStateLog); ok {
 		return sl.StateAt(version)
 	}
+	ps, err := f.PatchesBetween(0, version)
+	if err != nil {
+		return form.Snapshot{}, err
+	}
 	snap := form.Snapshot{}
-	for _, vp := range f.PatchesBetween(0, version) {
+	for _, vp := range ps {
 		snap = snap.Apply(vp.Patch)
 	}
 	return snap, nil
 }
 
 // The cold path; allocates.
-func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
+func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, error) {
 	var out []VersionedPatch
 	err := f.log.RangePatches(after+1, upTo, func(index uint64, payload []byte) error {
 		var p message.Patch
@@ -367,9 +366,12 @@ func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 	})
 	if err != nil {
 		slog.Warn("form patches from log", "after", after, "upTo", upTo, "err", err)
-		return nil, false
+		if errors.Is(err, ErrBelowFloor) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: %w", ErrBelowFloor, err)
 	}
-	return out, true
+	return out, nil
 }
 
 func trimPatches(ps []VersionedPatch, trimmed uint64, bytes int64) ([]VersionedPatch, uint64, int64) {
