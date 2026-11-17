@@ -127,6 +127,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.inbox.Prepend([]event{prompt})
 		return
 	}
+	a.hydrate()
 	a.mu.Lock()
 	a.lastActive = time.Now()
 	a.mu.Unlock()

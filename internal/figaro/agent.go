@@ -179,7 +179,8 @@ type Agent struct {
 	regionStart uint64
 	regionLast  uint64
 
-	ariaSrv *aria.Server
+	ariaSrv   *aria.Server
+	hydrateMu sync.Mutex
 
 	createdAt     time.Time
 	lastActive    time.Time
@@ -251,18 +252,13 @@ func NewAgent(cfg Config) *Agent {
 	a.inbox = NewInbox(ctx)
 	a.inbox.onPersist = a.persistSpool
 
-	entries := a.figLog.Read()
-	messages := unwrapMessages(entries)
 	// The _meta sidecar is current after Backend.Open (healMeta folds the suffix).
 	if !a.seedMetricsFromMeta() {
-		a.refreshMetricsFrom(messages)
+		a.refreshMetricsFrom(unwrapMessages(a.figLog.Read()))
 	}
 
 	a.ariaSrv = aria.NewServer()
 	a.ariaSrv.BindCache(a.id, cfg.UICache)
-	for _, t := range a.attachFormDeltas(a.projTurns(unwrapMessages(entries)), entries) {
-		a.ariaSrv.Commit(t)
-	}
 	a.ariaSrv.Subscribe(func(p aria.Page) {
 		p.Metrics = a.sessionMetrics()
 		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: p})
@@ -678,10 +674,22 @@ func (a *Agent) openTurn() {
 
 // seedTurnID walks the log only when the tail carries no id (pre-prompt records only).
 func (a *Agent) seedTurnID() uint64 {
-	if tail, ok := a.figLog.PeekTail(); ok && tail.Payload.TurnID != 0 {
-		return tail.Payload.TurnID
+	if id := a.tailTurnID(); id != 0 {
+		return id
 	}
 	return turns.StampIDs(unwrapMessages(a.figLog.Read()))
+}
+
+func (a *Agent) tailTurnID() uint64 {
+	tail, ok := a.figLog.PeekTail()
+	if !ok {
+		return 0
+	}
+	if tail.Payload.TurnID != 0 {
+		return tail.Payload.TurnID
+	}
+	id, _ := store.TurnAtLT(a.figLog, tail.LT)
+	return id
 }
 
 // unwrapMessages stamps LT and, for entries predating turn ids, a derived TurnID.
@@ -847,6 +855,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 }
 
 func (a *Agent) reconcileAriaServer() {
+	a.hydrate()
 	oldLast := a.ariaSrv.LastTurn()
 	hadOpen := a.ariaSrv.HasOpen()
 	history := a.materializeTurns()

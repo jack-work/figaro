@@ -7,10 +7,19 @@ import (
 // hydrate seeds the aria server from the log: an agent restored for a dormant
 // aria holds nothing until turns seal.
 func (a *Agent) hydrate() {
+	a.hydrateMu.Lock()
+	defer a.hydrateMu.Unlock()
 	if a.ariaSrv.LastTurn() > 0 || a.ariaSrv.HasOpen() {
 		return
 	}
 	a.ariaSrv.AdoptIfEmpty(a.materializeTurns())
+}
+
+func (a *Agent) turnCursor() uint64 {
+	if last := a.ariaSrv.LastTurn(); last > 0 {
+		return last
+	}
+	return a.tailTurnID()
 }
 
 // Read pages forward from at. Application is idempotent, so a catch-up/live overlap cannot double-apply.
