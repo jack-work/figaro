@@ -1,8 +1,12 @@
 package store
 
 import (
+	"encoding/json"
+
 	"log/slog"
 	"time"
+
+	"github.com/jack-work/figaro/api/form"
 )
 
 func (f *Form) maybeCheckpoint() {
@@ -94,6 +98,14 @@ func (f *Form) editMarks(cl checkpointLog, maxMarks int, edit func(map[uint64]Ma
 			delete(marks, v)
 		}
 	}
+	f.touched.Range(func(k, v any) bool {
+		if m, ok := marks[k.(uint64)]; ok && v.(int64) > m.Used {
+			m.Used = v.(int64)
+			marks[k.(uint64)] = m
+		}
+		f.touched.Delete(k)
+		return true
+	})
 	edit(marks)
 	evicted := evictMarks(marks, maxMarks)
 	for v := range held {
@@ -121,4 +133,42 @@ func dedupe(vs []uint64) []uint64 {
 		}
 	}
 	return out
+}
+
+func (f *Form) stateFromMark(cl checkpointLog, version uint64) (form.Snapshot, bool) {
+	marks := MarksOf(f.state.Load().snap)
+	var best uint64
+	for v := range marks {
+		if v <= version && v > best {
+			best = v
+		}
+	}
+	if best == 0 {
+		return form.Snapshot{}, false
+	}
+	c, err := cl.ReadCheckpoint(best)
+	if err != nil {
+		return form.Snapshot{}, false
+	}
+	if crc, err := cl.RecordCRC(best); err != nil || crc != c.RecordCRC {
+		return form.Snapshot{}, false
+	}
+	snap, _, err := decodeFormWatermark(c.body)
+	if err != nil {
+		return form.Snapshot{}, false
+	}
+	if version > best {
+		if err := f.log.RangePatches(best+1, version, func(_ uint64, payload []byte) error {
+			var rec formRecord
+			if err := json.Unmarshal(payload, &rec); err != nil {
+				return err
+			}
+			snap = snap.Apply(rec.Patch)
+			return nil
+		}); err != nil {
+			return form.Snapshot{}, false
+		}
+	}
+	f.touched.Store(best, time.Now().UnixMilli())
+	return snap, true
 }

@@ -2,8 +2,10 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -209,5 +211,57 @@ func TestConcurrentWritesOfOneCheckpointEachLand(t *testing.T) {
 	}
 	if vs := checkpointVersions(dir); len(vs) != 50 {
 		t.Fatalf("versions on disk: %v", vs)
+	}
+}
+
+func applyN(t testing.TB, b *XwalBackend, id string, n int, tag string) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		raw, _ := json.Marshal(fmt.Sprintf("%s-%d", tag, i))
+		if _, err := b.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{
+			fmt.Sprintf("%s.k%d", tag, i%40): raw,
+		}, nil)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A read refreshes a mark: of two old marks, the one read survives the
+// eviction and the one not read goes.
+func TestAReadMarkOutlivesAnUnreadOne(t *testing.T) {
+	checkpointEvery(t, 64, 3)
+	b, err := NewXwalBackend(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	id := mustNewAriaTB(t, b)
+	applyN(t, b, id, 64*3, "a")
+	settleCheckpoints(t, b, id)
+	f, _ := b.form(id)
+	snap, _ := f.Snapshot()
+	var old []uint64
+	for v, m := range MarksOf(snap) {
+		if m.Pin != PinTail {
+			old = append(old, v)
+		}
+	}
+	if len(old) != 2 {
+		t.Fatalf("want two old marks, got %v", MarksOf(snap))
+	}
+	slices.Sort(old)
+	time.Sleep(2 * time.Millisecond)
+	if _, err := f.StateAt(old[0] + 1); err != nil {
+		t.Fatal(err)
+	}
+	applyN(t, b, id, 64, "b")
+	settleCheckpoints(t, b, id)
+	snap, _ = f.Snapshot()
+	marks := MarksOf(snap)
+	if _, ok := marks[old[0]]; !ok {
+		t.Fatalf("the mark read at %d was evicted: %v", old[0], marks)
+	}
+	if _, ok := marks[old[1]]; ok {
+		t.Fatalf("the unread mark %d outlived the read one: %v", old[1], marks)
 	}
 }

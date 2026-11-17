@@ -176,6 +176,7 @@ type checkpointLog interface {
 	RecordCRC(version uint64) (uint32, error)
 	WriteCheckpoint(version uint64, recordCRC uint32, body []byte) error
 	CheckpointVersions() []uint64
+	ReadCheckpoint(version uint64) (formCheckpoint, error)
 	RemoveCheckpoint(version uint64) error
 }
 
