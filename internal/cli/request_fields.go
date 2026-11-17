@@ -9,13 +9,19 @@ import (
 )
 
 var requestFieldCapabilities = map[string]rpc.Capability{
-	"QuaRequest.Images":       rpc.CapQuaImages,
-	"SetRequest.Seq":          rpc.CapFormSeq,
-	"SetRequest.Client":       rpc.CapFormSeq,
-	"FormRequest.Client":      rpc.CapFormSeq,
-	"NormalizeRequest.DryRun": rpc.CapNormalize,
-	"StudyRequest.Keys":       rpc.CapStudyKeys,
-	"DecideRequest.Outfit":    rpc.CapDecideOutfit,
+	"QuaRequest.Images":               rpc.CapQuaImages,
+	"SetRequest.Seq":                  rpc.CapFormSeq,
+	"SetRequest.Client":               rpc.CapFormSeq,
+	"FormRequest.Client":              rpc.CapFormSeq,
+	"NormalizeRequest.DryRun":         rpc.CapNormalize,
+	"StudyRequest.Keys":               rpc.CapStudyKeys,
+	"DecideRequest.Outfit":            rpc.CapDecideOutfit,
+	"FormApplyRequest.FigaroID":       rpc.CapFormApply,
+	"FormApplyRequest.Outfits":        rpc.CapFormApply,
+	"FormApplyRequest.Managed":        rpc.CapFormApply,
+	"FormApplyRequest.IfVersion":      rpc.CapFormApply,
+	"FormApplyRequest.ExpectedOutfit": rpc.CapFormApply,
+	"FormApplyRequest.Check":          rpc.CapFormApply,
 }
 
 type quaer interface {
