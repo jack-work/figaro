@@ -27,6 +27,26 @@ func ReadReplay(s Snapshot) (Replay, bool) {
 	return r, true
 }
 
+type ReplayMasks struct {
+	Notice   bool
+	Clock    bool
+	Identity bool
+	Tools    bool
+}
+
+func ReadReplayMasks(s Snapshot) ReplayMasks {
+	on := func(name string) bool {
+		raw, ok := s.Get(ReplayKey + "." + name)
+		if !ok {
+			return true
+		}
+		var b bool
+		return json.Unmarshal(raw, &b) != nil || b
+	}
+	tools := on("tools")
+	return ReplayMasks{Notice: on("notice"), Clock: on("clock"), Identity: tools && on("identity"), Tools: tools}
+}
+
 func (r Replay) Patch(base Snapshot) Patch {
 	b, _ := json.Marshal(r)
 	return Build(base, map[string]json.RawMessage{ReplayKey: b}, nil)

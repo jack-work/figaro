@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
@@ -89,12 +90,18 @@ func ResolveReplay(backend store.Backend, r form.Replay) (ReplayRecord, error) {
 	return rec, nil
 }
 
-func (rec ReplayRecord) Mark(coord form.Replay) message.Replay {
-	return message.Replay{
+func (rec ReplayRecord) Mark(coord form.Replay, masks form.ReplayMasks) message.Replay {
+	m := message.Replay{
 		Of: coord.Of, Turn: coord.Turn, LT: rec.LT,
-		Notice: true, Clock: true, Identity: true, Tools: true,
-		AriaID: rec.AriaID, Studies: rec.Studies,
+		Notice: masks.Notice, Clock: masks.Clock, Identity: masks.Identity, Tools: masks.Tools,
 	}
+	if masks.Identity {
+		m.AriaID = rec.AriaID
+	}
+	if masks.Clock {
+		m.Studies = rec.Studies
+	}
+	return m
 }
 
 func inquiryWindow(before, after form.Snapshot) (map[string]json.RawMessage, []string) {
@@ -149,7 +156,8 @@ func (a *Agent) beginReplay(prompt event) (event, error) {
 	if prompt.replay == replayNone {
 		return prompt, nil
 	}
-	coord, ok := form.ReadReplay(a.form.Snapshot())
+	snap := a.form.Snapshot()
+	coord, ok := form.ReadReplay(snap)
 	if !ok {
 		return prompt, errReplayUnset
 	}
@@ -166,8 +174,12 @@ func (a *Agent) beginReplay(prompt event) (event, error) {
 		}
 		drop = rec.Drop
 	}
-	if len(rec.Datetime) > 0 {
+	masks := form.ReadReplayMasks(snap)
+	switch {
+	case masks.Clock && len(rec.Datetime) > 0:
 		set[form.DatetimeKey] = rec.Datetime
+	case !masks.Clock && prompt.replay == replayRun:
+		set[form.DatetimeKey] = form.Datetime(time.Now())
 	}
 	if patch := form.Build(a.form.Snapshot(), set, drop); !patch.IsIdentity() {
 		if _, err := a.backend.ApplyForm(a.id, patch); err != nil {
@@ -175,7 +187,7 @@ func (a *Agent) beginReplay(prompt event) (event, error) {
 		}
 		a.form.Apply(patch)
 	}
-	a.replay.Store(&replayTurn{mark: rec.Mark(coord), tape: recordTape(rec.Turn)})
+	a.replay.Store(&replayTurn{mark: rec.Mark(coord, masks), tape: recordTape(rec.Turn)})
 	return prompt, nil
 }
 
