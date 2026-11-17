@@ -282,12 +282,14 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		return nil, err
 	}
 	birth := forkDress(dress, req.FigaroID)
-	var replay replayPlan
+	births := []store.BirthOption{mintedBy(ctx), ariaIDStamp()}
 	if req.Replay {
-		if replay, err = h.planReplay(req.FigaroID, req.AtTurn, atMainLT, dress); err != nil {
+		replay, mark, err := h.planReplay(req.FigaroID, req.AtTurn)
+		if err != nil {
 			return nil, err
 		}
-		birth = form.Merge(birth, replay.birth(dress))
+		birth = form.Merge(replayBirth(replay, dress), birth)
+		births = append(births, store.Replaying(mark))
 	}
 	// interior is read off the coordinate, not the LT: forking at turn 1 has
 	// LT 0, which is also the head-fork sentinel.
@@ -318,7 +320,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			at = atMainLT
 		}
 		var ferr error
-		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, birth, mintedBy(ctx), ariaIDStamp())
+		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, birth, births...)
 		if ferr != nil {
 			return ferr
 		}
@@ -341,9 +343,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}
 	if req.Replay {
-		if err := h.startReplay(ctx, alt, replay); err != nil {
+		if err := h.startReplay(ctx, alt); err != nil {
 			h.discardBirth(alt)
-			return nil, err
+			return nil, fmt.Errorf("fork: %w", err)
 		}
 	}
 	slog.Info("forked figaro", "parent", req.FigaroID, "turn", req.AtTurn, "lt", atMainLT, "continuation", cont, "alternative", alt)

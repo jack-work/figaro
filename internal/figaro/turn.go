@@ -132,6 +132,13 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.lastActive = time.Now()
 	a.mu.Unlock()
 
+	prompt, rerr := a.beginReplay(prompt)
+	defer a.replay.Store(nil)
+	if errors.Is(rerr, errReplayUnset) {
+		slog.Info("replay dropped", "aria", a.id, "why", rerr)
+		return
+	}
+
 	// Turn start is the one moment no round is in flight, so an orphaned invoke
 	// (a fork over a dead tool call) is closed here, before history is assembled.
 	if a.backend != nil {
@@ -178,6 +185,10 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		cancel()
 	}()
 
+	if rerr != nil {
+		a.endTurn("error: " + rerr.Error())
+		return
+	}
 	if prompt.text != "" {
 		methodsCtx, methodsSpan := figOtel.Start(turnCtx, "figaro.methods")
 		a.runInquiryMethods(methodsCtx, prompt.text)
@@ -219,8 +230,12 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (arialog.Entry[mes
 		mv, _ := json.Marshal(firstChars(prompt.text, 60))
 		seed["mantra"] = mv
 	}
+	replay := a.replay.Load()
+	if replay != nil && !steering {
+		msg.Replay = &replay.mark
+	}
 	warning, warn := a.handoverWarning()
-	warn = warn && !prompt.replay
+	warn = warn && replay == nil
 	if warn {
 		a.markHandoverWarned()
 	}
@@ -1226,8 +1241,8 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 			})
 			return
 		}
-		if rec, ok := form.ReadReplay(a.form.Snapshot()); ok {
-			emitEnd(a.replayAnswer(rec, tc))
+		if r := a.replay.Load(); r != nil && r.mark.Tools {
+			emitEnd(r.answer(tc))
 			return
 		}
 		t, ok := a.tools.Get(tc.ToolName)
