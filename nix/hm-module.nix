@@ -10,6 +10,36 @@ let
   toml = pkgs.formats.toml { };
   figaro = "${cfg.package}/bin/figaro";
   restart = "${figaro} upgrade --to ${figaro} --if-changed --wait ${toString cfg.restartWait}";
+  applicationType = types.submodule {
+    options = {
+      roleId = mkOption {
+        type = types.strMatching "@([0-9a-f]{8}|[0-9a-f]{32})";
+        description = "Exact existing role ID (@ and 32 hex digits, or 8 for a legacy role), not a name or prefix.";
+      };
+      outfits = mkOption {
+        type = types.listOf types.str;
+        description = "Installed daemon outfit names, folded in order.";
+      };
+      managed = mkOption {
+        type = types.listOf types.str;
+        description = "Explicit paths whose values this declaration manages.";
+      };
+      mode = mkOption {
+        type = types.enum [
+          "check"
+          "apply"
+        ];
+        default = "check";
+        description = "Check by default; applying changes requires an explicit selection.";
+      };
+    };
+  };
+  roleApplications = import ./role-applications.nix {
+    inherit lib pkgs;
+    runtimeDir = cfg.roleApplicationRuntimeDir;
+    applications = cfg.roleApplications;
+    inherit figaro;
+  };
 in
 {
   options.programs.figaro = {
@@ -25,6 +55,20 @@ in
       default = { };
       description = "Declared outfits rendered under figaro/outfits. Never put credentials here; the Nix store is public.";
     };
+
+    roleApplications = mkOption {
+      type = types.attrsOf applicationType;
+      default = { };
+      description = "Outfit applications to existing roles. Live forms remain authoritative; this is not a role registry.";
+    };
+
+    roleApplicationRuntimeDir = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "Explicit local daemon runtime directory for declared role applications.";
+    };
+
+    applyRolesOnSwitch = lib.mkEnableOption "applying or checking declared role fields after outfit installation";
 
     restartOnSwitch = mkOption {
       type = types.bool;
@@ -53,11 +97,41 @@ in
   config = lib.mkIf cfg.enable (
     lib.mkMerge [
       {
-        home.packages = [ cfg.package ];
-        xdg.configFile = lib.mapAttrs' (name: spec: lib.nameValuePair "figaro/outfits/${name}.toml" {
-          source = toml.generate "figaro-outfit-${name}.toml" spec;
-        }) cfg.outfits;
+        assertions = [
+          {
+            assertion = cfg.roleApplications == { } || cfg.roleApplicationRuntimeDir != null;
+            message = "Figaro role applications require an explicit local runtime directory.";
+          }
+          {
+            assertion = lib.all (app: app.outfits != [ ] && app.managed != [ ]) (
+              lib.attrValues cfg.roleApplications
+            );
+            message = "Each Figaro role application needs outfit names and managed paths.";
+          }
+          {
+            assertion = !cfg.applyRolesOnSwitch || cfg.roleApplications != { };
+            message = "applyRolesOnSwitch requires at least one declared role application.";
+          }
+        ];
+        home.packages = [ cfg.package ] ++ lib.optional (cfg.roleApplications != { }) roleApplications;
+        xdg.configFile = lib.mapAttrs' (
+          name: spec:
+          lib.nameValuePair "figaro/outfits/${name}.toml" {
+            source = toml.generate "figaro-outfit-${name}.toml" spec;
+          }
+        ) cfg.outfits;
       }
+      (lib.mkIf cfg.applyRolesOnSwitch {
+        home.activation.figaroApplyRoles = lib.hm.dag.entryAfter [ "linkGeneration" "figaroRestartOnSwitch" ] ''
+          figaro_role_check_args=()
+          if [ -n "''${DRY_RUN:-}" ]; then
+            figaro_role_check_args=(--check)
+          fi
+          if ! ${roleApplications}/bin/figaro-apply-roles "''${figaro_role_check_args[@]}"; then
+            echo "figaro: role application did not complete; run ${roleApplications}/bin/figaro-apply-roles --check before retrying" >&2
+          fi
+        '';
+      })
       (lib.mkIf cfg.restartOnSwitch {
         home.activation.figaroRestartOnSwitch = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
           if [ -n "''${DRY_RUN:-}" ]; then
