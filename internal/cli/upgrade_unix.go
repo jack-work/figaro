@@ -337,8 +337,18 @@ func runUpgrade(o upgradeOptions) {
 	if err := boot.SpawnRefusal(os.Getenv); up && err != nil {
 		die("%s", err)
 	}
+	unit := governingUnit()
+	if unit != nil {
+		if err := unitMayServe(unit, to, os.Getenv); err != nil {
+			die("%s", err)
+		}
+	}
 	if !up && !o.dryRun {
 		recordSwitchExe(to)
+		if unit != nil {
+			fmt.Fprintf(stderrw, "figaro: no angelus is running; the next figaro command starts %s, which runs %s\n", unit.Name, to)
+			return
+		}
 		fmt.Fprintln(stderrw, "figaro: no angelus is running; the next figaro command starts the new build")
 		return
 	}
@@ -376,11 +386,15 @@ func runUpgrade(o upgradeOptions) {
 		}
 	}
 	runStop(stopOptions{keepAgent: true})
-	start := exec.Command(to, "ls", "-j")
-	start.Stdout = nil
-	start.Stderr = stderrw
-	if err := start.Run(); err != nil {
-		die("start the new angelus with %s: %s", to, err)
+	if unit != nil {
+		restartUnitServing(unit, to)
+	} else {
+		start := exec.Command(to, "ls", "-j")
+		start.Stdout = nil
+		start.Stderr = stderrw
+		if err := start.Run(); err != nil {
+			die("start the new angelus with %s: %s", to, err)
+		}
 	}
 	report := make([]string, 0, len(steps))
 	for i := range steps {
