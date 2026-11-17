@@ -174,6 +174,36 @@ func TestTheReplayedTurnReadsAsTheOriginal(t *testing.T) {
 	require.Equal(t, sent, tap.count(parent), "the replay is not sent as the original")
 }
 
+// Defends #114: each mask is the owner's to turn off. With the clock and
+// identity masks off the replayed turn reads today and its own id, while
+// the fork mark stays hidden and the tools stay stubbed.
+func TestTheOwnerTurnsReplayMasksOffOneByOne(t *testing.T) {
+	tap := &wireTap{}
+	a, acli := gatewayDaemon(t, tap)
+	parent := gatewayAria(t, a, acli)
+
+	resp, err := acli.Replay(t.Context(), parent, 2, nil, rawPatch(map[string]string{
+		"system.replay.clock":    "false",
+		"system.replay.identity": "false",
+	}))
+	require.NoError(t, err)
+	branch := resp.Alternative
+	body := sinceLastAnswer(t, awaitWire(t, a, tap, branch, 1))
+	require.Contains(t, body, "second question")
+	require.Contains(t, body, branch, "identity off: the model reads its own id")
+	require.NotContains(t, body, "November 12", "clock off: the model reads the live datetime")
+	require.NotContains(t, body, replayForkNotice, "the notice mask is still on")
+
+	marks := replayMarks(t, acli, branch)
+	m := marks[len(marks)-1]
+	require.NotNil(t, m)
+	require.False(t, m.Clock)
+	require.False(t, m.Identity)
+	require.True(t, m.Notice)
+	require.True(t, m.Tools)
+	require.Empty(t, m.AriaID)
+}
+
 func TestAReplayKeepsItsRealIdOffTheWire(t *testing.T) {
 	tap := &wireTap{}
 	a, acli := gatewayDaemon(t, tap)

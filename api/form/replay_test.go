@@ -24,3 +24,14 @@ func TestReadReplayWantsATrunkAndATurn(t *testing.T) {
 		t.Fatalf("round trip: %+v %v", got, ok)
 	}
 }
+
+func TestReplayMasksDefaultOn(t *testing.T) {
+	all := ReplayMasks{Notice: true, Clock: true, Identity: true, Tools: true}
+	if got := ReadReplayMasks(Snapshot{}); got != all {
+		t.Fatalf("no keys: %+v", got)
+	}
+	s := FromMap(map[string]json.RawMessage{ReplayKey: json.RawMessage(`{"of":"abc","turn":2,"clock":false,"tools":false}`)})
+	if got := ReadReplayMasks(s); got != (ReplayMasks{Notice: true, Identity: true}) {
+		t.Fatalf("clock and tools off: %+v", got)
+	}
+}
