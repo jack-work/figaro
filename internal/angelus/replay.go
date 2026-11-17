@@ -69,7 +69,7 @@ func (h *handlers) planReplay(parent string, turn, cut uint64, dress form.Patch)
 	return replayPlan{
 		inquiry: inq.Payload,
 		window:  replayWindow(before, after, dress),
-		record:  form.Replay{Of: parent, Turn: turn, LT: inq.LT, AriaID: seen},
+		record:  form.Replay{Of: parent, Turn: turn, LT: inq.LT, AriaID: seen, Studies: inq.StudyVersions},
 	}, nil
 }
 
