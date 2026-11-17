@@ -1333,14 +1333,15 @@ In order, stopping at the first step that fails:
      branches survive its end. A successor not drawn under it is left where
      it is, and the branch forked earliest takes its place.
   3. send the prompt to the successor. A successor mid-turn is steered.
-  4. cast the successor into the role.
-  5. the predecessor drops the role, its mantra gains "SUCCEEDED: ", and
-     --abdication decides the rest:
+  4. cast the successor into the role, and into every other role that
+     targets the predecessor.
+  5. the predecessor drops those roles, its mantra gains "SUCCEEDED: ",
+     and --abdication decides the rest:
        retire  (default) it refuses prompts from now on
        linger  it still takes prompts, for a handover with overlap
      Either way it is reaped --ttl from now (default 10m) unless something
-     holds it: a bound shell, another role, a recent branch. --ttl 0 kills
-     it instead. A reaped predecessor stays in ` + "`figaro reaped`" + `.
+     holds it: a bound shell, a recent branch. --ttl 0 kills it
+     instead. A reaped predecessor stays in ` + "`figaro reaped`" + `.
 
 Nothing is rolled back. A step that fails leaves the ones before it in
 place, and the error lists the commands that finish the job by hand.
