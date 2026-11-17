@@ -501,7 +501,7 @@ func (s *XwalStore) writeBirth(node string, patch message.Patch, b birthSpec) (u
 	if err != nil {
 		return 0, message.Patch{}, err
 	}
-	gen, _ := json.Marshal(message.Message{Role: message.RoleInput, Timestamp: s.now(), Principal: b.mintedBy})
+	gen, _ := json.Marshal(message.Message{Role: message.RoleInput, Timestamp: s.now(), Principal: b.mintedBy, Replay: b.replay})
 	glt, err := x.AppendMain(gen, nil)
 	if err != nil {
 		return 0, message.Patch{}, err

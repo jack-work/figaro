@@ -45,6 +45,7 @@ type spooledPrompt struct {
 	Segments []spooledSegment  `json:"segments,omitempty"`
 	At       int64             `json:"at,omitempty"`
 	Resume   bool              `json:"resume,omitempty"`
+	Replay   replayStep        `json:"replay,omitempty"`
 }
 
 type spooledSegment struct {
@@ -59,6 +60,7 @@ type cutTurn struct {
 	Turn      uint64 `json:"turn"`
 	Resumed   bool   `json:"resumed,omitempty"`
 	Suspended bool   `json:"suspended,omitempty"`
+	Replay    bool   `json:"replay,omitempty"`
 }
 
 func (c *cutTurn) owesResume() bool {
@@ -177,7 +179,7 @@ func (s *Spool) Arias() ([]string, error) {
 }
 
 func spooled(e event) spooledPrompt {
-	p := spooledPrompt{Text: e.text, Images: e.images, Form: e.form, At: e.at, Resume: e.resume}
+	p := spooledPrompt{Text: e.text, Images: e.images, Form: e.form, At: e.at, Resume: e.resume, Replay: e.replay}
 	for _, s := range e.segments {
 		p.Segments = append(p.Segments, spooledSegment{Sender: s.sender, Principal: s.principal, Text: s.text, Notice: s.notice, Delivery: s.delivery})
 	}
@@ -185,20 +187,24 @@ func spooled(e event) spooledPrompt {
 }
 
 func (p spooledPrompt) event() event {
-	e := event{typ: eventUserPrompt, text: p.Text, images: p.Images, form: p.Form, at: p.At, resume: p.Resume}
+	e := event{typ: eventUserPrompt, text: p.Text, images: p.Images, form: p.Form, at: p.At, resume: p.Resume, replay: p.Replay}
 	for _, s := range p.Segments {
 		e.segments = append(e.segments, promptSegment{sender: s.Sender, principal: s.Principal, text: s.Text, notice: s.Notice, delivery: s.Delivery})
 	}
 	return e
 }
 
-func resumeEvent() event {
-	return event{
+func resumeEvent(cut *cutTurn) event {
+	evt := event{
 		typ:      eventUserPrompt,
 		text:     ResumeNotice,
 		resume:   true,
 		segments: []promptSegment{{sender: resumeSender, text: ResumeNotice}},
 	}
+	if cut.Replay {
+		evt.replay = replayResume
+	}
+	return evt
 }
 
 func (a *Agent) Redeliver() {
@@ -217,7 +223,7 @@ func (a *Agent) Redeliver() {
 	var events []event
 	switch {
 	case f.Cut.owesResume():
-		events = append(events, resumeEvent())
+		events = append(events, resumeEvent(f.Cut))
 	case f.Cut != nil:
 		slog.Warn("a resumed turn was cut again by a crash; not resuming it twice", "aria", a.id, "turn", f.Cut.Turn)
 	}
@@ -263,10 +269,10 @@ func (a *Agent) persistSpool() {
 	a.spoolLast = data
 }
 
-func (a *Agent) markCut(turn uint64, resumed bool) {
+func (a *Agent) markCut(turn uint64, resumed, replay bool) {
 	a.spoolMu.Lock()
 	if !a.halted.Load() {
-		a.cut = &cutTurn{Turn: turn, Resumed: resumed}
+		a.cut = &cutTurn{Turn: turn, Resumed: resumed, Replay: replay}
 	}
 	a.spoolMu.Unlock()
 }

@@ -66,9 +66,11 @@ type event struct {
 	// segments keeps who said what across a fold; text stays the joined form.
 	segments []promptSegment
 	resume   bool
-	replay   bool
+	replay   replayStep
 	traces   []string
 }
+
+func (e event) foldable() bool { return e.typ == eventUserPrompt && e.replay == replayNone }
 
 // Config is the constructor input for NewAgent.
 type Config struct {
@@ -153,8 +155,7 @@ type Agent struct {
 	turnSenders []promptSegment
 	turnFault   error
 
-	replayMu   sync.Mutex
-	replayTape *replayTape
+	replay atomic.Pointer[replayTurn]
 
 	spool      *Spool
 	spoolMu    sync.Mutex
@@ -924,6 +925,10 @@ func (a *Agent) act(ctx context.Context) {
 		}
 		switch evt.typ {
 		case eventUserPrompt:
+			if evt.replay != replayNone {
+				a.runTurn(ctx, evt)
+				continue
+			}
 			batch := append([]event{evt}, a.inbox.TakeReadyUserPrompts()...)
 			merged, ok := mergePromptEvents(batch)
 			if !ok {
@@ -996,7 +1001,7 @@ func (a *Agent) formAccessor() provider.Form {
 		slog.Warn("form patches (transitions disabled this turn)", "aria", a.id, "err", err)
 		return nil
 	}
-	return boundView(a.backend, a.id, a.form.Snapshot())
+	return formView{backend: a.backend, id: a.id}
 }
 
 // studyAccessors reads each studied form's libretto, never the source, so a
@@ -1018,7 +1023,7 @@ func (a *Agent) studyAccessors() map[string]provider.Form {
 		}
 		out[fid] = librettoView{lib}
 	}
-	return freezeStudies(a.form.Snapshot(), out)
+	return out
 }
 
 // librettoBackend is optional: an ephemeral backend has none.
@@ -1305,8 +1310,7 @@ func BoundFormAccessorFor(backend store.Backend, ariaID string) provider.Form {
 	if _, err := backend.FormVersion(ariaID); err != nil {
 		return nil
 	}
-	snap, _ := backend.FormState(ariaID)
-	return boundView(backend, ariaID, snap)
+	return formView{backend: backend, id: ariaID}
 }
 
 func StudyAccessorsFor(backend store.Backend, ariaID string) map[string]provider.Form {
@@ -1330,5 +1334,5 @@ func StudyAccessorsFor(backend store.Backend, ariaID string) map[string]provider
 		}
 		out[id] = librettoView{lib: lib}
 	}
-	return freezeStudies(snap, out)
+	return out
 }

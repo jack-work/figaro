@@ -149,6 +149,18 @@ type StudyMark struct {
 	Began  bool   `json:"began"`
 }
 
+type Replay struct {
+	Of       string            `json:"of"`
+	Turn     uint64            `json:"turn"`
+	LT       uint64            `json:"lt"`
+	Notice   bool              `json:"notice,omitempty"`
+	Clock    bool              `json:"clock,omitempty"`
+	Identity bool              `json:"identity,omitempty"`
+	Tools    bool              `json:"tools,omitempty"`
+	AriaID   string            `json:"aria_id,omitempty"`
+	Studies  map[string]uint64 `json:"studies,omitempty"`
+}
+
 type Message struct {
 	Role    Role      `json:"role"`
 	Content []Content `json:"content"`
@@ -187,6 +199,8 @@ type Message struct {
 	Timestamp int64 `json:"timestamp"`
 
 	Principal string `json:"principal,omitempty"`
+
+	Replay *Replay `json:"replay,omitempty"`
 }
 
 func TextContent(text string) Content {

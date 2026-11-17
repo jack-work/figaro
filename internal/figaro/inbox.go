@@ -282,7 +282,7 @@ func (b *Inbox) Recv() (event, bool) {
 
 // TakeReadyUserPrompts never jumps prompts over an earlier control or fork event.
 func (b *Inbox) TakeReadyUserPrompts() []event {
-	taken := b.q.TakeWhile(func(e event) bool { return e.typ == eventUserPrompt })
+	taken := b.q.TakeWhile(event.foldable)
 	b.mu.Lock()
 	for _, evt := range taken {
 		b.liftLocked(evt)
@@ -384,13 +384,13 @@ func (b *Inbox) CoalesceUserPromptRuns() {
 		}
 		out := make([]event, 0, len(pending))
 		for i := 0; i < len(pending); {
-			if pending[i].typ != eventUserPrompt {
+			if !pending[i].foldable() {
 				out = append(out, pending[i])
 				i++
 				continue
 			}
 			j := i
-			for j < len(pending) && pending[j].typ == eventUserPrompt {
+			for j < len(pending) && pending[j].foldable() {
 				j++
 			}
 			if merged, ok := mergePromptEvents(pending[i:j]); ok {
@@ -413,7 +413,7 @@ func (b *Inbox) DrainUserPrompts() []event {
 		kept := make([]event, 0, len(pending))
 		drained = make([]event, 0, len(pending))
 		for _, e := range pending {
-			if e.typ == eventUserPrompt {
+			if e.foldable() {
 				drained = append(drained, e)
 				continue
 			}
@@ -472,7 +472,7 @@ func (b *Inbox) deleteLocked(queue []event, epoch string, ids []uint64, all bool
 		var results []rpc.QueueResult
 		kept := make([]event, 0, len(queue))
 		for _, e := range queue {
-			if e.typ != eventUserPrompt {
+			if !e.foldable() {
 				kept = append(kept, e)
 				continue
 			}
@@ -545,7 +545,7 @@ func indexOf(queue []event, id uint64) int {
 		return -1
 	}
 	for i := range queue {
-		if queue[i].typ == eventUserPrompt && queue[i].id == id {
+		if queue[i].foldable() && queue[i].id == id {
 			return i
 		}
 	}
