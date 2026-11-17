@@ -338,7 +338,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if auto != nil {
 		autoRequest = true
 		p.knownAuto.Store(model, true)
-	} else if autoRequest {
+	} else if _, listed := p.cat.lookup(model); autoRequest && (rememberedAuto || !listed) {
 		return fmt.Errorf("%s: auto route catalog entry is unavailable", p.Name())
 	}
 	if auto != nil && p.knobs.Lease != "" {
