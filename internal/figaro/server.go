@@ -87,7 +87,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			return nil, err
 		}
 		// The hub dresses on the way in; a missing spec already failed the qua.
-		cursor := int(a.ariaSrv.LastTurn())
+		cursor := int(a.turnCursor())
 		active := a.turnActive()
 		if err := a.SubmitPromptFrom(ctx, req, rpc.SenderFrom(params, a.dukeTitle)); err != nil {
 			return nil, err
