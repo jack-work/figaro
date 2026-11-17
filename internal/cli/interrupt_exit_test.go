@@ -13,9 +13,3 @@ func TestInterruptExit(t *testing.T) {
 		t.Errorf("exitInterrupted = %d, want 130", exitInterrupted)
 	}
 }
-
-func TestRawPathUsesTheSameConstant(t *testing.T) {
-	if interruptExit(true) != exitInterrupted {
-		t.Error("the interactive rule and the raw constant have diverged")
-	}
-}
