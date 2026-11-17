@@ -526,6 +526,9 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 	if err := a.refuseAsReplay(); err != nil {
 		return err
 	}
+	if err := refuseReplayInPrompt(a.form.Snapshot(), a.combineFormInput(req.Form)); err != nil {
+		return err
+	}
 	// A refused token leaves the form unpatched and the inbox untouched.
 	text, err := a.rewriteInput(ctx, req.Text)
 	if err != nil {

@@ -1,6 +1,7 @@
 package figaro
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -212,6 +213,18 @@ func replayEvent(inquiry message.Message) event {
 	}
 	evt.text = strings.Join(texts, "\n\n")
 	return evt
+}
+
+func refuseReplayInPrompt(snap form.Snapshot, patch form.Patch) error {
+	if patch.IsIdentity() {
+		return nil
+	}
+	was, _ := snap.Get(form.ReplayKey)
+	now, _ := snap.Apply(patch).Get(form.ReplayKey)
+	if bytes.Equal(was, now) {
+		return nil
+	}
+	return fmt.Errorf("%s is set with `figaro set`, not with a prompt", form.ReplayKey)
 }
 
 func (a *Agent) refuseAsReplay() error {
