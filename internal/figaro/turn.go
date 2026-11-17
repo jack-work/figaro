@@ -253,7 +253,11 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (arialog.Entry[mes
 		}
 	}
 	msg.Content = append(msg.Content, fitPromptImagesTotal(prompt.images, a.settings.InlineImageBudget())...)
-	a.turnSenders = append(a.turnSenders, prompt.segments...)
+	if replay != nil && !steering {
+		a.turnSenders = append(a.turnSenders, replay.by...)
+	} else {
+		a.turnSenders = append(a.turnSenders, prompt.segments...)
+	}
 	if blocks := senderRuns(prompt.segments); len(blocks) > 0 {
 		msg.Content = append(msg.Content, blocks...)
 	} else if prompt.text != "" {

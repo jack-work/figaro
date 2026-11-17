@@ -65,7 +65,7 @@ func replayBehindALiveTurn(t *testing.T) (store.Backend, string, *figaro.Agent, 
 	a.SubmitPrompt(rpc.QuaRequest{Text: "live work"})
 	require.Eventually(t, func() bool { return p.sends() == 2 }, 5*time.Second, 5*time.Millisecond)
 	require.NoError(t, a.ApplySuccession(form.Replay{Of: id, Turn: 1}.Patch(form.Snapshot{})))
-	require.NoError(t, a.SubmitReplay())
+	require.NoError(t, a.SubmitReplay("", ""))
 	return be, id, a, p
 }
 

@@ -60,7 +60,7 @@ func TestAReplayQueuedAcrossARestartStillReplays(t *testing.T) {
 	be, id, spool, a0 := recordedTurn(t)
 	a0.Suspend()
 	awaitState(t, a0, figaro.StateSuspended)
-	require.NoError(t, a0.SubmitReplay())
+	require.NoError(t, a0.SubmitReplay("", ""))
 	a0.Kill()
 
 	p := newSpoolProvider(false)
@@ -83,7 +83,7 @@ func TestACutReplayResumesOnlyAsAReplay(t *testing.T) {
 		a0.Kill()
 		hold := newSpoolProvider(true)
 		a1 := boundAgent(t, be, id, spool, hold)
-		require.NoError(t, a1.SubmitReplay())
+		require.NoError(t, a1.SubmitReplay("", ""))
 		hold.await(t)
 		a1.Suspend()
 		awaitState(t, a1, figaro.StateSuspended)
