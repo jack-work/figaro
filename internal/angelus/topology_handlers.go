@@ -247,6 +247,13 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.refuseUnheldSandbox(ctx, req.Patch); err != nil {
 		return nil, fmt.Errorf("fork: %w", err)
 	}
+	if max, ok, ferr := form.FanoutMaxChildren(inherited); ferr != nil {
+		return nil, fmt.Errorf("fork: %w", ferr)
+	} else if ok {
+		if n := len(h.angelus.liveChildrenOf(req.FigaroID)); n >= max {
+			return nil, fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one or fork elsewhere", req.FigaroID, n, max)
+		}
+	}
 	var cont, alt string
 	note := ""
 	var forkOwner store.OwnerInfo
@@ -304,7 +311,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			at = atMainLT
 		}
 		var ferr error
-		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID), mintedBy(ctx), ariaIDStamp())
+		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID, authz.FigaroOf(ctx) != ""), mintedBy(ctx), ariaIDStamp())
 		if ferr != nil {
 			return ferr
 		}

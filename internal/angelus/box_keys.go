@@ -321,6 +321,9 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 	if err := checkScopesParse(before, after); err != nil {
 		return err
 	}
+	if _, _, err := form.FanoutMaxChildren(after); err != nil {
+		return err
+	}
 	c := h.callerKeysOf(ctx)
 	if c.owns && !c.boxed {
 		return nil
@@ -336,7 +339,38 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 			return err
 		}
 	}
-	return h.refuseScopesBeyondWriter(ctx, c, line, before, after)
+	if err := h.refuseScopesBeyondWriter(ctx, c, line, before, after); err != nil {
+		return err
+	}
+	return h.refuseFanoutBeyondGranter(ctx, before, after)
+}
+
+func (h *handlers) refuseFanoutBeyondGranter(ctx context.Context, before, after form.Snapshot) error {
+	was, _ := before.Get(form.FanoutMaxChildrenKey)
+	now, nowOK := after.Get(form.FanoutMaxChildrenKey)
+	if !nowOK || bytes.Equal(was, now) {
+		return nil
+	}
+	n, _, err := form.FanoutMaxChildren(after)
+	if err != nil {
+		return err
+	}
+	f := authz.FigaroOf(ctx)
+	if f == "" {
+		return fmt.Errorf("%s: only the owner or an ancestor figaro grants it", form.FanoutMaxChildrenKey)
+	}
+	gsnap, gerr := h.angelus.Backend.FormState(f)
+	if gerr != nil {
+		return fmt.Errorf("%s: reading %s's own limit: %w", form.FanoutMaxChildrenKey, f, gerr)
+	}
+	own, ok, operr := form.FanoutMaxChildren(gsnap)
+	if operr != nil {
+		return operr
+	}
+	if ok && n > own {
+		return fmt.Errorf("%s: %s grants at most its own max_children (%d), not %d", form.FanoutMaxChildrenKey, f, own, n)
+	}
+	return nil
 }
 
 func (h *handlers) formAccess(ctx context.Context, id string, params json.RawMessage) *rpc.FormAccess {
@@ -367,7 +401,7 @@ func (h *handlers) callerOwns(ctx context.Context) bool {
 func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, params json.RawMessage) error {
 	_, boxed := callerBox(ctx)
 	owner := !boxed && h.callerOwns(ctx)
-	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retirement")) && !bytes.Contains(params, []byte("grants")) && !bytes.Contains(params, []byte("scopes")) && !bytes.ContainsRune(params, '\\') {
+	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retirement")) && !bytes.Contains(params, []byte("grants")) && !bytes.Contains(params, []byte("scopes")) && !bytes.Contains(params, []byte("fanout")) && !bytes.ContainsRune(params, '\\') {
 		return nil
 	}
 	var patch *form.Patch

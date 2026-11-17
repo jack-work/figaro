@@ -258,6 +258,16 @@ func (h *Hierarchy) DrawnByHand(id string) (string, bool) {
 	return over, true
 }
 
+// Children is this node's children in the drawn tree: the presentation a
+// fork grows and a reparent moves, whether or not anything overrode it by
+// hand.
+func (h *Hierarchy) Children(id string) []string {
+	if h == nil || h.eng == nil {
+		return nil
+	}
+	return h.eng.DrawnChildren(id)
+}
+
 func (h *Hierarchy) Check(ctx context.Context, by Principal, p Plan) (Plan, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

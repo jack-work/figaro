@@ -70,16 +70,22 @@ var ErrSystemOnly = errors.New("only the daemon may run this plan")
 var ErrSplitsReapedGroup = errors.New("a delete would split a reaped group")
 
 type TopologyGuard struct {
-	Policies   func() *Policies
-	Owner      func() jkauthz.Principal
-	Placement  func(id string) (zone string, deadlineMS int64)
-	Holds      func(ctx context.Context, root string, taken []string) (node, why string)
-	Reaped     func(ctx context.Context, root string) (nodes []string, due bool)
-	Empty      func(id string) bool
-	MintPlaces func(box, node, under string) error
+	Policies     func() *Policies
+	Owner        func() jkauthz.Principal
+	Placement    func(id string) (zone string, deadlineMS int64)
+	Holds        func(ctx context.Context, root string, taken []string) (node, why string)
+	Reaped       func(ctx context.Context, root string) (nodes []string, due bool)
+	Empty        func(id string) bool
+	MintPlaces   func(box, node, under string) error
+	FanoutLimit  func(id string) (max int, ok bool)
+	LiveChildren func(id string) []string
+	Live         func(id string) bool
 }
 
 func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hierarchy.Plan) (hierarchy.Verdict, error) {
+	if err := g.fanout(p); err != nil {
+		return hierarchy.Verdict{}, err
+	}
 	if err := g.rehomes(p); err != nil {
 		return hierarchy.Verdict{}, err
 	}
@@ -289,6 +295,44 @@ func (g TopologyGuard) wholeGroups(ctx context.Context, p hierarchy.Plan) error 
 			if !taken[n] {
 				return fmt.Errorf("%w: %s was reaped with %s, and this %s would leave it behind", ErrSplitsReapedGroup, n, id, p.Op)
 			}
+		}
+	}
+	return nil
+}
+
+func (g TopologyGuard) fanout(p hierarchy.Plan) error {
+	if g.FanoutLimit == nil || g.LiveChildren == nil {
+		return nil
+	}
+	arrivals := map[string]int{}
+	departures := map[string]int{}
+	touched := map[string]bool{}
+	for _, m := range p.Moves {
+		if m.Rehome || m.Tree != hierarchy.Drawn || m.From == m.To {
+			continue
+		}
+		if g.Live != nil && !g.Live(m.Node) {
+			continue
+		}
+		if m.To != "" {
+			arrivals[m.To]++
+			touched[m.To] = true
+		}
+		if m.From != "" {
+			departures[m.From]++
+		}
+	}
+	for to := range touched {
+		if arrivals[to] == 0 {
+			continue
+		}
+		max, ok := g.FanoutLimit(to)
+		if !ok {
+			continue
+		}
+		final := len(g.LiveChildren(to)) - departures[to] + arrivals[to]
+		if final > max {
+			return fmt.Errorf("fanout: %s would hold %d live children of max_children %d; the reparent is refused and nothing moved", to, final, max)
 		}
 	}
 	return nil
