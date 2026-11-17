@@ -29,7 +29,49 @@ const (
 	KeyCheckpointMaxMarks     = "system.checkpoint.max_marks"
 
 	PinTail = "tail"
+
+	KeyRetention        = "system.retention"
+	KeyRetentionMode    = "system.retention.mode"
+	KeyRetentionWriters = "system.retention.writers"
+
+	RetentionMarks = "marks"
+	RetentionNone  = "none"
 )
+
+var ErrRetentionOnConversation = errors.New("system.retention: a conversation-bound form keeps every record (its old turns are retranslated from them)")
+
+func touchesRetention(p form.Patch) bool {
+	for _, e := range p.Entries() {
+		if e.Key == KeyRetention || strings.HasPrefix(e.Key, KeyRetention+".") {
+			return true
+		}
+	}
+	return false
+}
+
+func RetentionModeOf(s form.Snapshot) string {
+	raw, ok := s.Get(KeyRetentionMode)
+	if !ok {
+		return ""
+	}
+	var mode string
+	if json.Unmarshal(raw, &mode) != nil {
+		return ""
+	}
+	return mode
+}
+
+func RetentionWritersOf(s form.Snapshot) []string {
+	raw, ok := s.Get(KeyRetentionWriters)
+	if !ok {
+		return nil
+	}
+	var ws []string
+	if json.Unmarshal(raw, &ws) != nil {
+		return nil
+	}
+	return ws
+}
 
 const (
 	minCheckpointEveryPatches = 64

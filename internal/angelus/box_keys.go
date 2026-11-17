@@ -332,11 +332,29 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 			}
 			continue
 		}
+		if retentionGranted(ctx, before, p) {
+			continue
+		}
 		if err := c.refusal(p); err != nil {
 			return err
 		}
 	}
 	return h.refuseScopesBeyondWriter(ctx, c, line, before, after)
+}
+
+func retentionGranted(ctx context.Context, before form.Snapshot, path string) bool {
+	if !strings.HasPrefix(path, store.KeyRetention+".") || path == store.KeyRetentionWriters || strings.HasPrefix(path, store.KeyRetentionWriters+".") || strings.HasPrefix(path, store.KeyRetentionWriters+"[") {
+		return false
+	}
+	writers := store.RetentionWritersOf(before)
+	if len(writers) == 0 {
+		return false
+	}
+	if fig := authz.FigaroOf(ctx); fig != "" && slices.Contains(writers, fig) {
+		return true
+	}
+	sub, err := authz.SubjectOf(ctx)
+	return err == nil && slices.Contains(writers, sub.Principal.String())
 }
 
 func (h *handlers) formAccess(ctx context.Context, id string, params json.RawMessage) *rpc.FormAccess {
