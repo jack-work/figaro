@@ -1,6 +1,7 @@
 package form
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -91,6 +92,42 @@ func (p Patch) IsIdentity() bool {
 		}
 		for _, c := range l.Update {
 			if !c.IsIdentity() {
+				return false
+			}
+		}
+		return true
+	}
+	return true
+}
+
+// IsRawIdentity is IsIdentity without decoding a value: a scalar counts as
+// unchanged only when Before and After are the same bytes. It never calls a
+// change an identity, but it may call a semantic no-op (whitespace or key
+// order) a change. Use it where that answer is harmless, such as replaying a
+// log whose writer already dropped identities: IsIdentity there canonicalizes
+// both sides of every changed scalar only to learn that it changed.
+func (p Patch) IsRawIdentity() bool {
+	switch {
+	case p.Scalar != nil:
+		return bytes.Equal(p.Scalar.Before.Raw(), p.Scalar.After.Raw())
+	case p.Object != nil:
+		o := p.Object
+		if len(o.Set) > 0 || len(o.Delete) > 0 {
+			return false
+		}
+		for _, c := range o.Update {
+			if !c.IsRawIdentity() {
+				return false
+			}
+		}
+		return true
+	case p.List != nil:
+		l := p.List
+		if len(l.Create) > 0 || len(l.Delete) > 0 || l.Order != nil {
+			return false
+		}
+		for _, c := range l.Update {
+			if !c.IsRawIdentity() {
 				return false
 			}
 		}

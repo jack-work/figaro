@@ -191,7 +191,9 @@ func OpenForm(log FormLog) (*Form, error) {
 		}
 		st.snap = st.snap.Apply(p)
 		st.version = index
-		if !p.IsIdentity() {
+		// The writer never records an identity (reduceOne), so the semantic
+		// check would canonicalize every changed scalar on every cold open.
+		if !p.IsRawIdentity() {
 			st.windowBytes += int64(p.ApproxBytes())
 			st.patches, st.trimmed, st.windowBytes = trimPatches(
 				append(st.patches, VersionedPatch{Version: index, Patch: p}), st.trimmed, st.windowBytes)
@@ -360,7 +362,7 @@ func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 		if err := json.Unmarshal(payload, &p); err != nil {
 			return err
 		}
-		if !p.IsIdentity() {
+		if !p.IsRawIdentity() { // as OpenForm: the log holds no identities
 			out = append(out, VersionedPatch{Version: index, Patch: p})
 		}
 		return nil
