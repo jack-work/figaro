@@ -3,12 +3,14 @@ package store
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 const (
@@ -167,18 +169,38 @@ func (b *XwalBackend) RoleForms() (map[string]string, bool) {
 }
 
 func (b *XwalBackend) RoleNamesByTarget() map[string][]string {
+	type held struct{ form, target, name string }
 	b.rolesMu.Lock()
-	defer b.rolesMu.Unlock()
-	out := map[string][]string{}
+	roles := make([]held, 0, len(b.roles.byForm))
 	for formID, target := range b.roles.byForm {
-		if name := b.roles.names[formID]; name != "" {
-			out[target] = append(out[target], name)
-		}
+		roles = append(roles, held{formID, target, b.roles.names[formID]})
 	}
-	for _, names := range out {
+	b.rolesMu.Unlock()
+	out := map[string][]string{}
+	for _, r := range roles {
+		address := "@" + r.name
+		if r.name == "" {
+			address = unnamedRoleAddress(r.form, b.MatchID)
+		}
+		out[r.target] = append(out[r.target], address)
+	}
+	for target, names := range out {
 		sort.Strings(names)
+		out[target] = slices.Compact(names)
 	}
 	return out
+}
+
+func unnamedRoleAddress(formID string, match func(prefix string, limit int) []string) string {
+	hex := strings.TrimPrefix(formID, "@")
+	if len(hex) <= rpc.ShortIDLen {
+		return "@" + hex
+	}
+	short := hex[:rpc.ShortIDLen]
+	if len(match("@"+short, 2)) > 1 || len(match(short, 1)) > 0 {
+		return "@" + hex
+	}
+	return "@" + short
 }
 
 func (b *XwalBackend) SeedRoles(ctx context.Context, pace time.Duration) {
