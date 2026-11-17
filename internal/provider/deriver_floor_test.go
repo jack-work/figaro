@@ -101,3 +101,28 @@ func snapJSON(t *testing.T, s form.Snapshot) string {
 	}
 	return string(b)
 }
+
+// #106: a long study window over a few hot keys folds to far more than the
+// state it lands on; the window goes as one diff, and lands on the same state.
+func TestALongStudyWindowGoesAsTheStateDiff(t *testing.T) {
+	study := flooredForm{stated: true, n: 410}
+	d := NewDeriver(nil, map[string]Form{"@s": study})
+	e := inputAt(1, 0)
+	e.StudyVersions = map[string]uint64{"@s": 400}
+	msg, _, _ := d.Next(e)
+	ps := msg.StudyPatches["@s"]
+	if len(ps) != 1 {
+		t.Fatalf("a 400-patch window over 3 keys went as %d patches", len(ps))
+	}
+	want, _ := study.StateAt(400)
+	if g, w := snapJSON(t, form.Fold(form.Snapshot{}, ps)), snapJSON(t, want); g != w {
+		t.Fatalf("the diff lands on %s, the form is %s", g, w)
+	}
+	d.Commit(e, msg)
+	e = inputAt(2, 0)
+	e.StudyVersions = map[string]uint64{"@s": 410}
+	msg, _, _ = d.Next(e)
+	if len(msg.StudyPatches["@s"]) != 10 {
+		t.Fatalf("a short window was collapsed: %d patches", len(msg.StudyPatches["@s"]))
+	}
+}
