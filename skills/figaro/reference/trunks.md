@@ -209,6 +209,7 @@ with no credentials and no tokens.
 - **`fork <id>:<turn> --replay [-O ..] [-S ..] [-j]`**: shorthand for a fork
   cut before `<turn>` with `system.replay` set on the branch. `-S` picks the
   rung (`system.thinking_effort=high`) or a mask (`system.replay.tools=false`).
+  Inquiry methods do not run on a replayed turn, so the rung holds.
   The call submits and exits; `figaro listen <branch>` follows the reply.
 - **`attend <id>` / `<id>:<turn>` / `:<turn>`** (alias **`at`**): bind this shell,
   like `cd`. CLI-native attendance: the pid↔trunk map (the angelus binding

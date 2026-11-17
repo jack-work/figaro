@@ -191,7 +191,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.endTurn("error: " + rerr.Error())
 		return
 	}
-	if prompt.text != "" {
+	if prompt.text != "" && a.replay.Load() == nil {
 		methodsCtx, methodsSpan := figOtel.Start(turnCtx, "figaro.methods")
 		a.runInquiryMethods(methodsCtx, prompt.text)
 		methodsSpan.End()
