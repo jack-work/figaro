@@ -339,7 +339,7 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers int) form.Snapshot {
 			put(base+"cwd", r.Cwd)
 		}
 		if len(r.Roles) > 0 {
-			put(base+"role", "@"+strings.Join(r.Roles, " @"))
+			put(base+"role", strings.Join(r.Roles, " "))
 		}
 	}
 	return form.Snapshot{}.Apply(form.Build(form.Snapshot{}, keys, nil))
