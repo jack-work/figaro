@@ -1013,7 +1013,7 @@ func (a *Agent) studyAccessors() map[string]provider.Form {
 		}
 		out[fid] = librettoView{lib}
 	}
-	return out
+	return freezeStudies(a.form.Snapshot(), out)
 }
 
 // librettoBackend is optional: an ephemeral backend has none.
@@ -1325,5 +1325,5 @@ func StudyAccessorsFor(backend store.Backend, ariaID string) map[string]provider
 		}
 		out[id] = librettoView{lib: lib}
 	}
-	return out
+	return freezeStudies(snap, out)
 }

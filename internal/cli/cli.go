@@ -1095,7 +1095,9 @@ is no prompt. System keys are the caller's: -S system.thinking_effort=high
 replays the turn at another rung. The model is not told it is a branch:
 it gets no fork notice and reads the original's aria_id (so its handle)
 and mantra. Only what the provider is sent is masked; ls, kill, the store
-and the Figaro-Id header keep the branch's own id. The call submits and exits; follow it
+and the Figaro-Id header keep the branch's own id. The clock stops at the
+original turn: datetime is the inquiry's, and every form the trunk
+studied reads as it stood then. The call submits and exits; follow it
 with ` + "`figaro listen <branch>`" + `. -j prints {aria_id, handle, parent, turn,
 mode}, mode "replay".
 
