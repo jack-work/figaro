@@ -321,9 +321,12 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 	if err := checkScopesParse(before, after); err != nil {
 		return err
 	}
+	if _, _, err := form.FanoutMaxChildren(after); err != nil {
+		return err
+	}
 	c := h.callerKeysOf(ctx)
 	if c.owns && !c.boxed {
-		return nil
+		return h.refuseFanoutByLabelAlone(ctx, line, before, after)
 	}
 	for _, p := range changedPaths(before, after) {
 		if k, ok := form.Protected(p); ok && c.lineage {
@@ -339,7 +342,74 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 			return err
 		}
 	}
-	return h.refuseScopesBeyondWriter(ctx, c, line, before, after)
+	if err := h.refuseScopesBeyondWriter(ctx, c, line, before, after); err != nil {
+		return err
+	}
+	return h.refuseFanoutBeyondGranter(ctx, before, after)
+}
+
+// refuseFanoutByLabelAlone applies to a caller that owns unpoliced through
+// a trusted door (local socket, in-process) without a box to verify it:
+// every other protected key stays out of reach for it (scopes is known
+// only through a box door), but the daemon trusts the figaro label the
+// CLI stamps and refuses fanout grants on it, the same ancestor and self
+// rule a box enforces for real.
+func (h *handlers) refuseFanoutByLabelAlone(ctx context.Context, line lineage, before, after form.Snapshot) error {
+	f := authz.FigaroOf(ctx)
+	if f == "" {
+		return nil
+	}
+	was, wasOK := before.Get(form.FanoutMaxChildrenKey)
+	now, nowOK := after.Get(form.FanoutMaxChildrenKey)
+	if nowOK && bytes.Equal(was, now) {
+		return nil
+	}
+	if !nowOK && !wasOK {
+		return nil
+	}
+	if line.of == "" || !slices.Contains(h.ancestorsOf(line), f) {
+		return fmt.Errorf("%s is protected, and figaro %s is no ancestor of the aria", form.FanoutMaxChildrenKey, f)
+	}
+	return h.refuseFanoutBeyondGranter(ctx, before, after)
+}
+
+func (h *handlers) refuseFanoutBeyondGranter(ctx context.Context, before, after form.Snapshot) error {
+	was, wasOK := before.Get(form.FanoutMaxChildrenKey)
+	now, nowOK := after.Get(form.FanoutMaxChildrenKey)
+	if nowOK && bytes.Equal(was, now) {
+		return nil
+	}
+	if !nowOK && !wasOK {
+		return nil
+	}
+	f := authz.FigaroOf(ctx)
+	if f == "" {
+		return fmt.Errorf("%s: only the owner or an ancestor figaro grants it", form.FanoutMaxChildrenKey)
+	}
+	gsnap, gerr := h.angelus.Backend.FormState(f)
+	if gerr != nil {
+		return fmt.Errorf("%s: reading %s's own limit: %w", form.FanoutMaxChildrenKey, f, gerr)
+	}
+	own, ok, operr := form.FanoutMaxChildren(gsnap)
+	if operr != nil {
+		return operr
+	}
+	if !nowOK {
+		// Removing the key makes the target unlimited: the same bound
+		// applies as granting any other value beyond the writer's own.
+		if ok {
+			return fmt.Errorf("%s: %s grants at most its own max_children (%d); removing it grants unlimited", form.FanoutMaxChildrenKey, f, own)
+		}
+		return nil
+	}
+	n, _, err := form.FanoutMaxChildren(after)
+	if err != nil {
+		return err
+	}
+	if ok && n > own {
+		return fmt.Errorf("%s: %s grants at most its own max_children (%d), not %d", form.FanoutMaxChildrenKey, f, own, n)
+	}
+	return nil
 }
 
 func retentionGranted(ctx context.Context, before form.Snapshot, path string) bool {
@@ -385,7 +455,7 @@ func (h *handlers) callerOwns(ctx context.Context) bool {
 func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, params json.RawMessage) error {
 	_, boxed := callerBox(ctx)
 	owner := !boxed && h.callerOwns(ctx)
-	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retirement")) && !bytes.Contains(params, []byte("grants")) && !bytes.Contains(params, []byte("scopes")) && !bytes.ContainsRune(params, '\\') {
+	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retirement")) && !bytes.Contains(params, []byte("grants")) && !bytes.Contains(params, []byte("scopes")) && !bytes.Contains(params, []byte("fanout")) && !bytes.ContainsRune(params, '\\') {
 		return nil
 	}
 	var patch *form.Patch

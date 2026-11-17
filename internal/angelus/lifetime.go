@@ -295,6 +295,19 @@ func (r roleSet) pointingAt(id string) (string, bool) {
 	return role, ok
 }
 
+// holding lists every role form (not only the lexicographically-first
+// holder) that targets id, for callers that apply all of them rather than
+// picking one.
+func (r roleSet) holding(id string) []string {
+	var out []string
+	for form, target := range r.forms {
+		if target == id {
+			out = append(out, form)
+		}
+	}
+	return out
+}
+
 var errRoleIndexMissed = errors.New("a role the index missed points into the delete set")
 
 var errRoleScanFailed = errors.New("the role scan could not read a form: refusing the delete")

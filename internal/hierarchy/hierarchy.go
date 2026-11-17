@@ -240,6 +240,19 @@ func (h *Hierarchy) Version() Version {
 	return h.eng.Version()
 }
 
+// WithLock runs fn under the same mutex that serializes every topology
+// plan. A caller whose own admission decision races a reparent (fork's
+// live-children count, for one) closes that window by taking its count
+// and its commit inside here instead of adding a second lock.
+func (h *Hierarchy) WithLock(fn func() error) error {
+	if h == nil {
+		return fn()
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return fn()
+}
+
 func (h *Hierarchy) Drawn(id string) (string, bool) {
 	if h == nil || h.eng == nil {
 		return "", false
@@ -256,6 +269,16 @@ func (h *Hierarchy) DrawnByHand(id string) (string, bool) {
 		return "", false
 	}
 	return over, true
+}
+
+// Children is this node's children in the drawn tree: the presentation a
+// fork grows and a reparent moves, whether or not anything overrode it by
+// hand.
+func (h *Hierarchy) Children(id string) []string {
+	if h == nil || h.eng == nil {
+		return nil
+	}
+	return h.eng.DrawnChildren(id)
 }
 
 func (h *Hierarchy) Check(ctx context.Context, by Principal, p Plan) (Plan, error) {

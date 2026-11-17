@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
@@ -114,6 +115,11 @@ func (b *liveForkBackend) SetMeta(_ string, meta *store.AriaMeta) error {
 	b.childMeta = meta
 	return nil
 }
+
+// Fork now admits under the topology's own lock (a per-parent fanout
+// race guard), so even a target with no max_children set still builds a
+// Hierarchy over this double's backend.
+func (b *liveForkBackend) HierarchyEngine() hierarchy.Engine { return nil }
 
 func TestForkKeepsLiveAgentRunning(t *testing.T) {
 	registry := NewRegistry()
