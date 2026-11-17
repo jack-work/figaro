@@ -138,10 +138,18 @@ func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled,
 		if call.ID == "" || call.Function.Name == "" {
 			continue
 		}
+		if out.StopReason == "length" && !closedArguments(call.Function.Arguments) {
+			continue
+		}
 		out.ToolCalls = append(out.ToolCalls, *call)
 		bus.PushToolReady(toolInvokeContent(*call))
 	}
 	return out, nil
+}
+
+func closedArguments(raw string) bool {
+	var args map[string]any
+	return json.Unmarshal([]byte(raw), &args) == nil
 }
 
 // toolInvokeContent turns malformed arguments into an empty object; the

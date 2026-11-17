@@ -248,7 +248,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 			"hint", "gateway must send stream_options.include_usage")
 	}
 	msg := out.toIRMessage()
-	if len(msg.Content) == 0 {
+	if len(msg.Content) == 0 && msg.StopReason != message.StopLength {
 		return nil
 	}
 	msg.Timestamp = time.Now().UnixMilli()
