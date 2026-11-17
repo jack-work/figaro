@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/sdk"
 )
@@ -201,6 +203,13 @@ type seated struct {
 // the first, as turn 0, and once each turn is written.
 func seatedPredecessor(t *testing.T, afterTurn func(backend *store.XwalBackend, pred string, turn uint64)) seated {
 	t.Helper()
+	return seatedPredecessorWith(t, afterTurn, func(string, provider.Knobs) (provider.Provider, error) {
+		return nil, errors.New("no provider: this aria is read, never run")
+	})
+}
+
+func seatedPredecessorWith(t *testing.T, afterTurn func(backend *store.XwalBackend, pred string, turn uint64), providers func(string, provider.Knobs) (provider.Provider, error)) seated {
+	t.Helper()
 	backend, pred := store.NewTestAria(t, "pred", message.Patch{})
 	ir, err := backend.OpenFigIR(pred)
 	require.NoError(t, err)
@@ -220,7 +229,7 @@ func seatedPredecessor(t *testing.T, afterTurn func(backend *store.XwalBackend, 
 	held, _ := json.Marshal(pred)
 	role, _, err := backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": held}, nil))
 	require.NoError(t, err)
-	acli, dir := serveBackend(t, backend)
+	acli, dir := serveBackendWith(t, backend, providers)
 	t.Setenv("FIGARO_RUNTIME_DIR", dir)
 	t.Setenv("FIGARO_CONFIG_DIR", t.TempDir())
 	t.Setenv("FIGARO_TROUPE", "")
@@ -283,4 +292,54 @@ func TestSucceedRefusesNoStudiesForAnExistingSuccessor(t *testing.T) {
 	if p, err := succeedArgs(t, "@warden", "--successor", "abc", "--no-studies", "--", "go"); err == nil {
 		t.Fatalf("accepted: %+v", p)
 	}
+}
+
+type answersOK struct{}
+
+func (answersOK) Name() string                                         { return "ok" }
+func (answersOK) Fingerprint() string                                  { return "ok/v1" }
+func (answersOK) SetModel(string)                                      {}
+func (answersOK) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (answersOK) Send(_ context.Context, _ provider.SendInput, bus provider.Bus) error {
+	bus.PushDelta(message.TextContent("ok"))
+	bus.PushMessageEnd(string(message.StopEnd))
+	bus.PushFigaro(message.Message{Role: message.RoleOutput, Content: []message.Content{message.TextContent("ok")}, StopReason: message.StopEnd})
+	return nil
+}
+
+// #96: a predecessor holding @a and @b hands both to the successor of
+// succeed @a; @b no longer points at a figaro on its way out.
+func TestSucceedRecastsEveryRoleThePredecessorHolds(t *testing.T) {
+	var other string
+	s := seatedPredecessorWith(t, func(b *store.XwalBackend, pred string, turn uint64) {
+		if turn != 3 {
+			return
+		}
+		held, _ := json.Marshal(pred)
+		var err error
+		other, _, err = b.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": held}, nil))
+		require.NoError(t, err)
+	}, func(string, provider.Knobs) (provider.Provider, error) { return answersOK{}, nil })
+
+	plan, err := succeedArgs(t, s.role, "--", "you hold both seats")
+	require.NoError(t, err)
+	r, err := succeedVerb(s.ctx, s.acli, plan, succeedHooks{})
+	require.NoError(t, err)
+	require.Equal(t, []string{other}, r.Recast)
+	for _, role := range []string{s.role, other} {
+		f, err := s.acli.Form(s.ctx, role)
+		require.NoError(t, err)
+		v, _ := f.Snapshot.Get("target-aria")
+		require.JSONEq(t, fmt.Sprintf("%q", r.Successor), string(v), "%s still targets the predecessor", role)
+	}
+	require.Contains(t, r.summary(), ariaName(other))
+}
+
+func TestRecoveryCastsTheOtherRolesNotYetRecast(t *testing.T) {
+	r := succeedReport{Role: "@r", Predecessor: "old", Successor: "new", Prompted: true, Cast: true,
+		OtherRoles: []string{"@b", "@c"}, Recast: []string{"@b"}, FailedAt: "cast @c"}
+	steps := strings.Join(r.recovery(succeedPlan{ttl: time.Minute, abdication: abdicateRetire}), "\n")
+	require.Contains(t, steps, "figaro cast new @c")
+	require.NotContains(t, steps, "figaro cast new @b")
+	require.NotContains(t, steps, "figaro cast new @r")
 }

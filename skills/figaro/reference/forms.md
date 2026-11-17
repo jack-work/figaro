@@ -238,12 +238,12 @@ The steps, each landing before the next runs: fork (or take
 `--successor`); `demote` the predecessor beneath the successor, so its
 branches outlive it (a successor not drawn under it stays put and the
 earliest branch takes the place); prompt the successor, steering it if it is
-mid-turn; cast it; the predecessor drops the role, its mantra gains
+mid-turn; cast it into the role and into every other role that targets
+the predecessor (the report lists them); the predecessor drops them, its mantra gains
 `SUCCEEDED: `, and it is retired (or, with `linger`, not) with `system.ttl`
 counted from now. When the ttl is spent the sweep reaps it into
-`figaro reaped` unless something holds it: a shell attending it, a second
-role still pointing at it (the report names those), a recent branch, or a
-branch running in a different sandbox.
+`figaro reaped` unless something holds it: a shell attending it, a recent
+branch, or a branch running in a different sandbox.
 
 Nothing is rolled back. `-j` prints the report (`failed_at`, `error`, and
 every step that landed), and a failure lists the commands that finish the
