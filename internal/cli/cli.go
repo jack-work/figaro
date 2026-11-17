@@ -1088,26 +1088,25 @@ With a prompt: ` + "`figaro fork [flags] -- <prompt>`" + `: it also sends, the w
                  said to it, so the first turn is answered wearing it. Legal
                  with or without a prompt. See ` + "`figaro help outfits`" + `.
 
-REPLAY. ` + "`figaro fork <id>:<turn> --replay`" + ` cuts before turn N and re-sends
-turn N's recorded inquiry to the branch: its words, senders and images,
-and the form changes that rode in with it (datetime among them). There
-is no prompt. System keys are the caller's: -S system.thinking_effort=high
-replays the turn at another rung. The model is not told it is a branch:
-it gets no fork notice and reads the original's aria_id (so its handle)
-and mantra. Only what the provider is sent is masked; ls, kill, the store
-and the Figaro-Id header keep the branch's own id. The clock stops at the
-original turn: datetime is the inquiry's, and every form the trunk
-studied reads as it stood then. No tool runs: a call matching one the
-turn made (same tool, same arguments) gets the recorded answer, in order;
-an outward verb (figaro and friends, git writes, file writes) gets a
-quiet success; anything else fails with a neutral error. The branch takes
-no messages and holds no role, and dies after system.ttl (1h unless -S
-sets it). The call submits and exits; follow it
+REPLAY. ` + "`figaro fork <id>:<turn> --replay`" + ` cuts before turn N, sets
+system.replay on the branch, and re-sends turn N's recorded inquiry: its
+words, senders and images, and the form changes that rode in with it.
+There is no prompt. System keys are the caller's: -S
+system.thinking_effort=high replays the turn at another rung. Four masks,
+each on unless -S sets it false: system.replay.notice (no fork notice),
+.clock (the recorded datetime and studied forms), .identity (the
+original's aria_id while .tools masks; ls, kill and the store keep the
+real one) and .tools (no tool runs: a call the turn made gets its
+recorded answer, an outward verb a quiet success, anything else a
+neutral error). While system.replay
+is set the branch takes no messages and holds no role; unset it to talk
+to the branch, set it again to replay again. Only the owner sets or
+unsets it. The call submits and exits; follow it
 with ` + "`figaro listen <branch>`" + `. -j prints {aria_id, handle, parent, turn,
 mode}, mode "replay".
 
-  figaro fork <id>:12 --replay                      re-run turn 12
-  figaro fork <id>:12 --replay -S system.ttl=1h -j  and print the branch
+  figaro fork <id>:12 --replay                               re-run turn 12
+  figaro fork <id>:12 --replay -S system.replay.clock=false  at today's date
 `,
 		PassRaw: true,
 		Flags: []cmdkit.FlagDef{
