@@ -128,6 +128,15 @@ func (t *transcript) closePanels() {
 	}
 }
 
+func (t *transcript) focusAppeared(id pitID) {
+	switch {
+	case !id.passive():
+		t.focused = focusPit
+	case t.focused == focusPit:
+		t.focused = focusTranscript
+	}
+}
+
 func (t *transcript) showing(id pitID) bool {
 	return t.pit.open() && t.pit.id == id
 }
