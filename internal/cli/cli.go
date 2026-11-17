@@ -1097,7 +1097,12 @@ it gets no fork notice and reads the original's aria_id (so its handle)
 and mantra. Only what the provider is sent is masked; ls, kill, the store
 and the Figaro-Id header keep the branch's own id. The clock stops at the
 original turn: datetime is the inquiry's, and every form the trunk
-studied reads as it stood then. The call submits and exits; follow it
+studied reads as it stood then. No tool runs: a call matching one the
+turn made (same tool, same arguments) gets the recorded answer, in order;
+an outward verb (figaro and friends, git writes, file writes) gets a
+quiet success; anything else fails with a neutral error. The branch takes
+no messages and holds no role, and dies after system.ttl (1h unless -S
+sets it). The call submits and exits; follow it
 with ` + "`figaro listen <branch>`" + `. -j prints {aria_id, handle, parent, turn,
 mode}, mode "replay".
 

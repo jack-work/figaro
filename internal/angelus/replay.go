@@ -9,6 +9,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/turns"
 )
 
@@ -113,4 +114,15 @@ func (h *handlers) startReplay(ctx context.Context, branch string, plan replayPl
 		return fmt.Errorf("fork: %s cannot take a replayed inquiry", branch)
 	}
 	return r.SubmitReplay(plan.inquiry, plan.window)
+}
+
+const replayTTL = "1h"
+
+func (p replayPlan) birth(dress form.Patch) form.Patch {
+	out := p.record.Patch()
+	if _, set := dress.Entry(store.SystemTTLKey); !set {
+		ttl, _ := json.Marshal(replayTTL)
+		out = form.Merge(out, form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemTTLKey: ttl}, nil))
+	}
+	return out
 }
