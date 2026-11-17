@@ -81,14 +81,17 @@ func ensureAngelus() {
 		return
 	}
 
-	if err := boot.SpawnRefusal(os.Getenv); err != nil {
-		die("%s", err)
-	}
-	h := MustHush()
 	exe, err := os.Executable()
 	if err != nil {
 		die("find executable: %s", err)
 	}
+	if !isTestBinary(exe) && awaitGoverningUnit() {
+		return
+	}
+	if err := boot.SpawnRefusal(os.Getenv); err != nil {
+		die("%s", err)
+	}
+	h := MustHush()
 	refuseSelfSpawn(exe)
 
 	cmd := exec.Command(exe)
