@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"filippo.io/age"
+	"github.com/jack-work/figaro/internal/testreap"
 	hush "github.com/jack-work/hush/client"
 	"github.com/stretchr/testify/require"
 )
@@ -78,6 +79,7 @@ func (h *isolatedHush) start(t *testing.T) {
 		"HUSH_KEYRING_SERVICE=figaro-isolated-auth-test",
 		"HUSH_AGENT_CHILD=1",
 		"SSL_CERT_FILE=" + h.certificate,
+		testreap.Env(),
 	}
 	h.process.ExtraFiles = []*os.File{reader}
 	h.process.Stdout = io.Discard

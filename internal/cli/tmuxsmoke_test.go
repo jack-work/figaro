@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/internal/testreap"
 )
 
 // Participation ledger: a skip prints nothing without -v, so a run in which
@@ -150,6 +152,7 @@ func firstLine(s string) string {
 // smokeStore returns an env over an isolated state/runtime/config trio.
 func smokeStore(t *testing.T) []string {
 	t.Helper()
+	scope := testreap.Scope(t)
 	dir := t.TempDir()
 	for _, sub := range []string{"state", "run", "config"} {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o700); err != nil {
@@ -195,6 +198,7 @@ func smokeStore(t *testing.T) []string {
 		"FIGARO_NO_ANGELUS_SCOPE=1",
 		"HUSH_NO_AGENT_SCOPE=1",
 		"FIGARO_CONFIG_DIR="+filepath.Join(dir, "config"),
+		scope,
 	)
 }
 

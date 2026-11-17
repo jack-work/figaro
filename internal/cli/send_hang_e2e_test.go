@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/jack-work/figaro/internal/testreap"
 )
 
 // A send that lands behind a running turn, with a terminal on stdin and a file
@@ -67,6 +68,7 @@ type sendRig struct {
 
 func newSendRig(t *testing.T, baseURL string) *sendRig {
 	t.Helper()
+	scope := testreap.Scope(t)
 	root, err := os.MkdirTemp("/var/tmp", "figaro-sendhang-")
 	if err != nil {
 		t.Fatal(err)
@@ -107,6 +109,7 @@ func newSendRig(t *testing.T, baseURL string) *sendRig {
 		"FIGARO_NO_BIND=1",
 		"ANTHROPIC_API_KEY=sk-ant-held",
 		"ANTHROPIC_BASE_URL="+baseURL,
+		scope,
 	)}
 	t.Cleanup(func() { _, _ = rig.cmd("stop", "--force").CombinedOutput() })
 	return rig

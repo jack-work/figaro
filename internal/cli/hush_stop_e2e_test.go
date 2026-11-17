@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/internal/testreap"
 )
 
 // `figaro stop` retires the hush agent the daemon spawned, witnessed in /proc.
@@ -48,6 +50,7 @@ func newHushRig(t *testing.T, name string) *hushRig {
 
 func newHushRigSharing(t *testing.T, name, shareHush string) *hushRig {
 	t.Helper()
+	scope := testreap.Scope(t)
 	// /var/tmp rather than t.TempDir(): /tmp is tmpfs.
 	root, err := os.MkdirTemp("/var/tmp", "figaro-hushstop-"+name+"-")
 	if err != nil {
@@ -81,6 +84,7 @@ func newHushRigSharing(t *testing.T, name, shareHush string) *hushRig {
 		"FIGARO_HUSH_DIR="+hushDir,
 		"FIGARO_HUSH_PASSPHRASE=figaro-hushstop-e2e",
 		"FIGARO_HUSH_TTL=2m",
+		scope,
 	)
 	t.Cleanup(func() {
 		_ = rig.run("stop", "--force")

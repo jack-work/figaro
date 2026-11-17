@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/internal/testreap"
 )
 
 const (
@@ -139,10 +141,11 @@ func tmuxScreens(t *testing.T, cols, rows int, phases []tmuxPhase) [][]string {
 			t.Fatal(err)
 		}
 	}
+	scope := testreap.Scope(t)
 	socket := filepath.Join(dir, "tmux.sock")
 	run := func(args ...string) (string, error) {
 		cmd := exec.Command("tmux", append([]string{"-S", socket, "-f", "/dev/null"}, args...)...)
-		cmd.Env = append(os.Environ(), "TMUX=")
+		cmd.Env = append(os.Environ(), "TMUX=", scope)
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
