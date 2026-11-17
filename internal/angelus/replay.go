@@ -9,6 +9,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
 )
 
@@ -19,6 +20,49 @@ type replaysInquiry interface {
 func refuseReplayCoordinate(req rpc.ForkRequest) error {
 	if req.Replay && (req.AtTurn == 0 || req.AtLT > 0) {
 		return fmt.Errorf("fork: --replay re-runs a past turn: name it as <id>:<turn>")
+	}
+	return nil
+}
+
+func (h *handlers) refuseReplayByFigaro(ctx context.Context, method, id string, params json.RawMessage) error {
+	f := authz.FigaroOf(ctx)
+	if f == "" || f != id || !bytes.Contains(params, []byte("replay")) {
+		return nil
+	}
+	var patch *form.Patch
+	switch method {
+	case rpc.MethodSet:
+		var req rpc.SetRequest
+		if json.Unmarshal(params, &req) == nil {
+			patch = &req.Patch
+		}
+	case rpc.MethodQua:
+		var req rpc.QuaRequest
+		if json.Unmarshal(params, &req) == nil && req.Form != nil {
+			patch = req.Form.Patch
+		}
+	}
+	if patch == nil {
+		return nil
+	}
+	before, err := h.angelus.Backend.FormState(id)
+	if err != nil {
+		return err
+	}
+	was, _ := before.Get(form.ReplayKey)
+	now, _ := before.Apply(*patch).Get(form.ReplayKey)
+	if bytes.Equal(was, now) {
+		return nil
+	}
+	return fmt.Errorf("%s is owner-held: figaro %s may not set or unset its own replay", form.ReplayKey, id)
+}
+
+func (h *handlers) refuseReplayFork(ctx context.Context, req rpc.ForkRequest) error {
+	if !req.Replay {
+		return nil
+	}
+	if err := h.callerKeysOf(ctx).refusal(form.ReplayKey); err != nil {
+		return fmt.Errorf("fork --replay: %w", err)
 	}
 	return nil
 }
