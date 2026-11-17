@@ -41,6 +41,7 @@ type sendOpts struct {
 	cast       bool
 	stdin      bool
 	images     []string
+	replay     bool
 }
 
 // extractSendFlags returns the parsed opts and the residual args, `--` boundary
@@ -221,6 +222,10 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			continue
 		case a == "--stdin":
 			opts.stdin = true
+			i++
+			continue
+		case a == "--replay" && bareTarget:
+			opts.replay = true
 			i++
 			continue
 		case a == "--stay", a == "--no-attend", a == "--attend=false", a == "--attend=0":

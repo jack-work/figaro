@@ -1020,7 +1020,7 @@ printed id yourself. See ` + "`figaro help form`" + ` for the form family.`,
 		Name:  "fork",
 		Group: "Session",
 		Short: "Branch a conversation: keep this id, mint an alternative",
-		Usage: "fork [--id <id> | <id>[:<turn>[.<node>]]] [--stay] [-r|-v|-o|-l|-x|-n|-y|-f|-j] [-- <prompt>]",
+		Usage: "fork [--id <id> | <id>[:<turn>[.<node>]]] [--stay] [-r|-v|-o|-l|-x|-n|-y|-f|-j] [-- <prompt>] | fork <id>:<turn> --replay [-O|-S|-D|-j]",
 		Long: `Branch a conversation. A HEAD fork keeps the target's id on the
 continuation line and mints ONE new aria, the alternative. The target is
 NOT frozen and does NOT become read-only: it stays live at the same id,
@@ -1087,6 +1087,17 @@ With a prompt: ` + "`figaro fork [flags] -- <prompt>`" + `: it also sends, the w
                  fold lands on the new branch's form before anything is
                  said to it, so the first turn is answered wearing it. Legal
                  with or without a prompt. See ` + "`figaro help outfits`" + `.
+
+REPLAY. ` + "`figaro fork <id>:<turn> --replay`" + ` cuts before turn N and re-sends
+turn N's recorded inquiry to the branch: its words, senders and images,
+and the form changes that rode in with it (datetime among them). There
+is no prompt. System keys are the caller's: -S system.thinking_effort=high
+replays the turn at another rung. The call submits and exits; follow it
+with ` + "`figaro listen <branch>`" + `. -j prints {aria_id, handle, parent, turn,
+mode}, mode "replay".
+
+  figaro fork <id>:12 --replay                      re-run turn 12
+  figaro fork <id>:12 --replay -S system.ttl=1h -j  and print the branch
 `,
 		PassRaw: true,
 		Flags: []cmdkit.FlagDef{
@@ -1094,6 +1105,7 @@ With a prompt: ` + "`figaro fork [flags] -- <prompt>`" + `: it also sends, the w
 			{Long: "stay", IsBool: true, Description: "Do not rebind this shell to the new branch/continuation"},
 			{Long: "outfit", Short: "O", Description: "Dress the new branch (see `figaro help outfits`)"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit machine-readable result on stdout (parent, continuation, alternative, ...)"},
+			{Long: "replay", IsBool: true, Description: "Re-send turn <id>:<turn>'s recorded inquiry to the new branch"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)

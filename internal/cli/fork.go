@@ -54,6 +54,9 @@ func planForkOn(args []string, s surface) (forkPlan, error) {
 	if _, _, perr := parseTarget(plan.spec); perr != nil {
 		return forkPlan{}, perr
 	}
+	if opts.replay {
+		return plan, refuseReplayPlan(plan)
+	}
 	if !plan.hasPrompt() {
 		if bad := forkPromptOnlyFlags(opts); bad != "" {
 			return forkPlan{}, fmt.Errorf("%s only applies with a prompt (fork %s-- <prompt>)", bad, forkTargetHint(plan.spec))
@@ -71,6 +74,10 @@ func runForkCmd(loaded *config.Loaded, rawArgs []string) {
 	plan, err := prepareFork(rawArgs, shellSurface)
 	if err != nil {
 		die("fork: %s", err)
+	}
+	if plan.opts.replay {
+		runForkReplay(loaded, plan)
+		return
 	}
 	if plan.compose {
 		text, cerr := composePrompt("Write a prompt for the new branch. Markdown is fine.")

@@ -66,6 +66,7 @@ type event struct {
 	// segments keeps who said what across a fold; text stays the joined form.
 	segments []promptSegment
 	resume   bool
+	replay   bool
 	traces   []string
 }
 
