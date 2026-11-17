@@ -221,6 +221,7 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (arialog.Entry[mes
 		seed["mantra"] = mv
 	}
 	warning, warn := a.handoverWarning()
+	warn = warn && !prompt.replay
 	if warn {
 		a.markHandoverWarned()
 	}
@@ -853,6 +854,7 @@ func mergePromptEvents(prompts []event) (event, bool) {
 		out.segments = append(out.segments, p.segments...)
 		out.merged = append(out.merged, p.merged...)
 		out.resume = out.resume || p.resume
+		out.replay = out.replay || p.replay
 		out.traces = append(out.traces, p.traces...)
 		if i > 0 && p.id != 0 {
 			out.merged = append(out.merged, p.id)
