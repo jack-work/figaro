@@ -271,7 +271,7 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 			}
 			defer done()
 		}
-		return hb.route(ctx, method, dressed)
+		return h.routeReplaying(ctx, hb, method, id, dressed)
 	}
 }
 
