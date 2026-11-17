@@ -38,6 +38,7 @@ var formViews = map[string]rpc.FormView{
 		Mount:   "id",
 		Through: "forks",
 		Label:   "mantra",
+		Badge:   "role",
 		Sort:    "-active_at",
 		Mark:    &rpc.ViewMark{Key: "id", KeySubject: "aria_id"},
 		Overlay: &rpc.ViewOverlay{Form: rpc.TopologyFormID, Key: "parent"},

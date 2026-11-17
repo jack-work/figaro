@@ -168,8 +168,29 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		h.fillTTL(result)
 	}
 	h.fillNames(result)
+	h.fillRoles(result)
 
 	return rpc.ListResponse{Figaros: result, NextBefore: nextBefore, Refused: refused.count, RefusedWhy: refused.why}, nil
+}
+
+type roleNamer interface {
+	RoleNamesByTarget() map[string][]string
+}
+
+func (h *handlers) fillRoles(result []rpc.FigaroInfoResponse) {
+	namer, ok := h.angelus.Backend.(roleNamer)
+	if !ok {
+		return
+	}
+	byTarget := namer.RoleNamesByTarget()
+	if len(byTarget) == 0 {
+		return
+	}
+	for i := range result {
+		if result[i].Node == "" {
+			result[i].Roles = byTarget[result[i].ID]
+		}
+	}
 }
 
 type ttlLister interface {
