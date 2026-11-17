@@ -283,14 +283,16 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	birth := forkDress(dress, req.FigaroID)
 	births := []store.BirthOption{mintedBy(ctx), ariaIDStamp()}
+	var replay *form.Replay
 	if req.Replay {
-		replay, mark, err := h.planReplay(req.FigaroID, req.AtTurn)
+		r, mark, err := h.planReplay(req.FigaroID, req.AtTurn)
 		if err != nil {
 			return nil, err
 		}
-		birth = form.Merge(replayBirth(replay, dress), birth)
+		replay = &r
 		births = append(births, store.Replaying(mark))
 	}
+	birth = form.Merge(replayBirth(replay, inherited), birth)
 	// interior is read off the coordinate, not the LT: forking at turn 1 has
 	// LT 0, which is also the head-fork sentinel.
 	interior := req.AtTurn > 0 || req.AtLT > 0
