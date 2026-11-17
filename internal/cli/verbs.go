@@ -241,10 +241,11 @@ type surface struct {
 	records bool
 	opens   bool
 	forgets bool
+	replays bool
 }
 
 var (
-	shellSurface = surface{name: "the shell", streams: true, spawns: true, records: true, opens: true, forgets: true}
+	shellSurface = surface{name: "the shell", streams: true, spawns: true, records: true, opens: true, forgets: true, replays: true}
 	pagerSurface = surface{name: "the pager"}
 )
 
@@ -262,6 +263,7 @@ func (s surface) refuse(o sendOpts) error {
 		{!s.streams && o.json, "-j", "prints an object on stdout, which " + s.name + " owns"},
 		{!s.opens && o.listen, "-l", "opens the transcript, which is already open"},
 		{!s.records && o.record != "", "--record", "records a session's wire, not a message"},
+		{!s.replays && o.replay, "--replay", "runs from the shell: `figaro fork <id>:<turn> --replay`"},
 	} {
 		if c.on {
 			return fmt.Errorf("%s %s", c.flag, c.why)

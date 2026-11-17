@@ -16,6 +16,7 @@ var requestFieldCapabilities = map[string]rpc.Capability{
 	"NormalizeRequest.DryRun": rpc.CapNormalize,
 	"StudyRequest.Keys":       rpc.CapStudyKeys,
 	"DecideRequest.Outfit":    rpc.CapDecideOutfit,
+	"ForkRequest.Replay":      rpc.CapForkReplay,
 }
 
 type quaer interface {
