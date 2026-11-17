@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -86,5 +87,66 @@ func TestLsRoleBadgeIsDrawnInTheHolderColour(t *testing.T) {
 				t.Errorf("focus %s: bravo holds no role but wears the holder colour: %q", focus, bravo)
 			}
 		}
+	}
+}
+
+// figaro ls draws the role where :ls does, before the mantra and in the
+// holder colour, and -j carries it as the addresses the list returned.
+func TestFigaroLsShowsTheRoleBeforeTheMantra(t *testing.T) {
+	figs := []rpc.FigaroInfoResponse{
+		{ID: ovA, Vector: []int{1}, Mantra: "alpha one", Roles: []string{"@reviewer"}},
+		{ID: ovB, Vector: []int{2}, Mantra: "bravo two"},
+	}
+	draw := func() map[string]string {
+		tree, _ := listTree(figs, "", -1)
+		out := map[string]string{}
+		for _, line := range strings.Split(renderListRows(tree.Rows(), 120, false), "\n") {
+			for _, m := range []string{"alpha one", "bravo two"} {
+				if strings.Contains(stripANSI(line), m) {
+					out[m] = line
+				}
+			}
+		}
+		return out
+	}
+	plain := draw()
+	if got := plain["alpha one"]; !strings.Contains(got, "@reviewer  alpha one") {
+		t.Errorf("alpha's row %q does not lead its mantra with the role", got)
+	}
+	if strings.Contains(plain["bravo two"], "@") {
+		t.Errorf("bravo holds no role: %q", plain["bravo two"])
+	}
+	restore := term.SetColorMode(term.ColorAlways)
+	colour := draw()
+	restore()
+	if got := colour["alpha one"]; !strings.Contains(got, term.HolderBody()) || !strings.Contains(got, "@reviewer") {
+		t.Errorf("alpha's role is not in the holder colour: %q", got)
+	}
+	raw, err := json.Marshal(displayed(&figs[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"roles":["@reviewer"]`) {
+		t.Errorf("ls -j does not carry the role: %s", raw)
+	}
+}
+
+// A figaro holding three long-named roles pushed its label past the tree
+// column and wrapped every row of the listing; the role and the mantra share
+// the label's room.
+func TestFigaroLsRolesShareTheLabelsRoom(t *testing.T) {
+	long := "a mantra long enough to fill the whole label column by itself"
+	plain := rpc.FigaroInfoResponse{ID: ovA, Vector: []int{1}, Mantra: long}
+	roled := plain
+	roled.Roles = []string{"@Coordinador de Spain", "@King of Spain", "@paperd-figaro-identity-plan"}
+	cell := func(f rpc.FigaroInfoResponse) string {
+		tree, _ := listTree([]rpc.FigaroInfoResponse{f}, "", -1)
+		return tree.Rows()[0].Cell()
+	}
+	if a, b := displayWidth(cell(plain)), displayWidth(cell(roled)); b > a {
+		t.Fatalf("roles widened the cell from %d to %d: %q", a, b, cell(roled))
+	}
+	if got := cell(roled); !strings.HasPrefix(stripANSI(got), "○ @Coordinador") {
+		t.Errorf("the role does not lead the cell: %q", got)
 	}
 }
