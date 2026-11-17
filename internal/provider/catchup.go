@@ -89,8 +89,15 @@ func CatchUp(cfg CatchUpConfig) (stats CatchUpStats, err error) {
 	if cfg.Translator == nil {
 		return stats, ErrNoTranslator
 	}
-	if arialog.ViewHidesOwnRows(cfg.Log) || arialog.ViewHidesOwnRows(cfg.Translator) {
+	if arialog.ViewHidesOwnRows(cfg.Log) {
 		return stats, arialog.ErrViewHidesOwnRows
+	}
+	if arialog.ViewHidesOwnRows(cfg.Translator) {
+		slog.Warn("translator view serves an ancestor where this node owns rows; re-deriving from the fig IR",
+			"provider", cfg.Provider, "rows", cfg.Translator.Len())
+		if err := cfg.Translator.Clear(); err != nil {
+			return stats, fmt.Errorf("clear a view that hides own rows: %w", err)
+		}
 	}
 
 	var watermark uint64
