@@ -397,7 +397,7 @@ func (v *formView) searchRows(snap form.Snapshot, width int) []pitRow {
 			if !hit || !c.leaf() {
 				keys := append(segs[:len(segs):len(segs)], c.label)
 				c.open = !c.leaf() && s.below[c.path]
-				c.peek = v.rowPeek(c, keys)
+				c.peek, c.badge = v.rowPeek(c, keys)
 				c.aside, c.summary = v.rowAside(c, keys)
 				marks := s.labelMarks(c)
 				peeked, inPeek := s.inPeek[c.path]
@@ -431,12 +431,12 @@ func (v *formView) searchRows(snap form.Snapshot, width int) []pitRow {
 	return out
 }
 
-func (v *formView) rowPeek(n *formNode, keys []string) string {
+func (v *formView) rowPeek(n *formNode, keys []string) (string, int) {
 	if v.view == nil || n.leaf() {
-		return ""
+		return "", 0
 	}
 	if _, ok := rpc.MatchPath(v.view.Rows, keys); !ok {
-		return ""
+		return "", 0
 	}
 	return rowPeekOf(v.view, n)
 }
@@ -632,10 +632,16 @@ func (v *formView) flatNameRow(keys []string, width int) pitRow {
 		}
 		at += len(k) + 1
 	}
-	if peek := v.rowPeek(n, keys); peek != "" {
-		text += "  " + peek
+	badgeAt, badge := 0, 0
+	if peek, b := v.rowPeek(n, keys); peek != "" {
+		text += "  "
+		badgeAt, badge = len(text), b
+		text += peek
 	}
 	row := pitRow{text: clipLine(text, width), yankFrom: n, id: n.path, marks: marks}
+	if badge > 0 {
+		row.spans = rowSpans{badgeAt: badgeAt, badgeEnd: badgeAt + badge}
+	}
 	if leaf, _ := v.rowAside(n, keys); leaf != nil {
 		row.aside = asideText(leaf)
 	}
@@ -655,7 +661,7 @@ func (v *formView) labelLeafOf(h fuzzy.Hit) (string, bool) {
 
 func (s *formSearch) peekMarks(n *formNode, h fuzzy.Hit) []int {
 	text := n.rowText()
-	_, tail := n.rowDims()
+	tail := n.rowDims().tail
 	if tail <= 0 || tail >= len(text) {
 		return nil
 	}

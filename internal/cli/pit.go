@@ -42,6 +42,7 @@ type pitRow struct {
 	tone    pitTone
 	marks   []int
 	dimLead int
+	spans   rowSpans
 	aside   string
 }
 
@@ -310,15 +311,34 @@ func (d *pit) lines(w, h int) []string {
 
 func pitGray(s string) string { return term.Label(s) }
 
-func (r pitRow) dims() (lead, tail int) {
-	if d, ok := r.textFrom.(interface{ rowDims() (int, int) }); ok {
-		return d.rowDims()
-	}
-	return r.dimLead, 0
+type rowSpans struct {
+	lead, tail        int
+	badgeAt, badgeEnd int
 }
 
-func paintRow(s string, lead, tail int, marks []int, back, match, quiet string) string {
-	if (lead == 0 && tail == 0 && len(marks) == 0) || !term.Enabled() {
+func (s rowSpans) shifted(by int) rowSpans {
+	s.lead += by
+	if s.tail > 0 {
+		s.tail += by
+	}
+	if s.badgeEnd > 0 {
+		s.badgeAt, s.badgeEnd = s.badgeAt+by, s.badgeEnd+by
+	}
+	return s
+}
+
+func (r pitRow) dims() rowSpans {
+	if d, ok := r.textFrom.(interface{ rowDims() rowSpans }); ok {
+		return d.rowDims()
+	}
+	s := r.spans
+	s.lead = r.dimLead
+	return s
+}
+
+func paintRow(s string, sp rowSpans, marks []int, back, match, quiet, holder string) string {
+	lead, tail := sp.lead, sp.tail
+	if (lead == 0 && tail == 0 && sp.badgeEnd == 0 && len(marks) == 0) || !term.Enabled() {
 		return s
 	}
 	on := make(map[int]bool, len(marks))
@@ -327,16 +347,27 @@ func paintRow(s string, lead, tail int, marks []int, back, match, quiet string) 
 			on[m] = true
 		}
 	}
-	style := func(i int) (dim, mark bool) {
-		return i < lead || (tail > 0 && i >= tail), on[i]
+	const (
+		plain = iota
+		dim
+		badge
+	)
+	style := func(i int) (int, bool) {
+		switch {
+		case i >= sp.badgeAt && i < sp.badgeEnd:
+			return badge, on[i]
+		case i < lead || (tail > 0 && i >= tail):
+			return dim, on[i]
+		}
+		return plain, on[i]
 	}
 	var b strings.Builder
 	for i := 0; i < len(s); {
-		dim, mark := style(i)
+		kind, mark := style(i)
 		j := i + 1
 		for j < len(s) {
-			d, m := style(j)
-			if d != dim || m != mark {
+			k, m := style(j)
+			if k != kind || m != mark {
 				break
 			}
 			j++
@@ -345,13 +376,22 @@ func paintRow(s string, lead, tail int, marks []int, back, match, quiet string) 
 		switch {
 		case mark:
 			run = match + "\x1b[1;4m" + run + "\x1b[22;24m" + back
-		case dim:
+		case kind == badge:
+			run = holder + run + back
+		case kind == dim:
 			run = quiet + run + back
 		}
 		b.WriteString(run)
 		i = j
 	}
 	return b.String()
+}
+
+func holderFg(selected bool) string {
+	if selected {
+		return term.HolderOnWash()
+	}
+	return term.HolderBody()
 }
 
 // The selected row is full strength over the wash; a toned row keeps its colour.
