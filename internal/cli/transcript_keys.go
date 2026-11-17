@@ -257,12 +257,12 @@ func pagerFormPit(t *transcript) {
 
 func pagerFocusTranscript(t *transcript) { focusTranscriptKey(t) }
 
-// ^N/^P move the pit's selection when one is up, the node selection otherwise.
+// ^N/^P move the selection of a focused pit, the node selection otherwise.
 func pagerSelectNext(t *transcript) { t.selectDown(1) }
 func pagerSelectPrev(t *transcript) { t.selectDown(-1) }
 
 func (t *transcript) selectDown(dir int) {
-	if p := t.pit.list(); p != nil && p.hasCursor() {
+	if p := t.pit.list(); p != nil && p.hasCursor() && t.focused == focusPit {
 		t.pit.moveSelection(dir)
 		return
 	}
