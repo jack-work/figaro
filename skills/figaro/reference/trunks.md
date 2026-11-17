@@ -172,6 +172,28 @@ with no credentials and no tokens.
   A figaro may fork itself from inside its own running turn: `figaro fork
   --stay -f -- go` from a tool call returns at once with the new ids, and the
   running turn carries on.
+- **`fork <id>:<turn> --replay [-O ..] [-S ..] [-j]`**: re-run a past turn
+  as it was asked, for evals. The fork cuts before turn `<turn>` and the
+  daemon re-sends that turn's recorded inquiry to the branch: its words with
+  their senders and principals, its images, and the non-system form changes
+  that rode in with it (datetime among them). There is no prompt; system keys
+  are the caller's, so `-S system.thinking_effort=high` picks the rung. The
+  branch carries `system.replay` `{of, turn, lt, aria_id, studies}` and:
+  - **reads as the original.** What the provider is sent shows the
+    original's `aria_id` (so its handle) and no fork reminder. Only that
+    projection is masked: the store, `ls`, `kill` and the Figaro-Id header
+    keep the branch's own id.
+  - **keeps the original's clock.** datetime is the inquiry's, and every
+    studied form reads as it stood at the inquiry.
+  - **runs no tool.** A call matching one the turn made (same tool, same
+    arguments) gets the recorded answer, in order. An outward verb (figaro,
+    fig, figla, gh, git writes, file writes and redirects; write, edit, say)
+    gets a quiet success in the tool's own shape. Anything else fails
+    neutrally.
+  - **is unaddressable.** Prompts, deliveries and casts are refused. It is
+    born with `system.ttl` 1h unless `-S` gives one.
+
+  The call submits and exits; `figaro listen <branch>` follows the reply.
 - **`attend <id>` / `<id>:<turn>` / `:<turn>`** (alias **`at`**): bind this shell,
   like `cd`. CLI-native attendance: the pid↔trunk map (the angelus binding
   registry) is the binding authority; the figwal layer knows nothing of it. An
