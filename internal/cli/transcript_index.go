@@ -454,7 +454,7 @@ func (t *transcript) rowLine(r transcriptRow, hl string, sel selectionSpan, cur 
 	if t.more() && (r.mark != "" || len(r.more) > 0) {
 		line = ldrender.Annotate(line, r.more, r.mark, r.gutter, t.w)
 	}
-	if r.mark != "" && !r.ref.valid() {
+	if r.mark != "" && (!r.ref.valid() || r.chrome) {
 		line = ldrender.OverlayRight(line, r.mark+" ", t.w-ldrender.GutterCols)
 		line = ldrender.OverlayGutter(line, r.gutter, t.w)
 	}

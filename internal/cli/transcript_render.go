@@ -89,6 +89,9 @@ func (t *transcript) renderMsg(m aria.Message, memo *openMemo) cachedMessage {
 		r := composed[i]
 		if r.Block == ldrender.BlockChrome {
 			row := transcriptRow{text: r.Text, more: r.More}
+			if senderAria(r.Sender) != "" {
+				row.ref, row.chrome, row.sender = blockRef(m, ldrender.BlockInquiry), true, r.Sender
+			}
 			if i == 0 && strings.TrimSpace(m.Inquiry) != "" {
 				row.mark = term.Dim(coordLabel(m.Turn, inquiryNode, 0, t.coordFormat()))
 				row.gutter = r.Gutter
@@ -134,6 +137,7 @@ func (t *transcript) pagerRow(m aria.Message, r ldrender.Row) transcriptRow {
 		spine:  r.Spine,
 		chrome: r.Chrome,
 		more:   r.More,
+		sender: r.Sender,
 	}
 }
 
