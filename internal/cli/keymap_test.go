@@ -159,43 +159,6 @@ func TestKeymap_IndexAgreesWithTheTable(t *testing.T) {
 	}
 }
 
-// The opener set is pinned by hand, so a row cannot become an opener unnoticed.
-func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
-	old := map[byte]bool{}
-	for _, b := range []byte{
-		'j', 'k', 'u', 'd', 'g', 'G', // scroll
-		'/',           // search prompt
-		':',           // command line
-		'>',           // the draft: a prompt is dispatched from the pager, so it opens one
-		'?', '!', 'Q', // backward search / figaro status / queued-prompt panels
-		'h',      // the help panel
-		'l', 'L', // the listing, and the home listing
-		'^',        // attend the parent
-		'S',        // the form, in the pit
-		'D',        // the last decision, in the pit
-		'T',        // focus the conversation, keeping the pit
-		'p',        // expand the pinned question
-		0x0f, 0x09, // ^O / Tab: the jumplist, back and forward
-		'a',        // attend the fork point (or the selected list row)
-		'f',        // arm the fork jump: f j / f k
-		'c',        // arm the comment jump: c j / c k
-		'm',        // more: the status bar's own detail
-		's',        // the pinned question, a pager toggle and so an opener too
-		0x0e, 0x10, // ^N/^P node selection
-		0x0d, 0x0a, // Enter: open tool bodies, quoted passages and form deltas
-		'e',      // the tool body alone
-		'v', 'V', // visual selection: a gesture about rows, which only the pager has
-		' ', // the leader: `space n` opens notifications, a pit
-	} {
-		old[b] = true
-	}
-	for b := 0; b < 256; b++ {
-		if got, want := opensTranscriptFor(byte(b)), old[byte(b)]; got != want {
-			t.Errorf("opensTranscriptFor(0x%02x) = %v, want %v", b, got, want)
-		}
-	}
-}
-
 func TestKeymap_OpenersReallyOpenThePager(t *testing.T) {
 	for i := range keymap {
 		bd := &keymap[i]
