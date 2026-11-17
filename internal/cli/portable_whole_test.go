@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/jack-work/figaro/internal/arialog"
@@ -49,6 +50,13 @@ func longAria(t *testing.T, n int) (*sdk.Angelus, string) {
 // runtime dir its door listens in.
 func serveBackend(t *testing.T, backend store.Backend) (*sdk.Angelus, string) {
 	t.Helper()
+	return serveBackendWith(t, backend, func(string, provider.Knobs) (provider.Provider, error) {
+		return nil, errors.New("no provider: this aria is read, never run")
+	})
+}
+
+func serveBackendWith(t *testing.T, backend store.Backend, providers func(string, provider.Knobs) (provider.Provider, error)) (*sdk.Angelus, string) {
+	t.Helper()
 	// A unix socket path is length-capped, so the runtime dir is short.
 	dir, err := os.MkdirTemp(os.Getenv("TMPDIR"), "f")
 	require.NoError(t, err)
@@ -59,9 +67,8 @@ func serveBackend(t *testing.T, backend store.Backend) (*sdk.Angelus, string) {
 	require.NoError(t, err)
 	a.Handlers = angelus.NewHandlers(angelus.ServerConfig{
 		Angelus: a, Config: loaded, Ctx: ctx,
-		ProviderFactory: func(string, provider.Knobs) (provider.Provider, error) {
-			return nil, errors.New("no provider: this aria is read, never run")
-		},
+		ProviderFactory: providers,
+		FormTemplates:   template.New("t"),
 	}).Map
 	done := make(chan error, 1)
 	go func() { done <- a.Run(ctx) }()

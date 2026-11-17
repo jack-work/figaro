@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -49,6 +50,9 @@ type succeedReport struct {
 	Prompted     bool     `json:"prompted"`
 	Steered      bool     `json:"steered,omitempty"`
 	Cast         bool     `json:"cast"`
+	OtherRoles   []string `json:"other_roles,omitempty"`
+	Recast       []string `json:"recast,omitempty"`
+	LeftAlone    []string `json:"left_alone,omitempty"`
 	Dropped      bool     `json:"dropped"`
 	Abdication   string   `json:"abdication,omitempty"`
 	TTL          string   `json:"ttl,omitempty"`
@@ -259,10 +263,7 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 		return r, r.fail("assert", err)
 	}
 	role, old := parties.role.ID, parties.predecessor
-	r.Role, r.Predecessor, r.Mantra = role, old.ID, old.Mantra
-	for _, other := range parties.otherRoles {
-		r.warn("%s also targets %s and stays pointed at it, holding it from the reap", ariaName(other), ariaName(old.ID))
-	}
+	r.Role, r.Predecessor, r.Mantra, r.OtherRoles = role, old.ID, old.Mantra, parties.otherRoles
 	if n := len(old.BoundPIDs); n > 0 && plan.ttl > 0 {
 		r.warn("%d shell(s) attend %s and hold it from the reap until they move", n, ariaName(old.ID))
 	}
@@ -332,6 +333,21 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 	}
 	r.Cast = true
 
+	for _, other := range r.OtherRoles {
+		if holder := roleHolder(ctx, acli, other); holder != "" && holder != old.ID {
+			r.warn("%s now targets %s, not %s: left where it is", ariaName(other), ariaName(holder), ariaName(old.ID))
+			r.LeftAlone = append(r.LeftAlone, other)
+			continue
+		}
+		if err := withAria(r.Successor, func(a *sdk.Aria) error {
+			_, err := a.Cast(ctx, rpc.CastRequest{FormID: other})
+			return err
+		}); err != nil {
+			return r, r.fail("cast "+ariaName(other), err)
+		}
+		r.Recast = append(r.Recast, other)
+	}
+
 	if hooks.handover != nil {
 		if err := hooks.handover(r); err != nil {
 			r.warn("%s", err)
@@ -345,6 +361,14 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 		r.warn("%s still studies %s: %s", ariaName(old.ID), ariaName(role), err)
 	} else {
 		r.Dropped = true
+	}
+	for _, other := range append(slices.Clone(r.Recast), r.LeftAlone...) {
+		if err := withAria(old.ID, func(a *sdk.Aria) error {
+			_, err := a.Drop(ctx, other)
+			return err
+		}); err != nil {
+			r.warn("%s still studies %s: %s", ariaName(old.ID), ariaName(other), err)
+		}
 	}
 
 	if plan.ttl == 0 {
@@ -400,6 +424,11 @@ func (r succeedReport) recovery(plan succeedPlan) []string {
 	if !r.Cast {
 		out = append(out, fmt.Sprintf("figaro cast %s %s", r.Successor, r.Role))
 	}
+	for _, other := range r.OtherRoles {
+		if !slices.Contains(r.Recast, other) && !slices.Contains(r.LeftAlone, other) {
+			out = append(out, fmt.Sprintf("figaro cast %s %s", r.Successor, other))
+		}
+	}
 	if !r.Dropped {
 		out = append(out, fmt.Sprintf("figaro drop %s %s", r.Predecessor, r.Role))
 	}
@@ -419,6 +448,9 @@ func (r succeedReport) recovery(plan succeedPlan) []string {
 func (r succeedReport) summary() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s succeeds %s in %s", ariaName(r.Successor), ariaName(r.Predecessor), ariaName(r.Role))
+	for _, other := range r.Recast {
+		fmt.Fprintf(&b, ", %s", ariaName(other))
+	}
 	switch {
 	case r.Killed:
 		b.WriteString("; predecessor killed")
@@ -526,4 +558,20 @@ func succeedStudies(want rpc.ForkStudies) (rpc.ForkStudies, bool) {
 		return rpc.ForkStudiesAtCut, true
 	}
 	return want, false
+}
+
+func roleHolder(ctx context.Context, acli *sdk.Angelus, role string) string {
+	f, err := acli.Form(ctx, role)
+	if err != nil {
+		return ""
+	}
+	raw, ok := f.Snapshot.Get("target-aria")
+	if !ok {
+		return ""
+	}
+	var holder string
+	if json.Unmarshal(raw, &holder) != nil {
+		return ""
+	}
+	return holder
 }
