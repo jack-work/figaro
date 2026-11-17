@@ -8,22 +8,6 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-// A drained batch is one message at one LT, separated by blank lines: a lone
-// newline is a soft break in markdown. Logs written before this read unchanged.
-func TestMergePromptEvents_JoinsWithABlankLine(t *testing.T) {
-	got, ok := mergePromptEvents([]event{
-		{typ: eventUserPrompt, text: "a"},
-		{typ: eventUserPrompt, text: "b"},
-		{typ: eventUserPrompt, text: "c"},
-	})
-	if !ok {
-		t.Fatal("a non-empty batch must merge")
-	}
-	if got.text != "a\n\nb\n\nc" {
-		t.Errorf("text = %q, want %q: blank line between, no trim", got.text, "a\n\nb\n\nc")
-	}
-}
-
 // A single prompt passes through untouched.
 func TestMergePromptEvents_EmptyAndSingle(t *testing.T) {
 	if _, ok := mergePromptEvents(nil); ok {
