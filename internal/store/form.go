@@ -167,7 +167,6 @@ type FormBase struct {
 
 // OpenForm replays the log (the cold cost); afterwards every read is an atomic load.
 func OpenForm(log FormLog) (*Form, error) {
-	f := &Form{log: log}
 	st := &formState{}
 	// A paged log is opened from its base, not record 1, which may no longer
 	// exist; trimmed records that a read under the base is told no rather than
@@ -177,7 +176,12 @@ func OpenForm(log FormLog) (*Form, error) {
 		st.snap, st.version, st.seqs = b.Snapshot, b.Version, b.Seqs
 		st.trimmed = st.version
 	}
-	if err := log.RangePatches(0, 0, func(index uint64, payload []byte) error {
+	return openFormFrom(log, st, 0)
+}
+
+func openFormFrom(log FormLog, st *formState, from uint64) (*Form, error) {
+	f := &Form{log: log}
+	if err := log.RangePatches(from, 0, func(index uint64, payload []byte) error {
 		var rec formRecord
 		if err := json.Unmarshal(payload, &rec); err != nil {
 			return err
@@ -211,6 +215,27 @@ func OpenForm(log FormLog) (*Form, error) {
 	subsInit(&f.subs)
 	f.q = actor.NewLazy(formBatch, time.Duration(formLinger.Load()), f.runBatch)
 	return f, nil
+}
+
+func (f *Form) inheritedAt(version uint64) (*formState, bool) {
+	st := f.state.Load()
+	if st == nil || st.version != version || f.sealed.Load() {
+		return nil, false
+	}
+	cp := &formState{
+		snap:        st.snap,
+		version:     st.version,
+		windowBytes: st.windowBytes,
+		trimmed:     st.trimmed,
+		patches:     append([]VersionedPatch(nil), st.patches...),
+	}
+	if st.seqs != nil {
+		cp.seqs = make(map[string]uint64, len(st.seqs))
+		for k, v := range st.seqs {
+			cp.seqs[k] = v
+		}
+	}
+	return cp, true
 }
 
 // formBatch caps one drain so a burst on one form cannot hold figwal's

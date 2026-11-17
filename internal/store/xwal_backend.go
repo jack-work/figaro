@@ -408,6 +408,10 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	if err != nil {
 		return nil, err
 	}
+	return b.registerForm(ariaID, opened)
+}
+
+func (b *XwalBackend) registerForm(ariaID string, opened *Form) (*Form, error) {
 	// Registered where the form is opened, so every writer passes it.
 	opened.OnCommit(func(c Commit) { b.formCommitted(ariaID, c.Patch, opened) })
 
@@ -423,6 +427,35 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	}
 	b.forms[ariaID] = opened
 	return opened, nil
+}
+
+func (b *XwalBackend) openForkedForm(child, parent string, inherited uint64) {
+	if parent == "" {
+		return
+	}
+	if info, ok := b.store.trunks.InfoLight(child); !ok || info.Parent != parent {
+		return
+	}
+	b.mu.Lock()
+	pf := b.forms[parent]
+	b.mu.Unlock()
+	if pf == nil {
+		return
+	}
+	st, ok := pf.inheritedAt(inherited)
+	if !ok {
+		return
+	}
+	if err := b.refuseUnreadableChannel(child, chanForm); err != nil {
+		return
+	}
+	opened, err := openFormFrom(&xwalFormLog{backend: b, ariaID: child}, st, inherited+1)
+	if err != nil {
+		return
+	}
+	if _, err := b.registerForm(child, opened); err != nil {
+		slog.Debug("fork: warm form not registered", "child", child, "err", err)
+	}
 }
 
 func (b *XwalBackend) formCommitted(ariaID string, patch message.Patch, f *Form) {
@@ -622,11 +655,18 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 		return "", 0, err
 	}
 	b.mirrorMintedBy(child, births(opts))
-	b.inheritStudies(child)
 	// The Form for a node born a moment ago must not be a replay of a channel
 	// that was empty when someone opened it first. Close what is dropped: a
 	// Form holds a writer.
 	b.dropForm(child)
+	own := uint64(1)
+	if !stamped.IsIdentity() {
+		own++
+	}
+	if atMainLT == 0 && version >= own {
+		b.openForkedForm(child, parent, version-own)
+	}
+	b.inheritStudies(child)
 	b.stampCommitted(child, stamped)
 	b.lifetimeAtBirth(child)
 	b.recordForkTurn(child)
