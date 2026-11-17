@@ -1,9 +1,15 @@
 { pkgs, self }:
 let
-  lib = pkgs.lib.extend (final: prev: {
-    hm.dag.entryAfter = after: data: { inherit after data; };
-  });
+  lib = pkgs.lib.extend (
+    final: prev: {
+      hm.dag.entryAfter = after: data: { inherit after data; };
+    }
+  );
   stubs = {
+    options.assertions = lib.mkOption {
+      type = lib.types.listOf lib.types.anything;
+      default = [ ];
+    };
     options.xdg.configFile = lib.mkOption {
       type = lib.types.attrsOf lib.types.anything;
       default = { };
@@ -17,20 +23,87 @@ let
       default = { };
     };
   };
-  eval = extra: (lib.evalModules {
-    specialArgs = { inherit pkgs; };
-    modules = [
-      stubs
-      self.homeManagerModules.default
-      { programs.figaro.enable = true; }
-      extra
-    ];
-  }).config;
+  eval =
+    extra:
+    (lib.evalModules {
+      specialArgs = { inherit pkgs; };
+      modules = [
+        stubs
+        self.homeManagerModules.default
+        { programs.figaro.enable = true; }
+        extra
+      ];
+    }).config;
   off = eval { };
-  on = eval { programs.figaro.restartOnSwitch = true; programs.figaro.restartWait = 7; };
+  on = eval {
+    programs.figaro.restartOnSwitch = true;
+    programs.figaro.restartWait = 7;
+  };
   step = on.home.activation.figaroRestartOnSwitch;
   data = builtins.unsafeDiscardStringContext step.data;
-  exe = builtins.unsafeDiscardStringContext "${self.packages.${pkgs.stdenv.hostPlatform.system}.figaro}/bin/figaro";
+  exe = builtins.unsafeDiscardStringContext "${
+    self.packages.${pkgs.stdenv.hostPlatform.system}.figaro
+  }/bin/figaro";
+  fakeFigaro = pkgs.writeShellScriptBin "figaro" ''
+    set -euo pipefail
+    test "''${FIGARO_RUNTIME_DIR:-}" = /fixture/roles
+    test "''${FIGARO_CONFIG_DIR:-}" = ${pkgs.emptyDirectory}
+    test "''${FIGARO_NO_SELF_SPAWN:-}" = 1
+    test -z "''${FIGARO_ARIA:-}"
+    test -z "''${FIGARO_TROUPE:-}"
+    test "$1" = form
+    test "$2" = apply
+    test "$3" = --manifest
+    manifest=$4
+    shift 4
+    check=false
+    for arg in "$@"; do
+      case "$arg" in
+        --check) check=true ;;
+        *) exit 3 ;;
+      esac
+    done
+    printf 'check=%s\n' "$check"
+    cat "$manifest"
+  '';
+  rolesModule = {
+    programs.figaro = {
+      package = fakeFigaro;
+      outfits.fixture.charter.purpose = "Fixture purpose";
+      roleApplicationRuntimeDir = "/fixture/roles";
+      roleApplications = {
+        preview = {
+          roleId = "@11111111111111111111111111111111";
+          outfits = [ "fixture" ];
+          managed = [ "charter" ];
+        };
+        reviewed = {
+          roleId = "@22222222222222222222222222222222";
+          outfits = [ "fixture" ];
+          managed = [ "charter" ];
+          mode = "apply";
+        };
+      };
+      applyRolesOnSwitch = true;
+    };
+  };
+  roles = eval rolesModule;
+  rolesAndRestart = eval {
+    imports = [ rolesModule ];
+    programs.figaro.restartOnSwitch = true;
+  };
+  shortId = builtins.tryEval (
+    builtins.deepSeq
+      (eval {
+        programs.figaro.roleApplications.short = {
+          roleId = "@1111111111";
+          outfits = [ "fixture" ];
+          managed = [ "charter" ];
+        };
+      }).programs.figaro.roleApplications
+      true
+  );
+  rolesPackage = lib.findFirst (p: (p.name or "") == "figaro-apply-roles") null roles.home.packages;
   dressed = eval {
     programs.figaro.outfits.fixture.charter.purpose = "Fixture purpose";
   };
@@ -40,6 +113,41 @@ let
         dressed.xdg.configFile ? "figaro/outfits/fixture.toml"
         && !(dressed.home.activation ? figaroRestartOnSwitch);
       why = "a declared outfit is installed without starting a restart owner";
+    }
+    {
+      ok = off.programs.figaro.roleApplications == { } && !(off.home.activation ? figaroApplyRoles);
+      why = "existing consumers get no role application by default";
+    }
+    {
+      ok = roles.programs.figaro.roleApplications.preview.mode == "check";
+      why = "declaring a role defaults to check, not apply";
+    }
+    {
+      ok = rolesPackage != null && roles.xdg.configFile ? "figaro/outfits/fixture.toml";
+      why = "declared outfits and their application command are installed";
+    }
+    {
+      ok =
+        roles.home.activation.figaroApplyRoles.after == [
+          "linkGeneration"
+          "figaroRestartOnSwitch"
+        ]
+        && !(roles.home.activation ? figaroRestartOnSwitch);
+      why = "role application follows file installation without starting a restart owner";
+    }
+    {
+      ok =
+        rolesAndRestart.home.activation ? figaroRestartOnSwitch
+        && builtins.elem "figaroRestartOnSwitch" rolesAndRestart.home.activation.figaroApplyRoles.after;
+      why = "with both enabled, roles are applied after the restart so the new daemon answers";
+    }
+    {
+      ok = !shortId.success;
+      why = "a role id that is neither 8 nor 32 hex digits is refused at evaluation";
+    }
+    {
+      ok = lib.all (a: a.assertion) roles.assertions;
+      why = "the declared role application satisfies the module's assertions";
     }
     {
       ok = !(off.home.activation ? figaroRestartOnSwitch);
@@ -72,11 +180,38 @@ let
   ];
   failed = builtins.filter (c: !c.ok) checks;
 in
-pkgs.runCommand "figaro-hm-module" { passAsFile = [ "script" ]; script = step.data; } (
-  if failed == [ ] then ''
-    cp $scriptPath $out
-  '' else ''
-    echo "${lib.concatMapStringsSep "\n" (c: "FAIL: " + c.why) failed}" >&2
-    exit 1
-  ''
-)
+pkgs.runCommand "figaro-hm-module"
+  {
+    passAsFile = [ "script" ];
+    script = data;
+  }
+  (
+    if failed == [ ] then
+      ''
+        export FIGARO_ARIA=fixture-caller
+        export FIGARO_TROUPE=must-not-be-forwarded
+        ${rolesPackage}/bin/figaro-apply-roles > actual
+        head -n1 actual | grep -qx 'check=false'
+        ${rolesPackage}/bin/figaro-apply-roles --check > checked
+        head -n1 checked | grep -qx 'check=true'
+        tail -n +2 actual > manifest.toml
+        ${pkgs.remarshal}/bin/toml2json manifest.toml > manifest.json
+        ${pkgs.jq}/bin/jq -e '
+          .roles == {
+            preview: {id: "@11111111111111111111111111111111", outfits: ["fixture"], managed: ["charter"], mode: "check"},
+            reviewed: {id: "@22222222222222222222222222222222", outfits: ["fixture"], managed: ["charter"], mode: "apply"}
+          }' manifest.json > /dev/null
+        ${rolesPackage}/bin/figaro-apply-roles --help > help
+        grep -q '^Usage:' help
+        if ${rolesPackage}/bin/figaro-apply-roles unexpected > unexpected 2>/dev/null; then
+          echo 'unexpected application arguments were accepted' >&2
+          exit 1
+        fi
+        cp $scriptPath $out
+      ''
+    else
+      ''
+        echo "${lib.concatMapStringsSep "\n" (c: "FAIL: " + c.why) failed}" >&2
+        exit 1
+      ''
+  )
