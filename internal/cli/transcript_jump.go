@@ -411,6 +411,10 @@ func (t *transcript) boxSubmit(snap bool) {
 	if opensPit(expanded) {
 		t.awaitPit()
 	}
+	if switchesSubject(expanded) {
+		t.switchSeq++
+		t.switching = t.switchSeq
+	}
 	t.command(expanded)
 }
 

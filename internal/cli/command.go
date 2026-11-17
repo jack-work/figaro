@@ -45,6 +45,24 @@ func (in *interactiveInput) commandAsync(fn func(context.Context) (string, error
 	})
 }
 
+func (in *interactiveInput) switchAsync(switchID uint64, fn func(context.Context) (string, error)) {
+	in.commandAsync(func(ctx context.Context) (string, error) {
+		defer in.liftSwitch(switchID)
+		return fn(ctx)
+	})
+}
+
+func (in *interactiveInput) liftSwitch(switchID uint64) {
+	if switchID == 0 {
+		return
+	}
+	in.mu.Lock()
+	if in.lt.tr.switching == switchID {
+		in.lt.tr.switching = 0
+	}
+	in.mu.Unlock()
+}
+
 func wireErrorText(err error) string {
 	var jerr *jkrpc.Error
 	if errors.As(err, &jerr) {

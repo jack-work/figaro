@@ -56,6 +56,7 @@ func (t *transcript) park(id string) *parkedSubject {
 func (t *transcript) adopt(p *parkedSubject, status *sessionStatus, here bool, base int) {
 	t.client = p.client
 	t.setStatus(status)
+	t.switching = 0
 	t.rowCache, t.stickyCache = p.rows, p.sticky
 	t.expanded, t.metaOpen = p.expand, p.adorn
 	if t.metaOpen == nil {
