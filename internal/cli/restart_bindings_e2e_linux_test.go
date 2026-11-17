@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/testreap"
 	"github.com/jack-work/figaro/sdk"
 )
 
@@ -32,6 +33,7 @@ type restartRig struct {
 
 func newRestartRig(t *testing.T) *restartRig {
 	t.Helper()
+	scope := testreap.Scope(t)
 	root, err := os.MkdirTemp("/var/tmp", "figaro-restartbind-")
 	if err != nil {
 		t.Fatal(err)
@@ -70,6 +72,7 @@ func newRestartRig(t *testing.T) *restartRig {
 		"FIGARO_HUSH_PASSPHRASE=figaro-restartbind-e2e",
 		"FIGARO_HUSH_TTL=2m",
 		"ANTHROPIC_API_KEY=sk-ant-unused",
+		scope,
 	)}
 	t.Cleanup(func() { _, _ = r.cmd("stop", "--force").CombinedOutput() })
 	return r

@@ -6,12 +6,14 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/testfence"
+	"github.com/jack-work/figaro/internal/testreap"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestMain(m *testing.M) {
+	reap := testreap.Start()
 	testfence.Install()
-	os.Exit(m.Run())
+	os.Exit(reap.Check(m.Run()))
 }
 
 // A login under test must never open the user's real browser: go test ./...

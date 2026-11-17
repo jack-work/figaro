@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/testreap"
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
@@ -105,10 +106,11 @@ func visibleText(row string) string {
 // tmuxReplay replays a frame stream into a private tmux pane of exactly w by h.
 func tmuxReplay(t *testing.T, dir, path string, w, h int) []string {
 	t.Helper()
+	scope := testreap.Scope(t)
 	socket := filepath.Join(dir, "tmux.sock")
 	run := func(args ...string) (string, error) {
 		cmd := exec.Command("tmux", append([]string{"-S", socket, "-f", "/dev/null"}, args...)...)
-		cmd.Env = append(os.Environ(), "TMUX=")
+		cmd.Env = append(os.Environ(), "TMUX=", scope)
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
