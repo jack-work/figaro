@@ -319,8 +319,8 @@ func (p *picker) lines(id pitID, w, h int) []string {
 		body := p.rows[i].str()
 		clean := pitText(body)
 		if clean == body {
-			lead, tail := p.rows[i].dims()
-			clean = paintRow(clean, lead, tail, p.rows[i].marks, p.rows[i].tone.fg(i == p.cursor), matchFg(i == p.cursor), quietFg(i == p.cursor))
+			sel := i == p.cursor
+			clean = paintRow(clean, p.rows[i].dims(), p.rows[i].marks, p.rows[i].tone.fg(sel), matchFg(sel), quietFg(sel), holderFg(sel))
 		}
 		text := prefix + clean
 		if note := p.rows[i].note; note != "" {

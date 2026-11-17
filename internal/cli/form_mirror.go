@@ -120,6 +120,9 @@ type formNode struct {
 	rowOpen  bool
 	rowPeek  string
 	peek     string
+	rowBadge int
+	badge    int
+	badgeEnd int
 	rowSum   bool
 	summary  bool
 	aside    *formNode
@@ -186,14 +189,24 @@ func (n *formNode) kids() []*formNode {
 }
 
 func (n *formNode) rendered(width int) string {
-	if n.rowWidth != width || n.rowGuide != n.guide || n.rowPad != n.pad || n.rowOpen != n.open || n.rowPeek != n.peek || n.rowSum != n.summary {
+	if n.rowWidth != width || n.rowGuide != n.guide || n.rowPad != n.pad || n.rowOpen != n.open || n.rowPeek != n.peek || n.rowBadge != n.badge || n.rowSum != n.summary {
 		n.row, n.tail = renderTreeRow(n, width)
-		n.rowWidth, n.rowGuide, n.rowPad, n.rowOpen, n.rowPeek, n.rowSum = width, n.guide, n.pad, n.open, n.peek, n.summary
+		n.badgeEnd = 0
+		if n.tail > 0 && n.badge > 0 {
+			n.badgeEnd = min(n.tail+n.badge, len(n.row))
+		}
+		n.rowWidth, n.rowGuide, n.rowPad, n.rowOpen, n.rowPeek, n.rowBadge, n.rowSum = width, n.guide, n.pad, n.open, n.peek, n.badge, n.summary
 	}
 	return n.row
 }
 
-func (n *formNode) rowDims() (lead, tail int) { return len(n.lead()), n.tail }
+func (n *formNode) rowDims() rowSpans {
+	s := rowSpans{lead: len(n.lead()), tail: n.tail}
+	if n.badgeEnd > 0 {
+		s.badgeAt, s.badgeEnd = n.tail, n.badgeEnd
+	}
+	return s
+}
 
 func (n *formNode) lead() string {
 	if n.guided {
@@ -290,11 +303,11 @@ func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, ro
 		w.out = append(w.out, c)
 		segs := append(labels[:len(labels):len(labels)], c.label)
 		under := row
-		c.peek, c.aside, c.summary = "", nil, false
+		c.peek, c.badge, c.aside, c.summary = "", 0, nil, false
 		if w.shape != nil {
 			under = w.shape.note(c, segs, row)
 			if !c.open || w.through[c.path] || w.topology != nil {
-				c.peek = w.shape.peek(c)
+				c.peek, c.badge = w.shape.peek(c)
 			}
 			c.aside, c.summary = w.shape.aside(c)
 		}

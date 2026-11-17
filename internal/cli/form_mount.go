@@ -36,12 +36,8 @@ type mountedText struct {
 
 func (m mountedText) rowText() string { return m.indent + m.inner.str() }
 
-func (m mountedText) rowDims() (int, int) {
-	lead, tail := m.inner.dims()
-	if tail > 0 {
-		tail += len(m.indent)
-	}
-	return lead + len(m.indent), tail
+func (m mountedText) rowDims() rowSpans {
+	return m.inner.dims().shifted(len(m.indent))
 }
 
 // A form read from another node mounts only that node's forms: its rows

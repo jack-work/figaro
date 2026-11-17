@@ -127,6 +127,8 @@ type palette struct {
 	// over the selection wash is 1.9:1.
 	noticeOnWash, cautionOnWash string
 
+	holder, holderOnWash string
+
 	// SGR bodies without a reset: the painter that splices them owns it.
 	selectWash, selectWash256   string
 	cursor, cursor256           string
@@ -156,6 +158,9 @@ var kanagawa = palette{
 
 	noticeOnWash:  "\033[22;38;5;210m",
 	cautionOnWash: "\033[22;38;5;222m",
+
+	holder:       "\033[38;5;140m",
+	holderOnWash: "\033[38;5;183m",
 
 	selectWash:    "\033[48;2;45;79;103m",
 	selectWash256: "\033[48;5;23m",
@@ -312,6 +317,22 @@ func NoticeOnWash() string {
 	}
 	return active.noticeOnWash
 }
+
+func HolderBody() string {
+	if !Enabled() {
+		return ""
+	}
+	return active.holder
+}
+
+func HolderOnWash() string {
+	if !Enabled() {
+		return ""
+	}
+	return active.holderOnWash
+}
+
+func Holder(s string) string { return paint(active.holder, s) }
 
 func CautionOnWash() string {
 	if !Enabled() {
