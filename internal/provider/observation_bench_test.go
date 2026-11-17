@@ -17,14 +17,14 @@ type benchForm struct {
 	patches []message.Patch
 }
 
-func (f *benchForm) PatchesBetween(after, upTo uint64) []message.Patch {
+func (f *benchForm) PatchesBetween(after, upTo uint64) ([]message.Patch, error) {
 	if upTo > uint64(len(f.patches)) {
 		upTo = uint64(len(f.patches))
 	}
 	if after >= upTo {
-		return nil
+		return nil, nil
 	}
-	return f.patches[after:upTo]
+	return f.patches[after:upTo], nil
 }
 
 func benchPatches(n int) []message.Patch {

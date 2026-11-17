@@ -526,16 +526,7 @@ func (b *XwalBackend) FormPatchesBetween(ariaID string, after, upTo uint64) ([]V
 	if err != nil {
 		return nil, err
 	}
-	return f.PatchesBetween(after, upTo), nil
-}
-
-func (b *XwalBackend) FormPatchesBetweenChecked(ariaID string, after, upTo uint64) ([]VersionedPatch, bool, error) {
-	f, err := b.form(ariaID)
-	if err != nil {
-		return nil, false, err
-	}
-	ps, ok := f.PatchesBetweenChecked(after, upTo)
-	return ps, ok, nil
+	return f.PatchesBetween(after, upTo)
 }
 
 // ApplyForm returns the patch's durable index in the form channel: the append

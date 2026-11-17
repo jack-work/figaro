@@ -189,7 +189,7 @@ func TestTopologyForm_PromoteIsOneRecord(t *testing.T) {
 	if got := x.Rev() - before; got != 1 {
 		t.Fatalf("a promote landed %d records; two edges must be one patch", got)
 	}
-	ps := x.form.PatchesBetween(before, x.Rev())
+	ps := heldPatches(x.form.PatchesBetween(before, x.Rev()))
 	if len(ps) != 1 {
 		t.Fatalf("want one patch, got %d", len(ps))
 	}
