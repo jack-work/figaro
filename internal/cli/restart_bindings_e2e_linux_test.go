@@ -24,13 +24,13 @@ import (
 // the new daemon what the shell is bound to.
 
 type restartRig struct {
-	t    *testing.T
+	t    testing.TB
 	bin  string
 	root string
 	env  []string
 }
 
-func newRestartRig(t *testing.T) *restartRig {
+func newRestartRig(t testing.TB) *restartRig {
 	t.Helper()
 	root, err := os.MkdirTemp("/var/tmp", "figaro-restartbind-")
 	if err != nil {

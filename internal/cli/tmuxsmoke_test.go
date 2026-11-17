@@ -111,7 +111,7 @@ func smokeEnabled(t *testing.T) {
 }
 
 // smokeBinary builds figaro from this worktree; FIGARO_SMOKE_BIN overrides it.
-func smokeBinary(t *testing.T) string {
+func smokeBinary(t testing.TB) string {
 	t.Helper()
 	if bin := os.Getenv("FIGARO_SMOKE_BIN"); bin != "" {
 		out, _ := exec.Command(bin, "--version").CombinedOutput()
@@ -131,7 +131,7 @@ func smokeBinary(t *testing.T) string {
 	return bin
 }
 
-func repoRoot(t *testing.T) string {
+func repoRoot(t testing.TB) string {
 	t.Helper()
 	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
