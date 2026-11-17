@@ -975,7 +975,13 @@ func (s *XwalStore) Node(id string) (NodeView, bool) {
 func (s *XwalStore) removeLocked(id string, recursive bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.trunks.Remove(id, recursive)
+	if err := s.trunks.Remove(id, recursive); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(checkpointDirOf(s.root, id)); err != nil {
+		slog.Warn("remove checkpoints", "id", id, "err", err)
+	}
+	return nil
 }
 
 func (s *XwalStore) collectStumpAfterDelete(stump string) {
