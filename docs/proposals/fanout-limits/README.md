@@ -1,114 +1,94 @@
 # Enforced fan-out limits
 
-Status: proposal, for Gluck. Asked by the King, 2026-11-17, after the
-Anthropic weekly plan burned at about 5x the sustainable rate.
+Status: proposal, revision 2, after Gluck's review on 2026-11-17. Asked by
+the King after the Anthropic weekly plan burned at about 5x the sustainable
+rate.
 
-## Problem
+## Decisions taken
 
-Fan-out limits today live in prompts ("max 2 concurrent lanes"). A figaro
-that forgets them, or a child that never heard them, spawns freely. The
-daemon mints every `new`, `fork` and `succeed`, and starts every turn, so it
-can hold the line itself.
+- One limit only: `system.fanout.max_children`. No `max_running`, no
+  `max_depth`; concurrency stays a rule in prompts.
+- Figaros fan out by **fork** only: an early fork (turn 0, 1 or 2) when the
+  child needs no context, a tail fork when it does. By default a figaro may
+  not mint a top-level figaro (`figaro new`). The King keeps that right, so
+  he can repair a limit that proves too tight.
+- Unboxed figaros are held by honour: the daemon trusts the figaro label the
+  CLI stamps (`FIGARO_ARIA`) and refuses on it, and a figaro that strips it is
+  breaking the rules, not the lock. Boxed figaros are held for real: their
+  door names them.
+- Once this ships, the policy is computed once and written into central
+  command (the Home Manager setup), not set by hand.
 
-## Keys
+## Children, not spawns
 
-Three keys under `system.fanout`, each a non-negative integer. Absent means
-no limit from that level.
+Since fan-out is by fork, a figaro's children are its children in the
+topology. No spawner key is needed.
 
-| key | counts | past the limit |
-|---|---|---|
-| `max_children` | live figaros this figaro spawned (not retired, not reaped) | `new`, `fork`, `succeed` from it are refused |
-| `max_running` | turns running at once among everything it spawned, at any depth | the next turn waits for a slot (FIFO); it is not refused |
-| `max_depth` | generations of spawning below it | a spawn deeper than this is refused |
+`max_children` counts a figaro's direct children that are live: neither
+retired nor reaped. Dormant and idle children count, because they are
+inventory and can wake. Absent means no limit.
 
-`max_children = 0` means no fan-out at all, so no separate `allowed` flag.
+## Where it is checked
 
-Dormant and idle children hold no running slot. A child woken by figla or a
-send takes a slot, or waits for one. That is the count the King asked for:
-`max_children` bounds inventory, `max_running` bounds spend.
+The daemon refuses past the limit at every call that adds a child:
 
-## Who spawned whom
+| call | refused when |
+|---|---|
+| `fork` | the parent already holds `max_children` live children |
+| `demote`, `adopt`, any reparent | the new parent would then hold more than its `max_children` |
+| `succeed` | never for its own fork: the successor and predecessor swap places at once, so the count does not change. Every other figaro it moves is checked as a reparent |
 
-`figaro new` mints a root, so topology does not record the spawner. The
-daemon stamps `system.spawner` at birth from the call's figaro claim, along
-with `system.spawner_role` when the spawner holds a role. Both are
-daemon-written; no caller sets them. A call with no figaro claim (Gluck at a
-terminal) stamps nothing and is unlimited.
+A refused reparent leaves the topology as it was. The figaro gets an error
+it can act on, for example:
+`fanout: f3a1 holds 3 live children of max_children 3; retire one or fork elsewhere`.
+That figaro recovers by itself: it retires a finished child, or asks the King.
 
-A role-holding spawner's children count against the role, not the aria. So
-when the Engineer succeeds, the new holder inherits the old holder's live
-children and their slots without any rewrite, and a succession cannot reset
-the budget.
+## Granting fan-out to a child
 
-## Effective limit
+A child gets `max_children = 0` at birth unless its parent grants more, so
+the parent decides whether a child may fan out. A parent may grant at most
+its own value. `fork -S system.fanout.max_children=2` is the gesture.
 
-For each key, the smallest of:
+`system.fanout` joins the protected keys (`api/form/protected.go`), with the
+same writers as `system.scopes`:
 
-- the figaro's own `system.fanout.<key>`;
-- the same key on every role form the figaro holds;
-- each spawner's own effective value, minus one generation for `max_depth`;
-- `[figaros] fanout` in `config.toml`, the node-wide ceiling.
+- the owner (Gluck) writes any value;
+- an ancestor writes a descendant's value, up to its own;
+- a figaro never writes its own.
 
-A turn needs a running slot at every level of its spawner chain, so a lane's
-grandchildren count against the King's budget as well as the lane's.
-Children always get the same limits as their parent or tighter ones. They
-never get looser ones.
+A role form's `system.fanout.max_children` is the default for whoever holds
+the role. It applies to the holder through every succession, so a new
+holder cannot reset it.
 
-## Who may write the keys
+## Top-level figaros
 
-`system.fanout` joins the protected keys (`api/form/protected.go`), on figaros
-and on role forms. As with `system.scopes`:
+`figaro new` is the `create` verb (`api/rpc/verbs.go`). Ordinary figaros
+lose it through their scopes: the default outfit gives `system.scopes`
+without `create`, and the King's outfit keeps it. Scopes only narrow down
+the lineage, so no fork of an ordinary figaro gets `create` back. Gluck at a
+terminal carries no figaro label and is unaffected. Minting a role form
+(`new -C`, `cast` with a patch) is a separate method and keeps working.
 
-- the owner (Gluck's door) writes any value;
-- an ancestor or spawner may write a child's value only at or below its own
-  effective value (the `refuseScopesBeyondWriter` check, reused);
-- a figaro may not write its own value, nor its role form's.
+To check before building: whether `form.create` shares the `create` verb.
+If it does, root minting needs its own verb (for example `mint`).
 
-For the King to set limits on roles he does not spawn, add one policy verb,
-`govern:<selector>`, granted to the King's role in the troupe policy. Without
-it, only Gluck sets role defaults.
+## Feasible?
 
-## The gap, stated plainly
+Yes, and small. The topology already knows each figaro's children, and
+every reparent passes one daemon function. The work:
 
-An unboxed figaro's bash reaches the local door as the owner (#57). The
-claim is the CLI's `FIGARO_ARIA` stamp, and `env -u FIGARO_ARIA figaro new`
-drops it. Step 1 therefore stops runaway fan-out by a well-behaved model, not
-a model working around the limit.
+1. Count live children, check at fork and reparent, add the protected key
+   and the birth default of 0. Tests: fork refused at the limit, a reparent
+   past the limit refused with the topology unchanged, `succeed` with a full
+   predecessor allowed, a retired child freeing a slot, a figaro unable to
+   raise its own limit, a parent unable to grant more than it holds. About
+   200 lines plus tests.
+2. Drop `create` from the default outfit's scopes, and keep it in the King's.
+3. Once both have run for a while: compute per-role limits from real fleet
+   shape and write them into central command through managed apply.
 
-Step 2 closes this for the local door. The daemon spawns every tool process
-and knows their pids. On a local-door call it reads the peer pid
-(SO_PEERCRED, already read in `internal/authz/peercred_linux.go`) and walks
-the parent chain. If the chain reaches a tool process of figaro X, the call
-is X's whatever the environment says. This is tool identity for unboxed
-figaros, and it narrows #57 for every protected key, not only fan-out.
-
-## Refusals and visibility
-
-- A spawn past the limit fails with an error the model can act on:
-  `fanout: @ee927149 holds 2 live children of max_children 2; retire one first`.
-- A turn waiting for a slot shows in `figaro ls` as `waiting: fan-out`, and
-  `figaro scopes <id>` (or a new `figaro fanout <id>`) prints each level,
-  its count and its limit.
-- Every refusal or wait logs one line in the daemon log.
-
-## Steps
-
-1. Keys, `system.spawner`/`spawner_role`, the effective limit, refusal on
-   spawn, the running-slot semaphore, protected-key wiring. Tests: limit at
-   each level, role counts surviving `succeed`, a wider write refused, a
-   dormant child holding no slot, a woken child waiting. Roughly 400 lines
-   plus tests.
-2. Peer-pid attribution on the local door (closes the env gap; separate
-   review).
-3. Role defaults, set by Gluck in Home Manager through managed apply
-   (I-01, already shipped): for example King 4 running / 8 children,
-   Engineer 2 / 6, lanes 1 / 2 with depth 1.
-
-Nothing on disk breaks: absent keys mean today's behaviour.
-
-## Questions for Gluck
-
-1. Past `max_running`, should a turn wait for a slot (proposed) or be
-   refused?
-2. Should the King get `govern:*`, or is the owner alone enough?
-3. Are the role defaults above about right?
+Nothing on disk breaks. Figaros that already exist carry no key, so they
+have no limit until step 3 writes one. Behaviour does change: from step 1,
+every new fork is born at 0 unless its parent grants more, so a lane that
+fans out to reviewers needs `-S system.fanout.max_children=N` when it is
+forked.
