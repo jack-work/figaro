@@ -4,6 +4,10 @@ let
     hm.dag.entryAfter = after: data: { inherit after data; };
   });
   stubs = {
+    options.xdg.configFile = lib.mkOption {
+      type = lib.types.attrsOf lib.types.anything;
+      default = { };
+    };
     options.home.packages = lib.mkOption {
       type = lib.types.listOf lib.types.package;
       default = [ ];
@@ -27,7 +31,16 @@ let
   step = on.home.activation.figaroRestartOnSwitch;
   data = builtins.unsafeDiscardStringContext step.data;
   exe = builtins.unsafeDiscardStringContext "${self.packages.${pkgs.stdenv.hostPlatform.system}.figaro}/bin/figaro";
+  dressed = eval {
+    programs.figaro.outfits.fixture.charter.purpose = "Fixture purpose";
+  };
   checks = [
+    {
+      ok =
+        dressed.xdg.configFile ? "figaro/outfits/fixture.toml"
+        && !(dressed.home.activation ? figaroRestartOnSwitch);
+      why = "a declared outfit is installed without starting a restart owner";
+    }
     {
       ok = !(off.home.activation ? figaroRestartOnSwitch);
       why = "restartOnSwitch is off by default and then renders no activation step";
