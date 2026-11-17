@@ -125,10 +125,20 @@ func (h *handlers) outfitReload(ctx context.Context, params json.RawMessage) (in
 
 // forkDress guarantees a non-empty birth patch; aria_id is re-stamped by
 // the boot patch once the child exists.
-func forkDress(dress form.Patch, parent string) form.Patch {
+func forkDress(dress form.Patch, parent string, capByDefault bool) form.Patch {
+	if capByDefault {
+		dress = withFanoutBirthDefault(dress)
+	}
 	return form.Merge(dress, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		form.ForkedFromKey: json.RawMessage(`"` + parent + `"`),
 	}, nil))
+}
+
+func withFanoutBirthDefault(dress form.Patch) form.Patch {
+	if e, ok := dress.Entry(form.FanoutMaxChildrenKey); ok && !e.IsRemoval() {
+		return dress
+	}
+	return form.Merge(dress, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.FanoutMaxChildrenKey: json.RawMessage(`0`)}, nil))
 }
 
 func mergePatches(a, b form.Patch) form.Patch {

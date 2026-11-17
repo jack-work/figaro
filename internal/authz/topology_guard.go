@@ -70,16 +70,30 @@ var ErrSystemOnly = errors.New("only the daemon may run this plan")
 var ErrSplitsReapedGroup = errors.New("a delete would split a reaped group")
 
 type TopologyGuard struct {
-	Policies   func() *Policies
-	Owner      func() jkauthz.Principal
-	Placement  func(id string) (zone string, deadlineMS int64)
-	Holds      func(ctx context.Context, root string, taken []string) (node, why string)
-	Reaped     func(ctx context.Context, root string) (nodes []string, due bool)
-	Empty      func(id string) bool
-	MintPlaces func(box, node, under string) error
+	Policies     func() *Policies
+	Owner        func() jkauthz.Principal
+	Placement    func(id string) (zone string, deadlineMS int64)
+	Holds        func(ctx context.Context, root string, taken []string) (node, why string)
+	Reaped       func(ctx context.Context, root string) (nodes []string, due bool)
+	Empty        func(id string) bool
+	MintPlaces   func(box, node, under string) error
+	FanoutLimit  func(id string) (max int, ok bool)
+	LiveChildren func(id string) []string
+	Live         func(id string) bool
+	SwapLimit    func(pred, succ string) (max int, ok, swap bool)
+	Committed    func(p hierarchy.Plan)
+}
+
+func (g TopologyGuard) AfterCommit(p hierarchy.Plan) {
+	if g.Committed != nil {
+		g.Committed(p)
+	}
 }
 
 func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hierarchy.Plan) (hierarchy.Verdict, error) {
+	if err := g.fanout(p); err != nil {
+		return hierarchy.Verdict{}, err
+	}
 	if err := g.rehomes(p); err != nil {
 		return hierarchy.Verdict{}, err
 	}
@@ -292,6 +306,63 @@ func (g TopologyGuard) wholeGroups(ctx context.Context, p hierarchy.Plan) error 
 		}
 	}
 	return nil
+}
+
+func (g TopologyGuard) fanout(p hierarchy.Plan) error {
+	if g.FanoutLimit == nil || g.LiveChildren == nil {
+		return nil
+	}
+	arrivals := map[string]int{}
+	departures := map[string]int{}
+	touched := map[string]bool{}
+	for _, m := range p.Moves {
+		if m.Rehome || m.Tree != hierarchy.Drawn || m.From == m.To {
+			continue
+		}
+		if g.Live != nil && !g.Live(m.Node) {
+			continue
+		}
+		if m.To != "" {
+			arrivals[m.To]++
+			touched[m.To] = true
+		}
+		if m.From != "" {
+			departures[m.From]++
+		}
+	}
+	swapTo, swapMax, swapOK := g.swapOf(p)
+	for to := range touched {
+		if arrivals[to] == 0 {
+			continue
+		}
+		max, ok := g.FanoutLimit(to)
+		if to == swapTo {
+			max, ok = swapMax, swapOK
+		}
+		if !ok {
+			continue
+		}
+		final := len(g.LiveChildren(to)) - departures[to] + arrivals[to]
+		if final > max {
+			return fmt.Errorf("fanout: %s would hold %d live children of max_children %d; the reparent is refused and nothing moved", to, final, max)
+		}
+	}
+	return nil
+}
+
+func (g TopologyGuard) swapOf(p hierarchy.Plan) (succ string, max int, ok bool) {
+	if p.Op != hierarchy.Demote || g.SwapLimit == nil {
+		return "", 0, false
+	}
+	for _, m := range p.Moves {
+		if m.Node != p.Node || m.Tree != hierarchy.Drawn || m.To == "" {
+			continue
+		}
+		if max, ok, swap := g.SwapLimit(p.Node, m.To); swap {
+			return m.To, max, ok
+		}
+	}
+	return "", 0, false
 }
 
 func (g TopologyGuard) rehomes(p hierarchy.Plan) error {

@@ -485,6 +485,33 @@ func TestSuccessionDrawsTheSuccessorBesideIt(t *testing.T) {
 	require.Equal(t, parent, under)
 }
 
+func TestSuccessionCarriesTheFanoutLimit(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	ownerSets(t, r.a, old, map[string]any{form.FanoutMaxChildrenKey: 1})
+	r.p.set(func() { r.p.holdOthers = true })
+	r.cross(old)
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "ramping" }, "the succession never reached its ramp")
+	snap, err := r.a.Backend.FormState(r.hs.SuccessorOf(old))
+	require.NoError(t, err)
+	got, ok := snap.Get(form.FanoutMaxChildrenKey)
+	require.True(t, ok, "the successor of a capped figaro is uncapped")
+	require.JSONEq(t, "1", string(got))
+}
+
+func TestSuccessionUnderAFullParentStillPlacesTheSuccessor(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	parent := r.aria(nil)
+	require.NoError(t, r.a.Backend.HierarchyEngine().WriteDrawn(map[string]string{old: parent}, nil))
+	ownerSets(t, r.a, parent, map[string]any{form.FanoutMaxChildrenKey: 1})
+	r.p.set(func() { r.p.holdOthers = true })
+	r.cross(old)
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "ramping" }, "a full parent stopped the succession")
+	under, _ := r.a.Backend.HierarchyEngine().Drawn(r.hs.SuccessorOf(old))
+	require.Equal(t, parent, under)
+}
+
 func (r *successionRig) requireUnretiredAndPaged(old, king, why string, roles ...string) {
 	r.t.Helper()
 	r.eventually(func() bool { return r.failed(old) != "" }, "the failure was never recorded")

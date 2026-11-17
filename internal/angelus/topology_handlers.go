@@ -241,11 +241,21 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		return nil, fmt.Errorf("fork: the board of %s cannot be read to check the patch against it: %w", req.FigaroID, err)
 	}
+	claimed := authz.FigaroOf(ctx) != ""
+	if claimed && req.Patch != nil {
+		if e, ok := req.Patch.Entry(form.FanoutMaxChildrenKey); ok && e.IsRemoval() {
+			p := withFanoutBirthDefault(*req.Patch)
+			req.Patch = &p
+		}
+	}
 	if err := h.refuseCallerKeys(ctx, birthUnder(req.FigaroID), inherited, req.Patch); err != nil {
 		return nil, err
 	}
 	if err := h.refuseUnheldSandbox(ctx, req.Patch); err != nil {
 		return nil, fmt.Errorf("fork: %w", err)
+	}
+	if err := h.admitFork(req.FigaroID); err != nil {
+		return nil, err
 	}
 	var cont, alt string
 	note := ""
@@ -303,10 +313,15 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		if interior {
 			at = atMainLT
 		}
-		var ferr error
-		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID), mintedBy(ctx), ariaIDStamp())
-		if ferr != nil {
-			return ferr
+		if err := h.angelus.topology().WithLock(func() error {
+			if err := h.admitFork(req.FigaroID); err != nil {
+				return err
+			}
+			var cerr error
+			alt, _, cerr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID, claimed), mintedBy(ctx), ariaIDStamp())
+			return cerr
+		}); err != nil {
+			return err
 		}
 		if interior && forkOwner.Trunk != "" && forkOwner.Trunk != req.FigaroID {
 			if merr := h.place(ctx, alt, req.FigaroID); merr != nil {
@@ -333,6 +348,20 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	slog.Info("forked figaro", "parent", req.FigaroID, "turn", req.AtTurn, "lt", atMainLT, "continuation", cont, "alternative", alt)
 	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note}, nil
+}
+
+func (h *handlers) admitFork(parent string) error {
+	max, ok, err := h.angelus.fanoutLimit(parent)
+	if err != nil {
+		return fmt.Errorf("fork: the limit of %s cannot be read to admit the fork: %w", parent, err)
+	}
+	if !ok {
+		return nil
+	}
+	if n := len(h.angelus.liveChildrenOf(parent)); n >= max {
+		return fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one or fork elsewhere", parent, n, max)
+	}
+	return nil
 }
 
 func (h *handlers) headForkOfAConversation(req rpc.ForkRequest) bool {

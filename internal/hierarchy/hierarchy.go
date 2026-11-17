@@ -240,6 +240,15 @@ func (h *Hierarchy) Version() Version {
 	return h.eng.Version()
 }
 
+func (h *Hierarchy) WithLock(fn func() error) error {
+	if h == nil {
+		return fn()
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return fn()
+}
+
 func (h *Hierarchy) Drawn(id string) (string, bool) {
 	if h == nil || h.eng == nil {
 		return "", false
@@ -256,6 +265,13 @@ func (h *Hierarchy) DrawnByHand(id string) (string, bool) {
 		return "", false
 	}
 	return over, true
+}
+
+func (h *Hierarchy) Children(id string) []string {
+	if h == nil || h.eng == nil {
+		return nil
+	}
+	return h.eng.DrawnChildren(id)
 }
 
 func (h *Hierarchy) Check(ctx context.Context, by Principal, p Plan) (Plan, error) {
@@ -283,7 +299,22 @@ func (h *Hierarchy) Apply(ctx context.Context, by Principal, p Plan) (Plan, erro
 	if v.Park != "" {
 		return plan, h.park(by, plan, v)
 	}
-	return h.commit(plan)
+	return h.commitAndTell(plan)
+}
+
+type afterCommitter interface {
+	AfterCommit(Plan)
+}
+
+func (h *Hierarchy) commitAndTell(p Plan) (Plan, error) {
+	plan, err := h.commit(p)
+	if err != nil {
+		return plan, err
+	}
+	if c, ok := h.guard.(afterCommitter); ok {
+		c.AfterCommit(plan)
+	}
+	return plan, nil
 }
 
 func (h *Hierarchy) park(by Principal, plan Plan, v Verdict) error {
@@ -395,7 +426,7 @@ func (h *Hierarchy) Accept(ctx context.Context, by Principal, parent, id string)
 	if v.Park != "" {
 		return plan, fmt.Errorf("%w %s: the topology changed since %s was proposed", ErrParked, v.Park, id)
 	}
-	return h.commit(plan)
+	return h.commitAndTell(plan)
 }
 
 func (h *Hierarchy) Refuse(ctx context.Context, by Principal, parent, id string) error {

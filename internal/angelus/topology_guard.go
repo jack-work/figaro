@@ -1,11 +1,15 @@
 package angelus
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/hierarchy"
@@ -34,9 +38,145 @@ func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
 			}
 			return nil, false
 		},
-		Empty:      a.ownsNoMessages,
-		MintPlaces: a.mintPlaces,
+		Empty:        a.ownsNoMessages,
+		MintPlaces:   a.mintPlaces,
+		FanoutLimit:  a.fanoutLimitOf,
+		LiveChildren: a.liveChildrenOf,
+		Live:         a.isLiveAria,
+		SwapLimit:    a.swapLimit,
+		Committed:    a.moveSwappedLimit,
 	}
+}
+
+func (a *Angelus) fanoutLimitOf(id string) (int, bool) {
+	max, ok, err := a.fanoutLimit(id)
+	if err != nil {
+		return 0, false
+	}
+	return max, ok
+}
+
+func (a *Angelus) fanoutLimit(id string) (int, bool, error) {
+	return a.fanoutLimitHeld(id, id)
+}
+
+func (a *Angelus) fanoutLimitHeld(ownOf string, holders ...string) (int, bool, error) {
+	if a.Backend == nil {
+		return 0, false, nil
+	}
+	snap, err := a.Backend.FormState(ownOf)
+	if err != nil {
+		return 0, false, err
+	}
+	best, bestOK, err := form.FanoutMaxChildren(snap)
+	if err != nil {
+		return 0, false, err
+	}
+	roles, _ := a.roles()
+	for _, holder := range holders {
+		for _, roleID := range roles.holding(holder) {
+			rsnap, rerr := a.Backend.FormState(roleID)
+			if rerr != nil {
+				continue
+			}
+			n, ok, nerr := form.FanoutMaxChildren(rsnap)
+			if nerr != nil || !ok {
+				continue
+			}
+			if !bestOK || n < best {
+				best, bestOK = n, true
+			}
+		}
+	}
+	return best, bestOK, nil
+}
+
+func (a *Angelus) forkDescends(id, ancestor string) bool {
+	if id == ancestor {
+		return false
+	}
+	chain, err := a.chainOf(id)
+	if err != nil {
+		return false
+	}
+	for _, l := range chain {
+		if l.Node == ancestor {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Angelus) swapLimit(pred, succ string) (int, bool, bool) {
+	if !a.forkDescends(succ, pred) {
+		return 0, false, false
+	}
+	max, ok, err := a.fanoutLimitHeld(pred, pred, succ)
+	if err != nil {
+		return 0, true, true
+	}
+	return max, ok, true
+}
+
+func (a *Angelus) moveSwappedLimit(p hierarchy.Plan) {
+	if p.Op != hierarchy.Demote || a.Backend == nil {
+		return
+	}
+	for _, m := range p.Moves {
+		if m.Node != p.Node || m.Tree != hierarchy.Drawn || !a.forkDescends(m.To, p.Node) {
+			continue
+		}
+		if err := a.swapFanoutKeys(p.Node, m.To); err != nil {
+			slog.Error("fanout: the swap moved the aria but not its limit", "pred", p.Node, "succ", m.To, "err", err)
+		}
+		return
+	}
+}
+
+func (a *Angelus) swapFanoutKeys(pred, succ string) error {
+	ps, err := a.Backend.FormState(pred)
+	if err != nil {
+		return err
+	}
+	ss, err := a.Backend.FormState(succ)
+	if err != nil {
+		return err
+	}
+	pv, pok := ps.Get(form.FanoutMaxChildrenKey)
+	sv, sok := ss.Get(form.FanoutMaxChildrenKey)
+	if pok == sok && bytes.Equal(pv, sv) {
+		return nil
+	}
+	if _, err := a.Backend.ApplyForm(succ, fanoutKeyPatch(ss, pv, pok)); err != nil {
+		return err
+	}
+	_, err = a.Backend.ApplyForm(pred, fanoutKeyPatch(ps, sv, sok))
+	return err
+}
+
+func fanoutKeyPatch(base form.Snapshot, raw json.RawMessage, ok bool) form.Patch {
+	if ok {
+		return form.Build(base, map[string]json.RawMessage{form.FanoutMaxChildrenKey: raw}, nil)
+	}
+	return form.Build(base, nil, []string{form.FanoutMaxChildrenKey})
+}
+
+func (a *Angelus) liveChildrenOf(id string) []string {
+	var out []string
+	for _, kid := range a.topology().Children(id) {
+		if a.isLiveAria(kid) {
+			out = append(out, kid)
+		}
+	}
+	return out
+}
+
+func (a *Angelus) isLiveAria(id string) bool {
+	if a.Backend == nil {
+		return true
+	}
+	meta, _ := a.Backend.Meta(id)
+	return meta == nil || (meta.RetiredAtMS == 0 && meta.ReapedAtMS == 0)
 }
 
 func (a *Angelus) ownsNoMessages(id string) bool {
