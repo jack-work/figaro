@@ -1300,7 +1300,7 @@ A lifted child keeps the scopes the killed figaro narrowed it to.`,
 		Name:  "succeed",
 		Group: "Session",
 		Short: "Hand a role to a successor and wind the old aria down",
-		Usage: "succeed <@role> [--turn <n>|head | --successor <aria>] [--title <t>] [-O <outfits>] [-S <k=v>] [-D <keys>] [--ttl <d>] [--abdication retire|linger] [--stay] [-j] -- <prompt>",
+		Usage: "succeed <@role> [--turn <n>|head | --successor <aria>] [--no-studies] [--title <t>] [-O <outfits>] [-S <k=v>] [-D <keys>] [--ttl <d>] [--abdication retire|linger] [--stay] [-j] -- <prompt>",
 		Long: `Replace the aria a role points at. The role must already target an aria
 that exists; that aria is the predecessor.
 
@@ -1322,6 +1322,9 @@ In order, stopping at the first step that fails:
                  with N turns, --turn N+1 is the same
      The fork carries the model its turn was recorded with; -O/-S/-D dress
      it in the same call, as with fork, so it can come up on today's.
+     It studies what the predecessor studies now, with the same --keys,
+     whatever turn it was cut at; --no-studies keeps only what the
+     predecessor studied at that turn.
      --successor names an existing aria instead and skips the fork.
   2. demote the predecessor beneath the successor (figaro demote), so its
      branches survive its end. A successor not drawn under it is left where
@@ -1349,6 +1352,7 @@ predecessor, the pager moves to the successor afterwards; --stay keeps it.`,
 			{Long: "ttl", Description: "Reap the predecessor this long from now; 0 kills it (default 10m)"},
 			{Long: "abdication", Description: "retire (refuse prompts) or linger (keep taking them)"},
 			{Long: "stay", IsBool: true, Description: "In the pager, keep showing the predecessor"},
+			{Long: "no-studies", IsBool: true, Description: "The successor studies what the predecessor studied at --turn, not what it studies now"},
 			{Long: "outfit", Short: "O", Description: "Outfit NAMES folded into the successor's birth patch"},
 			{Long: "set", Short: "S", Repeats: true, Description: "Successor birth keys: k=v or a JSON literal; repeats"},
 			{Long: "delete", Short: "D", Repeats: true, Description: "Key paths the successor's birth patch removes; repeats"},

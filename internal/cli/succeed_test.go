@@ -14,7 +14,10 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/sdk"
 )
 
 func succeedArgs(t *testing.T, argv ...string) (succeedPlan, error) {
@@ -168,35 +171,12 @@ func TestSucceedRefusesToDressAnExistingSuccessor(t *testing.T) {
 func TestSucceedAtTheHeadKeepsEveryTurn(t *testing.T) {
 	for _, turn := range []string{"head", "4"} {
 		t.Run(turn, func(t *testing.T) {
-			backend, pred := store.NewTestAria(t, "pred", message.Patch{})
-			ir, err := backend.OpenFigIR(pred)
+			s := seatedPredecessor(t, nil)
+			plan, err := succeedArgs(t, s.role, "--turn", turn, "--", "you hold the seat")
 			require.NoError(t, err)
-			for i := uint64(1); i <= 3; i++ {
-				for _, role := range []message.Role{message.RoleInput, message.RoleOutput} {
-					_, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
-						Role: role, TurnID: i, Content: []message.Content{message.TextContent(fmt.Sprintf("%s %d", role, i))}}})
-					require.NoError(t, err)
-				}
-			}
-			held, _ := json.Marshal(pred)
-			role, _, err := backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": held}, nil))
-			require.NoError(t, err)
-			acli, dir := serveBackend(t, backend)
-			t.Setenv("FIGARO_RUNTIME_DIR", dir)
-			t.Setenv("FIGARO_CONFIG_DIR", t.TempDir())
-			t.Setenv("FIGARO_TROUPE", "")
-			t.Setenv("FIGARO_ARIA", "")
+			r := s.succeed(t, plan)
 
-			plan, err := succeedArgs(t, role, "--turn", turn, "--", "you hold the seat")
-			require.NoError(t, err)
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			// The fixture runs no provider, so the succession stops at the
-			// prompt; the fork before it is what this defends.
-			r, err := succeedVerb(ctx, acli, plan, succeedHooks{})
-			require.True(t, r.Forked, "no successor was forked: %v", err)
-
-			msgs, err := ariaMessages(ctx, acli, r.Successor)
+			msgs, err := ariaMessages(s.ctx, s.acli, r.Successor)
 			require.NoError(t, err)
 			var inputs []string
 			for _, m := range msgs {
@@ -208,4 +188,120 @@ func TestSucceedAtTheHeadKeepsEveryTurn(t *testing.T) {
 				"the successor of --turn %s must carry the predecessor's three turns", turn)
 		})
 	}
+}
+
+type seated struct {
+	backend *store.XwalBackend
+	acli    *sdk.Angelus
+	pred    string
+	role    string
+	ctx     context.Context
+}
+
+// seatedPredecessor holds a role and has three turns; afterTurn runs before
+// the first, as turn 0, and once each turn is written.
+func seatedPredecessor(t *testing.T, afterTurn func(backend *store.XwalBackend, pred string, turn uint64)) seated {
+	t.Helper()
+	backend, pred := store.NewTestAria(t, "pred", message.Patch{})
+	ir, err := backend.OpenFigIR(pred)
+	require.NoError(t, err)
+	if afterTurn != nil {
+		afterTurn(backend, pred, 0)
+	}
+	for i := uint64(1); i <= 3; i++ {
+		for _, role := range []message.Role{message.RoleInput, message.RoleOutput} {
+			_, err := ir.Append(arialog.Entry[message.Message]{Payload: message.Message{
+				Role: role, TurnID: i, Content: []message.Content{message.TextContent(fmt.Sprintf("%s %d", role, i))}}})
+			require.NoError(t, err)
+		}
+		if afterTurn != nil {
+			afterTurn(backend, pred, i)
+		}
+	}
+	held, _ := json.Marshal(pred)
+	role, _, err := backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": held}, nil))
+	require.NoError(t, err)
+	acli, dir := serveBackend(t, backend)
+	t.Setenv("FIGARO_RUNTIME_DIR", dir)
+	t.Setenv("FIGARO_CONFIG_DIR", t.TempDir())
+	t.Setenv("FIGARO_TROUPE", "")
+	t.Setenv("FIGARO_ARIA", "")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
+	return seated{backend: backend, acli: acli, pred: pred, role: role, ctx: ctx}
+}
+
+// The fixture runs no provider, so the succession stops at the prompt; the
+// fork before it is what these tests defend.
+func (s seated) succeed(t *testing.T, plan succeedPlan) succeedReport {
+	t.Helper()
+	r, err := succeedVerb(s.ctx, s.acli, plan, succeedHooks{})
+	require.True(t, r.Forked, "no successor was forked: %v", err)
+	return r
+}
+
+// #135: the successor of a default succeed is cut at turn 2, before the
+// predecessor studied the board after turn two; it must study the board
+// anyway, with its keys.
+func TestTheSuccessorStudiesWhatThePredecessorStudiesNow(t *testing.T) {
+	var early, board string
+	s := seatedPredecessor(t, func(b *store.XwalBackend, pred string, turn uint64) {
+		var err error
+		switch turn {
+		case 0:
+			early, _, err = b.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"name": json.RawMessage(`"early"`)}, nil))
+			require.NoError(t, err)
+			_, err = b.StudyForm(pred, early, nil)
+		case 2:
+			board, _, err = b.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"issue": json.RawMessage(`"135"`)}, nil))
+			require.NoError(t, err)
+			_, err = b.StudyForm(pred, board, []string{"issue", "tree"})
+		}
+		require.NoError(t, err)
+	})
+
+	for name, tc := range map[string]struct {
+		argv    []string
+		studies []string
+		keys    []string
+	}{
+		"live":       {nil, []string{early, board}, []string{"issue", "tree"}},
+		"no-studies": {[]string{"--no-studies"}, []string{early}, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			plan, err := succeedArgs(t, append(append([]string{s.role}, tc.argv...), "--", "you hold the seat")...)
+			require.NoError(t, err)
+			r := s.succeed(t, plan)
+			f, err := s.acli.Form(s.ctx, r.Successor)
+			require.NoError(t, err)
+			require.ElementsMatch(t, tc.studies, figaro.StudiesFromSnapshot(f.Snapshot))
+			require.Equal(t, tc.keys, form.StudyKeys(f.Snapshot, board))
+		})
+	}
+}
+
+func TestSucceedRefusesNoStudiesForAnExistingSuccessor(t *testing.T) {
+	if p, err := succeedArgs(t, "@warden", "--successor", "abc", "--no-studies", "--", "go"); err == nil {
+		t.Fatalf("accepted: %+v", p)
+	}
+}
+
+// A daemon older than fork.studies would refuse the live request outright:
+// succeed falls back to the studies at the cut rather than fail, and asks
+// for live studies whenever the daemon reports them.
+func TestSucceedFallsBackToTheCutOnADaemonWithoutForkStudies(t *testing.T) {
+	resetDaemonSeen(t)
+	recordDaemon("figaro daemon", daemonIdentity{build: "v0.72.0", caps: []rpc.Capability{rpc.CapFormApply, rpc.CapStudyKeys}}, "this-build")
+	got, atCut := succeedStudies(rpc.ForkStudiesLive)
+	require.Equal(t, rpc.ForkStudiesAtCut, got)
+	require.True(t, atCut)
+	require.NoError(t, refuseUnknownFields(rpc.ForkRequest{FigaroID: "x", AtTurn: 2, Studies: got}))
+	got, atCut = succeedStudies(rpc.ForkStudiesAtCut)
+	require.Equal(t, rpc.ForkStudiesAtCut, got)
+	require.False(t, atCut)
+
+	recordDaemon("figaro daemon", daemonIdentity{build: "v0.73.0", caps: []rpc.Capability{rpc.CapForkStudies}}, "this-build")
+	got, atCut = succeedStudies(rpc.ForkStudiesLive)
+	require.Equal(t, rpc.ForkStudiesLive, got)
+	require.False(t, atCut)
 }
