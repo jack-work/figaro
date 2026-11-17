@@ -2,59 +2,24 @@ package figaro
 
 import (
 	"encoding/json"
-	"log/slog"
 	"path"
 	"regexp"
 	"strings"
 
-	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/turns"
 )
 
 type replayTape struct {
 	calls map[string][]toolOutcome
 }
 
-func (a *Agent) replayAnswer(rec form.Replay, tc message.Content) toolOutcome {
-	a.replayMu.Lock()
-	defer a.replayMu.Unlock()
-	if a.replayTape == nil {
-		a.replayTape = a.loadReplayTape(rec)
-	}
-	if oc, ok := a.replayTape.take(tc); ok {
+func (r *replayTurn) answer(tc message.Content) toolOutcome {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if oc, ok := r.tape.take(tc); ok {
 		return oc
 	}
 	return declaredStub(tc)
-}
-
-func (a *Agent) loadReplayTape(rec form.Replay) *replayTape {
-	tape := &replayTape{calls: map[string][]toolOutcome{}}
-	if a.backend == nil {
-		return tape
-	}
-	log, err := a.backend.OpenFigIR(rec.Of)
-	if err != nil {
-		slog.Warn("replay: the replayed trunk's log is unreadable; every tool call is stubbed", "aria", a.id, "of", rec.Of, "err", err)
-		return tape
-	}
-	entries := log.Read()
-	msgs := make([]message.Message, len(entries))
-	for i, e := range entries {
-		msgs[i] = e.Payload
-		msgs[i].LogicalTime = e.LT
-	}
-	first, last, ok := turns.Span(msgs, rec.Turn)
-	if !ok {
-		return tape
-	}
-	var turn []message.Message
-	for _, m := range msgs {
-		if m.LogicalTime >= first && m.LogicalTime <= last {
-			turn = append(turn, m)
-		}
-	}
-	return recordTape(turn)
 }
 
 func recordTape(turn []message.Message) *replayTape {

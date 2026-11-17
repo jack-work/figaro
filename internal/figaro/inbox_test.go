@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/rpc"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -265,4 +266,43 @@ func TestInbox_CommittedRingIsBounded(t *testing.T) {
 		b.MarkCommitted(b.TakeReadyUserPrompts())
 	}
 	assert.Len(t, b.committed, committedRing)
+}
+
+// Defends #114: a replay is the owner's set, not a message, and a turn of its
+// own. Folded into a running turn as a steer it was swallowed; folded or edited
+// into a prompt it would carry live words; and queue edits leave it alone.
+func TestInbox_AReplayIsNeverFolded(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := NewInbox(ctx)
+	b.Send(event{typ: eventUserPrompt, text: "before"})
+	b.Send(event{typ: eventUserPrompt, replay: replayRun})
+	b.Send(event{typ: eventUserPrompt, text: "after"})
+	b.Send(event{typ: eventUserPrompt, text: "and after"})
+
+	taken := b.TakeReadyUserPrompts()
+	require.Len(t, taken, 1)
+	assert.Equal(t, "before", taken[0].text)
+	assert.Empty(t, b.TakeReadyUserPrompts(), "a steer took the replay")
+
+	epoch := b.Epoch()
+	_, res := b.UpdatePrompt(epoch, 2, "live words")
+	assert.NotEqual(t, rpc.QueueUpdated, res.Outcome, "an edit gave the replay words")
+	_, results := b.DeletePrompts(epoch, []uint64{2}, false)
+	assert.NotEqual(t, rpc.QueueDeleted, results[0].Outcome, "a delete took the replay")
+	b.DeletePrompts(epoch, nil, true)
+	evt, ok := b.Recv()
+	require.True(t, ok)
+	assert.Equal(t, replayRun, evt.replay, "a delete of every prompt took the replay")
+	assert.True(t, b.IsIdle())
+
+	b.Send(event{typ: eventUserPrompt, replay: replayRun})
+	b.Send(event{typ: eventUserPrompt, text: "after"})
+	b.Send(event{typ: eventUserPrompt, text: "and after"})
+	b.CoalesceUserPromptRuns()
+	assert.Len(t, b.DrainUserPrompts(), 1, "the two prompts behind the replay fold into one and drain")
+	evt, ok = b.Recv()
+	require.True(t, ok)
+	assert.Equal(t, replayRun, evt.replay, "a drain took the replay")
+	assert.True(t, b.IsIdle())
 }
