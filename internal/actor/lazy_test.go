@@ -231,3 +231,40 @@ func TestLazyCloseAndSettleOnAnIdleQueueReturns(t *testing.T) {
 		t.Fatal("CloseAndSettle on an idle queue never returned")
 	}
 }
+
+// Defends #97: a wake token left over from an earlier Lingering->Running flip
+// must not leave the drainer spinning on a failed Running->Lingering CAS.
+func TestLazyStaleWakeDoesNotSpin(t *testing.T) {
+	var done atomic.Int32
+	q := NewLazy[int](0, 50*time.Millisecond, func(b []int) { done.Add(int32(len(b))) })
+	t.Cleanup(q.Close)
+	if err := q.Submit(1); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for (done.Load() != 1 || lazyState(q.st.Load()) != lazyLingering) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if lazyState(q.st.Load()) != lazyLingering {
+		t.Fatal("drainer never lingered")
+	}
+	q.wake <- struct{}{}
+
+	deadline = time.Now().Add(2 * time.Second)
+	for q.Running() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if q.Running() {
+		t.Fatal("drainer still running long after linger: spinning on a stale wake")
+	}
+	if err := q.Submit(2); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	for done.Load() != 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if done.Load() != 2 {
+		t.Fatal("queue did not come back after going idle")
+	}
+}

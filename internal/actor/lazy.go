@@ -123,9 +123,7 @@ func (q *Lazy[T]) work() {
 			q.drained()
 		}
 
-		if !q.st.CompareAndSwap(uint32(lazyRunning), uint32(lazyLingering)) {
-			continue
-		}
+		q.st.CompareAndSwap(uint32(lazyRunning), uint32(lazyLingering))
 		if !timer.Stop() {
 			select {
 			case <-timer.C:
