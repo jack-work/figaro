@@ -157,17 +157,54 @@ func TestSendToRoleRowAddressesTheRole(t *testing.T) {
 	}
 }
 
-func TestSendToRowRefusesARowThatIsNotAFigaro(t *testing.T) {
+// Gluck, 11-16: '>' said "that row is not a figaro" in every pit whose rows
+// are not figaros (the queue a running turn opens, help, status, the form), so
+// the one key that writes a prompt did nothing exactly while a turn ran. On a
+// row that names no figaro it is the conversation's '>': the composer.
+func TestSendToARowThatIsNotAFigaroOpensTheComposer(t *testing.T) {
 	r := newRowSendRig(t, sendRows())
 	r.typeSlowly(t, "jjj>")
 	r.in.mu.Lock()
 	open := r.lt.tr.openPit()
 	r.in.mu.Unlock()
-	if open == pitSendTo {
-		t.Fatal("the send box opened on an outfit row")
+	if open != pitComposer {
+		t.Fatalf("'>' on an outfit row opened %q, want the composer", open)
 	}
 	if len(r.sent) != 0 {
 		t.Fatalf("sent %+v", r.sent)
+	}
+}
+
+func TestGreaterThanComposesInPitsOfNoFigaros(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		open func(*transcript)
+	}{
+		{"queue", func(tr *transcript) {
+			tr.queued = []queuedItem{{id: 7, text: "a queued prompt"}}
+			tr.showQueuedAuto(true)
+		}},
+		{"status", (*transcript).openStatusPit},
+		{"help", (*transcript).openHelpPit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRowSendRig(t, sendRows())
+			r.in.mu.Lock()
+			r.lt.tr.closePanels()
+			tc.open(r.lt.tr)
+			shown := r.lt.tr.pit.open()
+			r.in.mu.Unlock()
+			if !shown {
+				t.Fatalf("fixture: the %s pit did not open", tc.name)
+			}
+			r.typeSlowly(t, ">")
+			r.in.mu.Lock()
+			open := r.lt.tr.openPit()
+			r.in.mu.Unlock()
+			if open != pitComposer {
+				t.Fatalf("'>' over the %s pit opened %q, want the composer", tc.name, open)
+			}
+		})
 	}
 }
 
