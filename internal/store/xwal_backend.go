@@ -460,7 +460,7 @@ func (b *XwalBackend) openForkedForm(child, parent string, inherited uint64) {
 
 func (b *XwalBackend) formCommitted(ariaID string, patch message.Patch, f *Form) {
 	b.wroteTo(ariaID, time.Now().UnixMilli())
-	b.roleCommitted(ariaID, patch)
+	b.roleCommitted(ariaID, patch, f.Read().Snapshot)
 	b.identityCommitted(ariaID, patch, f)
 	if namesOutfit(patch) {
 		b.labelChanged(ariaID)
@@ -715,7 +715,7 @@ func (b *XwalBackend) CreateForm(parent string, patch message.Patch, opts ...Bir
 	if parent != "" {
 		b.roleFromState(id)
 	} else {
-		b.roleCommitted(id, patch)
+		b.roleCommitted(id, patch, form.Snapshot{}.Apply(patch))
 	}
 	return id, version, nil
 }

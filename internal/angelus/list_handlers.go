@@ -123,14 +123,9 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			if n.Kind == string(store.KindForm) {
 				entry.State = "form"
 				entry.LastActive = h.angelus.Backend.LastTS(n.ID)
-				if snap, err := h.angelus.Backend.FormState(n.ID); err == nil {
-					if v := snap.Lookup("name"); v != nil {
-						entry.Name = *v
-					}
-					if v := snap.Lookup("target-aria"); v != nil {
-						entry.TargetAria = *v
-					}
-					entry.Sandbox = h.heldBox(snap)
+				if l, ok := h.formListing(n.ID); ok {
+					entry.Name, entry.TargetAria = l.Name, l.Target
+					entry.Sandbox = h.heldBoxNamed(l.Sandbox)
 				}
 			}
 			result = append(result, entry)
@@ -191,6 +186,29 @@ func (h *handlers) fillRoles(result []rpc.FigaroInfoResponse) {
 			result[i].Roles = byTarget[result[i].ID]
 		}
 	}
+}
+
+type formLister interface {
+	FormListing(formID string) (store.FormListing, bool)
+}
+
+func (h *handlers) formListing(id string) (store.FormListing, bool) {
+	if lister, ok := h.angelus.Backend.(formLister); ok {
+		if l, ready := lister.FormListing(id); ready {
+			return l, true
+		}
+	}
+	snap, err := h.angelus.Backend.FormState(id)
+	if err != nil {
+		return store.FormListing{}, false
+	}
+	get := func(key string) string {
+		if v := snap.Lookup(key); v != nil {
+			return *v
+		}
+		return ""
+	}
+	return store.FormListing{Name: get("name"), Target: get("target-aria"), Sandbox: get("system.sandbox")}, true
 }
 
 type ttlLister interface {

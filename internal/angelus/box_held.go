@@ -44,14 +44,21 @@ func (h *handlers) formsMintedBy(principal string) int {
 
 func (h *handlers) heldBox(snap form.Snapshot) string {
 	v := snap.Lookup("system.sandbox")
-	if v == nil || *v == "" {
+	if v == nil {
+		return ""
+	}
+	return h.heldBoxNamed(*v)
+}
+
+func (h *handlers) heldBoxNamed(box string) string {
+	if box == "" {
 		return ""
 	}
 	loaded, _ := h.settings()
-	if _, ok := loaded.Box(*v); !ok {
+	if _, ok := loaded.Box(box); !ok {
 		return ""
 	}
-	return *v
+	return box
 }
 
 func (h *handlers) refuseRoleOutOfBox(snap form.Snapshot) error {
