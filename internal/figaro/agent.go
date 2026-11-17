@@ -67,6 +67,7 @@ type event struct {
 	segments []promptSegment
 	resume   bool
 	replay   replayStep
+	replayBy []promptSegment
 	traces   []string
 }
 

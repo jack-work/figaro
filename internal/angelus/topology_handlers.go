@@ -348,7 +348,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}
 	if req.Replay {
-		if err := h.startReplay(ctx, alt, rpc.MethodFork); err != nil {
+		if err := h.startReplay(ctx, alt, rpc.MethodFork, rpc.SenderFrom(params, nil)); err != nil {
 			h.discardBirth(alt)
 			return nil, fmt.Errorf("fork: %w", err)
 		}

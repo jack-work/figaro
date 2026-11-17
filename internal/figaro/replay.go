@@ -135,12 +135,17 @@ const (
 
 type replayTurn struct {
 	mark message.Replay
+	by   []promptSegment
 	mu   sync.Mutex
 	tape *replayTape
 }
 
-func (a *Agent) SubmitReplay() error {
-	if !a.inbox.Send(event{typ: eventUserPrompt, replay: replayRun}) {
+func (a *Agent) SubmitReplay(by, principal string) error {
+	evt := event{typ: eventUserPrompt, replay: replayRun}
+	if by != "" {
+		evt.replayBy = []promptSegment{{sender: by, principal: principal}}
+	}
+	if !a.inbox.Send(evt) {
 		return ErrStopping
 	}
 	if !a.turnActive() {
@@ -187,7 +192,7 @@ func (a *Agent) beginReplay(prompt event) (event, error) {
 		}
 		a.form.Apply(patch)
 	}
-	a.replay.Store(&replayTurn{mark: rec.Mark(coord, masks), tape: recordTape(rec.Turn)})
+	a.replay.Store(&replayTurn{mark: rec.Mark(coord, masks), by: prompt.replayBy, tape: recordTape(rec.Turn)})
 	return prompt, nil
 }
 

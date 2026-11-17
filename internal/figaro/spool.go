@@ -46,6 +46,7 @@ type spooledPrompt struct {
 	At       int64             `json:"at,omitempty"`
 	Resume   bool              `json:"resume,omitempty"`
 	Replay   replayStep        `json:"replay,omitempty"`
+	ReplayBy []spooledSegment  `json:"replay_by,omitempty"`
 }
 
 type spooledSegment struct {
@@ -183,6 +184,9 @@ func spooled(e event) spooledPrompt {
 	for _, s := range e.segments {
 		p.Segments = append(p.Segments, spooledSegment{Sender: s.sender, Principal: s.principal, Text: s.text, Notice: s.notice, Delivery: s.delivery})
 	}
+	for _, s := range e.replayBy {
+		p.ReplayBy = append(p.ReplayBy, spooledSegment{Sender: s.sender, Principal: s.principal})
+	}
 	return p
 }
 
@@ -190,6 +194,9 @@ func (p spooledPrompt) event() event {
 	e := event{typ: eventUserPrompt, text: p.Text, images: p.Images, form: p.Form, at: p.At, resume: p.Resume, replay: p.Replay}
 	for _, s := range p.Segments {
 		e.segments = append(e.segments, promptSegment{sender: s.Sender, principal: s.Principal, text: s.Text, notice: s.Notice, delivery: s.Delivery})
+	}
+	for _, s := range p.ReplayBy {
+		e.replayBy = append(e.replayBy, promptSegment{sender: s.Sender, principal: s.Principal})
 	}
 	return e
 }
