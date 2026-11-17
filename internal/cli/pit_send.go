@@ -10,12 +10,12 @@ import (
 
 func listSendTo(t *transcript) {
 	row, ok := t.pit.selected()
-	if !ok {
-		return
+	to, handle := "", ""
+	if ok {
+		to, handle = t.rowAddress(row)
 	}
-	to, handle := t.rowAddress(row)
 	if to == "" {
-		t.note("that row is not a figaro")
+		pagerComposerBox(t)
 		return
 	}
 	if t.sendTo == nil {
