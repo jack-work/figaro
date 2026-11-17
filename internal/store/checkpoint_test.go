@@ -2,8 +2,10 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -176,5 +178,95 @@ func TestAFormsCheckpointKeyWinsOverTheDefault(t *testing.T) {
 	p = checkpointPolicyOf(form.Snapshot{}.SetPath(KeyCheckpointEverySeconds, json.RawMessage(`1`)))
 	if p.every != minCheckpointEverySeconds*time.Second {
 		t.Fatalf("every_seconds 1 gave %v", p.every)
+	}
+}
+
+func applyN(t testing.TB, b *XwalBackend, id string, n int, tag string) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		raw, _ := json.Marshal(fmt.Sprintf("%s-%d", tag, i))
+		if _, err := b.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{
+			fmt.Sprintf("%s.k%d", tag, i%40): raw,
+		}, nil)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A fork pins a mark at its fork point on the parent, and the state there is
+// read from that mark: the same state a replay from record 1 gives.
+func TestAForkPinsAMarkAtItsForkPoint(t *testing.T) {
+	checkpointEvery(t, 64, 5)
+	b, err := NewXwalBackend(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	parent := mustNewAriaTB(t, b)
+	applyN(t, b, parent, 100, "p")
+	f, _ := b.form(parent)
+	_, at := f.Snapshot()
+	want, err := f.StateAt(at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, _, err := b.ForkWith(parent, 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"c"`)}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyN(t, b, parent, 10, "q")
+	settleCheckpoints(t, b, parent)
+	snap, _ := f.Snapshot()
+	m, ok := MarksOf(snap)[at]
+	if !ok || m.Pin != "fork:"+child {
+		t.Fatalf("no fork mark at %d: %v", at, MarksOf(snap))
+	}
+	f.touched.Delete(at)
+	got, err := f.StateAt(at)
+	if err != nil || snapJSON(t, got) != snapJSON(t, want) {
+		t.Fatalf("state at the fork point from its mark differs: %v", err)
+	}
+	if _, ok := f.touched.Load(at); !ok {
+		t.Fatal("the read did not come through the fork's mark")
+	}
+}
+
+// A read refreshes a mark: of two old marks, the one read survives the
+// eviction and the one not read goes.
+func TestAReadMarkOutlivesAnUnreadOne(t *testing.T) {
+	checkpointEvery(t, 64, 3)
+	b, err := NewXwalBackend(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	id := mustNewAriaTB(t, b)
+	applyN(t, b, id, 64*3, "a")
+	settleCheckpoints(t, b, id)
+	f, _ := b.form(id)
+	snap, _ := f.Snapshot()
+	var old []uint64
+	for v, m := range MarksOf(snap) {
+		if m.Pin != PinTail {
+			old = append(old, v)
+		}
+	}
+	if len(old) != 2 {
+		t.Fatalf("want two old marks, got %v", MarksOf(snap))
+	}
+	slices.Sort(old)
+	time.Sleep(2 * time.Millisecond)
+	if _, err := f.StateAt(old[0] + 1); err != nil {
+		t.Fatal(err)
+	}
+	applyN(t, b, id, 64, "b")
+	settleCheckpoints(t, b, id)
+	snap, _ = f.Snapshot()
+	marks := MarksOf(snap)
+	if _, ok := marks[old[0]]; !ok {
+		t.Fatalf("the mark read at %d was evicted: %v", old[0], marks)
+	}
+	if _, ok := marks[old[1]]; ok {
+		t.Fatalf("the unread mark %d outlived the read one: %v", old[1], marks)
 	}
 }

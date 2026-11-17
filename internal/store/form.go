@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -49,6 +50,7 @@ type Form struct {
 	ckptBusy   atomic.Bool
 	ckptLast   atomic.Uint64
 	ckptLastAt atomic.Int64
+	touched    sync.Map
 }
 
 type formFailure struct{ err error }
@@ -350,6 +352,11 @@ func (f *Form) StateAt(version uint64) (form.Snapshot, error) {
 	}
 	if version > st.version {
 		return form.Snapshot{}, fmt.Errorf("form: version %d is past the head %d", version, st.version)
+	}
+	if cl, ok := f.log.(checkpointLog); ok {
+		if snap, ok := f.stateFromMark(cl, version); ok {
+			return snap, nil
+		}
 	}
 	if sl, ok := f.log.(formStateLog); ok {
 		return sl.StateAt(version)
@@ -956,6 +963,19 @@ func (l *xwalFormLog) RecordCRC(version uint64) (uint32, error) {
 		return 0, err
 	}
 	return payloadCRC(rec.Payload), nil
+}
+
+func (l *xwalFormLog) ReadCheckpoint(version uint64) (formCheckpoint, error) {
+	return readCheckpointFile(filepath.Join(l.checkpointDir(), checkpointName(version)))
+}
+
+func (l *xwalFormLog) StateBodyAt(version uint64) ([]byte, error) {
+	xw, err := l.backend.store.openNode(l.ariaID)
+	if err != nil {
+		return nil, err
+	}
+	defer xw.Close()
+	return xw.StateAt(chanForm, version)
 }
 
 func (l *xwalFormLog) CheckpointVersions() []uint64 { return checkpointVersions(l.checkpointDir()) }
