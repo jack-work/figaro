@@ -675,7 +675,27 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	b.stampCommitted(child, stamped)
 	b.lifetimeAtBirth(child)
 	b.recordForkTurn(child)
+	b.pinForkMark(parent, child)
 	return child, version, nil
+}
+
+func (b *XwalBackend) pinForkMark(parent, child string) {
+	xw, err := b.store.openNode(child)
+	if err != nil {
+		return
+	}
+	base, ok := xw.ChannelForkBase(chanForm)
+	xw.Close()
+	if !ok || base <= 1 {
+		return
+	}
+	f, err := b.form(parent)
+	if err != nil {
+		return
+	}
+	if err := f.PinMark(base-1, "fork:"+child); err != nil {
+		slog.Warn("fork: mark not pinned", "parent", parent, "child", child, "err", err)
+	}
 }
 
 // recordForkTurn records the turn a new fork's base falls in, read from the
@@ -719,6 +739,7 @@ func (b *XwalBackend) CreateForm(parent string, patch message.Patch, opts ...Bir
 	}
 	if parent != "" {
 		b.roleFromState(id)
+		b.pinForkMark(parent, id)
 	} else {
 		b.roleCommitted(id, patch)
 	}
@@ -742,6 +763,7 @@ func (b *XwalBackend) Fork(ariaID string) (cont, alt string, err error) {
 	cont, alt, err = b.store.Fork(ariaID)
 	if err == nil {
 		b.inheritStudies(alt)
+		b.pinForkMark(ariaID, alt)
 	}
 	return cont, alt, err
 }
@@ -749,6 +771,7 @@ func (b *XwalBackend) ForkAt(ariaID string, atMainLT uint64) (cont, alt string, 
 	cont, alt, err = b.store.ForkAt(ariaID, atMainLT)
 	if err == nil {
 		b.inheritStudies(alt)
+		b.pinForkMark(ariaID, alt)
 	}
 	return cont, alt, err
 }
