@@ -204,6 +204,8 @@ with no credentials and no tokens.
   unset shows the model its real id and fork. Only the owner sets or unsets
   the key: a box, a non-owner and the figaro itself are refused. A plain
   fork of a replaying figaro does not inherit it, and replay sets no ttl.
+  A replaying figaro is not warned, succeeded or retired at its context
+  threshold, and a set during a succession is refused.
   When a replayed turn fails, the notice goes to the figaro that set the
   replay, never to the original turn's senders.
 - **`fork <id>:<turn> --replay [-O ..] [-S ..] [-j]`**: shorthand for a fork
