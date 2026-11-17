@@ -72,6 +72,11 @@ func (p *cutProvider) Send(ctx context.Context, in provider.SendInput, bus provi
 
 func runCutTurn(t *testing.T, prov *cutProvider, tools *tool.Registry) (*figaro.Agent, string) {
 	t.Helper()
+	return runCutTurnWith(t, prov, tools)
+}
+
+func runCutTurnWith(t *testing.T, prov provider.Provider, tools *tool.Registry) (*figaro.Agent, string) {
+	t.Helper()
 	b, id := newBackedConversation(t)
 	t.Cleanup(func() { b.Close() })
 	if tools == nil {
