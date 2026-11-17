@@ -62,6 +62,10 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "system.scopes", Short: "Protected; the aria's scopes as a JSON array of verb:object strings, narrowing its parent's and enforced on calls that name it. Providers read the effective set from figaro.scopes, not this key. Same writers as system.sandbox; a figaro gives only what it holds. system.grants is its old name: still read, no longer written", Mode: KeyUserSettable},
 		{Key: "system.keep", Short: "Owner-held; true and `figaro gc` never chooses this aria, nor anything whose delete would take it", Mode: KeyUserSettable},
 
+		{Key: "system.checkpoint.marks", Short: "Logical times this form's state is checkpointed at, keyed by version: the tail mark moves with the writes, and past system.checkpoint.max_marks the least recently used goes", Mode: KeySystemManaged},
+		{Key: "system.checkpoint.every_patches", Short: "Move the tail checkpoint every N records (floor 64); unset takes [store] checkpoint_every_patches", Mode: KeyUserSettable},
+		{Key: "system.checkpoint.every_seconds", Short: "Move the tail checkpoint every N seconds when something was written (floor 5); unset takes [store] checkpoint_every_seconds", Mode: KeyUserSettable},
+		{Key: "system.checkpoint.max_marks", Short: "How many checkpoints the form keeps (floor 2, default 5)", Mode: KeyUserSettable},
 		{Key: "system.forked_from", Short: "The trunk this branch was forked from (stamped at birth)", Mode: KeySystemManaged},
 		{Key: "system.tombstone", Short: "Set when a form is deleted: the record subscribers hear the death through, after which the form is sealed", Mode: KeySystemManaged},
 		{Key: "system.studies", Short: "The forms this figaro observes. Written by the study verb only: each entry is refcounted on a shared libretto, and a hand-written one would declare a study nothing counted", Mode: KeySystemManaged},

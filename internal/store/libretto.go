@@ -363,7 +363,7 @@ func (l *Libretto) Close() {
 
 // isLibrettoKey names the keys a verbatim mirror must NOT copy.
 func isLibrettoKey(k string) bool {
-	return strings.HasPrefix(k, "system.libretto.") || k == TombstoneKey
+	return strings.HasPrefix(k, "system.libretto.") || k == TombstoneKey || k == KeyCheckpointMarks
 }
 
 // HiddenLibrettoKey is bookkeeping the model must never see: at moves on every

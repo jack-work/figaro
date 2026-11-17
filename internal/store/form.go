@@ -8,8 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -39,6 +42,13 @@ type Form struct {
 	subs   atomic.Pointer[[]*Subscription]
 	closed atomic.Bool
 	failed atomic.Pointer[formFailure]
+
+	ckpt       sync.WaitGroup
+	ckptGate   sync.Mutex
+	ckptMu     sync.Mutex
+	ckptBusy   atomic.Bool
+	ckptLast   atomic.Uint64
+	ckptLastAt atomic.Int64
 }
 
 type formFailure struct{ err error }
@@ -215,6 +225,10 @@ func openFormFrom(log FormLog, st *formState, from uint64) (*Form, error) {
 	f.sinks.Store(&empty)
 	subsInit(&f.subs)
 	f.q = actor.NewLazy(formBatch, time.Duration(formLinger.Load()), f.runBatch)
+	if marks := MarksOf(st.snap); len(marks) > 0 {
+		f.ckptLast.Store(slices.Max(slices.Collect(maps.Keys(marks))))
+	}
+	f.ckptLastAt.Store(time.Now().UnixMilli())
 	return f, nil
 }
 
@@ -571,6 +585,9 @@ func (f *Form) Close() {
 func (f *Form) CloseAndSettle() {
 	f.closed.Store(true)
 	f.q.CloseAndSettle()
+	f.ckptGate.Lock()
+	f.ckptGate.Unlock()
+	f.ckpt.Wait()
 }
 
 // runBatch: reduce each submission against a running state, append, one sync
@@ -622,6 +639,9 @@ func (f *Form) runBatch(batch []*formWrite) {
 	f.emit(events)
 	f.publish(events)
 	f.answer(batch)
+	if lastRecord != 0 {
+		f.maybeCheckpoint()
+	}
 }
 
 func (f *Form) reduceOne(st *formState, w *formWrite) (next *formState, res formResult, record bool) {
@@ -944,16 +964,54 @@ func (l *xwalFormLog) Base() FormBase {
 	if last == 0 {
 		return FormBase{}
 	}
+	var out FormBase
 	header, segBase, err := xw.SegmentHeaderAt(chanForm, last)
-	if err != nil || segBase <= 1 || len(header) == 0 {
-		return FormBase{}
+	if err == nil && segBase > 1 && len(header) > 0 {
+		if snap, seqs, err := decodeFormWatermark(header); err == nil {
+			out = FormBase{Snapshot: snap, Version: segBase - 1, Seqs: seqs}
+		}
 	}
-	snap, seqs, err := decodeFormWatermark(header)
+	c, ok := newestCheckpoint(l.checkpointDir(), last, func(v uint64) (uint32, error) {
+		rec, err := xw.ReadAt(chanForm, v)
+		if err != nil {
+			return 0, err
+		}
+		return payloadCRC(rec.Payload), nil
+	})
+	if ok && c.Version > out.Version {
+		if snap, seqs, err := decodeFormWatermark(c.body); err == nil {
+			out = FormBase{Snapshot: snap, Version: c.Version, Seqs: seqs}
+		}
+	}
+	l.base = out.Version
+	return out
+}
+
+func (l *xwalFormLog) checkpointDir() string {
+	return checkpointDirOf(l.backend.store.root, l.ariaID)
+}
+
+func (l *xwalFormLog) WriteCheckpoint(version uint64, recordCRC uint32, body []byte) error {
+	return writeCheckpointFile(l.checkpointDir(), version, recordCRC, body)
+}
+
+func (l *xwalFormLog) RecordCRC(version uint64) (uint32, error) {
+	xw, err := l.backend.store.openNode(l.ariaID)
 	if err != nil {
-		return FormBase{}
+		return 0, err
 	}
-	l.base = segBase - 1
-	return FormBase{Snapshot: snap, Version: l.base, Seqs: seqs}
+	defer xw.Close()
+	rec, err := xw.ReadAt(chanForm, version)
+	if err != nil {
+		return 0, err
+	}
+	return payloadCRC(rec.Payload), nil
+}
+
+func (l *xwalFormLog) CheckpointVersions() []uint64 { return checkpointVersions(l.checkpointDir()) }
+
+func (l *xwalFormLog) RemoveCheckpoint(version uint64) error {
+	return removeCheckpointFile(l.checkpointDir(), version)
 }
 
 func (l *xwalFormLog) Floor() uint64 {
