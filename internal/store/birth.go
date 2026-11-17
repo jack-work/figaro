@@ -6,6 +6,7 @@ type birthSpec struct {
 	mintedBy string
 	template bool
 	stamp    func(child string) message.Patch
+	replay   *message.Replay
 }
 
 type BirthOption func(*birthSpec)
@@ -20,6 +21,10 @@ func Template() BirthOption {
 
 func Stamped(fill func(child string) message.Patch) BirthOption {
 	return func(b *birthSpec) { b.stamp = fill }
+}
+
+func Replaying(mark message.Replay) BirthOption {
+	return func(b *birthSpec) { b.replay = &mark }
 }
 
 func births(opts []BirthOption) birthSpec {

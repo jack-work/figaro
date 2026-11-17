@@ -63,7 +63,7 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "system.keep", Short: "Owner-held; true and `figaro gc` never chooses this aria, nor anything whose delete would take it", Mode: KeyUserSettable},
 
 		{Key: "system.forked_from", Short: "The trunk this branch was forked from (stamped at birth)", Mode: KeySystemManaged},
-		{Key: "system.replay", Short: "Set by `fork <id>:<turn> --replay`: the trunk, turn and LT this branch re-runs", Mode: KeySystemManaged},
+		{Key: "system.replay", Short: "{of, turn, lt}: setting it re-runs that recorded turn here, under replay rules; while set the figaro takes no messages. `fork <id>:<turn> --replay` sets it on a new branch", Mode: KeyUserSettable},
 		{Key: "system.tombstone", Short: "Set when a form is deleted: the record subscribers hear the death through, after which the form is sealed", Mode: KeySystemManaged},
 		{Key: "system.studies", Short: "The forms this figaro observes. Written by the study verb only: each entry is refcounted on a shared libretto, and a hand-written one would declare a study nothing counted", Mode: KeySystemManaged},
 		{Key: "model", Short: "Active model ID", Mode: KeySystemManaged},

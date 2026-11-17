@@ -18,6 +18,10 @@ type Deriver struct {
 	lastForm  uint64
 	lastStudy map[string]uint64
 	snap      form.Snapshot
+
+	replay   *message.Replay
+	real     *form.Snapshot
+	nextReal *form.Snapshot
 }
 
 func NewDeriver(bound Form, studies map[string]Form) *Deriver {
@@ -32,6 +36,7 @@ func (d *Deriver) SeedAt(log arialog.Log[message.Message], rows arialog.Log[[]js
 	d.lastForm = 0
 	d.lastStudy = map[string]uint64{}
 	d.snap = form.Snapshot{}
+	d.replay, d.real, d.nextReal = nil, nil, nil
 	if rows == nil {
 		return
 	}
@@ -66,6 +71,9 @@ func (d *Deriver) SeedAt(log arialog.Log[message.Message], rows arialog.Log[[]js
 			}
 			d.snap = form.Fold(d.snap, e.Payload.Patches)
 		}
+	}
+	if d.form != nil {
+		d.seedReplay(log, watermark)
 	}
 }
 
@@ -140,9 +148,13 @@ func (d *Deriver) Next(entry arialog.Entry[message.Message]) (msg message.Messag
 		d.Skip(entry)
 		return msg, d.snap, false
 	}
+	if opensSpan(msg) {
+		d.replay = msg.Replay
+	}
 
+	d.nextReal = nil
 	if d.form != nil && carriesBlocks(msg) {
-		msg.Patches = d.form.PatchesBetween(d.lastForm, entry.FormChannelVersion)
+		msg.Patches, d.nextReal = d.shown(d.form.PatchesBetween(d.lastForm, entry.FormChannelVersion))
 	}
 
 	// A window may only close on an entry that can carry the block.
@@ -152,6 +164,7 @@ func (d *Deriver) Next(entry arialog.Entry[message.Message]) (msg message.Messag
 			if acc == nil {
 				continue
 			}
+			upTo = d.studyBound(fid, upTo)
 			if ps := acc.PatchesBetween(d.lastStudy[fid], upTo); len(ps) > 0 {
 				if msg.StudyPatches == nil {
 					msg.StudyPatches = map[string][]message.Patch{}
@@ -176,15 +189,16 @@ func (d *Deriver) Commit(entry arialog.Entry[message.Message], msg message.Messa
 	}
 	d.lastForm = maxVersion(d.lastForm, entry.FormChannelVersion)
 	for fid, upTo := range entry.StudyVersions {
-		d.lastStudy[fid] = maxVersion(d.lastStudy[fid], upTo)
+		d.lastStudy[fid] = maxVersion(d.lastStudy[fid], d.studyBound(fid, upTo))
 	}
 	d.snap = form.Fold(d.snap, msg.Patches)
+	d.settle()
 }
 
 // Skip advances the cursors past an untranslatable entry (genesis).
 func (d *Deriver) Skip(entry arialog.Entry[message.Message]) {
 	d.lastForm = maxVersion(d.lastForm, entry.FormChannelVersion)
 	for fid, upTo := range entry.StudyVersions {
-		d.lastStudy[fid] = maxVersion(d.lastStudy[fid], upTo)
+		d.lastStudy[fid] = maxVersion(d.lastStudy[fid], d.studyBound(fid, upTo))
 	}
 }
