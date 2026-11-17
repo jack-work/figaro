@@ -35,6 +35,7 @@ type succeedPlan struct {
 	prompt     string
 	stay       bool
 	dress      dressing
+	studies    rpc.ForkStudies
 }
 
 type succeedReport struct {
@@ -115,6 +116,13 @@ func succeedPlanFrom(ctx *cmdkit.RunContext) (succeedPlan, error) {
 		return plan, fmt.Errorf("succeed: %w", err)
 	}
 	plan.stay = ctx.BoolFlag("stay")
+	plan.studies = rpc.ForkStudiesLive
+	if ctx.BoolFlag("no-studies") {
+		if plan.successor != "" {
+			return plan, errors.New("succeed: --no-studies shapes the fork; --successor names a figaro that already exists and keeps its own studies")
+		}
+		plan.studies = rpc.ForkStudiesAtCut
+	}
 	dress, err := parseDress(ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"))
 	if err != nil {
 		return plan, fmt.Errorf("succeed: %w", err)
@@ -276,7 +284,11 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 			progress(fmt.Sprintf("forking %s at turn %d", ariaName(old.ID), plan.turn))
 		}
 		outfits, patch := plan.birth()
-		out, err := acli.Fork(ctx, old.ID, plan.turn, 0, outfits, patch)
+		req := rpc.ForkRequest{FigaroID: old.ID, AtTurn: plan.turn, Outfits: outfits, Patch: patch, Studies: plan.studies}
+		if err := refuseUnknownFields(req); err != nil {
+			return r, r.fail("fork", err)
+		}
+		out, err := acli.ForkWith(ctx, req)
 		if err != nil {
 			return r, r.fail("fork", err)
 		}
