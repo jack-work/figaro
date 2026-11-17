@@ -5,6 +5,7 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -226,8 +227,10 @@ func TestOpenFormOverAPagedLogResumesFromTheBase(t *testing.T) {
 	}
 }
 
-// PatchesBetween must not hand back a short prefix when it cannot answer.
-func TestPatchesBetweenBelowTheFloorIsNilNotShort(t *testing.T) {
+// PatchesBetween must refuse a range it cannot answer: an empty or short
+// answer reads at the call site as "nothing changed" and surfaces later as a
+// phantom gap.
+func TestPatchesBetweenBelowTheFloorIsRefused(t *testing.T) {
 	setPage(t, 4)
 	m := &MemFormLog{}
 	for i := 0; i < 50; i++ {
@@ -240,13 +243,11 @@ func TestPatchesBetweenBelowTheFloorIsNilNotShort(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	defer f.Close()
-	if got := f.PatchesBetween(1, 50); got != nil {
-		t.Fatalf("a read from version 1 under a floor of %d returned %d patches; "+
-			"it must return nil. A short prefix reads at the call site as a "+
-			"complete answer and surfaces later as a phantom gap",
-			f.PatchFloor(), len(got))
+	if got, err := f.PatchesBetween(1, 50); !errors.Is(err, ErrBelowFloor) {
+		t.Fatalf("a read from version 1 under a floor of %d returned %d patches and err %v; "+
+			"it must return ErrBelowFloor", f.PatchFloor(), len(got), err)
 	}
-	if got := f.PatchesBetween(f.PatchFloor(), 50); len(got) == 0 {
+	if got := heldPatches(f.PatchesBetween(f.PatchFloor(), 50)); len(got) == 0 {
 		t.Fatal("a read from the floor itself must be answerable")
 	}
 }

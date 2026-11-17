@@ -43,10 +43,6 @@ func PerRecord(b Backend, ariaID string, entries []arialog.Entry[message.Message
 	return PerRecordFrom(b, ariaID, Seed{}, entries)
 }
 
-type checkedPatchBackend interface {
-	FormPatchesBetweenChecked(ariaID string, after, upTo uint64) ([]store.VersionedPatch, bool, error)
-}
-
 type versionSpan struct {
 	minAfter uint64
 	maxUpTo  uint64
@@ -109,18 +105,8 @@ func loadBoundSpan(b Backend, ariaID string, sp versionSpan) ([]store.VersionedP
 	if !sp.seen {
 		return nil, true
 	}
-	if cb, ok := b.(checkedPatchBackend); ok {
-		ps, complete, err := cb.FormPatchesBetweenChecked(ariaID, sp.minAfter, sp.maxUpTo)
-		if err != nil || !complete {
-			return nil, false
-		}
-		return ps, true
-	}
 	ps, err := b.FormPatchesBetween(ariaID, sp.minAfter, sp.maxUpTo)
-	if err != nil {
-		return nil, false
-	}
-	return ps, len(ps) > 0 || sp.maxUpTo <= sp.minAfter
+	return ps, err == nil
 }
 
 func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []arialog.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
@@ -154,8 +140,8 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []arialog.Entry[
 			var ps []store.VersionedPatch
 			if boundComplete {
 				ps = store.SlicePatches(boundPatches, lastForm, entry.FormChannelVersion)
-			} else if fetched, err := b.FormPatchesBetween(ariaID, lastForm, entry.FormChannelVersion); err == nil {
-				ps = fetched
+			} else {
+				ps = boundBetween(b, ariaID, lastForm, entry.FormChannelVersion)
 			}
 			if len(ps) > 0 && deltas == nil {
 				deltas = map[string]livedoc.FormDelta{}
@@ -188,7 +174,7 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []arialog.Entry[
 			if sf.complete {
 				ps = store.SlicePatches(sf.patches, prev, upTo)
 			} else {
-				ps = sf.lib.PatchesBetween(prev, upTo)
+				ps = studiedBetween(sf.lib, prev, upTo)
 			}
 			if len(ps) > 0 && deltas == nil {
 				deltas = map[string]livedoc.FormDelta{}
@@ -206,6 +192,43 @@ func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []arialog.Entry[
 		return nil
 	}
 	return out
+}
+
+func boundBetween(b Backend, ariaID string, after, upTo uint64) []store.VersionedPatch {
+	ps, err := b.FormPatchesBetween(ariaID, after, upTo)
+	if err == nil {
+		return ps
+	}
+	at, ok := b.(formStateAt)
+	if !ok {
+		return nil
+	}
+	return diffBetween(func(v uint64) (form.Snapshot, error) { return at.FormStateAt(ariaID, v) }, after, upTo)
+}
+
+func studiedBetween(lib *store.Libretto, after, upTo uint64) []store.VersionedPatch {
+	ps, err := lib.PatchesBetween(after, upTo)
+	if err == nil {
+		return ps
+	}
+	return diffBetween(lib.StateAt, after, upTo)
+}
+
+func diffBetween(stateAt func(uint64) (form.Snapshot, error), after, upTo uint64) []store.VersionedPatch {
+	to, err := stateAt(upTo)
+	if err != nil {
+		return nil
+	}
+	from := form.Snapshot{}
+	if after > 0 {
+		if from, err = stateAt(after); err != nil {
+			return nil
+		}
+	}
+	if p := to.Diff(from); !p.IsIdentity() {
+		return []store.VersionedPatch{{Version: upTo, Patch: p}}
+	}
+	return nil
 }
 
 // role is decided once per assembly from the copy's current state: a form
@@ -227,7 +250,8 @@ func openStudied(b Backend, fid string, sp versionSpan) *studiedForm {
 		sf.role = true
 	}
 	if sp.seen {
-		sf.patches, sf.complete = lib.PatchesBetweenChecked(sp.minAfter, sp.maxUpTo)
+		ps, err := lib.PatchesBetween(sp.minAfter, sp.maxUpTo)
+		sf.patches, sf.complete = ps, err == nil
 	}
 	return sf
 }

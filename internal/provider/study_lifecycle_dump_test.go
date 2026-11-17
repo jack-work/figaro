@@ -114,11 +114,14 @@ func TestStudyLifecycleDump(t *testing.T) {
 
 type memAccessor struct{ f *store.Form }
 
-func (a *memAccessor) PatchesBetween(after, upTo uint64) []message.Patch {
-	ps := a.f.PatchesBetween(after, upTo)
+func (a *memAccessor) PatchesBetween(after, upTo uint64) ([]message.Patch, error) {
+	ps, err := a.f.PatchesBetween(after, upTo)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]message.Patch, len(ps))
 	for i := range ps {
 		out[i] = ps[i].Patch
 	}
-	return out
+	return out, nil
 }

@@ -147,7 +147,7 @@ func TestFormStateAtMatchesTheFold(t *testing.T) {
 	_, top := f.Snapshot()
 	for _, v := range []uint64{1, 7, top / 2, top - 1, top} {
 		want := form.Snapshot{}
-		for _, vp := range f.PatchesBetween(0, v) {
+		for _, vp := range heldPatches(f.PatchesBetween(0, v)) {
 			want = want.Apply(vp.Patch)
 		}
 		got, err := b.FormStateAt(id, v)

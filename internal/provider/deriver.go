@@ -18,6 +18,10 @@ type Deriver struct {
 	lastForm  uint64
 	lastStudy map[string]uint64
 	snap      form.Snapshot
+
+	heldAt    uint64
+	heldForm  bool
+	heldStudy map[string]bool
 }
 
 func NewDeriver(bound Form, studies map[string]Form) *Deriver {
@@ -56,7 +60,11 @@ func (d *Deriver) SeedAt(log arialog.Log[message.Message], rows arialog.Log[[]js
 				break
 			}
 		}
-		d.snap = form.Fold(d.snap, d.form.PatchesBetween(0, d.lastForm))
+		if ps, err := d.form.PatchesBetween(0, d.lastForm); err == nil {
+			d.snap = form.Fold(d.snap, ps)
+		} else {
+			d.lastForm = 0
+		}
 	default:
 		// No accessor: O(entries before the watermark), on this branch only.
 		prefix, _ := arialog.TailAfter(log, 0)
@@ -141,8 +149,11 @@ func (d *Deriver) Next(entry arialog.Entry[message.Message]) (msg message.Messag
 		return msg, d.snap, false
 	}
 
+	d.heldAt, d.heldForm, d.heldStudy = entry.LT, false, nil
 	if d.form != nil && carriesBlocks(msg) {
-		msg.Patches = d.form.PatchesBetween(d.lastForm, entry.FormChannelVersion)
+		ps, ok := resync(d.form, d.lastForm, entry.FormChannelVersion, d.snap, true)
+		msg.Patches = ps
+		d.heldForm = !ok
 	}
 
 	// A window may only close on an entry that can carry the block.
@@ -152,7 +163,14 @@ func (d *Deriver) Next(entry arialog.Entry[message.Message]) (msg message.Messag
 			if acc == nil {
 				continue
 			}
-			if ps := acc.PatchesBetween(d.lastStudy[fid], upTo); len(ps) > 0 {
+			ps, ok := resync(acc, d.lastStudy[fid], upTo, form.Snapshot{}, false)
+			if !ok {
+				if d.heldStudy == nil {
+					d.heldStudy = map[string]bool{}
+				}
+				d.heldStudy[fid] = true
+			}
+			if len(ps) > 0 {
 				if msg.StudyPatches == nil {
 					msg.StudyPatches = map[string][]message.Patch{}
 				}
@@ -174,11 +192,47 @@ func (d *Deriver) Commit(entry arialog.Entry[message.Message], msg message.Messa
 	if !carriesBlocks(msg) {
 		return
 	}
-	d.lastForm = maxVersion(d.lastForm, entry.FormChannelVersion)
+	held := d.heldAt == entry.LT
+	if !held || !d.heldForm {
+		d.lastForm = maxVersion(d.lastForm, entry.FormChannelVersion)
+	}
 	for fid, upTo := range entry.StudyVersions {
+		if held && d.heldStudy[fid] {
+			continue
+		}
 		d.lastStudy[fid] = maxVersion(d.lastStudy[fid], upTo)
 	}
 	d.snap = form.Fold(d.snap, msg.Patches)
+}
+
+func resync(f Form, after, upTo uint64, prev form.Snapshot, known bool) ([]message.Patch, bool) {
+	if upTo <= after {
+		return nil, true
+	}
+	ps, err := f.PatchesBetween(after, upTo)
+	if err == nil {
+		return ps, true
+	}
+	s, ok := f.(formStater)
+	if !ok {
+		return nil, false
+	}
+	to, ok := s.StateAt(upTo)
+	if !ok {
+		return nil, false
+	}
+	if !known {
+		prev = form.Snapshot{}
+		if after > 0 {
+			if from, ok := s.StateAt(after); ok {
+				prev = from
+			}
+		}
+	}
+	if p := to.Diff(prev); !p.IsIdentity() {
+		return []message.Patch{p}, true
+	}
+	return nil, true
 }
 
 // Skip advances the cursors past an untranslatable entry (genesis).

@@ -66,7 +66,7 @@ type AssistantCache struct {
 // Form is the per-LT bound form patch accessor; the encoder folds a message's
 // patches into its wire bytes so per-LT caching stays sound.
 type Form interface {
-	PatchesBetween(after, upTo uint64) []message.Patch
+	PatchesBetween(after, upTo uint64) ([]message.Patch, error)
 }
 
 // EntryEncoder lets a provider's translations be written when an entry
