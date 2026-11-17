@@ -803,6 +803,15 @@ func pagerVisualSelect(t *transcript) {
 // An aria id attends; anything else goes to the path hook, which decides whether
 // it is a file.
 func pagerVisualAttend(t *transcript) {
+	if id := t.visualNametag(); id != "" {
+		if t.attendAria == nil {
+			t.note("this session cannot attend (no shell to bind)")
+			return
+		}
+		t.leaveVisual()
+		t.attendAria(id)
+		return
+	}
 	text := t.visualTextUnderCursor()
 	if text == "" {
 		t.note("nothing under the cursor")
@@ -906,4 +915,24 @@ func (t *transcript) visualTextUnderCursor() string {
 		hi++
 	}
 	return strings.Trim(string(row[lo:hi+1]), "`'\"()[]{}<>,;:")
+}
+
+func (t *transcript) visualNametag() string {
+	line, ok := t.visualCursorLine()
+	if !ok {
+		return ""
+	}
+	if span := t.visualSpan(); span.active() && span.loLine != span.hiLine {
+		return ""
+	}
+	k := t.index.entryAt(line)
+	if k < 0 {
+		return ""
+	}
+	e := &t.index.entries[k]
+	rel := line - entryRowsStart(e)
+	if rel < 0 || e.isGap() || rel >= len(e.rows) {
+		return ""
+	}
+	return senderAria(e.rows[rel].sender)
 }
