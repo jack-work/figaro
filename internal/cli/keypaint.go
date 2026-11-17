@@ -84,10 +84,24 @@ func (t *transcript) paintView() paintView {
 }
 
 func (t *transcript) answerKeys() {
-	if t.awaiting && t.pit.shown == t.awaitShown {
+	if t.switching || t.awaiting && t.pit.shown == t.awaitShown {
 		return
 	}
 	t.keys.painted(t.paintView(), time.Now())
 }
 
-func (t *transcript) owesKeys() bool { return t.dirty || t.awaiting && t.pit.shown == t.awaitShown }
+func (t *transcript) owesKeys() bool {
+	return t.dirty || t.switching || t.awaiting && t.pit.shown == t.awaitShown
+}
+
+func switchesSubject(line string) bool {
+	argv := tokenize(line)
+	if len(argv) == 0 {
+		return false
+	}
+	switch argv[0] {
+	case "fork", "attend", "at", "listen", "new":
+		return true
+	}
+	return false
+}

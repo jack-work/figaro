@@ -37,6 +37,9 @@ func (in *interactiveInput) commandAsync(fn func(context.Context) (string, error
 		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 		defer cancel()
 		msg, err := fn(withProgress(ctx, in.note))
+		in.mu.Lock()
+		in.lt.tr.switching = false
+		in.mu.Unlock()
 		if err != nil {
 			in.noteErr(wireErrorText(err))
 			return

@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -81,5 +83,47 @@ func TestEachPitIsItsOwnView(t *testing.T) {
 		if got := lt.tr.paintView().String(); got != c.want {
 			t.Errorf("paintView = %q, want %q", got, c.want)
 		}
+	}
+}
+
+// v0.71.0: `:fork` is an overlay verb, so no pit fence was armed, and the
+// 150 ms progress repaint of the figaro being left answered every key. The
+// histogram clamped at 151 ms while the fork took 250 ms to reach the screen.
+func TestKeysTypedForASwitchAreAnsweredByTheNewFigaro(t *testing.T) {
+	for _, line := range []string{"fork aria0001:20", "attend aria0002", "listen aria0002", "new"} {
+		in, lt := navInput(t, &countingWriter{}, true)
+		lt.tr.command = func(string) {}
+		in.consume([]byte(":" + line + "\r"))
+		in.mu.Lock()
+		owed := len(lt.tr.keys.at)
+		if owed == 0 {
+			in.mu.Unlock()
+			t.Fatalf("%s: no keys owed after typing it", line)
+		}
+		lt.tr.setProgressNote("working on " + line)
+		if n := len(lt.tr.keys.at); n != owed {
+			in.mu.Unlock()
+			t.Fatalf("%s: the old figaro's progress frame answered %d of %d keys", line, owed-n, owed)
+		}
+		lt.retarget("aria0002", newSessionStatus("aria0002", time.Unix(0, 0)), 0)
+		lt.tr.render()
+		if n := len(lt.tr.keys.at); n != 0 {
+			in.mu.Unlock()
+			t.Fatalf("%s: %d keys still owed after the new figaro painted", line, n)
+		}
+		in.mu.Unlock()
+	}
+}
+
+func TestASwitchThatFailsStillAnswersItsKeys(t *testing.T) {
+	in, lt := navInput(t, &countingWriter{}, true)
+	lt.tr.command = func(string) {}
+	in.consume([]byte(":fork aria0001:20\r"))
+	in.commandAsync(func(context.Context) (string, error) { return "", errors.New("no such turn") })
+	settling.wait()
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if n := len(lt.tr.keys.at); n != 0 {
+		t.Fatalf("%d keys still owed after the failed switch painted its error", n)
 	}
 }
