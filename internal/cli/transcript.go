@@ -48,6 +48,8 @@ type transcript struct {
 	awaitGen   int
 	awaitShown int
 	awaitInput []awaitedInput
+	switching  uint64
+	switchSeq  uint64
 	// queueDismissed suppresses the auto-open after a deliberate close;
 	// without it the next poll reopens the pit.
 	queueDismissed bool
@@ -418,6 +420,7 @@ func (t *transcript) stopFollowing() {
 func (t *transcript) retarget(client *aria.Client, figaroID string, status *sessionStatus, base int) {
 	t.client = client
 	t.setStatus(status)
+	t.switching = 0
 	keepScroll := t.keepsScroll(base)
 	t.kept = keepScroll
 	// Fresh maps, always: the old ones may be on the shelf (subject_park).

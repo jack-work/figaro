@@ -25,7 +25,7 @@ func (in *interactiveInput) execOnTape(line string) {
 	verb := argv[0]
 	switch verb {
 	case "notifications", "no":
-		in.runOverlay(verb, argv[1:])
+		in.runOverlay(verb, argv[1:], 0)
 		return
 	case "form", "state":
 		if name, spec, ok := liveForm(argv); ok && in.onTape(spec) {
