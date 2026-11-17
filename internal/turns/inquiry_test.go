@@ -26,3 +26,17 @@ func TestInquiryNamesPromptImagesWithoutTheirBytes(t *testing.T) {
 		t.Fatal("a prompt with no picture must read as before")
 	}
 }
+
+// Defends #114: a later reader never takes a replayed turn, with its stubbed
+// tools, for one that ran for real.
+func TestAReplayedInquiryCarriesItsMark(t *testing.T) {
+	m := message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("second question")},
+		Replay: &message.Replay{Of: "abc", Turn: 2, Clock: true, Tools: true}}
+	if got := Inquiry(Text(m), m); got != "[replay of abc:2; masked: clock, tools]\n\nsecond question" {
+		t.Fatalf("inquiry = %q", got)
+	}
+	m.Replay = &message.Replay{Of: "abc", Turn: 2}
+	if got := Inquiry(Text(m), m); !strings.HasPrefix(got, "[replay of abc:2; nothing masked]") {
+		t.Fatalf("inquiry = %q", got)
+	}
+}

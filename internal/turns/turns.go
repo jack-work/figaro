@@ -2,6 +2,7 @@
 package turns
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/jack-work/figaro/api/message"
@@ -73,6 +74,9 @@ func Text(m message.Message) string {
 
 func Inquiry(text string, m message.Message) string {
 	lines := imageLines(m)
+	if m.Replay != nil {
+		lines = append([]string{ReplayLine(*m.Replay)}, lines...)
+	}
 	if len(lines) == 0 {
 		return text
 	}
@@ -96,4 +100,21 @@ func HasToolResult(m message.Message) bool {
 		}
 	}
 	return false
+}
+
+func ReplayLine(r message.Replay) string {
+	var masked []string
+	for _, m := range []struct {
+		on   bool
+		name string
+	}{{r.Notice, "notice"}, {r.Clock, "clock"}, {r.Identity, "identity"}, {r.Tools, "tools"}} {
+		if m.on {
+			masked = append(masked, m.name)
+		}
+	}
+	what := "nothing masked"
+	if len(masked) > 0 {
+		what = "masked: " + strings.Join(masked, ", ")
+	}
+	return fmt.Sprintf("[replay of %s:%d; %s]", r.Of, r.Turn, what)
 }
