@@ -981,7 +981,7 @@ func (a *Agent) formAccessor() provider.Form {
 		slog.Warn("form patches (transitions disabled this turn)", "aria", a.id, "err", err)
 		return nil
 	}
-	return formView{backend: a.backend, id: a.id}
+	return boundView(a.backend, a.id, a.form.Snapshot())
 }
 
 // studyAccessors reads each studied form's libretto, never the source, so a
@@ -1290,7 +1290,8 @@ func BoundFormAccessorFor(backend store.Backend, ariaID string) provider.Form {
 	if _, err := backend.FormVersion(ariaID); err != nil {
 		return nil
 	}
-	return formView{backend: backend, id: ariaID}
+	snap, _ := backend.FormState(ariaID)
+	return boundView(backend, ariaID, snap)
 }
 
 func StudyAccessorsFor(backend store.Backend, ariaID string) map[string]provider.Form {

@@ -7,6 +7,8 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 func (a *Agent) SubmitReplay(inquiry message.Message, window form.Patch) error {
@@ -48,4 +50,37 @@ func replayEvent(inquiry message.Message) event {
 	}
 	evt.text = strings.Join(texts, "\n\n")
 	return evt
+}
+
+type replayView struct {
+	formView
+	rec form.Replay
+}
+
+func boundView(backend store.Backend, id string, snap form.Snapshot) provider.Form {
+	v := formView{backend: backend, id: id}
+	if rec, ok := form.ReadReplay(snap); ok {
+		return replayView{formView: v, rec: rec}
+	}
+	return v
+}
+
+func (v replayView) PatchesBetween(after, upTo uint64) []message.Patch {
+	ps := v.formView.PatchesBetween(after, upTo)
+	if len(ps) == 0 {
+		return ps
+	}
+	out := make([]message.Patch, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, v.rec.Mask(v.id, p))
+	}
+	return out
+}
+
+func (v replayView) StateAt(version uint64) (form.Snapshot, bool) {
+	snap, ok := v.formView.StateAt(version)
+	if !ok {
+		return snap, false
+	}
+	return v.rec.MaskSnapshot(v.id, snap), true
 }

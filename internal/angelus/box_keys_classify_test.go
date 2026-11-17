@@ -19,6 +19,7 @@ import (
 // lists.
 var boxInertOpenKeys = map[string]string{
 	"mantra":               "a title, shown and sent as text",
+	"aria_id":              "read only to show a replay's model the id its original saw; it grants nothing",
 	"name":                 "a display name in the listing",
 	"duke-title":           "who the end user is called, rendered as text",
 	"anthropic":            "a provider registry name, not a board key",

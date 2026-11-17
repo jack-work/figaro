@@ -1092,7 +1092,10 @@ REPLAY. ` + "`figaro fork <id>:<turn> --replay`" + ` cuts before turn N and re-s
 turn N's recorded inquiry to the branch: its words, senders and images,
 and the form changes that rode in with it (datetime among them). There
 is no prompt. System keys are the caller's: -S system.thinking_effort=high
-replays the turn at another rung. The call submits and exits; follow it
+replays the turn at another rung. The model is not told it is a branch:
+it gets no fork notice and reads the original's aria_id (so its handle)
+and mantra. Only what the provider is sent is masked; ls, kill, the store
+and the Figaro-Id header keep the branch's own id. The call submits and exits; follow it
 with ` + "`figaro listen <branch>`" + `. -j prints {aria_id, handle, parent, turn,
 mode}, mode "replay".
 
