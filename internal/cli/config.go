@@ -147,10 +147,7 @@ func buildPromptForm(d dressing) *rpc.FormInput {
 	// `cwd` is not sent: system.cwd is written by the harness at create time
 	// through the privileged path.
 	snap := map[string]json.RawMessage{}
-	dt := time.Now().Format("Monday, January 2, 2006, 3PM MST")
-	if b, err := json.Marshal(dt); err == nil {
-		snap["datetime"] = b
-	}
+	snap[form.DatetimeKey] = form.Datetime(time.Now())
 	for k, v := range form.EnvironmentSnapshot() {
 		snap[k] = v
 	}

@@ -288,7 +288,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	births := []store.BirthOption{mintedBy(ctx), ariaIDStamp()}
 	var replay *form.Replay
 	if req.Replay {
-		r, mark, err := h.planReplay(req.FigaroID, req.AtTurn)
+		r, mark, err := h.planReplay(req.FigaroID, req.AtTurn, dress)
 		if err != nil {
 			return nil, err
 		}

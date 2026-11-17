@@ -64,6 +64,10 @@ func WellKnownKeys() []KeyDoc {
 
 		{Key: "system.forked_from", Short: "The trunk this branch was forked from (stamped at birth)", Mode: KeySystemManaged},
 		{Key: "system.replay", Short: "{of, turn, lt}: setting it re-runs that recorded turn here, under replay rules; while set the figaro takes no messages. `fork <id>:<turn> --replay` sets it on a new branch", Mode: KeyUserSettable},
+		{Key: "system.replay.notice", Short: "false and a replayed turn sees its fork mark; default true", Mode: KeyUserSettable},
+		{Key: "system.replay.clock", Short: "false and a replayed turn reads the live datetime and studied forms; default true freezes both at the recorded turn", Mode: KeyUserSettable},
+		{Key: "system.replay.identity", Short: "false and a replayed turn reads its own aria_id; default true shows the original's", Mode: KeyUserSettable},
+		{Key: "system.replay.tools", Short: "false and a replayed turn runs its tools for real; default true answers them from the record or a stub", Mode: KeyUserSettable},
 		{Key: "system.tombstone", Short: "Set when a form is deleted: the record subscribers hear the death through, after which the form is sealed", Mode: KeySystemManaged},
 		{Key: "system.studies", Short: "The forms this figaro observes. Written by the study verb only: each entry is refcounted on a shared libretto, and a hand-written one would declare a study nothing counted", Mode: KeySystemManaged},
 		{Key: "model", Short: "Active model ID", Mode: KeySystemManaged},
