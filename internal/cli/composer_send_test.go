@@ -63,3 +63,41 @@ func TestAQuickComposerSendShowsOnlySent(t *testing.T) {
 		t.Fatalf("bar %q after a quick send, want sent", got)
 	}
 }
+
+// Gluck, 11-17: a prompt composed behind a running turn opened the queue with
+// the keyboard, so the queue most readers ever see still took j/k from the turn
+// they were following. It opens like any queue that appears on its own, and a
+// send still revokes an earlier dismissal.
+func TestAComposerSendThatQueuesOpensTheQueueWithoutTheKeyboard(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(*transcript)
+	}{
+		{"dismissed", func(tr *transcript) { tr.queueDismissed = true }},
+		{"receded", func(tr *transcript) { tr.showQueuedAuto(true) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := composerRig(t, func(context.Context, string) (*rpc.QuaResponse, error) {
+				return &rpc.QuaResponse{OK: true, Active: true}, nil
+			})
+			in.mu.Lock()
+			in.lt.tr.queued = []queuedItem{{id: 1, text: "already queued"}}
+			tc.setup(in.lt.tr)
+			in.mu.Unlock()
+			in.keys(">and one more\x13")
+			in.barSays(t, "the send lands", "sent")
+			in.mu.Lock()
+			defer in.mu.Unlock()
+			tr := in.lt.tr
+			if !tr.showing(pitQueue) {
+				t.Fatalf("the queue is not showing after a send that queued (open %q)", tr.openPit())
+			}
+			if tr.focused != focusTranscript {
+				t.Fatalf("a send that queued left focus %v, want the transcript", tr.focused)
+			}
+			if tr.queueDismissed {
+				t.Fatal("the send did not revoke the dismissal")
+			}
+		})
+	}
+}
