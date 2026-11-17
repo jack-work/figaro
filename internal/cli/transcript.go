@@ -37,7 +37,6 @@ type transcript struct {
 	focused    pitFocus
 	head       questionHead
 	handoff    ruleHandoff
-	pitRule    pitRuleState
 	wake       func(time.Duration)
 	waking     bool
 	after      func(time.Duration, func())
