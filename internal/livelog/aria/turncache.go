@@ -192,6 +192,7 @@ func (c *TurnCache) seed(turns []Turn) {
 	if len(turns) == 0 {
 		return
 	}
+	first := len(c.keys)
 	for _, t := range turns {
 		c.keys = append(c.keys, keyOf(t, c.prevHi()))
 	}
@@ -210,7 +211,7 @@ func (c *TurnCache) seed(turns []Turn) {
 		c.put(from, to, batch)
 		batch, bytes, from, open = nil, 0, to, false
 	}
-	for _, t := range turns[:len(turns)-1] {
+	for i, t := range turns[:len(turns)-1] {
 		k := coordOf(t)
 		if k >= phantomBase {
 			c.putPinned(t)
@@ -223,7 +224,7 @@ func (c *TurnCache) seed(turns []Turn) {
 			open = true
 		}
 		batch = append(batch, t)
-		bytes += turnBytes(t)
+		bytes += c.keys[first+i].bytes
 		if bytes >= target {
 			flush(k)
 		}
