@@ -2,6 +2,7 @@ package figaro
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/jack-work/figaro/api/form"
@@ -107,4 +108,11 @@ func freezeStudies(snap form.Snapshot, studies map[string]provider.Form) map[str
 		studies[id] = frozenStudy{Form: acc, at: rec.Studies[id]}
 	}
 	return studies
+}
+
+func (a *Agent) refuseAsReplay() error {
+	if rec, ok := form.ReadReplay(a.form.Snapshot()); ok {
+		return fmt.Errorf("%s replays turn %d of %s and takes no messages", a.id, rec.Turn, rec.Of)
+	}
+	return nil
 }

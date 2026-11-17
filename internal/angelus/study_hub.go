@@ -81,6 +81,11 @@ func (h *handlers) castForHub(ctx context.Context, ariaID string, req rpc.CastRe
 		return rpc.CastResponse{}, fmt.Errorf("cast: %w", err)
 	}
 	defer done()
+	if snap, err := b.FormState(ariaID); err == nil {
+		if rec, ok := form.ReadReplay(snap); ok {
+			return rpc.CastResponse{}, fmt.Errorf("cast: %s replays turn %d of %s and holds no role", ariaID, rec.Turn, rec.Of)
+		}
+	}
 	res := rpc.CastResponse{RoleID: req.FormID}
 
 	if req.RolePatch != nil && !req.RolePatch.IsIdentity() {

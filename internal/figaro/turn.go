@@ -1225,6 +1225,10 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 			})
 			return
 		}
+		if rec, ok := form.ReadReplay(a.form.Snapshot()); ok {
+			emitEnd(a.replayAnswer(rec, tc))
+			return
+		}
 		t, ok := a.tools.Get(tc.ToolName)
 		if !ok {
 			emitEnd(toolOutcome{
