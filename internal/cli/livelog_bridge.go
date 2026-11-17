@@ -518,6 +518,7 @@ func (t *livelogTurn) showDropped(queue []rpc.QueuedPrompt) {
 		rows = append(rows, pitRow{text: "  " + queueRowText(p.Text), yank: p.Text, id: strconv.FormatUint(p.ID, 10)})
 	}
 	t.tr.pit.showList(pitDropped, "", rows)
+	t.tr.focusAppeared(pitDropped)
 	t.tr.render()
 	slog.Warn("figaro session", "dropped", len(queue))
 }

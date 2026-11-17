@@ -81,6 +81,12 @@ func (d pitID) face() pitFace {
 
 func (d pitID) keys() keyMode { return d.face().keys }
 
+var passivePits = map[pitID]bool{
+	pitQueue: true,
+}
+
+func (d pitID) passive() bool { return passivePits[d] }
+
 func (d pitID) token(verbose bool) string {
 	f := d.face()
 	switch {
