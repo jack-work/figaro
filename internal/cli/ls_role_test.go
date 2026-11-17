@@ -146,7 +146,25 @@ func TestFigaroLsRolesShareTheLabelsRoom(t *testing.T) {
 	if a, b := displayWidth(cell(plain)), displayWidth(cell(roled)); b > a {
 		t.Fatalf("roles widened the cell from %d to %d: %q", a, b, cell(roled))
 	}
-	if got := cell(roled); !strings.HasPrefix(stripANSI(got), "○ @Coordinador") {
+	if got := cell(roled); !strings.HasPrefix(stripANSI(got), `○ "@Coordinador`) {
 		t.Errorf("the role does not lead the cell: %q", got)
+	}
+}
+
+// Role names hold spaces ("@El Zapador"); the badge quotes such an address
+// so the roles on a row still read apart, and a cut name keeps its quotes.
+func TestFigaroLsRoleBadgeKeepsAddressesApart(t *testing.T) {
+	for _, tc := range []struct {
+		roles []string
+		want  string
+	}{
+		{[]string{"@El Zapador", "@edge"}, `"@El Zapador" @edge`},
+		{[]string{"@reviewer"}, "@reviewer"},
+		{[]string{"@Coordinador de Spain", "@King of Spain"}, `"@Coordinador de .." +1`},
+		{[]string{"@a", "@b c", "@paperd-figaro-identity-plan"}, `@a "@b c" +1`},
+	} {
+		if got := roleBadge(rpc.FigaroInfoResponse{Roles: tc.roles}); got != tc.want {
+			t.Errorf("%q badge %s, want %s", tc.roles, got, tc.want)
+		}
 	}
 }
