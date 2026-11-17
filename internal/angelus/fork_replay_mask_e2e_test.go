@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"text/template"
@@ -15,6 +16,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/config"
@@ -232,4 +235,126 @@ func TestAReplayReadsStudiedFormsAsTheyStoodAtTheTurn(t *testing.T) {
 	body := awaitWire(t, a, tap, resp.Alternative, 1)
 	require.Contains(t, body, "curtain at eight")
 	require.NotContains(t, body, "the run is over")
+}
+
+func chatToolCalls(calls ...[2]string) string {
+	var out strings.Builder
+	for i, c := range calls {
+		args, _ := json.Marshal(c[1])
+		fmt.Fprintf(&out, "data: {\"id\":\"1\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":%d,\"id\":\"call_%d\",\"type\":\"function\",\"function\":{\"name\":%q,\"arguments\":%s}}]}}]}\n\n", i, i, c[0], args)
+	}
+	out.WriteString("data: {\"id\":\"1\",\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2}}\n\n")
+	out.WriteString("data: [DONE]\n\n")
+	return out.String()
+}
+
+func lastRole(body string) string {
+	var req struct {
+		Messages []struct {
+			Role string `json:"role"`
+		} `json:"messages"`
+	}
+	if json.Unmarshal([]byte(body), &req) != nil || len(req.Messages) == 0 {
+		return ""
+	}
+	return req.Messages[len(req.Messages)-1].Role
+}
+
+func toolResultsOf(t *testing.T, acli *sdk.Angelus, id string) []string {
+	t.Helper()
+	resp, err := acli.IRAll(t.Context(), id, 0)
+	require.NoError(t, err)
+	var out []string
+	for _, e := range resp.Entries {
+		var m message.Message
+		if json.Unmarshal(e.Payload, &m) != nil {
+			continue
+		}
+		for _, c := range m.Content {
+			if c.Type == message.ContentToolResult {
+				out = append(out, c.Text)
+			}
+		}
+	}
+	return out
+}
+
+// Defends #114: a replay never runs a tool. The recorded call gets the
+// recorded answer, an outward verb a quiet success, anything else a
+// neutral failure. The calls here must stay harmless if run for real: the
+// test daemon's tools inherit the host's figaro environment.
+func TestAReplayAnswersToolsFromTheRecordNeverTheHost(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "replay-ran-me")
+	clock := `{"command":"date +%s%N"}`
+	var branch string
+	var branchMu sync.Mutex
+	tap := &wireTap{reply: func(id, body string) string {
+		switch {
+		case lastRole(body) == "tool":
+			return chatText("done")
+		case !strings.Contains(body, "second question"):
+			return chatText("ok")
+		}
+		branchMu.Lock()
+		defer branchMu.Unlock()
+		if id != branch {
+			return chatToolCalls([2]string{"bash", clock})
+		}
+		return chatToolCalls(
+			[2]string{"bash", clock},
+			[2]string{"bash", `{"command":"figaro --help"}`},
+			[2]string{"bash", fmt.Sprintf(`{"command":"touch %s"}`, marker)},
+			[2]string{"read", fmt.Sprintf(`{"path":%q}`, marker)},
+		)
+	}}
+	a, acli := gatewayDaemon(t, tap)
+	created, err := acli.Create(t.Context(), dress(t, "gw"), nil)
+	require.NoError(t, err)
+	parent := created.FigaroID
+	askAt(t, a, parent, "first question", "Thursday, November 12, 2026, 9AM EST")
+	askAt(t, a, parent, "second question", "Thursday, November 12, 2026, 2PM EST")
+	recorded := toolResultsOf(t, acli, parent)
+	require.Len(t, recorded, 1, "the original turn ran its one tool")
+
+	branchMu.Lock()
+	resp, err := acli.Replay(t.Context(), parent, 2, nil, nil)
+	if err == nil {
+		branch = resp.Alternative
+	}
+	branchMu.Unlock()
+	require.NoError(t, err)
+	awaitWire(t, a, tap, branch, 2)
+
+	require.Equal(t, []string{
+		recorded[0],
+		"(no output)",
+		"(no output)",
+		"Error: resource temporarily unavailable",
+	}, toolResultsOf(t, acli, branch))
+	_, statErr := os.Stat(marker)
+	require.True(t, os.IsNotExist(statErr), "a replayed tool ran on the host")
+}
+
+func TestAReplayTakesNoMessagesNoRoleAndExpires(t *testing.T) {
+	a, acli, ctx, parent := replayFixture(t)
+	resp, err := acli.Replay(ctx, parent, 2, nil, nil)
+	require.NoError(t, err)
+	branch := resp.Alternative
+	require.Eventually(t, func() bool { return answeredTurns(t, acli, ctx, branch) == 2 }, 10*time.Second, 20*time.Millisecond)
+	waitIdle(t, a, branch)
+
+	c, err := sdk.DialAria(ariaAddr(a, branch), nil)
+	require.NoError(t, err)
+	defer c.Close()
+	_, _, err = c.Qua(ctx, "are you there?", nil)
+	require.ErrorContains(t, err, "takes no messages")
+	role, err := acli.FormCreate(ctx, "", nil, rawPatch(map[string]string{"duty": `"answer"`}))
+	require.NoError(t, err)
+	_, err = c.Cast(ctx, rpc.CastRequest{FormID: role.FormID})
+	require.ErrorContains(t, err, "holds no role")
+	require.Equal(t, "1h", *boardOf(t, acli, ctx, branch).Lookup("system.ttl"))
+
+	kept, err := acli.Replay(ctx, parent, 2, nil, rawPatch(map[string]string{"system.ttl": `"10m"`}))
+	require.NoError(t, err)
+	require.Equal(t, "10m", *boardOf(t, acli, ctx, kept.Alternative).Lookup("system.ttl"), "the caller's ttl wins")
 }
