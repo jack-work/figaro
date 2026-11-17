@@ -151,6 +151,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	)
 	defer span.End()
 	a.streamCuts = 0
+	a.lengthCuts = 0
 	a.turnSenders = nil
 	a.turnFault = nil
 	defer func() {
@@ -660,9 +661,13 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	}
 
 	calls := assistantToolInvokes(lastFig)
+	cut := lengthCutCalls(asmMsg, lastFig)
 	if len(calls) == 0 {
 		a.turn = nil
 		a.waitWithForks(specDone)
+		if len(cut) > 0 {
+			return a.continueAfterLengthCut(cut)
+		}
 		stopReason := lastFig.StopReason
 		if stopReason == "" {
 			stopReason = message.StopEnd
@@ -728,6 +733,12 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	if a.isInterrupted() {
 		a.endTurn("interrupted")
 		return true
+	}
+	if len(cut) > 0 {
+		if err := a.tellLengthCut(cut); err != nil {
+			a.endTurn(fmt.Sprintf("error: %s; append the notice: %v", a.lengthCutText(cut), err))
+			return true
+		}
 	}
 	if err := a.appendSteeringPrompts(); err != nil {
 		a.endTurn("error: append steering prompt: " + err.Error())
