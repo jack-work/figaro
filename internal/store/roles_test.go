@@ -177,3 +177,51 @@ func TestFormsByNameAreUnboundFormsOnly(t *testing.T) {
 		t.Fatalf("named almaviva: roles %v forms %v ready=%v, want forms [%s] alone", roles, forms, ready, plain)
 	}
 }
+
+func sandboxPatch(box string) form.Patch {
+	if box == "" {
+		return form.Build(form.Snapshot{}, nil, []string{sandboxKey})
+	}
+	raw, _ := json.Marshal(box)
+	return form.Build(form.Snapshot{}, map[string]json.RawMessage{sandboxKey: raw}, nil)
+}
+
+// A listing shows each form's box from the index; the index follows writes
+// and rebuilds from disk, so the listing never opens a form for it.
+func TestFormListingFollowsTheSandbox(t *testing.T) {
+	dir := t.TempDir()
+	b, err := NewXwalBackend(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _, err := b.CreateForm("", sandboxPatch("kiosk"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := b.FormListing(id); l.Sandbox != "kiosk" {
+		t.Fatalf("sandbox %q after create, want kiosk", l.Sandbox)
+	}
+	if _, err := b.ApplyForm(id, sandboxPatch("")); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := b.FormListing(id); l.Sandbox != "" {
+		t.Fatalf("sandbox %q after removal, want none", l.Sandbox)
+	}
+	if _, err := b.ApplyForm(id, sandboxPatch("yard")); err != nil {
+		t.Fatal(err)
+	}
+	b.Close()
+
+	b2, err := NewXwalBackend(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b2.Close()
+	if _, ready := b2.FormListing(id); ready {
+		t.Fatal("a fresh backend claims a complete listing before reading any form")
+	}
+	b2.SeedRoles(context.Background(), 0)
+	if l, ready := b2.FormListing(id); !ready || l.Sandbox != "yard" {
+		t.Fatalf("sandbox %q ready=%v after the seed, want yard", l.Sandbox, ready)
+	}
+}

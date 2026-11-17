@@ -12,12 +12,18 @@ import (
 const (
 	targetAriaKey = "target-aria"
 	nameKey       = "name"
+	sandboxKey    = "system.sandbox"
 )
 
 type roleIndex struct {
 	byForm map[string]string
 	names  map[string]string
+	boxes  map[string]string
 	ready  bool
+}
+
+type FormListing struct {
+	Name, Target, Sandbox string
 }
 
 func targetOf(patch message.Patch) (target string, spoke bool) {
@@ -40,14 +46,24 @@ func (b *XwalBackend) roleNoted(formID, target string) {
 func (b *XwalBackend) nameNoted(formID, name string) {
 	b.rolesMu.Lock()
 	defer b.rolesMu.Unlock()
-	if b.roles.names == nil {
-		b.roles.names = map[string]string{}
-	}
-	if name == "" {
-		delete(b.roles.names, formID)
+	noted(&b.roles.names, formID, name)
+}
+
+func (b *XwalBackend) boxNoted(formID, box string) {
+	b.rolesMu.Lock()
+	defer b.rolesMu.Unlock()
+	noted(&b.roles.boxes, formID, box)
+}
+
+func noted(m *map[string]string, id, v string) {
+	if v == "" {
+		delete(*m, id)
 		return
 	}
-	b.roles.names[formID] = name
+	if *m == nil {
+		*m = map[string]string{}
+	}
+	(*m)[id] = v
 }
 
 func (b *XwalBackend) roleCommitted(formID string, patch message.Patch) {
@@ -56,6 +72,9 @@ func (b *XwalBackend) roleCommitted(formID string, patch message.Patch) {
 	}
 	if name, spoke := stringKeyOf(patch, nameKey); spoke {
 		b.nameNoted(formID, name)
+	}
+	if box, spoke := stringKeyOf(patch, sandboxKey); spoke {
+		b.boxNoted(formID, box)
 	}
 }
 
@@ -74,6 +93,11 @@ func (b *XwalBackend) roleFromState(formID string) {
 		name = *v
 	}
 	b.nameNoted(formID, name)
+	box := ""
+	if v := snap.Lookup(sandboxKey); v != nil {
+		box = *v
+	}
+	b.boxNoted(formID, box)
 }
 
 func (b *XwalBackend) rolesForgotten(ids []string) {
@@ -82,6 +106,7 @@ func (b *XwalBackend) rolesForgotten(ids []string) {
 	for _, id := range ids {
 		delete(b.roles.byForm, id)
 		delete(b.roles.names, id)
+		delete(b.roles.boxes, id)
 	}
 }
 
@@ -108,6 +133,16 @@ func (b *XwalBackend) FormsNamed(name string) (roles, forms []string, ready bool
 	sort.Strings(roles)
 	sort.Strings(forms)
 	return roles, forms, ready
+}
+
+func (b *XwalBackend) FormListing(formID string) (l FormListing, ready bool) {
+	b.rolesMu.Lock()
+	defer b.rolesMu.Unlock()
+	return FormListing{
+		Name:    b.roles.names[formID],
+		Target:  b.roles.byForm[formID],
+		Sandbox: b.roles.boxes[formID],
+	}, b.roles.ready
 }
 
 func (b *XwalBackend) RoleForms() (map[string]string, bool) {
