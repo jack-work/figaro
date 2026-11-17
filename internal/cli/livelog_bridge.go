@@ -840,9 +840,8 @@ func (t *livelogTurn) renderNow() {
 func (t *livelogTurn) retarget(figaroID string, status *sessionStatus, base int) seedPlan {
 	// Always a new client: the one held may be parked, and truncating it in
 	// place would rewrite a parked aria.
-	kept := 0
 	t.client = t.client.CloneBelow(base)
-	kept = t.client.Count()
+	kept := t.client.Count()
 	t.status = status
 	t.wireClient()
 	mark.Mark("hop.retain", "to", figaroID, "base", base, "kept", kept)
@@ -860,19 +859,19 @@ func (t *livelogTurn) retarget(figaroID string, status *sessionStatus, base int)
 	t.seeded = aria.Page{}
 
 	t.tr.retarget(t.client, figaroID, status, base)
+	if kept == 0 {
+		return seedPlan{kind: seedWindow}
+	}
 	// The floor is what the clone holds, not the divergence: a clone drops an
 	// open turn, and a read floored above it leaves a hole nothing asks for.
 	floor := base
 	if first, ok := t.client.FirstMissing(); ok && first < floor {
 		floor = first
 	}
-	switch {
-	case t.tr.kept:
+	if t.tr.kept {
 		return seedPlan{kind: seedSuffix, from: floor}
-	case base > 0:
-		return seedPlan{kind: seedTail, from: floor}
 	}
-	return seedPlan{kind: seedWindow}
+	return seedPlan{kind: seedTail, from: floor}
 }
 
 func (t *livelogTurn) setCommandRunner(fn func(string)) { t.tr.command = fn }
