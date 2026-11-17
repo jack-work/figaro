@@ -42,6 +42,12 @@ func TestPlanFork(t *testing.T) {
 			wantOpts: sendOpts{id: "abc12345", stay: true},
 		},
 		{
+			name:     "no studies",
+			args:     []string{"--no-studies", "abc12345"},
+			wantSpec: "abc12345",
+			wantOpts: sendOpts{target: "abc12345", noStudy: true},
+		},
+		{
 			name:       "bare prompt",
 			args:       []string{"--", "what", "if"},
 			wantPrompt: "what if",
@@ -237,5 +243,19 @@ func TestForkJSONIsPlannedAsAPrompt(t *testing.T) {
 	}
 	if !plan.opts.json {
 		t.Error("plan lost --json")
+	}
+}
+
+// #105: --no-studies shapes a fork; send has no fork of its own to shape.
+func TestNoStudiesIsAForkFlag(t *testing.T) {
+	if _, err := planSend([]string{"--no-studies", "--", "hi"}); err == nil || !strings.Contains(err.Error(), "--no-studies") {
+		t.Fatalf("send took --no-studies: %v", err)
+	}
+	p, err := planFork([]string{"--no-studies", "--", "hi"})
+	if err != nil || p.opts.forkStudies() != "none" {
+		t.Fatalf("fork --no-studies: %v %q", err, p.opts.forkStudies())
+	}
+	if p, _ := planFork(nil); p.opts.forkStudies() != "" {
+		t.Fatalf("a bare fork asks for %q, want the studies at the cut", p.opts.forkStudies())
 	}
 }

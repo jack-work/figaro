@@ -956,7 +956,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 			target = bound
 		}
 
-		resp, err := waitForFork(ctx, acli, target, at, opts.outfit, "")
+		resp, err := waitForFork(ctx, acli, target, at, opts.outfit, opts.forkStudies(), "")
 		if err != nil {
 			die("fork: %s", err)
 		}
