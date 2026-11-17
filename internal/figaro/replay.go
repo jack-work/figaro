@@ -232,6 +232,11 @@ func replayEvent(inquiry message.Message) event {
 	return evt
 }
 
+func replaying(snap form.Snapshot) bool {
+	_, ok := form.ReadReplay(snap)
+	return ok
+}
+
 func refuseReplayInPrompt(snap form.Snapshot, patch form.Patch) error {
 	if patch.IsIdentity() {
 		return nil

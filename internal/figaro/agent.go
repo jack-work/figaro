@@ -1193,7 +1193,7 @@ func (a *Agent) retireIfFull() {
 		slog.Warn("system.retirement ignored", "aria", a.id, "err", err)
 		return
 	}
-	if !r.Set() || r.Succeeds() || store.RetiredIn(snap) {
+	if !r.Set() || r.Succeeds() || store.RetiredIn(snap) || replaying(snap) {
 		return
 	}
 	a.mu.RLock()

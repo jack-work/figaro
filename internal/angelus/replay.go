@@ -109,6 +109,10 @@ func (h *handlers) replayOnSet(method, id string, params json.RawMessage) (bool,
 	if was, ok := form.ReadReplay(before); ok && was == now {
 		return false, nil
 	}
+	h.succ.load()
+	if h.succ.of(id) != nil || h.succ.succeededBy(id) != nil {
+		return false, fmt.Errorf("set %s: %s is in a succession; replay it once the succession ends", form.ReplayKey, id)
+	}
 	if _, err := figaro.ResolveReplay(h.angelus.Backend, now); err != nil {
 		return false, fmt.Errorf("set %s: %w", form.ReplayKey, err)
 	}
