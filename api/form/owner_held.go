@@ -19,6 +19,7 @@ var ownerHeldKeys = []string{
 	"system.retirement",
 	"system.succession_failed",
 	"system.keep",
+	"system.replay",
 }
 
 func OwnerHeldKeys() []string { return append([]string(nil), ownerHeldKeys...) }
