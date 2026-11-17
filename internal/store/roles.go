@@ -4,20 +4,28 @@ import (
 	"context"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 )
 
 const (
 	targetAriaKey = "target-aria"
 	nameKey       = "name"
+	sandboxKey    = "system.sandbox"
 )
 
 type roleIndex struct {
 	byForm map[string]string
 	names  map[string]string
+	boxes  map[string]string
 	ready  bool
+}
+
+type FormListing struct {
+	Name, Target, Sandbox string
 }
 
 func targetOf(patch message.Patch) (target string, spoke bool) {
@@ -40,23 +48,57 @@ func (b *XwalBackend) roleNoted(formID, target string) {
 func (b *XwalBackend) nameNoted(formID, name string) {
 	b.rolesMu.Lock()
 	defer b.rolesMu.Unlock()
-	if b.roles.names == nil {
-		b.roles.names = map[string]string{}
-	}
-	if name == "" {
-		delete(b.roles.names, formID)
-		return
-	}
-	b.roles.names[formID] = name
+	noted(&b.roles.names, formID, name)
 }
 
-func (b *XwalBackend) roleCommitted(formID string, patch message.Patch) {
-	if target, spoke := targetOf(patch); spoke {
-		b.roleNoted(formID, target)
+func (b *XwalBackend) boxNoted(formID, box string) {
+	b.rolesMu.Lock()
+	defer b.rolesMu.Unlock()
+	noted(&b.roles.boxes, formID, box)
+}
+
+func noted(m *map[string]string, id, v string) {
+	if v == "" {
+		delete(*m, id)
+		return
 	}
-	if name, spoke := stringKeyOf(patch, nameKey); spoke {
-		b.nameNoted(formID, name)
+	if *m == nil {
+		*m = map[string]string{}
 	}
+	(*m)[id] = v
+}
+
+func (b *XwalBackend) roleCommitted(formID string, patch message.Patch, after form.Snapshot) {
+	if reaches(patch, targetAriaKey) {
+		b.roleNoted(formID, listedValue(after, targetAriaKey))
+	}
+	if reaches(patch, nameKey) {
+		b.nameNoted(formID, listedValue(after, nameKey))
+	}
+	if reaches(patch, sandboxKey) {
+		b.boxNoted(formID, listedValue(after, sandboxKey))
+	}
+}
+
+func reaches(patch message.Patch, key string) bool {
+	for {
+		if _, ok := patch.Entry(key); ok {
+			return true
+		}
+		i := strings.LastIndexByte(key, '.')
+		if i < 0 {
+			return false
+		}
+		key = key[:i]
+	}
+}
+
+func listedValue(snap form.Snapshot, key string) string {
+	raw, ok := snap.Get(key)
+	if !ok {
+		return ""
+	}
+	return lifetimeString(raw)
 }
 
 func (b *XwalBackend) roleFromState(formID string) {
@@ -64,16 +106,9 @@ func (b *XwalBackend) roleFromState(formID string) {
 	if err != nil {
 		return
 	}
-	target := ""
-	if v := snap.Lookup(targetAriaKey); v != nil {
-		target = *v
-	}
-	b.roleNoted(formID, target)
-	name := ""
-	if v := snap.Lookup(nameKey); v != nil {
-		name = *v
-	}
-	b.nameNoted(formID, name)
+	b.roleNoted(formID, listedValue(snap, targetAriaKey))
+	b.nameNoted(formID, listedValue(snap, nameKey))
+	b.boxNoted(formID, listedValue(snap, sandboxKey))
 }
 
 func (b *XwalBackend) rolesForgotten(ids []string) {
@@ -82,6 +117,7 @@ func (b *XwalBackend) rolesForgotten(ids []string) {
 	for _, id := range ids {
 		delete(b.roles.byForm, id)
 		delete(b.roles.names, id)
+		delete(b.roles.boxes, id)
 	}
 }
 
@@ -108,6 +144,16 @@ func (b *XwalBackend) FormsNamed(name string) (roles, forms []string, ready bool
 	sort.Strings(roles)
 	sort.Strings(forms)
 	return roles, forms, ready
+}
+
+func (b *XwalBackend) FormListing(formID string) (l FormListing, ready bool) {
+	b.rolesMu.Lock()
+	defer b.rolesMu.Unlock()
+	return FormListing{
+		Name:    b.roles.names[formID],
+		Target:  b.roles.byForm[formID],
+		Sandbox: b.roles.boxes[formID],
+	}, b.roles.ready
 }
 
 func (b *XwalBackend) RoleForms() (map[string]string, bool) {
