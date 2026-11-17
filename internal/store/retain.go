@@ -1,10 +1,13 @@
 package store
 
 import (
+	"github.com/jack-work/figaro/api/form"
+
 	"context"
 	"errors"
 	"fmt"
 	"sort"
+	"sync/atomic"
 	"time"
 )
 
@@ -38,7 +41,11 @@ func (b *XwalBackend) RetainForms(ctx context.Context, dryRun bool, pace time.Du
 		} else if !ok {
 			continue
 		}
-		r, err := t.Retain(key, chanForm, dryRun)
+		floor, skip := b.retentionFloor(key)
+		if skip {
+			continue
+		}
+		r, err := t.RetainBelow(key, chanForm, floor, dryRun)
 		if err != nil {
 			errs = errors.Join(errs, fmt.Errorf("form %s: %w", id, err))
 		}
@@ -55,3 +62,57 @@ func (b *XwalBackend) RetainForms(ctx context.Context, dryRun bool, pace time.Du
 	}
 	return out, errs
 }
+
+func (b *XwalBackend) retentionFloor(key string) (uint64, bool) {
+	snap, ok := b.headState(key)
+	if !ok {
+		return 0, false
+	}
+	mode := RetentionModeOf(snap)
+	if mode == "" {
+		mode = *retentionDefault.Load()
+	}
+	switch mode {
+	case RetentionNone:
+		return 0, true
+	case RetentionMarks:
+		low := LowestMark(MarksOf(snap))
+		return low, low == 0
+	}
+	return 0, false
+}
+
+func (b *XwalBackend) headState(key string) (form.Snapshot, bool) {
+	id := key
+	if n, ok := b.store.trunks.Nodes()[key]; ok && n.Trunk != "" {
+		id = n.Trunk
+	}
+	b.mu.Lock()
+	f := b.forms[id]
+	b.mu.Unlock()
+	if f != nil {
+		snap, _ := f.Snapshot()
+		return snap, true
+	}
+	xw, err := b.store.openNode(id)
+	if err != nil {
+		return form.Snapshot{}, false
+	}
+	defer xw.Close()
+	_, last, _ := xw.ChannelBounds(chanForm)
+	if last == 0 {
+		return form.Snapshot{}, true
+	}
+	raw, err := xw.StateAt(chanForm, last)
+	if err != nil {
+		return form.Snapshot{}, false
+	}
+	snap, _, err := decodeFormWatermark(raw)
+	return snap, err == nil
+}
+
+var retentionDefault atomic.Pointer[string]
+
+func init() { SetRetentionDefault("") }
+
+func SetRetentionDefault(mode string) { retentionDefault.Store(&mode) }

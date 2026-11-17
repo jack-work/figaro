@@ -548,6 +548,11 @@ func (b *XwalBackend) ApplyForm(ariaID string, patch message.Patch) (uint64, err
 	return v.Version, err
 }
 
+func (b *XwalBackend) conversationBound(id string) bool {
+	kind, ok := b.store.trunks.Kind(id)
+	return ok && kind == string(kindConversation)
+}
+
 func (b *XwalBackend) FormReclaimable(ariaID string) (bool, error) {
 	f, err := b.form(ariaID)
 	if err != nil {
@@ -573,6 +578,9 @@ func (b *XwalBackend) ApplyFormEffectPrivilegedIf(ariaID string, patch message.P
 }
 
 func (b *XwalBackend) ApplyFormWrite(ariaID string, w FormWrite) (FormVerdict, error) {
+	if touchesRetention(w.Patch) && b.conversationBound(ariaID) {
+		return FormVerdict{}, ErrRetentionOnConversation
+	}
 	f, err := b.form(ariaID)
 	if err != nil {
 		return FormVerdict{}, err
