@@ -54,9 +54,20 @@ type ForkRequest struct {
 	// no turn boundary exists.
 	AtLT uint64 `json:"at_lt,omitempty"`
 	// Patch dresses the alternative in the same call that mints it.
-	Patch   *FormPatch `json:"patch,omitempty"`
-	Outfits []string   `json:"outfits,omitempty"`
+	Patch   *FormPatch  `json:"patch,omitempty"`
+	Outfits []string    `json:"outfits,omitempty"`
+	Studies ForkStudies `json:"studies,omitempty"`
 }
+
+type ForkStudies string
+
+const (
+	ForkStudiesAtCut ForkStudies = ""
+	ForkStudiesLive  ForkStudies = "live"
+	ForkStudiesNone  ForkStudies = "none"
+)
+
+const CapForkStudies Capability = "fork.studies"
 
 // ForkResponse: the parent freezes and keeps its id as a read-only index
 // node. OwnerNote announces that an interior <id>:<LT> resolved to an owning

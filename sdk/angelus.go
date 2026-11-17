@@ -191,9 +191,12 @@ func (c *Angelus) GCUndo(ctx context.Context, run string) (*rpc.GCUndoResponse, 
 // Fork branches a conversation. Zero forks at the head; atTurn replaces that
 // turn, atLT forks at that logical time exactly. They are distinct wire fields.
 func (c *Angelus) Fork(ctx context.Context, figaroID string, atTurn, atLT uint64, outfits []string, patch *rpc.FormPatch) (*rpc.ForkResponse, error) {
+	return c.ForkWith(ctx, rpc.ForkRequest{FigaroID: figaroID, AtTurn: atTurn, AtLT: atLT, Outfits: outfits, Patch: patch})
+}
+
+func (c *Angelus) ForkWith(ctx context.Context, req rpc.ForkRequest) (*rpc.ForkResponse, error) {
 	var resp rpc.ForkResponse
-	err := c.call(ctx, rpc.MethodFork,
-		rpc.ForkRequest{FigaroID: figaroID, AtTurn: atTurn, AtLT: atLT, Outfits: outfits, Patch: patch}, &resp)
+	err := c.call(ctx, rpc.MethodFork, req, &resp)
 	return &resp, err
 }
 
