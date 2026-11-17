@@ -479,6 +479,9 @@ func (p *Provider) imageLimits(model string, anySource bool) provider.ImageLimit
 
 func (p *Provider) sendVia(ctx context.Context, t Transport, model string, in provider.SendInput, bus provider.Bus) error {
 	in.TextOnly = p.textOnly(model)
+	if in.MaxTokens <= 0 && p.knobs.MaxTokens <= 0 {
+		in.MaxTokens = p.defaultMaxTokens(model, in)
+	}
 	if in.Images == (provider.ImageLimits{}) {
 		in.Images = p.imageLimits(model, false)
 	}
