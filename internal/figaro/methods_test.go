@@ -249,3 +249,29 @@ func TestAnAriaOlderThanItsOutfitRunsTheDefaultMethods(t *testing.T) {
 		t.Fatalf("the aria switched methods off and the provider saw %q", sends[0])
 	}
 }
+
+// Defends #114: a replay runs at the effort its caller left on the board. An
+// inquiry method judging the replayed words would overwrite `-S
+// system.thinking_effort=high`, and spend a decide call doing it.
+func TestAReplayRunsNoInquiryMethods(t *testing.T) {
+	asker := &scriptedAsker{pick: func(string) (string, error) { return "low", nil }}
+	a, p := agentWithMethods(t, asker)
+	submitPrompt(a, "hello")
+	waitSends(t, p, 1)
+	awaitState(t, a, "idle")
+	effort := form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.thinking_effort": json.RawMessage(`"xhigh"`)}, nil)
+	if _, _, err := a.Set(form.Merge(effort, form.Replay{Of: a.ID(), Turn: 1}.Patch(form.Snapshot{})), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SubmitReplay("", ""); err != nil {
+		t.Fatal(err)
+	}
+	if sends := waitSends(t, p, 2); sends[1] != "xhigh" {
+		t.Fatalf("the replay ran at %q, want the caller's xhigh", sends[1])
+	}
+	asker.mu.Lock()
+	defer asker.mu.Unlock()
+	if len(asker.asked) != 1 {
+		t.Fatalf("the replay asked the decider: %q", asker.asked)
+	}
+}
