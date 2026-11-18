@@ -456,7 +456,10 @@ ancestors behind does not widen it.
 permissions = ["read:*", "send:*", "*:lineage:self", "egress:*"]
 ```
 
-The claim is the CLI's stamp (`FIGARO_ARIA`), so a tool can drop it and be
+The claim is the CLI's stamp (`FIGARO_ARIA`). On the local door with
+`[authz] peer_check` on, a call from a figaro's tool cgroup carries that
+figaro whatever it stamps, and is never the owner
+([peer-check.md](peer-check.md)); otherwise a tool can drop the claim and be
 judged by its principal alone: the owner on the local door, the box in a box.
 A claim only ever narrows, so a forged one gains nothing. On the box door a
 claim counts only for a figaro that runs in that box; any other (an unknown
