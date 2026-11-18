@@ -75,7 +75,9 @@ func schemaFor(name string) (channelSchema, string, bool) {
 
 // storeVersion is the generation of meaning this build writes: not a record's
 // shape (channel schema) nor the arrangement on disk (figwal's layout).
-const storeVersion = 2
+const storeVersion = runtimeNamesGeneration
+
+const closedGeneration = 2
 
 type schemaFile struct {
 	StoreVersion int            `json:"store-version"`
@@ -133,7 +135,7 @@ func checkGeneration(f schemaFile, root string, trunks *xwal.Store) error {
 	if trunks == nil {
 		return nil // pre-open pass: the version is all that can be checked
 	}
-	f.StoreVersion = storeVersion
+	f.StoreVersion = max(f.StoreVersion, closedGeneration)
 	stored := f.Channels
 	var bust []string
 	var repairs []func(string, *xwal.Store) error

@@ -305,7 +305,7 @@ keepalive it states itself, so `retire --ttl 1h` really ends it in an hour.
 `system.retirement = { context_threshold = 700000, ttl = "72h" }` (owner-held)
 retires a figaro by itself: when a turn ends and that turn's last request
 carried at least `context_threshold` input tokens as the provider counted them,
-it retires as `figaro retire` would, with `system.retired = "context"`. A
+it retires as `figaro retire` would, with `runtime.retired = "context"`. A
 threshold like `"60%"` is of the model's context window. The turn in flight
 and prompts already queued finish; `ttl` counts from the retirement. A fork
 starts unretired but keeps the setting, so a fork taken above the threshold
