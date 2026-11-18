@@ -636,10 +636,12 @@ func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (inter
 
 func importedKeys(p form.Patch) map[string]json.RawMessage {
 	keys := map[string]json.RawMessage{}
+	studies := form.RuntimeDrops(figaro.StudiesKey)
 	for _, e := range p.Entries() {
-		if !e.IsRemoval() {
-			keys[e.Key] = e.New
+		if e.IsRemoval() || (form.WriterOf(e.Key) == form.WriterRuntime && !slices.Contains(studies, e.Key)) {
+			continue
 		}
+		keys[e.Key] = e.New
 	}
 	if raw, ok := keys[form.RetiredGrantsKey]; ok {
 		if _, both := keys[form.ScopesKey]; !both {
@@ -665,7 +667,11 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 		if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, &req.OutfitPatch); err != nil {
 			return nil, fmt.Errorf("import: outfit %q: %w", req.Outfit, err)
 		}
-		imported := form.Build(form.Snapshot{}, importedKeys(req.Form), nil)
+		keys := importedKeys(req.Form)
+		for _, k := range form.RuntimeDrops(figaro.StudiesKey) {
+			delete(keys, k)
+		}
+		imported := form.Build(form.Snapshot{}, keys, nil)
 		if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, &imported); err != nil {
 			return nil, fmt.Errorf("import: %w", err)
 		}
