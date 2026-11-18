@@ -453,6 +453,16 @@ it, not itself). A scope on `runtime.*` is refused: only the daemon writes
 there. A figaro writing another's `system.scopes` gives only what its own
 effective set covers, key globs included.
 
+**Child policy.** `system.child_policy` on a figaro (same writers as
+`system.scopes`) is an object of key paths to values, self- or lineage-class
+only, that is written into the birth patch of every fork of it. It is applied
+at birth and never kept linked: changing it touches no living child. When it
+is unset, a fork made by a figaro is born with `system.scopes =
+["send:parent", "read:aria:self"]`: it can report to its parent, by id or by
+any role that resolves to it, read its own form, and nothing else, until
+someone holding a grant on it widens it. A fork the owner makes keeps its
+parent's scopes as before.
+
 `system.grants` is the key's old name. 0.64 reads it when `system.scopes` is
 absent, logging one warning per aria per daemon run; an aria carrying both
 holds nothing; no caller may write `system.grants`, though removing it is

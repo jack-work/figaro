@@ -36,6 +36,7 @@ Set by the owner, or by an ancestor figaro through its box door, and a figaro gi
 - `system.scopes` and everything under it
 - `system.grants` and everything under it
 - `system.fanout.max_children` and everything under it
+- `system.child_policy` and everything under it
 - `system.fanout.mint` and everything under it
 
 ## runtime
