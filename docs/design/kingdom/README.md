@@ -10,7 +10,7 @@ One Strategist plans both tracks and fans out forks that build parts. The Knight
 
 Working agreement: REVISION 2 of the plan root. The Strategist builds everything at once with its forks, keeps the final vision, and restacks it into non-conflicting commits for the Knight as main moves. Reviewers fork the Strategist at turn 1 (the common fork point) on Gemini.
 
-**PAUSED 11-18 06:xx by King order (quota 52%) until Gluck answers.** No new lanes or reviews; in-flight reviews (P2+P5, E1 delta) and gates (v0.74.5) finish. Fan-out forks harvest and retire; branches stay.
+**PAUSED 11-18 06:xx by King order (quota 52%) until Gluck answers.** On resume, first: one Opus review of rel/v0.74.5 657c554ce (P3+H1, gate green, parked); verdicts from the P2+P5 and E1 delta reviews; restack P4 (scratch dac29e5ff) on v0.74.5; E3 resumes from scratch/valet 238a6fcf8. No new lanes or reviews; in-flight reviews (P2+P5, E1 delta) and gates (v0.74.5) finish. Fan-out forks harvest and retire; branches stay.
 
 | # | part | builder | branch | state (2026-11-18 02:xx) |
 |---|---|---|---|---|
