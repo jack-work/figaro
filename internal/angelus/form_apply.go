@@ -9,6 +9,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/formapply"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -48,7 +49,7 @@ func (h *handlers) formApply(ctx context.Context, params json.RawMessage) (any, 
 		return nil, err
 	}
 	desired := form.Snapshot{}.Apply(outfit)
-	patch, err := formapply.Plan(current.Snapshot, desired, req.Managed, managedHeldKeys(current.Snapshot))
+	patch, err := formapply.Plan(current.Snapshot, desired, req.Managed, managedHeldKeys(current.Snapshot), h.operatorPrefixes(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -144,4 +145,11 @@ func managedHeldKeys(role form.Snapshot) []string {
 		handoff = successionDefaultHandoff
 	}
 	return append(held, handoff)
+}
+
+func (h *handlers) operatorPrefixes(ctx context.Context) []string {
+	if _, boxed := callerBox(ctx); boxed || authz.FigaroOf(ctx) != "" || !h.callerOwns(ctx) {
+		return nil
+	}
+	return formapply.OperatorPrefixes
 }

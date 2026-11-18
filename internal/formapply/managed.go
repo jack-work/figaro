@@ -9,7 +9,9 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-func Plan(current, desired form.Snapshot, managed, held []string) (form.Patch, error) {
+var OperatorPrefixes = []string{"system.fanout"}
+
+func Plan(current, desired form.Snapshot, managed, held, operator []string) (form.Patch, error) {
 	if len(managed) == 0 {
 		return form.Patch{}, fmt.Errorf("form apply: name at least one managed path")
 	}
@@ -17,11 +19,11 @@ func Plan(current, desired form.Snapshot, managed, held []string) (form.Patch, e
 	slices.Sort(paths)
 	seen := make(map[string]bool, len(paths))
 	for _, path := range paths {
-		if err := validatePath(path); err != nil {
+		if err := validatePath(path, operator); err != nil {
 			return form.Patch{}, err
 		}
 		for _, key := range held {
-			if overlaps(path, key) {
+			if overlaps(path, key) && !under(key, operator) {
 				return form.Patch{}, fmt.Errorf("form apply: %q covers %q, which the daemon holds", path, key)
 			}
 		}
@@ -54,7 +56,7 @@ func Plan(current, desired form.Snapshot, managed, held []string) (form.Patch, e
 	return form.Build(current, set, remove), nil
 }
 
-func validatePath(path string) error {
+func validatePath(path string, operator []string) error {
 	if path == "" || path != strings.TrimSpace(path) || strings.ContainsAny(path, "[]*\\\x00\r\n\t") {
 		return fmt.Errorf("form apply: invalid managed path %q", path)
 	}
@@ -63,6 +65,9 @@ func validatePath(path string) error {
 		if part == "" || part != strings.TrimSpace(part) {
 			return fmt.Errorf("form apply: invalid managed path %q", path)
 		}
+	}
+	if under(path, operator) {
+		return nil
 	}
 	root := parts[0]
 	if strings.HasPrefix(root, "comment_") || strings.HasPrefix(root, "thread_") {
@@ -73,6 +78,15 @@ func validatePath(path string) error {
 		return fmt.Errorf("form apply: %q is runtime-owned", path)
 	}
 	return nil
+}
+
+func under(path string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if path == prefix || strings.HasPrefix(path, prefix+".") {
+			return true
+		}
+	}
+	return false
 }
 
 func overlaps(path, key string) bool {
