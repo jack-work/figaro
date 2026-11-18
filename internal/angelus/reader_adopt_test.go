@@ -114,3 +114,36 @@ func TestAForkAdoptsFromALiveParent(t *testing.T) {
 	srv.AppendSealed(r.project(child, log, from))
 	sameTurns(t, "adopted from the agent", srv.Turns(), f.projected(t, child))
 }
+
+// A waking agent takes its turn index from the reader that served it while
+// dormant, or from the aria it was forked from, and composes only the newest
+// turn; what it then serves must be a full projection.
+func TestAWakingAgentAdoptsItsTurns(t *testing.T) {
+	f := newAdoptFixture(t, 6)
+	r := f.h.reader()
+	if _, _, err := r.serverFor(f.parent); err != nil {
+		t.Fatal(err)
+	}
+	read := f.fork(t, 0)
+	if _, _, err := r.serverFor(read); err != nil {
+		t.Fatal(err)
+	}
+	unread := f.fork(t, 3)
+	for _, id := range []string{read, unread} {
+		srv := aria.NewServer()
+		srv.BindCache(id, r.uiCache)
+		if _, ok := r.SeedAgent(id, srv); !ok {
+			t.Fatalf("%s: nothing adopted for the waking agent", id)
+		}
+		woken, err := f.h.restoreOne(f.ctx, id, "test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		live := woken.(interface {
+			Read(aria.Anchor, int) aria.Page
+			TurnServer() *aria.Server
+		})
+		live.Read(aria.Anchor{}, 1<<20)
+		sameTurns(t, "woken "+id, live.TurnServer().Turns(), f.projected(t, id))
+	}
+}

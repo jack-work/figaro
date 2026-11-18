@@ -181,6 +181,38 @@ func (r *AriaReader) restore(id string, ra *readAria) error {
 	return nil
 }
 
+// SeedAgent fills a waking agent's empty turn server: from this reader's own
+// server for id when it holds the whole log, else as a fork's first read
+// starts, from the aria it was forked from.
+func (r *AriaReader) SeedAgent(id string, srv *aria.Server) (uint64, bool) {
+	if r == nil || r.backend == nil || r.proj == nil {
+		return 0, false
+	}
+	log, err := r.backend.OpenFigIR(id)
+	if err != nil {
+		return 0, false
+	}
+	tail, ok := log.PeekTail()
+	if !ok {
+		return 0, false
+	}
+	r.mu.Lock()
+	ra := r.servers[id]
+	r.mu.Unlock()
+	if ra != nil {
+		ra.mu.Lock()
+		from, ok := uint64(0), false
+		if ra.srv.TailBracket() >= tail.LT {
+			from, ok = srv.AdoptBelow(ra.srv, tail.LT)
+		}
+		ra.mu.Unlock()
+		if ok {
+			return from, true
+		}
+	}
+	return r.adoptFork(id, srv)
+}
+
 // adoptFork seeds an empty server from a resident server of the aria id was
 // forked from, or of its storage parent, when that one holds every record
 // below the fork base (the base is the first LT the child owns).

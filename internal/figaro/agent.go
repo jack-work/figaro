@@ -93,6 +93,11 @@ type Config struct {
 	// UICache is the process-wide composed UI IR cache; nil gives a private unbounded node.
 	UICache *aria.ComposedCache
 
+	// SeedTurns fills an empty turn server from turns already materialized
+	// elsewhere and returns the LT to compose from; nil, or false, composes
+	// the whole log.
+	SeedTurns func(id string, srv *aria.Server) (from uint64, ok bool)
+
 	Models ModelCatalog
 
 	Decider     methods.Asker
@@ -189,6 +194,7 @@ type Agent struct {
 
 	ariaSrv   *aria.Server
 	hydrateMu sync.Mutex
+	seedTurns func(id string, srv *aria.Server) (from uint64, ok bool)
 
 	createdAt     time.Time
 	lastActive    time.Time
@@ -267,6 +273,7 @@ func NewAgent(cfg Config) *Agent {
 
 	a.ariaSrv = aria.NewServer()
 	a.ariaSrv.BindCache(a.id, cfg.UICache)
+	a.seedTurns = cfg.SeedTurns
 	a.ariaSrv.Subscribe(func(p aria.Page) {
 		p.Metrics = a.sessionMetrics()
 		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: p})

@@ -151,6 +151,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		WokeBy:          wokeBy,
 		Settings:        loaded,
 		UICache:         h.angelus.UICache,
+		SeedTurns:       h.reader().SeedAgent,
 		Decider:         h.methodAsker(),
 		DefaultForm:     h.defaultForm,
 		Spool:           h.angelus.Spool,

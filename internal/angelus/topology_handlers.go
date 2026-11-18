@@ -248,6 +248,7 @@ func (h *handlers) createWith(ctx context.Context, params json.RawMessage, birth
 		Form:            cbState,
 		Settings:        loaded,
 		UICache:         h.angelus.UICache,
+		SeedTurns:       h.reader().SeedAgent,
 		Decider:         h.methodAsker(),
 		DefaultForm:     h.defaultForm,
 		Spool:           h.angelus.Spool,
