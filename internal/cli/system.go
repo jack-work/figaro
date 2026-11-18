@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,6 +84,12 @@ func runStop(o stopOptions) {
 	sockPath := boot.AngelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
 	if cli, err := sdk.DialAngelus(ep); err == nil {
+		if storeHasNoDaemon() {
+			cli.Close()
+			fmt.Fprintf(stderrw, "angelus is not running; %s is held open by its service manager, which starts it on the next call\n", sockPath)
+			afterExit()
+			return
+		}
 		if o.hup {
 			haltAndStop(cli, o, afterExit)
 			return
@@ -150,7 +157,7 @@ func stopPid(pid int, force bool, afterExit func()) {
 	if force {
 		killPid(pid, syscall.SIGKILL)
 		waitForExit(pid, 5*time.Second)
-		os.Remove(sockPath)
+		removeUnheldSocket(sockPath)
 		fmt.Fprintf(stderrw, "angelus (pid %d) forcefully terminated\n", pid)
 		afterExit()
 		return
@@ -166,6 +173,27 @@ func stopPid(pid int, force bool, afterExit func()) {
 
 	// keepHushAlive would respawn anything retired while the daemon is up.
 	die("angelus (pid %d) did not rest within 15s; try `figaro rest --force`", pid)
+}
+
+func storeHasNoDaemon() bool {
+	f, err := os.OpenFile(boot.StoreLockPath(), os.O_RDWR, 0)
+	if errors.Is(err, fs.ErrNotExist) {
+		return true
+	}
+	if err != nil {
+		return false
+	}
+	f.Close()
+	_, held := boot.StoreLockOwner()
+	return !held
+}
+
+func removeUnheldSocket(path string) {
+	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(path)); err == nil {
+		cli.Close()
+		return
+	}
+	os.Remove(path)
 }
 
 func waitForExit(pid int, within time.Duration) bool {
