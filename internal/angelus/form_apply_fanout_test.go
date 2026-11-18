@@ -1,6 +1,7 @@
 package angelus_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,16 +10,22 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 )
 
 func applyFanout(t *testing.T, r grantRig, id, outfit string, managed []string, claim string) error {
+	t.Helper()
+	return applyFanoutAs(t, r, asOwner(), id, outfit, managed, claim)
+}
+
+func applyFanoutAs(t *testing.T, r grantRig, ctx context.Context, id, outfit string, managed []string, claim string) error {
 	t.Helper()
 	call := func(req rpc.FormApplyRequest) (any, error) {
 		raw, _ := json.Marshal(req)
 		if claim != "" {
 			raw = claimed(t, claim, raw)
 		}
-		return r.h[rpc.MethodFormApply](asOwner(), raw)
+		return r.h[rpc.MethodFormApply](ctx, raw)
 	}
 	out, err := call(rpc.FormApplyRequest{FigaroID: id, Outfits: []string{outfit}, Managed: managed, Check: true})
 	if err != nil {
@@ -81,5 +88,41 @@ func TestTheOperatorStillCannotApplyOtherSystemKeys(t *testing.T) {
 		if err := applyFanout(t, r, id, "fanout", managed, ""); err == nil {
 			t.Fatalf("the operator applied %v", managed)
 		}
+	}
+}
+
+const setterPolicy = `
+[roles.setter]
+permissions = ["*:*"]
+
+[[bind]]
+role = "setter"
+principals = ["user:setter", "sandbox:judge@local:box"]
+`
+
+func TestOnlyTheOwnerItselfGetsTheOperatorPaths(t *testing.T) {
+	managed := []string{form.FanoutMaxChildrenKey}
+	local := func(ctx context.Context) context.Context { return authz.WithDoor(ctx, authz.DoorLocal) }
+	for name, c := range map[string]struct {
+		ctx   context.Context
+		claim string
+	}{
+		"a claim the daemon does not hold, dropped at a door":      {local(asOwner()), "0123456789abcdef0123456789abcdef"},
+		"a principal granted everything on the trusted local door": {local(as("user", "setter")), ""},
+		"a box": {authz.WithPrincipal(context.Background(), rpc.Principal{Kind: "sandbox", ID: "judge@" + authz.BoxScope}), ""},
+	} {
+		r, id := managedRoleUnder(t, doorPolicy+setterPolicy)
+		fanoutOutfits(t, r)
+		if err := applyFanoutAs(t, r, c.ctx, id, "fanout", managed, c.claim); err == nil || !strings.Contains(err.Error(), "runtime-owned") {
+			t.Errorf("%s: want the operator paths refused as runtime-owned, got %v", name, err)
+		}
+		if got, ok := keyOn(t, r, id, form.FanoutMaxChildrenKey); ok {
+			t.Errorf("%s: max_children landed: %s", name, got)
+		}
+	}
+	r, id := managedRole(t)
+	fanoutOutfits(t, r)
+	if err := applyFanoutAs(t, r, local(asOwner()), id, "fanout", managed, ""); err != nil {
+		t.Fatalf("control: the owner at the local door: %v", err)
 	}
 }
