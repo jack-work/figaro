@@ -35,6 +35,9 @@ func ChildPolicy(s Snapshot) (map[string]json.RawMessage, bool, error) {
 			return nil, true, fmt.Errorf("%s: %s is %s class; a child policy carries only self- and lineage-class keys", ChildPolicyKey, k, w)
 		}
 	}
+	if faults := TouchedShapeFaults(s.Apply(Build(s, keys, nil)), names); len(faults) > 0 {
+		return nil, true, fmt.Errorf("%s: a child would be born with %s: %w", ChildPolicyKey, faults[0].Path, faults[0].Err)
+	}
 	return keys, true, nil
 }
 
