@@ -458,6 +458,9 @@ key it names, the one above it (`system.retirement.action` is judged as all of
 `system.retirement`) and those below it (`system.fanout` as each of its
 fields). A bad value the write does not reach does not block it.
 
+**Laws.** `law.*` keys are owner class: only the owner writes or removes
+them. How they render, travel and stay in view: [laws.md](laws.md).
+
 **Child policy.** `system.child_policy` on a figaro (same writers as
 `system.scopes`) is an object of key paths to values, self-, lineage- or
 owner-class (an owner-class key only when the owner writes it), that is

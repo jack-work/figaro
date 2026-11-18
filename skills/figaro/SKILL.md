@@ -111,6 +111,7 @@ about changing figaro rather than using it live under
 | [reference/outfits.md](reference/outfits.md) | Composing outfits, the `-O`/`-S`/`-D` grammar, or dressing did not do what you expected. |
 | [reference/forms.md](reference/forms.md) | Using unbound forms and roles: the verbs, the listings, the matrix. |
 | [reference/fanout.md](reference/fanout.md) | `system.fanout.max_children`, why a figaro-forked fork is born at 0, how a succession swap moves the limit, who may take a held role, `system.fanout.mint` (who may `figaro new`, and granting it to the King's role), or the `create`/`mint` verb split. |
+| [reference/laws.md](reference/laws.md) | A `law.*` key or a reminder named `law.*`: what a law is, who writes or repeals one, why you may not drop a role that carries one, and where laws go when you fork or succeed. |
 | [reference/key-writers.md](reference/key-writers.md) | Who may write a form key: which keys are owner-held, protected for the lineage, or written by the daemon alone, and where to change that. Generated from `api/form/registry.go`. |
 | [debugging/tapes.md](debugging/tapes.md) | Record a figaro's wire and replay it: a rendering bug someone SAW and you cannot reproduce, or one recorded for CI. |
 | [reference/mantra.md](reference/mantra.md) | Maintaining your figaro's mantra. |
