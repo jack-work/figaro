@@ -1,7 +1,7 @@
 package form
 
-// The form is open-schema; WellKnownKeys is a partial catalog of the keys the
-// harness reads or writes.
+// The form is open-schema; WellKnownKeys is the documented part of the
+// registry, the keys the harness reads or writes.
 
 // KeyMode classifies a known key by who writes it.
 type KeyMode int
@@ -22,65 +22,26 @@ type KeyDoc struct {
 	Mode  KeyMode
 }
 
-// WellKnownKeys is in stable order.
+// WellKnownKeys is in registry order.
 func WellKnownKeys() []KeyDoc {
-	return []KeyDoc{
-		{Key: "duke-title", Short: `What this aria calls its END USER (default "user"); set it in an outfit and a human's prompts are attributed to that name`, Mode: KeyUserSettable},
-		{Key: "system.credo", Short: "Credo source (string or {content,filePath,frontmatter}); providers read this as the system prompt. Fixed at birth: set by the outfit or birth patch, refused once the figaro has spoken (fork -S or succeed for another)", Mode: KeyUserSettable},
-		{Key: "system.tags", Short: "Per-LT annotations (e.g. system.tags[42].cache_control)", Mode: KeyUserSettable},
-		{Key: "system.cache_control", Short: `Auto cache-marker policy; ON by default (short). "none" stops SIGNALLING (implicit-caching providers cache anyway); "5m"/"1h" force a TTL`, Mode: KeyUserSettable},
-		{Key: "system.cache_markers", Short: `How a route is marked: "auto" (default), "blocks", "top-level", "none"`, Mode: KeyUserSettable},
-		{Key: "system.thinking_budget", Short: "Extended-thinking token budget for budget-based models (>=1024 enables; unset/0 = off)", Mode: KeyUserSettable},
-		{Key: "system.model", Short: "Active provider model; switchable between turns", Mode: KeyUserSettable},
-		{Key: "system.max_tokens", Short: "Maximum output tokens for the next provider response", Mode: KeyUserSettable},
-		{Key: "system.max_request_bytes", Short: "Largest request body figaro sends to the provider, in bytes; over it the oldest images are elided first (default: max_request_bytes in providers/<name>.toml; 0 = no limit)", Mode: KeyUserSettable},
-		{Key: "system.first_byte_timeout", Short: `How long a provider request may wait for its first byte before it counts as a stream cut and is resent (Go duration, default "90s"; "0" turns it off)`, Mode: KeyUserSettable},
-		{Key: "system.context_tier", Short: `Copilot context-budget tier: "default" or "long_context"`, Mode: KeyUserSettable},
-		{Key: "system.max_context_tokens", Short: "Optional local cap for replayed prompt context tokens", Mode: KeyUserSettable},
-		{Key: "system.thinking_effort", Short: "Reasoning effort for models that support it", Mode: KeyUserSettable},
-		{Key: "system.reasoning_context", Short: `Copilot Responses reasoning retention: "auto", "current_turn", or "all_turns"`, Mode: KeyUserSettable},
-		{Key: "system.reasoning_summary", Short: `Copilot Responses readable reasoning summary: "auto", "concise", or "detailed"`, Mode: KeyUserSettable},
-		{Key: "system.verbosity", Short: "Copilot Responses text verbosity", Mode: KeyUserSettable},
-		{Key: "system.temperature", Short: "Copilot Responses sampling temperature (0 through 2; mutually exclusive with top_p)", Mode: KeyUserSettable},
-		{Key: "system.top_p", Short: "Copilot Responses nucleus sampling (greater than 0 through 1; mutually exclusive with temperature)", Mode: KeyUserSettable},
-		{Key: "system.parallel_tool_calls", Short: "Whether Copilot Responses may emit parallel function calls", Mode: KeyUserSettable},
-		{Key: "system.environment.<name>", Short: "Allowlisted env var capture", Mode: KeyUserSettable},
-		{Key: "system.study_incantation", Short: `What to SAY at a study lifecycle event: {"onstudy":…,"onupdate":…,"ondrop":…}, any subset, strings; a bare string is onstudy alone`, Mode: KeyUserSettable},
-		{Key: "system.fork_incantation", Short: `What to say to a branch at birth: a string, or {"onfork":…}. Unset means silence, which is the historical behaviour`, Mode: KeyUserSettable},
-		{Key: "system.decide.provider", Short: "The provider `figaro decide` sends through: its base_url and credential (rou2, azure, ...); set in an outfit, core.toml for every aria", Mode: KeyUserSettable},
-		{Key: "system.decide.model", Short: "The decision model `figaro decide` asks (openai/gpt-6-luna, explabs/jev-latest, decision-1); never a conversation model", Mode: KeyUserSettable},
-		{Key: "system.decide.base_url", Short: "Where decisions go when the provider's base_url serves turns elsewhere (Azure's decision-1 at .../providers/microsoft/v1); the credential stays the provider's", Mode: KeyUserSettable},
-		{Key: "system.decide.api", Short: "The decision API `figaro decide` speaks for this aria: systemone (jev, decision-1) or openai (luna); default inferred from the model", Mode: KeyUserSettable},
-		{Key: "system.methods.enabled", Short: "Master switch for methods (default true); false and no method runs", Mode: KeyUserSettable},
-		{Key: "system.methods.<name>", Short: `A method: on each inquiry the decision model picks one of {options} from the rendered {context} ({{inquiry}}, {{inquiry~N}}) and writes it to {key}; {score, default, enabled, event, keep_cache} optional; keep_cache (default true) holds a method whose change would break the prompt cache`, Mode: KeyUserSettable},
-		{Key: "system.tools", Short: "Owner-held allowlist of tool names the aria may use; [] means none, unset means all. Owner-held does not bind an unboxed aria whose tools include bash or process (issue #57)", Mode: KeyUserSettable},
-		{Key: "system.cwd", Short: "Working directory the tools resolve relative paths against (`figaro cd`)", Mode: KeyUserSettable},
-		{Key: "system.retirement", Short: `Owner-held {context_threshold, fallback_tokens, ttl, action, page, timeout, ramp, ramp_turns}: fallback_tokens is an absolute token threshold when the context capacity is unknown; otherwise context_threshold applies. At the end of a turn whose last request carried at least context_threshold input tokens (a count, or "60%" of the context window), the aria retires itself (system.retired = "context"); ttl counts from then. action = "succeed" hands over first: a warning at 80%, one final handoff turn, a successor minted, cast into every role the aria holds and prompted to ramp on, and the aria retires only when that first turn ends; a failure or timeout leaves it unretired and tells page (an aria or @role; default the holder of its drawn parent)`, Mode: KeyUserSettable},
-		{Key: "system.succession_warned", Short: "Set once the aria has been told to start handing over (80% of its retirement threshold)", Mode: KeySystemManaged},
-		{Key: "system.succession_failed", Short: "Owner-held; why the aria's succession stopped. While set no new succession starts; unset it to let the next turn try again", Mode: KeyUserSettable},
-		{Key: "system.sandbox", Short: "Protected; the sandbox the aria's tools run in (a box name, or unset for local). A figaro cannot set its own: only the owner or an ancestor figaro of the aria ([authz] protected_keys)", Mode: KeyUserSettable},
-		{Key: "system.scopes", Short: "Protected; the aria's scopes as a JSON array of verb:object strings, narrowing its parent's and enforced on calls that name it. Providers read the effective set from figaro.scopes, not this key. Same writers as system.sandbox; a figaro gives only what it holds. system.grants is its old name: still read, no longer written", Mode: KeyUserSettable},
-		{Key: "system.keep", Short: "Owner-held; true and `figaro gc` never chooses this aria, nor anything whose delete would take it", Mode: KeyUserSettable},
-
-		{Key: "system.checkpoint.marks", Short: "Logical times this form's state is checkpointed at, keyed by version: the tail mark moves with the writes, and past system.checkpoint.max_marks the least recently used goes", Mode: KeySystemManaged},
-		{Key: "system.checkpoint.every_patches", Short: "Move the tail checkpoint every N records (floor 64); unset takes [store] checkpoint_every_patches", Mode: KeyUserSettable},
-		{Key: "system.checkpoint.every_seconds", Short: "Move the tail checkpoint every N seconds when something was written (floor 5); unset takes [store] checkpoint_every_seconds", Mode: KeyUserSettable},
-		{Key: "system.checkpoint.max_marks", Short: "How many checkpoints the form keeps (floor 2, default 5)", Mode: KeyUserSettable},
-		{Key: "system.retention.mode", Short: `"marks" drops this form's records below its lowest live checkpoint mark, "none" keeps every record; unset takes [store] retention_mode, and with that unset the store-wide sweep decides. Owner-held; refused on a conversation-bound form`, Mode: KeyUserSettable},
-		{Key: "system.retention.writers", Short: "Figaro ids or principals the owner lets set system.retention.* besides itself; only the owner sets this", Mode: KeyUserSettable},
-		{Key: "system.forked_from", Short: "The trunk this branch was forked from (stamped at birth)", Mode: KeySystemManaged},
-		{Key: "system.tombstone", Short: "Set when a form is deleted: the record subscribers hear the death through, after which the form is sealed", Mode: KeySystemManaged},
-		{Key: "system.studies", Short: "The forms this figaro observes. Written by the study verb only: each entry is refcounted on a shared libretto, and a hand-written one would declare a study nothing counted", Mode: KeySystemManaged},
-		{Key: "model", Short: "Active model ID", Mode: KeySystemManaged},
-		{Key: "token_budget", Short: "Context window usage indicator", Mode: KeySystemManaged},
-		{Key: "truncation", Short: "Last tool truncation notice", Mode: KeySystemManaged},
-		{Key: FailureReasonKey, Short: "Why the last turn failed, as the provider or the daemon said it; removed by the next turn that ends without error", Mode: KeySystemManaged},
-		{Key: FailureCategoryKey, Short: `The last failure's kind: "rate_limited", "auth", "provider_error", "timeout", "refused" or "other"`, Mode: KeySystemManaged},
-		{Key: FailureTurnKey, Short: "The turn that failed", Mode: KeySystemManaged},
-		{Key: FailureAtKey, Short: "When it failed, unix millis", Mode: KeySystemManaged},
-
-		{Key: "datetime", Short: "Per-turn wall-clock time", Mode: KeyEphemeralPerTurn},
+	var out []KeyDoc
+	for _, s := range registry {
+		if s.Short == "" {
+			continue
+		}
+		out = append(out, KeyDoc{Key: s.Path, Short: s.Short, Mode: s.mode()})
 	}
+	return out
+}
+
+func (s Spec) mode() KeyMode {
+	switch {
+	case s.Writer == WriterRuntime:
+		return KeySystemManaged
+	case s.Ephemeral:
+		return KeyEphemeralPerTurn
+	}
+	return KeyUserSettable
 }
 
 // IntrinsicKeys catalogs a non-persistent builtin form addressed as
