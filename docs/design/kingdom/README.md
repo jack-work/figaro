@@ -13,10 +13,10 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 | # | part | builder | branch | state (2026-11-18 02:xx) |
 |---|---|---|---|---|
 | 1 | IF1 study_incantation string | Knight | `lane/study-incantation-string` | in v0.74.3 (cutting) |
-| 2 | P1 key registry | Knight | `lane/key-registry` | after IF1 |
+| 2 | P1 key registry | Knight | `lane/key-registry` 63de1c6f4 | SHIP (coverless-lullaby); P2/P5 restack on it |
 | 2b | H1 place --under; succeed --successor drawn in place | fork oceanic-degree `a78f3129` | `lane/hierarchy-place` | review FIX (2 HIGH): back to the drawing board; rebuilt on P3 as v0.74.5 |
 | 2d | F2 owner check ignores the figaro claim on the local door (pre-existing; cap bypass, role hijack) | Knight | off 0911f728f | v0.74.4 ships the consent and storage fix only; the topology gap for unscoped figaros under a policy moves to P5 |
-| 2c | P1b shape checks, figaro doctor keys | Knight | after P1 | queued, before P5 |
+| 2c | P1b shape checks, figaro doctor keys | Knight | `lane/key-shapes` on 63de1c6f4 | building |
 | 3 | E0 kingdom fan-out (charter `maxChildren`) | fork tavern-culprit `df4d5475` (drawn under the Engineer) | cheroot-config, off `proposal/system-charter-split` | finishing |
 | 3b | R1 kingdom regiment | Knight | cheroot-config `lane/kingdom-regiment` e86f3dc (on 579193c) | SHIP (explode-nugget, no findings); owner lands eced4cd, ac170c8, e86f3dc, then flake.lock with f11866f + 579193c |
 | 4 | P4 peer caller check | fork anagram-erratic `0e15cab0` | `lane/peer-caller-check` de5d64574 | fixes in (finite ttl from tools, succeed carries the seat ttl, peer-check.md); waits on v0.74.4 to restack, then review |
