@@ -14,12 +14,14 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 |---|---|---|---|---|
 | 1 | IF1 study_incantation string | Knight | `lane/study-incantation-string` | building |
 | 2 | P1 key registry | Knight | `lane/key-registry` | after IF1 |
-| 3 | E0 kingdom fan-out (charter `maxChildren`) | fork tavern-culprit `df4d5475` | cheroot-config, off `proposal/system-charter-split` | finishing |
+| 2b | H1 place --under; succeed --successor drawn in place | fork oceanic-degree `a78f3129` | `lane/hierarchy-place` | building; v0.74.3 with IF1 |
+| 2c | P1b shape checks, figaro doctor keys | Knight | after P1 | queued, before P5 |
+| 3 | E0 kingdom fan-out (charter `maxChildren`) | fork tavern-culprit `df4d5475` (drawn under the Engineer) | cheroot-config, off `proposal/system-charter-split` | finishing |
 | 4 | P4 peer caller check | fork anagram-erratic `0e15cab0` | `lane/peer-caller-check` | building |
 | 5 | E2 hush as a system service | fork erasable-unzip `56faa8d6` | hush `lane/hush-system-service` | building |
 | 6 | P3 admission ledger | fork dominoes-elusive `439448d3` | `lane/admission-ledger` | building |
-| 7 | E1 angelus socket activation | (slot asked) | `lane/socket-activation` | queued |
-| 8 | P2 runtime.* migration | (slot asked) | `lane/runtime-namespace` | queued; readers listed before landing |
+| 7 | E1 angelus socket activation | next free slot | `lane/socket-activation` | queued |
+| 8 | P2 runtime.* migration | waits for a slot (role raise) | `lane/runtime-namespace` | queued; readers listed before landing |
 | 9 | E3 figaro valet and the fence | after E1 | `lane/valet` | queued |
 | 10 | P5 key-path grants, selectors, child_policy | after P2 | `lane/key-grants` | queued |
 | 11 | P6 quota, role verbs, succession charging | after P3, P5 | `lane/quota` | queued |
