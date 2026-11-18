@@ -10,7 +10,7 @@ One Strategist plans both tracks and fans out forks that build parts. The Knight
 
 Working agreement: REVISION 2 of the plan root. The Strategist builds everything at once with its forks, keeps the final vision, and restacks it into non-conflicting commits for the Knight as main moves. Reviewers fork the Strategist at turn 1 (the common fork point) on Gemini.
 
-**Resumed 11-18 09:00 (Gluck lifted the hold).** P4: varied-username `f0fbbf89`. E1 LOWs then E3: llama-widow `937e1be4`. v0.74.5 (P3+H1) is in Opus review.
+**Resumed 11-18 09:00 (Gluck lifted the hold).** P4: varied-username `f0fbbf89`. E1 LOWs then E3: llama-widow `937e1be4`. v0.74.5 (P3+H1+P1b) is in Opus review. The P2+P5 review is resuming (hyacinth-obtain, sonnet); after it, P2+P5 restack on v0.74.5 with the fixes.
 
 | # | part | builder | branch | state (2026-11-18 02:xx) |
 |---|---|---|---|---|
@@ -18,7 +18,7 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 | 2 | P1 key registry | Knight | `lane/key-registry` 63de1c6f4 | SHIP (coverless-lullaby); P2/P5 restack on it |
 | 2b | H1 place --under; succeed --successor drawn in place | fork oceanic-degree `a78f3129` | `lane/hierarchy-place` | `lane/hierarchy-place` a40686c8d on P3 | READY; ships with P3 as one stack in v0.74.5, one batched review after v0.74.4 |
 | 2d | F2 owner check ignores the figaro claim on the local door (pre-existing; cap bypass, role hijack) | Knight | off 0911f728f | review FIX (aardvark-amazingly): scoped demote/succeed regression being fixed; v0.74.4 = F2 + that fix + callerOwns local door + dead-claim-as-owner + consent leak; delta review next. Unscoped topology reach moves to P5 |
-| 2c | P1b shape checks, figaro doctor keys | Knight | `lane/key-shapes` bf12f271f on 63de1c6f4 | SHIP (academy-kite, all A); lands with P2+P5 so P5 calls the shapes; three nits after the pause |
+| 2c | P1b shape checks, figaro doctor keys | Knight | `lane/key-shapes` bf12f271f on 63de1c6f4 | SHIP (academy-kite, all A); folded into v0.74.5 by the Knight; P5 restacks on it and calls the shapes |
 | 3 | E0 kingdom fan-out (charter `maxChildren`) | fork tavern-culprit `df4d5475` (drawn under the Engineer) | cheroot-config, off `proposal/system-charter-split` | finishing |
 | 3b | R1 kingdom regiment | Knight | cheroot-config `lane/kingdom-regiment` e86f3dc (on 579193c) | SHIP (explode-nugget, no findings); owner lands eced4cd, ac170c8, e86f3dc, then flake.lock with f11866f + 579193c |
 | 4 | P4 peer caller check | fork anagram-erratic `0e15cab0` | `lane/peer-caller-check` de5d64574 | fixes in (finite ttl from tools, succeed carries the seat ttl, peer-check.md); waits on v0.74.4 to restack, then review |
