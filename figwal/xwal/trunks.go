@@ -51,6 +51,7 @@ type Trunks struct {
 	testStoreClose    func()
 	testAppendBorrow  func()
 	testHeadSync      func(key string) error
+	testDetachPlanned func(node string)
 	testBatchSync     func(sync func() error) error
 }
 
