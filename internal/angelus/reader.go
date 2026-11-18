@@ -313,8 +313,6 @@ func (r *AriaReader) Form(id string) (form.Snapshot, uint64, error) {
 	return snap, version, nil
 }
 
-// sidecarMetrics is what the agent shows once woken: the _meta sidecar, with
-// the records past its watermark folded in. Without a sidecar it folds the log.
 func (r *AriaReader) sidecarMetrics(id string, log arialog.Log[message.Message], tailLT uint64) *aria.Metrics {
 	meta, err := r.backend.Meta(id)
 	if err != nil || meta == nil {
