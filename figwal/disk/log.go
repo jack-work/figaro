@@ -259,11 +259,12 @@ func (l *Log) Write(idx uint64, payload []byte) error {
 // callers batch writes and Sync at their durability points.
 func (l *Log) Sync() error {
 	l.mu.RLock()
-	defer l.mu.RUnlock()
-	if l.active == nil {
+	active := l.active
+	l.mu.RUnlock()
+	if active == nil {
 		return nil
 	}
-	return l.active.Sync()
+	return active.Sync()
 }
 
 // Range iterates from `from` (clamped to FirstIndex) to LastIndex; fork

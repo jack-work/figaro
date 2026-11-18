@@ -95,6 +95,17 @@ func (t *Trunks) LatestChannelRecord(trunk, channel string, minMainLT uint64) (R
 	return x.LatestChannelRecord(channel, minMainLT)
 }
 
+// WriteChannelThrough lands one channel of one trunk in its segment up to
+// idx, without an fsync.
+func (t *Trunks) WriteChannelThrough(trunk, channel string, idx uint64) error {
+	x, err := t.Head(trunk)
+	if err != nil {
+		return err
+	}
+	defer x.Close()
+	return x.WriteChannelThrough(channel, idx)
+}
+
 // SyncChannelThrough persists one channel of one trunk up to idx. The
 // borrow-and-release dance is the same one Append performs, so a writer can
 // append a batch and then make exactly that batch durable.

@@ -204,6 +204,20 @@ func coherentTarget(ch *channel, mainTail uint64) (uint64, error) {
 	return 0, nil
 }
 
+// WriteChannelThrough lands one channel in its segment up to idx without
+// an fsync: the records outlive the process, not the machine.
+func (x *XWAL) WriteChannelThrough(channelName string, idx uint64) error {
+	ch := x.channel(channelName)
+	if ch == nil {
+		return fmt.Errorf("xwal: no channel %q", channelName)
+	}
+	l, err := ch.Log()
+	if err != nil {
+		return err
+	}
+	return l.WriteThrough(idx)
+}
+
 // SyncChannelThrough persists one channel up to idx and no further. It is
 // what a writer calls between appending a batch and publishing it: Sync
 // would flush every channel, and SyncCoherent bounds related channels by the
