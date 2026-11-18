@@ -9,13 +9,14 @@ import (
 	"github.com/jack-work/jkauthz"
 )
 
-// Defends the rollout default: the three P5 switches ship off, and the
+// Defends the rollout default: every switch ships off, and the
 // daemon config's [authz] table is what turns each on.
 func TestTheSwitchesShipOffAndFollowTheConfig(t *testing.T) {
 	for body, want := range map[string]Enforcement{
 		"":                                     {},
 		"[authz]\nenforce_key_grants = true\n": {KeyGrants: true},
 		"[authz]\nenforce_child_policy = true\nenforce_lineage_reach = true\n": {ChildPolicy: true, LineageReach: true},
+		"[authz]\nenforce_quota = true\n":                                      {Quota: true},
 	} {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o600); err != nil {
@@ -30,7 +31,7 @@ func TestTheSwitchesShipOffAndFollowTheConfig(t *testing.T) {
 		}
 		p := NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "1000"}, nil)
 		p.SetEnforcement(EnforcementOf(loaded.Config.Authz))
-		for s, on := range map[Switch]bool{KeyGrants: want.KeyGrants, ChildPolicy: want.ChildPolicy, LineageReach: want.LineageReach} {
+		for s, on := range map[Switch]bool{KeyGrants: want.KeyGrants, ChildPolicy: want.ChildPolicy, LineageReach: want.LineageReach, Quota: want.Quota} {
 			if p.Enforces(s) != on {
 				t.Errorf("config %q: %s enforces %v, want %v", body, s, p.Enforces(s), on)
 			}

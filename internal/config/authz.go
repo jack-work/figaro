@@ -22,6 +22,7 @@ type AuthzConfig struct {
 	EnforceKeyGrants    bool `toml:"enforce_key_grants"`
 	EnforceChildPolicy  bool `toml:"enforce_child_policy"`
 	EnforceLineageReach bool `toml:"enforce_lineage_reach"`
+	EnforceQuota        bool `toml:"enforce_quota"`
 }
 
 type APIKeyConfig struct {

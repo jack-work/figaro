@@ -52,7 +52,7 @@ type grantRig struct {
 
 const defaultPolicy = "<the default policy>"
 
-const enforcingAll = "enforce_key_grants = true\nenforce_child_policy = true\nenforce_lineage_reach = true\n"
+const enforcingAll = "enforce_key_grants = true\nenforce_child_policy = true\nenforce_lineage_reach = true\nenforce_quota = true\n"
 
 func newGrantRig(t *testing.T) grantRig {
 	t.Helper()

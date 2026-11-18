@@ -561,7 +561,7 @@ func (h *handlers) refuseQuotaBeyondBudget(ctx context.Context, line lineage, be
 	c := h.angelus.fanoutCounts()
 	from, d, _ := c.chargeChange(line.of, n, capped)
 	if err := c.fits(from, d); err != nil {
-		return fmt.Errorf("%s: %w", form.FanoutQuotaKey, err)
+		return h.angelus.Policies.Shadow(authz.Quota, fmt.Errorf("%s: %w", form.FanoutQuotaKey, err))
 	}
 	return nil
 }

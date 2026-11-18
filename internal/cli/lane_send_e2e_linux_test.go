@@ -19,7 +19,7 @@ func (r *restartRig) enforceAll() {
 		r.t.Fatal(err)
 	}
 	defer f.Close()
-	if _, err := f.WriteString("[authz]\nenforce_key_grants = true\nenforce_child_policy = true\nenforce_lineage_reach = true\n"); err != nil {
+	if _, err := f.WriteString("[authz]\nenforce_key_grants = true\nenforce_child_policy = true\nenforce_lineage_reach = true\nenforce_quota = true\n"); err != nil {
 		r.t.Fatal(err)
 	}
 }
@@ -202,7 +202,7 @@ func TestTheEnforcementSwitchesShipOffInTheDaemon(t *testing.T) {
 			t.Error("the child policy the fork was not given was not counted")
 		}
 	}
-	for _, name := range []string{"enforce_key_grants", "enforce_child_policy", "enforce_lineage_reach"} {
+	for _, name := range []string{"enforce_key_grants", "enforce_child_policy", "enforce_lineage_reach", "enforce_quota"} {
 		if !seen[name] {
 			t.Errorf("doctor admission does not show %s", name)
 		}
