@@ -413,6 +413,10 @@ daemon (`FIGARO_NO_SELF_SPAWN=1`). In house mode a person owns it:
 modes set `[sandbox] local_tools = false`, since a tool run as uid figaro
 could rewrite the store; tools run in boxes. `services.figaro.importFrom`
 copies a home-mode store in once, before the first start.
+`services.figaro.valet.users` gives each person a box `valet-<user>`: his
+own valet (`figaro valet`) runs those tools as him inside its fence, calls
+back through a door only his valet can reach, and is `[sandbox] default` for
+the owner.
 
 ## Roadmap
 

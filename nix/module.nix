@@ -13,6 +13,9 @@ let
   principalOf = u: "user:${toString (uidOf u)}";
   doorGroup = if doorUsers != [ ] then "figaro-door" else cfg.user;
   runtimeMode = if doorUsers != [ ] then "0751" else "0750";
+  valetBox = u: "valet-${u}";
+  valetDoor = u: "${cfg.runtimeDir}/boxes/${valetBox u}/door.sock";
+  valetGroup = u: "figaro-valet-${u}";
   importStore = pkgs.writeShellApplication {
     name = "figaro-import-store";
     runtimeInputs = [
@@ -77,6 +80,8 @@ let
   );
 in
 {
+  imports = [ ./valet.nix ];
+
   options.services.figaro = {
     enable = lib.mkEnableOption ''
       the figaro angelus as a system service. A switch that changes the
@@ -180,6 +185,21 @@ in
         was, so home mode is the way back; delete it once house mode is
         settled. A missing source fails the start: set this to null to begin
         with an empty store.
+      '';
+    };
+
+    valet.users = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      example = [ "gluck" ];
+      description = ''
+        House mode: people whose figaros' tools run as them, fenced, in their
+        own valet (services.figaro-valet). Each gets a box valet-<user> with
+        figaro_claim = "required" and a door under runtimeDir/boxes that only
+        his valet can reach (group figaro-valet-<user>), and linger, so the
+        valet answers while he is logged out. A figaro the owner mints naming
+        no sandbox runs in his valet ([sandbox] default). Estate mode has no
+        valet.
       '';
     };
 
@@ -287,6 +307,10 @@ in
         message = "services.figaro.owner and users reach the CLI door through figaro.socket, which sets its group and mode: set services.figaro.socketActivation = true.";
       }
     ]
+    ++ lib.optional (cfg.valet.users != [ ]) {
+      assertion = cfg.mode == "house";
+      message = "services.figaro.valet.users: estate mode has no person's files in play, so it runs no valet; tools there run in boxes.";
+    }
     ++ map (u: {
       assertion = uidOf u != null;
       message = "services.figaro: ${u} reaches the CLI door as user:<uid>, so users.users.${u}.uid must be pinned.";
@@ -304,11 +328,23 @@ in
       (lib.genAttrs doorUsers (_: {
         extraGroups = [ "figaro-door" ];
       }))
+      (lib.genAttrs cfg.valet.users (_: {
+        linger = lib.mkDefault true;
+      }))
     ];
     users.groups = {
       ${cfg.user}.gid = cfg.gid;
     }
-    // lib.optionalAttrs (doorUsers != [ ]) { figaro-door = { }; };
+    // lib.optionalAttrs (doorUsers != [ ]) { figaro-door = { }; }
+    // lib.listToAttrs (map (u: lib.nameValuePair (valetGroup u) { members = [ u ]; }) cfg.valet.users);
+
+    services.figaro-valet = lib.mkMerge [
+      { package = lib.mkDefault cfg.package; }
+      (lib.mkIf (cfg.valet.users != [ ]) {
+        inherit (cfg.valet) users;
+        door = lib.mkDefault "${cfg.runtimeDir}/boxes/valet-%u/door.sock";
+      })
+    ];
 
     services.figaro.settings = lib.mkMerge [
       { sandbox.local_tools = lib.mkDefault cfg.localTools; }
@@ -316,13 +352,27 @@ in
       (lib.mkIf (doorUsers != [ ]) {
         authz.peercred.uids = lib.listToAttrs (map (u: lib.nameValuePair (toString (uidOf u)) (principalOf u)) doorUsers);
       })
+      (lib.mkIf (cfg.valet.users != [ ]) {
+        sandbox.boxes = lib.listToAttrs (map (u: lib.nameValuePair (valetBox u) {
+          exec = "/run/figaro-valet/${u}/exec.sock";
+          door = valetDoor u;
+          outfits = lib.mkDefault [ "*" ];
+          providers = lib.mkDefault [ "*" ];
+          figaro_claim = "required";
+        }) cfg.valet.users);
+      })
+      (lib.mkIf (cfg.owner != null && builtins.elem cfg.owner cfg.valet.users) {
+        sandbox.default = lib.mkDefault (valetBox cfg.owner);
+      })
     ];
 
     systemd.tmpfiles.rules = [ "d ${cfg.stateDir} 0700 ${cfg.user} ${cfg.user} -" ]
       ++ lib.optionals cfg.socketActivation [
         "d ${cfg.runtimeDir} ${runtimeMode} ${cfg.user} ${cfg.user} -"
         "z ${cfg.runtimeDir}/angelus.sock ${cfg.socketMode} ${cfg.user} ${doorGroup} -"
-      ];
+      ]
+      ++ lib.optional (cfg.valet.users != [ ]) "d ${cfg.runtimeDir}/boxes 0751 ${cfg.user} ${cfg.user} -"
+      ++ map (u: "d ${cfg.runtimeDir}/boxes/${valetBox u} 2750 ${cfg.user} ${valetGroup u} -") cfg.valet.users;
 
     systemd.sockets.figaro = lib.mkIf cfg.socketActivation {
       description = "figaro angelus CLI door";
