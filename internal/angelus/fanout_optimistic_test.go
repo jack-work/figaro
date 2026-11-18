@@ -1,11 +1,14 @@
 package angelus
 
 import (
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 func TestAForkNeverWaitsOnTheHierarchyLock(t *testing.T) {
@@ -126,3 +129,28 @@ func benchmarkConcurrentForks(b *testing.B, n int) {
 func BenchmarkForks1(b *testing.B) { benchmarkConcurrentForks(b, 1) }
 func BenchmarkForks4(b *testing.B) { benchmarkConcurrentForks(b, 4) }
 func BenchmarkForks8(b *testing.B) { benchmarkConcurrentForks(b, 8) }
+
+func TestAKillTakesAChildBornAfterItsDeleteSetWasRead(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	top, _ := b.CreateConversation(outfit)
+	out, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top})
+	if err != nil {
+		t.Fatal(err)
+	}
+	late := out.Alternative
+	raw, _ := json.Marshal(top)
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.ReapedKey: raw}, nil)
+	if _, err := b.ApplyFormPrivileged(top, patch); err != nil {
+		t.Fatal(err)
+	}
+	taken, err := hs.h.reapLateBorn(b, top, []string{top}, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(taken) != 1 || taken[0] != late {
+		t.Fatalf("late births reaped = %v, want [%s]", taken, late)
+	}
+	if !hs.h.angelus.isReaped(late) {
+		t.Fatal("a child born during its parent's kill stayed live under a reaped parent")
+	}
+}

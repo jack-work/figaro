@@ -96,6 +96,11 @@ func (h *handlers) reapGroup(id string, recursive bool, until time.Time, expect 
 			return time.Time{}, true, fmt.Errorf("kill %s: reaping %s: %w", id, n, err)
 		}
 	}
+	late, err := h.reapLateBorn(rk, id, mark, patch)
+	if err != nil {
+		return time.Time{}, true, fmt.Errorf("kill %s: %w", id, err)
+	}
+	mark = append(mark, late...)
 	slog.Info("killed figaro, reaped until its grace runs out",
 		"id", id, "root", root, "nodes", len(mark), "purge", until.Format(time.RFC3339), "by", by)
 	return until, true, nil
@@ -109,5 +114,32 @@ func (h *handlers) stopAria(id string) {
 	}
 	if n := h.killSessions(id); n > 0 {
 		slog.Info("killed aria sessions", "id", id, "sessions", n)
+	}
+}
+
+func (h *handlers) reapLateBorn(rk killReaper, id string, marked []string, patch form.Patch) ([]string, error) {
+	done := make(map[string]bool, len(marked))
+	for _, n := range marked {
+		done[n] = true
+	}
+	var late []string
+	for {
+		var fresh []string
+		for _, n := range rk.DeleteSet(id) {
+			if !done[n] && !h.angelus.isReaped(n) {
+				fresh = append(fresh, n)
+			}
+		}
+		if len(fresh) == 0 {
+			return late, nil
+		}
+		for _, n := range fresh {
+			done[n] = true
+			h.stopAria(n)
+			if _, err := rk.ApplyFormPrivileged(n, patch); err != nil {
+				return late, fmt.Errorf("reaping %s, born during the kill: %w", n, err)
+			}
+			late = append(late, n)
+		}
 	}
 }
