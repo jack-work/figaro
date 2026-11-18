@@ -13,6 +13,54 @@ let
   principalOf = u: "user:${toString (uidOf u)}";
   doorGroup = if doorUsers != [ ] then "figaro-door" else cfg.user;
   runtimeMode = if doorUsers != [ ] then "0751" else "0750";
+  importStore = pkgs.writeShellApplication {
+    name = "figaro-import-store";
+    runtimeInputs = [
+      cfg.package
+      pkgs.coreutils
+      pkgs.util-linux
+    ];
+    text = ''
+      src=${lib.escapeShellArg (toString cfg.importFrom)}
+      dst=${lib.escapeShellArg cfg.stateDir}
+      if [ -e "$dst/arias" ]; then
+        exit 0
+      fi
+      if [ ! -d "$src/arias" ]; then
+        echo "figaro import: no store at $src/arias; set services.figaro.importFrom = null to start with an empty one" >&2
+        exit 1
+      fi
+      work=$(mktemp -d)
+      trap 'rm -rf "$work" "$dst/arias.import"' EXIT
+      export HOME="$work" XDG_STATE_HOME="$work" FIGARO_STATE_DIR="$work" FIGARO_CONFIG_DIR="$work" FIGARO_NO_SELF_SPAWN=1
+      rm -rf "$dst/arias.import"
+      snapshot=(figaro doctor snapshot --from "$src/arias" --arias 0 --max-mb 0 "$dst/arias.import")
+      rc=0
+      if [ -e "$src/.daemon.lock" ]; then
+        flock --nonblock --conflict-exit-code 75 "$src/.daemon.lock" "''${snapshot[@]}" || rc=$?
+      else
+        "''${snapshot[@]}" || rc=$?
+      fi
+      if [ "$rc" = 75 ]; then
+        echo "figaro import: a home-mode angelus holds $src; stop it (figaro rest, as its user) and the next start imports" >&2
+        exit 1
+      fi
+      if [ "$rc" != 0 ]; then
+        exit "$rc"
+      fi
+      for f in spool successions.json; do
+        if [ -e "$src/$f" ] && [ ! -e "$dst/$f" ]; then
+          cp -a --reflink=auto "$src/$f" "$dst/$f"
+          chown -R ${cfg.user}:${cfg.user} "$dst/$f"
+        fi
+      done
+      chown -R ${cfg.user}:${cfg.user} "$dst/arias.import"
+      mv "$dst/arias.import" "$dst/arias"
+      printf '%s %s\n' "$src" "$(date -Is)" > "$dst/imported-from"
+      chown ${cfg.user}:${cfg.user} "$dst/imported-from"
+      echo "figaro import: $src/arias is now $dst/arias; $src is left as it was"
+    '';
+  };
   configDir = pkgs.linkFarm "figaro-config" (
     lib.optional (cfg.settings != { }) {
       name = "config.toml";
@@ -115,6 +163,23 @@ in
         figaro-door and admitted by peer credentials as `user:<uid>`, holding
         what the policy gives them (the default policy gives them nothing).
         Each needs a pinned `users.users.<name>.uid`.
+      '';
+    };
+
+    importFrom = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "/home/gluck/.local/state/figaro";
+      description = ''
+        A home-mode state directory whose store is copied into `stateDir`
+        before the angelus first starts, once: only while `stateDir` holds
+        no store. The copy runs as root and is chowned to `user`; spool and
+        successions.json come with it, never hush, oauth or troupe keys.
+        While a home-mode angelus holds that store the start is refused, and
+        the next start after `figaro rest` imports. The source is left as it
+        was, so home mode is the way back; delete it once house mode is
+        settled. A missing source fails the start: set this to null to begin
+        with an empty store.
       '';
     };
 
@@ -296,6 +361,8 @@ in
       };
       serviceConfig = {
         Type = "exec";
+        ExecStartPre = lib.optional (cfg.importFrom != null) "+${lib.getExe importStore}";
+        TimeoutStartSec = lib.mkIf (cfg.importFrom != null) "1h";
         User = cfg.user;
         Group = cfg.user;
         ExecStart = "${lib.getExe cfg.package} --angelus";

@@ -411,7 +411,8 @@ daemon (`FIGARO_NO_SELF_SPAWN=1`). In house mode a person owns it:
 `[authz] owner = "user:<uid>"`, and he and `services.figaro.users` reach
 `/run/figaro/angelus.sock` (0660, group `figaro-door`) as `user:<uid>`. Both
 modes set `[sandbox] local_tools = false`, since a tool run as uid figaro
-could rewrite the store; tools run in boxes.
+could rewrite the store; tools run in boxes. `services.figaro.importFrom`
+copies a home-mode store in once, before the first start.
 
 ## Roadmap
 
