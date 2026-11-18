@@ -56,6 +56,9 @@ type Angelus struct {
 	Topology     *hierarchy.Hierarchy
 	topologyOnce sync.Once
 
+	fanout     *fanoutCache
+	fanoutOnce sync.Once
+
 	reclaimOnce sync.Once
 	reclaim     *reclaimer
 
@@ -204,6 +207,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 
 	_ = a.StartPprof(ctx)
 
+	a.Go("fanout counts", func() { a.fanoutCounts() })
 	a.startSweeps(ctx)
 	a.Go("reachability", func() { a.keepReachable(ctx, pidPath) })
 	a.Go("reclaimer", func() { a.reclaims().run(ctx) })
@@ -255,6 +259,7 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 			sweep(ctx, "hibernate", a.hibernateIdleArias)
 			sweep(ctx, "cap_live", a.capLiveArias)
 			sweep(ctx, "expire_ttl", a.expireTTL)
+			sweep(ctx, "fanout_reconcile", a.reconcileFanout)
 			if a.successionSweep != nil {
 				sweep(ctx, "successions", a.successionSweep)
 			}
