@@ -58,6 +58,23 @@ func (a *Agent) attachFormDeltas(turns []aria.Turn, entries []arialog.Entry[mess
 	return turns
 }
 
+// composeFrom composes the turns opening at or after from, with the form
+// deltas seeded from the record before it.
+func (a *Agent) composeFrom(from uint64) []aria.Turn {
+	entries := a.figLog.ReadFrom(from, 0)
+	turns := a.projTurns(unwrapMessages(entries))
+	fb, ok := a.backend.(formdelta.Backend)
+	if !ok || len(turns) == 0 || len(entries) == 0 {
+		return turns
+	}
+	seed := formdelta.Seed{}
+	if prev, _ := a.figLog.ReadPage(0, from, 1); len(prev) > 0 {
+		seed = formdelta.SeedFrom(prev[len(prev)-1])
+	}
+	formdelta.Attach(turns, formdelta.PerRecordFrom(fb, a.id, seed, entries))
+	return turns
+}
+
 // materializeTurns reads the log once, composes, and attaches form deltas.
 func (a *Agent) materializeTurns() []aria.Turn {
 	if a.figLog == nil {

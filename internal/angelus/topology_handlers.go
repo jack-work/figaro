@@ -199,6 +199,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		Form:            cbState,
 		Settings:        loaded,
 		UICache:         h.angelus.UICache,
+		SeedTurns:       h.reader().SeedAgent,
 		Decider:         h.methodAsker(),
 		DefaultForm:     h.defaultForm,
 		Spool:           h.angelus.Spool,

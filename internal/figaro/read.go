@@ -12,6 +12,12 @@ func (a *Agent) hydrate() {
 	if a.ariaSrv.LastTurn() > 0 || a.ariaSrv.HasOpen() {
 		return
 	}
+	if a.seedTurns != nil && a.figLog != nil {
+		if from, ok := a.seedTurns(a.id, a.ariaSrv); ok {
+			a.ariaSrv.AppendSealed(a.composeFrom(from))
+			return
+		}
+	}
 	a.ariaSrv.AdoptIfEmpty(a.materializeTurns())
 }
 
