@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,6 +121,27 @@ func TestDetachCancelledPublishesNothing(t *testing.T) {
 	}
 	if err := f.Detach(node); err != nil {
 		t.Fatalf("detach after a cancelled one: %v", err)
+	}
+}
+
+func TestDetachPatchesTheIndexARebuildWouldRead(t *testing.T) {
+	f, _, _, child := seedDetachable(t)
+	if err := f.Detach(f.head(string(child))); err != nil {
+		t.Fatal(err)
+	}
+	patched := map[string]NodeInfo{}
+	for k, v := range f.idx.All() {
+		patched[k] = *v
+	}
+	if err := f.Refresh(); err != nil {
+		t.Fatal(err)
+	}
+	rebuilt := map[string]NodeInfo{}
+	for k, v := range f.idx.All() {
+		rebuilt[k] = *v
+	}
+	if !maps.Equal(patched, rebuilt) {
+		t.Fatalf("index after detach\n%v\nrebuilt from disk\n%v", patched, rebuilt)
 	}
 }
 
