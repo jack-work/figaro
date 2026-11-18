@@ -40,9 +40,14 @@ func (f Fence) Build() error {
 	if err := tmpfs(root, "0755"); err != nil {
 		return err
 	}
+	rootFd, err := unix.Open(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("fence: open the new root: %w", err)
+	}
+	defer unix.Close(rootFd)
 	for _, p := range systemTrees {
 		if _, err := os.Stat(p); err == nil {
-			if err := bind(p, filepath.Join(root, p), unix.MOUNT_ATTR_RDONLY|unix.MOUNT_ATTR_NOSUID|unix.MOUNT_ATTR_NODEV); err != nil {
+			if err := bind(rootFd, p, p, unix.MOUNT_ATTR_RDONLY|unix.MOUNT_ATTR_NOSUID|unix.MOUNT_ATTR_NODEV, false); err != nil {
 				return err
 			}
 		}
@@ -73,22 +78,26 @@ func (f Fence) Build() error {
 		if !g.Write {
 			attrs |= unix.MOUNT_ATTR_RDONLY
 		}
-		if err := bind(g.Path, filepath.Join(root, g.Path), attrs); err != nil {
+		if err := bind(rootFd, g.Path, g.Path, attrs, true); err != nil {
+			if errors.Is(err, errMoved) {
+				fmt.Fprintf(os.Stderr, "valet: grant of %s skipped: %v\n", g.Path, err)
+				continue
+			}
 			return err
 		}
 	}
 	for _, p := range f.Hide {
-		if err := hide(filepath.Join(root, p)); err != nil {
+		if err := hide(rootFd, p); err != nil {
 			return err
 		}
 	}
 	if f.Scratch != "" {
-		if err := bind(f.Scratch, filepath.Join(root, f.Scratch), unix.MOUNT_ATTR_NOSUID|unix.MOUNT_ATTR_NODEV); err != nil {
+		if err := bind(rootFd, f.Scratch, f.Scratch, unix.MOUNT_ATTR_NOSUID|unix.MOUNT_ATTR_NODEV, false); err != nil {
 			return err
 		}
 	}
 	if f.Door != "" {
-		if err := bind(f.Door, filepath.Join(root, f.Door), unix.MOUNT_ATTR_NOSUID|unix.MOUNT_ATTR_NODEV|unix.MOUNT_ATTR_NOEXEC); err != nil {
+		if err := bind(rootFd, f.Door, f.Door, unix.MOUNT_ATTR_NOSUID|unix.MOUNT_ATTR_NODEV|unix.MOUNT_ATTR_NOEXEC, false); err != nil {
 			return err
 		}
 	}
@@ -114,54 +123,164 @@ func mkdirIn(root, p string) error {
 	return nil
 }
 
-func bind(src, target string, attrs uint64) error {
-	fi, err := os.Stat(src)
-	if err != nil {
-		return fmt.Errorf("fence: %w", err)
+var errMoved = errors.New("a symlink now stands on its path")
+
+func beneath(dirFd int, name string, flags int) (int, error) {
+	return unix.Openat2(dirFd, name, &unix.OpenHow{
+		Flags:   uint64(flags | unix.O_CLOEXEC),
+		Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
+	})
+}
+
+func openSource(src string, exact bool) (int, error) {
+	how := &unix.OpenHow{Flags: unix.O_PATH | unix.O_CLOEXEC}
+	if exact {
+		how.Resolve = unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS
 	}
-	if fi.IsDir() {
-		err = os.MkdirAll(target, 0o755)
-	} else if err = os.MkdirAll(filepath.Dir(target), 0o755); err == nil {
-		var f *os.File
-		if f, err = os.OpenFile(target, os.O_CREATE|os.O_RDONLY, 0o644); err == nil {
-			f.Close()
+	fd, err := unix.Openat2(unix.AT_FDCWD, src, how)
+	if errors.Is(err, unix.ELOOP) {
+		return -1, fmt.Errorf("fence: %s: %w", src, errMoved)
+	}
+	if err != nil {
+		return -1, fmt.Errorf("fence: open %s: %w", src, err)
+	}
+	if exact {
+		if got, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", fd)); err != nil || got != src {
+			unix.Close(fd)
+			return -1, fmt.Errorf("fence: %s resolves to %q: %w", src, got, errMoved)
 		}
 	}
+	return fd, nil
+}
+
+func mountPoint(rootFd int, path string, dir bool) (int, error) {
+	at, err := unix.Dup(rootFd)
 	if err != nil {
-		return fmt.Errorf("fence: mount point for %s: %w", src, err)
+		return -1, fmt.Errorf("fence: %w", err)
 	}
-	if err := unix.Mount(src, target, "", unix.MS_BIND|unix.MS_REC, ""); err != nil {
-		return fmt.Errorf("fence: bind %s: %w", src, err)
+	parts := strings.Split(strings.Trim(filepath.Clean(path), "/"), "/")
+	for i, name := range parts {
+		last := i == len(parts)-1
+		var made error
+		if !last || dir {
+			made = unix.Mkdirat(at, name, 0o755)
+		} else if fd, err := unix.Openat(at, name, unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_RDONLY|unix.O_CLOEXEC, 0o644); err == nil {
+			unix.Close(fd)
+		} else {
+			made = err
+		}
+		if made != nil && !errors.Is(made, unix.EEXIST) {
+			unix.Close(at)
+			return -1, fmt.Errorf("fence: mount point %s: %w", path, made)
+		}
+		flags := unix.O_PATH
+		if !last || dir {
+			flags |= unix.O_DIRECTORY
+		}
+		next, err := beneath(at, name, flags)
+		unix.Close(at)
+		if errors.Is(err, unix.ELOOP) {
+			return -1, fmt.Errorf("fence: mount point %s: %w", path, errMoved)
+		}
+		if err != nil {
+			return -1, fmt.Errorf("fence: mount point %s: %w", path, err)
+		}
+		at = next
 	}
-	if err := unix.MountSetattr(unix.AT_FDCWD, target, unix.AT_RECURSIVE, &unix.MountAttr{Attr_set: attrs}); err != nil {
-		return fmt.Errorf("fence: restrict %s: %w", src, err)
+	return at, nil
+}
+
+func isDirFd(fd int) (bool, error) {
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		return false, err
+	}
+	return st.Mode&unix.S_IFMT == unix.S_IFDIR, nil
+}
+
+func attach(srcFd, targetFd int, attrs uint64) error {
+	mfd, err := unix.OpenTree(srcFd, "", unix.OPEN_TREE_CLONE|unix.OPEN_TREE_CLOEXEC|unix.AT_RECURSIVE|unix.AT_EMPTY_PATH)
+	if err != nil {
+		return fmt.Errorf("clone: %w", err)
+	}
+	defer unix.Close(mfd)
+	if attrs != 0 {
+		if err := unix.MountSetattr(mfd, "", unix.AT_EMPTY_PATH|unix.AT_RECURSIVE, &unix.MountAttr{Attr_set: attrs}); err != nil {
+			return fmt.Errorf("restrict: %w", err)
+		}
+	}
+	if err := unix.MoveMount(mfd, "", targetFd, "", unix.MOVE_MOUNT_F_EMPTY_PATH|unix.MOVE_MOUNT_T_EMPTY_PATH); err != nil {
+		return fmt.Errorf("attach: %w", err)
 	}
 	return nil
 }
 
-func hide(target string) error {
-	fi, err := os.Lstat(target)
-	if errors.Is(err, os.ErrNotExist) {
+func bind(rootFd int, src, at string, attrs uint64, exact bool) error {
+	sfd, err := openSource(src, exact)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(sfd)
+	dir, err := isDirFd(sfd)
+	if err != nil {
+		return fmt.Errorf("fence: %s: %w", src, err)
+	}
+	tfd, err := mountPoint(rootFd, at, dir)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(tfd)
+	if err := attach(sfd, tfd, attrs); err != nil {
+		return fmt.Errorf("fence: bind %s: %w", src, err)
+	}
+	return nil
+}
+
+func hide(rootFd int, path string) error {
+	fd, err := beneath(rootFd, strings.TrimPrefix(filepath.Clean(path), "/"), unix.O_PATH)
+	if errors.Is(err, unix.ENOENT) {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("fence: %w", err)
+		return fmt.Errorf("fence: hide %s: %w", path, err)
 	}
-	if fi.IsDir() {
-		if err := tmpfs(target, "0500"); err != nil {
+	defer unix.Close(fd)
+	dir, err := isDirFd(fd)
+	if err != nil {
+		return fmt.Errorf("fence: hide %s: %w", path, err)
+	}
+	sealed := unix.MOUNT_ATTR_RDONLY | unix.MOUNT_ATTR_NOSUID | unix.MOUNT_ATTR_NODEV | unix.MOUNT_ATTR_NOEXEC
+	if !dir {
+		null, err := openSource("/dev/null", false)
+		if err != nil {
 			return err
 		}
-		if err := unix.MountSetattr(unix.AT_FDCWD, target, 0, &unix.MountAttr{
-			Attr_set: unix.MOUNT_ATTR_RDONLY | unix.MOUNT_ATTR_NOSUID | unix.MOUNT_ATTR_NODEV | unix.MOUNT_ATTR_NOEXEC,
-		}); err != nil {
-			return fmt.Errorf("fence: seal hidden %s: %w", target, err)
+		defer unix.Close(null)
+		if err := attach(null, fd, uint64(sealed)); err != nil {
+			return fmt.Errorf("fence: hide %s: %w", path, err)
 		}
 		return nil
 	}
-	if fi.Mode()&os.ModeSymlink != 0 {
-		return nil
+	fsfd, err := unix.Fsopen("tmpfs", unix.FSOPEN_CLOEXEC)
+	if err != nil {
+		return fmt.Errorf("fence: hide %s: %w", path, err)
 	}
-	return bind("/dev/null", target, unix.MOUNT_ATTR_RDONLY|unix.MOUNT_ATTR_NOSUID|unix.MOUNT_ATTR_NOEXEC)
+	defer unix.Close(fsfd)
+	if err := unix.FsconfigSetString(fsfd, "mode", "0500"); err != nil {
+		return fmt.Errorf("fence: hide %s: %w", path, err)
+	}
+	if err := unix.FsconfigCreate(fsfd); err != nil {
+		return fmt.Errorf("fence: hide %s: %w", path, err)
+	}
+	mfd, err := unix.Fsmount(fsfd, unix.FSMOUNT_CLOEXEC, sealed)
+	if err != nil {
+		return fmt.Errorf("fence: hide %s: %w", path, err)
+	}
+	defer unix.Close(mfd)
+	if err := unix.MoveMount(mfd, "", fd, "", unix.MOVE_MOUNT_F_EMPTY_PATH|unix.MOVE_MOUNT_T_EMPTY_PATH); err != nil {
+		return fmt.Errorf("fence: hide %s: %w", path, err)
+	}
+	return nil
 }
 
 func runLinks(root string) error {
@@ -196,8 +315,13 @@ func devices(root string) error {
 	if err := tmpfs(dev, "0755"); err != nil {
 		return err
 	}
+	devFd, err := unix.Open(dev, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("fence: %w", err)
+	}
+	defer unix.Close(devFd)
 	for _, n := range devNodes {
-		if err := bind("/dev/"+n, filepath.Join(dev, n), unix.MOUNT_ATTR_NOSUID|unix.MOUNT_ATTR_NOEXEC); err != nil {
+		if err := bind(devFd, "/dev/"+n, n, unix.MOUNT_ATTR_NOSUID|unix.MOUNT_ATTR_NOEXEC, false); err != nil {
 			return err
 		}
 	}

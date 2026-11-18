@@ -357,3 +357,44 @@ func TestLandlockEnforcesReadOnlyAndAbstractSocketScope(t *testing.T) {
 		t.Fatalf("landlock helper failed: %v\n%s", err, out)
 	}
 }
+
+// A tool holding rw on a tree can replace the parent of a nested grant with a
+// symlink; the next fence must not follow it and mount what it points at.
+func TestASymlinkPlantedOverANestedGrantRedirectsNothing(t *testing.T) {
+	w := newWorld(t)
+	inner := filepath.Join(w.granted, "a", "b")
+	if err := os.MkdirAll(inner, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inner, "file"), []byte("inner\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tab, err := Load(w.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tab.Add(Grant{Figaro: "3006ff4b42ca", Path: inner, Mode: "rw", Granted: time.Now(), Expires: time.Now().Add(time.Hour)})
+	if err := tab.Save(w.state); err != nil {
+		t.Fatal(err)
+	}
+	first, _, err := w.open(t, "3006ff4b42cafe", w.granted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := run(t, first, "cat a/b/file; mv a a2 && mkdir a && ln -s ../.. a/b && echo planted"); !strings.Contains(got, "inner") || !strings.Contains(got, "planted") {
+		t.Fatalf("the first call could not plant the swap: %q", got)
+	}
+	first.Close()
+	second, _, err := w.open(t, "3006ff4b42cafe", w.granted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := run(t, second, "test -e "+filepath.Join(w.secret, "file")+" && echo SECRET-VISIBLE || echo secret-absent; "+
+		"{ echo pwned > "+filepath.Join(w.secret, "planted")+"; } 2>/dev/null && echo SECRET-WRITABLE || echo secret-unwritable")
+	if strings.TrimSpace(got) != "secret-absent\nsecret-unwritable" {
+		t.Errorf("the second call reached an ungranted tree: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(w.secret, "planted")); err == nil {
+		t.Error("a write landed in an ungranted tree on the host")
+	}
+}
