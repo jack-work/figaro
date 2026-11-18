@@ -40,7 +40,7 @@ func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
 		},
 		Empty:        a.ownsNoMessages,
 		MintPlaces:   a.mintPlaces,
-		FanoutLimit:  a.fanoutLimitOf,
+		FanoutLimit:  a.fanoutLimit,
 		LiveChildren: a.liveChildCount,
 		Live:         a.isLiveAria,
 		SwapLimit:    a.swapLimit,
@@ -48,15 +48,12 @@ func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
 	}
 }
 
-func (a *Angelus) fanoutLimitOf(id string) (int, bool) {
-	max, ok, err := a.fanoutLimit(id)
-	if err != nil {
-		return 0, false
-	}
-	return max, ok
-}
-
 func (a *Angelus) fanoutLimit(id string) (int, bool, error) {
+	if a.Backend != nil {
+		if n, ok := a.Backend.Node(id); !ok || n.Kind == nullKind || n.Kind == outfitKind {
+			return 0, false, nil
+		}
+	}
 	return a.fanoutLimitHeld(id, id)
 }
 

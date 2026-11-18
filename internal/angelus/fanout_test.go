@@ -524,7 +524,7 @@ func TestADemoteUnderANonForkMovesNoLimit(t *testing.T) {
 	}
 }
 
-// fanoutLimitOf also reads a role form's own max_children: whoever holds
+// fanoutLimit also reads a role form's own max_children: whoever holds
 // the role is bound by the tighter of its own value and the role's, so
 // the limit survives a succession even when the new holder's personal
 // form carries none at all.
@@ -542,8 +542,8 @@ func TestFanoutLimitOfIsTheTighterOfTheHoldersOwnAndEveryRoleItHolds(t *testing.
 	targetRaw, _ := json.Marshal(holder)
 	roleMax, _ := json.Marshal(1)
 	role := mintForm(t, hs.h, "target-aria", string(targetRaw), form.FanoutMaxChildrenKey, string(roleMax))
-	if max, ok := hs.h.angelus.fanoutLimitOf(holder); !ok || max != 1 {
-		t.Fatalf("fanoutLimitOf(holder) = %d, ok=%v, want 1 from the role %s (holder's own form carries no key)", max, ok, role)
+	if max, ok, err := hs.h.angelus.fanoutLimit(holder); err != nil || !ok || max != 1 {
+		t.Fatalf("fanoutLimit(holder) = %d, ok=%v, err=%v, want 1 from the role %s (holder's own form carries no key)", max, ok, err, role)
 	}
 
 	// grandparent has two children (holder and its sibling); demoting
@@ -753,4 +753,22 @@ func keyOnBackend(t *testing.T, b *store.XwalBackend, id, key string) (string, b
 	}
 	v, ok := snap.Get(key)
 	return string(v), ok
+}
+
+// A limit the guard cannot read refuses the reparent rather than waving it
+// through as unlimited.
+func TestAnUnreadableLimitRefusesTheReparent(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	top, _ := b.CreateConversation(outfit)
+	other, _ := b.CreateConversation(outfit)
+	applyKeys(t, b, top, map[string]any{form.FanoutMaxChildrenKey: "lots"})
+
+	raw, _ := json.Marshal(rpc.PlaceRequest{FigaroID: other, Under: top})
+	_, err := hs.Map[rpc.MethodPlace](inProcess(context.Background()), raw)
+	if err == nil || !strings.Contains(err.Error(), "cannot be read") {
+		t.Fatalf("placing under a figaro whose max_children is unreadable = %v, want refused", err)
+	}
+	if got := drawnChildren(t, hs, top); len(got) != 0 {
+		t.Fatalf("top's children after the refusal = %v, want none", got)
+	}
 }
