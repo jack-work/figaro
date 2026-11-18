@@ -4,9 +4,11 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -28,6 +30,11 @@ func stopPidCaptured(t *testing.T, pid int, force bool) (exited bool, afterExitR
 func TestStopPidRefusesAnotherUsersPidAtOnce(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("needs non-root EPERM on pid 1")
+	}
+	// In a pid namespace (the nix build sandbox) pid 1 is this test's own
+	// builder: signalling it would kill the build.
+	if err := syscall.Kill(1, 0); !errors.Is(err, syscall.EPERM) {
+		t.Skipf("pid 1 is signalable here (%v); it may be our own ancestor", err)
 	}
 	for _, force := range []bool{false, true} {
 		exited, ran, errs, took := stopPidCaptured(t, 1, force)
