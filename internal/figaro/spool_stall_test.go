@@ -37,9 +37,23 @@ func TestAQueuedPromptDoesNotWaitForTheSpoolWrite(t *testing.T) {
 		a.Kill()
 	})
 
-	done := make(chan struct{})
+	sent := make(chan struct{})
 	go func() {
 		a.SubmitPrompt(rpc.QuaRequest{Text: "first"})
+		close(sent)
+	}()
+	select {
+	case <-sent:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a send waited for the spool write")
+	}
+	select {
+	case <-stubborn.started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first turn never reached the provider")
+	}
+	done := make(chan struct{})
+	go func() {
 		a.SubmitPrompt(rpc.QuaRequest{Text: "queued behind a stalled disk"})
 		close(done)
 	}()
