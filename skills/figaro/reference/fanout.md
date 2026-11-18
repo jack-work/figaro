@@ -1,4 +1,4 @@
-# Fan-out limits: `system.fanout.max_children` and the `mint` verb
+# Fan-out limits: `system.fanout.max_children`, `system.fanout.mint` and the `mint` verb
 
 ## `system.fanout.max_children`
 
@@ -56,6 +56,69 @@ a descendant of the holder in the drawn tree, or the holder's direct drawn
 parent when that parent was forked from the holder: the shape `succeed`
 leaves after its demote. An ancestor that merely sits above the holder (a
 lead, the King) is refused. The owner acting with no figaro label is exempt.
+
+## `system.fanout.mint`: who may `figaro new`
+
+A figaro may not create a top-level figaro unless it holds mint. Forks are
+how a figaro fans out; `figaro new` and `figaro bind` (`figaro.create`,
+`form.bind`) are for Gluck and for whoever he licenses. No policy file is
+needed: the daemon applies this on every door.
+
+A call that carries a figaro label (`FIGARO_ARIA`) on an unboxed door is
+refused unless that figaro's effective `system.fanout.mint` is `true`:
+
+```
+mint: <id> may not create a top-level figaro; fork yourself instead (figaro fork <id>:1 ...)
+```
+
+Effective means its own form or any role it holds says `true`. A call with
+no label (Gluck at a terminal) is allowed as before. Boxed callers keep the
+policy path below: their box role needs `mint:*`. When a policy is in force
+on an unboxed door, the policy and the key must both allow it.
+
+The key is protected, with the writers of `max_children`:
+
+- the owner, unlabeled, sets any value on any form, a role form included;
+- an ancestor figaro sets it on a descendant only if it holds mint itself
+  (own form or role); clearing it needs ancestry only;
+- a figaro never sets its own, and no labeled figaro sets it on a role form
+  or on a form it mints, since neither has it as an ancestor.
+
+A claimed fork (`FIGARO_ARIA` on the call) is born without the key even when
+its parent has it, unless the fork grants it in the same call
+(`fork -S system.fanout.mint=true`, checked as a grant). An unclaimed fork
+inherits it as it inherits everything else.
+
+### Succession
+
+A role carrying `system.fanout.mint: true` licenses whoever holds the role,
+and only while they hold it, so the seat keeps it through every succession
+with nothing copied. A holder's own key moves in the succeed swap the way
+`max_children` does (the successor takes it, the predecessor loses it), and
+daemon-side succession copies it onto the successor it mints.
+
+### Licensing the King
+
+Put the key on the King's role, from Gluck's own terminal (no figaro label;
+inside a figaro's shell add `env -u FIGARO_ARIA`, or the call is the
+figaro's and is refused):
+
+```sh
+figaro set --id @<King role> system.fanout.mint true
+```
+
+`figaro set --id @<role>` writes the role form itself, not its holder's
+board (checked on 0.74.0 against a scratch role). `figaro state show --id
+@<King role> -j` confirms it. To revoke: `figaro form delete --id @<King
+role> system.fanout.mint`, or set it `false`.
+
+### What it does not stop
+
+The label is the caller's assertion. A figaro whose tool shell runs
+`env -u FIGARO_ARIA figaro new ...` reaches the local socket as Gluck does
+and is allowed. This default stops a figaro that follows its instructions,
+not one working around them; closing that gap needs the daemon to attribute
+a local call by its peer process rather than by its environment.
 
 ## `mint`: the verb `figaro.create` carries alone
 
