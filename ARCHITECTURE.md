@@ -395,6 +395,15 @@ $XDG_RUNTIME_DIR/figaro/          angelus.sock, angelus.pid
 └── arias/<id>/...                see "Streams" above
 ```
 
+The service manager may hold the doors instead. With
+`services.figaro.socketActivation`, `figaro.socket` owns `angelus.sock` and
+the angelus takes its listeners from `LISTEN_FDS` by name: `angelus` for the
+CLI door, `web` and `node` for those doors when they are configured. A daemon
+handed a socket never binds, rebinds or removes its path, so a call made while
+the service is stopped waits in the socket's queue and starts it. Admission
+does not move: peer credentials and policy still judge every connection. Box
+doors bind their own sockets, because a config reload reopens them.
+
 ## Roadmap
 
 - **A public frontend protocol.** `figaro.hello` carries a version and

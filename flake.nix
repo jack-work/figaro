@@ -209,6 +209,7 @@
       } // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
         container-vm = import ./nix/tests/container.nix { inherit pkgs self; };
         module-vm = import ./nix/tests/module.nix { inherit pkgs self; };
+        socket-activation-vm = import ./nix/tests/socket-activation.nix { inherit pkgs self; };
         hm-module = import ./nix/tests/hm-module.nix { inherit pkgs self; };
       });
 
