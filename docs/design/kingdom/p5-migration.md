@@ -165,6 +165,23 @@ succession carries it to the successor with `system.scopes`,
 (added in this change). A holder minted by hand needs it written, or carried
 by its seat outfit once E6 renders per-seat outfits.
 
+## A label on the local door is never the owner
+
+A call on the local door that names a figaro (FIGARO_ARIA set, as in every
+figaro's own shell) is judged as that figaro, never as the owner. It writes
+the keys its scopes reach, a protected key (system.scopes, system.sandbox,
+the fanout keys, system.child_policy, target-aria) only on a figaro below
+it, and an owner-held key (system.model, system.provider, system.ttl,
+system.tools, system.retirement, succession-policy, ...) nowhere. It still
+retires within its reach. Before P5 such a call skipped every key rule
+unless its params named one of a few words.
+
+Gluck, or a script acting as him, writes owner-held keys unlabelled:
+`env -u FIGARO_ARIA figaro set ...`. Nothing in the fleet's routine needs a
+figaro to write one: a seat that switched its own model through a labelled
+`figaro set system.model` now asks Gluck, or carries the model in its
+outfit.
+
 ## Order
 
 1. Before the P5 binary runs: write `["*:*"]` on the King, Engineer,

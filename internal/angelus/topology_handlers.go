@@ -670,7 +670,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	if req.Outfit == "" {
 		return nil, errors.New("import: no outfit named")
 	}
-	if !h.callerOwns(ctx) {
+	if !h.callerKeysOf(ctx).owns {
 		if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, &req.OutfitPatch); err != nil {
 			return nil, fmt.Errorf("import: outfit %q: %w", req.Outfit, err)
 		}
