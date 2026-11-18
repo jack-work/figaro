@@ -15,7 +15,7 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 - E1 LOWs, then E3: llama-widow `937e1be4`
 - P5 finish (E8 findings), then the fold: `eb4da540` (took over from blouse-pretzel; handoff /var/tmp/kingdom-part-p2p5-handoff.md)
 - P6: keepsake-avalanche `874637fe`
-- P7b laws: urchin-yacht `ee3ef672`
+- P7b laws: urchin-yacht `ee3ef672`, READY at `lane/laws` 694f07b16 on P5; folds after P5 (fork-head number to settle)
 - E4 house mode: utensil-slapping `ef74d1d6`
 - S1 auto-normalize: PARKED at `lane/auto-normalize` 67af48da5 (harvest kingdom-s1-auto-normalize.md); restacked last by a fresh fork
 - E8 kingdom module: cheroot-config `lane/kingdom-module` 45fa9c1, SHIP (ocular-epidemic), staged with El Mayor; lands after the P5+P6 release. Follow-ups: drop read:aria:@role once P5 resolves roles on the daemon side; rerun seats-e2e on the P5 build; p5-migration.md lands with P5
