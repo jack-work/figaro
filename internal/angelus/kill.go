@@ -26,6 +26,7 @@ func (h *handlers) reapKilled(ctx context.Context, by hierarchy.Principal, id st
 		return err
 	})
 	if err != nil {
+		h.settlePartialReap(step)
 		return time.Time{}, step.reaped, deleteSetChanged(err)
 	}
 	return h.finishReap(step)
@@ -34,9 +35,24 @@ func (h *handlers) reapKilled(ctx context.Context, by hierarchy.Principal, id st
 func (h *handlers) reapGroup(id string, recursive bool, until time.Time, expect []string, by string) (time.Time, bool, error) {
 	step, err := h.markReaped(id, recursive, until, expect, by)
 	if err != nil {
+		h.settlePartialReap(step)
 		return time.Time{}, step.reaped, err
 	}
 	return h.finishReap(step)
+}
+
+func (h *handlers) settlePartialReap(s reapStep) {
+	if len(s.pending) == 0 {
+		return
+	}
+	for _, n := range s.stop {
+		h.stopAria(n)
+	}
+	for i, wait := range s.pending {
+		if _, err := wait(); err != nil {
+			slog.Warn("kill: a mark submitted before the kill failed did not land", "id", s.id, "node", s.marked[i], "err", err)
+		}
+	}
 }
 
 type reapStep struct {
@@ -119,8 +135,8 @@ func (h *handlers) markReaped(id string, recursive bool, until time.Time, expect
 			return step, fmt.Errorf("kill %s: reaping %s: %w", id, n, err)
 		}
 		step.pending = append(step.pending, wait)
+		step.marked = append(step.marked, n)
 	}
-	step.marked = mark
 	return step, nil
 }
 

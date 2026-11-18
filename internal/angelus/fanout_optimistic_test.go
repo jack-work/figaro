@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -230,5 +231,61 @@ func TestAReapWaitingOnItsFormSyncHoldsNoHierarchyLock(t *testing.T) {
 	close(slow.stall)
 	if err := <-killed; err != nil {
 		t.Fatalf("kill: %v", err)
+	}
+}
+
+type failingSecondMarkBackend struct {
+	*store.XwalBackend
+	stall  chan struct{}
+	mu     sync.Mutex
+	marked []string
+}
+
+func (f *failingSecondMarkBackend) SubmitFormPrivileged(id string, patch form.Patch) (func() (uint64, error), error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.marked) == 1 {
+		return nil, errors.New("the form is closed")
+	}
+	wait, err := f.XwalBackend.SubmitFormPrivileged(id, patch)
+	if err != nil {
+		return nil, err
+	}
+	f.marked = append(f.marked, id)
+	return func() (uint64, error) {
+		<-f.stall
+		return wait()
+	}, nil
+}
+
+func TestAKillThatFailsMidwayStillAwaitsTheMarksItSubmitted(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	victim, _ := b.CreateConversation(outfit)
+	if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: victim}); err != nil {
+		t.Fatal(err)
+	}
+	f := &failingSecondMarkBackend{XwalBackend: b, stall: make(chan struct{})}
+	hs.h.angelus.Backend = f
+	killed := make(chan error, 1)
+	go func() {
+		raw, _ := json.Marshal(rpc.KillRequest{FigaroID: victim, Recursive: true, GraceMS: time.Hour.Milliseconds()})
+		_, err := hs.Map[rpc.MethodKill](inProcess(context.Background()), raw)
+		killed <- err
+	}()
+	select {
+	case err := <-killed:
+		close(f.stall)
+		t.Fatalf("the kill returned before the mark it had submitted was durable: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(f.stall)
+	if err := <-killed; err == nil {
+		t.Fatal("a kill whose second mark failed reported success")
+	}
+	f.mu.Lock()
+	first := f.marked[0]
+	f.mu.Unlock()
+	if !hs.h.angelus.isReaped(first) {
+		t.Fatalf("the mark submitted before the failure (%s) did not land", first)
 	}
 }
