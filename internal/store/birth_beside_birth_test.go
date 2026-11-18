@@ -69,3 +69,42 @@ func TestARemovalWaitsForABirthInProgress(t *testing.T) {
 		t.Fatal("the removal never ran after the birth ended")
 	}
 }
+
+// A birth's fsync can stall for seconds on a loaded disk. It runs after the
+// store lock is released, so a listing that must rebuild the topology does
+// not wait behind it.
+func TestABirthsStalledSyncHoldsNoStoreLock(t *testing.T) {
+	be, id := realAria(t, 4, 32)
+	const child = "c0ffee00c0ffee00c0ffee00c0ffee00"
+	drawn := drawTrunkID
+	drawTrunkID = func() string { return child }
+	t.Cleanup(func() { drawTrunkID = drawn })
+
+	gate := make(chan struct{})
+	entered := make(chan struct{}, 1)
+	be.store.syncs.get(syncKey{aria: child, channel: chanIR}, func(uint64) error {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-gate
+		return nil
+	})
+	t.Cleanup(func() { close(gate) })
+
+	born := make(chan error, 1)
+	go func() {
+		_, _, _, err := be.store.ForkWith(id, 0, birthPatch("stalled"))
+		born <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the birth never reached its sync")
+	}
+	within(t, "a listing", 100*time.Millisecond, func() error {
+		be.store.Nodes()
+		return nil
+	})
+	require.NoError(t, <-born)
+}
