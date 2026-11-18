@@ -2,6 +2,7 @@ package xwal
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -24,72 +25,105 @@ var ErrAbsorbConflict = errors.New("xwal: a segment below the fork base is not t
 // Detach makes a node self-sufficient: it absorbs the history prefix it
 // currently reads through an ancestor, and stops pointing at one.
 func (t *Trunks) Detach(node string) error {
+	return t.DetachContext(context.Background(), node)
+}
+
+func (t *Trunks) DetachContext(ctx context.Context, node string) error {
 	if node == "" {
 		return fmt.Errorf("xwal: cannot detach the root")
+	}
+	unlockNode := lockAbsorb("detach\x00" + canonicalDir(t.irDir(node)))
+	defer unlockNode()
+
+	plan, err := t.planDetach(ctx, node)
+	if err != nil {
+		return err
+	}
+	defer plan.discard()
+	if t.testDetachPlanned != nil {
+		t.testDetachPlanned(node)
 	}
 	endMutation, err := t.beginFlatCreate()
 	if err != nil {
 		return err
 	}
 	defer endMutation()
-	unlockNode := lockAbsorb("detach\x00" + canonicalDir(t.irDir(node)))
-	defer unlockNode()
+	return t.publishDetach(node, plan)
+}
 
+type absorbedCopy struct {
+	channel, dir string
+	from, base   uint64
+	scratch      string
+}
+
+type detachPlan struct {
+	codec  segment.SegmentCodec
+	dirs   []string
+	copies []absorbedCopy
+}
+
+func (t *Trunks) planDetach(ctx context.Context, node string) (*detachPlan, error) {
+	if t.node(node) == nil {
+		return nil, fmt.Errorf("%w: no node %q", ErrUnknownTrunk, node)
+	}
+	plan := &detachPlan{}
 	x, err := t.openHotTopology(node)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	type pending struct {
-		channel, dir string
-		log          *log.Log
-		base         uint64
-		initial      []byte
-	}
-	var dirs []string
-	var absorb []pending
+	defer x.Close()
+	plan.codec = x.codec
 	for _, c := range x.Channels() {
 		ch := x.channel(c.Name)
 		dir := filepath.Join(t.root, c.Name, fsName(node))
 		if _, serr := os.Stat(dir); os.IsNotExist(serr) {
-			continue // a channel added after this node existed
+			continue
 		} else if serr != nil {
-			x.Close()
-			return serr
+			plan.discard()
+			return nil, serr
 		}
-		dirs = append(dirs, dir)
 		chLog, lerr := ch.Log()
 		if lerr != nil {
-			x.Close()
-			return fmt.Errorf("xwal: detach %q channel %q: %w", node, c.Name, lerr)
+			plan.discard()
+			return nil, fmt.Errorf("xwal: detach %q channel %q: %w", node, c.Name, lerr)
 		}
 		base := chLog.ForkBase()
+		plan.dirs = append(plan.dirs, dir)
 		if base <= 1 {
-			continue // already its own root in this channel
+			continue
 		}
-		absorb = append(absorb, pending{c.Name, dir, chLog, base, ch.absorbInitial()})
+		scratch, from, berr := buildAbsorbed(ctx, dir, chLog, base, ch.absorbInitial(), x.codec)
+		if berr != nil {
+			plan.discard()
+			return nil, fmt.Errorf("xwal: detach %q channel %q: %w", node, c.Name, berr)
+		}
+		plan.copies = append(plan.copies, absorbedCopy{channel: c.Name, dir: dir, from: from, base: base, scratch: scratch})
 	}
-	keys := make([]string, 0, len(absorb))
-	for _, p := range absorb {
-		keys = append(keys, canonicalDir(p.dir))
+	return plan, nil
+}
+
+func (p *detachPlan) discard() {
+	for _, c := range p.copies {
+		os.Remove(c.scratch)
+	}
+}
+
+func (t *Trunks) publishDetach(node string, plan *detachPlan) error {
+	keys := make([]string, 0, len(plan.copies))
+	for _, c := range plan.copies {
+		keys = append(keys, canonicalDir(c.dir))
 	}
 	slices.Sort(keys)
 	for _, k := range keys {
 		defer lockAbsorb(k)()
 	}
-	for _, p := range absorb {
-		if err := absorbPrefix(p.dir, p.log, p.base, p.initial, x.codec); err != nil {
-			x.Close()
-			return fmt.Errorf("xwal: detach %q channel %q: %w", node, p.channel, err)
+	for _, c := range plan.copies {
+		if err := linkAbsorbed(c.dir, c.scratch, c.from, c.base, plan.codec); err != nil {
+			return fmt.Errorf("xwal: detach %q channel %q: %w", node, c.channel, err)
 		}
 	}
-	x.Close()
-
-	// Publish .fork per channel, then .from last. A crash between two
-	// channels' .fork writes leaves each channel correct because .from still
-	// names the parent: a flipped channel reads its absorbed copy, an
-	// unflipped one delegates, and the two are byte-identical. Clearing .from
-	// first would strand every channel not yet flipped.
-	for _, dir := range dirs {
+	for _, dir := range plan.dirs {
 		if err := writeForkMarker(dir, 1); err != nil {
 			return err
 		}
@@ -158,11 +192,15 @@ func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec s
 	if base <= 1 {
 		return nil
 	}
-	tmpName, from, err := buildAbsorbed(dir, src, base, initial, codec)
+	tmpName, from, err := buildAbsorbed(context.Background(), dir, src, base, initial, codec)
 	if err != nil {
 		return err
 	}
 	defer os.Remove(tmpName)
+	return linkAbsorbed(dir, tmpName, from, base, codec)
+}
+
+func linkAbsorbed(dir, tmpName string, from, base uint64, codec segment.SegmentCodec) error {
 	if from > 1 {
 		if err := disk.StubHole(dir, segFileName(1, codec)); err != nil {
 			return err
@@ -186,7 +224,7 @@ func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec s
 // buildAbsorbed writes the segment that holds src's records [from, base)
 // under a scratch name in dir that no other call shares, and returns that
 // path and from. The caller removes the scratch.
-func buildAbsorbed(dir string, src *log.Log, base uint64, initial []byte, codec segment.SegmentCodec) (path string, from uint64, err error) {
+func buildAbsorbed(ctx context.Context, dir string, src *log.Log, base uint64, initial []byte, codec segment.SegmentCodec) (path string, from uint64, err error) {
 	from, header := uint64(1), initial
 	if initial != nil && src.Floor() > 0 {
 		h, segBase, err := src.SegmentHeaderAt(base - 1)
@@ -199,18 +237,17 @@ func buildAbsorbed(dir string, src *log.Log, base uint64, initial []byte, codec 
 	if err != nil {
 		return "", 0, err
 	}
-	path = f.Name()
+	scratch := f.Name()
 	defer func() {
 		if err != nil {
-			os.Remove(path)
-			path = ""
+			os.Remove(scratch)
 		}
 	}()
 	if err := f.Close(); err != nil {
 		return "", 0, err
 	}
 	// maxSize 0: unbounded, so the whole prefix lands in this one segment.
-	seg, err := segment.Open(path, codec, from, 0)
+	seg, err := segment.Open(scratch, codec, from, 0)
 	if err != nil {
 		return "", 0, err
 	}
@@ -223,6 +260,9 @@ func buildAbsorbed(dir string, src *log.Log, base uint64, initial []byte, codec 
 	rerr := src.Range(from, func(idx uint64, payload []byte) error {
 		if idx >= base {
 			return errStopRange
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		_, aerr := seg.Append(payload)
 		return aerr
@@ -238,7 +278,7 @@ func buildAbsorbed(dir string, src *log.Log, base uint64, initial []byte, codec 
 	if err := seg.Close(); err != nil {
 		return "", 0, err
 	}
-	return path, from, nil
+	return scratch, from, nil
 }
 
 // finishInterruptedAbsorb runs on every open of a node's channel. A Detach
@@ -278,7 +318,7 @@ func finishInterruptedAbsorb(dir string, l *log.Log, initial []byte, codec segme
 		return fmt.Errorf("%w: %s base %d: only a hole below the base", ErrAbsorbConflict, dir, base)
 	}
 	first := own[0]
-	tmp, from, err := buildAbsorbed(dir, l, base, initial, codec)
+	tmp, from, err := buildAbsorbed(context.Background(), dir, l, base, initial, codec)
 	if err != nil {
 		return err
 	}
