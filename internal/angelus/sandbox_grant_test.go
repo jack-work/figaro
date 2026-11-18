@@ -52,6 +52,8 @@ type grantRig struct {
 
 const defaultPolicy = "<the default policy>"
 
+const enforcingAll = "enforce_key_grants = true\nenforce_child_policy = true\nenforce_lineage_reach = true\n"
+
 func newGrantRig(t *testing.T) grantRig {
 	t.Helper()
 	return newRigWith(t, grantPolicy)
@@ -89,12 +91,15 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 		}
 	}
 	self := strconv.Itoa(os.Getuid())
-	policy, authzConfig := "", ""
+	policy, authzConfig := "", "[authz]\n"+enforcingAll
 	if policyText != defaultPolicy {
-		policy, authzConfig = filepath.Join(dir, "policy.toml"), "[authz]\npolicy = \"policy.toml\"\n"
+		policy, authzConfig = filepath.Join(dir, "policy.toml"), authzConfig+"policy = \"policy.toml\"\n"
 		if err := os.WriteFile(policy, []byte(strings.ReplaceAll(policyText, "SELF", self)), 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if strings.Contains(extraConfig, "[authz]\n") {
+		extraConfig, authzConfig = strings.Replace(extraConfig, "[authz]\n", authzConfig, 1), ""
 	}
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(authzConfig+extraConfig), 0o600); err != nil {
 		t.Fatal(err)

@@ -317,7 +317,12 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	var policy form.Patch
 	if !heir {
-		if policy, err = form.ChildPolicyPatch(inherited, claimed); err != nil {
+		policy, err = form.ChildPolicyPatch(inherited, claimed)
+		if p := h.angelus.Policies; !p.Enforces(authz.ChildPolicy) && (err != nil || !policy.IsIdentity()) {
+			p.WouldRefuse(authz.ChildPolicy, birthPolicyNote(req.FigaroID, policy, err))
+			policy, err = form.Patch{}, nil
+		}
+		if err != nil {
 			return nil, fmt.Errorf("fork: %w", err)
 		}
 	}

@@ -15,6 +15,10 @@ type AuthzConfig struct {
 	Issuers       []IssuerConfig `toml:"issuers"`
 	APIKeys       []APIKeyConfig `toml:"api_keys"`
 	ProtectedKeys string         `toml:"protected_keys"`
+
+	EnforceKeyGrants    bool `toml:"enforce_key_grants"`
+	EnforceChildPolicy  bool `toml:"enforce_child_policy"`
+	EnforceLineageReach bool `toml:"enforce_lineage_reach"`
 }
 
 type APIKeyConfig struct {

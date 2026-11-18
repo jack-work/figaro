@@ -101,7 +101,7 @@ type callerKeys struct {
 func (h *handlers) callerKeysOf(ctx context.Context) callerKeys {
 	box, boxed := callerBox(ctx)
 	owns := h.callerOwns(ctx)
-	labelled := owns && !boxed && authz.FigaroOf(ctx) != ""
+	labelled := owns && !boxed && authz.FigaroOf(ctx) != "" && !keyGrantsWaived(ctx)
 	return callerKeys{owns: owns && !labelled, labelled: labelled, boxed: boxed, box: box, lineage: h.protectsByLineage()}
 }
 
@@ -225,6 +225,9 @@ func (h *handlers) refuseKeysBeyondGrants(ctx context.Context, line lineage, bef
 		if err := p.TopologyReach(sub, f, rpc.VerbSet, line.of); err != nil {
 			return err
 		}
+	}
+	if keyGrantsWaived(ctx) {
+		return nil
 	}
 	view := p.Figaro(f)
 	for _, key := range changedPaths(before, after) {
@@ -384,7 +387,27 @@ func refuseMalformedRetirement(before form.Snapshot, patch form.Patch) error {
 	return err
 }
 
+type waivedKeyGrants struct{}
+
+func keyGrantsWaived(ctx context.Context) bool {
+	waived, _ := ctx.Value(waivedKeyGrants{}).(bool)
+	return waived
+}
+
 func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before form.Snapshot, patch *form.Patch) error {
+	err := h.checkCallerKeys(ctx, line, before, patch)
+	p := h.angelus.Policies
+	if err == nil || p.Enforces(authz.KeyGrants) {
+		return err
+	}
+	if pre := h.checkCallerKeys(context.WithValue(ctx, waivedKeyGrants{}, true), line, before, patch); pre != nil {
+		return pre
+	}
+	p.WouldRefuse(authz.KeyGrants, err.Error())
+	return nil
+}
+
+func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before form.Snapshot, patch *form.Patch) error {
 	if patch == nil || patch.IsIdentity() {
 		return nil
 	}

@@ -17,17 +17,24 @@ func runDoctorAdmission(loaded *config.Loaded, jsonOut bool) error {
 	if err != nil {
 		return err
 	}
-	return printAdmission(stdout, resp.Drift, jsonOut)
+	return printAdmission(stdout, resp.Drift, resp.Switches, jsonOut)
 }
 
-func printAdmission(w io.Writer, drift []rpc.FanoutDrift, jsonOut bool) error {
+func printAdmission(w io.Writer, drift []rpc.FanoutDrift, switches []rpc.EnforcementSwitch, jsonOut bool) error {
 	if drift == nil {
 		drift = []rpc.FanoutDrift{}
 	}
 	if jsonOut {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		return enc.Encode(map[string]any{"count": len(drift), "drift": drift})
+		return enc.Encode(map[string]any{"count": len(drift), "drift": drift, "switches": switches})
+	}
+	for _, s := range switches {
+		state := "off: logged, not enforced"
+		if s.On {
+			state = "on"
+		}
+		fmt.Fprintf(w, "%s: %s; would have refused %d since the daemon started\n", s.Name, state, s.WouldRefuse)
 	}
 	if len(drift) == 0 {
 		fmt.Fprintln(w, "admission: the cached fan-out counts match the tree")

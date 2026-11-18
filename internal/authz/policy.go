@@ -242,6 +242,7 @@ type Policies struct {
 	figaroCeiling atomic.Pointer[jkauthz.Grants]
 	claimRequired atomic.Pointer[[]string]
 	leases        atomic.Pointer[Leases]
+	enforce       enforcement
 }
 
 type troupeLayer struct {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/logring"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/upstream"
@@ -69,7 +70,19 @@ func (h *handlers) pprofArm(ctx context.Context, params json.RawMessage) (interf
 }
 
 func (h *handlers) admission(context.Context, json.RawMessage) (interface{}, error) {
-	return rpc.AdmissionResponse{Drift: h.angelus.fanoutDrift()}, nil
+	return rpc.AdmissionResponse{Drift: h.angelus.fanoutDrift(), Switches: h.enforcementSwitches()}, nil
+}
+
+func (h *handlers) enforcementSwitches() []rpc.EnforcementSwitch {
+	p := h.angelus.Policies
+	if p == nil {
+		return nil
+	}
+	var out []rpc.EnforcementSwitch
+	for _, s := range authz.Switches() {
+		out = append(out, rpc.EnforcementSwitch{Name: s.String(), On: p.Enforces(s), WouldRefuse: p.WouldRefused(s)})
+	}
+	return out
 }
 
 func (h *handlers) residents(context.Context, json.RawMessage) (interface{}, error) {
