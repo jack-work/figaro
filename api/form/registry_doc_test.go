@@ -45,6 +45,10 @@ any caller with write access to the form may set it, the figaro itself included.
 		}
 		b.WriteString("\n")
 	}
+	b.WriteString("## managed apply\n\nManaged apply refuses every `system.*` path, except these, which the owner at the terminal may name (and everything under them). A figaro caller may not; the writer rules above still judge the patch.\n\n")
+	for _, k := range form.OperatorPaths() {
+		b.WriteString("- `" + k + "`\n")
+	}
 	return b.String()
 }
 
