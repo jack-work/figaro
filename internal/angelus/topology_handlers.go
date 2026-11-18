@@ -955,6 +955,42 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		return nil, err
 	}
+	redecide := req.Recursive && authz.FigaroOf(ctx) == "" && h.callerOwns(ctx)
+	since := time.Now().UnixMilli()
+	for attempt := 1; ; attempt++ {
+		resp, decided, err := h.killOnce(ctx, by, req)
+		if redecide && attempt < killRedecisions && errors.Is(err, store.ErrDeleteSetChanged) && h.onlyBornSince(ctx, by, req.FigaroID, decided, since) {
+			slog.Info("kill -r: figaros born under the kill joined its set; deciding again", "id", req.FigaroID, "attempt", attempt)
+			continue
+		}
+		return resp, err
+	}
+}
+
+const killRedecisions = 5
+
+func (h *handlers) onlyBornSince(ctx context.Context, by hierarchy.Principal, id string, decided []string, sinceMS int64) bool {
+	now, err := h.angelus.topology().Check(ctx, by, hierarchy.Plan{Op: hierarchy.Kill, Node: id, Recursive: true})
+	if err != nil {
+		return false
+	}
+	known := make(map[string]bool, len(decided))
+	for _, n := range decided {
+		known[n] = true
+	}
+	for _, n := range now.Delete {
+		if known[n] {
+			continue
+		}
+		meta, _ := h.angelus.Backend.Meta(n)
+		if meta == nil || meta.CreatedAtMS < sinceMS {
+			return false
+		}
+	}
+	return true
+}
+
+func (h *handlers) killOnce(ctx context.Context, by hierarchy.Principal, req rpc.KillRequest) (interface{}, []string, error) {
 	asked := hierarchy.Plan{Op: hierarchy.Kill, Node: req.FigaroID, Recursive: true}
 	if req.KeepChildren {
 		asked = hierarchy.Plan{Op: hierarchy.Kill, Node: req.FigaroID, Lift: true}
@@ -964,11 +1000,11 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		switch {
 		case req.Recursive:
-			return nil, fmt.Errorf("kill -r %s: %w", req.FigaroID, err)
+			return nil, nil, fmt.Errorf("kill -r %s: %w", req.FigaroID, err)
 		case req.KeepChildren:
-			return nil, fmt.Errorf("kill --keep-children %s: %w", req.FigaroID, err)
+			return nil, nil, fmt.Errorf("kill --keep-children %s: %w", req.FigaroID, err)
 		}
-		return nil, fmt.Errorf("kill %s: %w", req.FigaroID, err)
+		return nil, nil, fmt.Errorf("kill %s: %w", req.FigaroID, err)
 	}
 	if h.afterKillCheck != nil {
 		h.afterKillCheck()
@@ -984,9 +1020,9 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	if !req.Now && grace > 0 {
 		if until, ok, err := h.reapKilled(ctx, by, req.FigaroID, req.Recursive, req.KeepChildren, time.Now().Add(grace), checked.Delete); ok || err != nil {
 			if err != nil {
-				return nil, err
+				return nil, checked.Delete, err
 			}
-			return rpc.KillResponse{OK: true, PurgeAt: until.UnixMilli(), Roles: h.angelus.rolesIn(checked.Delete), Lifted: liftedIn(checked), Reaped: orSelf(checked.Delete, req.FigaroID)}, nil
+			return rpc.KillResponse{OK: true, PurgeAt: until.UnixMilli(), Roles: h.angelus.rolesIn(checked.Delete), Lifted: liftedIn(checked), Reaped: orSelf(checked.Delete, req.FigaroID)}, checked.Delete, nil
 		}
 	}
 	expect := checked.Delete
@@ -994,14 +1030,14 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 		expect = nil
 	}
 	if group, reaped := h.angelus.reapedGroupOf(req.FigaroID); reaped && !sameMembers(group, checked.Delete) {
-		return nil, fmt.Errorf("%w: %s was reaped with %v, and a delete of it now takes %v; nothing was purged", store.ErrDeleteSetChanged, req.FigaroID, group, checked.Delete)
+		return nil, nil, fmt.Errorf("%w: %s was reaped with %v, and a delete of it now takes %v; nothing was purged", store.ErrDeleteSetChanged, req.FigaroID, group, checked.Delete)
 	}
 	roles := h.angelus.rolesIn(checked.Delete)
 	removed, err := h.removeAria(ctx, by, hierarchy.Plan{Op: hierarchy.Kill, Node: req.FigaroID, Recursive: req.Recursive, Lift: req.KeepChildren, Delete: expect})
 	if err != nil {
-		return nil, err
+		return nil, checked.Delete, err
 	}
-	return rpc.KillResponse{OK: true, Removed: removed, Roles: roles, Lifted: liftedIn(checked)}, nil
+	return rpc.KillResponse{OK: true, Removed: removed, Roles: roles, Lifted: liftedIn(checked)}, checked.Delete, nil
 }
 
 func liftedIn(p hierarchy.Plan) []string {

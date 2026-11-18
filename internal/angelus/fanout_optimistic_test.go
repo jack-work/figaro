@@ -232,3 +232,33 @@ func TestAReapWaitingOnItsFormSyncHoldsNoHierarchyLock(t *testing.T) {
 		t.Fatalf("kill: %v", err)
 	}
 }
+
+func TestAnOwnersKillRDecidesAgainWhenAForkLandsUnderIt(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	victim, _ := b.CreateConversation(outfit)
+	if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: victim}); err != nil {
+		t.Fatal(err)
+	}
+	var late string
+	hs.AfterKillCheckForTest(func() {
+		if late != "" {
+			return
+		}
+		out, err := callFork(t, hs, rpc.ForkRequest{FigaroID: victim})
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		late = out.Alternative
+	})
+	raw, _ := json.Marshal(rpc.KillRequest{FigaroID: victim, Recursive: true, GraceMS: time.Hour.Milliseconds()})
+	if _, err := hs.Map[rpc.MethodKill](inProcess(context.Background()), raw); err != nil {
+		t.Fatalf("the owner's kill -r failed when a fork landed under it: %v", err)
+	}
+	if late == "" {
+		t.Fatal("no fork landed during the kill, so the race was never run")
+	}
+	if !hs.h.angelus.isReaped(late) {
+		t.Fatal("the fork that landed during the kill stayed live")
+	}
+}
