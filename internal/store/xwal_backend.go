@@ -36,6 +36,7 @@ var ErrClosed = xwal.ErrClosed
 
 type XwalBackend struct {
 	closed atomic.Bool
+	feed   atomic.Pointer[TopologyFeed]
 
 	rolesMu       sync.Mutex
 	roles         roleIndex
@@ -683,6 +684,7 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	b.stampCommitted(child, stamped)
 	b.lifetimeAtBirth(child)
 	b.recordForkTurn(child)
+	b.born(child)
 	return child, version, nil
 }
 
@@ -730,11 +732,16 @@ func (b *XwalBackend) CreateForm(parent string, patch message.Patch, opts ...Bir
 	} else {
 		b.roleCommitted(id, patch, form.Snapshot{}.Apply(patch))
 	}
+	b.born(id)
 	return id, version, nil
 }
 
 func (b *XwalBackend) CreateOutfit(name string, patch message.Patch) (string, error) {
-	return b.store.CreateOutfit(name, patch)
+	id, err := b.store.CreateOutfit(name, patch)
+	if err == nil {
+		b.born(id)
+	}
+	return id, err
 }
 
 func (b *XwalBackend) CreateConversation(outfitID string, opts ...BirthOption) (string, error) {
@@ -744,12 +751,15 @@ func (b *XwalBackend) CreateConversation(outfitID string, opts ...BirthOption) (
 	}
 	b.mirrorMintedBy(id, births(opts))
 	b.lifetimeAtBirth(id)
+	b.born(id)
 	return id, nil
 }
 func (b *XwalBackend) Fork(ariaID string) (cont, alt string, err error) {
 	cont, alt, err = b.store.Fork(ariaID)
 	if err == nil {
 		b.inheritStudies(alt)
+		b.born(cont)
+		b.born(alt)
 	}
 	return cont, alt, err
 }
@@ -757,6 +767,8 @@ func (b *XwalBackend) ForkAt(ariaID string, atMainLT uint64) (cont, alt string, 
 	cont, alt, err = b.store.ForkAt(ariaID, atMainLT)
 	if err == nil {
 		b.inheritStudies(alt)
+		b.born(cont)
+		b.born(alt)
 	}
 	return cont, alt, err
 }
