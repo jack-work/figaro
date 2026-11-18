@@ -834,7 +834,10 @@ func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rp
 	dem, err := h.demoteUnder(ctx, rpc.DemoteRequest{FigaroID: pred, Prefer: successor})
 	r.Demote = dem
 	if err == nil && dem.Parked != nil && r.Placed {
-		err = h.withdrawSeatDemote(*dem.Parked)
+		var withdrawn bool
+		if withdrawn, err = h.withdrawSeatDemote(*dem.Parked); withdrawn {
+			r.Demote.Parked = nil
+		}
 	}
 	if err != nil {
 		r.FailedAt, r.Error = "demote", err.Error()
@@ -850,16 +853,16 @@ func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rp
 	return r
 }
 
-func (h *handlers) withdrawSeatDemote(p rpc.Proposal) error {
+func (h *handlers) withdrawSeatDemote(p rpc.Proposal) (bool, error) {
 	why := fmt.Errorf("demoting the predecessor waits on %s as proposal %s, and a seat does not wait half drawn", p.Parent, p.ID)
 	by, err := h.angelus.topologyPrincipal(h.ownerContext())
 	if err != nil {
-		return fmt.Errorf("%w; withdrawing the proposal failed: %w", why, err)
+		return false, fmt.Errorf("%w; withdrawing the proposal failed: %w", why, err)
 	}
 	if err := h.angelus.topology().Refuse(h.ownerContext(), by, p.Parent, p.ID); err != nil {
-		return fmt.Errorf("%w; withdrawing the proposal failed: %w", why, err)
+		return false, fmt.Errorf("%w; withdrawing the proposal failed: %w", why, err)
 	}
-	return fmt.Errorf("%w; the proposal is withdrawn", why)
+	return true, fmt.Errorf("%w; the proposal is withdrawn", why)
 }
 
 func (h *handlers) demoteUnder(ctx context.Context, req rpc.DemoteRequest) (rpc.DemoteResponse, error) {

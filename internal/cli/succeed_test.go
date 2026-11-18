@@ -364,6 +364,12 @@ func TestSucceedRecastsEveryRoleThePredecessorHolds(t *testing.T) {
 	require.Contains(t, r.summary(), ariaName(other))
 }
 
+func TestRecoveryIsSilentWhenTheSeatMovedNothing(t *testing.T) {
+	r := succeedReport{Role: "@r", Predecessor: "old", Successor: "new", FailedAt: "demote",
+		Error: "nothing moved yet: the demote waits on p; the successor is back where it was, so nothing moved"}
+	require.Empty(t, r.recovery(succeedPlan{ttl: time.Minute, abdication: abdicateRetire}))
+}
+
 func TestRecoveryCastsTheOtherRolesNotYetRecast(t *testing.T) {
 	r := succeedReport{Role: "@r", Predecessor: "old", Successor: "new", Prompted: true, Cast: true,
 		OtherRoles: []string{"@b", "@c"}, Recast: []string{"@b"}, FailedAt: "cast @c"}

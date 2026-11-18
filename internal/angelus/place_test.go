@@ -155,6 +155,9 @@ func TestASeatWhoseDemoteWouldParkPutsTheSuccessorBack(t *testing.T) {
 	if seat.FailedAt != "demote" || seat.Placed || !strings.Contains(seat.Error, "withdrawn") {
 		t.Fatalf("seat = %+v, want the parked demote withdrawn and the place undone", seat)
 	}
+	if seat.Demote.Parked != nil {
+		t.Fatalf("the reply still names the withdrawn proposal %+v", *seat.Demote.Parked)
+	}
 	if up := presentedUnder(t, r, n); up != other.FigaroID {
 		t.Fatalf("N is drawn under %q, want back under %s", up, other.FigaroID)
 	}

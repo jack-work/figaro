@@ -440,11 +440,8 @@ func withAria(id string, fn func(*sdk.Aria) error) error {
 
 func (r succeedReport) recovery(plan succeedPlan) []string {
 	var out []string
-	if r.Successor == "" || r.FailedAt == "place" {
+	if r.Successor == "" || r.FailedAt == "place" || r.FailedAt == "demote" && r.DemotedUnder == "" {
 		return nil
-	}
-	if r.DemotedUnder == "" && r.FailedAt == "demote" {
-		out = append(out, fmt.Sprintf("figaro demote %s --under %s", r.Predecessor, r.Successor))
 	}
 	if !r.Prompted {
 		out = append(out, fmt.Sprintf("figaro send -f --id %s -- <the succession prompt>", r.Successor))
