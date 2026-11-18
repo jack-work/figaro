@@ -108,9 +108,14 @@ func (h *handlers) refreshReapedForm() {
 		raw, _ := json.Marshal(v)
 		keys[k] = raw
 	}
-	for _, g := range groupReaped(idx.Reaped()) {
+	groups := groupReaped(idx.Reaped())
+	sizes := h.angelus.reapedGroupBytes(groups)
+	var total int64
+	for _, g := range groups {
 		base := "items." + g.root + "."
 		put(base+"nodes", g.nodes)
+		put(base+"bytes", sizes[g.root])
+		total += sizes[g.root]
 		if g.by != "" {
 			put(base+"by", g.by)
 		}
@@ -125,6 +130,7 @@ func (h *handlers) refreshReapedForm() {
 		}
 	}
 	put("grace_hours", strconv.Itoa(int(grace/time.Hour)))
+	put("bytes", total)
 	cur, _ := h.reapedForm.Snapshot()
 	next := form.Snapshot{}.Apply(form.Build(form.Snapshot{}, keys, nil))
 	if patch := next.Diff(cur); !patch.IsIdentity() {

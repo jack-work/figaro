@@ -439,13 +439,16 @@ memory, read-only. One entry per reaped group, keyed by the root the delete
 would start from:
 
 ```
-items.<root>.{nodes, at, purge_at, mantra}
+items.<root>.{nodes, at, purge_at, mantra, bytes}
 grace_hours
+bytes
 ```
 
 `nodes` is every node the group holds (the root first or not; order is not
 meaningful). It changes when the sweep reaps or purges, and when a node is
 restored (`figaro reaped restore`; `runtime.reaped` is the daemon's, so no hand edit does it).
+`bytes` is what the group's nodes hold on disk, the segments of every channel
+they own; the top-level `bytes` sums the groups.
 
 ## `@successions`: handovers in flight
 

@@ -37,6 +37,8 @@ import (
 
 // Angelus is the figaro supervisor.
 type Angelus struct {
+	reapedSizes reapedBytes
+
 	held       heldNodes
 	guard      reapGuard
 	Registry   *Registry
