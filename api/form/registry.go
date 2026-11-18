@@ -5,20 +5,12 @@ import (
 	"strings"
 )
 
-// Writer names who may write a key.
 type Writer int
 
 const (
-	// WriterSelf keys any caller with write access to the form may set,
-	// the figaro itself included.
 	WriterSelf Writer = iota
-	// WriterOwner keys only the owner sets: the local door, an in-process
-	// call, or the owner's principal.
 	WriterOwner
-	// WriterLineage keys the owner or an ancestor figaro sets, never the
-	// figaro on its own form.
 	WriterLineage
-	// WriterRuntime keys only the daemon writes.
 	WriterRuntime
 )
 
@@ -35,12 +27,6 @@ func Writers() []Writer {
 	return []Writer{WriterSelf, WriterOwner, WriterLineage, WriterRuntime}
 }
 
-// Spec is one row of the registry. A spec covers its path and, unless Exact,
-// everything under it. An empty Short marks a root that only groups the
-// documented keys beneath it. A "<name>" segment is a placeholder and
-// documents a family without matching a literal path. An Operator row is
-// one the owner at the terminal may name in managed apply, whatever its
-// class; the daemon's writer rules still judge the patch.
 type Spec struct {
 	Path      string
 	Writer    Writer

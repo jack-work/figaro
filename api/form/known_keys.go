@@ -1,8 +1,5 @@
 package form
 
-// The form is open-schema; WellKnownKeys is the documented part of the
-// registry, the keys the harness reads or writes.
-
 // KeyMode classifies a known key by who writes it.
 type KeyMode int
 
@@ -22,7 +19,6 @@ type KeyDoc struct {
 	Mode  KeyMode
 }
 
-// WellKnownKeys is in registry order.
 func WellKnownKeys() []KeyDoc {
 	var out []KeyDoc
 	for _, s := range registry {
