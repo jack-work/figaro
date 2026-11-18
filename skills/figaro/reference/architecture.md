@@ -390,13 +390,13 @@ bindings stay admin-only, since they are keyed by a pid and a box has its own
 pid namespace; `figaro new` inside a box prints the id instead of attending. Under `local` a `system.cwd`
 the caller names is a host path and needs `use` on `sandbox:local`.
 
-**Owner-held keys.** `system.provider`, `system.model`, `system.max_tokens`,
-`system.max_context_tokens`, `system.credo`, `system.tools`,
-`system.methods`, `system.environment` (where wire dumps go),
-`system.decide.base_url` (where a provider credential goes), and
-`system.ttl`, `system.reap_if_empty`, `system.keepalive`,
-`system.retired` and `system.retirement` (when the sweep deletes a node and its subtree)
-(`api/form/owner_held.go`) are set or removed only by the
+**Owner-held keys.** The registry in `api/form/registry.go` lists them, and
+[key-writers.md](key-writers.md) prints the list per writer class (owner,
+lineage, runtime). Among them are `system.provider`, `system.model`,
+`system.credo`, `system.tools`, `system.environment` (where wire dumps go),
+`system.decide.base_url` (where a provider credential goes), `system.ttl`,
+`system.keepalive` and `system.retired` (when the sweep deletes a node and its
+subtree). They are set or removed only by the
 owner: the local door, an in-process call, or the owner's principal. Every
 other caller, a box included, is refused at set, prompt, cast, create, fork
 and form.create/bind. The one exception is `system.retired` for a box, on
