@@ -60,6 +60,12 @@ capabilities.
   figaro under another parent through the hierarchy guard. A CLI refuses
   `place` against a daemon that does not report `place`, which would answer
   with an unknown method.
+- **`figaro succeed` needs the `seat` capability** (0.74.5). Succeed seats
+  its successor through `figaro.seat`, which a daemon before 0.74.5 lacks.
+  A CLI checks for `seat` before it forks or casts anything, so against an
+  older daemon succeed fails with nothing done; restart the daemon on the
+  new build first. If a seat stops after a fork and nothing was seated, the
+  recovery names `figaro kill <fork>`.
 - **`figaro gc` plans before it acts.** It calls `figaro.gc.plan`,
   `figaro.gc.apply` and `figaro.gc.undo`, methods a daemon before them
   lacks; against one the verb fails with an unknown method and changes
