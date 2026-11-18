@@ -21,6 +21,7 @@ type reapedGroup struct {
 	PurgeMS int64    `json:"purge_at"`
 	By      string   `json:"by,omitempty"`
 	Bytes   int64    `json:"bytes"`
+	Over    bool     `json:"over_budget,omitempty"`
 }
 
 func parseReapedForm(snap form.Snapshot) ([]reapedGroup, error) {
@@ -36,6 +37,7 @@ func parseReapedForm(snap form.Snapshot) ([]reapedGroup, error) {
 			PurgeAt int64    `json:"purge_at"`
 			By      string   `json:"by"`
 			Bytes   int64    `json:"bytes"`
+			Over    bool     `json:"over_budget"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -43,10 +45,23 @@ func parseReapedForm(snap form.Snapshot) ([]reapedGroup, error) {
 	}
 	out := make([]reapedGroup, 0, len(doc.Items))
 	for root, it := range doc.Items {
-		out = append(out, reapedGroup{Root: root, Mantra: it.Mantra, Nodes: it.Nodes, AtMS: it.At, PurgeMS: it.PurgeAt, By: it.By, Bytes: it.Bytes})
+		out = append(out, reapedGroup{Root: root, Mantra: it.Mantra, Nodes: it.Nodes, AtMS: it.At, PurgeMS: it.PurgeAt, By: it.By, Bytes: it.Bytes, Over: it.Over})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].PurgeMS < out[j].PurgeMS })
+	sort.Slice(out, func(i, j int) bool { return out[i].purgesBefore(out[j]) })
 	return out, nil
+}
+
+func (g reapedGroup) purgesBefore(o reapedGroup) bool {
+	if g.Over != o.Over {
+		return g.Over
+	}
+	if (g.PurgeMS == 0) != (o.PurgeMS == 0) {
+		return o.PurgeMS == 0
+	}
+	if g.PurgeMS != o.PurgeMS {
+		return g.PurgeMS < o.PurgeMS
+	}
+	return g.AtMS < o.AtMS
 }
 
 func readReaped(ctx context.Context, acli *sdk.Angelus) ([]reapedGroup, error) {
@@ -164,8 +179,11 @@ func printReaped(groups []reapedGroup, asJSON bool) error {
 	fmt.Fprintf(stdout, "%-22s %-5s %-9s %-10s %-10s %-25s %s\n", "ARIA", "NODES", "SIZE", "REAPED", "PURGE IN", "BY", "MANTRA")
 	for _, g := range groups {
 		purge := "due"
-		if left := time.UnixMilli(g.PurgeMS).Sub(now); left > 0 {
+		if left := time.UnixMilli(g.PurgeMS).Sub(now); !g.Over && left > 0 {
 			purge = shortDuration(left)
+		}
+		if !g.Over && g.PurgeMS == 0 {
+			purge = "by size"
 		}
 		fmt.Fprintf(stdout, "%-22s %-5d %-9s %-10s %-10s %-25s %s\n",
 			truncRunes(ariaName(g.Root), 22), len(g.Nodes), compactBytes(g.Bytes), relAge(g.AtMS), purge, dash(g.By), truncRunes(g.Mantra, 48))

@@ -216,6 +216,9 @@ dormant_after_minutes  = 15   # 0 disables reclamation entirely
 sweep_interval_seconds = 120  # floored at 1s
 keepalive_minutes      = 1440 # default system.keepalive; 0 = none
 reaped_grace_hours     = 168  # reaped figaros wait this long; 0 = delete at once
+reaped_budget_mb       = 0    # 0 = none; set, purge oldest-reaped past the budget and
+                              #   reaped_grace_hours becomes an optional age cap (0 = none)
+reaped_min_hours       = 24   # under a budget, nothing reaped more recently is purged for size
 max_live_arias         = 0    # 0 = unbounded; SOFT cap
 ir_window_mb           = 4    # 0 = unbounded; the knob that matters
 ir_window              = 0    # row-count safety, floored at 64

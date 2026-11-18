@@ -69,3 +69,35 @@ func TestReapedCatalogCountsEachGroupsBytesAndTheirTotal(t *testing.T) {
 	require.Less(t, bytesOf(small.FigaroID), int64(100<<10))
 	require.Equal(t, float64(wantBig+bytesOf(small.FigaroID)), state["bytes"])
 }
+
+func TestABudgetPurgesTheOldestReapedAndAgeAloneNoLongerDoes(t *testing.T) {
+	a, acli, ctx, _ := daemonFixtureConfig(t, "[memory]\nreaped_budget_mb = 1\nreaped_min_hours = 0\n")
+	older, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	newer, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	for _, id := range []string{older.FigaroID, newer.FigaroID} {
+		bloat(t, a, id, 700<<10)
+		age(t, a, id, 72*time.Hour, 48*time.Hour, map[string]string{"system.keepalive": "0"})
+	}
+	a.SweepLifetimesNow()
+	require.True(t, reaped(t, a, older.FigaroID), "with a budget and no grace, the sweep must still reap softly")
+	require.True(t, reaped(t, a, newer.FigaroID))
+
+	backdateReaped(t, a, older.FigaroID, 10*24*time.Hour)
+	backdateReaped(t, a, newer.FigaroID, 24*time.Hour)
+	a.SweepLifetimesNow()
+	require.False(t, ariaExists(a, older.FigaroID), "the oldest reaped figaro outlived a budget it broke")
+	require.True(t, reaped(t, a, newer.FigaroID), "the budget took more than it needed")
+
+	backdateReaped(t, a, newer.FigaroID, 60*24*time.Hour)
+	a.SweepLifetimesNow()
+	require.True(t, reaped(t, a, newer.FigaroID), "with a budget and no grace, age alone purged a figaro under the budget")
+
+	state := reapedState(t, a)
+	require.Equal(t, float64(1), state["budget_mb"])
+	require.NotContains(t, state, "grace_hours", "no age cap applies, so none is shown")
+	item := state["items"].(map[string]any)[newer.FigaroID].(map[string]any)
+	require.NotContains(t, item, "purge_at", "a group only the budget purges has no date")
+	require.NotContains(t, item, "over_budget")
+}

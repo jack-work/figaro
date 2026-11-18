@@ -58,9 +58,12 @@ func (d softDeletion) await() error {
 		marked++
 	}
 	if marked > 0 || failed == nil {
+		purge := "when the reaped budget needs the room"
+		if d.grace > 0 {
+			purge = time.Now().Add(d.grace).Format(time.RFC3339)
+		}
 		slog.Info("soft-deleted a node whose lifetime was spent",
-			"node", d.e.ID, "ttl", d.e.TTL, "taken", marked,
-			"purge", time.Now().Add(d.grace).Format(time.RFC3339))
+			"node", d.e.ID, "ttl", d.e.TTL, "taken", marked, "purge", purge)
 	}
 	return failed
 }
@@ -82,11 +85,14 @@ func (g reapedGroup) purgeAt(grace time.Duration) time.Time {
 
 func (g reapedGroup) killed() bool { return g.untilMS > 0 }
 
-func (a *Angelus) reapedGraceOf(g reapedGroup, daemon time.Duration) time.Duration {
-	if _, any := a.Settings.ShortestBoxPurgeGrace(); !any || g.untilMS > 0 {
-		return daemon
+func (a *Angelus) reapedCapOf(g reapedGroup) (time.Duration, bool) {
+	if g.killed() {
+		return 0, true
 	}
-	return a.purgeGraceIn(a.sandboxOf(g.root), daemon)
+	if _, any := a.Settings.ShortestBoxPurgeGrace(); !any {
+		return a.Settings.ReapedAgeCap()
+	}
+	return a.purgeGraceIn(a.sandboxOf(g.root))
 }
 
 func groupReaped(entries []store.ReapedEntry) []reapedGroup {
@@ -129,16 +135,35 @@ func (a *Angelus) reapedGroupOf(root string) ([]string, bool) {
 }
 
 func (a *Angelus) mayBePastGrace(g reapedGroup, now time.Time) bool {
-	grace := a.Settings.ReapedGrace()
-	least, boxed := a.Settings.ShortestBoxPurgeGrace()
-	if !boxed || least > grace {
-		least = grace
+	if g.atMS == 0 {
+		return false
 	}
-	return g.atMS > 0 && !g.purgeAt(least).After(now)
+	if g.killed() {
+		return !g.purgeAt(0).After(now)
+	}
+	if a.overBudget(g.root) {
+		return true
+	}
+	least, capped := a.Settings.ReapedAgeCap()
+	if box, boxed := a.Settings.ShortestBoxPurgeGrace(); boxed && (!capped || box < least) {
+		least, capped = box, true
+	}
+	return capped && !g.purgeAt(least).After(now)
 }
 
 func (a *Angelus) pastGrace(g reapedGroup, now time.Time) bool {
-	return g.atMS > 0 && !g.purgeAt(a.reapedGraceOf(g, a.Settings.ReapedGrace())).After(now)
+	if g.atMS == 0 {
+		return false
+	}
+	if !g.killed() && a.overBudget(g.root) {
+		return true
+	}
+	return a.pastAgeCap(g, now)
+}
+
+func (a *Angelus) pastAgeCap(g reapedGroup, now time.Time) bool {
+	grace, capped := a.reapedCapOf(g)
+	return g.atMS > 0 && capped && !g.purgeAt(grace).After(now)
 }
 
 func (a *Angelus) purge(keeper ttlKeeper, g reapedGroup) error {

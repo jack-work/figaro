@@ -43,7 +43,9 @@ func (a *Angelus) expireTTL() {
 		return
 	}
 	now := time.Now()
-	for _, g := range a.reapedGroups() {
+	groups := a.reapedGroups()
+	a.planReapedBudget(groups, now)
+	for _, g := range groups {
 		if a.mayBePastGrace(g, now) {
 			a.reclaims().enqueue(g.root)
 		}
@@ -202,7 +204,7 @@ func (a *Angelus) take(keeper ttlKeeper, e store.TTLEntry, taken []string) error
 	if err := a.scanForRoleIn(taken, e.ID); err != nil {
 		return err
 	}
-	if g := a.purgeGraceIn(a.sandboxOf(e.ID), a.Settings.ReapedGrace()); g > 0 {
+	if g, capped := a.purgeGraceIn(a.sandboxOf(e.ID)); g > 0 || !capped {
 		var d softDeletion
 		_, err := a.topology().Under(sweepingAt(context.Background(), time.Now()), hierarchy.System,
 			hierarchy.Plan{Op: hierarchy.Reap, Node: e.ID, Delete: taken},
@@ -233,11 +235,11 @@ func (a *Angelus) otherSandboxIn(taken []string, self string) string {
 	return ""
 }
 
-func (a *Angelus) purgeGraceIn(sandbox string, daemon time.Duration) time.Duration {
+func (a *Angelus) purgeGraceIn(sandbox string) (time.Duration, bool) {
 	if d, ok := a.Settings.BoxPurgeGrace(sandbox); ok {
-		return d
+		return d, true
 	}
-	return daemon
+	return a.Settings.ReapedAgeCap()
 }
 
 func (a *Angelus) sandboxOf(id string) string {

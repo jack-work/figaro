@@ -566,7 +566,8 @@ box reaches its own; the daemon refuses one inside any of them.
 
 **Box purge grace.** `[sandbox.boxes.<name>] purge_grace = "1h"` is how long
 a reaped or killed figaro in that box waits before it is purged, in place of
-`[memory] reaped_grace_hours` and `kill_grace_hours`. A kill asking for a
+`[memory] reaped_grace_hours` and `kill_grace_hours`. Its figaros still count
+against `[memory] reaped_budget_mb`, and the budget may purge them sooner. A kill asking for a
 longer grace gets the box's; `kill --now` still purges at once.
 
 **Decisions.** `figaro.decide` is the `decide` verb, with `send` sufficient.

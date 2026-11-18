@@ -93,6 +93,7 @@ func (h *handlers) startReapedForm() {
 	h.reapedForm = store.NewMemForm()
 	h.refreshReapedForm()
 	idx.OnReapedChange(h.refreshReapedForm)
+	h.angelus.onBudgetChange(h.refreshReapedForm)
 }
 
 func (h *handlers) refreshReapedForm() {
@@ -102,7 +103,6 @@ func (h *handlers) refreshReapedForm() {
 	}
 	h.reapedMu.Lock()
 	defer h.reapedMu.Unlock()
-	grace := h.config.ReapedGrace()
 	keys := map[string]json.RawMessage{}
 	put := func(k string, v any) {
 		raw, _ := json.Marshal(v)
@@ -110,6 +110,7 @@ func (h *handlers) refreshReapedForm() {
 	}
 	groups := groupReaped(idx.Reaped())
 	sizes := h.angelus.reapedGroupBytes(groups)
+	over := h.angelus.overBudgetSet()
 	var total int64
 	for _, g := range groups {
 		base := "items." + g.root + "."
@@ -121,7 +122,12 @@ func (h *handlers) refreshReapedForm() {
 		}
 		if g.atMS > 0 {
 			put(base+"at", g.atMS)
-			put(base+"purge_at", g.purgeAt(h.angelus.reapedGraceOf(g, grace)).UnixMilli())
+			if grace, capped := h.angelus.reapedCapOf(g); capped {
+				put(base+"purge_at", g.purgeAt(grace).UnixMilli())
+			}
+		}
+		if over[g.root] {
+			put(base+"over_budget", true)
 		}
 		if snap, err := h.angelus.Backend.FormState(g.root); err == nil {
 			if m := snap.Lookup("mantra"); m != nil && *m != "" {
@@ -129,7 +135,13 @@ func (h *handlers) refreshReapedForm() {
 			}
 		}
 	}
-	put("grace_hours", strconv.Itoa(int(grace/time.Hour)))
+	if grace, capped := h.config.ReapedAgeCap(); capped {
+		put("grace_hours", strconv.Itoa(int(grace/time.Hour)))
+	}
+	if budget := h.config.ReapedBudget(); budget > 0 {
+		put("budget_mb", budget>>20)
+		put("min_hours", int(h.config.ReapedMinAge()/time.Hour))
+	}
 	put("bytes", total)
 	cur, _ := h.reapedForm.Snapshot()
 	next := form.Snapshot{}.Apply(form.Build(form.Snapshot{}, keys, nil))

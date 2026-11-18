@@ -162,6 +162,10 @@ type MemoryConfig struct {
 
 	ReapedGraceHours *int `toml:"reaped_grace_hours"`
 
+	ReapedBudgetMB *int `toml:"reaped_budget_mb"`
+
+	ReapedMinHours *int `toml:"reaped_min_hours"`
+
 	KillGraceHours *int `toml:"kill_grace_hours"`
 
 	// MaxLiveArias caps resident agents; 0 (default) is unbounded.
@@ -207,6 +211,7 @@ const (
 	defaultSweepInterval = 2 * time.Minute
 	defaultKeepalive     = 24 * time.Hour
 	defaultReapedGrace   = 7 * 24 * time.Hour
+	defaultReapedMinAge  = 24 * time.Hour
 	defaultKillGrace     = 3 * 24 * time.Hour
 	defaultSegmentSize   = 2 * 1024 * 1024
 	minSegmentSize       = 1024 * 1024
@@ -257,6 +262,36 @@ func (l *Loaded) ReapedGrace() time.Duration {
 		return 0
 	}
 	return time.Duration(*l.cfg().Memory.ReapedGraceHours) * time.Hour
+}
+
+func (l *Loaded) ReapedBudget() int64 {
+	mb := l.cfg().Memory.ReapedBudgetMB
+	if mb == nil || *mb <= 0 {
+		return 0
+	}
+	return int64(*mb) << 20
+}
+
+func (l *Loaded) ReapedMinAge() time.Duration {
+	h := l.cfg().Memory.ReapedMinHours
+	if h == nil {
+		return defaultReapedMinAge
+	}
+	if *h <= 0 {
+		return 0
+	}
+	return time.Duration(*h) * time.Hour
+}
+
+func (l *Loaded) ReapedAgeCap() (time.Duration, bool) {
+	if l.ReapedBudget() == 0 {
+		return l.ReapedGrace(), true
+	}
+	h := l.cfg().Memory.ReapedGraceHours
+	if h == nil || *h <= 0 {
+		return 0, false
+	}
+	return time.Duration(*h) * time.Hour, true
 }
 
 func (l *Loaded) KillGrace() time.Duration {

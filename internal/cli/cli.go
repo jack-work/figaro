@@ -1456,8 +1456,11 @@ bound shell, a role pointing into it, or a recently used branch under it.
 		Long: `When an aria's lifetime is spent and nothing holds it, the sweep does not
 delete it at once: it reaps it. A reaped aria and everything under it are
 hidden from ls, refuse prompts, and wait [memory] reaped_grace_hours (seven
-days by default) before the sweep purges them for good. The index is the
-catalog @reaped (figaro form show @reaped).
+days by default) before the sweep purges them for good. With [memory]
+reaped_budget_mb set, size decides: past the budget the sweep purges the
+oldest-reaped first, none reaped within reaped_min_hours (a day), and
+reaped_grace_hours becomes an optional age cap. The index is the catalog
+@reaped (figaro form show @reaped).
 
   figaro reaped                 what is reaped, and when each purge is due
   figaro reaped restore <id>    bring the group back; the keepalive holds

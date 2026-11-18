@@ -46,6 +46,53 @@ func TestParseReapedFormGroupsByRoot(t *testing.T) {
 	}
 }
 
+func TestReapedListsWhatTheBudgetTakesFirstAndUndatedGroupsLast(t *testing.T) {
+	now := time.Now()
+	keys := map[string]json.RawMessage{}
+	put := func(k string, v any) { raw, _ := json.Marshal(v); keys[k] = raw }
+	put("items.dated.nodes", []string{"dated"})
+	put("items.dated.at", now.Add(-time.Hour).UnixMilli())
+	put("items.dated.purge_at", now.Add(time.Hour).UnixMilli())
+	put("items.undated.nodes", []string{"undated"})
+	put("items.undated.at", now.Add(-48*time.Hour).UnixMilli())
+	put("items.undated.bytes", 3<<20)
+	put("items.over.nodes", []string{"over"})
+	put("items.over.at", now.Add(-24*time.Hour).UnixMilli())
+	put("items.over.over_budget", true)
+	put("items.over.bytes", 5<<20)
+	snap := form.Snapshot{}.Apply(form.Build(form.Snapshot{}, keys, nil))
+
+	groups, err := parseReapedForm(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	for _, g := range groups {
+		order = append(order, g.Root)
+	}
+	if strings.Join(order, ",") != "over,dated,undated" {
+		t.Fatalf("order %v, want the budget's pick first and the group with no date last", order)
+	}
+
+	var out bytes.Buffer
+	old := stdout
+	stdout = &out
+	t.Cleanup(func() { stdout = old })
+	if err := printReaped(groups, false); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(out.String(), "\n")
+	if !strings.Contains(lines[1], "due") || !strings.Contains(lines[1], "5.0MiB") {
+		t.Errorf("the budget's pick reads %q, want due and its size", lines[1])
+	}
+	if !strings.Contains(lines[3], "by size") {
+		t.Errorf("an undated group reads %q, want by size", lines[3])
+	}
+	if !strings.Contains(out.String(), "3 reaped, 8.0 MiB") {
+		t.Errorf("no total in %q", out.String())
+	}
+}
+
 // ls must not show what the sweep reaped, however recent its use.
 func TestLsWithholdsReapedRowsAndCountsThem(t *testing.T) {
 	now := time.Now().UnixMilli()

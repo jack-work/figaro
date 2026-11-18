@@ -378,7 +378,14 @@ everything its delete would take get `runtime.reaped` (naming the root), leave
 `ls`, refuse prompts, and are indexed in the catalog `@reaped`
 (`figaro form show @reaped`). `[memory] reaped_grace_hours` later (seven days by
 default; `0` deletes at once) the sweep purges the group, unless it has a live
-agent, a bound shell or a role pointing in. `figaro reaped` lists the groups,
+agent, a bound shell or a role pointing in. With `[memory] reaped_budget_mb`
+set, size decides instead: when the reaped groups hold more than the budget,
+the sweep purges the oldest-reaped first until they fit, never one reaped
+less than `reaped_min_hours` ago (a day by default; `0` for none). Under a
+budget `reaped_grace_hours` is an optional age cap: unset or `0` means none,
+and a reaped figaro under the budget waits indefinitely. A held group stays
+chosen and the next oldest goes in its place. `@reaped` shows each group's
+`bytes`, the total, and `over_budget` on what the next sweep takes. `figaro reaped` lists the groups,
 `figaro reaped restore <id>` brings one back (the keepalive then holds it a
 day; `--keep` also unsets its ttl), and `figaro reaped purge <id>` deletes it
 now. A fork of a reaped figaro is not reaped.
@@ -387,7 +394,8 @@ now. A fork of a reaped figaro is not reaped.
 (`runtime.reaped_until`, the kill time plus `--when` or `[memory]
 kill_grace_hours`), and at that deadline it is purged whatever holds it: a kill
 is a delete deferred, not a request. A sweep-reaped group keeps
-`reaped_grace_hours`; killing one gives it the kill's deadline.
+`reaped_grace_hours`; killing one gives it the kill's deadline. A killed group
+counts against the reaped budget but the budget never moves its deadline.
 
 `figaro gc <selector>` chooses figaros for you and reaps them the way `kill -r`
 does, with the kill's grace, each group stamped `runtime.reaped_by =

@@ -439,8 +439,9 @@ memory, read-only. One entry per reaped group, keyed by the root the delete
 would start from:
 
 ```
-items.<root>.{nodes, at, purge_at, mantra, bytes}
+items.<root>.{nodes, at, purge_at, mantra, bytes, over_budget}
 grace_hours
+budget_mb, min_hours
 bytes
 ```
 
@@ -448,7 +449,11 @@ bytes
 meaningful). It changes when the sweep reaps or purges, and when a node is
 restored (`figaro reaped restore`; `runtime.reaped` is the daemon's, so no hand edit does it).
 `bytes` is what the group's nodes hold on disk, the segments of every channel
-they own; the top-level `bytes` sums the groups.
+they own; the top-level `bytes` sums the groups. `purge_at` and `grace_hours`
+appear only where an age cap or a kill deadline applies; under
+`[memory] reaped_budget_mb` with no cap a group has no date, and
+`over_budget` marks the groups the next sweep purges for size. `budget_mb`
+and `min_hours` appear only when a budget is set.
 
 ## `@successions`: handovers in flight
 
