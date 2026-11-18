@@ -68,6 +68,7 @@ type AriaMeta struct {
 	TombstonedAtMS int64  `json:"tombstoned_at_ms,omitempty"`
 
 	FanoutQuota *int `json:"fanout_quota,omitempty"`
+	OwnerMade   bool `json:"owner_made,omitempty"`
 }
 
 type Lifetime struct {

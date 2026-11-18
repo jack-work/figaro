@@ -23,6 +23,7 @@ const (
 	ReapedKey           = "runtime.reaped"
 	ReapedUntilKey      = "runtime.reaped_until"
 	ReapedByKey         = "runtime.reaped_by"
+	OwnerMadeKey        = "runtime.owner_made"
 )
 
 const RetireRequestKey = "system.retired"

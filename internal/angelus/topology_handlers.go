@@ -37,7 +37,7 @@ func (h *handlers) createTopLevel(ctx context.Context, params json.RawMessage) (
 	if _, boxed := callerBox(ctx); minter == "" || boxed {
 		return h.create(ctx, params)
 	}
-	if err := h.admitFork(minter, 1, false); err != nil {
+	if err := h.admitFork(minter, 1, false, false); err != nil {
 		return nil, fmt.Errorf("mint: %s pays for what it mints: %w", minter, err)
 	}
 	out, err := h.createWith(ctx, params, withQuotaBirthDefault)
@@ -366,8 +366,10 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.refuseUnheldSandbox(ctx, req.Patch); err != nil {
 		return nil, fmt.Errorf("fork: %w", err)
 	}
+	_, boxed := callerBox(ctx)
+	ownerMade := !claimed && !boxed && h.callerOwns(ctx)
 	abdicating := req.Seat != "" && req.Abdicates
-	if err := h.admitFork(req.FigaroID, forkCharge(forkDress(asked, req.FigaroID, lane, policy)), abdicating); err != nil {
+	if err := h.admitFork(req.FigaroID, forkCharge(forkDress(asked, req.FigaroID, lane, policy, ownerMade)), abdicating, ownerMade); err != nil {
 		return nil, err
 	}
 	var cont, alt string
@@ -435,9 +437,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		if interior {
 			at = atMainLT
 		}
-		birth := forkDress(dress, req.FigaroID, lane, policy)
+		birth := forkDress(dress, req.FigaroID, lane, policy, ownerMade)
 		if err := h.angelus.topology().WithLock(func() error {
-			if err := h.admitFork(req.FigaroID, forkCharge(birth), abdicating); err != nil {
+			if err := h.admitFork(req.FigaroID, forkCharge(birth), abdicating, ownerMade); err != nil {
 				return err
 			}
 			var cerr error
@@ -485,7 +487,10 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note}, nil
 }
 
-func (h *handlers) admitFork(parent string, charge int, abdicating bool) error {
+func (h *handlers) admitFork(parent string, charge int, abdicating, ownerMade bool) error {
+	if ownerMade {
+		return nil
+	}
 	if abdicating {
 		if err := h.angelus.fanoutCounts().over(parent); err != nil {
 			return fmt.Errorf("%w; a succession that retires its predecessor fits only a budget that is not already overdrawn", err)
@@ -568,7 +573,7 @@ func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMa
 	copy.TTLMS, copy.KeepaliveMS, copy.RetiredAtMS = own.TTLMS, own.KeepaliveMS, own.RetiredAtMS
 	copy.ReapedAtMS, copy.ReapedRoot, copy.ReapedUntilMS = own.ReapedAtMS, own.ReapedRoot, own.ReapedUntilMS
 	copy.ReapIfEmpty, copy.RetiredReason = own.ReapIfEmpty, own.RetiredReason
-	copy.FanoutQuota = own.FanoutQuota
+	copy.FanoutQuota, copy.OwnerMade = own.FanoutQuota, own.OwnerMade
 	if interior {
 		held := h.heldBy(child)
 		copy.MessageCount = held.MessageCount

@@ -9,8 +9,21 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/sdk"
 )
+
+func (s seated) labeled(t *testing.T, figaro string) seated {
+	t.Helper()
+	t.Setenv("FIGARO_ARIA", figaro)
+	c, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath()))
+	require.NoError(t, err)
+	t.Cleanup(func() { c.Close() })
+	s.acli = c
+	return s
+}
 
 func (s seated) setKeys(t *testing.T, id string, kv map[string]any) {
 	t.Helper()
@@ -50,7 +63,7 @@ func fullPredecessor(t *testing.T) seated {
 	used, quota := s.fan(t, s.pred)
 	require.Equal(t, 2, used)
 	require.NotNil(t, quota)
-	return s
+	return s.labeled(t, s.pred)
 }
 
 // Hard succession is net zero: the successor takes the predecessor's place
@@ -110,4 +123,31 @@ func TestAnOverlapSucceedPaysAtItsOwnFork(t *testing.T) {
 func quotaZero() *form.Patch {
 	p := form.Build(form.Snapshot{}, map[string]json.RawMessage{form.FanoutQuotaKey: json.RawMessage(`0`)}, nil)
 	return &p
+}
+
+// Gluck's invariant: a fork at an old turn copies no quota from the form as
+// it stood then, and is charged by today's live tree.
+func TestAForkAtAnOldTurnCopiesNoQuotaAndPaysTodaysTree(t *testing.T) {
+	s := seatedPredecessor(t, func(b *store.XwalBackend, pred string, turn uint64) {
+		if turn != 1 {
+			return
+		}
+		snap, err := b.FormState(pred)
+		require.NoError(t, err)
+		_, err = b.ApplyForm(pred, form.Build(snap, map[string]json.RawMessage{form.FanoutQuotaKey: json.RawMessage(`5`)}, nil))
+		require.NoError(t, err)
+	})
+	out, err := s.acli.ForkWith(s.ctx, rpc.ForkRequest{FigaroID: s.pred, AtTurn: 2})
+	require.NoError(t, err)
+	snap, err := s.backend.FormState(out.Alternative)
+	require.NoError(t, err)
+	_, copied := snap.Get(form.FanoutQuotaKey)
+	require.False(t, copied, "a fork at turn 2 copied the quota the form held then")
+
+	_, _, err = s.backend.Fork(s.pred)
+	require.NoError(t, err)
+	s.setKeys(t, s.pred, map[string]any{form.FanoutQuotaKey: 2})
+	_, err = s.labeled(t, s.pred).acli.ForkWith(s.ctx, rpc.ForkRequest{FigaroID: s.pred, AtTurn: 1})
+	require.Error(t, err, "a fork at turn 1 was charged by the tree as it stood then")
+	require.Contains(t, err.Error(), "0 free of quota 2")
 }

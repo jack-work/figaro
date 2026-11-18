@@ -85,13 +85,13 @@ func TestForkRefusedAtTheFanoutLimit(t *testing.T) {
 	hs, b, outfit := fanoutHandlers(t)
 	top, _ := b.CreateConversation(outfit)
 	setMaxChildren(t, b, top, 2)
-	if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top}); err != nil {
+	if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); err != nil {
 		t.Fatalf("first fork: %v", err)
 	}
-	if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top}); err != nil {
+	if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); err != nil {
 		t.Fatalf("second fork: %v", err)
 	}
-	_, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top})
+	_, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top})
 	if err == nil || !strings.Contains(err.Error(), "fanout") || !strings.Contains(err.Error(), "max_children 2") {
 		t.Fatalf("third fork at the limit: %v", err)
 	}
@@ -223,15 +223,15 @@ func TestARetiredChildFreesAFanoutSlot(t *testing.T) {
 	hs, b, outfit := fanoutHandlers(t)
 	top, _ := b.CreateConversation(outfit)
 	setMaxChildren(t, b, top, 1)
-	out, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top})
+	out, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top}); err == nil {
+	if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); err == nil {
 		t.Fatal("a second fork at max_children=1 with one live child was allowed")
 	}
 	retireAria(t, b, out.Alternative)
-	if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top}); err != nil {
+	if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); err != nil {
 		t.Fatalf("a retired child never freed the slot: %v", err)
 	}
 }
@@ -571,7 +571,7 @@ func TestConcurrentForksNeverExceedTheFanoutLimit(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top}); err == nil {
+			if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); err == nil {
 				mu.Lock()
 				ok++
 				mu.Unlock()
@@ -601,7 +601,7 @@ func TestARoleCapsForkAdmissionAndTheGrant(t *testing.T) {
 	if _, err := callForkAsFigaro(t, hs, holder, rpc.ForkRequest{FigaroID: holder}); err != nil {
 		t.Fatalf("first fork under the role's cap: %v", err)
 	}
-	if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: holder}); err == nil || !strings.Contains(err.Error(), "max_children 1") {
+	if _, err := callForkAsFigaro(t, hs, holder, rpc.ForkRequest{FigaroID: holder}); err == nil || !strings.Contains(err.Error(), "max_children 1") {
 		t.Fatalf("a second fork past the role's cap of 1: %v", err)
 	}
 	if got := len(drawnChildren(t, hs, holder)); got != 1 {
@@ -655,7 +655,7 @@ func TestAForkRacingADemoteNeverOverfills(t *testing.T) {
 		setMaxChildren(t, b, p, 2)
 		var wg sync.WaitGroup
 		wg.Add(2)
-		go func() { defer wg.Done(); _, _ = callFork(t, hs, rpc.ForkRequest{FigaroID: p}) }()
+		go func() { defer wg.Done(); _, _ = callForkAsFigaro(t, hs, p, rpc.ForkRequest{FigaroID: p}) }()
 		go func() { defer wg.Done(); _ = swapUnder(t, hs, "", g, p) }()
 		wg.Wait()
 		if n := len(hs.h.angelus.liveChildrenOf(p)); n > 2 {

@@ -19,6 +19,7 @@ type fanoutNode struct {
 	live       bool
 	quota      int
 	capped     bool
+	ownerMade  bool
 }
 
 type fanoutRole struct {
@@ -35,11 +36,12 @@ type fanoutCache struct {
 	roles  map[string]fanoutRole
 	eff    map[string]int
 	used   map[string]int
+	owners map[string]bool
 }
 
 func newFanoutCache() *fanoutCache {
 	return &fanoutCache{parent: map[string]string{}, live: map[string]bool{}, kids: map[string]int{},
-		own: map[string]int{}, roles: map[string]fanoutRole{}, eff: map[string]int{}, used: map[string]int{}}
+		own: map[string]int{}, roles: map[string]fanoutRole{}, eff: map[string]int{}, used: map[string]int{}, owners: map[string]bool{}}
 }
 
 func (c *fanoutCache) reset(nodes []fanoutNode, roles map[string]fanoutRole) {
@@ -48,6 +50,9 @@ func (c *fanoutCache) reset(nodes []fanoutNode, roles map[string]fanoutRole) {
 		t.parent[n.id], t.live[n.id] = n.parent, n.live
 		if n.capped {
 			t.own[n.id] = n.quota
+		}
+		if n.ownerMade {
+			t.owners[n.id] = true
 		}
 	}
 	maps.Copy(t.roles, roles)
@@ -85,7 +90,7 @@ func (c *fanoutCache) reset(nodes []fanoutNode, roles map[string]fanoutRole) {
 		}
 	}
 	c.mu.Lock()
-	c.parent, c.live, c.kids, c.own, c.roles, c.eff, c.used = t.parent, t.live, t.kids, t.own, t.roles, t.eff, t.used
+	c.parent, c.live, c.kids, c.own, c.roles, c.eff, c.used, c.owners = t.parent, t.live, t.kids, t.own, t.roles, t.eff, t.used, t.owners
 	c.mu.Unlock()
 }
 
@@ -165,6 +170,9 @@ func (c *fanoutCache) put(n fanoutNode) {
 	} else {
 		delete(c.own, n.id)
 	}
+	if n.ownerMade {
+		c.owners[n.id] = true
+	}
 	c.effOf(n.id)
 	c.attach(n.id)
 }
@@ -208,6 +216,7 @@ func (c *fanoutCache) forget(id string) {
 	delete(c.own, id)
 	delete(c.eff, id)
 	delete(c.used, id)
+	delete(c.owners, id)
 }
 
 func (c *fanoutCache) relimit(id string, change func()) {
@@ -287,9 +296,8 @@ func (c *fanoutCache) fitsLocked(from string, need int) error {
 	if need <= 0 {
 		return nil
 	}
-	short := false
+	short := ""
 	var seen []string
-	charged := true
 	for id, steps := from, len(c.parent); id != "" && steps >= 0; steps-- {
 		if _, known := c.parent[id]; !known {
 			break
@@ -297,17 +305,38 @@ func (c *fanoutCache) fitsLocked(from string, need int) error {
 		if c.absorbs(id) {
 			q := c.eff[id]
 			seen = append(seen, fmt.Sprintf("%s has %d free of quota %d", shortID(id), max(q-c.used[id], 0), q))
-			if charged && c.used[id]+need > q {
-				short = true
+			if short == "" && len(seen) == 1 && c.used[id]+need > q {
+				short = id
 			}
-			charged = false
 		}
 		id = c.parent[id]
 	}
-	if !short {
+	if short == "" {
 		return nil
 	}
-	return fmt.Errorf("fanout: this needs %d of budget, and %s; retire a figaro under it or ask your parent for more", need, strings.Join(seen, ", "))
+	room := "retire a figaro under it or ask your parent for more"
+	if made := c.ownerMadeUnder(short, 5); len(made) > 0 {
+		room = "retire a figaro under it (the owner made " + strings.Join(made, ", ") + ") or ask your parent for more"
+	}
+	return fmt.Errorf("fanout: this needs %d of budget, and %s; %s", need, strings.Join(seen, ", "), room)
+}
+
+func (c *fanoutCache) ownerMadeUnder(root string, most int) []string {
+	var out []string
+	for id := range c.owners {
+		if !c.live[id] {
+			continue
+		}
+		for up, steps := c.parent[id], len(c.parent); up != "" && steps >= 0; steps-- {
+			if up == root {
+				out = append(out, shortID(id))
+				break
+			}
+			up = c.parent[up]
+		}
+	}
+	sort.Strings(out)
+	return out[:min(most, len(out))]
 }
 
 func (c *fanoutCache) over(from string) error {
@@ -457,7 +486,7 @@ func (a *Angelus) fanoutNodeOf(id, parent string) fanoutNode {
 	n := fanoutNode{id: id, parent: parent, live: true}
 	meta, _ := a.Backend.Meta(id)
 	if meta != nil {
-		n.live = meta.RetiredAtMS == 0 && meta.ReapedAtMS == 0
+		n.live, n.ownerMade = meta.RetiredAtMS == 0 && meta.ReapedAtMS == 0, meta.OwnerMade
 		if meta.FanoutQuota != nil && a.chargesQuota(id) {
 			n.quota, n.capped = *meta.FanoutQuota, true
 		}
@@ -502,7 +531,7 @@ func (a *Angelus) fanoutNodes() []fanoutNode {
 		}
 		n := fanoutNode{id: v.ID, parent: parent, live: true}
 		if meta, _ := a.Backend.Meta(v.ID); meta != nil {
-			n.live = meta.RetiredAtMS == 0 && meta.ReapedAtMS == 0
+			n.live, n.ownerMade = meta.RetiredAtMS == 0 && meta.ReapedAtMS == 0, meta.OwnerMade
 			if meta.FanoutQuota != nil && v.Kind == store.KindConversation {
 				n.quota, n.capped = *meta.FanoutQuota, true
 			}
