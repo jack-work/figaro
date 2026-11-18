@@ -28,6 +28,9 @@ import (
 const (
 	connFD = 3
 	planFD = 4
+
+	openingDeadline  = 10 * time.Second
+	strangerDeadline = 2 * time.Second
 )
 
 type Plan struct {
@@ -61,16 +64,31 @@ func (v Valet) Answer(nc *net.UnixConn, now time.Time) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, fmt.Errorf("valet: peer credentials: %w", err)
 	}
+	stranger := !slices.Contains(v.Peers, uid)
+	budget := openingDeadline
+	if stranger {
+		budget = strangerDeadline
+	}
+	if err := nc.SetReadDeadline(time.Now().Add(budget)); err != nil {
+		return nil, err
+	}
 	o, err := box.ReadOpening(nc)
+	if stranger {
+		refusal := fmt.Errorf("valet: uid %d may not call this valet", uid)
+		if err == nil {
+			o.Refuse(nc, refusal)
+		}
+		return nil, refusal
+	}
 	if err != nil {
+		return nil, err
+	}
+	if err := nc.SetReadDeadline(time.Time{}); err != nil {
 		return nil, err
 	}
 	refuse := func(err error) (*exec.Cmd, error) {
 		o.Refuse(nc, err)
 		return nil, err
-	}
-	if !slices.Contains(v.Peers, uid) {
-		return refuse(fmt.Errorf("valet: uid %d may not call this valet", uid))
 	}
 	if !scopeName.MatchString(o.Scope) {
 		return refuse(fmt.Errorf("valet: %q does not name a figaro", o.Scope))

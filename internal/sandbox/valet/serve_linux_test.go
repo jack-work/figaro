@@ -423,3 +423,34 @@ func TestAGrantHoldingAHideIsDropped(t *testing.T) {
 		t.Errorf("probe printed %q", got)
 	}
 }
+
+// A caller that is not a peer is judged before its opening is read, and
+// one that holds the connection open without speaking is let go.
+func TestAStrangerIsJudgedBeforeItSpeaksAndNotWaitedOn(t *testing.T) {
+	w := newWorld(t)
+	w.v.Peers = []int{os.Getuid() + 1}
+	sock := filepath.Join(w.dir, "silent.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	silent, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer silent.Close()
+	nc, err := ln.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nc.Close()
+	start := time.Now()
+	_, err = w.v.Answer(nc.(*net.UnixConn), time.Now())
+	if err == nil || !strings.Contains(err.Error(), "may not call this valet") {
+		t.Errorf("a silent stranger: %v", err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("the valet waited %s on a silent stranger", took)
+	}
+}
