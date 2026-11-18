@@ -19,7 +19,7 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 | 2c | P1b shape checks, figaro doctor keys | Knight | after P1 | queued, before P5 |
 | 3 | E0 kingdom fan-out (charter `maxChildren`) | fork tavern-culprit `df4d5475` (drawn under the Engineer) | cheroot-config, off `proposal/system-charter-split` | finishing |
 | 3b | R1 kingdom regiment | Knight | cheroot-config `lane/kingdom-regiment` e86f3dc (on 579193c) | SHIP (explode-nugget, no findings); owner lands eced4cd, ac170c8, e86f3dc, then flake.lock with f11866f + 579193c |
-| 4 | P4 peer caller check | fork anagram-erratic `0e15cab0` | `lane/peer-caller-check` 015c4433f | READY then FIX before review: tool shells must still set finite system.ttl on children and births, succeed carries ttl; restack on v0.74.4 |
+| 4 | P4 peer caller check | fork anagram-erratic `0e15cab0` | `lane/peer-caller-check` de5d64574 | fixes in (finite ttl from tools, succeed carries the seat ttl, peer-check.md); waits on v0.74.4 to restack, then review |
 | 5 | E2 hush as a system service | fork erasable-unzip `56faa8d6`; drop-box refresh by the Strategist | hush `lane/hush-system-service` 70d3782 + `lane/hush-drop-refresh` | delta review; drop.sock now serves `POST /refresh/<name>` (status only) so rou2 can take `minter_control_socket` |
 | 6 | P3 admission ledger | fork dominoes-elusive `439448d3` | `lane/admission-ledger` | building |
 | 7 | E1 angelus socket activation | fork tavern-culprit `df4d5475` (Engineer slot) | `lane/socket-activation` | queued |
