@@ -68,6 +68,11 @@ func TestManagedPathsCannotClaimRuntimeStateOrOverlap(t *testing.T) {
 			}
 		})
 	}
+	for _, path := range []string{"runtime", "runtime.forked_from", "runtime.anything.below", "model", "token_budget"} {
+		if _, err := Plan(form.Snapshot{}, form.Snapshot{}, []string{path}, nil, OperatorPrefixes); err == nil || !strings.Contains(err.Error(), "written only by the daemon") {
+			t.Errorf("the owner's managed path %q: %v", path, err)
+		}
+	}
 }
 
 func TestManagedChildCannotReplaceAnUnmanagedScalarAncestor(t *testing.T) {
