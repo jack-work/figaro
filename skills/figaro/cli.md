@@ -374,7 +374,7 @@ is every new figaro, boards included. A shell still attending it holds it until
 the shell exits or attends elsewhere.
 
 What the sweep takes, it first reaps rather than deletes: the node and
-everything its delete would take get `system.reaped` (naming the root), leave
+everything its delete would take get `runtime.reaped` (naming the root), leave
 `ls`, refuse prompts, and are indexed in the catalog `@reaped`
 (`figaro form show @reaped`). `[memory] reaped_grace_hours` later (seven days by
 default; `0` deletes at once) the sweep purges the group, unless it has a live
@@ -384,13 +384,13 @@ day; `--keep` also unsets its ttl), and `figaro reaped purge <id>` deletes it
 now. A fork of a reaped figaro is not reaped.
 
 `figaro kill` reaps the same way, but the group carries its own deadline
-(`system.reaped_until`, the kill time plus `--when` or `[memory]
+(`runtime.reaped_until`, the kill time plus `--when` or `[memory]
 kill_grace_hours`), and at that deadline it is purged whatever holds it: a kill
 is a delete deferred, not a request. A sweep-reaped group keeps
 `reaped_grace_hours`; killing one gives it the kill's deadline.
 
 `figaro gc <selector>` chooses figaros for you and reaps them the way `kill -r`
-does, with the kill's grace, each group stamped `system.reaped_by =
+does, with the kill's grace, each group stamped `runtime.reaped_by =
 "gc:<run>"` so `figaro gc --undo <run>` brings the run back. It never takes a
 figaro that has, or whose delete would take one that has, a live agent, a
 bound shell or attending pane, a role pointing in, a spooled prompt, a

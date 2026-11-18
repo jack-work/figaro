@@ -56,9 +56,9 @@ var boxHeldKeys = []struct{ key, why string }{
 	{"target-aria", "it makes a form a role the daemon resolves and keeps alive; cast checks its target"},
 	{successionPolicyKey, "it names the outfit the daemon dresses a successor in, as the owner"},
 	{poolNodeKey, "it names the node a pool's leases are placed under; the daemon mints it"},
-	{store.SystemReapedKey, "it names the root the purge groups this aria under; kill writes it"},
-	{store.SystemReapedUntilKey, "it schedules a purge; kill writes it"},
-	{store.SystemReapedByKey, "it names the run gc --undo restores; gc writes it"},
+	{store.ReapedKey, "it names the root the purge groups this aria under; kill writes it"},
+	{store.ReapedUntilKey, "it schedules a purge; kill writes it"},
+	{store.ReapedByKey, "it names the run gc --undo restores; gc writes it"},
 }
 
 func callerBox(ctx context.Context) (string, bool) {
@@ -260,7 +260,7 @@ func (c callerKeys) refusal(path string) error {
 	return nil
 }
 
-var reapKeys = []string{store.SystemReapedKey, store.SystemReapedUntilKey, store.SystemReapedByKey}
+var reapKeys = form.RuntimeDrops(store.ReapedKey, store.ReapedUntilKey, store.ReapedByKey)
 
 func refuseReapKeys(before form.Snapshot, patch form.Patch) error {
 	var after *form.Snapshot

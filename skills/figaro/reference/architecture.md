@@ -376,8 +376,7 @@ writes only the `system.` keys `boxWritable` lists (`internal/angelus/box_keys.g
 sampling knobs, tags, cwd, sandbox, the decision provider and model. Among those it may not write, the daemon dereferences
 `system.environment.*` (a directory it writes wire logs to),
 `system.decide.base_url` (a URL it sends a credential to), `system.methods`
-(keys it writes for the figaro) and
-`system.reaped(_until)`. Open keys are its own except `target-aria`, and a
+(keys it writes for the figaro). Open keys are its own except `target-aria`, and a
 test fails on any open key the daemon reads that no one has classified. That holds for set, prompt, cast, create, fork and
 form.create/bind; values from outfits it names are the owner's. A box may not
 import, and the cwd it sends at birth is never looked up on the host. An
@@ -393,7 +392,7 @@ the caller names is a host path and needs `use` on `sandbox:local`.
 **Runtime keys.** Everything the daemon writes for its own bookkeeping lives
 under `runtime.*` (`runtime.forked_from`, `runtime.studies`,
 `runtime.tombstone`, `runtime.checkpoint.marks`, `runtime.succession_warned`,
-`runtime.retired`, `runtime.failure.*`). No caller writes there, the owner
+`runtime.retired`, `runtime.failure.*`, `runtime.reaped*`). No caller writes there, the owner
 included; `figaro retire` asks through `system.retired`, which the daemon
 records at `runtime.retired`. A store from before is moved once, at the first
 open (store generation 3): one rename patch per form, so history keeps the old

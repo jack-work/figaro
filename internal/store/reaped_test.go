@@ -1,7 +1,10 @@
 package store
 
 import (
+	"encoding/json"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
 )
 
 func TestReapedMirrorsIndexesAndClears(t *testing.T) {
@@ -17,8 +20,8 @@ func TestReapedMirrorsIndexesAndClears(t *testing.T) {
 	changes := 0
 	b.OnReapedChange(func() { changes++ })
 
-	setBoundFormKey(t, b, root, SystemReapedKey, root)
-	setBoundFormKey(t, b, child, SystemReapedKey, root)
+	setRuntimeKey(t, b, root, ReapedKey, root)
+	setRuntimeKey(t, b, child, ReapedKey, root)
 	got := b.Reaped()
 	if len(got) != 2 || got[0].Root != root || got[1].Root != root {
 		t.Fatalf("reaped %+v, want both nodes under root %s", got, root)
@@ -34,7 +37,7 @@ func TestReapedMirrorsIndexesAndClears(t *testing.T) {
 		t.Fatalf("a fresh scan found %d reaped; the sidecar is the record and must survive a restart", n)
 	}
 
-	removeBoundFormKey(t, b, child, SystemReapedKey)
+	removeRuntimeKey(t, b, child, ReapedKey)
 	if got = b.Reaped(); len(got) != 1 || got[0].ID != root {
 		t.Fatalf("reaped %+v after restoring the child, want only the root", got)
 	}
@@ -43,7 +46,7 @@ func TestReapedMirrorsIndexesAndClears(t *testing.T) {
 func TestAForkOfAReapedAriaIsNotReaped(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
-	setBoundFormKey(t, b, id, SystemReapedKey, id)
+	setRuntimeKey(t, b, id, ReapedKey, id)
 	child, _, err := b.ForkWith(id, 0, setPatch(map[string]string{"mantra": "revived"}))
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +61,7 @@ func TestAForkOfAReapedAriaIsNotReaped(t *testing.T) {
 func TestAHardDeleteForgetsTheReapedEntry(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
-	setBoundFormKey(t, b, id, SystemReapedKey, id)
+	setRuntimeKey(t, b, id, ReapedKey, id)
 	if err := b.Remove(id, true); err != nil {
 		t.Fatal(err)
 	}
@@ -70,8 +73,8 @@ func TestAHardDeleteForgetsTheReapedEntry(t *testing.T) {
 func TestReapedByMirrorsIntoTheIndexAndGoesWithTheReap(t *testing.T) {
 	b := newTTLBackend(t)
 	id := mustNewAria(t, b)
-	setBoundFormKey(t, b, id, SystemReapedKey, id)
-	setBoundFormKey(t, b, id, SystemReapedByKey, "gc:run-1")
+	setRuntimeKey(t, b, id, ReapedKey, id)
+	setRuntimeKey(t, b, id, ReapedByKey, "gc:run-1")
 	if got := b.Reaped(); len(got) != 1 || got[0].By != "gc:run-1" {
 		t.Fatalf("reaped %+v, want one entry by gc:run-1", got)
 	}
@@ -88,11 +91,26 @@ func TestReapedByMirrorsIntoTheIndexAndGoesWithTheReap(t *testing.T) {
 	if m, _ := b.Meta(child); m != nil && m.ReapedBy != "" {
 		t.Fatalf("a fork inherited reaped_by %q", m.ReapedBy)
 	}
-	if snap, err := b.FormState(child); err != nil || snap.Lookup(SystemReapedByKey) != nil {
-		t.Fatalf("a fork's form carries %s: %v", SystemReapedByKey, err)
+	if snap, err := b.FormState(child); err != nil || snap.Lookup(ReapedByKey) != nil {
+		t.Fatalf("a fork's form carries %s: %v", ReapedByKey, err)
 	}
-	removeBoundFormKey(t, b, id, SystemReapedKey)
+	removeRuntimeKey(t, b, id, ReapedKey)
 	if m, _ := b.Meta(id); m == nil || m.ReapedBy != "" {
 		t.Fatalf("a restored aria still says who reaped it: %+v", m)
+	}
+}
+
+func setRuntimeKey(t *testing.T, b *XwalBackend, id, key, val string) {
+	t.Helper()
+	raw, _ := json.Marshal(val)
+	if _, err := b.ApplyFormPrivileged(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{key: raw}, nil)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func removeRuntimeKey(t *testing.T, b *XwalBackend, id, key string) {
+	t.Helper()
+	if _, err := b.ApplyFormPrivileged(id, form.Build(form.Snapshot{}, nil, []string{key})); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -203,9 +203,9 @@ func TestSystemKeepIsOwnerHeld(t *testing.T) {
 // kill, gc and reaped restore write them, through their own paths.
 func TestNoCallerSetsTheReapKeys(t *testing.T) {
 	reapKeys := map[string]any{
-		store.SystemReapedKey:      "x",
-		store.SystemReapedUntilKey: "2020-01-01T00:00:00Z",
-		store.SystemReapedByKey:    "gc:forged",
+		store.ReapedKey:      "x",
+		store.ReapedUntilKey: "2020-01-01T00:00:00Z",
+		store.ReapedByKey:    "gc:forged",
 	}
 	r := newRigWith(t, lentKillPolicy)
 	made, err := r.create(asOwner(), "mock")
@@ -232,9 +232,10 @@ func TestNoCallerSetsTheReapKeys(t *testing.T) {
 		if _, err := r.call(asOwner(), rpc.MethodSet, withAria(t, made.FigaroID, rpc.SetRequest{Patch: form.Build(form.Snapshot{}, nil, []string{key})})); err == nil {
 			t.Errorf("the owner unset %s", key)
 		}
-		nested := form.Build(form.Snapshot{}, map[string]json.RawMessage{"system": json.RawMessage(`{"` + strings.TrimPrefix(key, "system.") + `":"x"}`)}, nil)
+		root, leaf, _ := strings.Cut(key, ".")
+		nested := form.Build(form.Snapshot{}, map[string]json.RawMessage{root: json.RawMessage(`{"` + leaf + `":"x"}`)}, nil)
 		if _, err := r.call(asOwner(), rpc.MethodSet, withAria(t, made.FigaroID, rpc.SetRequest{Patch: nested})); err == nil {
-			t.Errorf("the owner set %s inside a whole system object", key)
+			t.Errorf("the owner set %s inside a whole root object", key)
 		}
 		if _, err := r.call(asOwner(), rpc.MethodCreate, rpc.CreateRequest{Outfits: []string{"mock"}, Cwd: r.cwd, Patch: keyPatch(key, val)}); err == nil {
 			t.Errorf("the owner set %s at birth", key)
@@ -324,4 +325,4 @@ func TestAnEscapedReapKeyIsRefusedFromTheOwner(t *testing.T) {
 	}
 }
 
-var reapKeyNames = []string{store.SystemReapedKey, store.SystemReapedUntilKey, store.SystemReapedByKey}
+var reapKeyNames = []string{store.ReapedKey, store.ReapedUntilKey, store.ReapedByKey}

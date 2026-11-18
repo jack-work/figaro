@@ -139,8 +139,8 @@ func TestSealedAriaAllowsLifetimeAndReapMetadataWritesOnly(t *testing.T) {
 		t.Fatalf("TTLEntries = %+v, want %s", got, id)
 	}
 
-	if _, err := be.ApplyForm(id, kv(SystemReapedKey, id)); err != nil {
-		t.Fatalf("system.reaped refused on a tombstoned bound form: %v", err)
+	if _, err := be.ApplyFormPrivileged(id, kv(ReapedKey, id)); err != nil {
+		t.Fatalf("runtime.reaped refused to the daemon on a tombstoned bound form: %v", err)
 	}
 	if got := be.Reaped(); len(got) != 1 || got[0].ID != id || got[0].Root != id {
 		t.Fatalf("Reaped = %+v, want %s", got, id)

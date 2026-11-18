@@ -79,7 +79,7 @@ func (h *handlers) restoreGroup(ctx context.Context, group reapedGroup, keep boo
 		if keep && id == group.root {
 			patch = form.Merge(unreap, lifetime)
 		}
-		if _, err := rk.ApplyForm(id, patch); err != nil {
+		if _, err := rk.ApplyFormPrivileged(id, patch); err != nil {
 			return resp, fmt.Errorf("reaped restore %s: stopped at %s after restoring %d of %d (%s): %w",
 				group.root, id, len(resp.Restored), len(group.nodes), strings.Join(resp.Restored, ", "), err)
 		}

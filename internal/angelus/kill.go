@@ -81,18 +81,18 @@ func (h *handlers) reapGroup(id string, recursive bool, until time.Time, expect 
 	rootRaw, _ := json.Marshal(root)
 	untilRaw, _ := json.Marshal(store.ReapedUntilValue(until))
 	keys := map[string]json.RawMessage{
-		store.SystemReapedKey:      rootRaw,
-		store.SystemReapedUntilKey: untilRaw,
+		store.ReapedKey:      rootRaw,
+		store.ReapedUntilKey: untilRaw,
 	}
 	var drops []string
 	if by != "" {
-		keys[store.SystemReapedByKey], _ = json.Marshal(by)
+		keys[store.ReapedByKey], _ = json.Marshal(by)
 	} else {
-		drops = append(drops, store.SystemReapedByKey)
+		drops = append(drops, store.ReapedByKey)
 	}
 	patch := form.Build(form.Snapshot{}, keys, drops)
 	for _, n := range mark {
-		if _, err := rk.ApplyForm(n, patch); err != nil {
+		if _, err := rk.ApplyFormPrivileged(n, patch); err != nil {
 			return time.Time{}, true, fmt.Errorf("kill %s: reaping %s: %w", id, n, err)
 		}
 	}
