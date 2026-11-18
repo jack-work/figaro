@@ -868,6 +868,7 @@ func encodeResponseMessage(
 	snap form.Snapshot,
 	templates *template.Template,
 ) ([]json.RawMessage, error) {
+	bound := snap
 	var beforeMessage []json.RawMessage
 	var afterMessage []json.RawMessage
 	var userContent []responseContent
@@ -949,22 +950,21 @@ func encodeResponseMessage(
 		reminders = append(reminders, rendered...)
 		snap = snap.Apply(patch)
 	}
+	reminders = append(reminders, provider.StudyReminderTexts(msg, bound)...)
+	reminders = append(reminders, provider.ForkReminderTexts(msg, bound)...)
+	joined := provider.JoinReminders(reminders)
 	// In a results-only round the reminders ride inside the last
 	// function_call_output: a user message of their own reads as an empty prompt.
-	if !spoke && lastOutput >= 0 && len(userContent) == 0 && len(reminders) > 0 {
-		out := lastText
-		for _, r := range reminders {
-			out += "\n\n" + r
-		}
-		raw, err := marshalResponseItem(responseFunctionOutput(lastCall, out))
+	if !spoke && lastOutput >= 0 && len(userContent) == 0 && joined != "" {
+		raw, err := marshalResponseItem(responseFunctionOutput(lastCall, lastText+"\n\n"+joined))
 		if err != nil {
 			return nil, err
 		}
 		beforeMessage[lastOutput] = raw
-		reminders = nil
+		joined = ""
 	}
-	for _, text := range reminders {
-		userContent = append(userContent, responseContent{Type: "input_text", Text: text})
+	if joined != "" {
+		userContent = append(userContent, responseContent{Type: "input_text", Text: joined})
 	}
 
 	if len(userContent) > 0 {
@@ -1349,16 +1349,6 @@ func encodeEntry(msg message.Message, snap form.Snapshot, templates *template.Te
 	encoded, err := encodeResponseMessage(msg, msg.Patches, snap, templates)
 	if err != nil {
 		return nil, fmt.Errorf("responses: encode message %d: %w", msg.LogicalTime, err)
-	}
-	for _, text := range append(provider.StudyReminderTexts(msg, snap),
-		provider.ForkReminderTexts(msg, snap)...) {
-		part, merr := json.Marshal(map[string]any{
-			"role":    "user",
-			"content": []map[string]any{{"type": "input_text", "text": text}},
-		})
-		if merr == nil {
-			encoded = append(encoded, part)
-		}
 	}
 	return encoded, nil
 }

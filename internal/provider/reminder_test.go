@@ -67,3 +67,10 @@ func TestStudyAndForkBodiesCannotCloseTheirReminder(t *testing.T) {
 		}
 	}
 }
+
+func TestJoinedRemindersCarryNoSeparator(t *testing.T) {
+	a, b := Reminder("a", "1"), Reminder("b", "2")
+	if got := JoinReminders([]string{a, "", b}); got != a+b {
+		t.Fatalf("a separator costs a token per reminder on gemini, where a part boundary is free: got %q", got)
+	}
+}

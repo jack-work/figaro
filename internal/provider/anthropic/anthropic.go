@@ -676,14 +676,9 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 		bound := *prevSnap
 		patchBlocks, advanced := a.renderPatchBlocks(msg.Patches, bound)
 		*prevSnap = advanced
-		reminders := patchBlocks
-		for _, text := range provider.StudyReminderTexts(msg, bound) {
-			reminders = append(reminders, nativeBlock{Type: "text", Text: text})
-		}
-		for _, text := range provider.ForkReminderTexts(msg, bound) {
-			reminders = append(reminders, nativeBlock{Type: "text", Text: text})
-		}
-		blocks = placeReminders(blocks, reminders)
+		reminders := append(patchBlocks, provider.StudyReminderTexts(msg, bound)...)
+		reminders = append(reminders, provider.ForkReminderTexts(msg, bound)...)
+		blocks = placeReminders(blocks, provider.JoinReminders(reminders))
 		if len(blocks) == 0 {
 			return nativeMessage{}, false
 		}
@@ -742,14 +737,14 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 	return nativeMessage{}, false
 }
 
-func (a *Anthropic) renderPatchBlocks(patches []message.Patch, snap form.Snapshot) ([]nativeBlock, form.Snapshot) {
+func (a *Anthropic) renderPatchBlocks(patches []message.Patch, snap form.Snapshot) ([]string, form.Snapshot) {
 	if a.Templates != nil && a.ReminderRenderer == "tool" {
 		slog.Warn("anthropic: reminder_renderer=tool not supported inline; using tag")
 	}
-	var out []nativeBlock
+	var out []string
 	snap = form.FoldRender(snap, patches, a.Templates,
 		func(r form.RenderedEntry) {
-			out = append(out, nativeBlock{Type: "text", Text: provider.Reminder(r.Key, r.Body)})
+			out = append(out, provider.Reminder(r.Key, r.Body))
 		},
 		func(err error) { slog.Warn("anthropic: render patch", "err", err) })
 	return out, snap
@@ -1589,21 +1584,22 @@ func (a *Anthropic) TranslatorChannel() string { return a.CacheNamespace }
 // placeReminders puts reminders beside a person's words when there are any;
 // in a results-only message they ride inside the last tool_result, where a
 // top-level reminder would read as the user speaking and saying nothing.
-func placeReminders(blocks, reminders []nativeBlock) []nativeBlock {
-	if len(reminders) == 0 {
+func placeReminders(blocks []nativeBlock, text string) []nativeBlock {
+	if text == "" {
 		return blocks
 	}
+	block := nativeBlock{Type: "text", Text: text}
 	last := -1
 	for i, b := range blocks {
 		switch b.Type {
 		case "tool_result":
 			last = i
 		case "text", "image":
-			return append(blocks, reminders...)
+			return append(blocks, block)
 		}
 	}
 	if last < 0 {
-		return append(blocks, reminders...)
+		return append(blocks, block)
 	}
 	out := append([]nativeBlock(nil), blocks...)
 	tr := out[last]
@@ -1615,7 +1611,7 @@ func placeReminders(blocks, reminders []nativeBlock) []nativeBlock {
 	case string:
 		inner = append(inner, nativeBlock{Type: "text", Text: c})
 	}
-	tr.Content = append(inner, reminders...)
+	tr.Content = append(inner, block)
 	out[last] = tr
 	return out
 }
