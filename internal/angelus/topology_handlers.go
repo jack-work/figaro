@@ -594,7 +594,7 @@ func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMa
 	copy.ReapIfEmpty, copy.RetiredReason = own.ReapIfEmpty, own.RetiredReason
 	copy.FanoutQuota, copy.OwnerMade = own.FanoutQuota, own.OwnerMade
 	if interior {
-		held := h.heldBy(child)
+		held := h.heldBy(parent, child, atMainLT)
 		copy.MessageCount = held.MessageCount
 		copy.TurnCount = held.TurnCount
 		copy.TokensIn = 0
@@ -651,11 +651,27 @@ func (h *handlers) dressedAs(id string) (provider, model, mantra, cwd string) {
 	return get("system.provider"), get("system.model"), get("mantra"), get("system.cwd")
 }
 
-func (h *handlers) heldBy(id string) store.AriaMeta {
+// heldBy moves the parent's sidecar to the fork point rather than fold the
+// child's history from LT 1, then folds the child's own birth records.
+func (h *handlers) heldBy(parent, child string, atMainLT uint64) store.AriaMeta {
 	var held store.AriaMeta
-	log, err := h.angelus.Backend.OpenFigIR(id)
+	log, err := h.angelus.Backend.OpenFigIR(child)
 	if err != nil {
 		return held
+	}
+	base, _ := h.angelus.Backend.Meta(parent)
+	from, ferr := h.angelus.Backend.OpenFigIR(parent)
+	if base != nil && ferr == nil {
+		if at, ok := store.HeldThrough(from, *base, atMainLT); ok {
+			if tail, ok := log.PeekTail(); ok && tail.LT > atMainLT {
+				for _, e := range log.ReadFrom(atMainLT+1, int(tail.LT-atMainLT)) {
+					if e.LT > atMainLT {
+						at.Fold(e)
+					}
+				}
+			}
+			return at
+		}
 	}
 	for _, e := range log.Read() {
 		held.Fold(e)
