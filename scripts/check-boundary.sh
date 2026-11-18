@@ -170,15 +170,17 @@ while IFS= read -r line; do
 	fi
 	for dep in ${line#"$importer"}; do
 		under "$dep" "$MOD/internal/sandbox" || continue
-		if [ "$importer" = "$MOD/internal/cli" ] && [ "$dep" = "$MOD/internal/sandbox/box" ]; then
-			continue
+		if [ "$importer" = "$MOD/internal/cli" ]; then
+			case "$dep" in
+			"$MOD/internal/sandbox/box" | "$MOD/internal/sandbox/valet") continue ;;
+			esac
 		fi
 		echo "$importer $dep sandbox-imports"
 	done
 done <"$direct" >>"$found"
 grep -l "\"$MOD/internal/sandbox" internal/cli/*.go | grep -v '_test\.go$' | while IFS= read -r file; do
 	case "$file" in
-	internal/cli/box.go) ;;
+	internal/cli/box.go | internal/cli/valet.go | internal/cli/valet_linux.go | internal/cli/valet_other.go | internal/cli/doctor_mode.go) ;;
 	*) echo "$MOD/internal/cli $file box-serve-edge" ;;
 	esac
 done >>"$found"
