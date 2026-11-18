@@ -36,6 +36,9 @@ func watchListenerConnects(t *testing.T, path string) (*net.UnixListener, *atomi
 // Defends F1: rest against an idle manager-held socket must never connect(2),
 // because connect(2) triggers EPOLLIN in systemd and wakes figaro.service.
 func TestRestAgainstIdleManagerSocketNeverConnects(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds figaro and keeps a rig under /var/tmp")
+	}
 	r := newRestartRig(t)
 	_, connected := watchListenerConnects(t, r.socket())
 
@@ -98,6 +101,9 @@ func TestRestForceOnActivatedDaemonNeitherDialsNorRemovesSocket(t *testing.T) {
 }
 
 func TestRestRemovesStaleUnheldSocket(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds figaro and keeps a rig under /var/tmp")
+	}
 	r := newRestartRig(t)
 	ln, err := net.Listen("unix", r.socket())
 	if err != nil {
@@ -116,6 +122,9 @@ func TestRestRemovesStaleUnheldSocket(t *testing.T) {
 }
 
 func TestRestRefusesWhenPidFilePermissionIsDenied(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds figaro and keeps a rig under /var/tmp")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses 0000 mode")
 	}
