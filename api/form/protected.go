@@ -101,6 +101,14 @@ func FanoutMint(s Snapshot) (bool, error) {
 	return b, nil
 }
 
+func RefuseRetiredMintWrite(before, after Snapshot) error {
+	now, ok := after.Get(FanoutMintKey)
+	if was, _ := before.Get(FanoutMintKey); !ok || string(was) == string(now) {
+		return nil
+	}
+	return fmt.Errorf("%s is retired while [authz] enforce_key_grants is on: the license to mint is the grant mint:* in %s, which a figaro gives only if it holds it", FanoutMintKey, ScopesKey)
+}
+
 func RefuseRetiredGrantsWrite(before, after Snapshot) error {
 	was, _ := before.Get(RetiredGrantsKey)
 	now, ok := after.Get(RetiredGrantsKey)
