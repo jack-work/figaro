@@ -252,9 +252,13 @@ Each owner gets a ready commit, or a one-line diff, before P2 is merged.
   - Overlap and familial succession cost 1, and are refused if the budget is not there.
 - **No `fanout ask` verb.** A refusal names the free budget at every capped ancestor, so the figaro asks its parent in plain words.
 - **Managed apply** can set quota from the charter.
+- **Owner forks (Gluck, 11-18).** A fork made by an unclaimed caller, the owner, skips fan-out and quota admission, but it still counts in its parent's live children and in every ancestor's usage. The child records that the owner made it in a runtime key (`runtime.owner_made`). A figaro at its cap may retire owner-made figaros in its own subtree to make room. Its refusal names them, so the figaro knows what it may clear. Gluck accepts that his forks can be cleaned up this way.
+- **Quota is never copied (invariant).** A fork never copies its parent's `system.fanout.quota` value, whatever the fork turn, outfit or birth patch. A child's quota is carved from the parent's free budget: budget moves down only, and setting it through `child_policy` is a carve too. Usage is derived from the live tree at admission, never from history, so a fork at an earlier turn is charged by the tree as it is now.
 
 **Done when:**
 - Random sequences of fork, retire, reparent and succeed keep every invariant against a reference model.
+- Reference-model test, owner forks: random sequences mixing owner and figaro forks. Owner forks are never refused and always counted. A figaro at cap is refused, and its refusal lists exactly the owner-made figaros in its subtree. Retiring one of them admits the next fork. Sabotage: drop the count for owner forks and the model diverges.
+- Reference-model test, no copied quota: forks at random turns, through outfits, birth patches and child_policy. A child's quota never equals a copy of the parent's value unless it was carved; total carved never exceeds the parent's free budget; usage matches the live tree after every step, including forks at old turns of a parent whose tree has since changed. Sabotage: copy quota in the birth patch and the model goes red.
 - Each succession variant is charged as described above.
 - Role-verb refusals are tested.
 - `ls` shows the budget.
@@ -262,6 +266,7 @@ Each owner gets a ready commit, or a one-line diff, before P2 is merged.
 **Breaks.**
 - A new lineage-class key.
 - Minting now spends budget.
+- A figaro at its cap may retire figaros Gluck forked under it.
 - Daemon-side succession accounting changes. Its drawn tree already changed in P3.
 
 **Numbers.** The same as P3: admission stays under 5 µs.
