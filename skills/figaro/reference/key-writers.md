@@ -10,6 +10,7 @@ any caller with write access to the form may set it, the figaro itself included.
 
 Set or removed only by the owner: the local door, an in-process call, or the owner's principal. Every other caller, a box included, is refused. A box may still set `system.retired` on the figaros inside it.
 
+- `succession-policy` and everything under it
 - `system.credo` and everything under it
 - `system.provider` and everything under it
 - `system.model` and everything under it
@@ -32,6 +33,7 @@ Set or removed only by the owner: the local door, an in-process call, or the own
 
 Set by the owner, or by an ancestor figaro through its box door, and a figaro gives only what it holds. A figaro never sets its own.
 
+- `target-aria` and everything under it
 - `system.sandbox` and everything under it
 - `system.scopes` and everything under it
 - `system.grants` and everything under it
