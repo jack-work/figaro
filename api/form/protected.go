@@ -16,18 +16,9 @@ const (
 	FanoutMintKey = "system.fanout.mint"
 )
 
-var protectedKeys = []string{ScopesKey, RetiredGrantsKey, "system.sandbox", FanoutMaxChildrenKey, FanoutMintKey}
+func ProtectedKeys() []string { return RootsOf(WriterLineage) }
 
-func ProtectedKeys() []string { return append([]string(nil), protectedKeys...) }
-
-func Protected(path string) (string, bool) {
-	for _, k := range protectedKeys {
-		if path == k || strings.HasPrefix(path, k+".") || strings.HasPrefix(path, k+"[") {
-			return k, true
-		}
-	}
-	return "", false
-}
+func Protected(path string) (string, bool) { return rootOf(WriterLineage, path) }
 
 func OwnScopes(s Snapshot) (raw json.RawMessage, key string, ok bool, err error) {
 	scopes, hasScopes := s.Get(ScopesKey)

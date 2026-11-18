@@ -6,16 +6,6 @@ import (
 	"strings"
 )
 
-var systemManaged = func() map[string]bool {
-	m := map[string]bool{}
-	for _, k := range WellKnownKeys() {
-		if k.Mode == KeySystemManaged {
-			m[k.Key] = true
-		}
-	}
-	return m
-}()
-
 // CheckWritable refuses an unprivileged write to a system-managed key.
 func CheckWritable(p Patch, privileged bool) error {
 	if privileged {
@@ -23,7 +13,7 @@ func CheckWritable(p Patch, privileged bool) error {
 	}
 	var bad []string
 	for _, e := range p.Entries() {
-		if systemManaged[e.Key] {
+		if _, ok := rootOf(WriterRuntime, e.Key); ok {
 			bad = append(bad, e.Key)
 		}
 	}
@@ -34,10 +24,7 @@ func CheckWritable(p Patch, privileged bool) error {
 }
 
 func SystemManagedKeys() []string {
-	out := make([]string, 0, len(systemManaged))
-	for k := range systemManaged {
-		out = append(out, k)
-	}
+	out := RootsOf(WriterRuntime)
 	sort.Strings(out)
 	return out
 }
