@@ -28,7 +28,7 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 | 10 | P5 key-path grants, selectors, child_policy | hydrant-rocket, after P2 | `lane/key-grants` | queued |
 | 11 | P6 quota, role verbs, succession charging | after P3, P5 | `lane/quota` | queued |
 | 12 | E4 house mode module (staged) | after E1-E3 | `lane/house-mode` + cheroot-config | queued; deploys only after Gluck's Merlin cutover |
-| 12b | P7a reminder coalescing | fork fossil-anklet `6483d245` | `lane/reminder-coalesce` 5fb4c9345 | READY, in review; gemini ties except turn 1 (-74 tokens), Anthropic measured after release |
+| 12b | P7a reminder coalescing | fork fossil-anklet `6483d245` | `lane/reminder-coalesce` 5fb4c9345 | SHIP (buckle-hugeness); to the Knight for the next cut; Anthropic savings measured after release; P7b waits on P5 |
 | 13 | P7 laws and reminder kinds | after P5 | `lane/laws` | queued |
 | 14 | E8 the whole kingdom module | after P4-P6 | cheroot-config | queued |
 
