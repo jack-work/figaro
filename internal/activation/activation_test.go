@@ -4,6 +4,7 @@ package activation
 
 import (
 	"fmt"
+	"golang.org/x/sys/unix"
 	"net"
 	"os"
 	"os/exec"
@@ -26,7 +27,7 @@ func TestAbsentVariablesMeanNotActivated(t *testing.T) {
 }
 
 func TestAnotherProcessesSocketsAreLeftAlone(t *testing.T) {
-	get, unset, env := envOf(map[string]string{envPID: "99", envFDs: "1", envNames: "angelus"})
+	get, unset, env := envOf(map[string]string{envPID: "99", envFDs: "1", envNames: "angelus", envPidfdID: "7"})
 	s, err := Take(get, unset, 10)
 	if err != nil || s.Active() {
 		t.Fatalf("active=%v err=%v", s.Active(), err)
@@ -58,16 +59,32 @@ func TestZeroSocketsIsActiveButEmpty(t *testing.T) {
 }
 
 func TestHelperProcess(t *testing.T) {
-	if os.Getenv("ACTIVATION_HELPER") == "" {
-		t.Skip("child half of TestNamedListenersReachAChild")
+	switch os.Getenv("ACTIVATION_HELPER") {
+	case "":
+		t.Skip("child half of activation helper tests")
+	case "duplicate":
+		_, err := TakeEnv()
+		if err == nil {
+			fmt.Println("accepted duplicate")
+			os.Exit(2)
+		}
+		for fd := firstFD; fd < firstFD+3; fd++ {
+			if _, serr := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0); serr == nil {
+				fmt.Printf("fd %d stayed open\n", fd)
+				os.Exit(2)
+			}
+		}
+		fmt.Println("closed-all")
+		os.Exit(0)
 	}
 	s, err := TakeEnv()
 	if err != nil {
 		fmt.Println("take:", err)
 		os.Exit(2)
 	}
-	fmt.Println("names", strings.Join(s.Names(), ","), "env", os.Getenv(envFDs) == "" && os.Getenv(envPID) == "" && os.Getenv(envNames) == "")
-	for _, name := range s.Names() {
+	cleanEnv := os.Getenv(envFDs) == "" && os.Getenv(envPID) == "" && os.Getenv(envNames) == "" && os.Getenv(envPidfdID) == ""
+	fmt.Println("names", strings.Join(s.Names(), ","), "env", cleanEnv)
+	for _, name := range []string{"angelus", "web"} {
 		ln, _, err := s.Listener(name)
 		if err != nil {
 			fmt.Println("listener:", err)
@@ -82,13 +99,21 @@ func TestHelperProcess(t *testing.T) {
 		c.Close()
 		ln.Close()
 	}
+	if err := s.Close(); err != nil {
+		fmt.Println("close:", err)
+		os.Exit(2)
+	}
+	if _, serr := unix.FcntlInt(uintptr(firstFD+2), unix.F_GETFD, 0); serr == nil {
+		fmt.Println("unserved fd stayed open after Close")
+		os.Exit(2)
+	}
 	fmt.Println("done")
 	os.Exit(0)
 }
 
-func TestNamedListenersReachAChild(t *testing.T) {
+func TestNamedListenersReachAChildAndUnservedOnesClose(t *testing.T) {
 	dir := t.TempDir()
-	names := []string{"angelus", "web"}
+	names := []string{"angelus", "web", "extra"}
 	var files []*os.File
 	paths := map[string]string{}
 	for _, n := range names {
@@ -97,17 +122,19 @@ func TestNamedListenersReachAChild(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f, err := ln.(*net.UnixListener).File()
+		ul := ln.(*net.UnixListener)
+		ul.SetUnlinkOnClose(false)
+		f, err := ul.File()
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer f.Close()
-		defer ln.Close()
+		ln.Close()
 		files = append(files, f)
 		paths[n] = p
 	}
 	cmd := exec.Command("sh", "-c", `LISTEN_PID=$$ exec "$0" -test.run=^TestHelperProcess$`, os.Args[0])
-	cmd.Env = append(os.Environ(), "ACTIVATION_HELPER=1", "LISTEN_FDS=2", "LISTEN_FDNAMES=angelus:web")
+	cmd.Env = append(os.Environ(), "ACTIVATION_HELPER=1", "LISTEN_FDS=3", "LISTEN_FDNAMES=angelus:web:extra", "LISTEN_PIDFDID=42")
 	cmd.ExtraFiles = files
 	out := &strings.Builder{}
 	cmd.Stdout = out
@@ -115,7 +142,7 @@ func TestNamedListenersReachAChild(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	for _, n := range names {
+	for _, n := range []string{"angelus", "web"} {
 		c, err := net.DialTimeout("unix", paths[n], 5*time.Second)
 		if err != nil {
 			t.Fatal(err)
@@ -131,8 +158,33 @@ func TestNamedListenersReachAChild(t *testing.T) {
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("child: %v\n%s", err, out)
 	}
-	if !strings.Contains(out.String(), "names angelus,web env true") {
+	if !strings.Contains(out.String(), "names angelus,extra,web env true") {
 		t.Fatalf("child saw: %s", out)
+	}
+	for _, n := range names {
+		if _, err := os.Stat(paths[n]); err != nil {
+			t.Fatalf("closing inherited listener unlinked %s: %v", n, err)
+		}
+	}
+}
+
+func TestDuplicateNameClosesEveryPassedFD(t *testing.T) {
+	var files []*os.File
+	for i := 0; i < 3; i++ {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Close()
+		defer w.Close()
+		files = append(files, r)
+	}
+	cmd := exec.Command("sh", "-c", `LISTEN_PID=$$ exec "$0" -test.run=^TestHelperProcess$`, os.Args[0])
+	cmd.Env = append(os.Environ(), "ACTIVATION_HELPER=duplicate", "LISTEN_FDS=3", "LISTEN_FDNAMES=angelus:angelus:web")
+	cmd.ExtraFiles = files
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "closed-all") {
+		t.Fatalf("duplicate cleanup failed: %v\n%s", err, out)
 	}
 }
 
