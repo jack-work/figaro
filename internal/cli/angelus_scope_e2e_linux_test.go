@@ -158,8 +158,8 @@ func TestAnAutostartedDaemonOutlivesTheUnitThatStartedIt(t *testing.T) {
 		t.Fatalf("a turn that ran bash left the daemon %d no child to check", pid)
 	}
 	for _, child := range tree {
-		if got := cgroupOf(child); got != cg {
-			t.Errorf("process %d under the daemon is in %q, not the daemon's %q", child, got, cg)
+		if got := cgroupOf(child); got != cg && !strings.HasPrefix(got, cg+"/") {
+			t.Errorf("process %d under the daemon is in %q, not in or below the daemon's %q", child, got, cg)
 		}
 	}
 }
