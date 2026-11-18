@@ -364,6 +364,15 @@ or key's expiry), a restart drops them, each parent holds 16, and one
 proposer holds 4 on a parent and 64 in all. `adopt` must stay out of a troupe policy until every member runs
 a release that knows the verb.
 
+**Seats.** A seat (`figaro succeed`, or `figaro.seat` from a caller) needs
+`kill` on both the predecessor and the successor, and on nothing else. A
+labelled figaro may therefore seat any figaro it may kill, whether or not
+that figaro is its fork, and the seated successor may then take the
+predecessor's roles. The predecessor's other children move under the
+successor on the strength of `kill` over the predecessor alone, as with
+demote. The daemon remembers the seats it applied only until it restarts;
+a cast refused for a forgotten seat says to run the seat again.
+
 **Sandboxes.** `use` on `sandbox:<name>` is checked on the dressed form at
 create, fork, bind, import and `figaro.set`. A figaro minted by a sandbox
 principal is pinned to that sandbox; a set, a fork's patch or a cast's role
