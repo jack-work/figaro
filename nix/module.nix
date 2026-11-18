@@ -150,7 +150,10 @@ in
     users.groups.${cfg.user}.gid = cfg.gid;
 
     systemd.tmpfiles.rules = [ "d ${cfg.stateDir} 0700 ${cfg.user} ${cfg.user} -" ]
-      ++ lib.optional cfg.socketActivation "d ${cfg.runtimeDir} 0750 ${cfg.user} ${cfg.user} -";
+      ++ lib.optionals cfg.socketActivation [
+        "d ${cfg.runtimeDir} 0750 ${cfg.user} ${cfg.user} -"
+        "z ${cfg.runtimeDir}/angelus.sock ${cfg.socketMode} ${cfg.user} ${cfg.user} -"
+      ];
 
     systemd.sockets.figaro = lib.mkIf cfg.socketActivation {
       description = "figaro angelus CLI door";
