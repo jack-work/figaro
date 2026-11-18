@@ -12,9 +12,9 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 
 | # | part | builder | branch | state (2026-11-18 02:xx) |
 |---|---|---|---|---|
-| 1 | IF1 study_incantation string | Knight | `lane/study-incantation-string` | building |
+| 1 | IF1 study_incantation string | Knight | `lane/study-incantation-string` | in v0.74.3 (cutting) |
 | 2 | P1 key registry | Knight | `lane/key-registry` | after IF1 |
-| 2b | H1 place --under; succeed --successor drawn in place | fork oceanic-degree `a78f3129` | `lane/hierarchy-place` | building; v0.74.3 with IF1 |
+| 2b | H1 place --under; succeed --successor drawn in place | fork oceanic-degree `a78f3129` | `lane/hierarchy-place` | in review; ships as v0.74.4 |
 | 2c | P1b shape checks, figaro doctor keys | Knight | after P1 | queued, before P5 |
 | 3 | E0 kingdom fan-out (charter `maxChildren`) | fork tavern-culprit `df4d5475` (drawn under the Engineer) | cheroot-config, off `proposal/system-charter-split` | finishing |
 | 4 | P4 peer caller check | fork anagram-erratic `0e15cab0` | `lane/peer-caller-check` | building |
