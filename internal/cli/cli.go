@@ -1323,8 +1323,14 @@ In order, stopping at the first step that fails:
        --turn head
                  every turn; the prompt follows the last. On an aria
                  with N turns, --turn N+1 is the same
-     The fork carries the model its turn was recorded with; -O/-S/-D dress
-     it in the same call, as with fork, so it can come up on today's.
+     The fork is dressed for the seat: each key comes from the first that
+     sets it of -S/-D, -O, the role's route keys (system.provider, model,
+     max_tokens, thinking_effort, thinking_budget, methods, decide), the
+     role's succession-policy.outfit, and last the predecessor's board at
+     the fork turn. A role with no route keys and no outfit leaves the
+     fork on the route its turn was recorded with.
+     A role naming a provider and no model drops a model that belongs to
+     another provider, so the provider's default applies.
      It studies what the predecessor studies now, with the same --keys,
      whatever turn it was cut at; --no-studies keeps only what the
      predecessor studied at that turn.

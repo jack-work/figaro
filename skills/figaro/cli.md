@@ -231,7 +231,7 @@ the full id.
 | `figaro fork --stay` | Branch without moving this shell. |
 | `figaro fork --no-studies` | Branch without the parent's studies: the branch studies no form. |
 | `figaro promote <id> [levels]` | Raise a figaro in the tree `ls` draws; it takes its parent's place. Presentation only. |
-| `figaro succeed <@role> [--turn <n> \| --successor <figaro>] [--no-studies] [--title <t>] [--ttl <d>] [--abdication retire\|linger] -- <prompt>` | Hand a role to a successor: fork the figaro it targets at `--turn` (default 2) or take `--successor` (a fork studies what the predecessor studies now; `--no-studies` keeps the fork turn's), demote the predecessor beneath it, prompt and cast the successor into the role and every other role the predecessor holds, then retire the predecessor with a ttl (default 10m; `0` kills it). `linger` leaves it promptable for an overlapping handover. Not atomic: a failure names the commands that finish the job. `:succeed` in the pager follows the successor unless `--stay`. See [reference/forms.md](reference/forms.md#roles). |
+| `figaro succeed <@role> [--turn <n> \| --successor <figaro>] [--no-studies] [--title <t>] [--ttl <d>] [--abdication retire\|linger] -- <prompt>` | Hand a role to a successor: fork the figaro it targets at `--turn` (default 2) or take `--successor` (a fork studies what the predecessor studies now; `--no-studies` keeps the fork turn's), dressed from the role's route keys and `succession-policy.outfit` beneath any `-O`/`-S`/`-D`, demote the predecessor beneath it, prompt and cast the successor into the role and every other role the predecessor holds, then retire the predecessor with a ttl (default 10m; `0` kills it). `linger` leaves it promptable for an overlapping handover. Not atomic: a failure names the commands that finish the job. `:succeed` in the pager follows the successor unless `--stay`. See [reference/forms.md](reference/forms.md#roles). |
 | `figaro demote <id> [--under <child>]` | Sink a figaro to a leaf: a child takes its place, the other children move under that child, and a kill then takes the figaro alone. Presentation only. |
 | `figaro kill <id> [-r \| --keep-children] [--when <d> \| --now]` | Stop a trunk's agent and sessions, then reap it until its grace runs out. `kill <id>` refuses when `ls` draws anything under it; `kill -r <id>` takes it and everything under it; `kill --keep-children <id>` takes it alone and lifts its children to its parent, or to the top, each keeping the scopes the killed figaro narrowed it to. Grace: `--when` (`90m`, `6h`, `2d`, `1w`), else `[memory] kill_grace_hours`, three days. `--now` or `--when 0` deletes at once. Killing a reaped figaro moves its group's purge to the new grace. |
 | `figaro reaped [ls \| restore <id> [--keep] \| purge <id>]` | What `kill`, `gc` and the ttl sweep reaped, who reaped each group, when it is purged, and the way back. |
@@ -325,8 +325,10 @@ system.retirement = { context_threshold = 300000, ttl = "72h", action = "succeed
    now", naming each role it holds and the path at that role's handoff key
    (`succession-policy.handoff-key`, `handoff` by default).
 3. When that turn ends the daemon mints the successor: on the roles'
-   `succession-policy.outfit`, or with no role on the figaro's own outfit,
-   provider, model and thinking. It carries the same `system.retirement`,
+   `succession-policy.outfit`, or with none on the figaro's own outfit,
+   provider, model and thinking; the route keys a role carries
+   (`system.provider`, `system.model`, `system.max_tokens`, the thinking
+   keys, `system.methods`, `system.decide`) override both. It carries the same `system.retirement`,
    `system.sandbox` and `system.tools`, whatever the outfit says. Its
    `system.scopes` are the old one's, or the old one's effective set when
    its ancestors narrowed it, with what it held over itself written as

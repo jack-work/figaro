@@ -57,13 +57,18 @@ func serveBackend(t *testing.T, backend store.Backend) (*sdk.Angelus, string) {
 
 func serveBackendWith(t *testing.T, backend store.Backend, providers func(string, provider.Knobs) (provider.Provider, error)) (*sdk.Angelus, string) {
 	t.Helper()
+	return serveBackendAt(t, backend, providers, t.TempDir())
+}
+
+func serveBackendAt(t *testing.T, backend store.Backend, providers func(string, provider.Knobs) (provider.Provider, error), configDir string) (*sdk.Angelus, string) {
+	t.Helper()
 	// A unix socket path is length-capped, so the runtime dir is short.
 	dir, err := os.MkdirTemp(os.Getenv("TMPDIR"), "f")
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	a := angelus.New(angelus.Config{Backend: backend, RuntimeDir: dir})
 	ctx, cancel := context.WithCancel(context.Background())
-	loaded, err := config.Load(t.TempDir())
+	loaded, err := config.Load(configDir)
 	require.NoError(t, err)
 	a.Handlers = angelus.NewHandlers(angelus.ServerConfig{
 		Angelus: a, Config: loaded, Ctx: ctx,
