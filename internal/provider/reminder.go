@@ -24,3 +24,17 @@ func escapeReminderName(s string) string {
 	s = strings.ReplaceAll(s, "<", "&lt;")
 	return s
 }
+
+func JoinReminders(texts []string) string {
+	var b strings.Builder
+	for _, t := range texts {
+		if t == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(t)
+	}
+	return b.String()
+}

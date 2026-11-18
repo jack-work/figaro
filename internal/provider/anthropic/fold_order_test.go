@@ -34,8 +34,8 @@ func TestRenderPatchBlocksRendersAgainstThePriorBoundForm(t *testing.T) {
 		t.Fatalf("got %d blocks, want 2", len(blocks))
 	}
 	for i, want := range []string{"first -> second", "second -> third"} {
-		if !strings.Contains(blocks[i].Text, want) {
-			t.Fatalf("block %d is %q, want it to carry %q", i, blocks[i].Text, want)
+		if !strings.Contains(blocks[i], want) {
+			t.Fatalf("block %d is %q, want it to carry %q", i, blocks[i], want)
 		}
 	}
 	if v, _ := advanced.Get("mantra"); string(v) != `"third"` {

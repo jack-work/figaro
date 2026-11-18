@@ -110,16 +110,11 @@ func encodeMessage(msg message.Message, reminders []string) ([]Content, error) {
 		if len(reminders) == 0 {
 			return nil, nil
 		}
-		var parts []Part
-		for _, r := range reminders {
-			if r != "" {
-				parts = append(parts, Part{Text: r})
-			}
-		}
-		if len(parts) == 0 {
+		joined := provider.JoinReminders(reminders)
+		if joined == "" {
 			return nil, nil
 		}
-		return []Content{{Role: "user", Parts: parts}}, nil
+		return []Content{{Role: "user", Parts: []Part{{Text: joined}}}}, nil
 
 	case message.RoleSystem:
 		var text string
@@ -284,13 +279,8 @@ func encodeMessage(msg message.Message, reminders []string) ([]Content, error) {
 }
 
 func placeReminders(parts []Part, reminders []string) []Part {
-	var clean []string
-	for _, r := range reminders {
-		if r != "" {
-			clean = append(clean, r)
-		}
-	}
-	if len(clean) == 0 {
+	joined := provider.JoinReminders(reminders)
+	if joined == "" {
 		return parts
 	}
 	hasHumanInput := false
@@ -305,12 +295,8 @@ func placeReminders(parts []Part, reminders []string) []Part {
 		}
 	}
 	if hasHumanInput || lastResp < 0 {
-		for _, r := range clean {
-			parts = append(parts, Part{Text: r})
-		}
-		return parts
+		return append(parts, Part{Text: joined})
 	}
-	joined := strings.Join(clean, "\n\n")
 	resp := parts[lastResp].FunctionResponse.Response
 	if resp == nil {
 		resp = map[string]any{}
