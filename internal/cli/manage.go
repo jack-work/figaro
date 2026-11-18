@@ -1192,6 +1192,55 @@ func runDemote(loaded *config.Loaded, idFlag string, args []string, under string
 	})
 }
 
+func runPlace(loaded *config.Loaded, idFlag string, args []string, under string, asJSON bool) {
+	target := idFlag
+	if target == "" && len(args) > 0 {
+		target = args[0]
+	}
+	if under == "" {
+		dieUsage("place: want --under <parent>")
+	}
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
+		if err := needCapability(rpc.CapPlace, "place"); err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if target == "" {
+			if r, err := resolveBinding(ctx, acli, shellPID); err == nil && r.Found {
+				target = r.FigaroID
+			}
+		}
+		if target == "" {
+			dieUsage("place: no figaro bound to this shell (try: place <id> --under <parent>)")
+		}
+		resp, err := acli.Place(ctx, target, under)
+		if err != nil {
+			die("place: %s", err)
+		}
+		if resp.Unsupported {
+			die("place: this figaro is built without the trunk capability, so there is\n" +
+				"  no hierarchy to draw in. Nesting follows fork history alone.")
+		}
+		if asJSON {
+			return json.NewEncoder(stdout).Encode(resp)
+		}
+		if p := resp.Parked; p != nil {
+			fmt.Fprintf(stderrw, "place: parked as proposal %s on %s\n"+
+				"  its holder accepts with: figaro adopt accept %s %s\n"+
+				"  it lapses at %s, or if the daemon restarts\n",
+				p.ID, ariaName(p.Parent), p.Parent, p.ID, time.UnixMilli(p.ExpiresMS).Format(time.DateTime))
+			return nil
+		}
+		if !resp.Moved {
+			fmt.Fprintf(stderrw, "%s is already drawn under %s\n", ariaName(resp.FigaroID), ariaName(resp.Under))
+			return nil
+		}
+		fmt.Fprintf(stderrw, "placed %s under %s: `figaro ls` now draws it there\n", ariaName(resp.FigaroID), ariaName(resp.Under))
+		return nil
+	})
+}
+
 // A bare id pins the trunk's leaf; an LT pins a pending fork point; :<LT>
 // re-pins the bound aria.
 func runAttend(loaded *config.Loaded, spec string) {

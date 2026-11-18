@@ -72,6 +72,7 @@ const (
 	CapForkStudies Capability = "fork.studies"
 	CapForkSeat    Capability = "fork.seat"
 	CapSeat        Capability = "seat"
+	CapPlace       Capability = "place"
 )
 
 // ForkResponse: the parent freezes and keeps its id as a read-only index
@@ -145,6 +146,19 @@ type DemoteResponse struct {
 	FigaroID    string    `json:"figaro_id"`
 	Under       string    `json:"under,omitempty"`
 	Preferred   bool      `json:"preferred,omitempty"`
+	Unsupported bool      `json:"unsupported,omitempty"`
+	Parked      *Proposal `json:"parked,omitempty"`
+}
+
+type PlaceRequest struct {
+	FigaroID string `json:"figaro_id"`
+	Under    string `json:"under"`
+}
+
+type PlaceResponse struct {
+	FigaroID    string    `json:"figaro_id"`
+	Under       string    `json:"under,omitempty"`
+	Moved       bool      `json:"moved,omitempty"`
 	Unsupported bool      `json:"unsupported,omitempty"`
 	Parked      *Proposal `json:"parked,omitempty"`
 }
