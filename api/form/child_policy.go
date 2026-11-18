@@ -8,7 +8,7 @@ import (
 
 const ChildPolicyKey = "system.child_policy"
 
-var defaultChildScopes = json.RawMessage(`["send:parent","read:aria:self"]`)
+var defaultChildScopes = json.RawMessage(`["send:parent","read:aria:self","write:aria:self#@self","delete:aria:self#@self"]`)
 
 func DefaultChildPolicy() map[string]json.RawMessage {
 	return map[string]json.RawMessage{ScopesKey: defaultChildScopes}

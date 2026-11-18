@@ -37,6 +37,12 @@ func validateKeyGlob(glob string) error {
 	if glob == "" {
 		return fmt.Errorf("a key glob after %s names nothing", keySep)
 	}
+	if class, ok := strings.CutPrefix(glob, form.KeyClassPrefix); ok {
+		if class != form.WriterSelf.String() && class != form.WriterLineage.String() {
+			return fmt.Errorf("key class %q: a grant names @self or @lineage; owner and runtime keys are granted to no figaro", glob)
+		}
+		return nil
+	}
 	for _, seg := range strings.Split(glob, ".") {
 		if seg == "" {
 			return fmt.Errorf("key glob %q has an empty segment", glob)

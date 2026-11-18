@@ -519,6 +519,21 @@ func TestSuccessionCarriesTheFanoutLimit(t *testing.T) {
 	require.JSONEq(t, "1", string(got))
 }
 
+func TestSuccessionCarriesTheChildPolicy(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	policy := map[string]any{form.ScopesKey: []string{"send:parent", "send:role:@9bf485c24507fe8484a001c18a1b84cc"}}
+	ownerSets(t, r.a, old, map[string]any{form.ChildPolicyKey: policy})
+	r.p.set(func() { r.p.holdOthers = true })
+	r.cross(old)
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "ramping" }, "the succession never reached its ramp")
+	snap, err := r.a.Backend.FormState(r.hs.SuccessorOf(old))
+	require.NoError(t, err)
+	got, ok := snap.Get(form.ChildPolicyKey)
+	require.True(t, ok, "the successor's lanes would be born without the seat's child policy")
+	require.JSONEq(t, `{"system.scopes":["send:parent","send:role:@9bf485c24507fe8484a001c18a1b84cc"]}`, string(got))
+}
+
 func TestSuccessionUnderAFullParentStillPlacesTheSuccessor(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(succeeding(nil))

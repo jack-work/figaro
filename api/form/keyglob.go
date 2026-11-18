@@ -2,7 +2,17 @@ package form
 
 import "strings"
 
+const KeyClassPrefix = "@"
+
+func KeyClassGlob(w Writer) string { return KeyClassPrefix + w.String() }
+
 func KeyGlobMatch(pattern, key string) bool {
+	if strings.HasPrefix(key, KeyClassPrefix) {
+		return pattern == key || pattern == "**"
+	}
+	if class, ok := strings.CutPrefix(pattern, KeyClassPrefix); ok {
+		return WriterOf(key).String() == class
+	}
 	return globMatch(strings.Split(pattern, "."), strings.Split(key, "."))
 }
 
