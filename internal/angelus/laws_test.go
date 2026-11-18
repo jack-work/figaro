@@ -6,8 +6,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/arialog"
 )
 
 const lawText = "Report to the role, never to a person."
@@ -68,4 +72,100 @@ func TestOnlyTheOwnersChildPolicyCarriesALaw(t *testing.T) {
 	if v, _ := keyOn(t, r.grantRig, kid, "law.x"); string(v) != `"x"` {
 		t.Errorf("the owner's child policy did not give its law: %s", v)
 	}
+}
+
+func lawsOn(t *testing.T, r grantRig, id string) string {
+	t.Helper()
+	v, _ := keyOn(t, r, id, form.LawRoot)
+	return string(v)
+}
+
+func spokeTwice(t *testing.T, r grantRig, id string) {
+	t.Helper()
+	log, err := r.backend.OpenFigIR(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []message.Message{
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("one")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("ok")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("two")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("ok")}},
+	} {
+		if _, err := log.Append(arialog.Entry[message.Message]{Payload: m}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Defends the copy at birth: without it a fork at an early turn is born
+// with the laws of that turn, and a figaro sheds a law by forking itself
+// from before it was given.
+func TestAForkAtAnyTurnCarriesItsParentsLawsAsTheyStand(t *testing.T) {
+	r := newLineageRig(t, "")
+	c := r.dial(t)
+	r.ownerSets(t, r.parent, map[string]any{"law.old": "the first rule"})
+	spokeTwice(t, r.grantRig, r.parent)
+	r.ownerSets(t, r.parent, map[string]any{"law.new": lawText})
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.parent, rpc.SetRequest{Patch: form.Build(form.Snapshot{}, nil, []string{"law.old"})})); err != nil {
+		t.Fatal(err)
+	}
+	want := `{"new":"` + lawText + `"}`
+	for _, at := range []uint64{1, 2, 0} {
+		raw, _ := json.Marshal(rpc.ForkRequest{FigaroID: r.parent, AtTurn: at})
+		var out rpc.ForkResponse
+		if err := c.Call(context.Background(), rpc.MethodFork, claimed(t, r.parent, raw), &out); err != nil {
+			t.Fatalf("fork at turn %d: %v", at, err)
+		}
+		require.JSONEq(t, want, lawsOn(t, r.grantRig, out.Alternative), "a figaro-made fork at turn %d", at)
+		owned, err := r.call(asOwner(), rpc.MethodFork, rpc.ForkRequest{FigaroID: r.parent, AtTurn: at})
+		if err != nil {
+			t.Fatalf("owner fork at turn %d: %v", at, err)
+		}
+		require.JSONEq(t, want, lawsOn(t, r.grantRig, owned.(rpc.ForkResponse).Alternative), "an owner's fork at turn %d", at)
+	}
+}
+
+func TestAFigaroMadeByAFigaroCarriesItsMakersLaws(t *testing.T) {
+	r := newLineageRig(t, "")
+	c := r.dial(t)
+	r.ownerSets(t, r.parent, map[string]any{"law.report": lawText})
+	raw, _ := json.Marshal(rpc.CreateRequest{Outfits: []string{"judged"}, Cwd: r.cwd})
+	var out rpc.CreateResponse
+	if err := c.Call(context.Background(), rpc.MethodCreate, claimed(t, r.parent, raw), &out); err != nil {
+		t.Fatal(err)
+	}
+	require.JSONEq(t, `{"report":"`+lawText+`"}`, lawsOn(t, r.grantRig, out.FigaroID))
+	mine, err := r.create(asOwner(), "judged")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := lawsOn(t, r.grantRig, mine.FigaroID); got != "" {
+		t.Fatalf("a figaro the owner made took laws from nowhere: %s", got)
+	}
+}
+
+// Defends the seat's copy: a successor made before a law was given is
+// seated without it, and the seat sheds the law.
+func TestASeatedSuccessorTakesItsPredecessorsLaws(t *testing.T) {
+	r, _, x, _ := guardChain(t)
+	other, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := ariasFork(t, r, other.FigaroID)
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, x, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"law.report": lawText})})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, n, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"law.own": "kept"})})); err != nil {
+		t.Fatal(err)
+	}
+	out, err := r.call(asOwner(), rpc.MethodSeat, rpc.SeatRequest{FigaroID: x, Successor: n})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seat := out.(rpc.SeatResponse); seat.FailedAt != "" {
+		t.Fatalf("seat failed at %s: %s", seat.FailedAt, seat.Error)
+	}
+	require.JSONEq(t, `{"own":"kept","report":"`+lawText+`"}`, lawsOn(t, r, n))
 }
