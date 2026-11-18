@@ -110,6 +110,7 @@ about changing figaro rather than using it live under
 | [reference/cache-control.md](reference/cache-control.md) | Prompt caching, and overriding it. |
 | [reference/outfits.md](reference/outfits.md) | Composing outfits, the `-O`/`-S`/`-D` grammar, or dressing did not do what you expected. |
 | [reference/forms.md](reference/forms.md) | Using unbound forms and roles: the verbs, the listings, the matrix. |
+| [reference/peer-check.md](reference/peer-check.md) | A command from your bash tool was refused as owner-held, protected or "never the owner", what a tool shell may still do (shorten a lifetime, retire a descendant), and how to get the rest done. |
 | [reference/fanout.md](reference/fanout.md) | `system.fanout.max_children`, why a figaro-forked fork is born at 0, how a succession swap moves the limit, who may take a held role, `system.fanout.mint` (who may `figaro new`, and granting it to the King's role), or the `create`/`mint` verb split. |
 | [debugging/tapes.md](debugging/tapes.md) | Record a figaro's wire and replay it: a rendering bug someone SAW and you cannot reproduce, or one recorded for CI. |
 | [reference/mantra.md](reference/mantra.md) | Maintaining your figaro's mantra. |
