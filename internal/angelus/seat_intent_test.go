@@ -208,3 +208,21 @@ func TestAFigaroSeatsOnlyItsOwnForkAndMovesNothingOtherwise(t *testing.T) {
 		t.Fatalf("seats.json holds %+v", left)
 	}
 }
+
+func TestASeatThatRollsBackLeavesTheSuccessorsLifetime(t *testing.T) {
+	f := newSeatFixture(t)
+	applyKeys(t, f.b, f.pred, map[string]any{store.SystemTTLKey: "0"})
+	applyKeys(t, f.b, f.successor, map[string]any{store.SystemTTLKey: "2h"})
+	setMaxChildren(t, f.b, f.successor, 0)
+
+	if seat := f.seat(t); seat.FailedAt != "demote" || seat.Placed {
+		t.Fatalf("seat = %+v, want a refused demote with the place undone", seat)
+	}
+	snap, err := f.b.FormState(f.successor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := snap.Get(store.SystemTTLKey); string(got) != `"2h"` {
+		t.Fatalf("a seat that rolled back gave the successor system.ttl %s, want its own \"2h\"", got)
+	}
+}

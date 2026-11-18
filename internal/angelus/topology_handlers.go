@@ -1,6 +1,7 @@
 package angelus
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -283,6 +284,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		return nil, fmt.Errorf("fork: the board of %s cannot be read to check the patch against it: %w", req.FigaroID, err)
 	}
+	holder := inherited
 	claimed := authz.FigaroOf(ctx) != ""
 	if claimed && req.Patch != nil {
 		if e, ok := req.Patch.Entry(form.FanoutMaxChildrenKey); ok && e.IsRemoval() {
@@ -335,6 +337,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	dress, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
 		return nil, err
+	}
+	if req.Seat != "" {
+		dress = withHolderTTL(dress, holder)
 	}
 	// interior is read off the coordinate, not the LT: forking at turn 1 has
 	// LT 0, which is also the head-fork sentinel.
@@ -810,7 +815,46 @@ func (h *handlers) seat(ctx context.Context, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	return h.seatInPlaceOf(ctx, req.Successor, req.FigaroID), nil
+	ttl, err := h.seatLifetime(ctx, req.FigaroID)
+	if err != nil {
+		return nil, err
+	}
+	r := h.seatInPlaceOf(ctx, req.Successor, req.FigaroID)
+	if r.FailedAt != "" || ttl == nil {
+		return r, nil
+	}
+	ss, err := h.angelus.Backend.FormState(req.Successor)
+	if have, ok := ss.Get(store.SystemTTLKey); err == nil && ok && bytes.Equal(have, ttl) {
+		return r, nil
+	}
+	if err == nil {
+		_, err = h.angelus.Backend.ApplyForm(req.Successor, form.Build(ss, map[string]json.RawMessage{store.SystemTTLKey: ttl}, nil))
+	}
+	if err != nil {
+		r.FailedAt, r.Error = "ttl", fmt.Sprintf("%s holds the seat but kept its own system.ttl: %v", req.Successor, err)
+	}
+	return r, nil
+}
+
+func (h *handlers) seatLifetime(ctx context.Context, pred string) (json.RawMessage, error) {
+	caller := authz.FigaroOf(ctx)
+	if caller == "" && !h.callerOwns(ctx) {
+		return nil, nil
+	}
+	if caller != "" && caller != pred {
+		return nil, fmt.Errorf("seat: only %s itself or the owner seats a successor in its place, not figaro %s", pred, caller)
+	}
+	snap, err := h.angelus.Backend.FormState(pred)
+	if err != nil {
+		return nil, fmt.Errorf("seat: read %s: %w", pred, err)
+	}
+	if store.RetiredIn(snap) {
+		return nil, nil
+	}
+	if ttl, ok := snap.Get(store.SystemTTLKey); ok {
+		return ttl, nil
+	}
+	return json.RawMessage(`"0"`), nil
 }
 
 func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rpc.SeatResponse {

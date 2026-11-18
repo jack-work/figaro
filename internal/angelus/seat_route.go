@@ -9,6 +9,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 var seatRouteKeys = []string{
@@ -164,4 +165,12 @@ func (h *handlers) dressForSeat(req rpc.ForkRequest) (rpc.ForkRequest, string, e
 	req.Patch = &patch
 	req.Outfits = append(seatOutfits(snap), req.Outfits...)
 	return req, deferred, nil
+}
+
+func withHolderTTL(dress form.Patch, holder form.Snapshot) form.Patch {
+	ttl, ok := holder.Get(store.SystemTTLKey)
+	if !ok {
+		ttl = json.RawMessage(`"0"`)
+	}
+	return form.Merge(dress, form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemTTLKey: ttl}, nil))
 }
