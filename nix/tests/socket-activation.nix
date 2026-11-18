@@ -81,7 +81,7 @@ pkgs.testers.runNixOSTest {
         activated.succeed("test -f /run/figaro/angelus.pid")
         print(activated.succeed("ls -la /run/figaro"))
 
-    with subtest("a switch that tightens socketMode replaces the socket, and stopping the socket removes it"):
+    with subtest("a switch made while the angelus runs replaces the socket with the new socketMode"):
         base_gen = activated.succeed("readlink -f /run/current-system").strip()
         activated.succeed("/run/current-system/specialisation/tight/bin/switch-to-configuration test")
         activated.wait_for_unit("figaro.socket")
@@ -90,6 +90,20 @@ pkgs.testers.runNixOSTest {
         activated.succeed(f"{base_gen}/bin/switch-to-configuration test")
         activated.wait_for_unit("figaro.socket")
         assert activated.succeed("stat -c %a /run/figaro/angelus.sock").strip() == "660"
+        activated.succeed("systemctl stop figaro.service")
+
+    with subtest("a switch made while the angelus is idle applies socketMode in place, and stopping the socket removes it"):
+        activated.succeed("systemctl is-active figaro.socket")
+        activated.fail("systemctl is-active figaro.service")
+        idle_inode = activated.succeed("stat -c %i /run/figaro/angelus.sock").strip()
+        activated.succeed("/run/current-system/specialisation/tight/bin/switch-to-configuration test")
+        assert activated.succeed("stat -c %a /run/figaro/angelus.sock").strip() == "600"
+        activated.fail("systemctl is-active figaro.service")
+        assert activated.succeed("stat -c %i /run/figaro/angelus.sock").strip() == idle_inode, "the idle switch replaced the socket"
+        activated.succeed(f"{base_gen}/bin/switch-to-configuration test")
+        assert activated.succeed("stat -c %a /run/figaro/angelus.sock").strip() == "660"
+        activated.fail("systemctl is-active figaro.service")
+        fig(activated, "ls --json")
         activated.succeed("systemctl stop figaro.service figaro.socket")
         activated.fail("test -e /run/figaro/angelus.sock")
         activated.succeed("systemctl start figaro.socket")
