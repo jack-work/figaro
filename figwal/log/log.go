@@ -52,6 +52,7 @@ type Log struct {
 	// Mutated only under wmu; read lock-free.
 	pend         atomic.Pointer[pendingView]
 	pendingBytes int64
+	epoch        uint64
 }
 
 // pendingView is an immutable window of records not yet on disk. Entries is
@@ -193,14 +194,36 @@ func (l *Log) write(idx uint64, payload []byte) error {
 func (l *Log) Sync() error { return l.SyncThrough(^uint64(0)) }
 
 // SyncThrough persists pending entries with index <= target and fsyncs.
-// The buffer is trimmed only after the fsync succeeds, so a failed
-// sync retries safely: entries that did reach disk before the failure
-// are skipped on the next attempt.
+// The fsync runs outside fmu, so a stalled disk holds back the next sync's
+// fsync and nothing else: writers keep landing records in the segment.
+// The buffer is trimmed only after the fsync succeeds, so a failed sync
+// retries safely: entries already in the segment are skipped next time.
 func (l *Log) SyncThrough(target uint64) error {
+	written, epoch, err := l.writeThrough(target)
+	if err != nil || written == 0 {
+		return err
+	}
+	if err := l.inner.Sync(); err != nil {
+		return err
+	}
+	l.trimThrough(written, epoch)
+	return nil
+}
+
+// WriteThrough lands pending entries with index <= target in the segment
+// without an fsync: they survive the process, not the machine, until a
+// SyncThrough covers them.
+func (l *Log) WriteThrough(target uint64) error {
+	_, _, err := l.writeThrough(target)
+	return err
+}
+
+func (l *Log) writeThrough(target uint64) (uint64, uint64, error) {
 	l.fmu.Lock()
 	defer l.fmu.Unlock()
 	l.wmu.Lock()
 	pend := l.pend.Load()
+	epoch := l.epoch
 	n := 0
 	var first uint64
 	if pend != nil && len(pend.entries) > 0 && target >= pend.first {
@@ -213,7 +236,7 @@ func (l *Log) SyncThrough(target uint64) error {
 	batch := pend.entriesPrefix(n)
 	l.wmu.Unlock()
 	if n == 0 {
-		return nil
+		return 0, epoch, nil
 	}
 	durable := l.inner.LastIndex()
 	for i, p := range batch {
@@ -222,22 +245,35 @@ func (l *Log) SyncThrough(target uint64) error {
 			continue
 		}
 		if err := l.inner.Write(idx, p); err != nil {
-			return err
+			return 0, epoch, err
 		}
 	}
-	if err := l.inner.Sync(); err != nil {
-		return err
-	}
+	return first + uint64(n) - 1, epoch, nil
+}
+
+// trimThrough drops pending entries the fsync covered, unless a discard
+// rewound the log since they were written: the entries now at those
+// indices are new and not on disk.
+func (l *Log) trimThrough(through, epoch uint64) {
+	l.fmu.Lock()
+	defer l.fmu.Unlock()
 	l.wmu.Lock()
-	cur := l.pend.Load()
-	if cur != nil && cur.first == first {
-		l.pend.Store(&pendingView{first: first + uint64(n), entries: cur.entries[n:]})
+	defer l.wmu.Unlock()
+	if l.epoch != epoch {
+		return
 	}
-	for _, p := range batch {
+	cur := l.pend.Load()
+	if cur == nil || len(cur.entries) == 0 || through < cur.first {
+		return
+	}
+	k := through - cur.first + 1
+	if k > uint64(len(cur.entries)) {
+		k = uint64(len(cur.entries))
+	}
+	for _, p := range cur.entries[:k] {
 		l.pendingBytes -= int64(len(p))
 	}
-	l.wmu.Unlock()
-	return nil
+	l.pend.Store(&pendingView{first: cur.first + k, entries: cur.entries[k:]})
 }
 
 func (p *pendingView) entriesPrefix(n int) [][]byte {
@@ -255,6 +291,7 @@ func (l *Log) DiscardFrom(index uint64) error {
 	defer l.fmu.Unlock()
 	l.wmu.Lock()
 	defer l.wmu.Unlock()
+	l.epoch++
 	if pend := l.pend.Load(); pend != nil && len(pend.entries) > 0 && index <= pend.last() {
 		keep := 0
 		if index > pend.first {

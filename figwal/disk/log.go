@@ -63,6 +63,8 @@ type Log struct {
 	forkBase   uint64 // first index this log owns; 0 if not a fork
 	readOnly   bool   // true when the dir has child subdirs (branch point)
 	absent     bool
+
+	beforeSync func()
 }
 
 // SyncDir fsyncs a directory where the platform supports it.
@@ -257,13 +259,29 @@ func (l *Log) Write(idx uint64, payload []byte) error {
 
 // Sync fsyncs the active segment. Write does not fsync on its own;
 // callers batch writes and Sync at their durability points.
+// The fsync runs outside mu; a rotation that seals and later closes the
+// segment it captured fsynced that segment under mu first, so a closed
+// file found here is already durable.
 func (l *Log) Sync() error {
 	l.mu.RLock()
-	defer l.mu.RUnlock()
-	if l.active == nil {
+	active := l.active
+	l.mu.RUnlock()
+	if active == nil {
 		return nil
 	}
-	return l.active.Sync()
+	if l.beforeSync != nil {
+		l.beforeSync()
+	}
+	err := active.Sync()
+	if err != nil && errors.Is(err, os.ErrClosed) {
+		l.mu.RLock()
+		rotated := l.active != active
+		l.mu.RUnlock()
+		if rotated {
+			return nil
+		}
+	}
+	return err
 }
 
 // Range iterates from `from` (clamped to FirstIndex) to LastIndex; fork
