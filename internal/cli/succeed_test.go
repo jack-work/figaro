@@ -18,6 +18,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/provider"
@@ -368,6 +369,35 @@ func TestRecoveryIsSilentWhenTheSeatMovedNothing(t *testing.T) {
 	r := succeedReport{Role: "@r", Predecessor: "old", Successor: "new", FailedAt: "demote",
 		Error: "nothing moved yet: the demote waits on p; the successor is back where it was, so nothing moved"}
 	require.Empty(t, r.recovery(succeedPlan{ttl: time.Minute, abdication: abdicateRetire}))
+}
+
+func TestRecoveryKillsAForkThatWasNeverSeated(t *testing.T) {
+	for _, step := range []string{"place", "demote"} {
+		r := succeedReport{Role: "@r", Predecessor: "old", Successor: "new", Forked: true, FailedAt: step}
+		require.Equal(t, []string{"figaro kill new"}, r.recovery(succeedPlan{ttl: time.Minute, abdication: abdicateRetire}), step)
+	}
+}
+
+func TestSucceedRefusesADaemonWithoutSeatBeforeItForks(t *testing.T) {
+	s := seatedPredecessor(t, nil)
+	daemonSeen.Lock()
+	known, same, who, d := daemonSeen.known, daemonSeen.same, daemonSeen.who, daemonSeen.d
+	daemonSeen.Unlock()
+	t.Cleanup(func() {
+		daemonSeen.Lock()
+		daemonSeen.known, daemonSeen.same, daemonSeen.who, daemonSeen.d = known, same, who, d
+		daemonSeen.Unlock()
+	})
+	recordDaemon("the running angelus", daemonIdentity{build: "0ld0ld0ld0ld0ld0", release: "0.74.4"}, boot.BuildRevision())
+	before := len(s.backend.EveryNode())
+
+	plan, err := succeedArgs(t, s.role, "--", "you hold the seat")
+	require.NoError(t, err)
+	r, err := succeedVerb(s.ctx, s.acli, plan, succeedHooks{})
+	require.Error(t, err)
+	require.Contains(t, r.Error, string(rpc.CapSeat))
+	require.Empty(t, r.Successor)
+	require.Len(t, s.backend.EveryNode(), before, "succeed forked before it knew the daemon could seat")
 }
 
 func TestRecoveryCastsTheOtherRolesNotYetRecast(t *testing.T) {

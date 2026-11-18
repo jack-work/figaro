@@ -258,6 +258,9 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 		progress = func(string) {}
 	}
 	r := succeedReport{Abdication: plan.abdication}
+	if err := needCapability(rpc.CapSeat, "succeed"); err != nil {
+		return r, r.fail("assert", err)
+	}
 	parties, err := succeedAssert(ctx, acli, plan)
 	if err != nil {
 		return r, r.fail("assert", err)
@@ -308,9 +311,6 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 	}
 
 	progress(fmt.Sprintf("seating %s in %s's place", ariaName(r.Successor), ariaName(old.ID)))
-	if err := lacksForUse(rpc.CapSeat, "succeed"); err != nil {
-		return r, r.fail("place", err)
-	}
 	seat, err := acli.Seat(ctx, old.ID, r.Successor)
 	if err != nil {
 		return r, r.fail("place", err)
@@ -440,7 +440,13 @@ func withAria(id string, fn func(*sdk.Aria) error) error {
 
 func (r succeedReport) recovery(plan succeedPlan) []string {
 	var out []string
-	if r.Successor == "" || r.FailedAt == "place" || r.FailedAt == "demote" && r.DemotedUnder == "" {
+	if r.Successor == "" {
+		return nil
+	}
+	if r.FailedAt == "place" || r.FailedAt == "demote" && r.DemotedUnder == "" {
+		if r.Forked {
+			return []string{"figaro kill " + r.Successor}
+		}
 		return nil
 	}
 	if !r.Prompted {
@@ -488,6 +494,7 @@ func (r succeedReport) summary() string {
 }
 
 func runSucceed(plan succeedPlan, asJSON bool) error {
+	ensureAngelus()
 	acli, err := sdk.DialAngelus(doorEndpoint())
 	if err != nil {
 		return fmt.Errorf("connect angelus: %w", err)
