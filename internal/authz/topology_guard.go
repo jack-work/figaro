@@ -494,5 +494,8 @@ func (g TopologyGuard) allow(c TopologyCaller, verb rpc.Verb, id string) error {
 	if d := pol.AllowFigaro(c.Subject, c.Figaro, verb, Aria(id)); !d.Allowed {
 		return fmt.Errorf("%s on %s: %s", verb, Aria(id), d.Reason())
 	}
+	if verb == rpc.VerbKill {
+		return pol.TopologyReach(c.Subject, c.Figaro, verb, id)
+	}
 	return nil
 }

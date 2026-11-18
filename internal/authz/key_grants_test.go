@@ -207,3 +207,23 @@ func BenchmarkAPatchCheckedKeyByKey(b *testing.B) {
 		}
 	}
 }
+
+func TestTopologyVerbsReachOnlyTheFigarosOwnLineageUnlessGranted(t *testing.T) {
+	s := jkauthz.Subject{Principal: me}
+	p := NewPolicies(me, treeFakes(nil))
+	for target, ok := range map[string]bool{"kid": true, "grandkid": true, "sib": false, "niece": false, "top": false} {
+		if err := p.TopologyReach(s, "kid", rpc.VerbKill, target); (err == nil) != ok {
+			t.Errorf("unscoped kid kills %s: %v, want ok=%v", target, err, ok)
+		}
+	}
+	granted := NewPolicies(me, treeFakes(map[string]string{"kid": `["kill:*", "read:*"]`}))
+	if err := granted.TopologyReach(s, "kid", rpc.VerbKill, "niece"); err != nil {
+		t.Errorf("a written kill:* does not reach the fleet: %v", err)
+	}
+	if err := granted.TopologyReach(s, "kid", rpc.VerbSet, "niece"); err == nil {
+		t.Error("kill:* let it retire (set) elsewhere")
+	}
+	if err := p.TopologyReach(s, "", rpc.VerbKill, "niece"); err != nil {
+		t.Errorf("a call naming no figaro is judged by its principal alone: %v", err)
+	}
+}
