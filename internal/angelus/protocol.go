@@ -266,6 +266,11 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if dressed, err = h.holdCastInBox(ctx, method, id, dressed); err != nil {
 			return nil, err
 		}
+		if method == rpc.MethodQua {
+			if err := h.dropUnreadableStudies(id); err != nil {
+				return nil, err
+			}
+		}
 		if err := h.checkAriaMethod(ctx, method, id, dressed); err != nil {
 			return nil, err
 		}

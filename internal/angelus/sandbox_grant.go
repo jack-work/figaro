@@ -381,9 +381,13 @@ func (h *handlers) studiesOnlyReadableKeys(ctx context.Context, req rpc.StudyReq
 		return fmt.Errorf("study %s: figaro %s may read only %s there; study with --keys naming them", req.FormID, f, strings.Join(globs, ", "))
 	}
 	for _, k := range req.Keys {
-		if !slices.ContainsFunc(globs, func(g string) bool { return g == k || authz.KeyGlobMatch(g, k) }) {
+		if !readCovers(globs, k) {
 			return fmt.Errorf("study %s: figaro %s may not read %s there; its scopes reach %s", req.FormID, f, k, strings.Join(globs, ", "))
 		}
 	}
 	return nil
+}
+
+func readCovers(globs []string, key string) bool {
+	return slices.ContainsFunc(globs, func(g string) bool { return authz.GlobCovers(g, key+".**") })
 }

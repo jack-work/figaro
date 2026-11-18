@@ -204,6 +204,22 @@ when Gluck writes it), or forks unlabelled. The Review Steward's reviewer
 forks of the Strategist on gemini are refused as labelled forks with a
 gemini outfit; they need one of the two.
 
+## Studies follow the observer's reads
+
+A figaro's fork keeps only the studies its own grants can read: a default
+child (read:aria:self) is born studying nothing of its parent's. A seat
+whose lanes must keep a study carries the read in its child_policy
+(`read:aria:<form>` beside send:parent). A standing study ends at the
+observer's next prompt once its read is revoked, and a key study is
+admitted only when a read glob reaches everything under the key
+(`read:...#notes.**`, not `#notes`).
+
+## study, drop and cast
+
+Making another figaro study or drop a form needs an unkeyed set on it, a
+cast into an existing role needs set on its target-aria, and a cast that
+mints a role needs create. Seats holding `*:*` keep all three.
+
 ## Order
 
 1. Before the P5 binary runs: write `["*:*"]` on the King, Engineer,

@@ -2,6 +2,8 @@ package angelus
 
 import (
 	"fmt"
+	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/jkauthz"
 	"slices"
 
 	"github.com/jack-work/figaro/api/form"
@@ -46,6 +48,44 @@ func (h *handlers) alignForkStudies(child, parent string, mode rpc.ForkStudies) 
 		}
 		if err := h.studyOnFork(child, id, form.StudyKeys(want, id), false); err != nil {
 			return fmt.Errorf("study %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
+func (h *handlers) unreadableStudies(id string) ([]string, error) {
+	p := h.angelus.Policies
+	if p == nil || h.angelus.Backend == nil {
+		return nil, nil
+	}
+	snap, err := h.angelus.Backend.FormState(id)
+	if err != nil {
+		return nil, err
+	}
+	view := p.Figaro(id)
+	var out []string
+	for _, f := range figaro.StudiesFromSnapshot(snap) {
+		all, globs := view.KeyGlobs(jkauthz.Subject{}, rpc.VerbRead, authz.Aria(f))
+		if all {
+			continue
+		}
+		keys := form.StudyKeys(snap, f)
+		if len(keys) > 0 && !slices.ContainsFunc(keys, func(k string) bool { return !readCovers(globs, k) }) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out, nil
+}
+
+func (h *handlers) dropUnreadableStudies(id string) error {
+	gone, err := h.unreadableStudies(id)
+	if err != nil {
+		return err
+	}
+	for _, f := range gone {
+		if _, err := h.studyForHub(id, f, nil, true); err != nil {
+			return fmt.Errorf("drop %s, which %s may no longer read: %w", f, id, err)
 		}
 	}
 	return nil

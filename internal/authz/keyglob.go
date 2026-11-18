@@ -23,6 +23,8 @@ func keyed(sel, glob string) string {
 
 func KeyGlobMatch(pattern, key string) bool { return form.KeyGlobMatch(pattern, key) }
 
+func GlobCovers(held, granted string) bool { return globCovers(held, granted) }
+
 func globCovers(a, b string) bool {
 	switch {
 	case a == "" || a == b:
