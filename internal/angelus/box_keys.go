@@ -90,16 +90,19 @@ func changedPaths(before, after form.Snapshot) []string {
 }
 
 type callerKeys struct {
-	owns    bool
-	boxed   bool
-	box     string
-	lineage bool
-	heir    bool
+	owns     bool
+	labelled bool
+	boxed    bool
+	box      string
+	lineage  bool
+	heir     bool
 }
 
 func (h *handlers) callerKeysOf(ctx context.Context) callerKeys {
 	box, boxed := callerBox(ctx)
-	return callerKeys{owns: h.callerOwns(ctx), boxed: boxed, box: box, lineage: h.protectsByLineage()}
+	owns := h.callerOwns(ctx)
+	labelled := owns && !boxed && authz.FigaroOf(ctx) != ""
+	return callerKeys{owns: owns && !labelled, labelled: labelled, boxed: boxed, box: box, lineage: h.protectsByLineage()}
 }
 
 func (h *handlers) callerKeysOn(ctx context.Context, line lineage) callerKeys {
@@ -130,8 +133,15 @@ func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line linea
 	if key == "" {
 		key = "a protected key"
 	}
+	if c.labelled {
+		f := authz.FigaroOf(ctx)
+		if line.of == "" || !slices.Contains(h.ancestorsOf(line), f) {
+			return fmt.Errorf("%s is protected, and figaro %s is no ancestor of the aria", key, f)
+		}
+		return nil
+	}
 	if !c.boxed {
-		return fmt.Errorf("%s is protected: only the owner or an ancestor figaro sets it, and a figaro is known only through its box door", key)
+		return fmt.Errorf("%s is protected: only the owner or an ancestor figaro sets it, and a figaro is known only through its box door or its label on the local door", key)
 	}
 	f := authz.FigaroOf(ctx)
 	if f == "" {
@@ -259,7 +269,7 @@ func (c callerKeys) deny() []rpc.KeyDeny {
 	}
 	if !c.owns {
 		for _, k := range form.OwnerHeldKeys() {
-			if c.boxed && slices.Contains(boxRetires, k) {
+			if (c.boxed || c.labelled) && slices.Contains(boxRetires, k) {
 				continue
 			}
 			out = append(out, rpc.KeyDeny{Key: k, Kind: rpc.DenyOwnerHeld,
@@ -591,8 +601,8 @@ func ownerKeyRulesSkip(params json.RawMessage) bool {
 }
 
 func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, params json.RawMessage) error {
-	_, boxed := callerBox(ctx)
-	owner := !boxed && h.callerOwns(ctx)
+	c := h.callerKeysOf(ctx)
+	owner := c.owns && !c.boxed
 	shapesOnly := owner && ownerKeyRulesSkip(params)
 	var patch *form.Patch
 	switch method {
