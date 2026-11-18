@@ -4,10 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/user"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/cmdkit"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/sandbox/valet"
 )
 
@@ -15,10 +21,12 @@ var valetVerb = &cmdkit.Command{
 	Name:  "valet",
 	Group: "System",
 	Short: "Grant figaros paths for the tools your valet runs as you",
-	Usage: "valet grant <figaro|*> <path> ro|rw [--for 8h] | valet grants [-j] | valet revoke <figaro|*> [<path>]",
+	Usage: "valet grant <figaro|*> <path> ro|rw [--for 8h] | valet grants [-j] | valet revoke <figaro|*> [<path>] | valet serve [--peer <user>] [--door <path>] [--hide <path>]",
 	Long: `The valet runs a figaro's tools as you, inside a fence that shows them
 only the paths you granted that figaro. Grants live in your own table,
 ~/.local/state/figaro-valet/grants.toml (0600), which no tool can see.
+To the daemon the valet is a box: [sandbox.boxes.<name>] exec names its
+socket, and an outfit picks it with system.sandbox.
 
   grant    let <figaro> (eight or more characters of its id, or * for
            every figaro) see <path> read-only or read-write for --for
@@ -26,12 +34,24 @@ only the paths you granted that figaro. Grants live in your own table,
            resolved through symlinks; your home, anything holding it, and
            the valet's own state are refused: grant working trees
   grants   list the table, with when each grant runs out
-  revoke   drop <figaro>'s grant of <path>, or every grant it holds`,
+  revoke   drop <figaro>'s grant of <path>, or every grant it holds
+  serve    answer one call, from figaro-valet.socket (Accept=yes): admit
+           the caller only if its uid is a --peer (default: yours), read
+           the figaro from box.open, and serve that box from inside a
+           fence: a user, mount and pid namespace whose root holds the
+           system trees read-only, an empty home, the figaro's grants, a
+           scratch directory under the valet's state, and --door. Your
+           runtime directory, the nix daemon socket, the valet's state and
+           every --hide path are absent. Refuses when unprivileged user
+           namespaces are off`,
 	Flags: []cmdkit.FlagDef{
 		{Long: "for", Description: "grant: how long the grant lasts (default 8h; d and w suffixes work)"},
-		{Long: "max-grant", Description: "grant: the longest grant to accept (default 7d)"},
+		{Long: "max-grant", Description: "grant, serve: the longest grant to accept or honour (default 7d)"},
 		{Long: "state", Description: "the valet's state directory (default ~/.local/state/figaro-valet)"},
 		{Long: "json", Short: "j", IsBool: true, Description: "grants: machine-readable output"},
+		{Long: "peer", Repeats: true, Description: "serve: a user or uid that may call the valet; repeats"},
+		{Long: "door", Description: "serve: the daemon's door socket for this box, bound into the fence"},
+		{Long: "hide", Repeats: true, Description: "serve: a path kept from tools even inside a grant; repeats"},
 	},
 	ArgsMin: 1,
 	Run: func(ctx *cmdkit.RunContext) error {
@@ -47,6 +67,16 @@ only the paths you granted that figaro. Grants live in your own table,
 			return runValetGrant(state, ctx.Args[1], ctx.Args[2], ctx.Args[3], ctx.Flag("for"), ctx.Flag("max-grant"))
 		case "grants":
 			return runValetGrants(state, ctx.BoolFlag("json"))
+		case "serve":
+			v, err := valetFromFlags(state, ctx.Flag("peer"), ctx.Flag("max-grant"), ctx.Flag("door"), ctx.Flag("hide"))
+			if err != nil {
+				return err
+			}
+			return runValetServe(v)
+		case "fence":
+			return runValetFence()
+		case "fenced":
+			return runValetFenced()
 		case "revoke":
 			if len(ctx.Args) < 2 || len(ctx.Args) > 3 {
 				return fmt.Errorf("valet revoke <figaro|*> [<path>]")
@@ -61,7 +91,7 @@ only the paths you granted that figaro. Grants live in your own table,
 			}
 			return runValetRevoke(state, ctx.Args[1], path)
 		}
-		return fmt.Errorf("valet: want grant, grants or revoke, not %q", ctx.Args[0])
+		return fmt.Errorf("valet: want grant, grants, revoke or serve, not %q", ctx.Args[0])
 	},
 }
 
@@ -162,4 +192,54 @@ func runValetRevoke(state, figaro, path string) error {
 	}
 	fmt.Fprintf(stdout, "revoked %d grant(s)\n", n)
 	return nil
+}
+
+func valetFromFlags(state, peers, maxRaw, door, hides string) (valet.Valet, error) {
+	max, err := durationOr(maxRaw, valet.DefaultMaxGrant)
+	if err != nil {
+		return valet.Valet{}, err
+	}
+	v := valet.Valet{State: state, MaxGrant: max, Door: door, Log: stderrw}
+	if v.Self, err = os.Executable(); err != nil {
+		return v, err
+	}
+	if v.Home, err = os.UserHomeDir(); err != nil {
+		return v, err
+	}
+	if v.State, err = filepath.Abs(state); err != nil {
+		return v, err
+	}
+	v.Peers = []int{os.Getuid()}
+	if peers != "" {
+		v.Peers = nil
+		for _, p := range strings.Split(peers, ",") {
+			uid, err := lookupUID(p)
+			if err != nil {
+				return v, err
+			}
+			v.Peers = append(v.Peers, uid)
+		}
+	}
+	v.Hide = []string{
+		filepath.Join(v.Home, ".ssh"),
+		filepath.Join(v.Home, ".gnupg"),
+		boot.StateDir(),
+		boot.CacheDir(),
+		config.DefaultConfigDir(),
+	}
+	if hides != "" {
+		v.Hide = append(v.Hide, strings.Split(hides, ",")...)
+	}
+	return v, nil
+}
+
+func lookupUID(name string) (int, error) {
+	if uid, err := strconv.Atoi(name); err == nil {
+		return uid, nil
+	}
+	u, err := user.Lookup(name)
+	if err != nil {
+		return 0, fmt.Errorf("valet: --peer %s: %w", name, err)
+	}
+	return strconv.Atoi(u.Uid)
 }
