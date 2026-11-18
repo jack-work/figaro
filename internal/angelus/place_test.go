@@ -101,3 +101,36 @@ func TestPlaceResolvesItsParentByPrefix(t *testing.T) {
 		t.Fatalf("S is drawn under %q, want X %s", up, x)
 	}
 }
+
+// A seat redraws: the named successor keeps its history where it was, and
+// one with branches of its own takes them along.
+func TestASeatDrawsTheSuccessorWithoutMovingItsHistory(t *testing.T) {
+	r, p, x, _ := guardChain(t)
+	other, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := ariasFork(t, r, other.FigaroID)
+	branch := ariasFork(t, r, n)
+	before, _ := r.backend.Node(n)
+
+	out, err := r.call(asOwner(), rpc.MethodSeat, rpc.SeatRequest{FigaroID: x, Successor: n})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seat := out.(rpc.SeatResponse); seat.FailedAt != "" {
+		t.Fatalf("seat failed at %s: %s", seat.FailedAt, seat.Error)
+	}
+	if up := presentedUnder(t, r, n); up != p {
+		t.Fatalf("N is drawn under %q, want X's place under P %s", up, p)
+	}
+	if up := presentedUnder(t, r, x); up != n {
+		t.Fatalf("X is drawn under %q, want N %s", up, n)
+	}
+	if up := presentedUnder(t, r, branch); up != n {
+		t.Fatalf("N's branch is drawn under %q, want N", up)
+	}
+	if after, _ := r.backend.Node(n); after.Parent != before.Parent {
+		t.Fatalf("N's history moved from %q to %q", before.Parent, after.Parent)
+	}
+}

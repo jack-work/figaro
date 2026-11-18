@@ -801,7 +801,7 @@ func (h *handlers) seat(ctx context.Context, params json.RawMessage) (interface{
 func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rpc.SeatResponse {
 	var r rpc.SeatResponse
 	if have, _ := h.angelus.topology().Drawn(successor); have != pred {
-		err := h.place(ctx, successor, pred)
+		_, err := h.drawUnder(ctx, successor, pred)
 		if prop, ok := h.parkedProposal(ctx, err); ok {
 			r.FailedAt, r.PlaceParked = "place", prop
 			return r
@@ -852,12 +852,8 @@ func (h *handlers) placeUnder(ctx context.Context, params json.RawMessage) (inte
 	if h.allowed(ctx, rpc.VerbRead, authz.Aria(under)) != nil {
 		return nil, fmt.Errorf("aria %s not found", req.Under)
 	}
-	by, err := h.angelus.topologyPrincipal(ctx)
-	if err != nil {
-		return nil, err
-	}
 	resp := rpc.PlaceResponse{FigaroID: req.FigaroID, Under: under}
-	p, err := h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Arrange, Parents: map[string]string{req.FigaroID: under}})
+	p, err := h.drawUnder(ctx, req.FigaroID, under)
 	if prop, ok := h.parkedProposal(ctx, err); ok {
 		resp.Parked = prop
 		return resp, nil
@@ -872,6 +868,14 @@ func (h *handlers) placeUnder(ctx context.Context, params json.RawMessage) (inte
 	resp.Moved = slices.ContainsFunc(p.Moves, func(m hierarchy.Move) bool { return m.Node == req.FigaroID })
 	slog.Info("placed figaro", "trunk", req.FigaroID, "under", under, "moved", resp.Moved)
 	return resp, nil
+}
+
+func (h *handlers) drawUnder(ctx context.Context, id, under string) (hierarchy.Plan, error) {
+	by, err := h.angelus.topologyPrincipal(ctx)
+	if err != nil {
+		return hierarchy.Plan{}, err
+	}
+	return h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Arrange, Parents: map[string]string{id: under}})
 }
 
 func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{}, error) {
