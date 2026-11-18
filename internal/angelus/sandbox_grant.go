@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/jack-work/figaro/api/form"
@@ -173,7 +174,9 @@ func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, param
 		var req rpc.StudyRequest
 		if json.Unmarshal(params, &req) == nil && req.FormID != "" {
 			if h.allowed(ctx, rpc.VerbRead, authz.Aria(req.FormID)) != nil {
-				return authz.NotFound(method, req.FormID)
+				if err := h.studiesOnlyReadableKeys(ctx, req); err != nil {
+					return err
+				}
 			}
 			if h.studiesAFigaro(req.FormID) && !h.callerIsOwner(ctx) {
 				return authz.NotFound(method, req.FormID)
@@ -329,4 +332,25 @@ func (h *handlers) studiesAFigaro(id string) bool {
 	}
 	n, ok := b.Node(id)
 	return ok && n.Kind != "form"
+}
+
+func (h *handlers) studiesOnlyReadableKeys(ctx context.Context, req rpc.StudyRequest) error {
+	p, f := h.angelus.Policies, authz.FigaroOf(ctx)
+	sub, err := authz.SubjectOf(ctx)
+	if p == nil || f == "" || err != nil {
+		return authz.NotFound(rpc.MethodStudy, req.FormID)
+	}
+	all, globs := p.Figaro(f).KeyGlobs(sub, rpc.VerbRead, authz.Aria(req.FormID))
+	if all || len(globs) == 0 {
+		return authz.NotFound(rpc.MethodStudy, req.FormID)
+	}
+	if len(req.Keys) == 0 {
+		return fmt.Errorf("study %s: figaro %s may read only %s there; study with --keys naming them", req.FormID, f, strings.Join(globs, ", "))
+	}
+	for _, k := range req.Keys {
+		if !slices.ContainsFunc(globs, func(g string) bool { return g == k || authz.KeyGlobMatch(g, k) }) {
+			return fmt.Errorf("study %s: figaro %s may not read %s there; its scopes reach %s", req.FormID, f, k, strings.Join(globs, ", "))
+		}
+	}
+	return nil
 }

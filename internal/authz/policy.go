@@ -80,6 +80,10 @@ const (
 	selBoxed   = "sandboxed:self"
 	selUnboxed = "unboxed"
 	selSelf    = "self"
+
+	selParent   = "parent"
+	selChildren = "children"
+	selBelow    = "below:"
 )
 
 const formIDHexLen = 32
@@ -167,6 +171,9 @@ func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
 	case strings.HasPrefix(sel, selLineage):
 		root := sel[len(selLineage):]
 		return root == r.ID || (m.facts != nil && m.facts.DescendsFrom(r.ID, root))
+	case strings.HasPrefix(sel, selBelow):
+		root := sel[len(selBelow):]
+		return root != r.ID && m.facts != nil && m.facts.DescendsFrom(r.ID, root)
 	case strings.HasPrefix(sel, selBoxedIn):
 		box := sel[len(selBoxedIn):]
 		if box == "" || m.facts == nil {

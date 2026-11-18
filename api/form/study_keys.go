@@ -46,6 +46,19 @@ func StudyKeyShown(key string, keys []string) bool {
 		if key == p || strings.HasPrefix(key, p+".") {
 			return true
 		}
+		if strings.Contains(p, "*") && globShows(p, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func globShows(pattern, key string) bool {
+	segs := strings.Split(key, ".")
+	for i := len(segs); i > 0; i-- {
+		if KeyGlobMatch(pattern, strings.Join(segs[:i], ".")) {
+			return true
+		}
 	}
 	return false
 }
