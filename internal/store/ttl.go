@@ -314,6 +314,9 @@ func (b *XwalBackend) mirrorLifetime(id string, c lifetimeChange) {
 		return
 	}
 	b.ttlNoted(id, &meta)
+	if c.retired != nil || c.reapedRoot != nil {
+		b.livenessChanged(id, &meta)
+	}
 	if c.ttl != nil {
 		if *c.ttl > 0 {
 			slog.Info("node lifetime set", "node", id, "ttl", *c.ttl,
