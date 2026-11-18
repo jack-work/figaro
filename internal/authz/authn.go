@@ -77,6 +77,23 @@ func NewPeercred(selfUID uint32, cfg config.PeercredConfig) (*Peercred, error) {
 
 func (p *Peercred) Self() jkauthz.Principal { return p.self }
 
+func OwnerOf(cfg config.AuthzConfig, self jkauthz.Principal) (jkauthz.Principal, error) {
+	if cfg.Owner == "" {
+		return self, nil
+	}
+	p, err := jkauthz.ParsePrincipal(cfg.Owner)
+	if err != nil {
+		return jkauthz.Principal{}, fmt.Errorf("authz.owner: %w", err)
+	}
+	if p.Node != "" {
+		return jkauthz.Principal{}, fmt.Errorf("authz.owner = %q: this node's owner is not a principal of another node", cfg.Owner)
+	}
+	if p.Kind == KindTroupe {
+		return jkauthz.Principal{}, fmt.Errorf("authz.owner: %w", errTroupeKind)
+	}
+	return p, nil
+}
+
 func (p *Peercred) Subject(uid uint32) (jkauthz.Subject, error) {
 	if uid == p.selfUID {
 		return jkauthz.Subject{Principal: p.self}, nil

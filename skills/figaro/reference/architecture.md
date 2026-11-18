@@ -332,8 +332,13 @@ strings. `grants` is the old name for `permissions` (and for the `[figaros]`
 ceiling's key): 0.64 still loads it, logs one warning per load naming the
 new key, and refuses a table that sets both; the next release drops it. The
 troupe policy reads the same names. With none
-configured, the daemon's own principal holds every verb and nobody else holds
-any. `outfit reload` and `angelus.configure` reload it; a file that fails to
+configured, the owner holds every verb and nobody else holds any. The owner
+is the daemon's own principal unless `[authz] owner` names another
+(`"user:1000"`, the person at a house-mode host whose daemon runs as uid
+`figaro`); a named owner also takes the operator paths (managed fan-out,
+studying a figaro, a trusted traceparent) and the troupe ledger's owner of
+this node, and the daemon's uid then holds nothing a policy does not give it.
+`outfit reload` and `angelus.configure` reload it; a file that fails to
 load leaves the previous policy in force. `owner:self` reads `minted_by`,
 which the birth record writes once and nothing rewrites. `unboxed` is every
 figaro whose `system.sandbox` is exactly empty or `local`: any other value is a

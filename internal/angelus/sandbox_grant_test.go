@@ -111,8 +111,11 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 		t.Fatal(err)
 	}
 	a.Peercred = peer
+	if a.Owner, err = authz.OwnerOf(loaded.Config.Authz, peer.Self()); err != nil {
+		t.Fatal(err)
+	}
 	a.Settings = loaded
-	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
+	a.Policies = authz.NewPolicies(a.Owner, angelus.StoreFacts(backend))
 	a.Policies.SetBoxes(loaded.DooredBoxes())
 	a.Policies.SetBoxesRequiringClaim(loaded.BoxesRequiringClaim())
 	if err := a.Policies.Reload(policy); err != nil {

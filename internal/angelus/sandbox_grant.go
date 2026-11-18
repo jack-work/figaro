@@ -139,6 +139,9 @@ func (h *handlers) policy() authz.Policy {
 }
 
 func (a *Angelus) owner() jkauthz.Principal {
+	if !a.Owner.IsZero() {
+		return a.Owner
+	}
 	if a.Peercred == nil {
 		return jkauthz.Principal{}
 	}

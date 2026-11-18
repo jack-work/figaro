@@ -157,8 +157,7 @@ func federateByLedger(ctx context.Context, a *angelus.Angelus, loaded *config.Lo
 	a.Peers = m
 	bindLedgerTroupePolicy(a, m, loaded.Config.Authz.TakesTroupeIssuers())
 	bindLedgerAPIKeys(a, m)
-	owner := a.Peercred.Self().String()
-	seedJoin(k, m, door.Advertise, owner, time.Now())
+	seedJoin(k, m, door.Advertise, a.Owner.String(), time.Now())
 	dialer := &peer.Dialer{Members: m, Versions: a.PeerVersions}
 	m.OnEvict(dialer.Evict)
 	k.Renew = renewer(ctx, m, dialer, door.Advertise)
@@ -320,7 +319,7 @@ func gossip(ctx context.Context, a *angelus.Angelus, m *peer.Ledger, door string
 	g := &peer.Gossip{
 		Members: m,
 		Dialer:  &peer.Dialer{Members: m, Versions: a.PeerVersions},
-		Seed:    func() { seedJoin(a.Troupe, m, door, a.Peercred.Self().String(), time.Now()) },
+		Seed:    func() { seedJoin(a.Troupe, m, door, a.Owner.String(), time.Now()) },
 	}
 	m.OnEvict(g.Dialer.Evict)
 	m.OnAdmit(g.Greet(ctx))

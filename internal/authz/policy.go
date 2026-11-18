@@ -186,7 +186,7 @@ func Schema(facts Facts) jkauthz.Schema[Resource] {
 	return jkauthz.Schema[Resource]{Verbs: verbs, Selectors: selectors{facts: facts}}
 }
 
-func DefaultPolicy(self jkauthz.Principal, boxes []string) string {
+func DefaultPolicy(owner jkauthz.Principal, boxes []string) string {
 	text := fmt.Sprintf(`
 [roles.owner]
 permissions = ["*:*"]
@@ -194,7 +194,7 @@ permissions = ["*:*"]
 [[bind]]
 role = "owner"
 principals = [%q]
-`, self.String())
+`, owner.String())
 	if len(boxes) == 0 {
 		return text
 	}
@@ -222,7 +222,7 @@ principals = [%s]
 type Policies struct {
 	mu      sync.Mutex
 	store   *jkauthz.Store[Resource]
-	self    jkauthz.Principal
+	owner   jkauthz.Principal
 	path    string
 	scopes  []string
 	troupe  atomic.Pointer[troupeLayer]
@@ -244,9 +244,9 @@ type troupeLayer struct {
 	err    error
 }
 
-func NewPolicies(self jkauthz.Principal, facts Facts) *Policies {
+func NewPolicies(owner jkauthz.Principal, facts Facts) *Policies {
 	schema := Schema(facts)
-	return &Policies{store: jkauthz.NewStore(schema), self: self, schema: schema}
+	return &Policies{store: jkauthz.NewStore(schema), owner: owner, schema: schema}
 }
 
 func (p *Policies) SetIssuerScopes(scopes []string) {
@@ -273,7 +273,7 @@ func (p *Policies) Reload(path string) error {
 		return errors.New("policy: a daemon that leases workers names its policy file and never takes the default policy")
 	}
 	if path == "" {
-		return p.load([]byte(DefaultPolicy(p.self, p.boxes)))
+		return p.load([]byte(DefaultPolicy(p.owner, p.boxes)))
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

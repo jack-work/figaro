@@ -17,7 +17,6 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/troupe"
@@ -76,8 +75,7 @@ func TestACredentialWithoutACredentialsDirectoryIsRefused(t *testing.T) {
 	loaded, err := config.Load(n.cfgDir)
 	require.NoError(t, err)
 	a := angelus.New(angelus.Config{RuntimeDir: t.TempDir(), Backend: n.backend})
-	a.Peercred, err = authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
-	require.NoError(t, err)
+	require.NoError(t, admitLocal(a, loaded.Config.Authz))
 	err = federateIn(context.Background(), a, loaded, n.stateDir)
 	require.ErrorContains(t, err, "troupe.intermediate_key_credential")
 	require.ErrorContains(t, err, "CREDENTIALS_DIRECTORY")

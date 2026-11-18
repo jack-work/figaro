@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/jkauthz"
 )
 
 // Studying a figaro reads it for as long as the study stands, so the call is
@@ -99,5 +100,17 @@ func TestOnlyTheOwnerStudiesAnotherFigaro(t *testing.T) {
 	}
 	if err := r.study(t, r.owner, r.target); err != nil {
 		t.Fatalf("control: the owner studies the figaro: %v", err)
+	}
+}
+
+func TestTheNamedOwnerStudiesAnotherFigaroAndTheDaemonUIDDoesNot(t *testing.T) {
+	r := newStudyOwnerRig(t)
+	r.hs.h.angelus.Owner = jkauthz.Principal{Kind: jkauthz.KindUser, ID: "peer"}
+
+	if err := r.study(t, r.owner, r.target); err == nil || err.Error() != authz.NotFound(rpc.MethodStudy, r.target).Error() {
+		t.Fatalf("the daemon's uid studies a figaro on a node a person owns: %v", err)
+	}
+	if err := r.study(t, r.peer, r.target); err != nil {
+		t.Fatalf("the named owner cannot study a figaro: %v", err)
 	}
 }
