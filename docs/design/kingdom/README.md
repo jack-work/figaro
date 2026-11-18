@@ -26,8 +26,7 @@ v0.74.5 review FIX, the Knight fixing (F-A cap overfill on kill+restore, plus F-
 
 **North star (Gluck 11:2x): keel `kingdom/north-star`, now at a07b06838 (= v0.75.0: fixed v0.74.5 + E1 + P2).** One integration branch for the whole remaining plan.
 - **Folding:** a lane rebases onto the north-star tip and gates there; then the Strategist fast-forwards. The branch stays linear, one idea per commit.
-- **Review:** listless-oncoming `92aa6e78` (Opus, ttl 48h, kept warm). It finishes E3, then does an integration read of main..a07b06838, then reviews each fold as a delta. Each verdict names the sha it passed. Last passed: none yet.
-- **Landing:** the Knight lands slices. Each slice gets a Sonnet check: a range-diff against the last north-star sha the Opus reviewer passed, a green gate, and notes. A slice that diverges goes back to Opus.
+- **Review in post (Gluck 11:4x).** A slice ships on a green gate plus the Knight's Sonnet slice check. Folds don't wait on Opus. listless-oncoming `92aa6e78` (Opus, warm) reviews each shipped batch afterwards, and its findings ship as follow-up patches the same day, High first.
 - **Fold order as lanes are READY:** E3, P4, P5 (fix), P6, P7b, E4, reaped-budget, fork-latency, seat-plan, optimistic-fork. E8 is cheroot-config, and S1 comes last.
 
 **Release rules (Gluck 13:3x, for the rest of the drive):**
