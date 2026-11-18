@@ -402,3 +402,64 @@ func TestStudyDropAndCastNeedMoreThanAKeyedSet(t *testing.T) {
 		t.Fatalf("canary: a figaro holding set on the observer was refused a drop: %v", err)
 	}
 }
+
+func studiesOn(t *testing.T, r lineageRig, id string) string {
+	t.Helper()
+	v, _ := keyOn(t, r.grantRig, id, form.StudiesKey)
+	return string(v)
+}
+
+// Defends the study read filter (P2+P5 review, F6): a key is admitted only
+// when a read glob reaches everything under it, a standing study ends at the
+// observer's next prompt once its read is revoked, and a fork keeps only the
+// studies its own grants can read.
+func TestAStudyReadsOnlyWhatItsObserverMayRead(t *testing.T) {
+	r := newLineageRig(t, "")
+	made, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: heldPatch(t, map[string]any{"allowed": map[string]any{"top": "x", "deep": map[string]any{"secret": "y"}}})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := made.(rpc.FormCreateResponse).FormID
+	r.ownerSets(t, r.child, map[string]any{form.ScopesKey: []string{"*:aria:self", "read:aria:" + f + "#allowed.top", "read:aria:" + f + "#allowed.deep.**"}})
+	if err := r.ariaCall(t, true, r.child, rpc.MethodStudy, r.child, rpc.StudyRequest{FormID: f, Keys: []string{"allowed.top"}}); err == nil {
+		t.Error("a read of allowed.top admitted a study of everything under it")
+	}
+	if err := r.ariaCall(t, true, r.child, rpc.MethodStudy, r.child, rpc.StudyRequest{FormID: f, Keys: []string{"allowed.deep"}}); err != nil {
+		t.Fatalf("a read of allowed.deep.** was refused a study of allowed.deep: %v", err)
+	}
+	if !strings.Contains(studiesOn(t, r, r.child), f) {
+		t.Fatalf("the admitted study is missing: %s", studiesOn(t, r, r.child))
+	}
+
+	if _, err := r.h[rpc.MethodStudy](asOwner(), withAria(t, r.parent, rpc.StudyRequest{FormID: f})); err != nil {
+		t.Fatal(err)
+	}
+	kid := r.forkAsFigaro(t, r.parent)
+	if strings.Contains(studiesOn(t, r, kid), f) {
+		t.Errorf("a figaro's fork kept a study its grants cannot read: %s", studiesOn(t, r, kid))
+	}
+	ownerKid, err := r.call(asOwner(), rpc.MethodFork, rpc.ForkRequest{FigaroID: r.parent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id := ownerKid.(rpc.ForkResponse).Alternative; !strings.Contains(studiesOn(t, r, id), f) {
+		t.Errorf("the owner's fork lost a study it may read: %s", studiesOn(t, r, id))
+	}
+
+	free, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := free.FigaroID
+	r.ownerSets(t, m, map[string]any{form.ScopesKey: []string{"*:aria:self", "read:aria:" + f}})
+	if err := r.ariaCall(t, true, m, rpc.MethodStudy, m, rpc.StudyRequest{FormID: f}); err != nil {
+		t.Fatal(err)
+	}
+	r.ownerSets(t, m, map[string]any{form.ScopesKey: []string{"*:aria:self"}})
+	if _, err := r.h[rpc.MethodQua](asOwner(), withAria(t, m, rpc.QuaRequest{Text: "next turn"})); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(studiesOn(t, r, m), f) {
+		t.Errorf("a revoked read left the study standing: %s", studiesOn(t, r, m))
+	}
+}
