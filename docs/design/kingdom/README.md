@@ -20,10 +20,10 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 | 4 | P4 peer caller check | fork anagram-erratic `0e15cab0` | `lane/peer-caller-check` | building |
 | 5 | E2 hush as a system service | fork erasable-unzip `56faa8d6` | hush `lane/hush-system-service` | building |
 | 6 | P3 admission ledger | fork dominoes-elusive `439448d3` | `lane/admission-ledger` | building |
-| 7 | E1 angelus socket activation | next free slot | `lane/socket-activation` | queued |
-| 8 | P2 runtime.* migration | waits for a slot (role raise) | `lane/runtime-namespace` | queued; readers listed before landing |
-| 9 | E3 figaro valet and the fence | after E1 | `lane/valet` | queued |
-| 10 | P5 key-path grants, selectors, child_policy | after P2 | `lane/key-grants` | queued |
+| 7 | E1 angelus socket activation | fork tavern-culprit `df4d5475` (Engineer slot) | `lane/socket-activation` | queued |
+| 8 | P2 runtime.* migration | fork hydrant-rocket `78718b5c` | `lane/runtime-namespace` | building, stacked on P1; readers listed before landing |
+| 9 | E3 figaro valet and the fence | tavern-culprit, after E1 | `lane/valet` | queued |
+| 10 | P5 key-path grants, selectors, child_policy | hydrant-rocket, after P2 | `lane/key-grants` | queued |
 | 11 | P6 quota, role verbs, succession charging | after P3, P5 | `lane/quota` | queued |
 | 12 | E4 house mode module (staged) | after E1-E3 | `lane/house-mode` + cheroot-config | queued; deploys only after Gluck's Merlin cutover |
 | 13 | P7 laws and reminder kinds | after P5 | `lane/laws` | queued |
