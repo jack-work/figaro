@@ -82,6 +82,8 @@ func (l *Loaded) HostDoors() map[string]string {
 	return out
 }
 
+func (l *Loaded) BoxNames() []string { return sortedKeys(l.cfg().Sandbox.Boxes) }
+
 func (l *Loaded) BoxesRequiringClaim() []string {
 	var out []string
 	for _, name := range sortedKeys(l.cfg().Sandbox.Boxes) {
