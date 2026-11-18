@@ -88,6 +88,15 @@ func changedPaths(before, after form.Snapshot) []string {
 	return out
 }
 
+func writtenPaths(before form.Snapshot, patch form.Patch, after form.Snapshot) []string {
+	out := changedPaths(before, after)
+	if e, ok := patch.Entry(store.SystemRetiredKey); ok && e.IsRemoval() && store.RetiredIn(before) && !slices.Contains(out, store.SystemRetiredKey) {
+		out = append(out, store.SystemRetiredKey)
+		sort.Strings(out)
+	}
+	return out
+}
+
 type callerKeys struct {
 	owns    bool
 	boxed   bool
@@ -347,7 +356,7 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 		}
 		return h.refuseMintByLabelAlone(ctx, line, before, after)
 	}
-	for _, p := range changedPaths(before, after) {
+	for _, p := range writtenPaths(before, *patch, after) {
 		if k, ok := form.Protected(p); ok && c.lineage {
 			if err := h.refuseProtected(ctx, c, line, k, before); err != nil {
 				return err
