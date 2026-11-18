@@ -212,6 +212,10 @@ honest:
 - **An open `fig listen` does not chase a repoint**: reconnect to
   re-resolve.
 - Each role-targeted invocation costs one wake-free form read.
+- **A role's laws** (`law.*`, which only the owner writes) reach its holder
+  in the study cast opens. The holder may not drop that study, or study the
+  role with `--keys` that leave a law out, while the role holds a law
+  ([laws.md](laws.md)).
 
 ```sh
 fig set --id @role target-aria dcb89d6b       # repoint on succession
