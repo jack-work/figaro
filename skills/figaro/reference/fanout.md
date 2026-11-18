@@ -49,6 +49,14 @@ child's own.
 Daemon-side succession (`succession-policy`) mints the successor fresh and
 copies the predecessor's `max_children` onto it.
 
+## Who may take a held role
+
+Once a role has a holder, `cast` (and `new -C`) hands it only to the holder,
+a descendant of the holder in the drawn tree, or the holder's direct drawn
+parent when that parent was forked from the holder: the shape `succeed`
+leaves after its demote. An ancestor that merely sits above the holder (a
+lead, the King) is refused. The owner acting with no figaro label is exempt.
+
 ## `mint`: the verb `figaro.create` carries alone
 
 `figaro.create` (`figaro new`, root-minting a bound figaro) and `form.create`
