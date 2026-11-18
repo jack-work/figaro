@@ -5,11 +5,9 @@ package store
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -84,33 +82,7 @@ func LastUse(accessMS, lastWriteMS int64) int64 {
 	return lastWriteMS
 }
 
-// ParseTTL accepts Go duration syntax plus the d and w suffixes. Empty, zero
-// or negative means no lifetime.
-func ParseTTL(s string) (time.Duration, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, nil
-	}
-	mult := time.Duration(0)
-	switch {
-	case strings.HasSuffix(s, "d"):
-		mult = 24 * time.Hour
-	case strings.HasSuffix(s, "w"):
-		mult = 7 * 24 * time.Hour
-	}
-	if mult > 0 {
-		n, err := strconv.ParseFloat(strings.TrimSuffix(s[:len(s)-1], " "), 64)
-		if err != nil {
-			return 0, fmt.Errorf("ttl %q: %w", s, err)
-		}
-		return time.Duration(n * float64(mult)), nil
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return 0, fmt.Errorf("ttl %q: %w", s, err)
-	}
-	return d, nil
-}
+func ParseTTL(s string) (time.Duration, error) { return form.ParseLifetime(s) }
 
 // ttlOf: spoke reports whether the patch names the key at all; a removal clears the lifetime.
 func ttlOf(patch message.Patch) (raw string, spoke bool) {
@@ -128,21 +100,7 @@ func stringKeyOf(patch message.Patch, key string) (raw string, spoke bool) {
 	return lifetimeString(e.New), true
 }
 
-func lifetimeString(raw json.RawMessage) string {
-	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
-		return s
-	}
-	var b bool
-	if err := json.Unmarshal(raw, &b); err == nil {
-		return strconv.FormatBool(b)
-	}
-	var n json.Number
-	if err := json.Unmarshal(raw, &n); err == nil {
-		return n.String()
-	}
-	return ""
-}
+func lifetimeString(raw json.RawMessage) string { return form.ScalarString(raw) }
 
 type lifetimeChange struct {
 	ttl          *time.Duration
@@ -212,13 +170,7 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapIfEmpty != nil || c.reapedRoot != nil || c.reapedUntil != nil || c.reapedBy != nil
 }
 
-func retiredValue(raw string) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "", "0", "false", "no", "off":
-		return false
-	}
-	return true
-}
+func retiredValue(raw string) bool { return form.Truthy(raw) }
 
 func (c lifetimeChange) applyTo(m *AriaMeta, now int64) {
 	if c.ttl != nil {
