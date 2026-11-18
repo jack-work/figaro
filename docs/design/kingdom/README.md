@@ -6,16 +6,30 @@ One Strategist plans both tracks and fans out forks that build parts. The Knight
 - Seats (roles; their names live in the charter, never in figaro Go): Figaro Strategist `@9bf485c2`, Figaro Knight `@d121c404`, Figaro Review Steward `@9e5bdab3`. Reviewers are turn-1 forks of the Strategist on Gemini, one per change.
 - Validated builds: `/var/tmp/kingdom-builds/<part>`.
 
-## In flight (2026-11-18 03:4x)
+## The whole plan (14 items), board order
 
-| part | who | branch | state |
-|---|---|---|---|
-| IF1 study_incantation string | Knight | `lane/study-incantation-string` | building |
-| P1 key registry | Knight | `lane/key-registry` | after IF1 |
-| P4 peer caller check | fork anagram-erratic `0e15cab0` | `lane/peer-caller-check` | building |
-| E0 kingdom fan-out (charter `maxChildren`) | fork tavern-culprit `df4d5475` | cheroot-config, off `proposal/system-charter-split` | finishing |
-| E2 hush as a system service | fork erasable-unzip `56faa8d6` | hush `lane/hush-system-service` | building |
+Working agreement: REVISION 2 of the plan root. The Strategist builds everything at once with its forks, keeps the final vision, and restacks it into non-conflicting commits for the Knight as main moves. Reviewers fork the Strategist at turn 1 (the common fork point) on Gemini.
 
-## Next
+| # | part | builder | branch | state (2026-11-18 02:xx) |
+|---|---|---|---|---|
+| 1 | IF1 study_incantation string | Knight | `lane/study-incantation-string` | building |
+| 2 | P1 key registry | Knight | `lane/key-registry` | after IF1 |
+| 3 | E0 kingdom fan-out (charter `maxChildren`) | fork tavern-culprit `df4d5475` | cheroot-config, off `proposal/system-charter-split` | finishing |
+| 4 | P4 peer caller check | fork anagram-erratic `0e15cab0` | `lane/peer-caller-check` | building |
+| 5 | E2 hush as a system service | fork erasable-unzip `56faa8d6` | hush `lane/hush-system-service` | building |
+| 6 | P3 admission ledger | fork dominoes-elusive `439448d3` | `lane/admission-ledger` | building |
+| 7 | E1 angelus socket activation | (slot asked) | `lane/socket-activation` | queued |
+| 8 | P2 runtime.* migration | (slot asked) | `lane/runtime-namespace` | queued; readers listed before landing |
+| 9 | E3 figaro valet and the fence | after E1 | `lane/valet` | queued |
+| 10 | P5 key-path grants, selectors, child_policy | after P2 | `lane/key-grants` | queued |
+| 11 | P6 quota, role verbs, succession charging | after P3, P5 | `lane/quota` | queued |
+| 12 | E4 house mode module (staged) | after E1-E3 | `lane/house-mode` + cheroot-config | queued; deploys only after Gluck's Merlin cutover |
+| 13 | P7 laws and reminder kinds | after P5 | `lane/laws` | queued |
+| 14 | E8 the whole kingdom module | after P4-P6 | cheroot-config | queued |
 
-P3 (admission ledger) when a fork slot frees, then E1 (socket activation), E3 (valet), P2 (runtime.*, readers listed first), P5, P6, E4 (house mode, staged; deploys only after Gluck's Merlin cutover), P7, E8 (the whole kingdom module).
+## By morning (honest)
+
+- Likely ready for the Engineer: IF1, P1, E0 (applies once `lane/managed-fanout` lands).
+- Likely built, review may still be open: P4, E2, P3.
+- If two more slots are granted: E1 built, P2 built and tested on a snapshot with its readers listed.
+- Not by morning: P5, P6, P7, E3, E4, E8. Nothing is merged to main or deployed by the regiment; Merlin and spain are untouched.
