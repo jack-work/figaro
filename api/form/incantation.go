@@ -1,9 +1,7 @@
 package form
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"strings"
 )
@@ -40,18 +38,10 @@ func ReadStudyIncantation(snap Snapshot) StudyIncantation {
 	if !ok {
 		return StudyIncantation{}
 	}
-	if s, isString := incantationString(raw); isString {
+	if s, isString := asString(raw); isString {
 		return StudyIncantation{OnStudy: strings.TrimSpace(s)}
 	}
-	// Only a value the strict decode refuses pays for diagnostics.
-	var fast StudyIncantation
-	if strictDecode(raw, &fast) == nil {
-		fast.OnStudy = strings.TrimSpace(fast.OnStudy)
-		fast.OnUpdate = strings.TrimSpace(fast.OnUpdate)
-		fast.OnDrop = strings.TrimSpace(fast.OnDrop)
-		return fast
-	}
-	fields, ok := incantationObject(raw, StudyIncantationKey, studyIncantationFields)
+	fields, ok := incantationFields(raw, StudyIncantationKey, studyIncantationFields)
 	if !ok {
 		return StudyIncantation{}
 	}
@@ -62,39 +52,36 @@ func ReadStudyIncantation(snap Snapshot) StudyIncantation {
 	}
 }
 
-// strictDecode refuses unknown fields, routing a typo to the diagnostic path.
-func strictDecode(raw json.RawMessage, out any) error {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(out); err != nil {
-		return err
-	}
-	if dec.More() {
-		return errTrailingJSON
-	}
-	return nil
-}
+var forkIncantationFields = []string{"onfork"}
 
-var errTrailingJSON = errors.New("incantation: trailing content after the object")
-
-// ReadForkIncantation accepts a bare string or an object carrying onfork.
 func ReadForkIncantation(snap Snapshot) ForkIncantation {
 	raw, ok := snap.Get(ForkIncantationKey)
 	if !ok {
 		return ForkIncantation{}
 	}
-	if s, isString := incantationString(raw); isString {
+	if s, isString := asString(raw); isString {
 		return ForkIncantation{OnFork: strings.TrimSpace(s)}
 	}
-	var fast ForkIncantation
-	if strictDecode(raw, &fast) == nil {
-		return ForkIncantation{OnFork: strings.TrimSpace(fast.OnFork)}
-	}
-	fields, ok := incantationObject(raw, ForkIncantationKey, []string{"onfork"})
+	fields, ok := incantationFields(raw, ForkIncantationKey, forkIncantationFields)
 	if !ok {
 		return ForkIncantation{}
 	}
 	return ForkIncantation{OnFork: fields["onfork"]}
+}
+
+func incantationFields(raw json.RawMessage, key string, known []string) (map[string]string, bool) {
+	if checkIncantation(raw, known) != nil {
+		return incantationObject(raw, key, known)
+	}
+	var obj map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &obj)
+	out := make(map[string]string, len(obj))
+	for name, value := range obj {
+		if s, _ := asString(value); strings.TrimSpace(s) != "" {
+			out[strings.ToLower(strings.TrimSpace(name))] = strings.TrimSpace(s)
+		}
+	}
+	return out, true
 }
 
 func incantationString(raw json.RawMessage) (string, bool) {
