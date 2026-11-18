@@ -16,6 +16,7 @@ var requestFieldCapabilities = map[string]rpc.Capability{
 	"QuaRequest.Images":               rpc.CapQuaImages,
 	"SetRequest.Seq":                  rpc.CapFormSeq,
 	"SetRequest.Client":               rpc.CapFormSeq,
+	"SetRequest.Lineage":              rpc.CapSetLineage,
 	"FormRequest.Client":              rpc.CapFormSeq,
 	"NormalizeRequest.DryRun":         rpc.CapNormalize,
 	"StudyRequest.Keys":               rpc.CapStudyKeys,

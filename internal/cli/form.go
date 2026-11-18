@@ -15,7 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
-func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
+func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string, lineage bool) {
 
 	value := json.RawMessage(raw)
 	if !json.Valid(value) {
@@ -30,6 +30,9 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 
 	var topValue json.RawMessage
 	var ifVersion uint64
+	if len(path) > 0 && lineage {
+		die("set --lineage: %s names a path inside a value, which differs per figaro; set the whole key", keyArg)
+	}
 	if len(path) == 0 {
 		topValue = value
 	} else {
@@ -42,9 +45,10 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 	}
 
 	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{top: topValue}, nil)
-	resp := mustCallSet(loaded, ariaID, patch, ifVersion)
+	resp := callSet(loaded, ariaID, rpc.SetRequest{Patch: patch, IfVersion: ifVersion, Lineage: lineage})
 	fmt.Fprintf(stderrw, "%s %s = %s (figaro %s)%s\n",
 		resp.verb("set"), keyArg, value, ariaName(resp.figaroID), resp.at())
+	resp.printLineage()
 }
 
 func runToggle(loaded *config.Loaded, ariaID, key string) error {
@@ -109,7 +113,7 @@ func runFormSet(loaded *config.Loaded, ariaID string, args []string) error {
 		return fmt.Errorf("usage: form set <key> <value> | form set k=v,k2=v2")
 	case 2:
 		if !strings.ContainsAny(args[0], "={") {
-			runSetArgs(loaded, ariaID, args[0], args[1])
+			runSetArgs(loaded, ariaID, args[0], args[1], false)
 			return nil
 		}
 	}
@@ -142,7 +146,7 @@ func runFormDelete(loaded *config.Loaded, ariaID string, args []string) error {
 	if len(paths) == 0 {
 		return fmt.Errorf("form delete: no key paths given")
 	}
-	runUnsetArgs(loaded, ariaID, paths)
+	runUnsetArgs(loaded, ariaID, paths, false)
 	return nil
 }
 
@@ -157,7 +161,7 @@ func runFormHelp(ctx *cmdkit.RunContext, args []string) error {
 	return fmt.Errorf("no help topic %q (try `figaro help` for the list)", args[0])
 }
 
-func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
+func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string, lineage bool) {
 	keys := map[string]json.RawMessage{}
 	var drops []string
 	var ifVersion uint64
@@ -169,6 +173,9 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 		if len(path) == 0 {
 			drops = append(drops, top)
 			continue
+		}
+		if lineage {
+			die("unset --lineage: %s names a path inside a value, which differs per figaro; unset the whole key", keyArg)
 		}
 		current, version := mustFetchFormKey(loaded, ariaID, top)
 		if len(current) == 0 {
@@ -190,9 +197,10 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 		return
 	}
 	// An absent key is a refusal, not a silent success.
-	resp := mustCallSetAsserting(loaded, ariaID, form.Build(form.Snapshot{}, keys, drops), ifVersion)
+	resp := callSet(loaded, ariaID, rpc.SetRequest{Patch: form.Build(form.Snapshot{}, keys, drops), IfVersion: ifVersion, Assert: !lineage, Lineage: lineage})
 	fmt.Fprintf(stderrw, "%s %s (figaro %s)%s\n",
 		resp.verb("unset"), strings.Join(args, ", "), ariaName(resp.figaroID), resp.at())
+	resp.printLineage()
 }
 
 func runForm(loaded *config.Loaded, ariaID string) {
@@ -401,6 +409,24 @@ func (r setResult) verb(did string) string {
 	}
 }
 
+func (r setResult) printLineage() {
+	if r.resp == nil || len(r.resp.Lineage) == 0 {
+		return
+	}
+	changed, unchanged := 0, 0
+	for _, row := range r.resp.Lineage {
+		switch {
+		case row.Refused != "":
+			fmt.Fprintf(stderrw, "  refused on %s: %s\n", ariaName(row.FigaroID), row.Refused)
+		case row.Outcome == rpc.OutcomeUnchanged:
+			unchanged++
+		default:
+			changed++
+		}
+	}
+	fmt.Fprintf(stderrw, "  and %d below it changed, %d already so\n", changed, unchanged)
+}
+
 func (r setResult) at() string {
 	if r.resp == nil || r.resp.Version == 0 {
 		return ""
@@ -408,24 +434,21 @@ func (r setResult) at() string {
 	return fmt.Sprintf(" @%d", r.resp.Version)
 }
 
-func mustCallSetAsserting(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVersion uint64) setResult {
-	return callSet(loaded, ariaID, patch, ifVersion, true)
-}
-
 func mustCallSet(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVersion uint64) setResult {
-	return callSet(loaded, ariaID, patch, ifVersion, false)
+	return callSet(loaded, ariaID, rpc.SetRequest{Patch: patch, IfVersion: ifVersion})
 }
 
-func callSet(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVersion uint64, assert bool) setResult {
+func callSet(loaded *config.Loaded, ariaID string, req rpc.SetRequest) setResult {
 	var result setResult
+	if req.Lineage {
+		if err := needCapability(rpc.CapSetLineage, "set --lineage"); err != nil {
+			die("set: %s", err)
+		}
+	}
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		set := s.Figaro.Set
-		if assert {
-			set = s.Figaro.SetAsserting
-		}
-		resp, err := set(ctx, patch, ifVersion)
+		resp, err := s.Figaro.SetWith(ctx, req)
 		if err != nil {
 			die("set: %s", err)
 		}

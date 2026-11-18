@@ -214,3 +214,57 @@ func TestAForkDressedInAnOutfitKeepsItsParentsLaws(t *testing.T) {
 		require.JSONEq(t, want, lawsOn(t, r.grantRig, out.Alternative), "a fork at turn %d dressed in lawful", at)
 	}
 }
+
+// Defends the one-gesture repeal: a law copied at birth lives on in every
+// figaro drawn below, and a repeal that reached only the root left them
+// bound.
+func TestTheOwnersRepealReachesTheWholeLineageInOneCall(t *testing.T) {
+	r := newLineageRig(t, "")
+	c := r.dial(t)
+	for _, id := range []string{r.parent, r.child, r.sibling} {
+		r.ownerSets(t, id, map[string]any{"law.report": lawText})
+	}
+	grandchild := r.forkAsFigaro(t, r.child)
+	require.JSONEq(t, `{"report":"`+lawText+`"}`, lawsOn(t, r.grantRig, grandchild))
+	outsider, err := r.create(asOwner(), "judged")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.ownerSets(t, outsider.FigaroID, map[string]any{"law.report": lawText})
+	repeal := rpc.SetRequest{Patch: form.Build(form.Snapshot{}, nil, []string{"law.report"}), Lineage: true}
+	if err := c.Call(context.Background(), rpc.MethodSet, claimed(t, r.parent, withAria(t, r.parent, repeal)), nil); err == nil || !strings.Contains(err.Error(), "owner's alone") {
+		t.Fatalf("a figaro set a whole lineage: %v", err)
+	}
+	if _, err := r.h[rpc.MethodSet](toolOf(r.parent), withAria(t, r.parent, repeal)); err == nil || !strings.Contains(err.Error(), "owner's alone") {
+		t.Fatalf("a figaro's tool shell set a whole lineage: %v", err)
+	}
+	out, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.parent, repeal))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reached := map[string]string{}
+	for _, row := range out.(rpc.SetResponse).Lineage {
+		reached[row.FigaroID] = row.Outcome + row.Refused
+	}
+	for _, id := range []string{r.child, r.sibling, grandchild} {
+		if reached[id] != rpc.OutcomeApplied {
+			t.Errorf("%s: %q in %v", id, reached[id], reached)
+		}
+	}
+	for _, id := range []string{r.parent, r.child, r.sibling, grandchild} {
+		if got := lawsOn(t, r.grantRig, id); got != "" && got != "{}" {
+			t.Errorf("%s still holds %s", id, got)
+		}
+	}
+	if _, ok := reached[outsider.FigaroID]; ok {
+		t.Fatal("the repeal reached a figaro outside the lineage")
+	}
+	require.JSONEq(t, `{"report":"`+lawText+`"}`, lawsOn(t, r.grantRig, outsider.FigaroID))
+	give := rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"law.spend": "Opus only under the throttle."}), Lineage: true}
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.parent, give)); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{r.parent, r.child, r.sibling, grandchild} {
+		require.JSONEq(t, `{"spend":"Opus only under the throttle."}`, lawsOn(t, r.grantRig, id), id)
+	}
+}

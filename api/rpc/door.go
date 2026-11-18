@@ -17,6 +17,7 @@ const (
 	CapChannels     Capability = "follow.channels"
 	CapStudyKeys    Capability = "study.keys"
 	CapDecideOutfit Capability = "decide.outfit"
+	CapSetLineage   Capability = "set.lineage"
 )
 
 type PrincipalKind string

@@ -1638,15 +1638,16 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 		Name:    "set",
 		Group:   "State",
 		Short:   "Patch a form key (no LLM round-trip)",
-		Usage:   "set [--id <id>] <key> <value>",
+		Usage:   "set [--id <id>] [--lineage] <key> <value>",
 		ArgsMin: 2,
 		ArgsMax: 2,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
+			{Long: "lineage", IsBool: true, Description: "Also set it on every figaro drawn below (the owner's alone)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runSetArgs(ld, ctx.Flag("id"), ctx.Args[0], ctx.Args[1])
+			runSetArgs(ld, ctx.Flag("id"), ctx.Args[0], ctx.Args[1], ctx.BoolFlag("lineage"))
 			return nil
 		},
 		CompleteArgs: completeSetArgs,
@@ -1746,14 +1747,15 @@ and pwd prints that. Change it with figaro cd.`,
 		Name:    "unset",
 		Group:   "State",
 		Short:   "Remove form key(s)",
-		Usage:   "unset [--id <id>] <key> [<key>...]",
+		Usage:   "unset [--id <id>] [--lineage] <key> [<key>...]",
 		ArgsMin: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
+			{Long: "lineage", IsBool: true, Description: "Also remove it from every figaro drawn below, as a law's repeal must (the owner's alone)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runUnsetArgs(ld, ctx.Flag("id"), ctx.Args)
+			runUnsetArgs(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("lineage"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsAfterFlag(completeFormKeys),

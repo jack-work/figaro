@@ -192,6 +192,7 @@ func (h *handlers) door(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy
 	for _, m := range figaro.AgentMethods() {
 		methods[m] = h.ariaMethod(m)
 	}
+	methods[rpc.MethodSet] = h.settingLineages(methods[rpc.MethodSet])
 	methods[rpc.MethodFollow] = h.ariaMethod(rpc.MethodFollow)
 	methods[rpc.MethodUnfollow] = h.unfollow
 	guarded := authz.Guard(methods, authz.AriaHeader{}, policy)
