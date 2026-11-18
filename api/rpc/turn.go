@@ -97,9 +97,10 @@ type SetRequest struct {
 	// version; zero is unconditional.
 	IfVersion uint64 `json:"if_version,omitempty"`
 	// Assert makes a removal of an absent key a refusal rather than a no-op.
-	Assert bool   `json:"assert,omitempty"`
-	Client string `json:"client,omitempty"`
-	Seq    uint64 `json:"seq,omitempty"`
+	Assert  bool   `json:"assert,omitempty"`
+	Client  string `json:"client,omitempty"`
+	Seq     uint64 `json:"seq,omitempty"`
+	Lineage bool   `json:"lineage,omitempty"`
 }
 
 type SetResponse struct {
@@ -110,5 +111,12 @@ type SetResponse struct {
 	Outcome string `json:"outcome,omitempty"`
 	// Version is the durable version the form stands at after this call,
 	// what a follower quotes back in IfVersion.
-	Version uint64 `json:"version,omitempty"`
+	Version uint64       `json:"version,omitempty"`
+	Lineage []LineageSet `json:"lineage,omitempty"`
+}
+
+type LineageSet struct {
+	FigaroID string `json:"figaro_id"`
+	Outcome  string `json:"outcome,omitempty"`
+	Refused  string `json:"refused,omitempty"`
 }
