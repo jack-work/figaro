@@ -56,7 +56,7 @@ func TestConcurrentForksUnderTheLimitAllLand(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top}); err != nil {
+			if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); err != nil {
 				errs <- err
 			}
 		}()
@@ -70,7 +70,7 @@ func TestConcurrentForksUnderTheLimitAllLand(t *testing.T) {
 		t.Fatalf("children after 8 concurrent forks = %d, want 8", got)
 	}
 	requireCacheMatchesTree(t, hs, "8 concurrent forks")
-	if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top}); err == nil {
+	if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); err == nil {
 		t.Fatal("a ninth fork past max_children 8 was admitted")
 	}
 }

@@ -112,7 +112,7 @@ func TestAKilledAndRestoredChildStillHoldsItsSlot(t *testing.T) {
 			t.Fatalf("round %d: restore: %v", round, err)
 		}
 		requireCacheMatchesTree(t, hs, "a restore")
-		if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top}); err == nil {
+		if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); err == nil {
 			t.Fatalf("round %d: a fork past max_children 1 was admitted after a kill and a restore", round)
 		}
 	}
@@ -134,7 +134,7 @@ func TestARestoreCountsAChildTheCacheHadForgotten(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireCacheMatchesTree(t, hs, "a restore")
-	if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top}); err == nil {
+	if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); err == nil {
 		t.Fatal("a fork past max_children 1 was admitted: the restore did not put the child back")
 	}
 }

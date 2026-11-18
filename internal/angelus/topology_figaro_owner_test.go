@@ -67,7 +67,7 @@ func (r ownerRig) arrange(t *testing.T, figaro, node, under string) error {
 
 func (r ownerRig) drawnUnder(t *testing.T, node string) string {
 	t.Helper()
-	parent, _ := r.a.Topology.Drawn(node)
+	parent, _ := r.backend.HierarchyEngine().Drawn(node)
 	return parent
 }
 

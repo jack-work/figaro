@@ -281,6 +281,10 @@ runtime.forked_from[0]	owner= lineage= set=true remove=true apply.owner=refused 
 runtime.forked_from_x	owner= lineage= set=true remove=true apply.owner=refused apply.figaro=refused
 runtime.marks.system	owner= lineage= set=true remove=true apply.owner=refused apply.figaro=refused
 runtime.methods.credo	owner= lineage= set=true remove=true apply.owner=refused apply.figaro=refused
+runtime.owner_made	owner= lineage= set=true remove=true apply.owner=refused apply.figaro=refused
+runtime.owner_made.x	owner= lineage= set=true remove=true apply.owner=refused apply.figaro=refused
+runtime.owner_made[0]	owner= lineage= set=true remove=true apply.owner=refused apply.figaro=refused
+runtime.owner_made_x	owner= lineage= set=true remove=true apply.owner=refused apply.figaro=refused
 runtime.retention	owner= lineage= set=true remove=true apply.owner=refused apply.figaro=refused
 runtime.retention.scopes.reason	owner= lineage= set=true remove=true apply.owner=refused apply.figaro=refused
 runtime.retired	owner= lineage= set=true remove=true apply.owner=refused apply.figaro=refused

@@ -99,12 +99,12 @@ func TestAGrantUnderAnUncappedLeadCountsAgainstTheCapAbove(t *testing.T) {
 	setQuota(t, b, king, 3)
 	lead := forkOK(t, hs, "", king, nil)
 	if got := budgetOf(hs, lead); got.capped {
-		t.Fatalf("an unclaimed fork inherited its parent's quota: %+v", got)
+		t.Fatalf("an owner's fork inherited its parent's quota: %+v", got)
 	}
-	if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: lead, Patch: quotaPatch(10)}); err == nil {
+	if _, err := callForkAsFigaro(t, hs, lead, rpc.ForkRequest{FigaroID: lead, Patch: quotaPatch(10)}); err == nil {
 		t.Fatal("a lane granted 10 under an uncapped lead escaped the king's quota of 3")
 	}
-	forkOK(t, hs, "", lead, quotaPatch(1))
+	forkOK(t, hs, lead, lead, quotaPatch(1))
 	if got := budgetOf(hs, king); got.used != 3 {
 		t.Fatalf("king uses %d, want 3: the lead (1) and its lane granted 1 (2)", got.used)
 	}
@@ -219,4 +219,76 @@ func TestTheQuotaIsShownInTheListing(t *testing.T) {
 		return
 	}
 	t.Fatal("top has no row")
+}
+
+func keyIn(t *testing.T, b *store.XwalBackend, id, key string) (string, bool) {
+	t.Helper()
+	snap, err := b.FormState(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, ok := snap.Get(key)
+	return string(v), ok
+}
+
+// Gluck's call: the owner's forks skip every fan-out check but still count,
+// and a figaro at its cap is told which of them it may retire.
+func TestAnOwnerForkSkipsAdmissionButCounts(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	top, _ := b.CreateConversation(outfit)
+	setQuota(t, b, top, 1)
+	setMaxChildren(t, b, top, 1)
+	a := forkOK(t, hs, "", top, nil)
+	c := forkOK(t, hs, "", top, nil)
+	if got := budgetOf(hs, top); got.used != 2 || hs.h.angelus.liveChildCount(top) != 2 {
+		t.Fatalf("two owner forks were not counted: %+v, %d live", got, hs.h.angelus.liveChildCount(top))
+	}
+	if v, ok := keyIn(t, b, a, form.OwnerMadeKey); !ok || v != "true" {
+		t.Fatalf("an owner fork carries %s = %s (present %v)", form.OwnerMadeKey, v, ok)
+	}
+	_, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top})
+	if err == nil {
+		t.Fatal("a figaro over its cap forked")
+	}
+	setMaxChildren(t, b, top, 3)
+	_, err = callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top})
+	if err == nil || !strings.Contains(err.Error(), "the owner made ") || !strings.Contains(err.Error(), shortID(a)) || !strings.Contains(err.Error(), shortID(c)) {
+		t.Fatalf("the quota refusal does not name the owner's forks: %v", err)
+	}
+	for _, id := range []string{a, c} {
+		if err := setAsFigaro(t, hs, top, id, form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemRetiredKey: json.RawMessage(`"room"`)}, nil)); err != nil {
+			t.Fatalf("a capped figaro could not retire an owner's fork under it: %v", err)
+		}
+	}
+	forkOK(t, hs, top, top, nil)
+	requireCacheMatchesTree(t, hs, "owner forks")
+}
+
+// Gluck's invariant: a fork never copies its parent's quota; a quota is
+// carved from the parent's free budget, a child_policy's included.
+func TestAForkNeverCopiesItsParentsQuota(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	top, _ := b.CreateConversation(outfit)
+	setQuota(t, b, top, 3)
+	owners := forkOK(t, hs, "", top, nil)
+	if v, ok := keyIn(t, b, owners, form.FanoutQuotaKey); ok {
+		t.Fatalf("an owner's fork copied the quota: %s", v)
+	}
+	claimedKid := forkOK(t, hs, top, top, nil)
+	if v, _ := keyIn(t, b, claimedKid, form.FanoutQuotaKey); v != "0" {
+		t.Fatalf("a claimed fork's quota = %q, want 0", v)
+	}
+	applyKeys(t, b, top, map[string]any{form.ChildPolicyKey: map[string]any{form.FanoutQuotaKey: 1}})
+	if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); err == nil {
+		t.Fatal("a child_policy quota of 1 was not carved: top had 1 free and the child costs 2")
+	}
+	retireAria(t, b, owners)
+	carved := forkOK(t, hs, top, top, nil)
+	if v, _ := keyIn(t, b, carved, form.FanoutQuotaKey); v != "1" {
+		t.Fatalf("the child_policy quota = %q, want 1", v)
+	}
+	if got := budgetOf(hs, top); got.used != 3 {
+		t.Fatalf("top uses %d, want 3: a claimed child (1) and a carved one (2)", got.used)
+	}
+	requireCacheMatchesTree(t, hs, "carves")
 }

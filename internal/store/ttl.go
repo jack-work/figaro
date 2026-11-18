@@ -117,6 +117,7 @@ type lifetimeChange struct {
 	reapedBy     *string
 	quotaSpoke   bool
 	quota        *int
+	ownerMade    *bool
 }
 
 func lifetimeOf(id string, patch message.Patch) (lifetimeChange, bool) {
@@ -173,6 +174,10 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 		by := strings.TrimSpace(raw)
 		c.reapedBy = &by
 	}
+	if raw, spoke := valueOf(form.OwnerMadeKey); spoke {
+		made := form.Truthy(raw)
+		c.ownerMade = &made
+	}
 	if raw, spoke := valueOf(form.FanoutQuotaKey); spoke {
 		c.quotaSpoke = true
 		if raw != "" {
@@ -183,7 +188,7 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 			}
 		}
 	}
-	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapIfEmpty != nil || c.reapedRoot != nil || c.reapedUntil != nil || c.reapedBy != nil || c.quotaSpoke
+	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapIfEmpty != nil || c.reapedRoot != nil || c.reapedUntil != nil || c.reapedBy != nil || c.quotaSpoke || c.ownerMade != nil
 }
 
 func retiredValue(raw string) bool { return form.Truthy(raw) }
@@ -233,6 +238,9 @@ func (c lifetimeChange) applyTo(m *AriaMeta, now int64) {
 	if c.quotaSpoke {
 		m.FanoutQuota = c.quota
 	}
+	if c.ownerMade != nil {
+		m.OwnerMade = *c.ownerMade
+	}
 }
 
 func sameLifetime(a, b *AriaMeta) bool {
@@ -240,7 +248,7 @@ func sameLifetime(a, b *AriaMeta) bool {
 	return a.TTLMS == b.TTLMS && a.RetiredAtMS == b.RetiredAtMS && a.RetiredReason == b.RetiredReason && a.ReapIfEmpty == b.ReapIfEmpty &&
 		a.ReapedAtMS == b.ReapedAtMS && a.ReapedRoot == b.ReapedRoot && a.ReapedUntilMS == b.ReapedUntilMS && a.ReapedBy == b.ReapedBy &&
 		(ka == nil) == (kb == nil) && (ka == nil || *ka == *kb) &&
-		(a.FanoutQuota == nil) == (b.FanoutQuota == nil) && (a.FanoutQuota == nil || *a.FanoutQuota == *b.FanoutQuota)
+		(a.FanoutQuota == nil) == (b.FanoutQuota == nil) && (a.FanoutQuota == nil || *a.FanoutQuota == *b.FanoutQuota) && a.OwnerMade == b.OwnerMade
 }
 
 func (b *XwalBackend) ttlCommitted(id string, patch message.Patch) {
