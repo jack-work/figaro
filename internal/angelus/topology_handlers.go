@@ -800,7 +800,18 @@ func (h *handlers) seat(ctx context.Context, params json.RawMessage) (interface{
 
 func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rpc.SeatResponse {
 	var r rpc.SeatResponse
-	intent := h.seatIntent(successor, pred)
+	var intent seatRecord
+	var landed bool
+	_ = h.angelus.topology().WithLock(func() error {
+		intent = h.seatIntent(successor, pred)
+		have, _ := h.angelus.topology().Drawn(pred)
+		landed = have == successor
+		return nil
+	})
+	if landed {
+		r.Demote = rpc.DemoteResponse{FigaroID: pred, Under: successor, Preferred: true}
+		return r
+	}
 	if have, _ := h.angelus.topology().Drawn(successor); have != pred {
 		if h.seats != nil {
 			if err := h.seats.begin(intent); err != nil {

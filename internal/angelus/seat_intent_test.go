@@ -166,3 +166,21 @@ func (f *seatFixture) crashAfterThePlace(t *testing.T) {
 		t.Fatalf("the crash left %d records, want 1", len(left))
 	}
 }
+
+func TestASeatThatHasLandedLandsAgainWithNoMoves(t *testing.T) {
+	f := newSeatFixture(t)
+	if seat := f.seat(t); seat.FailedAt != "" {
+		t.Fatalf("seat failed at %s: %s", seat.FailedAt, seat.Error)
+	}
+	before := f.overrides(t)
+	again := f.seat(t)
+	if again.FailedAt != "" {
+		t.Fatalf("a rerun failed at %s: %s", again.FailedAt, again.Error)
+	}
+	if again.Placed || again.Demote.Under != f.successor || !again.Demote.Preferred {
+		t.Fatalf("a rerun reported %+v, want the landed demote under %s and no place", again, f.successor)
+	}
+	if after := f.overrides(t); !bytes.Equal(before, after) {
+		t.Fatalf("a rerun moved something: before %s, after %s", before, after)
+	}
+}
