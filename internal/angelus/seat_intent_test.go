@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -182,5 +183,28 @@ func TestASeatThatHasLandedLandsAgainWithNoMoves(t *testing.T) {
 	}
 	if after := f.overrides(t); !bytes.Equal(before, after) {
 		t.Fatalf("a rerun moved something: before %s, after %s", before, after)
+	}
+}
+
+func TestAFigaroSeatsOnlyItsOwnForkAndMovesNothingOtherwise(t *testing.T) {
+	f := newSeatFixture(t)
+	before := f.overrides(t)
+	raw, err := rpc.WithCaller(rpc.SeatRequest{FigaroID: f.pred, Successor: f.successor}, f.pred, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.hs.Map[rpc.MethodSeat](inProcess(context.Background()), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seat := out.(rpc.SeatResponse)
+	if seat.FailedAt != "place" || !strings.Contains(seat.Error, "owner") {
+		t.Fatalf("seat = %+v, want a refusal at place that names the owner", seat)
+	}
+	if after := f.overrides(t); !bytes.Equal(before, after) {
+		t.Fatalf("a refused seat moved something: before %s, after %s", before, after)
+	}
+	if left := f.leftRecords(t); len(left) != 0 {
+		t.Fatalf("seats.json holds %+v", left)
 	}
 }
