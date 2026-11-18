@@ -99,9 +99,9 @@ daemon-side succession copies it onto the successor it mints.
 
 ### Licensing the King
 
-Put the key on the King's role, from Gluck's own terminal (no figaro label;
-inside a figaro's shell add `env -u FIGARO_ARIA`, or the call is the
-figaro's and is refused):
+Put the key on the King's role, from Gluck's own terminal. A figaro's tool
+shell cannot do it, whatever its environment: the daemon knows it by its
+cgroup and refuses it as that figaro (see [peer-check.md](peer-check.md)):
 
 ```sh
 figaro set --id @<King role> system.fanout.mint true
@@ -114,11 +114,11 @@ role> system.fanout.mint`, or set it `false`.
 
 ### What it does not stop
 
-The label is the caller's assertion. A figaro whose tool shell runs
-`env -u FIGARO_ARIA figaro new ...` reaches the local socket as Gluck does
-and is allowed. This default stops a figaro that follows its instructions,
-not one working around them; closing that gap needs the daemon to attribute
-a local call by its peer process rather than by its environment.
+With `[authz] peer_check` on (the default on Linux), the daemon attributes a
+local call by the cgroup of the process that made it, so a tool shell that
+runs `env -u FIGARO_ARIA figaro new ...` is still its figaro and is refused.
+It is the same uid, so a tool working against it can still leave its cgroup
+on purpose; see [peer-check.md](peer-check.md).
 
 ## `mint`: the verb `figaro.create` carries alone
 
