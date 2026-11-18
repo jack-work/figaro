@@ -54,6 +54,9 @@ func Run(progName string, args []string) {
 		case "box":
 			exitAt(runBoxStandalone(progName, args))
 			return
+		case "valet":
+			exitAt(runValetStandalone(progName, args))
+			return
 		}
 	}
 
@@ -1945,6 +1948,7 @@ there until you revoke it with the provider.`,
 
 	registerTroupe(r)
 	r.Register(boxVerb)
+	r.Register(valetVerb)
 
 	r.Register(&cmdkit.Command{
 		Name:  "models",
