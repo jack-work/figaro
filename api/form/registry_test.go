@@ -87,8 +87,8 @@ func TestTheNamedKeysCarryTheirWriterClass(t *testing.T) {
 		form.WriterLineage: {form.ScopesKey, form.FanoutMaxChildrenKey, form.FanoutQuotaKey, form.FanoutMintKey, "system.sandbox"},
 		form.WriterRuntime: {form.FailureReasonKey, form.FailureCategoryKey, form.FailureTurnKey, form.FailureAtKey, "system.forked_from", "system.studies", "system.tombstone", "system.checkpoint.marks", "system.succession_warned",
 			form.ForkedFromKey, form.StudiesKey, form.TombstoneKey, form.CheckpointMarksKey, form.SuccessionWarnedKey, form.RetiredKey, "runtime", "runtime.anything.below"},
-		form.WriterOwner: {form.GrantsKey, "system.provider", "system.model", "system.ttl", "system.retired", "system.retention.mode", "system.methods.pick.key"},
-		form.WriterSelf:  {"system.cwd", "system.cache_control", "system.checkpoint.every_patches", "mantra", "datetime", "system.fanout"},
+		form.WriterOwner: {form.GrantsKey, "system.provider", "system.model", "system.ttl", "system.retired", "system.retention.mode", "system.methods.pick.key", "law", "law.report-to-role", "law.a.b"},
+		form.WriterSelf:  {"system.cwd", "system.cache_control", "system.checkpoint.every_patches", "mantra", "datetime", "system.fanout", "laws", "lawyer.x", "system.law"},
 	} {
 		for _, k := range keys {
 			if got := form.WriterOf(k); got != want {

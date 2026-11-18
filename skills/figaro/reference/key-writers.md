@@ -29,6 +29,7 @@ Set or removed only by the owner: the local door, an in-process call, or the own
 - `system.methods` and everything under it
 - `system.environment` and everything under it
 - `system.retention` and everything under it
+- `law` and everything under it
 
 ## lineage
 
