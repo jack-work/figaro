@@ -224,25 +224,39 @@ func (b *XwalBackend) librettoInstance(sourceFormID string) (*Libretto, error) {
 		b.mu.Unlock()
 		return l, nil
 	}
+	if o := b.opening[key]; o != nil {
+		b.mu.Unlock()
+		<-o.done
+		return o.lib, o.err
+	}
+	o := &librettoOpening{done: make(chan struct{})}
+	if b.opening == nil {
+		b.opening = map[string]*librettoOpening{}
+	}
+	b.opening[key] = o
 	b.mu.Unlock()
 
 	// Outside the lock: this replays a form and reads files.
-	lib, err := OpenLibretto(b.store, sourceFormID)
-	if err != nil {
-		return nil, err
-	}
+	o.lib, o.err = openLibretto(b.store, sourceFormID)
 	b.mu.Lock()
-	if existing := b.librettos[key]; existing != nil {
-		b.mu.Unlock()
-		lib.Close() // lost the race; the shared one wins
-		return existing, nil
+	delete(b.opening, key)
+	if o.err == nil {
+		if b.librettos == nil {
+			b.librettos = map[string]*Libretto{}
+		}
+		b.librettos[key] = o.lib
 	}
-	if b.librettos == nil {
-		b.librettos = map[string]*Libretto{}
-	}
-	b.librettos[key] = lib
 	b.mu.Unlock()
-	return lib, nil
+	close(o.done)
+	return o.lib, o.err
+}
+
+var openLibretto = OpenLibretto
+
+type librettoOpening struct {
+	done chan struct{}
+	lib  *Libretto
+	err  error
 }
 
 // LibrettoStats: a fold is a goroutine and a subscription, so this is the one

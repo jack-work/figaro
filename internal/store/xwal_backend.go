@@ -55,6 +55,7 @@ type XwalBackend struct {
 	models   *Form
 	// librettos: one fold goroutine per libretto, not per observer.
 	librettos map[string]*Libretto
+	opening   map[string]*librettoOpening
 	// lastTS is aria id -> newest record timestamp, memoized.
 	lastTS map[string]int64
 
