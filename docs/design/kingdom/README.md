@@ -19,9 +19,7 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 - E4 house mode: utensil-slapping `ef74d1d6`
 - S1 auto-normalize: oven-receipt `ae2fc7c2`
 
-Queued, after P6: optimistic fork. Fork admission and birth come out from under the Hierarchy mutex (internal/hierarchy/hierarchy.go:221), and the store's global birth lock goes. Prior art: the fork-admission proposal, stage 4d.
-
-Queued for the next free slot: the composed Seat plan (docs/design/h1-seat-plan.md), the full fix for F-E (the cheap guard ships in v0.74.5) and F-F.
+Under the Engineer: composed Seat plan, neither-blimp `a107c3b5` (`lane/seat-plan` on rel/v0.75.0). Optimistic fork part 1 (the store's birth lock), iphone-sushi `7c36bb41` (`lane/optimistic-fork`). Part 2 (admission off the Hierarchy mutex) waits on P6.
 
 v0.74.5 review FIX, the Knight fixing (F-A cap overfill on kill+restore, plus F-B to F-G); P2+P5 in review (hyacinth-obtain).
 
