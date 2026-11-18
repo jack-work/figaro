@@ -21,6 +21,7 @@ pkgs.testers.runNixOSTest {
   };
 
   testScript = ''
+    import json
     import statistics
 
     def fig(node, cmd, user="figaro"):
@@ -56,10 +57,16 @@ pkgs.testers.runNixOSTest {
         activated.succeed("test -S /run/figaro/angelus.sock")
         out = fig(activated, "rest 2>&1")
         assert "not running" in out, out
+        doc = json.loads(fig(activated, "doctor unit -j"))
+        assert doc["ok"], doc
         activated.succeed("sleep 0.5")
         assert activated.succeed("systemctl show -p ActiveState --value figaro.service").strip() == "inactive"
         fig(activated, "ls --json")
         activated.succeed("systemctl is-active figaro.service")
+        doc_active = json.loads(fig(activated, "doctor unit -j"))
+        assert doc_active["ok"], doc_active
+        doc_intruder = json.loads(activated.succeed("runuser -u intruder -- env HOME=/tmp figaro doctor unit -j"))
+        assert doc_intruder["ok"], doc_intruder
         assert activated.succeed("stat -c %i /run/figaro/angelus.sock").strip() == inode, "the socket was replaced"
 
     with subtest("the door keeps its admission: a uid that can reach the socket is still judged by the daemon"):
