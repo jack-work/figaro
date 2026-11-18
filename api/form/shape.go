@@ -103,11 +103,21 @@ func ShapeStringList() Shape {
 	}}
 }
 
-func ShapeEnum(values ...string) Shape {
-	return Shape{Name: "one of " + strings.Join(values, "|"), check: func(raw json.RawMessage) error {
+func ShapeEnum(values ...string) Shape { return enumShape(false, values) }
+
+func ShapeEnumFold(values ...string) Shape { return enumShape(true, values) }
+
+func enumShape(fold bool, values []string) Shape {
+	name := "one of " + strings.Join(values, "|")
+	if fold {
+		name += " (any case)"
+	}
+	return Shape{Name: name, check: func(raw json.RawMessage) error {
 		s, ok := asString(raw)
 		if ok {
-			s = strings.ToLower(strings.TrimSpace(s))
+			if fold {
+				s = strings.ToLower(strings.TrimSpace(s))
+			}
 			for _, v := range values {
 				if s == v {
 					return nil
@@ -284,6 +294,9 @@ func placeholderMatches(pattern, path string) bool {
 		return false
 	}
 	for i := range ps {
+		if xs[i] == "" || strings.Contains(xs[i], "[") {
+			return false
+		}
 		if ps[i] != xs[i] && !strings.HasPrefix(ps[i], "<") {
 			return false
 		}

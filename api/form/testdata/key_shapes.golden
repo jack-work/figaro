@@ -48,6 +48,8 @@ duke-title	"current_turn"	ok
 duke-title	"detailed"	ok
 duke-title	"concise"	ok
 duke-title	"watch it"	ok
+duke-title	"None"	ok
+duke-title	" auto"	ok
 duke-title	[]	no
 duke-title	["a"]	no
 duke-title	[" a"]	no
@@ -122,6 +124,8 @@ system.credo	"current_turn"	ok
 system.credo	"detailed"	ok
 system.credo	"concise"	ok
 system.credo	"watch it"	ok
+system.credo	"None"	ok
+system.credo	" auto"	ok
 system.credo	[]	no
 system.credo	["a"]	no
 system.credo	[" a"]	no
@@ -196,6 +200,8 @@ system.provider	"current_turn"	ok
 system.provider	"detailed"	ok
 system.provider	"concise"	ok
 system.provider	"watch it"	ok
+system.provider	"None"	ok
+system.provider	" auto"	ok
 system.provider	[]	no
 system.provider	["a"]	no
 system.provider	[" a"]	no
@@ -270,6 +276,8 @@ system.tags	"current_turn"	ok
 system.tags	"detailed"	ok
 system.tags	"concise"	ok
 system.tags	"watch it"	ok
+system.tags	"None"	ok
+system.tags	" auto"	ok
 system.tags	[]	ok
 system.tags	["a"]	ok
 system.tags	[" a"]	ok
@@ -344,6 +352,8 @@ system.cache_control	"current_turn"	no
 system.cache_control	"detailed"	no
 system.cache_control	"concise"	no
 system.cache_control	"watch it"	no
+system.cache_control	"None"	ok
+system.cache_control	" auto"	no
 system.cache_control	[]	no
 system.cache_control	["a"]	no
 system.cache_control	[" a"]	no
@@ -418,6 +428,8 @@ system.cache_markers	"current_turn"	no
 system.cache_markers	"detailed"	no
 system.cache_markers	"concise"	no
 system.cache_markers	"watch it"	no
+system.cache_markers	"None"	ok
+system.cache_markers	" auto"	ok
 system.cache_markers	[]	no
 system.cache_markers	["a"]	no
 system.cache_markers	[" a"]	no
@@ -492,6 +504,8 @@ system.thinking_budget	"current_turn"	no
 system.thinking_budget	"detailed"	no
 system.thinking_budget	"concise"	no
 system.thinking_budget	"watch it"	no
+system.thinking_budget	"None"	no
+system.thinking_budget	" auto"	no
 system.thinking_budget	[]	no
 system.thinking_budget	["a"]	no
 system.thinking_budget	[" a"]	no
@@ -566,6 +580,8 @@ system.model	"current_turn"	ok
 system.model	"detailed"	ok
 system.model	"concise"	ok
 system.model	"watch it"	ok
+system.model	"None"	ok
+system.model	" auto"	ok
 system.model	[]	no
 system.model	["a"]	no
 system.model	[" a"]	no
@@ -640,6 +656,8 @@ system.max_tokens	"current_turn"	no
 system.max_tokens	"detailed"	no
 system.max_tokens	"concise"	no
 system.max_tokens	"watch it"	no
+system.max_tokens	"None"	no
+system.max_tokens	" auto"	no
 system.max_tokens	[]	no
 system.max_tokens	["a"]	no
 system.max_tokens	[" a"]	no
@@ -714,6 +732,8 @@ system.max_request_bytes	"current_turn"	no
 system.max_request_bytes	"detailed"	no
 system.max_request_bytes	"concise"	no
 system.max_request_bytes	"watch it"	no
+system.max_request_bytes	"None"	no
+system.max_request_bytes	" auto"	no
 system.max_request_bytes	[]	no
 system.max_request_bytes	["a"]	no
 system.max_request_bytes	[" a"]	no
@@ -788,6 +808,8 @@ system.first_byte_timeout	"current_turn"	no
 system.first_byte_timeout	"detailed"	no
 system.first_byte_timeout	"concise"	no
 system.first_byte_timeout	"watch it"	no
+system.first_byte_timeout	"None"	no
+system.first_byte_timeout	" auto"	no
 system.first_byte_timeout	[]	no
 system.first_byte_timeout	["a"]	no
 system.first_byte_timeout	[" a"]	no
@@ -862,6 +884,8 @@ system.context_tier	"current_turn"	no
 system.context_tier	"detailed"	no
 system.context_tier	"concise"	no
 system.context_tier	"watch it"	no
+system.context_tier	"None"	no
+system.context_tier	" auto"	no
 system.context_tier	[]	no
 system.context_tier	["a"]	no
 system.context_tier	[" a"]	no
@@ -936,6 +960,8 @@ system.max_context_tokens	"current_turn"	no
 system.max_context_tokens	"detailed"	no
 system.max_context_tokens	"concise"	no
 system.max_context_tokens	"watch it"	no
+system.max_context_tokens	"None"	no
+system.max_context_tokens	" auto"	no
 system.max_context_tokens	[]	no
 system.max_context_tokens	["a"]	no
 system.max_context_tokens	[" a"]	no
@@ -1010,6 +1036,8 @@ system.thinking_effort	"current_turn"	ok
 system.thinking_effort	"detailed"	ok
 system.thinking_effort	"concise"	ok
 system.thinking_effort	"watch it"	ok
+system.thinking_effort	"None"	ok
+system.thinking_effort	" auto"	ok
 system.thinking_effort	[]	no
 system.thinking_effort	["a"]	no
 system.thinking_effort	[" a"]	no
@@ -1084,6 +1112,8 @@ system.reasoning_context	"current_turn"	ok
 system.reasoning_context	"detailed"	no
 system.reasoning_context	"concise"	no
 system.reasoning_context	"watch it"	no
+system.reasoning_context	"None"	no
+system.reasoning_context	" auto"	no
 system.reasoning_context	[]	no
 system.reasoning_context	["a"]	no
 system.reasoning_context	[" a"]	no
@@ -1158,6 +1188,8 @@ system.reasoning_summary	"current_turn"	no
 system.reasoning_summary	"detailed"	ok
 system.reasoning_summary	"concise"	ok
 system.reasoning_summary	"watch it"	no
+system.reasoning_summary	"None"	no
+system.reasoning_summary	" auto"	no
 system.reasoning_summary	[]	no
 system.reasoning_summary	["a"]	no
 system.reasoning_summary	[" a"]	no
@@ -1232,6 +1264,8 @@ system.verbosity	"current_turn"	ok
 system.verbosity	"detailed"	ok
 system.verbosity	"concise"	ok
 system.verbosity	"watch it"	ok
+system.verbosity	"None"	ok
+system.verbosity	" auto"	ok
 system.verbosity	[]	no
 system.verbosity	["a"]	no
 system.verbosity	[" a"]	no
@@ -1306,6 +1340,8 @@ system.temperature	"current_turn"	no
 system.temperature	"detailed"	no
 system.temperature	"concise"	no
 system.temperature	"watch it"	no
+system.temperature	"None"	no
+system.temperature	" auto"	no
 system.temperature	[]	no
 system.temperature	["a"]	no
 system.temperature	[" a"]	no
@@ -1380,6 +1416,8 @@ system.top_p	"current_turn"	no
 system.top_p	"detailed"	no
 system.top_p	"concise"	no
 system.top_p	"watch it"	no
+system.top_p	"None"	no
+system.top_p	" auto"	no
 system.top_p	[]	no
 system.top_p	["a"]	no
 system.top_p	[" a"]	no
@@ -1454,6 +1492,8 @@ system.parallel_tool_calls	"current_turn"	no
 system.parallel_tool_calls	"detailed"	no
 system.parallel_tool_calls	"concise"	no
 system.parallel_tool_calls	"watch it"	no
+system.parallel_tool_calls	"None"	no
+system.parallel_tool_calls	" auto"	no
 system.parallel_tool_calls	[]	no
 system.parallel_tool_calls	["a"]	no
 system.parallel_tool_calls	[" a"]	no
@@ -1528,6 +1568,8 @@ system.environment.<name>	"current_turn"	ok
 system.environment.<name>	"detailed"	ok
 system.environment.<name>	"concise"	ok
 system.environment.<name>	"watch it"	ok
+system.environment.<name>	"None"	ok
+system.environment.<name>	" auto"	ok
 system.environment.<name>	[]	no
 system.environment.<name>	["a"]	no
 system.environment.<name>	[" a"]	no
@@ -1602,6 +1644,8 @@ system.study_incantation	"current_turn"	ok
 system.study_incantation	"detailed"	ok
 system.study_incantation	"concise"	ok
 system.study_incantation	"watch it"	ok
+system.study_incantation	"None"	ok
+system.study_incantation	" auto"	ok
 system.study_incantation	[]	no
 system.study_incantation	["a"]	no
 system.study_incantation	[" a"]	no
@@ -1676,6 +1720,8 @@ system.fork_incantation	"current_turn"	ok
 system.fork_incantation	"detailed"	ok
 system.fork_incantation	"concise"	ok
 system.fork_incantation	"watch it"	ok
+system.fork_incantation	"None"	ok
+system.fork_incantation	" auto"	ok
 system.fork_incantation	[]	no
 system.fork_incantation	["a"]	no
 system.fork_incantation	[" a"]	no
@@ -1750,6 +1796,8 @@ system.decide.provider	"current_turn"	ok
 system.decide.provider	"detailed"	ok
 system.decide.provider	"concise"	ok
 system.decide.provider	"watch it"	ok
+system.decide.provider	"None"	ok
+system.decide.provider	" auto"	ok
 system.decide.provider	[]	no
 system.decide.provider	["a"]	no
 system.decide.provider	[" a"]	no
@@ -1824,6 +1872,8 @@ system.decide.model	"current_turn"	ok
 system.decide.model	"detailed"	ok
 system.decide.model	"concise"	ok
 system.decide.model	"watch it"	ok
+system.decide.model	"None"	ok
+system.decide.model	" auto"	ok
 system.decide.model	[]	no
 system.decide.model	["a"]	no
 system.decide.model	[" a"]	no
@@ -1898,6 +1948,8 @@ system.decide.base_url	"current_turn"	ok
 system.decide.base_url	"detailed"	ok
 system.decide.base_url	"concise"	ok
 system.decide.base_url	"watch it"	ok
+system.decide.base_url	"None"	ok
+system.decide.base_url	" auto"	ok
 system.decide.base_url	[]	no
 system.decide.base_url	["a"]	no
 system.decide.base_url	[" a"]	no
@@ -1972,6 +2024,8 @@ system.decide.api	"current_turn"	no
 system.decide.api	"detailed"	no
 system.decide.api	"concise"	no
 system.decide.api	"watch it"	no
+system.decide.api	"None"	no
+system.decide.api	" auto"	no
 system.decide.api	[]	no
 system.decide.api	["a"]	no
 system.decide.api	[" a"]	no
@@ -2046,6 +2100,8 @@ system.methods.enabled	"current_turn"	no
 system.methods.enabled	"detailed"	no
 system.methods.enabled	"concise"	no
 system.methods.enabled	"watch it"	no
+system.methods.enabled	"None"	no
+system.methods.enabled	" auto"	no
 system.methods.enabled	[]	no
 system.methods.enabled	["a"]	no
 system.methods.enabled	[" a"]	no
@@ -2120,6 +2176,8 @@ system.methods.<name>	"current_turn"	no
 system.methods.<name>	"detailed"	no
 system.methods.<name>	"concise"	no
 system.methods.<name>	"watch it"	no
+system.methods.<name>	"None"	no
+system.methods.<name>	" auto"	no
 system.methods.<name>	[]	no
 system.methods.<name>	["a"]	no
 system.methods.<name>	[" a"]	no
@@ -2194,6 +2252,8 @@ system.tools	"current_turn"	no
 system.tools	"detailed"	no
 system.tools	"concise"	no
 system.tools	"watch it"	no
+system.tools	"None"	no
+system.tools	" auto"	no
 system.tools	[]	ok
 system.tools	["a"]	ok
 system.tools	[" a"]	ok
@@ -2268,6 +2328,8 @@ system.cwd	"current_turn"	ok
 system.cwd	"detailed"	ok
 system.cwd	"concise"	ok
 system.cwd	"watch it"	ok
+system.cwd	"None"	ok
+system.cwd	" auto"	ok
 system.cwd	[]	no
 system.cwd	["a"]	no
 system.cwd	[" a"]	no
@@ -2342,6 +2404,8 @@ system.retirement	"current_turn"	no
 system.retirement	"detailed"	no
 system.retirement	"concise"	no
 system.retirement	"watch it"	no
+system.retirement	"None"	no
+system.retirement	" auto"	no
 system.retirement	[]	no
 system.retirement	["a"]	no
 system.retirement	[" a"]	no
@@ -2416,6 +2480,8 @@ system.succession_warned	"current_turn"	ok
 system.succession_warned	"detailed"	ok
 system.succession_warned	"concise"	ok
 system.succession_warned	"watch it"	ok
+system.succession_warned	"None"	ok
+system.succession_warned	" auto"	ok
 system.succession_warned	[]	ok
 system.succession_warned	["a"]	ok
 system.succession_warned	[" a"]	ok
@@ -2490,6 +2556,8 @@ system.succession_failed	"current_turn"	ok
 system.succession_failed	"detailed"	ok
 system.succession_failed	"concise"	ok
 system.succession_failed	"watch it"	ok
+system.succession_failed	"None"	ok
+system.succession_failed	" auto"	ok
 system.succession_failed	[]	no
 system.succession_failed	["a"]	no
 system.succession_failed	[" a"]	no
@@ -2564,6 +2632,8 @@ system.sandbox	"current_turn"	ok
 system.sandbox	"detailed"	ok
 system.sandbox	"concise"	ok
 system.sandbox	"watch it"	ok
+system.sandbox	"None"	ok
+system.sandbox	" auto"	ok
 system.sandbox	[]	no
 system.sandbox	["a"]	no
 system.sandbox	[" a"]	no
@@ -2638,6 +2708,8 @@ system.scopes	"current_turn"	no
 system.scopes	"detailed"	no
 system.scopes	"concise"	no
 system.scopes	"watch it"	no
+system.scopes	"None"	no
+system.scopes	" auto"	no
 system.scopes	[]	ok
 system.scopes	["a"]	ok
 system.scopes	[" a"]	no
@@ -2712,6 +2784,8 @@ system.grants	"current_turn"	no
 system.grants	"detailed"	no
 system.grants	"concise"	no
 system.grants	"watch it"	no
+system.grants	"None"	no
+system.grants	" auto"	no
 system.grants	[]	ok
 system.grants	["a"]	ok
 system.grants	[" a"]	no
@@ -2786,6 +2860,8 @@ system.fanout.max_children	"current_turn"	no
 system.fanout.max_children	"detailed"	no
 system.fanout.max_children	"concise"	no
 system.fanout.max_children	"watch it"	no
+system.fanout.max_children	"None"	no
+system.fanout.max_children	" auto"	no
 system.fanout.max_children	[]	no
 system.fanout.max_children	["a"]	no
 system.fanout.max_children	[" a"]	no
@@ -2860,6 +2936,8 @@ system.fanout.mint	"current_turn"	no
 system.fanout.mint	"detailed"	no
 system.fanout.mint	"concise"	no
 system.fanout.mint	"watch it"	no
+system.fanout.mint	"None"	no
+system.fanout.mint	" auto"	no
 system.fanout.mint	[]	no
 system.fanout.mint	["a"]	no
 system.fanout.mint	[" a"]	no
@@ -2934,6 +3012,8 @@ system.keep	"current_turn"	ok
 system.keep	"detailed"	ok
 system.keep	"concise"	ok
 system.keep	"watch it"	ok
+system.keep	"None"	ok
+system.keep	" auto"	ok
 system.keep	[]	no
 system.keep	["a"]	no
 system.keep	[" a"]	no
@@ -3008,6 +3088,8 @@ system.checkpoint.marks	"current_turn"	ok
 system.checkpoint.marks	"detailed"	ok
 system.checkpoint.marks	"concise"	ok
 system.checkpoint.marks	"watch it"	ok
+system.checkpoint.marks	"None"	ok
+system.checkpoint.marks	" auto"	ok
 system.checkpoint.marks	[]	ok
 system.checkpoint.marks	["a"]	ok
 system.checkpoint.marks	[" a"]	ok
@@ -3082,6 +3164,8 @@ system.checkpoint.every_patches	"current_turn"	no
 system.checkpoint.every_patches	"detailed"	no
 system.checkpoint.every_patches	"concise"	no
 system.checkpoint.every_patches	"watch it"	no
+system.checkpoint.every_patches	"None"	no
+system.checkpoint.every_patches	" auto"	no
 system.checkpoint.every_patches	[]	no
 system.checkpoint.every_patches	["a"]	no
 system.checkpoint.every_patches	[" a"]	no
@@ -3156,6 +3240,8 @@ system.checkpoint.every_seconds	"current_turn"	no
 system.checkpoint.every_seconds	"detailed"	no
 system.checkpoint.every_seconds	"concise"	no
 system.checkpoint.every_seconds	"watch it"	no
+system.checkpoint.every_seconds	"None"	no
+system.checkpoint.every_seconds	" auto"	no
 system.checkpoint.every_seconds	[]	no
 system.checkpoint.every_seconds	["a"]	no
 system.checkpoint.every_seconds	[" a"]	no
@@ -3230,6 +3316,8 @@ system.checkpoint.max_marks	"current_turn"	no
 system.checkpoint.max_marks	"detailed"	no
 system.checkpoint.max_marks	"concise"	no
 system.checkpoint.max_marks	"watch it"	no
+system.checkpoint.max_marks	"None"	no
+system.checkpoint.max_marks	" auto"	no
 system.checkpoint.max_marks	[]	no
 system.checkpoint.max_marks	["a"]	no
 system.checkpoint.max_marks	[" a"]	no
@@ -3304,6 +3392,8 @@ system.retention.mode	"current_turn"	no
 system.retention.mode	"detailed"	no
 system.retention.mode	"concise"	no
 system.retention.mode	"watch it"	no
+system.retention.mode	"None"	no
+system.retention.mode	" auto"	no
 system.retention.mode	[]	no
 system.retention.mode	["a"]	no
 system.retention.mode	[" a"]	no
@@ -3378,6 +3468,8 @@ system.retention.writers	"current_turn"	no
 system.retention.writers	"detailed"	no
 system.retention.writers	"concise"	no
 system.retention.writers	"watch it"	no
+system.retention.writers	"None"	no
+system.retention.writers	" auto"	no
 system.retention.writers	[]	ok
 system.retention.writers	["a"]	ok
 system.retention.writers	[" a"]	ok
@@ -3452,6 +3544,8 @@ system.forked_from	"current_turn"	ok
 system.forked_from	"detailed"	ok
 system.forked_from	"concise"	ok
 system.forked_from	"watch it"	ok
+system.forked_from	"None"	ok
+system.forked_from	" auto"	ok
 system.forked_from	[]	no
 system.forked_from	["a"]	no
 system.forked_from	[" a"]	no
@@ -3526,6 +3620,8 @@ system.tombstone	"current_turn"	ok
 system.tombstone	"detailed"	ok
 system.tombstone	"concise"	ok
 system.tombstone	"watch it"	ok
+system.tombstone	"None"	ok
+system.tombstone	" auto"	ok
 system.tombstone	[]	ok
 system.tombstone	["a"]	ok
 system.tombstone	[" a"]	ok
@@ -3600,6 +3696,8 @@ system.studies	"current_turn"	ok
 system.studies	"detailed"	ok
 system.studies	"concise"	ok
 system.studies	"watch it"	ok
+system.studies	"None"	ok
+system.studies	" auto"	ok
 system.studies	[]	ok
 system.studies	["a"]	ok
 system.studies	[" a"]	ok
@@ -3674,6 +3772,8 @@ model	"current_turn"	ok
 model	"detailed"	ok
 model	"concise"	ok
 model	"watch it"	ok
+model	"None"	ok
+model	" auto"	ok
 model	[]	ok
 model	["a"]	ok
 model	[" a"]	ok
@@ -3748,6 +3848,8 @@ token_budget	"current_turn"	ok
 token_budget	"detailed"	ok
 token_budget	"concise"	ok
 token_budget	"watch it"	ok
+token_budget	"None"	ok
+token_budget	" auto"	ok
 token_budget	[]	ok
 token_budget	["a"]	ok
 token_budget	[" a"]	ok
@@ -3822,6 +3924,8 @@ truncation	"current_turn"	ok
 truncation	"detailed"	ok
 truncation	"concise"	ok
 truncation	"watch it"	ok
+truncation	"None"	ok
+truncation	" auto"	ok
 truncation	[]	ok
 truncation	["a"]	ok
 truncation	[" a"]	ok
@@ -3896,6 +4000,8 @@ system.failure.reason	"current_turn"	ok
 system.failure.reason	"detailed"	ok
 system.failure.reason	"concise"	ok
 system.failure.reason	"watch it"	ok
+system.failure.reason	"None"	ok
+system.failure.reason	" auto"	ok
 system.failure.reason	[]	ok
 system.failure.reason	["a"]	ok
 system.failure.reason	[" a"]	ok
@@ -3970,6 +4076,8 @@ system.failure.category	"current_turn"	ok
 system.failure.category	"detailed"	ok
 system.failure.category	"concise"	ok
 system.failure.category	"watch it"	ok
+system.failure.category	"None"	ok
+system.failure.category	" auto"	ok
 system.failure.category	[]	ok
 system.failure.category	["a"]	ok
 system.failure.category	[" a"]	ok
@@ -4044,6 +4152,8 @@ system.failure.turn	"current_turn"	ok
 system.failure.turn	"detailed"	ok
 system.failure.turn	"concise"	ok
 system.failure.turn	"watch it"	ok
+system.failure.turn	"None"	ok
+system.failure.turn	" auto"	ok
 system.failure.turn	[]	ok
 system.failure.turn	["a"]	ok
 system.failure.turn	[" a"]	ok
@@ -4118,6 +4228,8 @@ system.failure.at	"current_turn"	ok
 system.failure.at	"detailed"	ok
 system.failure.at	"concise"	ok
 system.failure.at	"watch it"	ok
+system.failure.at	"None"	ok
+system.failure.at	" auto"	ok
 system.failure.at	[]	ok
 system.failure.at	["a"]	ok
 system.failure.at	[" a"]	ok
@@ -4192,6 +4304,8 @@ datetime	"current_turn"	ok
 datetime	"detailed"	ok
 datetime	"concise"	ok
 datetime	"watch it"	ok
+datetime	"None"	ok
+datetime	" auto"	ok
 datetime	[]	ok
 datetime	["a"]	ok
 datetime	[" a"]	ok
@@ -4266,6 +4380,8 @@ system.ttl	"current_turn"	no
 system.ttl	"detailed"	no
 system.ttl	"concise"	no
 system.ttl	"watch it"	no
+system.ttl	"None"	no
+system.ttl	" auto"	no
 system.ttl	[]	no
 system.ttl	["a"]	no
 system.ttl	[" a"]	no
@@ -4340,6 +4456,8 @@ system.reap_if_empty	"current_turn"	ok
 system.reap_if_empty	"detailed"	ok
 system.reap_if_empty	"concise"	ok
 system.reap_if_empty	"watch it"	ok
+system.reap_if_empty	"None"	ok
+system.reap_if_empty	" auto"	ok
 system.reap_if_empty	[]	no
 system.reap_if_empty	["a"]	no
 system.reap_if_empty	[" a"]	no
@@ -4414,6 +4532,8 @@ system.keepalive	"current_turn"	no
 system.keepalive	"detailed"	no
 system.keepalive	"concise"	no
 system.keepalive	"watch it"	no
+system.keepalive	"None"	no
+system.keepalive	" auto"	no
 system.keepalive	[]	no
 system.keepalive	["a"]	no
 system.keepalive	[" a"]	no
@@ -4488,6 +4608,8 @@ system.retired	"current_turn"	ok
 system.retired	"detailed"	ok
 system.retired	"concise"	ok
 system.retired	"watch it"	ok
+system.retired	"None"	ok
+system.retired	" auto"	ok
 system.retired	[]	no
 system.retired	["a"]	no
 system.retired	[" a"]	no
@@ -4562,6 +4684,8 @@ system.methods	"current_turn"	no
 system.methods	"detailed"	no
 system.methods	"concise"	no
 system.methods	"watch it"	no
+system.methods	"None"	no
+system.methods	" auto"	no
 system.methods	[]	no
 system.methods	["a"]	no
 system.methods	[" a"]	no
@@ -4636,6 +4760,8 @@ system.fanout	"current_turn"	no
 system.fanout	"detailed"	no
 system.fanout	"concise"	no
 system.fanout	"watch it"	no
+system.fanout	"None"	no
+system.fanout	" auto"	no
 system.fanout	[]	no
 system.fanout	["a"]	no
 system.fanout	[" a"]	no
@@ -4710,6 +4836,8 @@ system.environment	"current_turn"	no
 system.environment	"detailed"	no
 system.environment	"concise"	no
 system.environment	"watch it"	no
+system.environment	"None"	no
+system.environment	" auto"	no
 system.environment	[]	no
 system.environment	["a"]	no
 system.environment	[" a"]	no
@@ -4784,6 +4912,8 @@ system.retention	"current_turn"	no
 system.retention	"detailed"	no
 system.retention	"concise"	no
 system.retention	"watch it"	no
+system.retention	"None"	no
+system.retention	" auto"	no
 system.retention	[]	no
 system.retention	["a"]	no
 system.retention	[" a"]	no
