@@ -233,8 +233,9 @@ them:
 
 The machinery states facts; what a fact MEANS to a particular figaro is not
 the machinery's business. `system.study_incantation` is an object with any
-subset of `onstudy`, `onupdate` and `ondrop`, each a string, and the matching
-phrase rides that event's block as a `say` field.
+subset of `onstudy`, `onupdate` and `ondrop`, each a string, or a bare string
+for `onstudy` alone, and the matching phrase rides that event's block as a
+`say` field.
 `system.fork_incantation` is the same for a branch's birth, spelled either as
 a bare string or as `{"onfork": …}`.
 
@@ -244,7 +245,7 @@ Three properties, each load-bearing:
   observer's mouth. All system settings live on the observer's own bound form and
   this is no exception.
 - **Tolerance is asymmetric.** A malformed incantation costs its own phrase
-  and nothing else: a non-object is refused wholesale, a non-string field is
+  and nothing else: a value that is neither an object nor a string is refused wholesale, a non-string field is
   dropped alone, an unknown key is named in the log, and the block it
   decorates still renders. A strict parse would mean one typo in a shared
   outfit silently breaking every figaro wearing it.

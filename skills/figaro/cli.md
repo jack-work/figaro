@@ -412,7 +412,8 @@ and every reaped row, is omitted, with a count of what was withheld.
 Two `system.` keys are exceptions in one direction: they do not render
 themselves, they change what OTHER events say.
 `system.study_incantation` is `{onstudy, onupdate, ondrop}`, any subset, each a
-string, and the matching phrase rides that study block as a `say` field.
+string, and the matching phrase rides that study block as a `say` field; a bare
+string is `onstudy` alone.
 `system.fork_incantation` is the same for a branch's birth: a bare string, or
 `{"onfork": …}`. Unset means silence. A malformed one is logged and skipped
 key by key; the fact it decorates still reaches the model. Both are read from
