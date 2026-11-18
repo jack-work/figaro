@@ -84,6 +84,26 @@ func studyBoundFixture(t *testing.T) (*angelus.Angelus, *studyRenderer, *studyCl
 	return a, r, dialNode(t, a, parent.FigaroID), dialNode(t, a, child.FigaroID), parent.FigaroID, child.FigaroID, ctx
 }
 
+// studyAndAwaitMark returns once the began mark is in the child's IR. Study
+// answers before the drain loop writes that mark, and a parent change that
+// lands first is folded into the mark's baseline, not reported as a change.
+func studyAndAwaitMark(t *testing.T, ctx context.Context, a *angelus.Angelus, cc *studyClient, child, parent string, keys ...string) *rpc.StudyResponse {
+	t.Helper()
+	resp, err := cc.c.Study(ctx, parent, keys...)
+	require.NoError(t, err)
+	lg, err := a.Backend.OpenFigIR(child)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		for _, e := range lg.Read() {
+			if m := e.Payload.Study; m != nil && m.Began && m.FormID == parent {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 5*time.Millisecond, "the child never wrote its began mark")
+	return resp
+}
+
 func commentAndMantra(t *testing.T, ctx context.Context, a *angelus.Angelus, pc *studyClient, parent string) {
 	t.Helper()
 	_, err := pc.c.Set(ctx, *rawPatch(map[string]string{
@@ -106,8 +126,7 @@ func TestAStudiedParentsChangeArrivesAsOneReminder(t *testing.T) {
 	callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
-	_, err := cc.c.Study(callCtx, parent)
-	require.NoError(t, err)
+	studyAndAwaitMark(t, callCtx, a, cc, child, parent)
 	commentAndMantra(t, callCtx, a, pc, parent)
 	cc.turn(t, callCtx, "anything for me?")
 
@@ -125,8 +144,7 @@ func TestAStudiedParentsCommentArrivesAsOneReminder(t *testing.T) {
 	callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
-	resp, err := cc.c.Study(callCtx, parent, "comments")
-	require.NoError(t, err)
+	resp := studyAndAwaitMark(t, callCtx, a, cc, child, parent, "comments")
 	require.Contains(t, resp.Studies, parent)
 
 	commentAndMantra(t, callCtx, a, pc, parent)
