@@ -79,3 +79,33 @@ func TestACallClaimingAFigaroNotHeldIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// The label-only checks read the figaro off the context; a claim the local
+// door dropped left it empty, and the call passed as the owner's. They now
+// refuse a dropped claim the way the topology guard does.
+func TestTheLabelChecksRefuseADroppedClaim(t *testing.T) {
+	r := newRigConfigured(t, defaultPolicy, "")
+	target, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ghost := "0123456789abcdef0123456789abcdef"
+	local := authz.WithDoor(asOwner(), authz.DoorLocal)
+	for name, keys := range map[string]map[string]any{
+		"max_children": {"system.fanout.max_children": 2},
+		"mint":         {"system.fanout.mint": true},
+		"retire":       {"system.retired": "manual"},
+	} {
+		_, err := r.h[rpc.MethodSet](local, claimed(t, ghost, withAria(t, target.FigaroID, rpc.SetRequest{Patch: *heldPatch(t, keys)})))
+		if err == nil || !strings.Contains(err.Error(), "does not hold") {
+			t.Errorf("%s with a dropped claim: %v", name, err)
+		}
+		if _, err := r.h[rpc.MethodSet](local, withAria(t, target.FigaroID, rpc.SetRequest{Patch: *heldPatch(t, keys)})); err != nil {
+			t.Errorf("control: the owner with no claim sets %s: %v", name, err)
+		}
+	}
+	create, _ := json.Marshal(rpc.CreateRequest{Outfits: []string{"mock"}, Cwd: r.cwd})
+	if _, err := r.h[rpc.MethodCreate](local, claimed(t, ghost, create)); err == nil || !strings.Contains(err.Error(), "does not hold") {
+		t.Errorf("mint with a dropped claim: %v", err)
+	}
+}

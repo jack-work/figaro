@@ -40,6 +40,9 @@ func (h *handlers) createTopLevel(ctx context.Context, params json.RawMessage) (
 func (h *handlers) refuseUnlicensedMint(ctx context.Context) error {
 	f := authz.FigaroOf(ctx)
 	if f == "" {
+		if claimsUnheld(ctx) {
+			return errors.New("mint: the caller names a figaro this daemon does not hold")
+		}
 		return nil
 	}
 	if _, boxed := callerBox(ctx); boxed {

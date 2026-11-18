@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -215,7 +216,14 @@ func (h *handlers) refuseScopesBeyondWriter(ctx context.Context, c callerKeys, l
 	return fmt.Errorf("%s: the writer does not hold %q, and a figaro gives only what it holds", form.ScopesKey, want[0])
 }
 
+func claimsUnheld(ctx context.Context) bool {
+	return authz.FigaroOf(ctx) == "" && authz.Claimed(ctx) && authz.DoorOf(ctx).Trusted()
+}
+
 func (h *handlers) refuseKeysBeyondGrants(ctx context.Context, line lineage, before form.Snapshot, patch form.Patch, after form.Snapshot) error {
+	if claimsUnheld(ctx) && (keyChanged(before, after, store.SystemRetiredKey) || keyChanged(before, after, form.RetiredKey)) {
+		return errors.New("retire: the caller names a figaro this daemon does not hold")
+	}
 	f, p := authz.FigaroOf(ctx), h.angelus.Policies
 	if f == "" || p == nil || line.of == "" || line.self {
 		return nil
@@ -452,7 +460,13 @@ func keyChanged(before, after form.Snapshot, key string) bool {
 
 func (h *handlers) refuseMintByLabelAlone(ctx context.Context, line lineage, before, after form.Snapshot) error {
 	f := authz.FigaroOf(ctx)
-	if f == "" || !keyChanged(before, after, form.FanoutMintKey) {
+	if !keyChanged(before, after, form.FanoutMintKey) {
+		return nil
+	}
+	if f == "" {
+		if claimsUnheld(ctx) {
+			return fmt.Errorf("%s is protected, and the caller names a figaro this daemon does not hold", form.FanoutMintKey)
+		}
 		return nil
 	}
 	if line.of == "" || !slices.Contains(h.ancestorsOf(line), f) {
@@ -484,7 +498,7 @@ func (h *handlers) refuseMintBeyondGranter(ctx context.Context, before, after fo
 
 func (h *handlers) refuseFanoutByLabelAlone(ctx context.Context, line lineage, before, after form.Snapshot) error {
 	f := authz.FigaroOf(ctx)
-	if f == "" {
+	if f == "" && !claimsUnheld(ctx) {
 		return nil
 	}
 	was, wasOK := before.Get(form.FanoutMaxChildrenKey)
@@ -494,6 +508,9 @@ func (h *handlers) refuseFanoutByLabelAlone(ctx context.Context, line lineage, b
 	}
 	if !nowOK && !wasOK {
 		return nil
+	}
+	if f == "" {
+		return fmt.Errorf("%s is protected, and the caller names a figaro this daemon does not hold", form.FanoutMaxChildrenKey)
 	}
 	if line.of == "" || !slices.Contains(h.ancestorsOf(line), f) {
 		return fmt.Errorf("%s is protected, and figaro %s is no ancestor of the aria", form.FanoutMaxChildrenKey, f)
