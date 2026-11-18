@@ -3,6 +3,7 @@ package authz
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jack-work/jkauthz"
@@ -41,5 +42,31 @@ func TestTheBoxDoorIsNeverTheOwner(t *testing.T) {
 	_, err := g.Check(context.Background(), onBox, hierarchy.Plan{Op: hierarchy.Arrange, Moves: []hierarchy.Move{move}})
 	if !errors.Is(err, hierarchy.ErrDrawnOnly) {
 		t.Fatalf("the owner's principal on the box door moving storage = %v, want ErrDrawnOnly", err)
+	}
+}
+
+// P4: a tool shell on the local door reaches the topology guard as its
+// figaro, judged by that figaro's lineage and grants, never as the owner.
+func TestAToolShellsTopologyOpIsJudgedAsItsFigaro(t *testing.T) {
+	g := topologyGuard(t, setOnlyPolicy)
+	move := hierarchy.Move{Node: "a", From: "s", To: "b", Tree: hierarchy.Storage, NodeOwner: guardOwner.String()}
+	plan := hierarchy.Plan{Op: hierarchy.Arrange, Moves: []hierarchy.Move{move}}
+	owner := WithDoor(WithSubject(context.Background(), jkauthz.Subject{Principal: guardOwner}), DoorLocal)
+	asOwner, err := TopologyPrincipal(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Check(context.Background(), asOwner, plan); err != nil {
+		t.Fatalf("the owner at a terminal moving storage: %v", err)
+	}
+	asTool, err := TopologyPrincipal(WithToolOf(owner, "f00d"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := asTool.Subject.(TopologyCaller); c.Figaro != "f00d" {
+		t.Fatalf("the tool shell reached the guard as figaro %q", c.Figaro)
+	}
+	if _, err := g.Check(context.Background(), asTool, plan); err == nil || !strings.Contains(err.Error(), "f00d") {
+		t.Fatalf("a tool shell moving the owner's storage = %v, want a refusal judged as figaro f00d", err)
 	}
 }

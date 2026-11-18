@@ -28,6 +28,7 @@ import (
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/sandbox/local"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/toolcgroup"
 	"github.com/jack-work/figaro/internal/troupe"
 	"github.com/jack-work/figaro/internal/uiir"
 	"github.com/jack-work/jkrpc"
@@ -80,6 +81,7 @@ type Angelus struct {
 	Issuers      *authz.Issuers
 	APIKeys      *authz.APIKeys
 	Peercred     *authz.Peercred
+	ToolCgroups  *toolcgroup.Registry
 	Peers        peer.Membership
 	PeerVersions *peer.Versions
 	Troupe       *troupe.Keeper

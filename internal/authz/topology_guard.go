@@ -16,6 +16,7 @@ type TopologyCaller struct {
 	Subject jkauthz.Subject
 	Figaro  string
 	Door    Door
+	Tool    bool
 	Until   time.Time
 	Readmit func(context.Context) (jkauthz.Subject, error)
 }
@@ -25,7 +26,8 @@ func TopologyPrincipal(ctx context.Context) (hierarchy.Principal, error) {
 	if err != nil {
 		return hierarchy.Principal{}, err
 	}
-	c := TopologyCaller{Subject: sub, Figaro: FigaroOf(ctx), Door: DoorOf(ctx)}
+	_, tool := ToolOf(ctx)
+	c := TopologyCaller{Subject: sub, Figaro: FigaroOf(ctx), Door: DoorOf(ctx), Tool: tool}
 	c.Until, c.Readmit = admission(ctx)
 	return hierarchy.Principal{Name: PrincipalText(PrincipalOf(ctx)), Subject: c}, nil
 }
@@ -452,7 +454,7 @@ func (g TopologyGuard) owner() jkauthz.Principal {
 }
 
 func (g TopologyGuard) isOwner(c TopologyCaller) bool {
-	return c.Door != DoorBox && IsOwner(g.owner(), c.Subject)
+	return c.Door != DoorBox && !c.Tool && IsOwner(g.owner(), c.Subject)
 }
 
 func (g TopologyGuard) ownerish(minter string) bool {
