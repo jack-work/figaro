@@ -40,6 +40,9 @@ func ReadStudyIncantation(snap Snapshot) StudyIncantation {
 	if !ok {
 		return StudyIncantation{}
 	}
+	if s, isString := incantationString(raw); isString {
+		return StudyIncantation{OnStudy: strings.TrimSpace(s)}
+	}
 	// Only a value the strict decode refuses pays for diagnostics.
 	var fast StudyIncantation
 	if strictDecode(raw, &fast) == nil {

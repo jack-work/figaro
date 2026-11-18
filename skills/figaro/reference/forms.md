@@ -312,17 +312,18 @@ facts: `{"aria_id":…,"minted_figaro":true,"cast":false,"error":…}`.
 
 **What a studied form SAYS at each event** is `system.study_incantation` on
 the observer's own bound form, an object with any subset of `onstudy`, `onupdate`
-and `ondrop`. The phrase rides the block for that event as a `say` field; the
+and `ondrop`, or a bare string, which is `onstudy` alone. The phrase rides the block for that event as a `say` field; the
 fact is rendered either way. `system.fork_incantation` is the same idea for a
 branch's birth: a string, or `{"onfork": …}`. Unset means silence, which is
 what a fork has always been. A malformed incantation costs its own phrase and
-nothing else: a non-object is refused, a non-string field is dropped alone, an
+nothing else: a value that is neither an object nor a string is refused, a non-string field is dropped alone, an
 unknown key is named, all of it in the daemon log, and the block it decorates
 still renders.
 
 ```sh
-fig set --id <figaro> 'system.study_incantation={"onupdate":"the brief moved; re-read it"}'
-fig set --id <figaro> 'system.fork_incantation=you are a branch; the trunk went on without you'
+fig set --id <figaro> system.study_incantation '{"onupdate":"the brief moved; re-read it"}'
+fig set --id <figaro> system.study_incantation 'heed this form; it is your brief'
+fig set --id <figaro> system.fork_incantation 'you are a branch; the trunk went on without you'
 ```
 
 ---

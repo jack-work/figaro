@@ -69,7 +69,6 @@ func TestStudyIncantationPartialSurvivesOneBadField(t *testing.T) {
 func TestStudyIncantationWrongShapeIsRefusedWholesale(t *testing.T) {
 	for _, tc := range []struct{ name, raw, kind string }{
 		{"array", `["watch it"]`, "array"},
-		{"string", `"watch it"`, "string"},
 		{"number", `7`, "number"},
 		{"boolean", `true`, "boolean"},
 	} {
@@ -88,6 +87,35 @@ func TestStudyIncantationWrongShapeIsRefusedWholesale(t *testing.T) {
 				t.Fatalf("the warning must name the key; logged: %s", out)
 			}
 		})
+	}
+}
+
+func TestStudyIncantationBareStringIsOnStudyAlone(t *testing.T) {
+	for _, tc := range []struct{ name, raw, want string }{
+		{"string", `"watch it"`, "watch it"},
+		{"trimmed", `"  watch it \n"`, "watch it"},
+		{"empty", `""`, ""},
+		{"blank", `"   "`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got StudyIncantation
+			out := captureWarnings(t, func() {
+				got = ReadStudyIncantation(boundFormWith(t, StudyIncantationKey, tc.raw))
+			})
+			if got != (StudyIncantation{OnStudy: tc.want}) {
+				t.Fatalf("got %+v, want onstudy %q alone", got, tc.want)
+			}
+			if out != "" {
+				t.Fatalf("a string is a valid spelling and must not warn: %s", out)
+			}
+		})
+	}
+}
+
+func TestStudyIncantationObjectSpellingIsUnchanged(t *testing.T) {
+	got := ReadStudyIncantation(boundFormWith(t, StudyIncantationKey, `{"onstudy":"a","ondrop":"b"}`))
+	if got != (StudyIncantation{OnStudy: "a", OnDrop: "b"}) {
+		t.Fatalf("object form changed: %+v", got)
 	}
 }
 

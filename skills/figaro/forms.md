@@ -69,7 +69,7 @@ whole changed value, so keep studied values small if context matters.
   another figaro; anyone else hears "not found". A figaro cannot study
   itself, and `cast` still takes unbound forms only. To change the keys, drop and study again.
 - `system.study_incantation` on **your own bound form**: `{onstudy, onupdate,
-  ondrop}`, a sentence added to each event so a figaro is told what the change
+  ondrop}` (a bare string is `onstudy` alone), a sentence added to each event so a figaro is told what the change
   MEANS to it, not just what changed.
 - Without `--keys` every key but `system.*` is mirrored.
 
