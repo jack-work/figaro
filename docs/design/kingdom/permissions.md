@@ -217,6 +217,7 @@ Each owner gets a ready commit, or a one-line diff, before P2 is merged.
   - A `reapply` verb is deferred.
 - **The default child policy** for forks made by a figaro is `scopes = ["send:parent"]`. Forks made by Gluck keep today's inheritance, as proposed. A child with no `send:parent` cannot talk to its parent.
 - **Role addresses.** Sending to `@role` where the role resolves to the parent counts as `send:parent`, so lanes reporting to the Engineer's role keep working.
+- **Topology verbs have teeth (from F2's smoke).** Today a figaro with no `system.scopes` gets the owner's reach through `AllowFigaro`, so any labeled figaro can demote, retire or kill another lineage's figaros. Under P5, a figaro's demote, promote, retire and kill reach its own lineage only. Reach beyond that is a grant: the King's and the Engineer's roles carry a fleet grant for reaping, given in the regiment outfits.
 
 **Done when:**
 - A matrix test passes across writer × target × key class × selector.
@@ -225,10 +226,12 @@ Each owner gets a ready commit, or a one-line diff, before P2 is merged.
 - A child whose policy omits `send:parent` cannot reach its parent.
 - Old scope strings still parse.
 - Sabotage: skip the per-key check and the matrix goes red.
+- F2's control row passes on a real snapshot daemon, which builds Policies. An unrelated labeled figaro is refused demote, retire and kill on another lineage. The King's role, with its grant, still reaps.
 
 **Breaks.**
 - New forks made by figaros can only talk to their parent by default. A lane that messages the King, El Zapador or Gluck needs that grant in its parent's `child_policy`. The regiment outfits must carry it.
 - The scopes grammar is extended, so binaries older than P5 refuse the new strings.
+- Unscoped figaros lose topology reach outside their lineage. Any script or seat that reaps other lineages needs the fleet grant first.
 
 **Numbers.**
 - Checking a typical patch: target under 20 µs.
