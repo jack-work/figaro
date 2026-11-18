@@ -59,3 +59,33 @@ func TurnAtLT(log arialog.Log[message.Message], lt uint64) (turn uint64, exact b
 // turnScanPage is small: a record can carry a whole tool output, and the
 // stamped record is almost always the next one down.
 const turnScanPage = 16
+
+// TurnStart is the LT of the record that opens turn, and the log's last turn.
+// Stamps never fall as LT rises, so the owner of an LT is monotone and the
+// opener is found by bisection: a few TurnAtLT reads, never a walk.
+func TurnStart(log arialog.Log[message.Message], turn uint64) (first, last uint64, ok bool) {
+	if log == nil {
+		return 0, 0, false
+	}
+	tail, found := log.PeekTail()
+	if !found {
+		return 0, 0, false
+	}
+	last, _ = TurnAtLT(log, tail.LT)
+	if turn == 0 || turn > last {
+		return 0, last, false
+	}
+	lo, hi := uint64(1), tail.LT
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if owner, _ := TurnAtLT(log, mid); owner >= turn {
+			hi = mid
+		} else {
+			lo = mid + 1
+		}
+	}
+	if owner, exact := TurnAtLT(log, lo); owner != turn || !exact {
+		return 0, last, false
+	}
+	return lo, last, true
+}
