@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jack-work/figaro/api/form"
@@ -127,11 +128,14 @@ func (h *handlers) protectsByLineage() bool {
 }
 
 type lineage struct {
-	of   string
-	self bool
+	of    string
+	self  bool
+	birth bool
 }
 
-func birthUnder(parent string) lineage { return lineage{of: parent, self: true} }
+func birthUnder(parent string) lineage { return lineage{of: parent, self: true, birth: true} }
+
+func rootBirth() lineage { return lineage{birth: true} }
 
 func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line lineage, key string, current form.Snapshot) error {
 	if c.owns && !c.boxed {
@@ -267,6 +271,9 @@ func (c callerKeys) refusal(path string) error {
 			if c.boxed {
 				return fmt.Errorf("box %s may not set %s: it is owner-held", c.box, d.Key)
 			}
+			if c.tool != "" && (d.Key == store.SystemTTLKey || d.Key == store.SystemRetiredKey) {
+				return fmt.Errorf("figaro %s may not set %s that way: a figaro's tools only shorten a lifetime (a finite ttl no later than the current one, or retiring), on themselves, their descendants or a figaro they create; 0, a removal, a later deadline or unretiring is the owner's", c.tool, d.Key)
+			}
 			if c.tool != "" {
 				return fmt.Errorf("figaro %s may not set %s: it is owner-held, and a figaro's tools are never the owner", c.tool, d.Key)
 			}
@@ -375,6 +382,9 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 			continue
 		}
 		if retentionGranted(ctx, before, p) {
+			continue
+		}
+		if h.toolShortensLifetime(c, line, before, after, p) {
 			continue
 		}
 		if err := c.refusal(p); err != nil {
@@ -658,4 +668,59 @@ func (h *handlers) carryNarrowing(id string) error {
 	}
 	slog.Info("scopes: a figaro leaving its ancestors carries their narrowing", "id", id, "scopes", eff.String())
 	return nil
+}
+
+func (h *handlers) toolShortensLifetime(c callerKeys, line lineage, before, after form.Snapshot, path string) bool {
+	if c.tool == "" {
+		return false
+	}
+	switch path {
+	case store.SystemTTLKey:
+		if !ttlShortened(before, after) {
+			return false
+		}
+	case store.SystemRetiredKey:
+		raw, ok := after.Get(path)
+		if !ok || line.birth || store.RetiredReason(lifetimeText(raw)) == "" {
+			return false
+		}
+	default:
+		return false
+	}
+	if line.birth {
+		return true
+	}
+	return line.of != "" && (line.of == c.tool || slices.Contains(h.ancestorsOf(line), c.tool))
+}
+
+func ttlShortened(before, after form.Snapshot) bool {
+	raw, ok := after.Get(store.SystemTTLKey)
+	if !ok {
+		return false
+	}
+	now, err := store.ParseTTL(lifetimeText(raw))
+	if err != nil || now <= 0 {
+		return false
+	}
+	was, ok := before.Get(store.SystemTTLKey)
+	if !ok {
+		return true
+	}
+	old, err := store.ParseTTL(lifetimeText(was))
+	if err != nil {
+		return false
+	}
+	return old <= 0 || now <= old
+}
+
+func lifetimeText(raw json.RawMessage) string {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	var b bool
+	if json.Unmarshal(raw, &b) == nil {
+		return strconv.FormatBool(b)
+	}
+	return string(raw)
 }
