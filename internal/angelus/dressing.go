@@ -142,3 +142,48 @@ func remarshalWithSender(orig json.RawMessage, req any) (json.RawMessage, error)
 	}
 	return json.Marshal(now)
 }
+
+var outfitGrantRoots = []string{form.ScopesKey, form.RetiredGrantsKey, "system.fanout", form.ChildPolicyKey}
+
+func (h *handlers) refuseOutfitGrants(ctx context.Context, outfits []string) error {
+	if len(outfits) == 0 {
+		return nil
+	}
+	dressed, err := h.dress(outfits, nil)
+	if err != nil {
+		return err
+	}
+	if err := refuseRuntimeKeys(form.Snapshot{}, dressed); err != nil {
+		return err
+	}
+	if c := h.callerKeysOf(ctx); c.owns && !c.boxed {
+		return nil
+	}
+	for _, e := range dressed.Entries() {
+		for _, root := range outfitGrantRoots {
+			if e.Key == root || strings.HasPrefix(e.Key, root+".") {
+				return fmt.Errorf("outfit %s gives a new figaro %s: only the owner names an outfit that carries it", strings.Join(outfits, ","), e.Key)
+			}
+		}
+	}
+	return nil
+}
+
+func (h *handlers) listedOutfitKeys(ctx context.Context, before form.Snapshot, outfits []string) (form.Snapshot, error) {
+	box, boxed := callerBox(ctx)
+	if !boxed || len(outfits) == 0 {
+		return before, nil
+	}
+	dressed, err := h.dress(outfits, nil)
+	if err != nil {
+		return before, err
+	}
+	held := map[string]json.RawMessage{}
+	for _, e := range dressed.Entries() {
+		own := e.Key == "system.sandbox" && e.NewString() == box
+		if !e.IsRemoval() && (own || form.WriterOf(e.Key) == form.WriterOwner) {
+			held[e.Key] = e.New
+		}
+	}
+	return before.Apply(form.Build(before, held, nil)), nil
+}

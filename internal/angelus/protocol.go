@@ -250,14 +250,14 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if method == rpc.MethodFollow {
 			return rpc.FollowResponse{OK: true, FigaroID: id}, nil
 		}
-		if err := h.refuseCallerPatch(ctx, method, id, params); err != nil {
-			return nil, err
-		}
-		if err := h.refuseCastPlacement(ctx, method, id, params); err != nil {
-			return nil, err
-		}
 		dressed, err := h.dressParams(ctx, method, params)
 		if err != nil {
+			return nil, err
+		}
+		if err := h.refuseCallerPatch(ctx, method, id, dressed); err != nil {
+			return nil, err
+		}
+		if err := h.refuseCastPlacement(ctx, method, id, dressed); err != nil {
 			return nil, err
 		}
 		if dressed, err = h.trustTraceparent(ctx, method, dressed); err != nil {
@@ -496,14 +496,22 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
 	}
-	if req.Patch != nil {
-		if targets := roleTargetsOf(*req.Patch); len(targets) > 0 {
-			done, err := h.angelus.guard.enter(targets...)
-			if err != nil {
-				return nil, fmt.Errorf("form.create: %w", err)
-			}
-			defer done()
+	if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
+		return nil, err
+	}
+	if err := h.refuseOutfitGrants(ctx, req.Outfits); err != nil {
+		return nil, err
+	}
+	patch, err := h.dress(req.Outfits, req.Patch)
+	if err != nil {
+		return nil, err
+	}
+	if targets := roleTargetsOf(patch); len(targets) > 0 {
+		done, err := h.angelus.guard.enter(targets...)
+		if err != nil {
+			return nil, fmt.Errorf("form.create: %w", err)
 		}
+		defer done()
 	}
 	if req.Parent != "" {
 		parent, err := h.canonicalID(ctx, req.Parent)
@@ -514,13 +522,6 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 		if err := h.allowed(ctx, rpc.VerbRead, authz.Aria(req.Parent)); err != nil {
 			return nil, fmt.Errorf("form.create: a copy of %s reads it: %w", req.Parent, err)
 		}
-	}
-	if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
-		return nil, err
-	}
-	patch, err := h.dress(req.Outfits, req.Patch)
-	if err != nil {
-		return nil, err
 	}
 	if patch.IsIdentity() {
 		return nil, fmt.Errorf("form.create: a form is born of its patch and outfits; an empty one names nothing")
@@ -584,14 +585,18 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	if authz.FigaroOf(ctx) != "" {
 		inherited, req.Patch = withoutInheritedMint(inherited, req.Patch)
 	}
-	if err := h.refuseCallerKeys(ctx, birthUnder(parent), inherited, req.Patch); err != nil {
-		return nil, err
-	}
 	if err := h.refuseBoxOutfits(ctx, req.Outfits, true); err != nil {
 		return nil, err
 	}
 	dress, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
+		return nil, err
+	}
+	base, err := h.listedOutfitKeys(ctx, inherited, req.Outfits)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.refuseCallerKeys(ctx, birthUnder(parent), base, &dress); err != nil {
 		return nil, err
 	}
 	cwd := birthCwd(req.Cwd)
