@@ -132,7 +132,13 @@ func Registry() []Spec { return slices.Clone(registry) }
 func (s Spec) placeholder() bool { return strings.Contains(s.Path, "<") }
 
 func under(path, root string) bool {
-	return path == root || strings.HasPrefix(path, root+".") || strings.HasPrefix(path, root+"[")
+	if !strings.HasPrefix(path, root) {
+		return false
+	}
+	if len(path) == len(root) {
+		return true
+	}
+	return path[len(root)] == '.' || path[len(root)] == '['
 }
 
 func (s Spec) covers(path string) bool {

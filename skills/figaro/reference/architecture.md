@@ -451,6 +451,13 @@ it, not itself). A scope on `runtime.*` is refused: only the daemon writes
 there. A figaro writing another's `system.scopes` gives only what its own
 effective set covers, key globs included.
 
+**Shapes on write.** Every row of the key registry names the shape its value
+takes (`figaro doctor form-keys` lists them). A write, the owner's included,
+is refused when it leaves a key it reaches outside that shape: the registered
+key it names, the one above it (`system.retirement.action` is judged as all of
+`system.retirement`) and those below it (`system.fanout` as each of its
+fields). A bad value the write does not reach does not block it.
+
 **Child policy.** `system.child_policy` on a figaro (same writers as
 `system.scopes`) is an object of key paths to values, self- or lineage-class
 only, that is written into the birth patch of every fork of it. It is applied

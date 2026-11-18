@@ -352,3 +352,75 @@ func AuditShapes(snap Snapshot) []ShapeFault {
 	}
 	return out
 }
+
+var exactRows = func() map[string]bool {
+	m := make(map[string]bool, len(registry))
+	for _, s := range registry {
+		if !s.placeholder() {
+			m[s.Path] = true
+		}
+	}
+	return m
+}()
+
+func TouchedShapeFaults(after Snapshot, touched []string) []ShapeFault {
+	var out []ShapeFault
+	seen := map[string]bool{}
+	check := func(path string, shape Shape) {
+		if seen[path] {
+			return
+		}
+		seen[path] = true
+		raw, ok := after.Get(path)
+		if !ok {
+			return
+		}
+		if err := shape.Check(raw); err != nil {
+			out = append(out, ShapeFault{Path: path, Value: raw, Err: err})
+		}
+	}
+	instance := func(row Spec, n int, leaf string) {
+		path, ok := firstSegments(leaf, n)
+		if ok && !exactRows[path] && placeholderMatches(row.Path, path) {
+			check(path, row.Shape)
+		}
+	}
+	for _, t := range touched {
+		for _, s := range registry {
+			if !s.placeholder() {
+				if under(t, s.Path) || under(s.Path, t) {
+					check(s.Path, s.Shape)
+				}
+				continue
+			}
+			n := strings.Count(s.Path, ".") + 1
+			parent := s.Path[:strings.LastIndexByte(s.Path, '.')]
+			switch {
+			case strings.Count(t, ".")+1 >= n:
+				instance(s, n, t)
+			case under(parent, t):
+				for leaf := range after.All() {
+					if under(leaf, parent) && leaf != parent {
+						instance(s, n, leaf)
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+func firstSegments(path string, n int) (string, bool) {
+	end := 0
+	for i := 0; i < n; i++ {
+		j := strings.IndexByte(path[end:], '.')
+		if j < 0 {
+			return path, i == n-1
+		}
+		if i == n-1 {
+			return path[:end+j], true
+		}
+		end += j + 1
+	}
+	return "", false
+}
