@@ -34,6 +34,10 @@ func TestEachEnforcementSwitchRefusesWhenOnAndOnlyCountsWhenOff(t *testing.T) {
 			}
 			return r.setLocal(t, other.FigaroID, r.sibling, map[string]any{"system.retired": "manual"})
 		}},
+		"a fork past its quota": {authz.Quota, func(t *testing.T, r lineageRig) error {
+			r.ownerSets(t, r.parent, map[string]any{form.FanoutQuotaKey: 0})
+			return r.forkAs(t, r.dial(t), r.parent, r.parent, form.Patch{})
+		}},
 	}
 	for name, row := range rows {
 		for _, on := range []bool{true, false} {
@@ -94,7 +98,7 @@ func TestASwitchOffKeepsTheRulesOlderThanIt(t *testing.T) {
 }
 
 func enforcingAllBut(sw authz.Switch, on bool) authz.Enforcement {
-	e := authz.Enforcement{KeyGrants: true, ChildPolicy: true, LineageReach: true}
+	e := authz.Enforcement{KeyGrants: true, ChildPolicy: true, LineageReach: true, Quota: true}
 	switch sw {
 	case authz.KeyGrants:
 		e.KeyGrants = on
@@ -102,6 +106,24 @@ func enforcingAllBut(sw authz.Switch, on bool) authz.Enforcement {
 		e.ChildPolicy = on
 	case authz.LineageReach:
 		e.LineageReach = on
+	case authz.Quota:
+		e.Quota = on
 	}
 	return e
+}
+
+// Defends the quota switch's reach: off, a fork past the quota lands and
+// counts, and max_children, older than the quota, still refuses.
+func TestWithTheQuotaOffAForkPastItCountsAgainstMaxChildren(t *testing.T) {
+	r := newLineageRig(t, "")
+	r.a.Policies.SetEnforcement(enforcingAllBut(authz.Quota, false))
+	r.ownerSets(t, r.parent, map[string]any{form.FanoutQuotaKey: 0, form.FanoutMaxChildrenKey: 3})
+	c := r.dial(t)
+	if err := r.forkAs(t, c, r.parent, r.parent, form.Patch{}); err != nil {
+		t.Fatalf("with the quota off a fork past it was refused: %v", err)
+	}
+	err := r.forkAs(t, c, r.parent, r.parent, form.Patch{})
+	if err == nil || !strings.Contains(err.Error(), "max_children 3") {
+		t.Fatalf("max_children stopped refusing with the quota off: %v", err)
+	}
 }

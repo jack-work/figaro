@@ -493,14 +493,14 @@ func (h *handlers) admitFork(parent string, charge int, abdicating, ownerMade bo
 	}
 	if abdicating {
 		if err := h.angelus.fanoutCounts().over(parent); err != nil {
-			return fmt.Errorf("%w; a succession that retires its predecessor fits only a budget that is not already overdrawn", err)
+			return h.angelus.Policies.Shadow(authz.Quota, fmt.Errorf("%w; a succession that retires its predecessor fits only a budget that is not already overdrawn", err))
 		}
 		return nil
 	}
 	if err := h.admitMaxChildren(parent); err != nil {
 		return err
 	}
-	return h.angelus.fanoutCounts().fits(parent, charge)
+	return h.angelus.Policies.Shadow(authz.Quota, h.angelus.fanoutCounts().fits(parent, charge))
 }
 
 func (h *handlers) admitMaxChildren(parent string) error {

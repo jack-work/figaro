@@ -44,8 +44,10 @@ func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
 		LiveChildren: a.liveChildCount,
 		Live:         a.isLiveAria,
 		SwapLimit:    a.swapLimit,
-		Quota:        func(p hierarchy.Plan) error { return a.fanoutCounts().fitsMoves(p.Moves) },
-		Committed:    a.topologyCommitted,
+		Quota: func(p hierarchy.Plan) error {
+			return a.Policies.Shadow(authz.Quota, a.fanoutCounts().fitsMoves(p.Moves))
+		},
+		Committed: a.topologyCommitted,
 	}
 }
 
