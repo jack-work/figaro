@@ -20,7 +20,7 @@ var shapeCorpus = []string{
 	`""`, `" "`, `"x"`, `"true"`, `"false"`, `"yes"`, `"no"`, `"on"`, `"off"`, `"0"`, `"1"`, `"-5"`, `"1024"`,
 	`"90m"`, `"2d"`, `"1w"`, `"1.5d"`, `"-5m"`, `"abc"`, `"context"`, `"none"`, `"5m"`, `"1h"`, `"long"`, `"short"`,
 	`"blocks"`, `"Top-Level"`, `"auto"`, `"marks"`, `"default"`, `"long_context"`, `"openai"`, `"systemone"`,
-	`"current_turn"`, `"detailed"`, `"concise"`, `"watch it"`,
+	`"current_turn"`, `"detailed"`, `"concise"`, `"watch it"`, `"None"`, `" auto"`,
 	`[]`, `["a"]`, `[" a"]`, `["a",""]`, `["read:*","set:aria:self"]`, `[1]`, `[null]`,
 	`{}`, `{"onstudy":"x"}`, `{"onstudy":1}`, `{"OnStudy":"x"}`, `{" ondrop ":"x"}`, `{"onstudy":null}`,
 	`{"onfork":"x"}`, `{"onstudied":"x"}`, `{"bogus":"x"}`, `{"content":"c"}`,
