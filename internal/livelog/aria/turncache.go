@@ -518,3 +518,66 @@ func turnBytes(t Turn) int {
 	}
 	return n
 }
+
+// prefixBelow is what a cache seeded from this one takes for history ending at
+// base: the index entries of every turn that ends at or below it but the
+// last, the payloads of the phantoms among them (nothing else can recompose
+// those), and the last such turn's opening LT. The caller projects from there,
+// so a turn the base cuts, or a record after it, is composed whole. Other
+// payloads stay put: they fault through the lineage, which holds base's
+// history in an ancestor's node.
+func (c *TurnCache) prefixBelow(base uint64) (keys []turnKey, pinned []Turn, from uint64, ok bool) {
+	n := sort.Search(len(c.keys), func(i int) bool { return c.keys[i].hi > base })
+	if n == 0 || n == len(c.keys) && c.keys[n-1].hi != base {
+		return nil, nil, 0, false
+	}
+	last := c.keys[n-1]
+	if last.phantom || last.lo == 0 {
+		return nil, nil, 0, false
+	}
+	keys = append([]turnKey(nil), c.keys[:n-1]...)
+	for _, k := range keys {
+		if !k.phantom {
+			continue
+		}
+		t, found := c.cache.At(c.node, k.coord())
+		if !found {
+			return nil, nil, 0, false
+		}
+		pinned = append(pinned, t)
+	}
+	return keys, pinned, last.lo, true
+}
+
+// adopt installs a prefix taken by prefixBelow into an empty cache.
+func (c *TurnCache) adopt(keys []turnKey, pinned []Turn) bool {
+	if len(c.keys) > 0 || c.tail != nil {
+		return false
+	}
+	for _, t := range pinned {
+		c.putPinned(t)
+	}
+	c.keys = keys
+	return true
+}
+
+// reopenTail drops the newest turn and returns its opening LT, so the caller
+// recomposes it with whatever was appended after it.
+func (c *TurnCache) reopenTail() (from uint64, ok bool) {
+	n := len(c.keys)
+	if n == 0 {
+		return 0, false
+	}
+	last := c.keys[n-1]
+	if last.phantom || last.lo == 0 {
+		return 0, false
+	}
+	c.keys = c.keys[:n-1]
+	c.tail = nil
+	return last.lo, true
+}
+
+// appendSealed adds whole turns after the index without broadcasting.
+func (c *TurnCache) appendSealed(turns []Turn) {
+	c.seed(turns)
+}

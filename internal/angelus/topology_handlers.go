@@ -395,6 +395,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := runFork(); err != nil {
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}
+	h.reader().ForkedFrom(alt, req.FigaroID)
 	slog.Info("forked figaro", "parent", req.FigaroID, "turn", req.AtTurn, "lt", atMainLT, "continuation", cont, "alternative", alt)
 	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note}, nil
 }

@@ -38,3 +38,6 @@ func (a *Agent) ReadBefore(at, floor aria.Anchor, budget int) aria.Page {
 	out.Metrics = a.sessionMetrics()
 	return out
 }
+
+// TurnServer is the agent's materialized turns, for a reader seeding a fork.
+func (a *Agent) TurnServer() *aria.Server { return a.ariaSrv }

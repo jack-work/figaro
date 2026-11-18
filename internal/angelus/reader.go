@@ -26,12 +26,18 @@ type AriaReader struct {
 	models  *modelcat.Catalog
 
 	// servers share the agents' TurnCache and budget; one read path, not two.
-	mu      sync.Mutex
-	servers map[string]*readAria
+	mu         sync.Mutex
+	servers    map[string]*readAria
+	forkedFrom map[string]string
+
+	// liveTurns is a live agent's turn server, nil when none is resident.
+	liveTurns func(id string) *aria.Server
 }
 
-// readAria caches metrics from its last refresh; the log growing is what triggers both.
+// readAria caches metrics from its last refresh; the log growing is what
+// triggers both. mu makes one build per aria: concurrent readers wait for it.
 type readAria struct {
+	mu      sync.Mutex
 	srv     *aria.Server
 	metrics *aria.Metrics
 }
@@ -46,7 +52,7 @@ func NewAriaReader(backend store.Backend, proj Projector) *AriaReader {
 }
 
 func NewAriaReaderBounded(backend store.Backend, proj Projector, uiCache *aria.ComposedCache) *AriaReader {
-	return &AriaReader{backend: backend, proj: proj, uiCache: uiCache, servers: map[string]*readAria{}}
+	return &AriaReader{backend: backend, proj: proj, uiCache: uiCache, servers: map[string]*readAria{}, forkedFrom: map[string]string{}}
 }
 
 // messages also returns the entries: they carry the cursor stamps the
@@ -98,8 +104,21 @@ func (r *AriaReader) Page(id string, at, floor aria.Anchor, budget int, before b
 	return page, nil
 }
 
+// ForkedFrom tells the reader child shares parent's history up to its fork
+// base, so its first read can start from parent's turns.
+func (r *AriaReader) ForkedFrom(child, parent string) {
+	if r == nil || child == "" || parent == "" {
+		return
+	}
+	r.mu.Lock()
+	r.forkedFrom[child] = parent
+	r.mu.Unlock()
+}
+
 // serverFor refreshes when the log has grown past the server's tail: a
-// dormant aria still takes hub writes. The tail probe is one ReadPage, not a walk.
+// dormant aria still takes hub writes. The tail probe is one ReadPage, not a
+// walk, and a refresh recomposes from the newest turn on. A new server starts
+// from the turns of the aria it was forked from when one is resident.
 func (r *AriaReader) serverFor(id string) (*readAria, error) {
 	if r == nil || r.backend == nil {
 		return nil, errors.New("no backend")
@@ -117,6 +136,8 @@ func (r *AriaReader) serverFor(id string) (*readAria, error) {
 	}
 	r.mu.Unlock()
 
+	ra.mu.Lock()
+	defer ra.mu.Unlock()
 	log, err := r.backend.OpenFigIR(id)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", id, err)
@@ -128,9 +149,26 @@ func (r *AriaReader) serverFor(id string) (*readAria, error) {
 	if b := ra.srv.TailBracket(); b != 0 && tailLT <= b {
 		return ra, nil
 	}
+	var from uint64
+	ok := false
+	if ra.srv.LastTurn() == 0 {
+		from, ok = r.adoptFork(id, ra.srv)
+	} else {
+		from, ok = ra.srv.ReopenTail()
+	}
+	if ok {
+		ra.srv.AppendSealed(r.project(id, log, from))
+	} else if err := r.restore(id, ra); err != nil {
+		return nil, err
+	}
+	ra.metrics = r.sidecarMetrics(id, log, tailLT)
+	return ra, nil
+}
+
+func (r *AriaReader) restore(id string, ra *readAria) error {
 	msgs, entries, err := r.messages(id)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	turns := []aria.Turn(nil)
 	if r.proj != nil {
@@ -140,8 +178,80 @@ func (r *AriaReader) serverFor(id string) (*readAria, error) {
 		}
 	}
 	ra.srv.Restore(turns)
-	ra.metrics = r.sidecarMetrics(id, log, tailLT)
-	return ra, nil
+	return nil
+}
+
+// adoptFork seeds an empty server from a resident server of the aria id was
+// forked from, or of its storage parent, when that one holds every record
+// below the fork base (the base is the first LT the child owns).
+func (r *AriaReader) adoptFork(id string, srv *aria.Server) (uint64, bool) {
+	cb, ok := r.backend.(store.ChainBackend)
+	if !ok || r.proj == nil {
+		return 0, false
+	}
+	links := cb.LineageLinks(id)
+	if len(links) < 2 {
+		return 0, false
+	}
+	base := links[len(links)-1].BaseLT
+	if base < 2 {
+		return 0, false
+	}
+	inherited := base - 1
+	r.mu.Lock()
+	candidates := []string{r.forkedFrom[id], links[len(links)-2].Node}
+	r.mu.Unlock()
+	for _, from := range candidates {
+		for _, src := range r.resident(from) {
+			if src.TailBracket() < inherited {
+				continue
+			}
+			if lt, ok := srv.AdoptBelow(src, inherited); ok {
+				return lt, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// resident is every materialized turn server of id: a live agent's, then
+// this reader's own.
+func (r *AriaReader) resident(id string) []*aria.Server {
+	if id == "" {
+		return nil
+	}
+	var out []*aria.Server
+	if r.liveTurns != nil {
+		if srv := r.liveTurns(id); srv != nil {
+			out = append(out, srv)
+		}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if ra := r.servers[id]; ra != nil {
+		out = append(out, ra.srv)
+	}
+	return out
+}
+
+// project composes the turns opening at or after from, with the form deltas
+// seeded from the record before it.
+func (r *AriaReader) project(id string, log arialog.Log[message.Message], from uint64) []aria.Turn {
+	entries := log.ReadFrom(from, 0)
+	msgs := make([]message.Message, len(entries))
+	for i, e := range entries {
+		msgs[i] = e.Payload
+		msgs[i].LogicalTime = e.LT
+	}
+	turns := r.proj.Turns(msgs)
+	if fb, ok := r.backend.(formdelta.Backend); ok && len(entries) > 0 {
+		seed := formdelta.Seed{}
+		if prev, _ := log.ReadPage(0, from, 1); len(prev) > 0 {
+			seed = formdelta.SeedFrom(prev[len(prev)-1])
+		}
+		formdelta.Attach(turns, formdelta.PerRecordFrom(fb, id, seed, entries))
+	}
+	return turns
 }
 
 func (r *AriaReader) FormSince(id string, since uint64) (store.FormSince, error) {

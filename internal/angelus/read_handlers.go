@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/formdelta"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/modelcat"
 	"github.com/jack-work/figaro/internal/store"
 
@@ -26,8 +27,20 @@ func (h *handlers) reader() *AriaReader {
 	h.readerOnce.Do(func() {
 		h.readerInst = NewAriaReaderBounded(h.angelus.Backend, uiir.New(nil).Naming(h.angelus.senderName), h.angelus.UICache)
 		h.readerInst.models = h.angelus.Models
+		h.readerInst.liveTurns = h.liveTurns
 	})
 	return h.readerInst
+}
+
+func (h *handlers) liveTurns(id string) *aria.Server {
+	if h.angelus.Registry == nil {
+		return nil
+	}
+	t, ok := h.angelus.Registry.Get(id).(interface{ TurnServer() *aria.Server })
+	if !ok {
+		return nil
+	}
+	return t.TurnServer()
 }
 
 func (h *handlers) liveAgent(id string) figaro.AgentServer {
