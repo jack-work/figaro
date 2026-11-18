@@ -65,6 +65,7 @@ func StudyReminderTexts(msg message.Message, bound form.Snapshot) []string {
 				if v, ok := msg.StudyAt[fid]; ok {
 					body["version"] = v
 				}
+				delete(body, "form")
 				if incantation.OnUpdate != "" {
 					body["say"] = incantation.OnUpdate
 				}

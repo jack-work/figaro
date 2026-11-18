@@ -77,7 +77,7 @@ func TestForkIncantationRendersOnlyOnTheBirthPatch(t *testing.T) {
 		form.ForkedFromKey: json.RawMessage(`"abc123"`),
 	}, nil)}}
 	s := strings.Join(provider.ForkReminderTexts(born, bound), "")
-	if !strings.Contains(s, `"say":"you are a branch"`) || !strings.Contains(s, `"forked_from":"abc123"`) {
+	if s != "<system-reminder name=\"fork\">\nfrom abc123\nyou are a branch\n</system-reminder>" {
 		t.Fatalf("the fork block must carry the phrase and the parent: %s", s)
 	}
 

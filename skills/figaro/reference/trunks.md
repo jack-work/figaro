@@ -158,7 +158,7 @@ with no credentials and no tokens.
   disagree with the history the branch can read for itself.
 
   The branch learns that it IS a branch from the fork reminder
-  (`<system-reminder name="fork">`), which carries `forked_from` and the
+  (`<system-reminder name="fork">`), which carries the parent id and the
   bound form's `system.fork_incantation`. Set the incantation once in an
   outfit (`core.toml` reaches every figaro) and no forking prompt has to say
   it; unset, nothing tells the branch it was forked. A fresh figaro from `new`

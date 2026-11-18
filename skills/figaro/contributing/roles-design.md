@@ -128,12 +128,12 @@ bought at the haiku tier in a storm of fifty observers:
    and one of them answered from the first: it reported the value the form
    held BEFORE the change it was being asked about. An intermediate value
    inside one window is not information, it is a trap.
-2. **The body is structure, not prose.** One compact object naming the form
-   and what moved. The skills contextualize it; the reminder states it.
+2. **The body is structure, not prose.** The name carries the form; one compact
+   object says what moved. The skills contextualize it; the reminder states it.
 
 ```
 <system-reminder name="study:@a5af1a83">
-{"changes":2,"form":"@a5af1a83","removed":["stale"],"set":{"brief":"go"}}
+{"changes":2,"removed":["stale"],"set":{"brief":"go"}}
 </system-reminder>
 ```
 
