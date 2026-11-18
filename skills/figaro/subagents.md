@@ -17,9 +17,10 @@ figaro new -f -j -- "<prompt>"     spawn a worker, print {"aria_id":...}, return
 figaro send -f --id <id> -- "<p>"  steer that worker later
 ```
 
-**From inside a figaro, `new` needs `system.fanout.mint`.** Without it the
-daemon refuses: `mint: <you> may not create a top-level figaro; fork yourself
-instead`. Fork (`figaro fork -f -- go`, or `figaro fork <id>:1 -f -- "<prompt>"`
+**From inside a figaro, `new` needs `mint:*` written in your scopes**, and
+what you mint is drawn under you and spends your fan-out budget. Without it
+the daemon refuses: `mint: <you> may not create a top-level figaro; fork
+yourself instead`. Fork (`figaro fork -f -- go`, or `figaro fork <id>:1 -f -- "<prompt>"`
 for a near-empty branch) and steer the fork with `send`. Gluck at a terminal
 is unaffected. See [reference/fanout.md](reference/fanout.md).
 

@@ -1,4 +1,4 @@
-# Fan-out limits: `system.fanout.max_children`, `system.fanout.mint` and the `mint` verb
+# Fan-out limits: `system.fanout.max_children`, `system.fanout.quota` and the role verbs
 
 ## `system.fanout.max_children`
 
@@ -34,6 +34,12 @@ with no limit may grant any value. A fork with no figaro claim, the common
 case of a human forking interactively, carries no default and starts absent
 (unlimited), exactly as before this key existed.
 
+**The owner's forks are never refused.** A fork the owner makes (no figaro
+claim, not through a box door) skips `max_children` and the quota, but it
+still counts: as a live child of its parent and in every ancestor's usage.
+It carries `runtime.owner_made = true`. A figaro over its cap because of
+them may retire them (they sit in its own lineage); its refusal names them.
+
 ## The swap: the limit goes with the place
 
 `succeed` forks the holder, then demotes the holder under its fork. When a
@@ -47,7 +53,8 @@ fork of the demoted figaro moves no limit and is checked against the
 child's own.
 
 Daemon-side succession (`succession-policy`) mints the successor fresh and
-copies the predecessor's `max_children` onto it.
+copies the predecessor's `max_children` onto it; the quota moves to it when
+it takes the seat (below).
 
 ## Who may take a held role
 
@@ -57,83 +64,140 @@ parent when that parent was forked from the holder: the shape `succeed`
 leaves after its demote. An ancestor that merely sits above the holder (a
 lead, the King) is refused. The owner acting with no figaro label is exempt.
 
-## `system.fanout.mint`: who may `figaro new`
+## `system.fanout.quota`: a budget for the whole subtree
 
-A figaro may not create a top-level figaro unless it holds mint. Forks are
-how a figaro fans out; `figaro new` and `figaro bind` (`figaro.create`,
-`form.bind`) are for Gluck and for whoever he licenses. No policy file is
-needed: the daemon applies this on every door.
+**Off by default.** The quota is computed and counted everywhere, but the
+daemon refuses nothing for it until the owner turns it on:
 
-A call that carries a figaro label (`FIGARO_ARIA`) on an unboxed door is
-refused unless that figaro's effective `system.fanout.mint` is `true`:
-
-```
-mint: <id> may not create a top-level figaro; fork yourself instead (figaro fork <id>:1 ...)
+```toml
+# config.toml
+[authz]
+enforce_quota = true
 ```
 
-Effective means its own form or any role it holds says `true`. A call with
-no label (Gluck at a terminal) is allowed as before. Boxed callers keep the
-policy path below: their box role needs `mint:*`. When a policy is in force
-on an unboxed door, the policy and the key must both allow it.
+While it is off, every fork, reparent or quota write the quota would refuse
+goes through, is logged as `authz: would refuse` with the switch, and is
+counted in `figaro doctor admission`. `max_children` is enforced either way.
 
-The key is protected, with the writers of `max_children`:
+A protected key beside `max_children`, same writers, checked independently.
+It is the most live figaros a figaro's subtree may hold, itself not counted.
 
-- the owner, unlabeled, sets any value on any form, a role form included;
-- an ancestor figaro sets it on a descendant only if it holds mint itself
-  (own form or role); clearing it needs ancestry only;
-- a figaro never sets its own, and no labeled figaro sets it on a role form
-  or on a form it mints, since neither has it as an ancestor.
+- A live child with a quota charges its parent `1 + quota`, or `1 + used`
+  while it uses more. A live child with
+  none charges `1 +` what its own subtree uses, so a grant under an uncapped
+  lead still counts against the cap above it. A retired or reaped child
+  charges only what its subtree uses.
+- `used` is the sum of the children's charges. The daemon keeps it in memory,
+  beside the live-child counts, and changes it on every birth, retirement,
+  reparent, limit write and role cast, walking up only to the nearest live
+  capped ancestor. `figaro doctor admission` compares it with the tree.
+- A role's quota is a ceiling for its holder: the effective quota is the
+  lowest of the figaro's own and every role it holds.
 
-A claimed fork (`FIGARO_ARIA` on the call) is born without the key even when
-its parent has it, unless the fork grants it in the same call
-(`fork -S system.fanout.mint=true`, checked as a grant). An unclaimed fork
-inherits it as it inherits everything else.
+**Budget only moves down.** A claimed fork is born at quota 0 unless the
+fork grants more (`fork -S system.fanout.quota=3`), and the grant comes out
+of the parent's free budget: a fork costs `1 + grant`. A `system.child_policy`
+quota is a grant too. A fork never copies its parent's quota, whatever the
+turn, the outfit or the patch: an owner's fork with no grant is uncapped.
+Usage is read off today's live tree, so a fork at an old turn pays for the
+tree as it is now.
 
-### Succession
+**Re-granting.** An ancestor raises a child's quota only from its own free
+budget. A quota may be lowered below
+what the subtree already uses: nothing is reaped, the child cannot fork
+until its use drops under, and meanwhile it charges its parent
+`1 + max(quota, used)`. A figaro never writes its own. `figaro ls` marks a
+figaro using more than its quota with `!`. Usage is never written to a form.
 
-A role carrying `system.fanout.mint: true` licenses whoever holds the role,
-and only while they hold it, so the seat keeps it through every succession
-with nothing copied. A holder's own key moves in the succeed swap the way
-`max_children` does (the successor takes it, the predecessor loses it), and
-daemon-side succession copies it onto the successor it mints.
+**Admission is optimistic.** A fork, a mint and a quota write read the
+counts without taking the hierarchy lock, admit if under, and update the
+counts after the birth or the write. Two that race may overshoot, by at most
+what was in flight at that figaro. The overshoot is never undone: the figaro
+is over budget, refused every fork until it is back under, charges its
+parent `1 + max(quota, used)`, and nothing is reaped. The reconciler rebuilds
+any count that drifted from the tree, and `figaro doctor admission` lists
+every figaro over `max_children` or its quota.
 
-### Licensing the King
+**A refusal names the budget** at every live capped ancestor on the way up,
+and the owner's forks under the one that refused:
 
-Put the key on the King's role, from Gluck's own terminal (no figaro label;
-inside a figaro's shell add `env -u FIGARO_ARIA`, or the call is the
-figaro's and is refused):
-
-```sh
-figaro set --id @<King role> system.fanout.mint true
+```
+fanout: this needs 1 of budget, and 9a5715d8 has 0 free of quota 2; retire a figaro under it (the owner made 3f0c11aa) or ask your parent for more
 ```
 
-`figaro set --id @<role>` writes the role form itself, not its holder's
-board (checked on 0.74.0 against a scratch role). `figaro state show --id
-@<King role> -j` confirms it. To revoke: `figaro form delete --id @<King
-role> system.fanout.mint`, or set it `false`.
+There is no verb to ask for budget: ask the parent in words.
 
-### What it does not stop
+**Minting spends budget.** A labeled `figaro new` is charged to the minter as
+a fork would be: the new figaro is born at quota 0, drawn under its minter,
+and costs it 1 until it retires.
 
-The label is the caller's assertion. A figaro whose tool shell runs
-`env -u FIGARO_ARIA figaro new ...` reaches the local socket as Gluck does
-and is allowed. This default stops a figaro that follows its instructions,
-not one working around them; closing that gap needs the daemon to attribute
-a local call by its peer process rather than by its environment.
+**Reparents** carry the whole charge of the moved subtree; a move that would
+overdraw a capped ancestor is refused and nothing moves.
 
-## `mint`: the verb `figaro.create` carries alone
+**`figaro ls`** shows `used/quota` in the `FAN` column for every capped
+figaro (`-` when uncapped); `ls -j` carries `fan_used` and `fan_quota`.
 
-`figaro.create` (`figaro new`, root-minting a bound figaro) and `form.create`
-(minting an unbound form, the mechanism behind `cast -O`/`new -C` role
-minting) used to share the `create` verb. They no longer do:
-`figaro.create` now needs `mint`; `form.create`, `form.bind` and import stay
-on `create`. A figaro whose `system.scopes` grants `create:*` but not `mint`
-can still cast itself into a role or import an aria, but `figaro new` is
-refused.
+## Succession and the quota
 
-The production box-door policy (`internal/authz/policy.go`) grants both, so
-sandboxed workers keep minting figaros unless an outfit narrows them
-further. The restriction this is for ("ordinary figaros lose `figaro new`")
-is meant to land in `system.scopes`, on the outfit a figaro is born under:
-see `docs/skills/fanout-limits-outfit-example.md` for the staged change, not
-applied to any outfit or config in this repo. `new -C`/`cast` (role minting)
-is unaffected either way, since those go through `create`, not `mint`.
+- **`figaro succeed`** (the predecessor retires) is net zero. The successor
+  fork costs nothing; the seat swaps places, the successor takes the
+  predecessor's quota and the predecessor keeps none, so once it retires the
+  seat uses exactly what it used before. It is refused only if the
+  predecessor's budget is already overdrawn.
+- **`--abdication linger`** (familial) keeps the predecessor alive under its
+  successor, so it costs 1 and is refused at the fork without it.
+- **`--successor <it>`** (overlap) paid for the successor at the fork that made
+  it; the seat moves nothing in the budget.
+- **Daemon-side succession** places the fresh successor beside the
+  predecessor for its ramp, which costs 1 at their parent, and moves the
+  quota to it when it takes the seat.
+
+## Role verbs: `cast` and `succeed`
+
+**Off by default, with the mint grant below.** Until the owner sets
+
+```toml
+[authz]
+enforce_key_grants = true
+```
+
+a cast, succession or mint these rules would refuse goes through, is logged
+as `authz: would refuse`, and is counted in `figaro doctor admission`, and
+`system.fanout.mint` licenses exactly as before.
+
+Two verbs in `system.scopes` name a role form (`cast:@<role>` is short for
+`cast:aria:@<role>`):
+
+- `cast` is needed to cast anything into an existing role. A role that
+  nobody holds is taken only with `cast` **written** in the figaro's scopes
+  (or an ancestor's): the implicit `*:*` of an unscoped figaro does not
+  count. The owner at a terminal is exempt.
+- `succeed` is needed to fork a seat's successor (`fork --seat`, which
+  `figaro succeed` sends) and to seat one (`figaro.seat`) in place of a
+  holder of that role.
+
+The default box role carries `cast:sandboxed:self` and
+`succeed:sandboxed:self`.
+
+## `mint`: who may `figaro new`
+
+A figaro may not create a top-level figaro unless `mint:*` is written in its
+`system.scopes` or an ancestor's; the implicit `*:*` of an unscoped figaro is
+no license. `figaro new` and `figaro bind` (`figaro.create`, `form.bind`)
+are otherwise for Gluck:
+
+```
+mint: <id> may not create a top-level figaro; fork yourself instead (figaro fork <id>:1 ...), or have mint:* written in its system.scopes
+```
+
+A figaro gives `mint:*` only if it holds it. Scopes on a role form grant
+nothing, so a seat's license lives on its holder and succession carries it
+with the rest of `system.scopes`.
+
+With `enforce_key_grants` on, `system.fanout.mint` is retired: it is no
+longer read, and a write is refused with a pointer to `mint:*`. Clearing it
+is allowed. With it off, the key licenses as it always did: a figaro may
+`figaro new` when its own form or a role it holds says `true`.
+
+`figaro.create` needs the `mint` verb; `form.create`, `form.bind` and import
+stay on `create`. The production box-door policy grants both.

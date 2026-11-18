@@ -1,7 +1,7 @@
 # Permissions: scopes, key grants, child policies
 
 What a figaro may do to other figaros and to forms, how a parent hands that
-down, and the three switches that decide whether the daemon enforces it.
+down, and the four switches that decide whether the daemon enforces it.
 
 ## Scopes
 
@@ -104,7 +104,7 @@ count.
 
 ## The switches
 
-Three owner-held switches in the daemon config (`config.toml`, `[authz]`)
+Four owner-held switches in the daemon config (`config.toml`, `[authz]`)
 decide whether the daemon enforces the rules above. All are off by default.
 The daemon reads them at start and on `figaro state outfit --refresh`.
 
@@ -113,13 +113,15 @@ The daemon reads them at start and on `figaro state outfit --refresh`.
 enforce_key_grants = true      # key-by-key writes, study/drop/cast rules, a label never the owner
 enforce_child_policy = true    # default lane scopes and system.child_policy at birth
 enforce_lineage_reach = true   # demote/promote/retire/kill beyond the lineage need a grant
+enforce_quota = true           # system.fanout.quota refuses forks, reparents and grants past it
 ```
 
 | switch | on | off |
 |---|---|---|
-| `enforce_key_grants` | a keyed grant covers only its keys; a labelled call on the local door is judged as that figaro | the write lands as it would have before key grants |
+| `enforce_key_grants` | a keyed grant covers only its keys; a labelled call on the local door is judged as that figaro; `cast`, `succeed` and `mint:*` are checked, and `system.fanout.mint` is retired | the write lands as it would have before key grants, and `system.fanout.mint` licenses `figaro new` |
 | `enforce_child_policy` | a figaro's fork is born with the policy or the lane set | the fork inherits its parent's scopes, as before |
 | `enforce_lineage_reach` | reach beyond the lineage needs a written grant | the call goes through |
+| `enforce_quota` | a fork, reparent, mint or quota grant past a subtree's budget is refused | it lands and is counted against the budget; `max_children` still refuses |
 
 Off, the daemon still decides, logs `authz: would refuse` with the switch and
 the reason, and counts it:
