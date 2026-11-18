@@ -2,11 +2,13 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/sandbox/local"
 )
 
@@ -42,6 +44,26 @@ func TestLocalFallsBackToTheDaemonsDirectory(t *testing.T) {
 		}
 		if box.Workspace != daemon {
 			t.Fatalf("%q: workspace %q, want %q", kind, box.Workspace, daemon)
+		}
+	}
+}
+
+// In house and estate mode a tool run as the daemon's uid owns the store, so
+// a figaro on local, or naming no sandbox, is refused at open; the daemon
+// itself is not a box.
+func TestLocalIsRefusedWhenTheDaemonRunsNoToolsAsItself(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[sandbox]\nlocal_tools = false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"", "local"} {
+		_, err := Open(context.Background(), local.NewHost(local.DefaultTTL), loaded, kind, "a1", t.TempDir())
+		if !errors.Is(err, ErrLocalToolsOff) {
+			t.Fatalf("%q opened under local_tools = false: %v", kind, err)
 		}
 	}
 }
