@@ -322,8 +322,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.checkForkLT(req.FigaroID, req.AtLT); err != nil {
 		return nil, err
 	}
+	seatProvider := ""
 	if req.Seat != "" {
-		if req, err = h.dressForSeat(req); err != nil {
+		if req, seatProvider, err = h.dressForSeat(req); err != nil {
 			return nil, err
 		}
 	}
@@ -371,6 +372,13 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			return cerr
 		}); err != nil {
 			return err
+		}
+		if seatProvider != "" {
+			if serr := h.fixSeatProvider(alt, seatProvider); serr != nil {
+				h.discardBirth(alt)
+				alt = ""
+				return serr
+			}
 		}
 		if interior && forkOwner.Trunk != "" && forkOwner.Trunk != req.FigaroID {
 			if merr := h.place(ctx, alt, req.FigaroID); merr != nil {

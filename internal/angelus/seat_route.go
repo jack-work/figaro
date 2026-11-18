@@ -8,6 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	providerPkg "github.com/jack-work/figaro/internal/provider"
 )
 
 var seatRouteKeys = []string{
@@ -68,13 +69,60 @@ func patchCovers(p form.Patch, key string) bool {
 	return slices.ContainsFunc(p.Entries(), func(e form.Entry) bool { return overlaps(e.Key, key) })
 }
 
-func (h *handlers) dressForSeat(req rpc.ForkRequest) (rpc.ForkRequest, error) {
+func seatProviderAlone(route map[string]json.RawMessage) (string, bool) {
+	if _, named := route["system.model"]; named {
+		return "", false
+	}
+	var p string
+	if json.Unmarshal(route["system.provider"], &p) != nil || p == "" {
+		return "", false
+	}
+	return p, true
+}
+
+func orphanedModel(seat, under string) (bool, error) {
+	if seat == under {
+		return false, nil
+	}
+	if reg := providerPkg.Lookup(seat); reg != nil && (reg.Declared || reg.DefaultModel != "") {
+		return true, nil
+	}
+	return false, fmt.Errorf("the seat names provider %s and no model, the successor's model belongs to %q, and %s has no default model: set system.model on the role", seat, under, seat)
+}
+
+func seatProviderPatch(seat string, dropModel bool) form.Patch {
+	raw, _ := json.Marshal(seat)
+	var drops []string
+	if dropModel {
+		drops = []string{"system.model"}
+	}
+	return form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.provider": raw}, drops)
+}
+
+func (h *handlers) fixSeatProvider(child, seat string) error {
+	snap, err := h.angelus.Backend.FormState(child)
+	if err != nil {
+		return err
+	}
+	under := ""
+	if v := snap.Lookup("system.provider"); v != nil {
+		under = *v
+	}
+	drop, err := orphanedModel(seat, under)
+	if err != nil {
+		return err
+	}
+	_, err = h.angelus.Backend.ApplyFormPrivileged(child, seatProviderPatch(seat, drop))
+	return err
+}
+
+func (h *handlers) dressForSeat(req rpc.ForkRequest) (rpc.ForkRequest, string, error) {
 	snap, err := h.angelus.Backend.FormState(req.Seat)
 	if err != nil {
-		return req, fmt.Errorf("fork: seat %s: %w", req.Seat, err)
+		return req, "", fmt.Errorf("fork: seat %s: %w", req.Seat, err)
 	}
 	if v := snap.Lookup("target-aria"); v == nil || *v != req.FigaroID {
-		return req, fmt.Errorf("fork: seat %s does not target %s", req.Seat, req.FigaroID)
+		return req, "", fmt.Errorf("fork: seat %s does not target %s", req.Seat, req.FigaroID)
 	}
 	var caller form.Patch
 	if req.Patch != nil {
@@ -82,10 +130,24 @@ func (h *handlers) dressForSeat(req rpc.ForkRequest) (rpc.ForkRequest, error) {
 	}
 	callerOutfits, err := h.dress(req.Outfits, nil)
 	if err != nil {
-		return req, err
+		return req, "", err
+	}
+	roleOutfits, err := h.dress(seatOutfits(snap), nil)
+	if err != nil {
+		return req, "", err
+	}
+	route := seatRoute(snap)
+	deferred, alone := seatProviderAlone(route)
+	for _, p := range []form.Patch{callerOutfits, caller, roleOutfits} {
+		if patchCovers(p, "system.model") || patchCovers(p, "system.provider") {
+			deferred, alone = "", false
+		}
+	}
+	if alone {
+		delete(route, "system.provider")
 	}
 	set := map[string]json.RawMessage{}
-	for k, v := range seatRoute(snap) {
+	for k, v := range route {
 		if !patchCovers(callerOutfits, k) && !patchCovers(caller, k) {
 			set[k] = v
 		}
@@ -101,5 +163,5 @@ func (h *handlers) dressForSeat(req rpc.ForkRequest) (rpc.ForkRequest, error) {
 	patch := form.Build(form.Snapshot{}, set, drops)
 	req.Patch = &patch
 	req.Outfits = append(seatOutfits(snap), req.Outfits...)
-	return req, nil
+	return req, deferred, nil
 }

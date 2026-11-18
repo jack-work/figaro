@@ -476,6 +476,22 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 		}
 		copied(snap, keys, "system.provider", "system.model", "system.thinking_effort", "system.thinking_budget")
 	}
+	var drops []string
+	if seat, alone := seatProviderAlone(route); alone && outfit == "" {
+		under := ""
+		if v := snap.Lookup("system.provider"); v != nil {
+			under = *v
+		}
+		drop, err := orphanedModel(seat, under)
+		if err != nil {
+			h.failSuccession(ctx, rec, err.Error())
+			return
+		}
+		if drop {
+			delete(keys, "system.model")
+			drops = append(drops, "system.model")
+		}
+	}
 	for k, v := range route {
 		keys[k] = v
 	}
@@ -484,7 +500,7 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 		mantra = *v
 	}
 	keys["mantra"], _ = json.Marshal("succeeding " + rec.Old[:min(8, len(rec.Old))] + ": " + mantra)
-	patch := form.Build(form.Snapshot{}, keys, nil)
+	patch := form.Build(form.Snapshot{}, keys, drops)
 	req := rpc.CreateRequest{Patch: &patch}
 	if outfit != "" {
 		req.Outfits = strings.Split(outfit, ",")

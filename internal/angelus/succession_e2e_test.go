@@ -913,3 +913,13 @@ func TestSuccessionRefusesDisagreeingRoutes(t *testing.T) {
 	r.requireUnretiredAndPaged(old, king, "roles disagree on the successor's system.model", a, b)
 	require.NotContains(t, r.heard(old), "write your handoff now", "the refusal must come before the final turn is spent")
 }
+
+func TestSuccessionKeepsTheModelWhenTheSeatNamesTheSameProvider(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	ownerSets(t, r.a, old, map[string]any{"system.model": "lane-model"})
+	r.role(old, map[string]any{"name": "warden", "system.provider": "mock"})
+	r.cross(old)
+	next := r.successorOf(old)
+	require.Equal(t, "lane-model", r.key(next, "system.model"))
+}

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -211,6 +213,11 @@ func seatedPredecessor(t *testing.T, afterTurn func(backend *store.XwalBackend, 
 
 func seatedPredecessorWith(t *testing.T, afterTurn func(backend *store.XwalBackend, pred string, turn uint64), providers func(string, provider.Knobs) (provider.Provider, error)) seated {
 	t.Helper()
+	return seatedPredecessorAt(t, afterTurn, providers, t.TempDir())
+}
+
+func seatedPredecessorAt(t *testing.T, afterTurn func(backend *store.XwalBackend, pred string, turn uint64), providers func(string, provider.Knobs) (provider.Provider, error), configDir string) seated {
+	t.Helper()
 	backend, pred := store.NewTestAria(t, "pred", message.Patch{})
 	ir, err := backend.OpenFigIR(pred)
 	require.NoError(t, err)
@@ -230,7 +237,7 @@ func seatedPredecessorWith(t *testing.T, afterTurn func(backend *store.XwalBacke
 	held, _ := json.Marshal(pred)
 	role, _, err := backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": held}, nil))
 	require.NoError(t, err)
-	acli, dir := serveBackendWith(t, backend, providers)
+	acli, dir := serveBackendAt(t, backend, providers, configDir)
 	t.Setenv("FIGARO_RUNTIME_DIR", dir)
 	t.Setenv("FIGARO_CONFIG_DIR", t.TempDir())
 	t.Setenv("FIGARO_TROUPE", "")
@@ -416,8 +423,10 @@ func strKeys(t *testing.T, keys map[string]string) form.Patch {
 // The King, 11-17: El Pregonero's successor came up on the chatgpt route its
 // predecessor's turn was recorded on, while its role says anthropic/opus.
 // The successor of a seat takes the seat's route; the caller's -S/-D and -O
-// still win, and a role naming no route leaves the recorded one.
+// still win, and a role naming no route leaves the recorded one. A role
+// naming a provider alone must not pair it with another provider's model.
 func TestSucceedSeatsTheSuccessorOnTheRolesRoute(t *testing.T) {
+	provider.Register(&provider.Registration{Name: "seat-defaulted", DefaultModel: "seat-default-model"})
 	recorded := map[string]string{"system.provider": "chatgpt-personal", "system.model": "gpt-5.5", "system.thinking_effort": "low"}
 	seat := map[string]string{"system.provider": "anthropic", "system.model": "claude-opus-5", "system.thinking_effort": "high"}
 	for name, tc := range map[string]struct {
@@ -428,19 +437,14 @@ func TestSucceedSeatsTheSuccessorOnTheRolesRoute(t *testing.T) {
 		"role route":       {seat, nil, seat},
 		"caller -S wins":   {seat, []string{"-S", "system.model=claude-sonnet-5"}, map[string]string{"system.provider": "anthropic", "system.model": "claude-sonnet-5", "system.thinking_effort": "high"}},
 		"caller -D wins":   {seat, []string{"-D", "system.thinking_effort"}, map[string]string{"system.provider": "anthropic", "system.model": "claude-opus-5", "system.thinking_effort": ""}},
+		"caller -O wins":   {seat, []string{"-O", "sonnet"}, map[string]string{"system.provider": "anthropic", "system.model": "claude-sonnet-5", "system.thinking_effort": "high"}},
 		"no route on role": {nil, nil, recorded},
+		"provider alone, another provider": {map[string]string{"system.provider": "seat-defaulted"}, nil,
+			map[string]string{"system.provider": "seat-defaulted", "system.model": "", "system.thinking_effort": "low"}},
+		"provider alone, the same provider": {map[string]string{"system.provider": "chatgpt-personal"}, nil, recorded},
 	} {
 		t.Run(name, func(t *testing.T) {
-			s := seatedPredecessor(t, func(b *store.XwalBackend, pred string, turn uint64) {
-				if turn == 0 {
-					_, err := b.ApplyForm(pred, strKeys(t, recorded))
-					require.NoError(t, err)
-				}
-			})
-			if tc.role != nil {
-				_, err := s.backend.ApplyForm(s.role, strKeys(t, tc.role))
-				require.NoError(t, err)
-			}
+			s := seatWithRoute(t, recorded, tc.role)
 			plan, err := succeedArgs(t, append(append([]string{s.role}, tc.argv...), "--", "you hold the seat")...)
 			require.NoError(t, err)
 			r := s.succeed(t, plan)
@@ -455,4 +459,35 @@ func TestSucceedSeatsTheSuccessorOnTheRolesRoute(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSucceedRefusesAProviderAloneWithNoDefaultModel(t *testing.T) {
+	provider.Register(&provider.Registration{Name: "seat-bare"})
+	s := seatWithRoute(t, map[string]string{"system.provider": "chatgpt-personal", "system.model": "gpt-5.5"}, map[string]string{"system.provider": "seat-bare"})
+	plan, err := succeedArgs(t, s.role, "--", "you hold the seat")
+	require.NoError(t, err)
+	r, err := succeedVerb(s.ctx, s.acli, plan, succeedHooks{})
+	require.ErrorContains(t, err, "seat-bare has no default model")
+	require.False(t, r.Forked)
+	require.Equal(t, s.pred, roleHolder(s.ctx, s.acli, s.role))
+}
+
+func seatWithRoute(t *testing.T, recorded, role map[string]string) seated {
+	t.Helper()
+	cfg := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(cfg, "outfits"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(cfg, "outfits", "sonnet.toml"), []byte("[system]\nmodel = \"claude-sonnet-5\"\n"), 0o600))
+	s := seatedPredecessorAt(t, func(b *store.XwalBackend, pred string, turn uint64) {
+		if turn == 0 {
+			_, err := b.ApplyForm(pred, strKeys(t, recorded))
+			require.NoError(t, err)
+		}
+	}, func(string, provider.Knobs) (provider.Provider, error) {
+		return nil, errors.New("no provider: this aria is read, never run")
+	}, cfg)
+	if role != nil {
+		_, err := s.backend.ApplyForm(s.role, strKeys(t, role))
+		require.NoError(t, err)
+	}
+	return s
 }
