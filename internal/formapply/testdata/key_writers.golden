@@ -102,6 +102,13 @@ grants.retired.system.marks	owner= lineage= set=false remove=false apply.owner=r
 grants.runtime	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 grants.runtime.runtime	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 grants.x.mint	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
+law	owner=law lineage= set=false remove=false apply.owner=ok apply.figaro=ok
+law.x	owner=law lineage= set=false remove=false apply.owner=ok apply.figaro=ok
+law.x.x	owner=law lineage= set=false remove=false apply.owner=ok apply.figaro=ok
+law.x[0]	owner=law lineage= set=false remove=false apply.owner=refused apply.figaro=refused
+law.x_x	owner=law lineage= set=false remove=false apply.owner=ok apply.figaro=ok
+law[0]	owner=law lineage= set=false remove=false apply.owner=refused apply.figaro=refused
+law_x	owner= lineage= set=false remove=false apply.owner=ok apply.figaro=ok
 mantra	owner= lineage= set=false remove=false apply.owner=ok apply.figaro=ok
 mantra.checkpoint	owner= lineage= set=false remove=false apply.owner=ok apply.figaro=ok
 mantra.credo.scopes.failure	owner= lineage= set=false remove=false apply.owner=ok apply.figaro=ok

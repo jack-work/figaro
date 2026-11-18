@@ -104,11 +104,13 @@ var registry = withLegacyRuntimeRows([]Spec{
 	{Path: "system.keepalive", Short: `Owner-held; a node whose lifetime is spent survives while it was used within this window (default one day; 0 reaps at the deadline)`, Writer: WriterOwner, Shape: ShapeLifetime()},
 	{Path: RetireRequestKey, Short: `Owner-held; the request to retire a figaro, with the reason (e.g. "manual"); a box may set it on the figaros inside it. The daemon records it at runtime.retired and never keeps it here; removing it unretires`, Writer: WriterOwner, Shape: ShapeTruthy()},
 	{Path: RetiredKey, Short: `Set when a figaro retires, with the reason ("manual", "context"); written by the daemon from system.retired or its own retirement`, Writer: WriterRuntime, Exact: true, Shape: ShapeTruthy()},
+	{Path: LawRoot + ".<name>", Short: "A law: text the figaro is shown like any other key; owner class, so only the owner writes or removes it", Writer: WriterOwner, Shape: ShapeString()},
 	{Path: RuntimeRoot, Writer: WriterRuntime, Shape: ShapeObject()},
 	{Path: "system.methods", Writer: WriterOwner, Shape: ShapeObject()},
 	{Path: "system.fanout", Writer: WriterSelf, Operator: true, Shape: ShapeObject()},
 	{Path: "system.environment", Writer: WriterOwner, Shape: ShapeObject()},
 	{Path: "system.retention", Writer: WriterOwner, Shape: ShapeObject()},
+	{Path: LawRoot, Writer: WriterOwner, Shape: ShapeObject()},
 })
 
 func withLegacyRuntimeRows(rows []Spec) []Spec {
