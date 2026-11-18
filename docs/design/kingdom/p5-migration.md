@@ -166,6 +166,12 @@ system.child_policy = { "system.scopes" = [
 ] }
 ```
 
+A policy's keys are key paths: `"system.scopes"` quoted, `system.scopes`
+dotted inside an outfit's `[system.child_policy]` table, or a nested
+object all name the same path, and the policy lands on the child key by
+key, never as a whole object. One path named twice in one policy is
+refused.
+
 `system.child_policy` is lineage class: only Gluck, or an ancestor figaro,
 writes it, and a seat cannot write its own. It lives on the holder, and
 succession carries it to the successor with `system.scopes`,

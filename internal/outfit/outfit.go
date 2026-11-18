@@ -389,6 +389,19 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				}
 				continue
 			}
+			if key == form.ChildPolicyKey {
+				policy := map[string]json.RawMessage{}
+				if err := o.flatten("", val, policy, map[string]bool{}, r); err != nil {
+					return err
+				}
+				b, err := json.Marshal(policy)
+				if err != nil {
+					return fmt.Errorf("outfit: marshal %s: %w", key, err)
+				}
+				out[key] = b
+				roots[key] = true
+				continue
+			}
 			if err := o.flatten(key, val, out, roots, r); err != nil {
 				return err
 			}

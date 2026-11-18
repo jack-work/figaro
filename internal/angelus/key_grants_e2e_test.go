@@ -544,3 +544,27 @@ func TestASendCarriesItsDatetimeAndNoOtherUngrantedKey(t *testing.T) {
 		}
 	}
 }
+
+// Defends a child policy carried by an outfit: a figaro dressed in it gives
+// its lanes the outfit's policy key by key over the one it inherited, and the
+// lane keeps the rest of its board.
+func TestAnOutfitsChildPolicyReachesTheLanesOfWhatItDresses(t *testing.T) {
+	r := newLineageRig(t, "")
+	r.ownerSets(t, r.parent, map[string]any{form.ChildPolicyKey: map[string]any{form.ScopesKey: []string{"send:parent", "read:*"}}})
+	out, err := r.call(asOwner(), rpc.MethodFork, rpc.ForkRequest{FigaroID: r.parent, Outfits: []string{"lanepolicy"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dressed := out.(rpc.ForkResponse).Alternative
+	r.ownerSets(t, dressed, map[string]any{form.ScopesKey: []string{"*:*"}})
+	lane := r.forkAsFigaro(t, dressed)
+	if got := grantsOn(t, r, lane); got != `["send:parent","read:aria:self"]` {
+		t.Errorf("the lane of a figaro dressed in a child policy holds %s, want the outfit's", got)
+	}
+	if got := keyOnString(t, r, lane, "mantra"); got != `"a lane"` {
+		t.Errorf("lane mantra %s", got)
+	}
+	if got := keyOnString(t, r, lane, "system.model"); got != `"m"` {
+		t.Errorf("the lane lost its model: %s", got)
+	}
+}
