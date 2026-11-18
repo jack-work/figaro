@@ -24,7 +24,6 @@ import (
 	"github.com/jack-work/figaro/internal/sandbox"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
-	"github.com/jack-work/figaro/internal/turns"
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
@@ -251,17 +250,10 @@ func (h *handlers) forkPointOf(ariaID string, turn uint64) (lt uint64, head bool
 	if err != nil {
 		return 0, false, fmt.Errorf("fork: open %s: %w", ariaID, err)
 	}
-	entries := log.Read()
-	msgs := make([]message.Message, len(entries))
-	for i, e := range entries {
-		msgs[i] = e.Payload
-		msgs[i].LogicalTime = e.LT
-	}
-	first, _, ok := turns.Span(msgs, turn)
+	first, last, ok := store.TurnStart(log, turn)
 	if ok {
 		return first - 1, false, nil
 	}
-	last := turns.StampIDs(msgs)
 	if turn == last+1 {
 		return 0, true, nil
 	}
