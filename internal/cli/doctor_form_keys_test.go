@@ -31,7 +31,7 @@ func TestTheShapeAuditCountsFaultsPerKeyAcrossForms(t *testing.T) {
 		"a2": {"system.max_tokens": json.RawMessage(`-3`), "system.ttl": json.RawMessage(`"soon"`)},
 		"@f": {"system.max_tokens": json.RawMessage(`8192`)},
 	}
-	rep, err := auditFormShapes(context.Background(), door)
+	rep, err := auditFormShapes(context.Background(), []formReader{door, door, door})
 	if err != nil {
 		t.Fatal(err)
 	}

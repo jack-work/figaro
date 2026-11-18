@@ -7,6 +7,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -37,6 +38,8 @@ type shapeAudit struct {
 	Faults    []shapeFaultRow `json:"faults"`
 }
 
+const auditConnections = 8
+
 type formReader interface {
 	ListGlobal(ctx context.Context) (*rpc.ListResponse, error)
 	Form(ctx context.Context, figaroID string) (*rpc.FormResponse, error)
@@ -46,9 +49,13 @@ func runDoctorFormKeys(loaded *config.Loaded, audit, jsonOut bool) error {
 	if !audit {
 		return printFormKeys(stdout, jsonOut)
 	}
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
-	rep, err := auditFormShapes(context.Background(), acli)
+	doors := make([]formReader, auditConnections)
+	for i := range doors {
+		acli := mustConnectAngelus(loaded)
+		defer acli.Close()
+		doors[i] = acli
+	}
+	rep, err := auditFormShapes(context.Background(), doors)
 	if err != nil {
 		return err
 	}
@@ -77,25 +84,53 @@ func printFormKeys(w io.Writer, jsonOut bool) error {
 	return tw.Flush()
 }
 
-func auditFormShapes(ctx context.Context, door formReader) (shapeAudit, error) {
+func auditFormShapes(ctx context.Context, doors []formReader) (shapeAudit, error) {
 	start := time.Now()
-	resp, err := door.ListGlobal(ctx)
+	resp, err := doors[0].ListGlobal(ctx)
 	if err != nil {
 		return shapeAudit{}, err
 	}
+	type result struct {
+		id     string
+		faults []form.ShapeFault
+		ok     bool
+	}
+	ids := make(chan string)
+	results := make(chan result)
+	var wg sync.WaitGroup
+	for _, door := range doors {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range ids {
+				got, err := door.Form(ctx, id)
+				if err != nil || got == nil {
+					results <- result{id: id}
+					continue
+				}
+				results <- result{id: id, faults: form.AuditShapes(got.Snapshot), ok: true}
+			}
+		}()
+	}
+	go func() {
+		for _, f := range resp.Figaros {
+			if f.State != "anchor" {
+				ids <- f.ID
+			}
+		}
+		close(ids)
+		wg.Wait()
+		close(results)
+	}()
 	var rep shapeAudit
 	byPath := map[string]*shapeFaultRow{}
-	for _, f := range resp.Figaros {
-		if f.State == "anchor" {
-			continue
-		}
-		got, err := door.Form(ctx, f.ID)
-		if err != nil || got == nil {
+	for r := range results {
+		if !r.ok {
 			rep.Unread++
 			continue
 		}
 		rep.Forms++
-		for _, fault := range form.AuditShapes(got.Snapshot) {
+		for _, fault := range r.faults {
 			row := byPath[fault.Path]
 			if row == nil {
 				row = &shapeFaultRow{Path: fault.Path, Example: fault.Err.Error()}
@@ -103,7 +138,7 @@ func auditFormShapes(ctx context.Context, door formReader) (shapeAudit, error) {
 			}
 			row.Count++
 			if len(row.Samples) < 3 {
-				row.Samples = append(row.Samples, f.ID)
+				row.Samples = append(row.Samples, r.id)
 			}
 		}
 	}
