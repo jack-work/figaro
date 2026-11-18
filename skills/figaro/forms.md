@@ -62,7 +62,7 @@ whole changed value, so keep studied values small if context matters.
 **What configures it**
 
 - `fig study @x` / `fig drop @x`, the subscription itself. It lives on your
-  bound form as `system.studies`, which is system-managed: only the verbs write it.
+  bound form as `runtime.studies`, which only the daemon writes: only the verbs change it.
 - `fig study <me> <figaro> --keys comments` studies another figaro's bound
   form by its bare id, mirroring only keys at or under the listed prefixes
   (`system.study_keys.<id>` on your bound form). Only the owner may study

@@ -288,7 +288,7 @@ its output, prose off the first line of its own text, and a question
 **encloses** its section between its text and the rule that closes the seam, so
 its snake runs down to a `╰` corner instead of up to a block. A fork is lifted
 out of the question's section and into its header row, named the way every
-figaro is named. Anywhere else a `system.forked_from` is a key like any other.
+figaro is named. Anywhere else a `runtime.forked_from` (or, in history from before runtime.*, `system.forked_from`) is a key like any other.
 
 `c j` / `c k` open the section a comment lives in and land on it. A comment's
 passage stays washed in the block's text whether or not the section is open. A

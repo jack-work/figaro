@@ -35,8 +35,9 @@ var _ Backend = (*XwalBackend)(nil)
 var ErrClosed = xwal.ErrClosed
 
 type XwalBackend struct {
-	closed atomic.Bool
-	feed   atomic.Pointer[TopologyFeed]
+	runtimeNames RuntimeNamesReport
+	closed       atomic.Bool
+	feed         atomic.Pointer[TopologyFeed]
 
 	rolesMu       sync.Mutex
 	roles         roleIndex
@@ -172,6 +173,18 @@ func (c *metaCache) loadOnce(path string) (*metaState, error) {
 
 // segmentSize <= 0 takes the configured default.
 func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
+	b, err := openXwalBackend(root, segmentSize)
+	if err != nil {
+		return nil, err
+	}
+	if err := b.migrateRuntimeNamesAtOpen(); err != nil {
+		b.Close()
+		return nil, err
+	}
+	return b, nil
+}
+
+func openXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 	st, err := OpenXwalStore(root, segmentSize)
 	if err != nil {
 		return nil, err

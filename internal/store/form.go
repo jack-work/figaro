@@ -109,6 +109,7 @@ type formWrite struct {
 	ifVersion uint64
 	intent    Intent
 	priv      bool
+	rename    bool
 	origin    Origin
 	result    formResult
 	done      atomic.Bool
@@ -504,6 +505,14 @@ func (f *Form) ApplyEffectPrivileged(patch message.Patch, ifVersion uint64) (uin
 	return f.applyEffect(patch, ifVersion, Ensure, true)
 }
 
+func (f *Form) applyRename(patch message.Patch) (uint64, message.Patch, error) {
+	t, err := f.submit(&formWrite{patch: patch, intent: Ensure, priv: true, rename: true})
+	if err != nil {
+		return 0, message.Patch{}, err
+	}
+	return f.Await(context.Background(), t)
+}
+
 func (f *Form) ApplyWrite(in FormWrite) (FormVerdict, error) {
 	if in.Origin.Seq > 0 && (in.Intent == Assert || in.IfVersion != 0) {
 		return FormVerdict{}, ErrSeqConditional
@@ -690,7 +699,7 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (next *formState, res form
 func (f *Form) judge(st *formState, w *formWrite) formResult {
 	// A tombstone is final. The one write allowed past it is the tombstone
 	// itself, which Tombstone makes idempotent rather than repeatable.
-	if f.sealed.Load() {
+	if f.sealed.Load() && !w.rename {
 		return formResult{version: st.version, err: errSealed}
 	}
 	if w.ifVersion != 0 && st.version != w.ifVersion {
