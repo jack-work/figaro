@@ -235,6 +235,17 @@ Making another figaro study or drop a form needs an unkeyed set on it, a
 cast into an existing role needs set on its target-aria, and a cast that
 mints a role needs create. Seats holding `*:*` keep all three.
 
+## Retire and succeed write the lifetime
+
+`system.ttl` stays owner-held and no grant names it: key grants never judge
+it. The peer check's lifetime rule does (peer-check.md): a figaro's tools,
+or a call labelled with the figaro, set a finite ttl no later than the
+current one and retire, on the figaro itself, a figaro below it or a figaro
+it forks. So `figaro retire <id> --ttl 10m` on a fork and the abdication of
+a holder-run `figaro succeed` need no grant, and a figaro's own retire needs
+none on system.retired. 0, a removal, a later deadline and unretiring stay
+Gluck's.
+
 ## Switches
 
 P5 ships its three enforcements off, each behind an owner-held switch in

@@ -96,6 +96,15 @@ Sending to a role: `figaro send -f --id @role -- ...` needs only
 `send:role:@role` (or `send:parent` while the role points at your parent).
 The daemon resolves the role for you; no read on the role form is needed.
 
+## Retire and succeed
+
+`system.ttl` is owner-held and never granted. The verbs that end a figaro
+write it under the lifetime rule of [peer-check.md](peer-check.md): you may
+shorten a lifetime (a finite ttl no later than the current one) and retire,
+on yourself, a figaro below you or one you fork. `figaro retire <id> --ttl
+10m` on your fork and the abdication of a `figaro succeed` you run on your
+own seat need no grant. You never lengthen a lifetime.
+
 ## Reach
 
 Demote, promote, retire and kill reach your own lineage. Beyond it they need

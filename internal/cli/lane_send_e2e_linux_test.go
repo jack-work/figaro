@@ -279,3 +279,33 @@ func TestAnOutfitsChildPolicyReachesALaneThroughTheCLI(t *testing.T) {
 	}
 	t.Logf("lane %s holds %s", lane, grantsOf(t, r, lane))
 }
+
+// Defends retire and succeed as verbs under enforce_key_grants: the lifetime
+// they write is the daemon's to give, so a figaro retires its own fork with
+// --ttl, and a holder-run succeed abdicates, with no grant on system.ttl.
+func TestRetireAndSucceedWriteTheirLifetimeWithNoKeyGrant(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns a daemon; skipped under -short")
+	}
+	prov := newScriptedProvider(t, func(string) (bool, string) { return false, sseText("noted") })
+	r := newRestartRig(t)
+	r.enforceAll()
+	r.env = append(r.env, "ANTHROPIC_BASE_URL="+prov.srv.URL, "FIGARO_NO_BIND=1")
+	holder := r.newAria()
+	r.run("set", "--id", holder, "system.scopes", `["*:*"]`)
+	lane := r.laneOf(holder)
+	if out, err := r.as(holder, "retire", lane, "--ttl", "10m"); err != nil {
+		t.Fatalf("a figaro could not retire its own fork with --ttl: %v\n%s", err, out)
+	}
+	seat := r.roleFor(holder, "seat")
+	out, err := r.as(holder, "succeed", seat, "--abdication", "linger", "--stay", "-j", "--", "you hold the seat")
+	var rep struct {
+		Abdicated bool   `json:"abdicated"`
+		FailedAt  string `json:"failed_at"`
+	}
+	_ = json.NewDecoder(strings.NewReader(out)).Decode(&rep)
+	if err != nil || !rep.Abdicated || rep.FailedAt != "" {
+		t.Fatalf("a holder-run succeed did not abdicate: %v\n%s", err, out)
+	}
+	t.Logf("holder-run succeed: %s", strings.TrimSpace(out))
+}

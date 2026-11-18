@@ -167,6 +167,7 @@ func TestADefaultChildWritesOnlyItsOwnSelfClassKeys(t *testing.T) {
 	r := newLineageRig(t, "")
 	c := r.dial(t)
 	kid := r.forkAsFigaro(t, r.parent)
+	r.ownerSets(t, kid, map[string]any{"system.ttl": "30m"})
 	for keys, ok := range map[string]bool{
 		`{"mantra":"lane"}`:                      true,
 		`{"notes.today":"x"}`:                    true,
@@ -566,5 +567,33 @@ func TestAnOutfitsChildPolicyReachesTheLanesOfWhatItDresses(t *testing.T) {
 	}
 	if got := keyOnString(t, r, lane, "system.model"); got != `"m"` {
 		t.Errorf("the lane lost its model: %s", got)
+	}
+}
+
+// Defends the lifetime rule under key grants: no grant names system.ttl, so
+// a figaro shortens a lifetime on itself or below it, retires there with a
+// ttl, and never lengthens one or reaches outside its lineage ungranted.
+func TestALifetimeIsShortenedOnlyWithinTheLineage(t *testing.T) {
+	r := newLineageRig(t, "")
+	kid := r.forkAsFigaro(t, r.parent)
+	r.ownerSets(t, kid, map[string]any{"system.ttl": "1h"})
+	if err := r.setLocal(t, kid, kid, map[string]any{"system.ttl": "10m"}); err != nil {
+		t.Errorf("a figaro could not shorten its own lifetime: %v", err)
+	}
+	if err := r.setLocal(t, kid, kid, map[string]any{"system.ttl": "2h"}); err == nil {
+		t.Error("a figaro lengthened its own lifetime")
+	}
+	if err := r.setLocal(t, kid, kid, map[string]any{"system.retired": "manual", "system.ttl": "5m"}); err != nil {
+		t.Errorf("a default child could not retire itself with a ttl: %v", err)
+	}
+	if err := r.setLocal(t, r.parent, r.sibling, map[string]any{"system.ttl": "30m"}); err != nil {
+		t.Errorf("a figaro could not shorten the lifetime of a figaro below it: %v", err)
+	}
+	r.ownerSets(t, r.child, map[string]any{form.ScopesKey: []string{"read:*", "write:aria:self#@self"}})
+	if err := r.setLocal(t, r.child, r.sibling, map[string]any{"system.ttl": "5m"}); err == nil {
+		t.Error("a figaro with no grant there set the lifetime of a figaro outside its lineage")
+	}
+	if err := r.setLocal(t, r.parent, r.sibling, map[string]any{"system.retired": "manual", "system.ttl": "5m"}); err != nil {
+		t.Errorf("a figaro could not retire a figaro below it with a ttl: %v", err)
 	}
 }

@@ -246,6 +246,9 @@ func (h *handlers) refuseKeysBeyondGrants(ctx context.Context, line lineage, bef
 	}
 	view := p.Figaro(f)
 	for _, key := range writtenPaths(before, patch, after) {
+		if judgedByLifetime(f, line, key, after) {
+			continue
+		}
 		verb := rpc.VerbSet
 		if !after.Has(key) {
 			verb = rpc.VerbDelete
@@ -255,6 +258,16 @@ func (h *handlers) refuseKeysBeyondGrants(ctx context.Context, line lineage, bef
 		}
 	}
 	return nil
+}
+
+func judgedByLifetime(figaro string, line lineage, key string, after form.Snapshot) bool {
+	switch key {
+	case store.SystemTTLKey:
+		return true
+	case store.SystemRetiredKey:
+		return line.of == figaro && after.Has(key)
+	}
+	return false
 }
 
 func keyVerbName(v rpc.Verb) string {
