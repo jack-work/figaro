@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -94,5 +95,50 @@ func TestAWriterOnAnotherFigarosScopesGrantsOnlyWhatItHolds(t *testing.T) {
 		if (err == nil) != ok {
 			t.Errorf("child gives its child %s: %v, want ok=%v", scopes, err, ok)
 		}
+	}
+}
+
+func TestAForkMadeByAFigaroCanReachOnlyItsParent(t *testing.T) {
+	r := newLineageRig(t, "")
+	kid := r.forkAsFigaro(t, r.parent)
+	if got := grantsOn(t, r, kid); got != `["send:parent","read:aria:self"]` {
+		t.Fatalf("default child scopes %s", got)
+	}
+	if got := strings.Join(grantsOf(t, r.grantRig, kid).Effective, ", "); got != "read:aria:"+kid+", send:aria:"+r.parent {
+		t.Fatalf("effective %s", got)
+	}
+	out, err := r.call(asOwner(), rpc.MethodFork, rpc.ForkRequest{FigaroID: r.parent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := grantsOn(t, r, out.(rpc.ForkResponse).Alternative); !strings.Contains(got, "*:*") {
+		t.Fatalf("a fork the owner makes keeps its parent's scopes, got %s", got)
+	}
+}
+
+func TestAChildPolicyIsAppliedAtBirthAndNotKeptLinked(t *testing.T) {
+	r := newLineageRig(t, "")
+	r.ownerSets(t, r.parent, map[string]any{form.ChildPolicyKey: map[string]any{
+		form.ScopesKey: []string{"read:*", "send:aria:self"},
+		"mantra":       "a lane",
+	}})
+	kid := r.forkAsFigaro(t, r.parent)
+	if got := grantsOn(t, r, kid); got != `["read:*","send:aria:self"]` {
+		t.Fatalf("policy scopes %s", got)
+	}
+	if v, _ := keyOn(t, r.grantRig, kid, "mantra"); string(v) != `"a lane"` {
+		t.Fatalf("policy mantra %s", v)
+	}
+	eff := grantsOf(t, r.grantRig, kid).Effective
+	if slices.Contains(eff, "send:aria:"+r.parent) {
+		t.Fatalf("a policy without send:parent still reaches the parent: %s", eff)
+	}
+	r.ownerSets(t, r.parent, map[string]any{form.ChildPolicyKey: map[string]any{"mantra": "changed"}})
+	if v, _ := keyOn(t, r.grantRig, kid, "mantra"); string(v) != `"a lane"` {
+		t.Fatalf("a policy edit reached a living child: %s", v)
+	}
+	_, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.parent, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{form.ChildPolicyKey: map[string]any{"system.model": "x"}})}))
+	if err == nil || !strings.Contains(err.Error(), "owner class") {
+		t.Fatalf("a policy carrying an owner-class key was accepted: %v", err)
 	}
 }

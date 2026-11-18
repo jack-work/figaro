@@ -296,6 +296,10 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.refuseCallerKeys(ctx, birthUnder(req.FigaroID), inherited, req.Patch); err != nil {
 		return nil, err
 	}
+	policy, err := form.ChildPolicyPatch(inherited, claimed)
+	if err != nil {
+		return nil, fmt.Errorf("fork: %w", err)
+	}
 	if err := h.refuseUnheldSandbox(ctx, req.Patch); err != nil {
 		return nil, fmt.Errorf("fork: %w", err)
 	}
@@ -369,7 +373,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 				return err
 			}
 			var cerr error
-			alt, _, cerr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID, claimed), mintedBy(ctx), ariaIDStamp())
+			alt, _, cerr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID, claimed, policy), mintedBy(ctx), ariaIDStamp())
 			return cerr
 		}); err != nil {
 			return err
