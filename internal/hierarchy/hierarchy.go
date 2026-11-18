@@ -43,6 +43,7 @@ const (
 	Discard
 	Reap
 	Depart
+	Seat
 )
 
 func (o Op) String() string {
@@ -69,6 +70,8 @@ func (o Op) String() string {
 		return "reap"
 	case Depart:
 		return "depart"
+	case Seat:
+		return "seat"
 	}
 	return "op?"
 }
@@ -319,7 +322,7 @@ func (h *Hierarchy) commitAndTell(p Plan) (Plan, error) {
 }
 
 func (h *Hierarchy) park(by Principal, plan Plan, v Verdict) error {
-	if plan.Op.Deletes() || plan.Op == Restore {
+	if plan.Op.Deletes() || plan.Op == Restore || plan.Op == Seat {
 		return fmt.Errorf("%w %s: %s never waits", ErrParked, v.Park, plan.Op)
 	}
 	h.expireLocked()
@@ -615,6 +618,8 @@ func (h *Hierarchy) derive(p Plan) (Plan, error) {
 		out.Moves, err = h.deriveArrange(p.Parents, p.Restore, p.Storage)
 	case Place:
 		out.Moves, err = h.derivePlace(p.Node, p.To)
+	case Seat:
+		out.Moves, err = h.deriveSeat(p.Node, p.To)
 	case Restore:
 		for _, id := range p.Revive {
 			if _, ok := h.eng.Node(id); !ok {
@@ -760,6 +765,37 @@ func (h *Hierarchy) deriveDemote(id, prefer string) ([]Move, string, error) {
 	o.set(under, parent)
 	o.set(id, under)
 	return o.moves(nil), under, nil
+}
+
+func (h *Hierarchy) deriveSeat(pred, succ string) ([]Move, error) {
+	if pred == succ {
+		return nil, fmt.Errorf("seat: %q cannot take its own place", pred)
+	}
+	if !h.isAria(pred) {
+		return nil, fmt.Errorf("seat: no aria %q", pred)
+	}
+	if !h.isAria(succ) {
+		return nil, fmt.Errorf("seat: no aria %q", succ)
+	}
+	parent, ok := h.eng.Drawn(pred)
+	if parent == succ {
+		return nil, nil
+	}
+	if !ok || parent == "" {
+		return nil, fmt.Errorf("seat: %q is a root", pred)
+	}
+	if h.drawnBelow(pred, succ) {
+		return nil, fmt.Errorf("seat: %q is drawn above %q, so it cannot take its place", succ, pred)
+	}
+	o := newOverlay(h.eng)
+	for _, kid := range h.eng.DrawnChildren(pred) {
+		if kid != succ {
+			o.set(kid, succ)
+		}
+	}
+	o.set(succ, parent)
+	o.set(pred, succ)
+	return o.moves(nil), nil
 }
 
 func (h *Hierarchy) demoteTarget(id, prefer string) string {
