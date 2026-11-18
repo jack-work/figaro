@@ -79,13 +79,21 @@ func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, 
 		if HarnessKey(e.Key) {
 			continue
 		}
+		keyBytes := limits.KeyBytes
+		if IsLaw(e.Key) {
+			if e.IsRemoval() {
+				out = append(out, RenderedEntry{Key: e.Key, Body: LawRepealed})
+				continue
+			}
+			keyBytes = 0
+		}
 		t := tmpls.Lookup(e.Key)
 		if t == nil {
 			body := genericBody(e)
 			if body == "" {
 				continue
 			}
-			body, _ = TruncateUTF8(body, limits.KeyBytes)
+			body, _ = TruncateUTF8(body, keyBytes)
 			out = append(out, RenderedEntry{Key: e.Key, Body: body})
 			continue
 		}
@@ -97,7 +105,7 @@ func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, 
 		if body == "" {
 			continue
 		}
-		body, _ = TruncateUTF8(body, limits.KeyBytes)
+		body, _ = TruncateUTF8(body, keyBytes)
 		out = append(out, RenderedEntry{Key: e.Key, Body: body})
 	}
 	return out, nil

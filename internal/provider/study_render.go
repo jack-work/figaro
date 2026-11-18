@@ -147,6 +147,10 @@ func studyFold(fid string, patches []message.Patch, keys []string, limits form.D
 		spent, elided := 0, 0
 		for _, k := range names {
 			v := set[k]
+			if form.IsLaw(k) {
+				shown[k] = v
+				continue
+			}
 			cut, wasCut := form.TruncateUTF8(string(v), limits.KeyBytes)
 			if wasCut {
 				// A cut value is no longer valid JSON; it rides as a string.
