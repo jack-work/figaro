@@ -33,7 +33,7 @@ In review: v0.74.5, P3+H1+P1b (dandelion-kabob, Opus); P2+P5 (hyacinth-obtain, S
 | 4 | P4 peer caller check | fork anagram-erratic `0e15cab0` | `lane/peer-caller-check` de5d64574 | fixes in (finite ttl from tools, succeed carries the seat ttl, peer-check.md); waits on v0.74.4 to restack, then review |
 | 5 | E2 hush as a system service | fork erasable-unzip `56faa8d6`; drop-box refresh by the Strategist | hush `lane/hush-system-service` 70d3782 + `lane/hush-drop-refresh` | SHIP; landing branch hush lane/hush-landing e2497c5be (gate green) with the Engineer to merge |
 | 6 | P3 admission ledger | fork dominoes-elusive `439448d3` | `lane/admission-ledger` a7ec40e88 | restacked on 0911f728f with the shared seat op (figaro.seat); restacks onto v0.74.4, then lands |
-| 7 | E1 angelus socket activation | fork tavern-culprit `df4d5475` (Engineer slot) | `lane/socket-activation` 5d80c21ad | SHIP (carrot-princess delta). Before landing, two LOWs: a tmpfiles `z` rule for angelus.sock so an idle switch applies socketMode; stopPid dies on EPERM rather than waiting. Lands in the train after v0.74.5 |
+| 7 | E1 angelus socket activation | fork tavern-culprit `df4d5475` (Engineer slot) | `lane/socket-activation` f7a95a444 | SHIP plus the two LOW fixes; with the Knight for v0.74.6 |
 | 8 | P2 runtime.* migration | fork hydrant-rocket `78718b5c` | `lane/runtime-namespace` ffe9ba6d5 on P1 | READY; in one Opus review with P5 |
 | 9 | E3 figaro valet and the fence | fork cognitive-backpack `3006ff4b` | `lane/valet` on b4bf913cb | building |
 | 10 | P5 key-path grants, selectors, child_policy | hydrant-rocket | `lane/key-grants` 0783d56c8 | READY (default child writes its own self-class keys; seats take *:* per p5-migration.md); in review with P2 |
