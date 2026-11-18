@@ -21,7 +21,10 @@ const SystemTTLKey = "system.ttl"
 
 const SystemKeepaliveKey = "system.keepalive"
 
-const SystemRetiredKey = "system.retired"
+const (
+	SystemRetiredKey = form.RetireRequestKey
+	RetiredKey       = form.RetiredKey
+)
 
 const SystemReapIfEmptyKey = "system.reap_if_empty"
 
@@ -144,7 +147,7 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 			c.keepalive, c.keepaliveSet = &ka, strings.TrimSpace(raw) != ""
 		}
 	}
-	if raw, spoke := valueOf(SystemRetiredKey); spoke {
+	if raw, spoke := retiredFrom(valueOf); spoke {
 		reason := RetiredReason(raw)
 		c.retired = &reason
 	}
@@ -469,4 +472,16 @@ const SystemKeepKey = "system.keep"
 func KeepSet(snap form.Snapshot) bool {
 	raw, ok := snap.Get(SystemKeepKey)
 	return ok && retiredValue(lifetimeString(raw))
+}
+
+func retiredFrom(valueOf func(key string) (string, bool)) (string, bool) {
+	now, nowSpoke := valueOf(RetiredKey)
+	old, oldSpoke := valueOf(SystemRetiredKey)
+	switch {
+	case nowSpoke && (now != "" || !oldSpoke):
+		return now, true
+	case oldSpoke:
+		return old, true
+	}
+	return "", false
 }

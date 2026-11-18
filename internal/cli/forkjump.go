@@ -44,7 +44,7 @@ func forkParentOf(deltas map[string]livedoc.FormDelta) string {
 		if d.Kind != livedoc.FormBound || d.Event != livedoc.FormSet {
 			continue
 		}
-		if strings.TrimPrefix(key, d.Form+".") != forkedFromKey {
+		if !isForkedFromKey(strings.TrimPrefix(key, d.Form+".")) {
 			continue
 		}
 		return unquote(d.Value).text

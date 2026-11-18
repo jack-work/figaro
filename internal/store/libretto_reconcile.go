@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+
+	"github.com/jack-work/figaro/api/form"
 )
 
 type LibrettoAudit struct {
@@ -19,7 +21,7 @@ type LibrettoAudit struct {
 
 // StudiesKey: the store owns the name because its reconciliation sweep
 // recomputes refcounts from the bound forms; figaro re-exports it.
-const StudiesKey = "system.studies"
+const StudiesKey = form.StudiesKey
 
 // ReconcileLibrettos is idempotent and safe while live: each correction is an
 // ordinary patch on the libretto's own actor, so a study landing mid-sweep is
@@ -142,7 +144,7 @@ func sortedIDs(ids []string) []string {
 func studiesOf(snap interface {
 	Get(string) (json.RawMessage, bool)
 }) []string {
-	raw, ok := snap.Get(StudiesKey)
+	raw, ok := form.RuntimeGet(snap, StudiesKey)
 	if !ok {
 		return nil
 	}

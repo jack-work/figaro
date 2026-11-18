@@ -40,7 +40,7 @@ func NormalizeStudyKeys(keys []string) []string {
 
 func StudyKeyShown(key string, keys []string) bool {
 	if len(keys) == 0 {
-		return !strings.HasPrefix(key, "system.")
+		return !HarnessKey(key)
 	}
 	for _, p := range keys {
 		if key == p || strings.HasPrefix(key, p+".") {

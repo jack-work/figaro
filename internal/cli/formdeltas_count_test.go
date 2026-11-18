@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
@@ -51,9 +52,9 @@ func TestDeltaRowCountAgreesWithDeltaRows(t *testing.T) {
 		{"one key", bound("mantra", "sing")},
 		{"two forms", join(bound("mantra", "sing"), unbound("role", "scribe"))},
 		{"a fork and nothing else", join(
-			bound(forkedFromKey, "abcd1234"), bound("aria_id", "beef5678"))},
+			bound(form.ForkedFromKey, "abcd1234"), bound("aria_id", "beef5678"))},
 		{"a fork plus state", join(
-			bound(forkedFromKey, "abcd1234"), bound("aria_id", "beef5678"), bound("mantra", "sing"))},
+			bound(form.ForkedFromKey, "abcd1234"), bound("aria_id", "beef5678"), bound("mantra", "sing"))},
 		{"a dead form", join(
 			bound("mantra", "sing"), one("@f2", livedoc.FormStudied, livedoc.FormDeleted, "", ""))},
 		{"a removed key", join(

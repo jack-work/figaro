@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	KeyCheckpointMarks        = "system.checkpoint.marks"
+	KeyCheckpointMarks        = form.CheckpointMarksKey
 	KeyCheckpointEveryPatches = "system.checkpoint.every_patches"
 	KeyCheckpointEverySeconds = "system.checkpoint.every_seconds"
 	KeyCheckpointMaxMarks     = "system.checkpoint.max_marks"
@@ -147,7 +147,7 @@ type Mark struct {
 }
 
 func MarksOf(s form.Snapshot) map[uint64]Mark {
-	raw, ok := s.Get(KeyCheckpointMarks)
+	raw, ok := form.RuntimeGet(s, KeyCheckpointMarks)
 	if !ok {
 		return nil
 	}
@@ -173,7 +173,7 @@ func marksPatch(base form.Snapshot, marks map[uint64]Mark) (form.Patch, error) {
 	if err != nil {
 		return form.Patch{}, err
 	}
-	return form.Build(base, map[string]json.RawMessage{KeyCheckpointMarks: raw}, nil), nil
+	return form.RuntimeSet(base, map[string]json.RawMessage{KeyCheckpointMarks: raw}), nil
 }
 
 func evictMarks(marks map[uint64]Mark, maxMarks int) []uint64 {

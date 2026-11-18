@@ -15,12 +15,12 @@ type turnFailure struct {
 
 func failureOf(snap form.Snapshot) (turnFailure, bool) {
 	var f turnFailure
-	raw, ok := snap.Get(form.FailureReasonKey)
+	raw, ok := form.RuntimeGet(snap, form.FailureReasonKey)
 	if !ok || json.Unmarshal(raw, &f.reason) != nil || f.reason == "" {
 		return turnFailure{}, false
 	}
 	f.reason = pitText(strings.Join(strings.Fields(f.reason), " "))
-	if raw, ok := snap.Get(form.FailureTurnKey); ok {
+	if raw, ok := form.RuntimeGet(snap, form.FailureTurnKey); ok {
 		_ = json.Unmarshal(raw, &f.turn)
 	}
 	return f, true

@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/sdk"
@@ -33,7 +34,7 @@ func retiredKey(t *testing.T, a *angelus.Angelus, id string) string {
 	t.Helper()
 	snap, err := a.Backend.FormState(id)
 	require.NoError(t, err)
-	if v := snap.Lookup("system.retired"); v != nil {
+	if v := form.RuntimeLookup(snap, form.RetiredKey); v != nil {
 		return *v
 	}
 	return ""
