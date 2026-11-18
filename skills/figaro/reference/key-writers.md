@@ -8,7 +8,7 @@ any caller with write access to the form may set it, the figaro itself included.
 
 ## owner
 
-Set or removed only by the owner: the local door, an in-process call, or the owner's principal. Every other caller, a box included, is refused. A box may still set `system.retired` on the figaros inside it.
+Set or removed only by the owner: the local door, an in-process call, or the owner's principal. Every other caller, a box included, is refused. A box may still set or remove `system.retired` on the figaros inside it, so it unretires them as well as retiring them; that is intended. Removing `system.retired` unretires, and for any other caller that removal is refused like a set.
 
 - `system.credo` and everything under it
 - `system.provider` and everything under it

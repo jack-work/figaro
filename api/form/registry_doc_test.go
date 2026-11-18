@@ -53,7 +53,7 @@ any caller with write access to the form may set it, the figaro itself included.
 }
 
 var keyWriterProse = map[form.Writer]string{
-	form.WriterOwner:   "Set or removed only by the owner: the local door, an in-process call, or the owner's principal. Every other caller, a box included, is refused. A box may still set `system.retired` on the figaros inside it.",
+	form.WriterOwner:   "Set or removed only by the owner: the local door, an in-process call, or the owner's principal. Every other caller, a box included, is refused. A box may still set or remove `system.retired` on the figaros inside it, so it unretires them as well as retiring them; that is intended. Removing `system.retired` unretires, and for any other caller that removal is refused like a set.",
 	form.WriterLineage: "Set by the owner, or by an ancestor figaro through its box door, and a figaro gives only what it holds. A figaro never sets its own.",
 	form.WriterRuntime: "Written by the daemon alone. An unprivileged patch that names one, to set or to remove it, is refused as written by the harness, not by hand. A row matches its own path only.",
 }
