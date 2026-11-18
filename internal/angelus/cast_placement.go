@@ -21,7 +21,7 @@ func (h *handlers) refuseCastPlacement(ctx context.Context, method, id string, p
 	if roleID == "" {
 		return nil
 	}
-	if authz.FigaroOf(ctx) == "" && h.callerOwns(ctx) {
+	if authz.FigaroOf(ctx) == "" && !authz.Claimed(ctx) && h.callerOwns(ctx) {
 		return nil
 	}
 	snap, err := h.angelus.Backend.FormState(roleID)

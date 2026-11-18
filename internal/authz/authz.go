@@ -25,6 +25,7 @@ type Identity struct {
 	Principal rpc.Principal
 	FigaroID  string
 	Label     string
+	Claimed   bool
 }
 
 type Authenticator interface {
@@ -34,7 +35,8 @@ type Authenticator interface {
 type AriaHeader struct{}
 
 func (AriaHeader) Authenticate(peer rpc.Principal, params json.RawMessage) Identity {
-	return Identity{Principal: peer, FigaroID: rpc.CallerOf(params), Label: rpc.LabelOf(params)}
+	figaro := rpc.CallerOf(params)
+	return Identity{Principal: peer, FigaroID: figaro, Label: rpc.LabelOf(params), Claimed: figaro != ""}
 }
 
 type callerKey struct{}
@@ -69,6 +71,11 @@ func identityOf(ctx context.Context) (Identity, bool) {
 func FigaroOf(ctx context.Context) string {
 	id, _ := identityOf(ctx)
 	return id.FigaroID
+}
+
+func Claimed(ctx context.Context) bool {
+	id, _ := identityOf(ctx)
+	return id.Claimed
 }
 
 func Admit(ctx context.Context, conn net.Conn) (context.Context, error) {

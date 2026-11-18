@@ -141,3 +141,26 @@ func TestAScopedSeatDemotesItselfUnderItsForkWithoutConsent(t *testing.T) {
 		t.Errorf("the seat is drawn under %q after its demote, want %q", got, heir)
 	}
 }
+
+// Review of F2: a claim the daemon drops (a figaro killed, or never held
+// here) must not leave its caller reading as the owner.
+func TestADroppedClaimIsNotTheOwner(t *testing.T) {
+	r := newOwnerRig(t, func(r ownerRig) []string { return []string{"read:*"} })
+	const unheld = "0123456789abcdef0123456789abcdef"
+	_ = r.arrange(t, unheld, r.kid, r.q)
+	if got := r.drawnUnder(t, r.kid); got != r.self {
+		t.Errorf("a dropped claim moved %s under %q without consent", r.kid, got)
+	}
+	if _, err := r.h[rpc.MethodCast](localOwner(), claimed(t, unheld, withAria(t, r.q, rpc.CastRequest{FormID: r.role}))); err == nil {
+		t.Errorf("a dropped claim cast %s into %s, a role held by %s", r.q, r.role, r.holder)
+	}
+	raw, _ := json.Marshal(rpc.DemoteRequest{FigaroID: r.self})
+	if out, err := r.h[rpc.MethodDemote](localOwner(), claimed(t, unheld, raw)); err == nil && out.(rpc.DemoteResponse).Parked == nil {
+		if got := r.drawnUnder(t, r.self); got == r.kid {
+			t.Errorf("a dropped claim demoted %s under %s without consent", r.self, r.kid)
+		}
+	}
+	if err := r.arrange(t, "", r.kid, r.q); err != nil || r.drawnUnder(t, r.kid) != r.q {
+		t.Fatalf("control: the owner at the terminal: %v, under %q", err, r.drawnUnder(t, r.kid))
+	}
+}

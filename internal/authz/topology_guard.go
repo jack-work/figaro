@@ -15,6 +15,7 @@ import (
 type TopologyCaller struct {
 	Subject jkauthz.Subject
 	Figaro  string
+	Claimed bool
 	Door    Door
 	Until   time.Time
 	Readmit func(context.Context) (jkauthz.Subject, error)
@@ -25,7 +26,7 @@ func TopologyPrincipal(ctx context.Context) (hierarchy.Principal, error) {
 	if err != nil {
 		return hierarchy.Principal{}, err
 	}
-	c := TopologyCaller{Subject: sub, Figaro: FigaroOf(ctx), Door: DoorOf(ctx)}
+	c := TopologyCaller{Subject: sub, Figaro: FigaroOf(ctx), Claimed: Claimed(ctx), Door: DoorOf(ctx)}
 	c.Until, c.Readmit = admission(ctx)
 	return hierarchy.Principal{Name: PrincipalText(PrincipalOf(ctx)), Subject: c}, nil
 }
@@ -217,7 +218,7 @@ func (g TopologyGuard) ownsParent(by hierarchy.Principal, c TopologyCaller, mint
 	if g.ownerish(minter) {
 		return g.isOwner(c)
 	}
-	return c.Door != DoorBox && c.Figaro == "" && by.Name == minter
+	return c.Door != DoorBox && c.Figaro == "" && !c.Claimed && by.Name == minter
 }
 
 func (g TopologyGuard) system(ctx context.Context, p hierarchy.Plan) error {
@@ -454,7 +455,7 @@ func (g TopologyGuard) owner() jkauthz.Principal {
 }
 
 func (g TopologyGuard) isOwner(c TopologyCaller) bool {
-	return c.Door != DoorBox && c.Figaro == "" && IsOwner(g.owner(), c.Subject)
+	return c.Door != DoorBox && c.Figaro == "" && !c.Claimed && IsOwner(g.owner(), c.Subject)
 }
 
 func (g TopologyGuard) ownerish(minter string) bool {
@@ -474,6 +475,9 @@ func (g TopologyGuard) zone(id string) string {
 }
 
 func (g TopologyGuard) allow(c TopologyCaller, verb rpc.Verb, id string) error {
+	if c.Claimed && c.Figaro == "" && c.Door.Trusted() {
+		return fmt.Errorf("%s on %s: the caller names a figaro this daemon does not hold", verb, Aria(id))
+	}
 	var pol *Policies
 	if g.Policies != nil {
 		pol = g.Policies()
