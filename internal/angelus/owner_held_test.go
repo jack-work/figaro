@@ -1,12 +1,14 @@
 package angelus_test
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/decide"
 )
 
@@ -100,8 +102,14 @@ principals = ["user:guest"]
 // the same guest may still set an open key, so the refusal is the key's and
 // not a missing grant.
 func TestAnUnboxedGuestCannotRedirectDumpsOrADecisionCredential(t *testing.T) {
+	t.Run("unknown door", func(t *testing.T) { guestCannotRedirect(t, as("user", "guest")) })
+	t.Run("local door", func(t *testing.T) { guestCannotRedirect(t, authz.WithDoor(as("user", "guest"), authz.DoorLocal)) })
+}
+
+// The local door is trusted, and a peercred-mapped uid on it is still not
+// the owner once a policy is loaded (review of E1, F2).
+func guestCannotRedirect(t *testing.T, guest context.Context) {
 	r := newRigWith(t, lentPolicy)
-	guest := as("user", "guest")
 	resp, err := r.create(asOwner(), "mock")
 	if err != nil {
 		t.Fatal(err)

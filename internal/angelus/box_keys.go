@@ -484,7 +484,10 @@ func (h *handlers) callerOwns(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	return h.passesUnpoliced(ctx, sub)
+	if h.angelus.Policies == nil {
+		return h.passesUnpoliced(ctx, sub)
+	}
+	return authz.DoorOf(ctx) == authz.DoorInProcess || authz.IsOwner(h.angelus.owner(), sub)
 }
 
 func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, params json.RawMessage) error {
