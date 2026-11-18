@@ -52,8 +52,14 @@ type Provider struct {
 }
 
 func (p Provider) Open(_ context.Context, spec sandbox.Spec) (sandbox.Sandbox, error) {
+	var cgroup func() (int, error)
+	if p.Host != nil && p.Host.Tools != nil {
+		tools, figaro := p.Host.Tools, spec.Figaro
+		cgroup = func() (int, error) { return tools.FD(figaro) }
+	}
 	return New(p.Host, spec.Figaro, &Sandbox{
 		Workspace: spec.Workspace,
+		Cgroup:    cgroup,
 		Env:       MergeEnv(Environ(), spec.Env),
 		Argv:      func(_, command string) []string { return []string{bashPath(), "-c", command} },
 		Files:     FS{},
@@ -67,6 +73,7 @@ type Sandbox struct {
 	Argv      func(dir, command string) []string
 	Files     sandbox.FS
 	Claims    sandbox.Isolation
+	Cgroup    func() (int, error)
 	sessions  sandbox.Sessions
 }
 
@@ -93,7 +100,14 @@ func (s *Sandbox) Exec(ctx context.Context, req sandbox.ExecRequest) (sandbox.Pr
 	} else if !info.IsDir() {
 		return nil, fmt.Errorf("%s: not a directory", dir)
 	}
-	return Start(ctx, s.Argv(dir, req.Command), dir, MergeEnv(s.Env, req.Env), req)
+	fd := -1
+	if s.Cgroup != nil {
+		var err error
+		if fd, err = s.Cgroup(); err != nil {
+			return nil, fmt.Errorf("%w; [authz] peer_check = false runs tools unattributed", err)
+		}
+	}
+	return StartIn(ctx, s.Argv(dir, req.Command), dir, MergeEnv(s.Env, req.Env), req, fd)
 }
 
 func (s *Sandbox) Sessions() sandbox.Sessions   { return s.sessions }
