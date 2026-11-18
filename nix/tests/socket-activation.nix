@@ -2,13 +2,14 @@
 pkgs.testers.runNixOSTest {
   name = "figaro-socket-activation";
 
-  nodes.activated = {
+  nodes.activated = { lib, ... }: {
     imports = [ self.nixosModules.default ];
     services.figaro = {
       enable = true;
       socketActivation = true;
       socketMode = "0660";
     };
+    specialisation.tight.configuration.services.figaro.socketMode = lib.mkForce "0600";
     users.users.intruder = {
       isNormalUser = true;
       extraGroups = [ "figaro" ];
@@ -79,6 +80,20 @@ pkgs.testers.runNixOSTest {
     with subtest("the angelus still owns its runtime files beside the manager's socket"):
         activated.succeed("test -f /run/figaro/angelus.pid")
         print(activated.succeed("ls -la /run/figaro"))
+
+    with subtest("a switch that tightens socketMode replaces the socket, and stopping the socket removes it"):
+        base_gen = activated.succeed("readlink -f /run/current-system").strip()
+        activated.succeed("/run/current-system/specialisation/tight/bin/switch-to-configuration test")
+        activated.wait_for_unit("figaro.socket")
+        assert activated.succeed("stat -c %a /run/figaro/angelus.sock").strip() == "600"
+        fig(activated, "ls --json")
+        activated.succeed(f"{base_gen}/bin/switch-to-configuration test")
+        activated.wait_for_unit("figaro.socket")
+        assert activated.succeed("stat -c %a /run/figaro/angelus.sock").strip() == "660"
+        activated.succeed("systemctl stop figaro.service figaro.socket")
+        activated.fail("test -e /run/figaro/angelus.sock")
+        activated.succeed("systemctl start figaro.socket")
+        activated.wait_for_unit("figaro.socket")
 
     with subtest("without socket activation the daemon binds the socket itself, as before"):
         bound.wait_for_unit("figaro.service")

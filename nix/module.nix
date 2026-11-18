@@ -162,6 +162,7 @@ in
         SocketGroup = cfg.user;
         SocketMode = cfg.socketMode;
         DirectoryMode = "0750";
+        RemoveOnStop = true;
       };
     };
 
@@ -171,6 +172,7 @@ in
       after = [ "network-online.target" ] ++ lib.optional cfg.socketActivation "figaro.socket";
       wants = [ "network-online.target" ];
       requires = lib.optional cfg.socketActivation "figaro.socket";
+      restartTriggers = lib.optional cfg.socketActivation config.systemd.units."figaro.socket".unit;
       path = cfg.toolPackages;
       environment = {
         HOME = cfg.stateDir;
@@ -205,7 +207,8 @@ in
         LoadCredential = lib.mapAttrsToList (id: src: "${id}:${src}") (lib.filterAttrs (_: src: src != "") cfg.credentials);
         SetCredential = lib.mapAttrsToList (id: _: "${id}:") (lib.filterAttrs (_: src: src != "") cfg.credentials);
         ImportCredential = lib.attrNames (lib.filterAttrs (_: src: src == "") cfg.credentials);
-      } // lib.optionalAttrs (cfg.memoryMax != null) { MemoryMax = cfg.memoryMax; };
+      } // lib.optionalAttrs cfg.socketActivation { Sockets = "figaro.socket"; }
+        // lib.optionalAttrs (cfg.memoryMax != null) { MemoryMax = cfg.memoryMax; };
     };
 
     environment.systemPackages = [ cfg.package ];
