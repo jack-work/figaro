@@ -143,7 +143,7 @@ func (r *AriaReader) serverFor(id string) (*aria.Server, *aria.Metrics, error) {
 		}
 	}
 	ra.srv.Restore(turns)
-	ra.metrics = r.metrics(id, msgs)
+	ra.metrics = r.sidecarMetrics(id, log, tailLT)
 	return ra.srv, ra.metrics, nil
 }
 
@@ -172,6 +172,37 @@ func (r *AriaReader) Form(id string) (form.Snapshot, uint64, error) {
 		return form.Snapshot{}, 0, fmt.Errorf("form %s version: %w", id, err)
 	}
 	return snap, version, nil
+}
+
+// sidecarMetrics is what the agent shows once woken: the _meta sidecar, with
+// the records past its watermark folded in. Without a sidecar it folds the log.
+func (r *AriaReader) sidecarMetrics(id string, log arialog.Log[message.Message], tailLT uint64) *aria.Metrics {
+	meta, err := r.backend.Meta(id)
+	if err != nil || meta == nil {
+		msgs, _, err := r.messages(id)
+		if err != nil {
+			return &aria.Metrics{}
+		}
+		return r.metrics(id, msgs)
+	}
+	held := *meta
+	if held.LastFigaroLT > 0 && held.LastFigaroLT < tailLT {
+		for _, e := range log.ReadFrom(held.LastFigaroLT+1, int(tailLT-held.LastFigaroLT)) {
+			if e.LT > held.LastFigaroLT && e.LT <= tailLT {
+				held.Fold(e)
+			}
+		}
+	}
+	m := &aria.Metrics{
+		ContextTokens: held.ContextTokens, ContextExact: held.ContextExact,
+		TokensIn: held.TokensIn, TokensOut: held.TokensOut,
+		CacheReadTokens: held.CacheReadTokens, CacheWriteTokens: held.CacheWriteTokens,
+	}
+	if snap, _, err := r.Form(id); err == nil {
+		m.Mantra = snapString(snap, "mantra")
+		r.models.Want(models.Subject(snap))
+	}
+	return m
 }
 
 // metrics matches the agent's refreshMetricsFrom minus what only a live turn knows.
