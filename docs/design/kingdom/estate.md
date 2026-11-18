@@ -58,3 +58,7 @@ house mode.
 1. rou2 needs a control socket against the new layout (status and refresh moved to the admin socket) before any rou2 host switches from `services.hush-cred` to `services.hush`. Owner: rou2's Engineer, via the King.
 2. hush `feat/anthropic-max-login` (worktree /var/tmp/hush-anthropic-max) must merge before the move, so the anthropic-max sign-in state moves under the new service. Owner: the Figaro Engineer (hush).
 Both gate spain's daytime window, not tonight's work.
+
+## Deferred: scoping the drop box (from rou2's review, 11-18)
+
+The drop box's sign-in and refresh routes reach every instance. A drop user can re-sign or refresh any of them. Neither route ever returns a token. If house mode wants this narrower, one change scopes both: a per-principal list of instances the principal may manage, kept separate from `credentials` (which grants `GET /cred`). Raise it when E4 shapes the owner principal config.
