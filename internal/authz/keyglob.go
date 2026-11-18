@@ -24,13 +24,39 @@ func keyed(sel, glob string) string {
 func KeyGlobMatch(pattern, key string) bool { return form.KeyGlobMatch(pattern, key) }
 
 func globCovers(a, b string) bool {
-	if a == "" {
+	switch {
+	case a == "" || a == b:
 		return true
-	}
-	if b == "" {
+	case b == "":
 		return false
 	}
-	return a == b || KeyGlobMatch(a, b)
+	if class, ok := strings.CutPrefix(a, form.KeyClassPrefix); ok {
+		return !strings.Contains(b, "*") && !strings.HasPrefix(b, form.KeyClassPrefix) && form.WriterOf(b).String() == class
+	}
+	if strings.HasPrefix(b, form.KeyClassPrefix) {
+		return a == "**"
+	}
+	return segmentsCover(strings.Split(a, "."), strings.Split(b, "."))
+}
+
+func segmentsCover(a, b []string) bool {
+	if len(a) == 0 {
+		return len(b) == 0
+	}
+	if a[0] == "**" {
+		return segmentsCover(a[1:], b) || (len(b) > 0 && segmentsCover(a, b[1:]))
+	}
+	if len(b) == 0 || b[0] == "**" {
+		return false
+	}
+	if strings.Contains(b[0], "*") {
+		if a[0] != "*" && a[0] != b[0] {
+			return false
+		}
+	} else if !KeyGlobMatch(a[0], b[0]) {
+		return false
+	}
+	return segmentsCover(a[1:], b[1:])
 }
 
 func validateKeyGlob(glob string) error {
