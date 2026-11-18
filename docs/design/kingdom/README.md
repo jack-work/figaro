@@ -13,7 +13,7 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 **Running through the day (Gluck 10:0x: until all of it ships; no quota pauses).** Strategist forks, 7 of 7:
 - P4: varied-username `f0fbbf89`
 - E1 LOWs, then E3: llama-widow `937e1be4`
-- P2+P5 landing: blouse-pretzel `1f6e3ae2`
+- P5 finish (E8 findings), then the fold: `eb4da540` (took over from blouse-pretzel; handoff /var/tmp/kingdom-part-p2p5-handoff.md)
 - P6: keepsake-avalanche `874637fe`
 - P7b laws: urchin-yacht `ee3ef672`
 - E4 house mode: utensil-slapping `ef74d1d6`
