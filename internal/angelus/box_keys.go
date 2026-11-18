@@ -651,6 +651,9 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 		return err
 	}
 	if shapesOnly {
+		if err := refuseRuntimeKeys(snap, *patch); err != nil {
+			return err
+		}
 		return refuseMisshapenKeys(snap.Apply(*patch), *patch)
 	}
 	line := lineage{of: id}

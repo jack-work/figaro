@@ -32,9 +32,11 @@ that list), a protected key, or the key the role's `succession-policy.handoff-ke
 names. The one exception is `system.fanout` and what is under it: the owner
 itself may manage it on a role, from an unboxed caller that names no figaro.
 Any other caller, including another principal on the local door, a box, or
-a call carrying a figaro claim (held or not), gets runtime-owned. Ordinary
+a call carrying a figaro claim (held or not), is refused: the path is reserved. Ordinary
 caller read/set authorization and outfit restrictions still apply;
-`--managed` is not an authorization grant.
+`--managed` is not an authorization grant. A key only the daemon writes
+(`runtime.*`, `model`, `token_budget`, `truncation`) is refused for every
+caller, the owner included.
 
 ## Check, apply and uncertain outcomes
 
