@@ -11,6 +11,8 @@ import (
 var requestFieldCapabilities = map[string]rpc.Capability{
 	"SeatRequest.FigaroID":            rpc.CapSeat,
 	"SeatRequest.Successor":           rpc.CapSeat,
+	"PlaceRequest.FigaroID":           rpc.CapPlace,
+	"PlaceRequest.Under":              rpc.CapPlace,
 	"QuaRequest.Images":               rpc.CapQuaImages,
 	"SetRequest.Seq":                  rpc.CapFormSeq,
 	"SetRequest.Client":               rpc.CapFormSeq,

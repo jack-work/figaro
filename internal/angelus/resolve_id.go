@@ -23,7 +23,7 @@ const (
 	fullIDLen     = 32
 )
 
-var secondaryIDKeys = []string{"form_id", "role_id", "against", "prefer"}
+var secondaryIDKeys = []string{"form_id", "role_id", "against", "prefer", "under"}
 
 func (h *handlers) resolvingIDs(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {

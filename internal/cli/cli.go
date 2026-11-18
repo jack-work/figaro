@@ -1271,6 +1271,35 @@ children is left where it is. ` + "`figaro succeed`" + ` demotes the aria it rep
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "place",
+		Group: "Session",
+		Short: "Draw a figaro under another figaro or form",
+		Usage: "place [--id <id> | <id>] --under <parent> [-j]",
+		Long: `Draw a figaro, and everything drawn under it, under another figaro or
+form in the tree ` + "`figaro ls`" + ` draws. Presentation only: no history moves.
+
+  figaro place <id> --under <parent>
+
+A parent drawn under the figaro itself is refused, as is a parent whose
+max_children it would overfill. Under a parent you did not mint, and on
+which you hold no adopt, the move waits as a proposal until its holder
+runs ` + "`figaro adopt accept <parent> <proposal>`" + `.`,
+		ArgsMin: 0,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Figaro to place (defaults to this shell's)"},
+			{Long: "under", Description: "The figaro or form to draw it under"},
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			runPlace(ld, ctx.Flag("id"), ctx.Args, ctx.Flag("under"), ctx.BoolFlag("json"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "kill",
 		Group: "Session",
 		Short: "Stop a trunk and reap it; purged after a grace",
