@@ -215,7 +215,7 @@ func (g TopologyGuard) ownsParent(by hierarchy.Principal, c TopologyCaller, mint
 	if g.ownerish(minter) {
 		return g.isOwner(c)
 	}
-	return c.Door != DoorBox && by.Name == minter
+	return c.Door != DoorBox && c.Figaro == "" && by.Name == minter
 }
 
 func (g TopologyGuard) system(ctx context.Context, p hierarchy.Plan) error {
@@ -452,7 +452,7 @@ func (g TopologyGuard) owner() jkauthz.Principal {
 }
 
 func (g TopologyGuard) isOwner(c TopologyCaller) bool {
-	return c.Door != DoorBox && IsOwner(g.owner(), c.Subject)
+	return c.Door != DoorBox && c.Figaro == "" && IsOwner(g.owner(), c.Subject)
 }
 
 func (g TopologyGuard) ownerish(minter string) bool {
