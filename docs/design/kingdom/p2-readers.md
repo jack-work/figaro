@@ -35,15 +35,16 @@ outfits), and this repo's skills/ and docs/.
 |---|---|
 | skills/figaro/cli.md:307 | `system.retired = "context"` -> `runtime.retired = "context"` |
 | skills/figaro/forms.md:65 | `system.studies` -> `runtime.studies` |
-| skills/figaro/reference/architecture.md:379,398,402 | `system.studies`, `system.retired` -> `runtime.*`; the box exception names the request key `system.retired` |
+| skills/figaro/reference/architecture.md:379,398,402 | `system.studies` dropped from the box-held list (runtime class now); `system.retired` described as the request; a new "Runtime keys" paragraph |
 | skills/figaro/reference/key-writers.md | regenerated from the registry |
 | skills/figaro/reference/ui-stream.md:291 | `system.forked_from` -> `runtime.forked_from` |
 | skills/figaro/reference/trunks.md:161 | none: `forked_from` there is a field of the fork reminder body |
 
 ## In this repo: code (changed in the same commit)
 
-Every reader goes through `form.RuntimeValue`, which reads the new name and
-falls back to the old one for one release: store (tombstone, checkpoint
+Every reader goes through `form.RuntimeGet`, `RuntimeHas`, `RuntimeLookup`
+or `RuntimeEntry`, which read the new name and fall back to the old one for
+one release: store (tombstone, checkpoint
 marks, studies reconcile, lifetime sink, libretto mirror), angelus (birth
 patch, box keys, topology), cli (formdeltas fork parent, forkjump,
 turn_failure, doctor tombstones, retire), figaro (failure, study,
@@ -54,6 +55,6 @@ succession) and provider (fork render).
 - `turn.*`, `inflight`: on the status form, not the bound form; that form is
   runtime class already.
 - `system.reaped`, `system.reaped_until`, `system.reaped_by`: daemon-written
-  by kill, but not on P2's list; open for P6 with the rest of kill.
+  by kill, but not on P2's list. Open question for the Strategist.
 - `model`, `token_budget`, `truncation`: runtime rows at top level, not
   under system; left where they are.
