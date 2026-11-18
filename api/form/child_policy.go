@@ -52,5 +52,33 @@ func ChildPolicyPatch(parent Snapshot, figaroMade bool) (Patch, error) {
 		}
 		keys = DefaultChildPolicy()
 	}
-	return Build(Snapshot{}, keys, nil), nil
+	p := Build(Snapshot{}, keys, nil)
+	if _, own, over := policyFanoutOver(parent, p); over {
+		raw, _ := json.Marshal(own)
+		p = Merge(p, Build(Snapshot{}, map[string]json.RawMessage{FanoutMaxChildrenKey: raw}, nil))
+	}
+	return p, nil
+}
+
+func policyFanoutOver(holder Snapshot, policy Patch) (n, own int, over bool) {
+	n, carried, _ := FanoutMaxChildren(Snapshot{}.Apply(policy))
+	if !carried {
+		return 0, 0, false
+	}
+	own, capped, err := FanoutMaxChildren(holder)
+	if err != nil || !capped {
+		return n, 0, false
+	}
+	return n, own, n > own
+}
+
+func CheckChildPolicyFanout(holder Snapshot) error {
+	keys, set, err := ChildPolicy(holder)
+	if err != nil || !set {
+		return err
+	}
+	if n, own, over := policyFanoutOver(holder, Build(Snapshot{}, keys, nil)); over {
+		return fmt.Errorf("%s: a child would hold %s %d, more than this figaro's own %d; a figaro gives only what it holds", ChildPolicyKey, FanoutMaxChildrenKey, n, own)
+	}
+	return nil
 }

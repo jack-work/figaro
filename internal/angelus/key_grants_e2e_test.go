@@ -202,3 +202,34 @@ func TestAChildPolicyCarriesOnlyWellShapedValues(t *testing.T) {
 		t.Fatalf("policy thinking_budget %s", v)
 	}
 }
+
+// Defends give-only-what-you-hold on a child policy's max_children: above the
+// figaro's own it is refused when written, and at or below it the policy beats
+// the cap of 0 a figaro's fork is born with when the policy is silent.
+func TestAChildPolicyGivesMaxChildrenUpToItsHoldersOwn(t *testing.T) {
+	r := newLineageRig(t, "")
+	c := r.dial(t)
+	r.ownerSets(t, r.child, map[string]any{form.FanoutMaxChildrenKey: 3})
+	over := *heldPatch(t, map[string]any{form.ChildPolicyKey: map[string]any{form.FanoutMaxChildrenKey: 4}})
+	if err := r.setAs(t, c, r.parent, r.child, over); err == nil || !strings.Contains(err.Error(), "more than this figaro's own 3") {
+		t.Fatalf("an ancestor wrote a policy above the holder's own: %v", err)
+	}
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: over})); err == nil || !strings.Contains(err.Error(), "more than this figaro's own 3") {
+		t.Fatalf("the owner wrote a policy above the holder's own: %v", err)
+	}
+	if err := r.setAs(t, c, r.parent, r.child, *heldPatch(t, map[string]any{form.ChildPolicyKey: map[string]any{form.FanoutMaxChildrenKey: 2}})); err != nil {
+		t.Fatalf("a policy under the holder's own was refused: %v", err)
+	}
+	kid := r.forkAsFigaro(t, r.child)
+	if v, _ := keyOn(t, r.grantRig, kid, form.FanoutMaxChildrenKey); string(v) != `2` {
+		t.Fatalf("the policy's max_children lost to the birth cap: %s", v)
+	}
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: form.Build(form.Snapshot{}, nil, []string{form.ChildPolicyKey})})); err != nil {
+		t.Fatal(err)
+	}
+	r.ownerSets(t, r.child, map[string]any{form.ChildPolicyKey: map[string]any{"mantra": "quiet on fanout"}})
+	kid = r.forkAsFigaro(t, r.child)
+	if v, _ := keyOn(t, r.grantRig, kid, form.FanoutMaxChildrenKey); string(v) != `0` {
+		t.Fatalf("a policy silent on fanout gave a figaro's fork %s, not the cap of 0", v)
+	}
+}
