@@ -11,7 +11,7 @@ import (
 const SystemRetirementKey = form.RetirementKey
 
 const (
-	SystemSuccessionWarnedKey = "system.succession_warned"
+	SystemSuccessionWarnedKey = form.SuccessionWarnedKey
 	SystemSuccessionFailedKey = "system.succession_failed"
 )
 
@@ -38,7 +38,7 @@ func RetiredReason(raw string) string {
 }
 
 func RetiredIn(snap form.Snapshot) bool {
-	raw, ok := snap.Get(SystemRetiredKey)
+	raw, ok := form.RuntimeGet(snap, RetiredKey)
 	return ok && RetiredReason(lifetimeString(raw)) != ""
 }
 

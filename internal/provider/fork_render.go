@@ -24,7 +24,7 @@ func ForkReminderTexts(msg message.Message, bound form.Snapshot) []string {
 
 func forkedFrom(patches []message.Patch) (string, bool) {
 	for _, p := range patches {
-		e, ok := p.Entry(form.ForkedFromKey)
+		e, ok := form.RuntimeEntry(p, form.ForkedFromKey)
 		if !ok || e.IsRemoval() {
 			continue
 		}

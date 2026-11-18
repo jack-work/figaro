@@ -155,16 +155,17 @@ func TestStudyWindowIsFoldedToItsResult(t *testing.T) {
 	}
 }
 
-// system.* keys are not rendered.
+// system.* and runtime.* keys are not rendered.
 func TestStudyRenderSkipsTheHarnessNamespace(t *testing.T) {
 	msg := message.Message{StudyPatches: map[string][]message.Patch{
 		"@r": {form.Build(form.Snapshot{}, map[string]json.RawMessage{
-			"system.studies": json.RawMessage(`["@x"]`),
-			"brief":          json.RawMessage(`"visible"`),
+			"system.studies":  json.RawMessage(`["@x"]`),
+			"runtime.studies": json.RawMessage(`["@y"]`),
+			"brief":           json.RawMessage(`"visible"`),
 		}, nil)},
 	}}
 	joined := strings.Join(StudyReminderTexts(msg, form.Snapshot{}), "\n")
-	if strings.Contains(joined, "system.studies") {
+	if strings.Contains(joined, "system.studies") || strings.Contains(joined, "runtime.studies") {
 		t.Errorf("harness namespace leaked: %s", joined)
 	}
 	if !strings.Contains(joined, "visible") {

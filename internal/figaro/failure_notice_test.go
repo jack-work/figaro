@@ -58,7 +58,7 @@ func TestAFailedTurnTellsItsFigaroSenderOnce(t *testing.T) {
 	require.Len(t, got, 1, "the figaro that sent the failed turn's message was told %d times", len(got))
 	require.Equal(t, senderA, got[0].To)
 	require.Equal(t, a.ID(), got[0].From)
-	require.Equal(t, "figaro "+a.ID()+": turn 1 failed (rate_limited). The reason is in system.failure.reason on its form.", got[0].Text)
+	require.Equal(t, "figaro "+a.ID()+": turn 1 failed (rate_limited). The reason is in runtime.failure.reason on its form.", got[0].Text)
 	require.NotContains(t, got[0].Text, "7-day", "the notice carries the upstream's words into another figaro's prompt")
 }
 

@@ -690,14 +690,20 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	// The form last, as one patch; aria_id is re-stamped because the export
 	// carries the id it had in the source store.
 	keys := importedKeys(req.Form)
-	// system.studies is refcounted on a shared libretto, so it is replayed
+	// runtime.studies is refcounted on a shared libretto, so it is replayed
 	// through the verb below rather than copied as a key.
 	var studies []string
-	if raw, ok := keys[figaro.StudiesKey]; ok {
-		if err := json.Unmarshal(raw, &studies); err != nil {
-			return nil, fmt.Errorf("import: %s: %w", figaro.StudiesKey, err)
+	for _, k := range form.RuntimeDrops(figaro.StudiesKey) {
+		raw, ok := keys[k]
+		if !ok {
+			continue
 		}
-		delete(keys, figaro.StudiesKey)
+		if studies == nil {
+			if err := json.Unmarshal(raw, &studies); err != nil {
+				return nil, fmt.Errorf("import: %s: %w", k, err)
+			}
+		}
+		delete(keys, k)
 	}
 	studyKeys := map[string][]string{}
 	for k, raw := range keys {

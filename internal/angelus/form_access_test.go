@@ -42,7 +42,7 @@ func TestAFormReadCarriesTheCallersAccess(t *testing.T) {
 	if _, denied := a.Refusal("system.model"); denied {
 		t.Error("the owner is told system.model is not theirs to set")
 	}
-	if d, denied := a.Refusal("system.studies"); !denied || d.Kind != rpc.DenySystemManaged {
+	if d, denied := a.Refusal("runtime.studies"); !denied || d.Kind != rpc.DenySystemManaged {
 		t.Errorf("system.studies for the owner = %+v %v, want system-managed", d, denied)
 	}
 

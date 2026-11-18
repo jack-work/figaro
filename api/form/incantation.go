@@ -9,7 +9,6 @@ import (
 const (
 	StudyIncantationKey = "system.study_incantation"
 	ForkIncantationKey  = "system.fork_incantation"
-	ForkedFromKey       = "system.forked_from"
 )
 
 // StudyIncantation is the phrase per study lifecycle event; an empty field
