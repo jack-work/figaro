@@ -28,10 +28,25 @@ func (r *restartRig) laneOf(parent string) string {
 	return out.Alternative
 }
 
-// Defends the send of a lane, end to end through the real CLI: every send
-// carries the sender's datetime in its context, and that key is not a write
-// the lane needs a grant for on the figaro it sends to.
-func TestADefaultLaneSendsToItsParent(t *testing.T) {
+func (r *restartRig) roleFor(holder, name string) string {
+	r.t.Helper()
+	raw := r.run("cast", holder, "-S", "name="+name, "-j")
+	var out struct {
+		RoleID string `json:"role_id"`
+	}
+	lines := strings.Split(strings.TrimSpace(raw), "\n")
+	if json.Unmarshal([]byte(lines[len(lines)-1]), &out) != nil || out.RoleID == "" {
+		r.t.Fatalf("cast %s -S name=%s -j printed no role: %q", holder, name, raw)
+	}
+	return out.RoleID
+}
+
+// Defends the sends of a lane, end to end through the real CLI: every send
+// carries the sender's datetime in its context, which is not a write the lane
+// needs a grant for on its receiver; and a role resolves on the daemon under
+// the send grant, so a lane holding send:role:@R and no read on R reaches R's
+// holder.
+func TestADefaultLaneSendsToItsParentAndToItsRole(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns a daemon; skipped under -short")
 	}
@@ -49,4 +64,16 @@ func TestADefaultLaneSendsToItsParent(t *testing.T) {
 	if out, err := r.as(lane, "send", "-f", "--id", stranger, "--", "lane to a stranger"); err == nil {
 		t.Fatalf("a default lane sent to a figaro outside its grant:\n%s", out)
 	}
+
+	desk := r.roleFor(stranger, "desk")
+	if out, err := r.as(lane, "send", "-f", "--id", desk, "--", "lane to a role it was not given"); err == nil {
+		t.Fatalf("a default lane sent to a role outside its grant:\n%s", out)
+	}
+	r.run("set", "--id", parent, "system.child_policy", `{"system.scopes": ["send:parent", "send:role:`+desk+`", "read:aria:self", "write:aria:self#@self", "delete:aria:self#@self"]}`)
+	clerk := r.laneOf(parent)
+	n := prov.count()
+	if out, err := r.as(clerk, "send", "-f", "--id", desk, "--", "lane to its role"); err != nil {
+		t.Fatalf("a lane holding send:role:%s could not send to it: %v\n%s", desk, err, out)
+	}
+	prov.awaitAsk(t, n, 30*time.Second, "lane to its role")
 }

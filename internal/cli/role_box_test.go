@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -56,6 +57,44 @@ func TestARoleHeldInABoxIsFollowedOnlyIntoIt(t *testing.T) {
 	id, _, err := redirectRole(context.Background(), nil, acli, "@seat", ariaAddr("@seat"))
 	if err != nil || id != inside {
 		t.Fatalf("a sound role in box0: id %q, %v", id, err)
+	}
+}
+
+// Defends the daemon's answer: a role the attach resolves is followed without
+// reading its form, which a caller holding only send cannot, and a role the
+// daemon refuses to follow is refused here with its reason.
+func TestARoleIsFollowedAsTheDaemonResolvesIt(t *testing.T) {
+	root := completionTestDirs(t)
+	t.Setenv("FIGARO_CONFIG_DIR", t.TempDir())
+	t.Setenv("FIGARO_TROUPE", "")
+	const holder = "11111111111111111111111111111111"
+	role := &rpc.RoleHolder{Holder: holder}
+	fakeRPCServer(t, filepath.Join(root, "angelus.sock"), map[string]jkrpc.HandlerFunc{
+		rpc.MethodAttach: func(_ context.Context, p json.RawMessage) (any, error) {
+			var req rpc.AttachRequest
+			_ = json.Unmarshal(p, &req)
+			if req.FigaroID == "@desk" {
+				return rpc.AttachResponse{FigaroID: req.FigaroID, Role: role}, nil
+			}
+			return rpc.AttachResponse{FigaroID: req.FigaroID}, nil
+		},
+		rpc.MethodForm: func(_ context.Context, p json.RawMessage) (any, error) {
+			return nil, errors.New("figaro.form: aria " + rpc.AriaOf(p) + " not found")
+		},
+	})
+	resetDoorCache(t)
+	acli, err := sdk.DialAngelus(doorEndpoint())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { acli.Close() })
+
+	if id, _, err := redirectRole(context.Background(), nil, acli, "@desk", ariaAddr("@desk")); err != nil || id != holder {
+		t.Fatalf("a role the daemon resolved: id %q, %v", id, err)
+	}
+	role = &rpc.RoleHolder{Refused: "role @desk: a role held in box box0 points only at an aria in it"}
+	if _, _, err := redirectRole(context.Background(), nil, acli, "@desk", ariaAddr("@desk")); err == nil || !strings.Contains(err.Error(), "points only at an aria in it") {
+		t.Fatalf("followed a role the daemon refused: %v", err)
 	}
 }
 

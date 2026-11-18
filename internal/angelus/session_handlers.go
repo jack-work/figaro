@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
@@ -71,7 +72,28 @@ func (h *handlers) attach(ctx context.Context, params json.RawMessage) (interfac
 	if err := h.requireAria(req.FigaroID); err != nil {
 		return nil, fmt.Errorf("attach %s: %w", req.FigaroID, err)
 	}
-	return rpc.AttachResponse{FigaroID: req.FigaroID, May: h.mayOn(ctx, req.FigaroID)}, nil
+	return rpc.AttachResponse{FigaroID: req.FigaroID, May: h.mayOn(ctx, req.FigaroID), Role: h.roleHolder(req.FigaroID)}, nil
+}
+
+func (h *handlers) roleHolder(id string) *rpc.RoleHolder {
+	if !strings.HasPrefix(id, "@") || h.angelus.Backend == nil {
+		return nil
+	}
+	snap, err := h.angelus.Backend.FormState(id)
+	if err != nil {
+		return nil
+	}
+	target := snap.Lookup("target-aria")
+	if target == nil || *target == "" {
+		return nil
+	}
+	if strings.Contains(*target, "@") {
+		return &rpc.RoleHolder{Refused: fmt.Sprintf("role %s: target-aria %q is a form, not an aria; roles do not chain", id, *target)}
+	}
+	if err := h.refuseRoleOutOfBox(snap); err != nil {
+		return &rpc.RoleHolder{Refused: fmt.Sprintf("role %s: %v", id, err)}
+	}
+	return &rpc.RoleHolder{Holder: *target, Sandbox: h.heldBox(snap)}
 }
 
 func (h *handlers) mayOn(ctx context.Context, id string) []rpc.Verb {
