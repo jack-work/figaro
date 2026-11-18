@@ -1,6 +1,7 @@
 package wire_test
 
 import (
+	"context"
 	"reflect"
 	"slices"
 	"testing"
@@ -59,7 +60,7 @@ func TestNormalizeDropsTheOverrideHistoryNowAgreesWith(t *testing.T) {
 	if err := b.HierarchyEngine().WriteDrawn(map[string]string{conv: "null"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	r, err := b.Normalize(false)
+	r, err := b.Normalize(context.Background(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +80,7 @@ func TestNormalizeDropsTheOverrideHistoryNowAgreesWith(t *testing.T) {
 // history now says the root: it decides which delete sets the aria is in.
 func TestNormalizeKeepsAnOverrideToANodeThatIsNotItsHistory(t *testing.T) {
 	b, _, _, alt := promotedPair(t)
-	r, err := b.Normalize(false)
+	r, err := b.Normalize(context.Background(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +138,7 @@ func TestAnAriaDrawnAwayFromATTLdBirthFormSurvivesItsExpiryAfterAClean(t *testin
 func TestNormalizeDryRunReportsTheRealRun(t *testing.T) {
 	b, _, _, _ := promotedPair(t)
 	edges := b.Store().Tree().Edges()
-	plan, err := b.Normalize(true)
+	plan, err := b.Normalize(context.Background(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +148,7 @@ func TestNormalizeDryRunReportsTheRealRun(t *testing.T) {
 	if b.Store().Tree().Normalized() {
 		t.Fatal("the dry run detached something")
 	}
-	done, err := b.Normalize(false)
+	done, err := b.Normalize(context.Background(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
