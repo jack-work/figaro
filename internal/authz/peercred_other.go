@@ -20,8 +20,13 @@ func peer(conn net.Conn) (rpc.Principal, error) {
 }
 
 func PeerUID(conn net.Conn) (uint32, error) {
+	uid, _, err := PeerCred(conn)
+	return uid, err
+}
+
+func PeerCred(conn net.Conn) (uint32, int32, error) {
 	if _, ok := conn.(*net.UnixConn); !ok {
-		return 0, fmt.Errorf("%w: peercred vouches only for a unix socket, not %T", ErrUnadmitted, conn)
+		return 0, 0, fmt.Errorf("%w: peercred vouches only for a unix socket, not %T", ErrUnadmitted, conn)
 	}
-	return uint32(os.Getuid()), nil
+	return uint32(os.Getuid()), 0, nil
 }

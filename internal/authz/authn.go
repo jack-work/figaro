@@ -20,6 +20,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/apikey"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/toolcgroup"
 	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkauthz/bearer"
 )
@@ -40,6 +41,7 @@ func kindOf(name string) (jkauthz.Kind, error) {
 }
 
 type Peercred struct {
+	tools   *toolcgroup.Registry
 	self    jkauthz.Principal
 	selfUID uint32
 	uids    map[uint32]jkauthz.Principal
@@ -76,6 +78,8 @@ func NewPeercred(selfUID uint32, cfg config.PeercredConfig) (*Peercred, error) {
 }
 
 func (p *Peercred) Self() jkauthz.Principal { return p.self }
+
+func (p *Peercred) AttributeTools(reg *toolcgroup.Registry) { p.tools = reg }
 
 func (p *Peercred) Subject(uid uint32) (jkauthz.Subject, error) {
 	if uid == p.selfUID {
@@ -506,7 +510,7 @@ func (s *Session) Present(ctx context.Context, token string) error {
 }
 
 func (p *Peercred) Admit(ctx context.Context, conn net.Conn) (context.Context, error) {
-	uid, err := PeerUID(conn)
+	uid, pid, err := PeerCred(conn)
 	if err != nil {
 		return nil, err
 	}
@@ -514,7 +518,27 @@ func (p *Peercred) Admit(ctx context.Context, conn net.Conn) (context.Context, e
 	if err != nil {
 		return nil, err
 	}
-	return WithSubject(ctx, s), nil
+	ctx = WithSubject(ctx, s)
+	if p.tools == nil {
+		return ctx, nil
+	}
+	figaro, err := p.toolOf(pid)
+	if err != nil {
+		return nil, err
+	}
+	if figaro != "" {
+		ctx = WithToolOf(ctx, figaro)
+	}
+	return ctx, nil
+}
+
+func (p *Peercred) toolOf(pid int32) (string, error) {
+	cg, err := toolcgroup.ProcCgroupOf(int(pid))
+	if err != nil {
+		return "", fmt.Errorf("%w: the caller's cgroup is unreadable, so it may be a figaro's tool: %v", ErrUnadmitted, err)
+	}
+	figaro, _ := p.tools.Lookup(cg)
+	return figaro, nil
 }
 
 func (u *Upstream) AdmitRequest(ctx context.Context, r *http.Request) (context.Context, error) {
