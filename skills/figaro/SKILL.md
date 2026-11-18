@@ -112,6 +112,7 @@ about changing figaro rather than using it live under
 | [reference/forms.md](reference/forms.md) | Using unbound forms and roles: the verbs, the listings, the matrix. |
 | [reference/peer-check.md](reference/peer-check.md) | A command from your bash tool was refused as owner-held, protected or "never the owner", what a tool shell may still do (shorten a lifetime, retire a descendant), and how to get the rest done. |
 | [reference/fanout.md](reference/fanout.md) | `system.fanout.max_children`, why a figaro-forked fork is born at 0, how a succession swap moves the limit, who may take a held role, `system.fanout.mint` (who may `figaro new`, and granting it to the King's role), or the `create`/`mint` verb split. |
+| [reference/permissions.md](reference/permissions.md) | A send, write, fork, study or kill was refused or logged as would-refuse; writing `system.scopes`, a `#key` grant or a `system.child_policy`; sending to a role from a lane; or what `enforce_key_grants`, `enforce_child_policy` and `enforce_lineage_reach` do. |
 | [reference/key-writers.md](reference/key-writers.md) | Who may write a form key: which keys are owner-held, protected for the lineage, or written by the daemon alone, and where to change that. Generated from `api/form/registry.go`. |
 | [debugging/tapes.md](debugging/tapes.md) | Record a figaro's wire and replay it: a rendering bug someone SAW and you cannot reproduce, or one recorded for CI. |
 | [reference/mantra.md](reference/mantra.md) | Maintaining your figaro's mantra. |
