@@ -31,7 +31,7 @@ func writeFile(t *testing.T, path string, body []byte) {
 // releases left them: by hand, since forks no longer write them.
 func newPruneFixture(t *testing.T) *pruneFixture {
 	t.Helper()
-	s, root := openLazyStore(t)
+	s, root := openLazyStoreWithoutFlusher(t)
 	f := &pruneFixture{s: s, root: root, notes: lazyVariants[0], trunks: map[string]string{}, dirs: map[string]string{}}
 	for _, name := range []string{"rows", "zero", "base1", "inherits", "parent", "empty", "zerobase1"} {
 		f.trunks[name] = spawnTurns(t, s, 2)
