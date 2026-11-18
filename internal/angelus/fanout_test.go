@@ -131,8 +131,12 @@ func TestAForkIsBornAtZeroUnlessGrantedMore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := callForkAsFigaro(t, hs, out.Alternative, rpc.ForkRequest{FigaroID: out.Alternative}); err == nil {
+	_, err = callForkAsFigaro(t, hs, out.Alternative, rpc.ForkRequest{FigaroID: out.Alternative})
+	if err == nil {
 		t.Fatal("a fresh fork forked a child of its own with no grant")
+	}
+	if grant := "figaro set --id " + shortID(out.Alternative) + " system.fanout.max_children 1"; !strings.Contains(err.Error(), grant) {
+		t.Fatalf("the refusal does not name the parent's grant %q: %v", grant, err)
 	}
 
 	out2, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top, Patch: grantPatch(2, 2)})

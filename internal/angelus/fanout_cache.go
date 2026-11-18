@@ -337,11 +337,12 @@ func (c *fanoutCache) fitsLocked(from string, need int) error {
 	if short == "" {
 		return nil
 	}
-	room := "retire a figaro under it or ask your parent for more"
+	under := ""
 	if made := c.ownerMadeUnder(short, 5); len(made) > 0 {
-		room = "retire a figaro under it (the owner made " + strings.Join(made, ", ") + ") or ask your parent for more"
+		under = " (the owner made " + strings.Join(made, ", ") + ")"
 	}
-	return fmt.Errorf("fanout: this needs %d of budget, and %s; %s", need, strings.Join(seen, ", "), room)
+	grant := fmt.Sprintf("figaro set --id %s %s %d", shortID(short), form.FanoutQuotaKey, c.used[short]+need)
+	return fmt.Errorf("fanout: this needs %d of budget, and %s; retire a figaro under it%s, or have its parent grant more (%s)", need, strings.Join(seen, ", "), under, grant)
 }
 
 func (c *fanoutCache) ownerMadeUnder(root string, most int) []string {
@@ -594,7 +595,7 @@ func (a *Angelus) holdForkSlot(parent string) (func(), error) {
 	c := a.fanoutCounts()
 	n, held := c.hold(parent, max)
 	if !held {
-		return nil, fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one or fork elsewhere", parent, n, max)
+		return nil, fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one, fork elsewhere, or have its parent grant more (figaro set --id %s %s %d)", parent, n, max, shortID(parent), form.FanoutMaxChildrenKey, n+1)
 	}
 	var once sync.Once
 	return func() { once.Do(func() { c.release(parent) }) }, nil

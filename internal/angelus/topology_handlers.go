@@ -547,7 +547,7 @@ func (h *handlers) admitMaxChildren(parent string) error {
 		return nil
 	}
 	if n := h.angelus.liveChildCount(parent); n >= max {
-		return fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one or fork elsewhere", parent, n, max)
+		return fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one, fork elsewhere, or have its parent grant more (figaro set --id %s %s %d)", parent, n, max, shortID(parent), form.FanoutMaxChildrenKey, n+1)
 	}
 	return nil
 }

@@ -62,6 +62,9 @@ func TestAForkPastTheQuotaIsRefusedAndNamesTheFreeBudget(t *testing.T) {
 	if !strings.Contains(err.Error(), "0 free of quota 2") {
 		t.Fatalf("the refusal does not name the free budget: %v", err)
 	}
+	if grant := "figaro set --id " + shortID(top) + " system.fanout.quota 3"; !strings.Contains(err.Error(), grant) {
+		t.Fatalf("the refusal does not name the parent's grant %q: %v", grant, err)
+	}
 	if got := budgetOf(hs, top); got.used != 2 || got.quota != 2 {
 		t.Fatalf("top's budget after the refusal = %+v, want 2 of 2", got)
 	}
