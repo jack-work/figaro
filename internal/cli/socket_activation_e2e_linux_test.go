@@ -102,6 +102,14 @@ func TestSocketActivatedDaemonServesAndLeavesTheManagersSocket(t *testing.T) {
 		t.Fatalf("the daemon removed the manager's socket on its way out: %v\n%s", err, first.log)
 	}
 
+	out := r.run("rest")
+	if !strings.Contains(out, "not running") || !strings.Contains(out, "service manager") {
+		t.Fatalf("rest against an idle activation socket: %s", out)
+	}
+	if _, err := os.Stat(r.socket()); err != nil {
+		t.Fatalf("rest removed the manager's socket: %v", err)
+	}
+
 	queued, queuedOut := startQueued(t, r.cmd("ls", "--json"))
 	time.Sleep(200 * time.Millisecond)
 	second := m.activate(r, "angelus")
