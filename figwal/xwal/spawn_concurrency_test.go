@@ -1,6 +1,7 @@
 package xwal
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -109,4 +110,35 @@ func TestARetainWaitsForASpawnInProgress(t *testing.T) {
 		t.Fatal("the retain never ran after the spawn ended")
 	}
 	fx.childrenRead("after the retain")
+}
+
+// A quarantine release checks that no other figaro shares the corrupt
+// segment and then cuts it. A spawn in between could start sharing it, so
+// the release waits for every spawn in progress.
+func TestAQuarantineReleaseWaitsForASpawnInProgress(t *testing.T) {
+	f, trunk := seedTrunk(t, filepath.Join(t.TempDir(), "f"))
+	end, err := f.beginSpawn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := make(chan error, 1)
+	go func() {
+		_, err := f.ReleaseQuarantine(trunk, "", 0, t.TempDir(), true)
+		released <- err
+	}()
+	select {
+	case err := <-released:
+		end()
+		t.Fatalf("the release ran beside a spawn in progress (err %v)", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+	end()
+	select {
+	case err := <-released:
+		if !errors.Is(err, ErrNotQuarantined) {
+			t.Fatalf("release = %v, want ErrNotQuarantined", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the release never ran after the spawn ended")
+	}
 }

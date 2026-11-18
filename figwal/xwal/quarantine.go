@@ -109,6 +109,10 @@ func (t *Trunks) descendantTrunks(key, own string) []string {
 }
 
 func (t *Trunks) ReleaseQuarantine(trunk, channel string, offset int64, asideDir string, apply bool) (QuarantineRelease, error) {
+	if apply {
+		t.cutMu.Lock()
+		defer t.cutMu.Unlock()
+	}
 	all, err := t.ScanQuarantine()
 	if err != nil {
 		return QuarantineRelease{}, err
