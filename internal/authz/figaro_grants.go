@@ -642,6 +642,39 @@ func (p *Policies) HoldsGrants(figaro string, want jkauthz.Grants, target, paren
 	return nil
 }
 
+func (p *Policies) TopologyReach(s jkauthz.Subject, figaro string, verb rpc.Verb, target string) error {
+	ff, m, ok := p.figaroFacts()
+	if !ok || figaro == "" || target == figaro || m.facts.DescendsFrom(target, figaro) {
+		return nil
+	}
+	if p.grantsReach(ff, s, figaro, verb, target) {
+		return nil
+	}
+	return fmt.Errorf("%s%s may not %s %s: a figaro's demote, promote, retire and kill reach its own lineage, and reach beyond it is a grant written in system.scopes (%s:*)", figaroPrefix, figaro, verb, target, verb)
+}
+
+func (p *Policies) ReachGranted(s jkauthz.Subject, figaro string, verb rpc.Verb, target string) bool {
+	ff, _, ok := p.figaroFacts()
+	return ok && figaro != "" && p.grantsReach(ff, s, figaro, verb, target)
+}
+
+func (p *Policies) grantsReach(ff FigaroFacts, s jkauthz.Subject, figaro string, verb rpc.Verb, target string) bool {
+	return p.writtenScopes(ff, figaro) && p.Figaro(figaro).refuses(s, verb, Aria(target)) == ""
+}
+
+func (p *Policies) writtenScopes(ff FigaroFacts, figaro string) bool {
+	if _, set := p.ceiling(); set {
+		return true
+	}
+	chain, _ := ff.Ancestry(figaro)
+	for _, id := range chain {
+		if _, present, err := ff.OwnGrants(id); err == nil && present {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *Policies) Covers(held, want jkauthz.Grants) bool {
 	m, _ := p.schema.Selectors.(selectors)
 	for _, g := range want {

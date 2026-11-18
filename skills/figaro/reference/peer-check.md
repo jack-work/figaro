@@ -23,7 +23,8 @@ trusted every same-uid caller as the owner and the claim was honour only.
   the placement rules, `kill` what its grants allow.
 - Protected keys (`system.scopes`, `system.sandbox`, `system.fanout.*`) on
   its descendants, as an ancestor figaro.
-- Shorten a lifetime, on itself, a descendant, or a figaro it forks:
+- Shorten a lifetime, on itself, a descendant, a figaro it forks, or a
+  figaro its written grant lets it retire (`set:*` in `system.scopes`):
   - `figaro fork -S system.ttl=2h ...`: a finite ttl at birth;
   - `figaro set --id <child> system.ttl 30m`: finite, and no later than
     the current one;

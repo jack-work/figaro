@@ -224,6 +224,11 @@ func (h *handlers) refuseKeysBeyondGrants(ctx context.Context, line lineage, bef
 	if err != nil {
 		return err
 	}
+	if keyChanged(before, after, store.SystemRetiredKey) || keyChanged(before, after, form.RetiredKey) {
+		if err := p.TopologyReach(sub, f, rpc.VerbSet, line.of); err != nil {
+			return err
+		}
+	}
 	view := p.Figaro(f)
 	for _, key := range writtenPaths(before, patch, after) {
 		verb := rpc.VerbSet
@@ -305,7 +310,7 @@ func (c callerKeys) refusal(path string) error {
 				return fmt.Errorf("box %s may not set %s: it is owner-held", c.box, d.Key)
 			}
 			if c.tool != "" && (d.Key == store.SystemTTLKey || d.Key == store.SystemRetiredKey) {
-				return fmt.Errorf("figaro %s may not set %s that way: a figaro's tools only shorten a lifetime (a finite ttl no later than the current one, or retiring), on themselves, their descendants or a figaro they create; 0, a removal, a later deadline or unretiring is the owner's", c.tool, d.Key)
+				return fmt.Errorf("figaro %s may not set %s that way: a figaro's tools only shorten a lifetime (a finite ttl no later than the current one, or retiring), on themselves, their descendants, a figaro they create or one a written grant lets them retire; 0, a removal, a later deadline or unretiring is the owner's", c.tool, d.Key)
 			}
 			if c.tool != "" {
 				return fmt.Errorf("figaro %s may not set %s: it is owner-held, and a figaro's tools are never the owner", c.tool, d.Key)
@@ -423,7 +428,7 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 		if retentionGranted(ctx, before, p) {
 			continue
 		}
-		if h.toolShortensLifetime(c, line, before, after, p) {
+		if h.toolShortensLifetime(ctx, c, line, before, after, p) {
 			continue
 		}
 		if err := c.refusal(p); err != nil {
@@ -578,7 +583,7 @@ func (h *handlers) callerOwns(ctx context.Context) bool {
 func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, params json.RawMessage) error {
 	_, boxed := callerBox(ctx)
 	owner := !boxed && h.callerOwns(ctx)
-	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retirement")) && !bytes.Contains(params, []byte("grants")) && !bytes.Contains(params, []byte("scopes")) && !bytes.Contains(params, []byte("fanout")) && !bytes.Contains(params, []byte("child_policy")) && !bytes.ContainsRune(params, '\\') {
+	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retired")) && !bytes.Contains(params, []byte("retirement")) && !bytes.Contains(params, []byte("grants")) && !bytes.Contains(params, []byte("scopes")) && !bytes.Contains(params, []byte("fanout")) && !bytes.Contains(params, []byte("child_policy")) && !bytes.ContainsRune(params, '\\') {
 		return nil
 	}
 	var patch *form.Patch
@@ -709,7 +714,7 @@ func (h *handlers) carryNarrowing(id string) error {
 	return nil
 }
 
-func (h *handlers) toolShortensLifetime(c callerKeys, line lineage, before, after form.Snapshot, path string) bool {
+func (h *handlers) toolShortensLifetime(ctx context.Context, c callerKeys, line lineage, before, after form.Snapshot, path string) bool {
 	if c.tool == "" {
 		return false
 	}
@@ -729,7 +734,13 @@ func (h *handlers) toolShortensLifetime(c callerKeys, line lineage, before, afte
 	if line.birth {
 		return true
 	}
-	return line.of != "" && (line.of == c.tool || slices.Contains(h.ancestorsOf(line), c.tool))
+	return line.of != "" && (line.of == c.tool || slices.Contains(h.ancestorsOf(line), c.tool) || h.lifetimeGranted(ctx, c.tool, line.of, path))
+}
+
+func (h *handlers) lifetimeGranted(ctx context.Context, figaro, target, key string) bool {
+	p := h.angelus.Policies
+	sub, err := authz.SubjectOf(ctx)
+	return p != nil && err == nil && p.ReachGranted(sub, figaro, rpc.VerbSet, target) && p.Figaro(figaro).AllowsKey(sub, rpc.VerbSet, authz.Aria(target), key)
 }
 
 func ttlShortened(before, after form.Snapshot) bool {
