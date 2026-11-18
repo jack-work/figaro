@@ -59,9 +59,10 @@ in
       default = [ ];
       example = [ "%h/dev/cheroot-config" "%h/.config/home-manager" ];
       description = ''
-        Paths no tool sees even when a grant holds them, beside the built-in
+        Paths no tool sees and no grant may hold, beside the built-in
         ~/.ssh, ~/.gnupg, figaro's own state, cache and config, and the
-        valet's grant table. systemd specifiers (%h, %u) expand.
+        valet's grant table: a grant that holds one, or lies inside one, is
+        dropped for every call. systemd specifiers (%h, %u) expand.
       '';
     };
 

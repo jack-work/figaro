@@ -101,8 +101,13 @@ func (v Valet) fenceFor(scope string, grants []Grant) (Fence, error) {
 			return Fence{}, err
 		}
 	}
+	hidden := append(slices.Clone(v.Hide), v.State)
 	var live []Grant
 	for _, g := range grants {
+		if h, ok := Overlaps(g.Path, hidden); ok {
+			fmt.Fprintf(v.Log, "valet: %s: grant of %s dropped: it overlaps %s, which no tool sees\n", scope, g.Path, h)
+			continue
+		}
 		if _, err := os.Stat(g.Path); err == nil {
 			live = append(live, g)
 		} else {
@@ -121,7 +126,7 @@ func (v Valet) fenceFor(scope string, grants []Grant) (Fence, error) {
 		Scratch: scratch,
 		Door:    door,
 		Grants:  GrantMounts(live),
-		Hide:    append(slices.Clone(v.Hide), v.State),
+		Hide:    hidden,
 	}, nil
 }
 

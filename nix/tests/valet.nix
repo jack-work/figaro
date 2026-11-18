@@ -10,7 +10,7 @@ let
     "{ echo x > ${home}/dev/ro/written; } 2>/dev/null && echo RO-WRITABLE || echo ro-readonly"
     "test -e ${home}/dev/private/file && echo PRIVATE-VISIBLE || echo private-absent"
     "test -e ${home}/.local/state/figaro-valet/grants.toml && echo TABLE-VISIBLE || echo table-absent"
-    "test -e ${home}/dev/granted/conf/settings && echo HIDDEN-VISIBLE || echo hidden-absent"
+    "test -e ${home}/dev/conf/settings && echo HIDDEN-VISIBLE || echo hidden-absent"
     "test -S /run/figaro/angelus.sock && echo DAEMON-VISIBLE || echo daemon-absent"
     "test -S /run/hush/cred.sock && echo HUSH-VISIBLE || echo hush-absent"
     "test -e /run/user/1000/systemd && echo RUNTIME-VISIBLE || echo runtime-absent"
@@ -36,7 +36,7 @@ pkgs.testers.runNixOSTest {
     };
     services.figaro-valet = {
       users = [ "alice" ];
-      hide = [ "%h/dev/granted/conf" ];
+      hide = [ "%h/dev/conf" ];
     };
     users.users.alice = {
       isNormalUser = true;
@@ -107,11 +107,12 @@ pkgs.testers.runNixOSTest {
 
     with subtest("outside the fence alice reaches the daemon, hush and her own runtime directory"):
         alice("test -S /run/figaro/angelus.sock && test -S /run/hush/cred.sock && test -e /run/user/1000/systemd")
-        alice("mkdir -p ~/dev/granted/conf ~/dev/ro ~/dev/private && echo g > ~/dev/granted/file && echo r > ~/dev/ro/file && echo p > ~/dev/private/file && echo s > ~/dev/granted/conf/settings")
+        alice("mkdir -p ~/dev/granted ~/dev/conf ~/dev/ro ~/dev/private && echo g > ~/dev/granted/file && echo r > ~/dev/ro/file && echo p > ~/dev/private/file && echo s > ~/dev/conf/settings")
 
     with subtest("alice grants working trees from her own shell"):
         print(alice("figaro valet grant '*' ~/dev/granted rw --for 1h"))
         print(alice("figaro valet grant '*' ~/dev/ro ro --for 1h"))
+        print(alice("figaro valet grant '*' ~/dev/conf rw --for 1h"))
         print(alice("figaro valet grants"))
         machine.succeed("test \"$(stat -c %a ${home}/.local/state/figaro-valet/grants.toml)\" = 600")
 
