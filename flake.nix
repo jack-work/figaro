@@ -106,9 +106,8 @@
 
       nixosModules = {
         default = { lib, pkgs, ... }: {
-          imports = [ ./nix/module.nix ./nix/valet.nix ];
+          imports = [ ./nix/module.nix ];
           services.figaro.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.figaro;
-          services.figaro-valet.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.figaro;
         };
         container = { lib, pkgs, ... }: {
           imports = [ ./nix/container.nix ];

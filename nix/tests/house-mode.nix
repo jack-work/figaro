@@ -1,6 +1,11 @@
 { pkgs, self }:
 let
-  probe = pkgs.writeText "house-probe" "echo uid=$(id -u)";
+  probe = pkgs.writeText "house-probe" (builtins.concatStringsSep "; " [
+    "echo uid=$(id -u)"
+    "echo pwd=$(pwd)"
+    "test -S /run/figaro/angelus.sock && echo DOOR-VISIBLE || echo door-absent"
+    "{ echo from-tool > written; } 2>/dev/null && echo wrote || echo write-refused"
+  ]);
   standIn = {
     users.users.toolbox = {
       isSystemUser = true;
@@ -40,6 +45,7 @@ pkgs.testers.runNixOSTest {
       enable = true;
       owner = "alice";
       users = [ "carol" ];
+      valet.users = [ "alice" ];
       providers.gateway.base_url = "http://127.0.0.1:8099/v1";
       settings.sandbox.boxes.stand-in.exec = "/run/stand-in/exec.sock";
       outfits.boxed.system = {
@@ -133,6 +139,8 @@ pkgs.testers.runNixOSTest {
     house.wait_for_unit("stub-model.service")
     house.wait_for_unit("stand-in-box.service")
     house.wait_until_succeeds("test -S /run/stand-in/exec.sock")
+    house.wait_for_unit("user@1000.service")
+    house.wait_for_unit("figaro-valet.socket", "alice")
 
     with subtest("the door is the people's: figaro-door, 0660, in a directory they may cross"):
         print(house.succeed("stat -c '%U %G %a %n' /run/figaro /run/figaro/angelus.sock"))
@@ -149,6 +157,8 @@ pkgs.testers.runNixOSTest {
         assert 'owner = "user:1000"' in rendered, rendered
         assert '1000 = "user:1000"' in rendered and '1002 = "user:1002"' in rendered, rendered
         assert "local_tools = false" in rendered, rendered
+        assert 'default = "valet-alice"' in rendered, rendered
+        assert 'figaro_claim = "required"' in rendered and "/run/figaro-valet/alice/exec.sock" in rendered, rendered
 
     with subtest("the owner's first call starts the angelus as uid figaro"):
         print(alice("figaro ls --json"))
@@ -171,11 +181,29 @@ pkgs.testers.runNixOSTest {
         shown = alice(f"figaro show {parent}")
         assert "uid=1500" in shown, shown
 
-    with subtest("local is refused at birth, and naming no sandbox is local"):
-        out = refused("alice", "figaro new -j -O bare -- hello")
-        assert "local_tools = false" in out, out
+    with subtest("local is refused at birth"):
         out = refused("alice", "figaro new -j -O bare -S system.sandbox=local -- hello")
         assert "local_tools = false" in out, out
+
+    with subtest("the valet's door is the daemon's, reachable by alice's valet alone"):
+        print(house.succeed("stat -c '%U %G %a %n' /run/figaro/boxes /run/figaro/boxes/valet-alice /run/figaro/boxes/valet-alice/door.sock /run/figaro-valet/alice/exec.sock"))
+        assert house.succeed("stat -c '%G %a' /run/figaro/boxes/valet-alice/door.sock").split() == ["figaro-valet-alice", "660"]
+        house.fail("su - carol -c 'test -r /run/figaro/boxes/valet-alice/door.sock'")
+        doc = json.loads(alice("figaro doctor mode -j"))
+        print(doc)
+        assert doc["mode"] == "house" and doc["valet"]["answers"] is True, doc
+
+    with subtest("a figaro naming no sandbox runs in the owner's valet: its tool is alice, fenced"):
+        alice("mkdir -p ~/dev/work && figaro valet grant '*' ~/dev/work rw --for 1h")
+        fig = json.loads(alice("figaro new -j -O bare -S system.cwd=/home/alice/dev/work -- probe").strip().splitlines()[-1])["aria_id"]
+        idle(fig)
+        state = json.loads(alice(f"figaro state show {fig} -j"))
+        assert state["system"]["sandbox"] == "valet-alice", state
+        shown = alice(f"figaro show {fig}")
+        print(shown)
+        assert "uid=1000" in shown and "pwd=/home/alice/dev/work" in shown and "wrote" in shown, shown
+        assert "door-absent" in shown and "DOOR-VISIBLE" not in shown, shown
+        assert house.succeed("stat -c %U /home/alice/dev/work/written").strip() == "alice"
 
     with subtest("the owner binding: alice applies a managed fan-out, the daemon's uid cannot"):
         role = json.loads(alice(f"figaro form new -S name=house-role,target-aria={parent} -j"))["form_id"]
