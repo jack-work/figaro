@@ -24,7 +24,7 @@ func ForkReminderTexts(msg message.Message, bound form.Snapshot) []string {
 	if err != nil {
 		return nil
 	}
-	return []string{"<system-reminder name=\"fork\">\n" + string(b) + "\n</system-reminder>"}
+	return []string{Reminder("fork", string(b))}
 }
 
 func forkedFrom(patches []message.Patch) (string, bool) {

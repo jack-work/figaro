@@ -332,7 +332,7 @@ func (p *Provider) renderPatches(patches []message.Patch, snap form.Snapshot) []
 	var out []string
 	form.FoldRender(snap, patches, p.Templates,
 		func(r form.RenderedEntry) {
-			out = append(out, fmt.Sprintf("<system-reminder name=%q>\n%s\n</system-reminder>", r.Key, r.Body))
+			out = append(out, provider.Reminder(r.Key, r.Body))
 		},
 		func(err error) { slog.Warn("openaichat: render patch", "err", err) })
 	return out

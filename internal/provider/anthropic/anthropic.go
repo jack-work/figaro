@@ -648,7 +648,7 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 				if r := provider.SenderReminder(c.Sender); r != "" && c.Text != "" {
 					blocks = append(blocks, nativeBlock{Type: "text", Text: r})
 				}
-				blocks = append(blocks, nativeBlock{Type: "text", Text: c.Text})
+				blocks = append(blocks, nativeBlock{Type: "text", Text: provider.SenderProse(c.Sender, c.Text)})
 			case message.ContentImage:
 				// Claimed images render inside their tool_result below.
 				if _, claimed := toolImages[c.ToolCallID]; claimed && c.ToolCallID != "" {
@@ -749,18 +749,10 @@ func (a *Anthropic) renderPatchBlocks(patches []message.Patch, snap form.Snapsho
 	var out []nativeBlock
 	snap = form.FoldRender(snap, patches, a.Templates,
 		func(r form.RenderedEntry) {
-			out = append(out, nativeBlock{Type: "text", Text: fmt.Sprintf(
-				"<system-reminder name=\"%s\">\n%s\n</system-reminder>", escapeAttr(r.Key), r.Body)})
+			out = append(out, nativeBlock{Type: "text", Text: provider.Reminder(r.Key, r.Body)})
 		},
 		func(err error) { slog.Warn("anthropic: render patch", "err", err) })
 	return out, snap
-}
-
-func escapeAttr(s string) string {
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, `"`, "&quot;")
-	s = strings.ReplaceAll(s, "<", "&lt;")
-	return s
 }
 
 func projectTools(tools []provider.Tool) []nativeTool {
