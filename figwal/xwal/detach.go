@@ -138,7 +138,7 @@ func (t *Trunks) publishDetach(node string, plan *detachPlan) error {
 	if err := writeNodeMarker(t.irDir(node), nodeMarker{kind: kind, trunk: trunk}); err != nil {
 		return err
 	}
-	return t.rebuild()
+	return t.reshape(func() error { t.idx.Reparent(node, ""); return nil })
 }
 
 var absorbLocks = struct {
