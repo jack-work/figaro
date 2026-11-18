@@ -1,6 +1,7 @@
 package activation
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -12,9 +13,10 @@ import (
 const firstFD = 3
 
 const (
-	envPID   = "LISTEN_PID"
-	envFDs   = "LISTEN_FDS"
-	envNames = "LISTEN_FDNAMES"
+	envPID     = "LISTEN_PID"
+	envFDs     = "LISTEN_FDS"
+	envNames   = "LISTEN_FDNAMES"
+	envPidfdID = "LISTEN_PIDFDID"
 )
 
 type Sockets struct {
@@ -43,6 +45,18 @@ func (s *Sockets) Has(name string) bool {
 	return ok
 }
 
+func (s *Sockets) Close() error {
+	if s == nil {
+		return nil
+	}
+	var err error
+	for name, f := range s.files {
+		delete(s.files, name)
+		err = errors.Join(err, f.Close())
+	}
+	return err
+}
+
 func (s *Sockets) Listener(name string) (net.Listener, bool, error) {
 	if s == nil {
 		return nil, false, nil
@@ -57,6 +71,9 @@ func (s *Sockets) Listener(name string) (net.Listener, bool, error) {
 	if err != nil {
 		return nil, true, fmt.Errorf("activation socket %q: %w", name, err)
 	}
+	if ul, ok := ln.(*net.UnixListener); ok {
+		ul.SetUnlinkOnClose(false)
+	}
 	return ln, true, nil
 }
 
@@ -64,7 +81,7 @@ func Take(getenv func(string) string, unsetenv func(string) error, pid int) (*So
 	raw := getenv(envFDs)
 	owner := getenv(envPID)
 	names := getenv(envNames)
-	for _, k := range []string{envPID, envFDs, envNames} {
+	for _, k := range []string{envPID, envFDs, envNames, envPidfdID} {
 		_ = unsetenv(k)
 	}
 	if raw == "" || owner == "" {
@@ -81,6 +98,9 @@ func Take(getenv func(string) string, unsetenv func(string) error, pid int) (*So
 	if err != nil || count < 0 {
 		return &Sockets{}, fmt.Errorf("%s=%q is not a count", envFDs, raw)
 	}
+	for i := 0; i < count; i++ {
+		closeOnExec(firstFD + i)
+	}
 	var labels []string
 	if names != "" {
 		labels = strings.Split(names, ":")
@@ -88,14 +108,19 @@ func Take(getenv func(string) string, unsetenv func(string) error, pid int) (*So
 	s := &Sockets{files: make(map[string]*os.File, count)}
 	for i := 0; i < count; i++ {
 		fd := firstFD + i
-		closeOnExec(fd)
 		name := "unknown"
 		if i < len(labels) && labels[i] != "" {
 			name = labels[i]
 		}
 		f := os.NewFile(uintptr(fd), name)
 		if _, dup := s.files[name]; dup {
-			f.Close()
+			_ = f.Close()
+			_ = s.Close()
+			for j := i + 1; j < count; j++ {
+				if rest := os.NewFile(uintptr(firstFD+j), ""); rest != nil {
+					_ = rest.Close()
+				}
+			}
 			return nil, fmt.Errorf("systemd passed two sockets named %q; give each its own FileDescriptorName", name)
 		}
 		s.files[name] = f
