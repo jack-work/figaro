@@ -196,3 +196,15 @@ func (hs *Handlers) MovingForTest(id string) bool {
 	_, ok := hs.h.moving.of(id)
 	return ok
 }
+
+func (a *Angelus) liveChildrenOf(id string) []string {
+	var out []string
+	for _, kid := range a.topology().Children(id) {
+		if a.isLiveAria(kid) {
+			out = append(out, kid)
+		}
+	}
+	return out
+}
+
+func (hs *Handlers) FanoutDriftForTest() []rpc.FanoutDrift { return hs.h.angelus.fanoutDrift() }

@@ -78,7 +78,7 @@ type TopologyGuard struct {
 	Empty        func(id string) bool
 	MintPlaces   func(box, node, under string) error
 	FanoutLimit  func(id string) (max int, ok bool)
-	LiveChildren func(id string) []string
+	LiveChildren func(id string) int
 	Live         func(id string) bool
 	SwapLimit    func(pred, succ string) (max int, ok, swap bool)
 	Committed    func(p hierarchy.Plan)
@@ -342,7 +342,7 @@ func (g TopologyGuard) fanout(p hierarchy.Plan) error {
 		if !ok {
 			continue
 		}
-		final := len(g.LiveChildren(to)) - departures[to] + arrivals[to]
+		final := g.LiveChildren(to) - departures[to] + arrivals[to]
 		if final > max {
 			return fmt.Errorf("fanout: %s would hold %d live children of max_children %d; the reparent is refused and nothing moved", to, final, max)
 		}
