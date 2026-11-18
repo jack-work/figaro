@@ -44,7 +44,13 @@ func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
 		LiveChildren: a.liveChildCount,
 		Live:         a.isLiveAria,
 		SwapLimit:    a.swapLimit,
-		Committed:    a.topologyCommitted,
+		Quota: func(p hierarchy.Plan) error {
+			if len(p.Moves) == 0 {
+				return nil
+			}
+			return a.fanoutCounts().fitsMoves(p.Moves)
+		},
+		Committed: a.topologyCommitted,
 	}
 }
 
@@ -159,6 +165,26 @@ func (a *Angelus) moveSwappedLimit(p hierarchy.Plan) {
 	}
 }
 
+func (a *Angelus) moveQuota(pred, succ string) error {
+	ps, err := a.Backend.FormState(pred)
+	if err != nil {
+		return err
+	}
+	q, ok := ps.Get(form.FanoutQuotaKey)
+	if !ok {
+		return nil
+	}
+	ss, err := a.Backend.FormState(succ)
+	if err != nil {
+		return err
+	}
+	if _, err := a.Backend.ApplyForm(succ, form.Build(ss, map[string]json.RawMessage{form.FanoutQuotaKey: q}, nil)); err != nil {
+		return err
+	}
+	_, err = a.Backend.ApplyForm(pred, form.Build(ps, nil, []string{form.FanoutQuotaKey}))
+	return err
+}
+
 func (a *Angelus) swapFanoutKeys(pred, succ string) error {
 	ps, err := a.Backend.FormState(pred)
 	if err != nil {
@@ -170,6 +196,12 @@ func (a *Angelus) swapFanoutKeys(pred, succ string) error {
 	}
 	succSet, predSet := map[string]json.RawMessage{}, map[string]json.RawMessage{}
 	var succDrop, predDrop []string
+	if pv, pok := ps.Get(form.FanoutQuotaKey); pok {
+		succSet[form.FanoutQuotaKey] = pv
+		predDrop = append(predDrop, form.FanoutQuotaKey)
+	} else if _, sok := ss.Get(form.FanoutQuotaKey); sok {
+		succDrop = append(succDrop, form.FanoutQuotaKey)
+	}
 	for _, key := range []string{form.FanoutMaxChildrenKey, form.FanoutMintKey} {
 		pv, pok := ps.Get(key)
 		sv, sok := ss.Get(key)

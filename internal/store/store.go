@@ -66,6 +66,8 @@ type AriaMeta struct {
 
 	MintedBy       string `json:"minted_by,omitempty"`
 	TombstonedAtMS int64  `json:"tombstoned_at_ms,omitempty"`
+
+	FanoutQuota *int `json:"fanout_quota,omitempty"`
 }
 
 type Lifetime struct {
@@ -79,18 +81,21 @@ type Lifetime struct {
 	ReapedUntilMS int64
 	ReapedBy      string
 	ReapIfEmpty   bool
+	FanoutQuota   *int
 }
 
 func (m *AriaMeta) Lifetime() Lifetime {
 	return Lifetime{TTLMS: m.TTLMS, KeepaliveMS: m.KeepaliveMS, RetiredAtMS: m.RetiredAtMS, RetiredReason: m.RetiredReason,
 		LastAccessMS: m.LastAccessMS, ReapedAtMS: m.ReapedAtMS, ReapedRoot: m.ReapedRoot,
-		ReapedUntilMS: m.ReapedUntilMS, ReapedBy: m.ReapedBy, ReapIfEmpty: m.ReapIfEmpty}
+		ReapedUntilMS: m.ReapedUntilMS, ReapedBy: m.ReapedBy, ReapIfEmpty: m.ReapIfEmpty,
+		FanoutQuota: m.FanoutQuota}
 }
 
 func (m *AriaMeta) SetLifetime(l Lifetime) {
 	m.TTLMS, m.KeepaliveMS, m.RetiredAtMS, m.LastAccessMS = l.TTLMS, l.KeepaliveMS, l.RetiredAtMS, l.LastAccessMS
 	m.ReapedAtMS, m.ReapedRoot, m.ReapedUntilMS, m.ReapedBy = l.ReapedAtMS, l.ReapedRoot, l.ReapedUntilMS, l.ReapedBy
 	m.ReapIfEmpty, m.RetiredReason = l.ReapIfEmpty, l.RetiredReason
+	m.FanoutQuota = l.FanoutQuota
 }
 
 // CurrentMetaVersion is the sidecar shape this build writes.

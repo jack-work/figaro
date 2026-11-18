@@ -15,6 +15,8 @@ const (
 	FanoutMaxChildrenKey = "system.fanout.max_children"
 
 	FanoutMintKey = "system.fanout.mint"
+
+	FanoutQuotaKey = "system.fanout.quota"
 )
 
 func ProtectedKeys() []string { return RootsOf(WriterLineage) }
@@ -62,6 +64,7 @@ func checkScopeList(raw json.RawMessage) error {
 var (
 	maxChildrenShape = ShapeInt(0, math.MaxInt64)
 	mintShape        = ShapeBool()
+	quotaShape       = ShapeInt(0, math.MaxInt64)
 )
 
 func FanoutMaxChildren(s Snapshot) (n int, ok bool, err error) {
@@ -71,6 +74,17 @@ func FanoutMaxChildren(s Snapshot) (n int, ok bool, err error) {
 	}
 	if maxChildrenShape.Check(raw) != nil || json.Unmarshal(raw, &n) != nil {
 		return 0, false, fmt.Errorf("%s must be a non-negative integer, got %s", FanoutMaxChildrenKey, raw)
+	}
+	return n, true, nil
+}
+
+func FanoutQuota(s Snapshot) (n int, ok bool, err error) {
+	raw, has := s.Get(FanoutQuotaKey)
+	if !has {
+		return 0, false, nil
+	}
+	if quotaShape.Check(raw) != nil || json.Unmarshal(raw, &n) != nil {
+		return 0, false, fmt.Errorf("%s must be a non-negative integer, got %s", FanoutQuotaKey, raw)
 	}
 	return n, true, nil
 }

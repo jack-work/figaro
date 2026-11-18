@@ -34,7 +34,22 @@ func (h *handlers) createTopLevel(ctx context.Context, params json.RawMessage) (
 	if err := h.refuseUnlicensedMint(ctx); err != nil {
 		return nil, err
 	}
-	return h.create(ctx, params)
+	minter := authz.FigaroOf(ctx)
+	if _, boxed := callerBox(ctx); minter == "" || boxed {
+		return h.create(ctx, params)
+	}
+	if err := h.admitFork(minter, 1, false); err != nil {
+		return nil, fmt.Errorf("mint: %s pays for what it mints: %w", minter, err)
+	}
+	out, err := h.createWith(ctx, params, withQuotaBirthDefault)
+	if err != nil {
+		return nil, err
+	}
+	id := out.(rpc.CreateResponse).FigaroID
+	if err := h.place(h.ownerContext(), id, minter); err != nil {
+		slog.Warn("mint: the new figaro stays where it was born, and its minter is not charged", "figaro", id, "minter", minter, "err", err)
+	}
+	return out, nil
 }
 
 func (h *handlers) refuseUnlicensedMint(ctx context.Context) error {
@@ -58,23 +73,27 @@ func (h *handlers) refuseUnlicensedMint(ctx context.Context) error {
 	return nil
 }
 
-func withoutInheritedMint(inherited form.Snapshot, patch *form.Patch) (form.Snapshot, *form.Patch) {
-	if _, has := inherited.Get(form.FanoutMintKey); !has {
+func withoutInherited(key string, inherited form.Snapshot, patch *form.Patch) (form.Snapshot, *form.Patch) {
+	if _, has := inherited.Get(key); !has {
 		return inherited, patch
 	}
 	if patch != nil {
-		if e, ok := patch.Entry(form.FanoutMintKey); ok && !e.IsRemoval() {
-			return inherited.DeletePath(form.FanoutMintKey), patch
+		if e, ok := patch.Entry(key); ok && !e.IsRemoval() {
+			return inherited.DeletePath(key), patch
 		}
 	}
-	drop := form.Build(form.Snapshot{}, nil, []string{form.FanoutMintKey})
+	drop := form.Build(form.Snapshot{}, nil, []string{key})
 	if patch != nil {
 		drop = form.Merge(*patch, drop)
 	}
-	return inherited.DeletePath(form.FanoutMintKey), &drop
+	return inherited.DeletePath(key), &drop
 }
 
 func (h *handlers) create(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	return h.createWith(ctx, params, nil)
+}
+
+func (h *handlers) createWith(ctx context.Context, params json.RawMessage, birth func(form.Patch) form.Patch) (interface{}, error) {
 	_, span := figOtel.Start(ctx, "angelus.create")
 	defer span.End()
 
@@ -117,6 +136,9 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	dress, err := h.dress(nil, req.Patch)
 	if err != nil {
 		return nil, err
+	}
+	if birth != nil {
+		dress = birth(dress)
 	}
 	base := mergePatches(stumpPatch, dress)
 	// A named default missing on disk falls through to the missing-provider error.
@@ -294,14 +316,13 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	claimed := authz.FigaroOf(ctx) != ""
 	heir := req.Seat != "" && (!claimed || authz.FigaroOf(ctx) == req.FigaroID)
 	lane := claimed && !heir
-	if lane && req.Patch != nil {
-		if e, ok := req.Patch.Entry(form.FanoutMaxChildrenKey); ok && e.IsRemoval() {
-			p := withFanoutBirthDefault(*req.Patch)
-			req.Patch = &p
-		}
+	if lane && req.Patch != nil && removesFanoutBirthKey(*req.Patch) {
+		p := withFanoutBirthDefault(*req.Patch)
+		req.Patch = &p
 	}
+	inherited = inherited.DeletePath(form.FanoutQuotaKey)
 	if lane {
-		inherited, req.Patch = withoutInheritedMint(inherited, req.Patch)
+		inherited, req.Patch = withoutInherited(form.FanoutMintKey, inherited, req.Patch)
 	}
 	asked, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
@@ -331,7 +352,8 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.refuseUnheldSandbox(ctx, req.Patch); err != nil {
 		return nil, fmt.Errorf("fork: %w", err)
 	}
-	if err := h.admitFork(req.FigaroID); err != nil {
+	abdicating := req.Seat != "" && req.Abdicates
+	if err := h.admitFork(req.FigaroID, forkCharge(forkDress(asked, req.FigaroID, lane, policy)), abdicating); err != nil {
 		return nil, err
 	}
 	var cont, alt string
@@ -399,12 +421,16 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		if interior {
 			at = atMainLT
 		}
+		birth := forkDress(dress, req.FigaroID, lane, policy)
+		if err := h.admitFork(req.FigaroID, forkCharge(birth), abdicating); err != nil {
+			return err
+		}
 		release, err := h.angelus.holdForkSlot(req.FigaroID)
 		if err != nil {
 			return err
 		}
 		reapedBefore := h.angelus.isReaped(req.FigaroID)
-		alt, _, err = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID, lane, policy), mintedBy(ctx), ariaIDStamp())
+		alt, _, err = h.angelus.Backend.ForkWith(req.FigaroID, at, birth, mintedBy(ctx), ariaIDStamp())
 		release()
 		if err != nil {
 			return err
@@ -453,7 +479,20 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note}, nil
 }
 
-func (h *handlers) admitFork(parent string) error {
+func (h *handlers) admitFork(parent string, charge int, abdicating bool) error {
+	if abdicating {
+		if err := h.angelus.fanoutCounts().over(parent); err != nil {
+			return fmt.Errorf("%w; a succession that retires its predecessor fits only a budget that is not already overdrawn", err)
+		}
+		return nil
+	}
+	if err := h.admitMaxChildren(parent); err != nil {
+		return err
+	}
+	return h.angelus.fanoutCounts().fits(parent, charge)
+}
+
+func (h *handlers) admitMaxChildren(parent string) error {
 	max, ok, err := h.angelus.fanoutLimit(parent)
 	if err != nil {
 		return fmt.Errorf("fork: the limit of %s cannot be read to admit the fork: %w", parent, err)
@@ -523,6 +562,7 @@ func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMa
 	copy.TTLMS, copy.KeepaliveMS, copy.RetiredAtMS = own.TTLMS, own.KeepaliveMS, own.RetiredAtMS
 	copy.ReapedAtMS, copy.ReapedRoot, copy.ReapedUntilMS = own.ReapedAtMS, own.ReapedRoot, own.ReapedUntilMS
 	copy.ReapIfEmpty, copy.RetiredReason = own.ReapIfEmpty, own.RetiredReason
+	copy.FanoutQuota = own.FanoutQuota
 	if interior {
 		held := h.heldBy(child)
 		copy.MessageCount = held.MessageCount
@@ -932,6 +972,11 @@ func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rp
 	}
 	dem, err := h.demoteUnder(ctx, rpc.DemoteRequest{FigaroID: pred, Prefer: successor})
 	r.Demote = dem
+	if err == nil && dem.Preferred && !h.angelus.forkDescends(successor, pred) {
+		if qerr := h.angelus.moveQuota(pred, successor); qerr != nil {
+			slog.Error("fanout: the seat moved the figaro but not its quota", "pred", pred, "succ", successor, "err", qerr)
+		}
+	}
 	if err == nil && dem.Parked != nil && r.Placed {
 		var withdrawn bool
 		if withdrawn, err = h.withdrawSeatDemote(*dem.Parked); withdrawn {

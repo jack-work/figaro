@@ -429,6 +429,10 @@ system.fanout.mint	owner= lineage=system.fanout.mint set=false remove=false appl
 system.fanout.mint.x	owner= lineage=system.fanout.mint set=false remove=false apply.owner=ok apply.figaro=refused
 system.fanout.mint[0]	owner= lineage=system.fanout.mint set=false remove=false apply.owner=refused apply.figaro=refused
 system.fanout.mint_x	owner= lineage= set=false remove=false apply.owner=ok apply.figaro=refused
+system.fanout.quota	owner= lineage=system.fanout.quota set=false remove=false apply.owner=ok apply.figaro=refused
+system.fanout.quota.x	owner= lineage=system.fanout.quota set=false remove=false apply.owner=ok apply.figaro=refused
+system.fanout.quota[0]	owner= lineage=system.fanout.quota set=false remove=false apply.owner=refused apply.figaro=refused
+system.fanout.quota_x	owner= lineage= set=false remove=false apply.owner=ok apply.figaro=refused
 system.fanout.x	owner= lineage= set=false remove=false apply.owner=ok apply.figaro=refused
 system.fanout[0]	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.fanout_x	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused

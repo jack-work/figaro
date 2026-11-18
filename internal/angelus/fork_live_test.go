@@ -121,6 +121,10 @@ func (b *liveForkBackend) SetMeta(_ string, meta *store.AriaMeta) error {
 // Hierarchy over this double's backend.
 func (b *liveForkBackend) HierarchyEngine() hierarchy.Engine { return nil }
 
+func (b *liveForkBackend) Feed(store.TopologyFeed) {}
+
+func (b *liveForkBackend) EveryNode() []store.NodeView { return nil }
+
 func TestForkKeepsLiveAgentRunning(t *testing.T) {
 	registry := NewRegistry()
 	live := &liveForkFigaro{id: "live"}

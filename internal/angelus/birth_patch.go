@@ -132,6 +132,9 @@ func forkDress(dress form.Patch, parent string, capByDefault bool, policy form.P
 	if capByDefault {
 		dress = withFanoutBirthDefault(dress)
 	}
+	if e, ok := dress.Entry(form.FanoutQuotaKey); !ok || e.IsRemoval() {
+		dress = form.Merge(dress, form.Build(form.Snapshot{}, nil, []string{form.FanoutQuotaKey}))
+	}
 	return form.Merge(dress, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		form.ForkedFromKey: json.RawMessage(`"` + parent + `"`),
 	}, nil))
@@ -146,11 +149,44 @@ func birthPolicyNote(parent string, policy form.Patch, err error) string {
 	return fmt.Sprintf("a fork of %s would be born under its child policy (%s)", parent, strings.Join(keys, ", "))
 }
 
+var fanoutBirthKeys = []string{form.FanoutMaxChildrenKey, form.FanoutQuotaKey}
+
 func withFanoutBirthDefault(dress form.Patch) form.Patch {
-	if e, ok := dress.Entry(form.FanoutMaxChildrenKey); ok && !e.IsRemoval() {
+	set := map[string]json.RawMessage{}
+	for _, key := range fanoutBirthKeys {
+		if e, ok := dress.Entry(key); !ok || e.IsRemoval() {
+			set[key] = json.RawMessage(`0`)
+		}
+	}
+	if len(set) == 0 {
 		return dress
 	}
-	return form.Merge(dress, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.FanoutMaxChildrenKey: json.RawMessage(`0`)}, nil))
+	return form.Merge(dress, form.Build(form.Snapshot{}, set, nil))
+}
+
+func withQuotaBirthDefault(dress form.Patch) form.Patch {
+	if e, ok := dress.Entry(form.FanoutQuotaKey); ok && !e.IsRemoval() {
+		return dress
+	}
+	return form.Merge(dress, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.FanoutQuotaKey: json.RawMessage(`0`)}, nil))
+}
+
+func removesFanoutBirthKey(p form.Patch) bool {
+	for _, key := range fanoutBirthKeys {
+		if e, ok := p.Entry(key); ok && e.IsRemoval() {
+			return true
+		}
+	}
+	return false
+}
+
+func forkCharge(birth form.Patch) int {
+	if e, ok := birth.Entry(form.FanoutQuotaKey); ok && !e.IsRemoval() {
+		if n, ok, err := form.FanoutQuota(form.Snapshot{}.Apply(birth)); err == nil && ok {
+			return 1 + n
+		}
+	}
+	return 1
 }
 
 func mergePatches(a, b form.Patch) form.Patch {
