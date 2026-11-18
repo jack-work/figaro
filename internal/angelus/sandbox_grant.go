@@ -191,9 +191,33 @@ func (h *handlers) allowed(ctx context.Context, verb rpc.Verb, res authz.Resourc
 	return nil
 }
 
+func (h *handlers) figaroGrant(ctx context.Context, verb rpc.Verb, res authz.Resource, ok func(authz.FigaroView, jkauthz.Subject) bool, why string) error {
+	f, p := authz.FigaroOf(ctx), h.angelus.Policies
+	if f == "" || p == nil {
+		return nil
+	}
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil {
+		return err
+	}
+	if !ok(p.Figaro(f), sub) {
+		return fmt.Errorf("%s on %s: figaro %s %s", verb, res, f, why)
+	}
+	return nil
+}
+
 func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, params json.RawMessage) error {
 	switch method {
+	case rpc.MethodDrop:
+		return h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(id), func(v authz.FigaroView, s jkauthz.Subject) bool {
+			return v.AllowWhole(s, rpc.VerbSet, authz.Aria(id))
+		}, "holds only keyed set there, and a drop writes the observer's studies")
 	case rpc.MethodStudy:
+		if err := h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(id), func(v authz.FigaroView, s jkauthz.Subject) bool {
+			return v.AllowWhole(s, rpc.VerbSet, authz.Aria(id))
+		}, "holds only keyed set there, and a study writes the observer's studies"); err != nil {
+			return err
+		}
 		var req rpc.StudyRequest
 		if json.Unmarshal(params, &req) == nil && req.FormID != "" {
 			if h.allowed(ctx, rpc.VerbRead, authz.Aria(req.FormID)) != nil {
@@ -207,9 +231,18 @@ func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, param
 		}
 	case rpc.MethodCast:
 		var req rpc.CastRequest
-		if json.Unmarshal(params, &req) == nil && req.FormID != "" {
-			return h.allowed(ctx, rpc.VerbSet, authz.Aria(req.FormID))
+		if json.Unmarshal(params, &req) != nil {
+			break
 		}
+		if req.FormID == "" {
+			return h.allowed(ctx, rpc.VerbCreate, authz.Daemon)
+		}
+		if err := h.allowed(ctx, rpc.VerbSet, authz.Aria(req.FormID)); err != nil {
+			return err
+		}
+		return h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(req.FormID), func(v authz.FigaroView, s jkauthz.Subject) bool {
+			return v.AllowsKey(s, rpc.VerbSet, authz.Aria(req.FormID), "target-aria")
+		}, "may not set target-aria there, which a cast writes")
 	case rpc.MethodSet:
 		var req rpc.SetRequest
 		if err := json.Unmarshal(params, &req); err != nil {
