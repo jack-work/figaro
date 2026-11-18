@@ -3,7 +3,9 @@ package hierarchy_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
+	"slices"
 	"sort"
 	"testing"
 
@@ -348,5 +350,51 @@ func TestADepartureTakesTheComponentTheStoreHolds(t *testing.T) {
 	sort.Strings(p.Delete)
 	if len(p.Delete) != 3 || p.Delete[0] != "C" || p.Delete[1] != "D" || p.Delete[2] != "X" {
 		t.Fatalf("departure took %v, want C D X", p.Delete)
+	}
+}
+
+type holdLog []string
+
+func (l *holdLog) Settle(p hierarchy.Plan, committed bool) {
+	*l = append(*l, fmt.Sprintf("%s %t", p.Op, committed))
+}
+
+type holdingGuard struct{ log *holdLog }
+
+func (g holdingGuard) Check(context.Context, hierarchy.Principal, hierarchy.Plan) (hierarchy.Verdict, error) {
+	return hierarchy.Verdict{Hold: g.log}, nil
+}
+
+func (holdingGuard) MayConsent(context.Context, hierarchy.Principal, string) error { return nil }
+
+func (holdingGuard) Readmit(_ context.Context, by hierarchy.Principal) (hierarchy.Principal, error) {
+	return by, nil
+}
+
+func TestEveryHoldIsSettledOnceWithWhatTheStoreDid(t *testing.T) {
+	ctx := context.Background()
+	f := chain()
+	var log holdLog
+	h := hierarchy.New(f, holdingGuard{&log})
+	if _, err := h.Check(ctx, anyone, hierarchy.Plan{Op: hierarchy.Place, Node: "C", To: "P"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Apply(ctx, anyone, hierarchy.Plan{Op: hierarchy.Place, Node: "C", To: "P"}); err != nil {
+		t.Fatal(err)
+	}
+	f.removeErr = errors.New("disk full")
+	if _, err := h.Apply(ctx, anyone, hierarchy.Plan{Op: hierarchy.Kill, Node: "D"}); err == nil {
+		t.Fatal("the kill was not refused")
+	}
+	f.removeErr = nil
+	if _, err := h.Under(ctx, anyone, hierarchy.Plan{Op: hierarchy.Reap, Node: "D"}, func(hierarchy.Plan) error { return errors.New("refused") }); err == nil {
+		t.Fatal("the reap was not refused")
+	}
+	if _, err := h.Under(ctx, anyone, hierarchy.Plan{Op: hierarchy.Reap, Node: "D"}, func(hierarchy.Plan) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	want := holdLog{"place false", "place true", "kill false", "reap false", "reap true"}
+	if !slices.Equal(log, want) {
+		t.Fatalf("settled %v, want %v", log, want)
 	}
 }

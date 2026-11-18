@@ -131,6 +131,17 @@ type Verdict struct {
 	Park    string
 	Accepts []string
 	Until   time.Time
+	Hold    Hold
+}
+
+type Hold interface {
+	Settle(p Plan, committed bool)
+}
+
+func (v Verdict) settle(p Plan, committed bool) {
+	if v.Hold != nil {
+		v.Hold.Settle(p, committed)
+	}
 }
 
 type Consent struct {
@@ -279,6 +290,7 @@ func (h *Hierarchy) Check(ctx context.Context, by Principal, p Plan) (Plan, erro
 	defer h.mu.Unlock()
 	p.Consent = nil
 	plan, v, err := h.checkLocked(ctx, by, p)
+	v.settle(plan, false)
 	if err == nil && v.Park != "" {
 		err = fmt.Errorf("%w %s", ErrParked, v.Park)
 	}
@@ -297,17 +309,19 @@ func (h *Hierarchy) Apply(ctx context.Context, by Principal, p Plan) (Plan, erro
 		return plan, err
 	}
 	if v.Park != "" {
+		v.settle(plan, false)
 		return plan, h.park(by, plan, v)
 	}
-	return h.commitAndTell(plan)
+	return h.commitAndTell(plan, v)
 }
 
 type afterCommitter interface {
 	AfterCommit(Plan)
 }
 
-func (h *Hierarchy) commitAndTell(p Plan) (Plan, error) {
+func (h *Hierarchy) commitAndTell(p Plan, v Verdict) (Plan, error) {
 	plan, err := h.commit(p)
+	v.settle(plan, err == nil)
 	if err != nil {
 		return plan, err
 	}
@@ -424,9 +438,10 @@ func (h *Hierarchy) Accept(ctx context.Context, by Principal, parent, id string)
 		return plan, err
 	}
 	if v.Park != "" {
+		v.settle(plan, false)
 		return plan, fmt.Errorf("%w %s: the topology changed since %s was proposed", ErrParked, v.Park, id)
 	}
-	return h.commitAndTell(plan)
+	return h.commitAndTell(plan, v)
 }
 
 func (h *Hierarchy) Refuse(ctx context.Context, by Principal, parent, id string) error {
@@ -451,14 +466,19 @@ func (h *Hierarchy) Under(ctx context.Context, by Principal, p Plan, commit func
 		return plan, err
 	}
 	if v.Park != "" {
+		v.settle(plan, false)
 		return plan, fmt.Errorf("%w %s: %s never waits", ErrParked, v.Park, plan.Op)
 	}
 	if err := h.lifting(plan, func() error { return commit(plan) }); err != nil {
+		v.settle(plan, false)
 		return plan, err
 	}
 	if plan.Op == Depart {
-		return plan, h.forgetDeparted(plan)
+		err := h.forgetDeparted(plan)
+		v.settle(plan, true)
+		return plan, err
 	}
+	v.settle(plan, true)
 	return plan, nil
 }
 
