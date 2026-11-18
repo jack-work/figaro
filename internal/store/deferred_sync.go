@@ -33,6 +33,8 @@ type syncWaiter struct {
 type syncers struct {
 	mu sync.Mutex
 	by map[syncKey]*channelSyncer
+
+	before func()
 }
 
 func (s *syncers) get(key syncKey, sync func(uint64) error) *channelSyncer {
@@ -159,7 +161,13 @@ func (cs *channelSyncer) flush() {
 }
 
 func (s *XwalStore) syncChannel(aria, channel string, idx uint64) error {
+	if err := s.trunks.WriteChannelThrough(aria, channel, idx); err != nil {
+		return err
+	}
 	cs := s.syncs.get(syncKey{aria: aria, channel: channel}, func(through uint64) error {
+		if s.syncs.before != nil {
+			s.syncs.before()
+		}
 		if _, ok := s.trunks.Kind(aria); !ok {
 			return nil
 		}
