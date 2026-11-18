@@ -194,3 +194,29 @@ func TestListenerIsHandedOverOnce(t *testing.T) {
 		t.Fatalf("ok=%v err=%v", ok, err)
 	}
 }
+
+func TestAcceptedConnectionIsHandedOverOnce(t *testing.T) {
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := os.NewFile(uintptr(fds[1]), "peer")
+	defer peer.Close()
+	s := &Sockets{files: map[string]*os.File{Accepted: os.NewFile(uintptr(fds[0]), Accepted)}}
+	c, ok, err := s.Conn(Accepted)
+	if !ok || err != nil {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	defer c.Close()
+	if _, err := c.Write([]byte("hi\n")); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 8)
+	k, _ := peer.Read(buf)
+	if string(buf[:k]) != "hi\n" {
+		t.Fatalf("peer read %q", buf[:k])
+	}
+	if _, ok, _ := s.Conn(Accepted); ok {
+		t.Fatal("the connection was handed over twice")
+	}
+}

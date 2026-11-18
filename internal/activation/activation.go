@@ -57,15 +57,22 @@ func (s *Sockets) Close() error {
 	return err
 }
 
-func (s *Sockets) Listener(name string) (net.Listener, bool, error) {
+func (s *Sockets) take(name string) (*os.File, bool) {
 	if s == nil {
-		return nil, false, nil
+		return nil, false
 	}
 	f, ok := s.files[name]
+	if ok {
+		delete(s.files, name)
+	}
+	return f, ok
+}
+
+func (s *Sockets) Listener(name string) (net.Listener, bool, error) {
+	f, ok := s.take(name)
 	if !ok {
 		return nil, false, nil
 	}
-	delete(s.files, name)
 	defer f.Close()
 	ln, err := net.FileListener(f)
 	if err != nil {
@@ -75,6 +82,21 @@ func (s *Sockets) Listener(name string) (net.Listener, bool, error) {
 		ul.SetUnlinkOnClose(false)
 	}
 	return ln, true, nil
+}
+
+const Accepted = "connection"
+
+func (s *Sockets) Conn(name string) (net.Conn, bool, error) {
+	f, ok := s.take(name)
+	if !ok {
+		return nil, false, nil
+	}
+	defer f.Close()
+	c, err := net.FileConn(f)
+	if err != nil {
+		return nil, true, fmt.Errorf("activation socket %q: %w", name, err)
+	}
+	return c, true, nil
 }
 
 func Take(getenv func(string) string, unsetenv func(string) error, pid int) (*Sockets, error) {
