@@ -146,13 +146,11 @@ func (h *handlers) finishSeats() {
 		case pred == r.Successor:
 			slog.Info("seats: a seat cut short by a stop had finished", "predecessor", r.Predecessor, "successor", r.Successor)
 		case succ == r.Predecessor:
-			seat := h.seatInPlaceOf(h.ownerContext(), r.Successor, r.Predecessor)
-			if seat.FailedAt == "demote" {
-				if err := h.unseat(r); err != nil {
-					seat.Error += "; putting the successor back failed: " + err.Error()
-				}
+			if err := h.unseat(r); err != nil {
+				slog.Error("seats: a seat cut short by a stop could not be undone", "predecessor", r.Predecessor, "successor", r.Successor, "err", err)
+				break
 			}
-			slog.Warn("seats: finished a seat cut short by a stop", "predecessor", r.Predecessor, "successor", r.Successor, "failed_at", seat.FailedAt, "err", seat.Error)
+			slog.Warn("seats: undid a seat cut short by a stop; nothing seats without its caller", "predecessor", r.Predecessor, "successor", r.Successor)
 		default:
 			slog.Warn("seats: a seat cut short by a stop was overtaken; the tree is left as it is", "predecessor", r.Predecessor, "successor", r.Successor)
 		}

@@ -116,17 +116,19 @@ func TestASeatLeavesNoRecordOnceItLands(t *testing.T) {
 }
 
 // A stop between the place and the demote leaves the successor under its
-// predecessor and the record on disk. The next daemon finishes the seat.
-func TestASeatCutShortByAStopIsFinishedOnTheNextSweep(t *testing.T) {
+// predecessor and the record on disk. The record does not know its caller,
+// so the next daemon puts the successor back instead of finishing as the
+// owner.
+func TestASeatCutShortByAStopIsUndoneOnTheNextSweep(t *testing.T) {
 	f := newSeatFixture(t)
 	f.crashAfterThePlace(t)
 
 	f.hs.h.finishSeats()
-	if got := f.drawn(f.pred); got != f.successor {
-		t.Fatalf("the predecessor is drawn under %q, want the successor", got)
+	if got := f.drawn(f.successor); got != f.other {
+		t.Fatalf("the successor is drawn under %q, want back under %s", got, f.other)
 	}
-	if got := f.drawn(f.successor); got != f.top {
-		t.Fatalf("the successor is drawn under %q, want the predecessor's place under %s", got, f.top)
+	if got := f.drawn(f.pred); got != f.top {
+		t.Fatalf("the predecessor is drawn under %q, want where it was under %s", got, f.top)
 	}
 	if left := f.leftRecords(t); len(left) != 0 {
 		t.Fatalf("seats.json still holds %+v", left)
