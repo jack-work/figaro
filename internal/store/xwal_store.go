@@ -453,6 +453,20 @@ func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.P
 	if patch.IsIdentity() {
 		return "", 0, message.Patch{}, fmt.Errorf("xwal store: fork-with: a fork must carry a patch")
 	}
+	child, version, stamped, mainLT, err := s.bear(parent, atMainLT, patch, kind, b)
+	if err != nil {
+		return "", 0, message.Patch{}, err
+	}
+	if err := s.syncChannel(child, chanIR, mainLT); err != nil {
+		return "", 0, message.Patch{}, fmt.Errorf("xwal store: %s birth sync: %w", child, err)
+	}
+	if err := s.syncChannel(child, chanForm, version); err != nil {
+		return "", 0, message.Patch{}, fmt.Errorf("xwal store: %s birth sync: %w", child, err)
+	}
+	return child, version, stamped, nil
+}
+
+func (s *XwalStore) bear(parent string, atMainLT uint64, patch message.Patch, kind string, b birthSpec) (child string, version uint64, stamped message.Patch, mainLT uint64, err error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -473,14 +487,14 @@ func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.P
 		child, err = s.forkAtLocked(parent, atMainLT)
 	}
 	if err != nil {
-		return "", 0, message.Patch{}, err
+		return "", 0, message.Patch{}, 0, err
 	}
-	version, stamped, err = s.writeBirth(child, patch, b)
+	version, stamped, mainLT, err = s.writeBirth(child, patch, b)
 	if err != nil {
-		return "", 0, message.Patch{}, err
+		return "", 0, message.Patch{}, 0, err
 	}
 	s.trunks.Touch(child)
-	return child, version, stamped, nil
+	return child, version, stamped, mainLT, nil
 }
 
 // Caller holds s.mu.
@@ -491,37 +505,35 @@ func (s *XwalStore) isFormLocked(id string) bool {
 
 // writeBirth appends a node's birth patch and the renderable record that carries
 // its cursor stamp. Caller holds s.mu.
-func (s *XwalStore) writeBirth(node string, patch message.Patch, b birthSpec) (uint64, message.Patch, error) {
+func (s *XwalStore) writeBirth(node string, patch message.Patch, b birthSpec) (uint64, message.Patch, uint64, error) {
 	x, err := s.trunks.Head(node)
 	if err != nil {
-		return 0, message.Patch{}, err
+		return 0, message.Patch{}, 0, err
 	}
 	defer x.Close()
 	pb, err := json.Marshal(patch)
 	if err != nil {
-		return 0, message.Patch{}, err
+		return 0, message.Patch{}, 0, err
 	}
 	next := mainTailOf(x) + 1
 	version, err := x.Append(chanForm, next, pb, nil)
 	if err != nil {
-		return 0, message.Patch{}, err
+		return 0, message.Patch{}, 0, err
 	}
 	gen, _ := json.Marshal(message.Message{Role: message.RoleInput, Timestamp: s.now(), Principal: b.mintedBy})
 	glt, err := x.AppendMain(gen, nil)
 	if err != nil {
-		return 0, message.Patch{}, err
+		return 0, message.Patch{}, 0, err
 	}
 	if glt != next {
-		return 0, message.Patch{}, fmt.Errorf("xwal store: %s birth record landed at %d, form patch keyed to %d",
+		return 0, message.Patch{}, 0, fmt.Errorf("xwal store: %s birth record landed at %d, form patch keyed to %d",
 			node, glt, next)
 	}
 	version, stamped, err := stampBirth(x, node, patch, version, b.stamp)
 	if err != nil {
-		return 0, message.Patch{}, fmt.Errorf("xwal store: %s stamp: %w", node, err)
+		return 0, message.Patch{}, 0, fmt.Errorf("xwal store: %s stamp: %w", node, err)
 	}
-	// Durable before anything spawns beneath it: a crash between here and the
-	// next flush would orphan a child's fork base.
-	return version, stamped, x.SyncCoherent()
+	return version, stamped, glt, nil
 }
 
 func stampBirth(x *xwal.XWAL, child string, birth message.Patch, version uint64, fill func(string) message.Patch) (uint64, message.Patch, error) {
