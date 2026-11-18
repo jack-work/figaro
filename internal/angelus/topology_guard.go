@@ -91,6 +91,30 @@ func (a *Angelus) fanoutLimitHeld(ownOf string, holders ...string) (int, bool, e
 	return best, bestOK, nil
 }
 
+func (a *Angelus) mayMint(id string) (bool, error) {
+	if a.Backend == nil {
+		return false, nil
+	}
+	snap, err := a.Backend.FormState(id)
+	if err != nil {
+		return false, err
+	}
+	if ok, err := form.FanoutMint(snap); ok || err != nil {
+		return ok, err
+	}
+	roles, _ := a.roles()
+	for _, roleID := range roles.holding(id) {
+		rsnap, rerr := a.Backend.FormState(roleID)
+		if rerr != nil {
+			continue
+		}
+		if ok, _ := form.FanoutMint(rsnap); ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (a *Angelus) forkDescends(id, ancestor string) bool {
 	if id == ancestor {
 		return false
@@ -142,23 +166,33 @@ func (a *Angelus) swapFanoutKeys(pred, succ string) error {
 	if err != nil {
 		return err
 	}
-	pv, pok := ps.Get(form.FanoutMaxChildrenKey)
-	sv, sok := ss.Get(form.FanoutMaxChildrenKey)
-	if pok == sok && bytes.Equal(pv, sv) {
+	succSet, predSet := map[string]json.RawMessage{}, map[string]json.RawMessage{}
+	var succDrop, predDrop []string
+	for _, key := range []string{form.FanoutMaxChildrenKey, form.FanoutMintKey} {
+		pv, pok := ps.Get(key)
+		sv, sok := ss.Get(key)
+		if pok == sok && bytes.Equal(pv, sv) {
+			continue
+		}
+		if pok {
+			succSet[key] = pv
+		} else {
+			succDrop = append(succDrop, key)
+		}
+		if sok {
+			predSet[key] = sv
+		} else {
+			predDrop = append(predDrop, key)
+		}
+	}
+	if len(succSet)+len(succDrop) == 0 {
 		return nil
 	}
-	if _, err := a.Backend.ApplyForm(succ, fanoutKeyPatch(ss, pv, pok)); err != nil {
+	if _, err := a.Backend.ApplyForm(succ, form.Build(ss, succSet, succDrop)); err != nil {
 		return err
 	}
-	_, err = a.Backend.ApplyForm(pred, fanoutKeyPatch(ps, sv, sok))
+	_, err = a.Backend.ApplyForm(pred, form.Build(ps, predSet, predDrop))
 	return err
-}
-
-func fanoutKeyPatch(base form.Snapshot, raw json.RawMessage, ok bool) form.Patch {
-	if ok {
-		return form.Build(base, map[string]json.RawMessage{form.FanoutMaxChildrenKey: raw}, nil)
-	}
-	return form.Build(base, nil, []string{form.FanoutMaxChildrenKey})
 }
 
 func (a *Angelus) liveChildrenOf(id string) []string {

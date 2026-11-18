@@ -324,9 +324,15 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 	if _, _, err := form.FanoutMaxChildren(after); err != nil {
 		return err
 	}
+	if _, err := form.FanoutMint(after); err != nil {
+		return err
+	}
 	c := h.callerKeysOf(ctx)
 	if c.owns && !c.boxed {
-		return h.refuseFanoutByLabelAlone(ctx, line, before, after)
+		if err := h.refuseFanoutByLabelAlone(ctx, line, before, after); err != nil {
+			return err
+		}
+		return h.refuseMintByLabelAlone(ctx, line, before, after)
 	}
 	for _, p := range changedPaths(before, after) {
 		if k, ok := form.Protected(p); ok && c.lineage {
@@ -345,7 +351,48 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 	if err := h.refuseScopesBeyondWriter(ctx, c, line, before, after); err != nil {
 		return err
 	}
-	return h.refuseFanoutBeyondGranter(ctx, before, after)
+	if err := h.refuseFanoutBeyondGranter(ctx, before, after); err != nil {
+		return err
+	}
+	return h.refuseMintBeyondGranter(ctx, before, after)
+}
+
+func keyChanged(before, after form.Snapshot, key string) bool {
+	was, wasOK := before.Get(key)
+	now, nowOK := after.Get(key)
+	return wasOK != nowOK || !bytes.Equal(was, now)
+}
+
+func (h *handlers) refuseMintByLabelAlone(ctx context.Context, line lineage, before, after form.Snapshot) error {
+	f := authz.FigaroOf(ctx)
+	if f == "" || !keyChanged(before, after, form.FanoutMintKey) {
+		return nil
+	}
+	if line.of == "" || !slices.Contains(h.ancestorsOf(line), f) {
+		return fmt.Errorf("%s is protected, and figaro %s is no ancestor of the aria", form.FanoutMintKey, f)
+	}
+	return h.refuseMintBeyondGranter(ctx, before, after)
+}
+
+func (h *handlers) refuseMintBeyondGranter(ctx context.Context, before, after form.Snapshot) error {
+	if !keyChanged(before, after, form.FanoutMintKey) {
+		return nil
+	}
+	if granted, _ := form.FanoutMint(after); !granted {
+		return nil
+	}
+	f := authz.FigaroOf(ctx)
+	if f == "" {
+		return fmt.Errorf("%s: only the owner or an ancestor figaro grants it", form.FanoutMintKey)
+	}
+	own, err := h.angelus.mayMint(f)
+	if err != nil {
+		return fmt.Errorf("%s: reading %s's own: %w", form.FanoutMintKey, f, err)
+	}
+	if !own {
+		return fmt.Errorf("%s: %s does not hold mint itself, so it cannot grant it", form.FanoutMintKey, f)
+	}
+	return nil
 }
 
 func (h *handlers) refuseFanoutByLabelAlone(ctx context.Context, line lineage, before, after form.Snapshot) error {

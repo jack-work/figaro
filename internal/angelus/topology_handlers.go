@@ -28,6 +28,47 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
+func (h *handlers) createTopLevel(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	if err := h.refuseUnlicensedMint(ctx); err != nil {
+		return nil, err
+	}
+	return h.create(ctx, params)
+}
+
+func (h *handlers) refuseUnlicensedMint(ctx context.Context) error {
+	f := authz.FigaroOf(ctx)
+	if f == "" {
+		return nil
+	}
+	if _, boxed := callerBox(ctx); boxed {
+		return nil
+	}
+	ok, err := h.angelus.mayMint(f)
+	if err != nil {
+		return fmt.Errorf("mint: reading %s's %s: %w", f, form.FanoutMintKey, err)
+	}
+	if !ok {
+		return fmt.Errorf("mint: %s may not create a top-level figaro; fork yourself instead (figaro fork %s:1 ...)", f, f)
+	}
+	return nil
+}
+
+func withoutInheritedMint(inherited form.Snapshot, patch *form.Patch) (form.Snapshot, *form.Patch) {
+	if _, has := inherited.Get(form.FanoutMintKey); !has {
+		return inherited, patch
+	}
+	if patch != nil {
+		if e, ok := patch.Entry(form.FanoutMintKey); ok && !e.IsRemoval() {
+			return inherited.DeletePath(form.FanoutMintKey), patch
+		}
+	}
+	drop := form.Build(inherited, nil, []string{form.FanoutMintKey})
+	if patch != nil {
+		drop = form.Merge(*patch, drop)
+	}
+	return inherited.DeletePath(form.FanoutMintKey), &drop
+}
+
 func (h *handlers) create(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	_, span := figOtel.Start(ctx, "angelus.create")
 	defer span.End()
@@ -247,6 +288,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			p := withFanoutBirthDefault(*req.Patch)
 			req.Patch = &p
 		}
+	}
+	if claimed {
+		inherited, req.Patch = withoutInheritedMint(inherited, req.Patch)
 	}
 	if err := h.refuseCallerKeys(ctx, birthUnder(req.FigaroID), inherited, req.Patch); err != nil {
 		return nil, err

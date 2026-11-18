@@ -698,3 +698,59 @@ func TestForkAdmissionDoesNotDeadlockAgainstTopologyOrGrants(t *testing.T) {
 		t.Fatal("forks, demotes, casts and grants under one parent did not finish in 60s")
 	}
 }
+
+// Mint goes with the seat. A role carrying it licenses whoever holds the
+// role now, and only them; a holder's own mint moves to its successor in
+// the succeed swap, and its claimed fork is born without it.
+func TestSuccessionKeepsMintThroughTheRoleAndTheSwap(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	gp, _ := b.CreateConversation(outfit)
+	_, pred, err := b.Fork(gp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, _ := json.Marshal(pred)
+	role := mintForm(t, hs.h, "target-aria", string(target), form.FanoutMintKey, "true")
+	applyKeys(t, b, pred, map[string]any{form.FanoutMintKey: true})
+	out, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred})
+	if err != nil {
+		t.Fatal(err)
+	}
+	succ := out.Alternative
+	if v, ok := keyOnBackend(t, b, succ, form.FanoutMintKey); ok {
+		t.Fatalf("the claimed successor was born with mint %s", v)
+	}
+	if err := swapUnder(t, hs, pred, pred, succ); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := keyOnBackend(t, b, succ, form.FanoutMintKey); v != "true" {
+		t.Fatalf("successor's own mint after the swap = %q, want true", v)
+	}
+	if v, ok := keyOnBackend(t, b, pred, form.FanoutMintKey); ok {
+		t.Fatalf("predecessor kept its own mint %s after the swap", v)
+	}
+	if ok, _ := hs.h.angelus.mayMint(pred); !ok {
+		t.Fatal("control: the predecessor still holds the role, so it may mint")
+	}
+	applyKeys(t, b, succ, map[string]any{form.FanoutMintKey: false})
+	succRaw, _ := json.Marshal(succ)
+	if _, err := b.ApplyForm(role, form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": succRaw}, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := hs.h.angelus.mayMint(succ); !ok {
+		t.Fatal("the new holder of a role carrying mint may not mint")
+	}
+	if ok, _ := hs.h.angelus.mayMint(pred); ok {
+		t.Fatal("the old holder kept mint after the role moved on")
+	}
+}
+
+func keyOnBackend(t *testing.T, b *store.XwalBackend, id, key string) (string, bool) {
+	t.Helper()
+	snap, err := b.FormState(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, ok := snap.Get(key)
+	return string(v), ok
+}

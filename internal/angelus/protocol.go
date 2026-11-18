@@ -104,7 +104,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	h.startTroupeForm()
 	h.publishCatalogs()
 	methods := map[string]jkrpc.HandlerFunc{
-		rpc.MethodCreate:             h.create,
+		rpc.MethodCreate:             h.createTopLevel,
 		rpc.MethodFormCreate:         h.formCreate,
 		rpc.MethodFormApply:          h.formApply,
 		rpc.MethodFormBind:           h.formBind,
@@ -547,6 +547,9 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
+	if err := h.refuseUnlicensedMint(ctx); err != nil {
+		return nil, fmt.Errorf("form.bind: %w", err)
+	}
 	req.Cwd = hostCwdOf(ctx, req.Cwd)
 	parent := req.Parent
 	if parent == "null" {
@@ -569,6 +572,9 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		if inherited, err = h.angelus.Backend.FormState(parent); err != nil {
 			return nil, fmt.Errorf("form.bind: the board of %s cannot be read to check the patch against it: %w", parent, err)
 		}
+	}
+	if authz.FigaroOf(ctx) != "" {
+		inherited, req.Patch = withoutInheritedMint(inherited, req.Patch)
 	}
 	if err := h.refuseCallerKeys(ctx, birthUnder(parent), inherited, req.Patch); err != nil {
 		return nil, err

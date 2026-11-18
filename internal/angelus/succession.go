@@ -451,7 +451,7 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 		return
 	}
 	keys := map[string]json.RawMessage{store.SystemTTLKey: json.RawMessage(`"0"`)}
-	copied(snap, keys, store.SystemRetirementKey, "system.sandbox", "system.tools", form.FanoutMaxChildrenKey)
+	copied(snap, keys, store.SystemRetirementKey, "system.sandbox", "system.tools", form.FanoutMaxChildrenKey, form.FanoutMintKey)
 	scopes, narrowed, err := h.carriedScopes(rec.Old, snap)
 	if err != nil {
 		h.failSuccession(ctx, rec, "read the predecessor's scopes: "+err.Error())
