@@ -424,6 +424,11 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			alt = ""
 			return serr
 		}
+		if serr := h.dropUnreadableStudies(alt); serr != nil {
+			h.discardBirth(alt)
+			alt = ""
+			return serr
+		}
 		cont = req.FigaroID
 		h.seedForkMeta(parentMeta, req.FigaroID, alt, atMainLT, interior, forkOwner)
 		return nil
