@@ -94,6 +94,7 @@ type Move struct {
 	ToOwner        string
 	Rehome         bool
 	WithinLineage  bool
+	FromBelow      bool
 	ToReceiver     bool
 	Home           bool
 	Lift           bool
@@ -647,7 +648,24 @@ func (h *Hierarchy) annotate(moves []Move) {
 		up, _ := h.eng.Stored(m.Node)
 		m.Home = m.To != "" && m.To == up
 		m.WithinLineage = h.storedBelow(m.To, m.Node)
+		m.FromBelow = h.drawnBelow(m.Node, m.To)
 	}
+}
+
+func (h *Hierarchy) drawnBelow(node, ancestor string) bool {
+	if ancestor == "" {
+		return false
+	}
+	seen := map[string]bool{node: true}
+	at, _ := h.eng.Drawn(node)
+	for at != "" && !seen[at] {
+		if at == ancestor {
+			return true
+		}
+		seen[at] = true
+		at, _ = h.eng.Drawn(at)
+	}
+	return false
 }
 
 func (h *Hierarchy) storedBelow(to, node string) bool {

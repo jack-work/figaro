@@ -2,6 +2,7 @@ package angelus_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
@@ -72,11 +73,15 @@ func (r ownerRig) drawnUnder(t *testing.T, node string) string {
 
 func (r ownerRig) refusesShedAndHijack(t *testing.T) {
 	t.Helper()
-	_ = r.arrange(t, r.self, r.kid, r.q)
+	if err := r.arrange(t, r.self, r.kid, r.q); err == nil || !strings.Contains(err.Error(), "waits on") {
+		t.Errorf("shedding the child under %s: %v, want it to wait on that parent", r.q, err)
+	}
 	if got := r.drawnUnder(t, r.kid); got != r.self {
 		t.Errorf("a figaro shed its child under %s, outside its lineage, without consent: the child is drawn under %q", r.q, got)
 	}
-	_ = r.arrange(t, r.self, r.self, r.holder)
+	if err := r.arrange(t, r.self, r.self, r.holder); err == nil || !strings.Contains(err.Error(), "waits on") {
+		t.Errorf("drawing itself under %s: %v, want it to wait on that holder", r.holder, err)
+	}
 	if got := r.drawnUnder(t, r.self); got == r.holder {
 		t.Errorf("a figaro drew itself under the role holder %s without consent", r.holder)
 	}
@@ -90,4 +95,49 @@ func TestAFigaroWithNarrowScopesCannotShedAChildOrTakeAHeldRole(t *testing.T) {
 		return []string{"*:aria:self", "*:aria:" + r.kid, "read:*"}
 	})
 	r.refusesShedAndHijack(t)
+}
+
+// Review of F2: an in-place swap moves a node up into a parent that already
+// holds it, so it waits on no one; demote and succeed must not park.
+func TestAScopedSeatDemotesItselfUnderItsForkWithoutConsent(t *testing.T) {
+	r := ownerRig{grantRig: newRigWith(t, doorPolicy)}
+	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	engineer := out.FigaroID
+	fork := func(of string) string {
+		raw, _ := json.Marshal(rpc.ForkRequest{FigaroID: of, Patch: heldPatch(t, map[string]any{form.FanoutMaxChildrenKey: 2})})
+		out, err := r.h[rpc.MethodFork](asOwner(), raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.(rpc.ForkResponse).Alternative
+	}
+	seat := fork(engineer)
+	heir := fork(seat)
+	scopes, _ := json.Marshal([]string{"*:aria:self", "*:aria:" + heir, "read:*"})
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, seat, rpc.SetRequest{Patch: form.Build(form.Snapshot{}, map[string]json.RawMessage{form.ScopesKey: scopes}, nil)})); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.drawnUnder(t, seat); got != engineer {
+		t.Fatalf("the seat is drawn under %q, want %q", got, engineer)
+	}
+	raw, _ := json.Marshal(rpc.DemoteRequest{FigaroID: seat, Prefer: heir})
+	res, err := r.h[rpc.MethodDemote](localOwner(), claimed(t, seat, raw))
+	if err != nil {
+		t.Fatalf("a scoped seat demoting itself under its fork: %v", err)
+	}
+	if dem := res.(rpc.DemoteResponse); dem.Parked != nil {
+		t.Fatalf("the demote parked on %s, which already held the fork", dem.Parked.Parent)
+	}
+	if got := r.drawnUnder(t, heir); got != engineer {
+		t.Errorf("the fork is drawn under %q after the demote, want %q", got, engineer)
+	}
+	if got := r.drawnUnder(t, seat); got != heir {
+		t.Errorf("the seat is drawn under %q after its demote, want %q", got, heir)
+	}
 }

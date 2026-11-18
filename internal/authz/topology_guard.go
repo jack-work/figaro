@@ -169,11 +169,13 @@ func (g TopologyGuard) Readmit(ctx context.Context, by hierarchy.Principal) (hie
 	return by, nil
 }
 
+func swaps(op hierarchy.Op) bool { return op == hierarchy.Demote || op == hierarchy.Promote }
+
 func (g TopologyGuard) consent(ctx context.Context, by hierarchy.Principal, c TopologyCaller, p hierarchy.Plan) (hierarchy.Verdict, error) {
 	var waits []string
 	var accepts []string
 	for _, m := range p.Moves {
-		if m.Rehome || !m.ToReceiver || m.Home || m.From == m.To && m.Tree == hierarchy.Drawn {
+		if m.Rehome || !m.ToReceiver || m.Home || m.FromBelow && swaps(p.Op) || m.From == m.To && m.Tree == hierarchy.Drawn {
 			continue
 		}
 		if g.ownsParent(by, c, m.ToOwner) {

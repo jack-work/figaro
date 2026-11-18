@@ -312,6 +312,8 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 	switch {
 	case err != nil:
 		return r, r.fail("demote", err)
+	case dem.Parked != nil:
+		return r, r.fail("demote", fmt.Errorf("nothing moved yet: the demote waits on %s as proposal %s", dem.Parked.Parent, dem.Parked.ID))
 	case dem.Unsupported:
 		r.warn("no trunk capability: %s was not demoted, and deleting it takes what is drawn under it", ariaName(old.ID))
 	case dem.Under != "" && !dem.Preferred:
