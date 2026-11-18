@@ -31,9 +31,9 @@ func (e *hierarchyEngine) s() *XwalStore { return e.b.store }
 func (e *hierarchyEngine) Version() hierarchy.Version {
 	v := hierarchy.Version{Epoch: e.epoch}
 	s := e.s()
-	s.mu.Lock()
+	s.mu.RLock()
 	v.Stored = s.trunks.Version()
-	s.mu.Unlock()
+	s.mu.RUnlock()
 	if s.tree != nil {
 		v.Drawn = s.tree.Rev()
 	}

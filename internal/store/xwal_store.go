@@ -181,7 +181,7 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 type XwalStore struct {
 	root     string
 	nodeID   string
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	trunks   *xwal.Store
 	topology atomic.Pointer[topologySnapshot]
 
@@ -371,8 +371,8 @@ func migrateLayout(root string) error {
 
 // Caller closes.
 func (s *XwalStore) openNode(id string) (*xwal.XWAL, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	x, err := s.trunks.Head(id)
 	if err == nil {
 		return x, nil
@@ -436,10 +436,10 @@ func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch
 // fork, through ForkWith.
 func (s *XwalStore) CreateForm(parent string, patch message.Patch, opts ...BirthOption) (id string, version uint64, stamped message.Patch, err error) {
 	if parent != "" {
-		s.mu.Lock()
+		s.mu.RLock()
 		kind, known := s.trunks.Kind(parent)
 		legacyStump := s.isStumpLocked(parent)
-		s.mu.Unlock()
+		s.mu.RUnlock()
 		if !legacyStump && (!known || kind != string(kindForm)) {
 			return "", 0, message.Patch{}, fmt.Errorf("xwal store: create form: parent %s is not an unbound form", parent)
 		}
@@ -453,8 +453,8 @@ func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.P
 	if patch.IsIdentity() {
 		return "", 0, message.Patch{}, fmt.Errorf("xwal store: fork-with: a fork must carry a patch")
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	switch {
 	case parent == "":
