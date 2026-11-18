@@ -56,7 +56,8 @@ func TestAFormReadCarriesTheCallersAccess(t *testing.T) {
 	for path, kind := range map[string]rpc.KeyDenyKind{
 		"system.model":          rpc.DenyOwnerHeld,
 		"system.tools":          rpc.DenyOwnerHeld,
-		"target-aria":           rpc.DenyBoxHeld,
+		"target-aria":           rpc.DenyProtected,
+		"succession-policy":     rpc.DenyOwnerHeld,
 		"system.ttl":            rpc.DenyOwnerHeld,
 		"system.added_tomorrow": rpc.DenyBoxUnlisted,
 	} {
