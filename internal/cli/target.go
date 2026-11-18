@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"strings"
@@ -118,41 +119,82 @@ func redirectRole(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus,
 
 func redirectRoleGrant(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, id string, ep sdk.Addr) (string, sdk.Addr, rpc.AttachResponse, error) {
 	var none rpc.AttachResponse
+	role, err := roleAt(ctx, loaded, acli, id, ep)
+	if err != nil {
+		return "", sdk.Addr{}, none, err
+	}
+	if role.Refused != "" {
+		return "", sdk.Addr{}, none, errors.New(role.Refused)
+	}
+	target := role.Holder
+	if foreignNode(id) != "" {
+		target = onNodeOf(id, target)
+	}
+	if role.Sandbox != "" {
+		report(ctx, "role %s → aria %s, held in sandbox %s", ariaName(id), ariaName(target), role.Sandbox)
+	} else {
+		report(ctx, "role %s → aria %s", ariaName(id), ariaName(target))
+	}
+	return resolveTargetGrant(ctx, loaded, acli, target, false, dressing{})
+}
+
+func roleAt(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, id string, ep sdk.Addr) (rpc.RoleHolder, error) {
+	if resp, err := attachRole(ctx, acli, id); err == nil && resp.Role != nil {
+		return *resp.Role, nil
+	}
+	return roleOnForm(ctx, loaded, acli, id, ep)
+}
+
+func attachRole(ctx context.Context, acli *sdk.Angelus, id string) (rpc.AttachResponse, error) {
+	if foreignNode(id) != "" {
+		_, _, resp, err := attachForeign(ctx, id)
+		return resp, err
+	}
+	attachCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	resp, err := acli.Attach(attachCtx, id)
+	if err != nil {
+		return rpc.AttachResponse{}, err
+	}
+	return *resp, nil
+}
+
+func roleOnForm(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, id string, ep sdk.Addr) (rpc.RoleHolder, error) {
+	var none rpc.RoleHolder
 	fcli, err := sdk.DialAria(ep, nil)
 	if err != nil {
-		return "", sdk.Addr{}, none, fmt.Errorf("read form %s: %w", id, err)
+		return none, fmt.Errorf("read form %s: %w", id, err)
 	}
 	formCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	resp, err := fcli.Form(formCtx)
 	cancel()
 	fcli.Close()
 	if err != nil {
-		return "", sdk.Addr{}, none, fmt.Errorf("read form %s: %w", id, err)
+		return none, fmt.Errorf("read form %s: %w", id, err)
 	}
 	target := resp.Snapshot.Lookup("target-aria")
 	if target == nil || *target == "" {
-		return "", sdk.Addr{}, none, notARole{id}
-	}
-	if foreignNode(id) != "" {
-		held := onNodeOf(id, *target)
-		target = &held
+		return none, notARole{id}
 	}
 	if strings.Contains(*target, "@") {
-		return "", sdk.Addr{}, none, fmt.Errorf("role %s: target-aria %q is a form, not an aria; roles do not chain", id, *target)
+		return rpc.RoleHolder{Refused: fmt.Sprintf("role %s: target-aria %q is a form, not an aria; roles do not chain", id, *target)}, nil
 	}
-	if box := resp.Snapshot.Lookup("system.sandbox"); box != nil && *box != "" {
-		report(ctx, "role %s → aria %s, held in sandbox %s", ariaName(id), ariaName(*target), *box)
-		tid, tep, grant, err := resolveTargetGrant(ctx, loaded, acli, *target, false, dressing{})
-		if err != nil {
-			return "", sdk.Addr{}, none, err
-		}
-		if got := sandboxOfAria(ctx, tep); got != *box {
-			return "", sdk.Addr{}, none, fmt.Errorf("role %s is held in sandbox %s but points at %s, which runs in %q: refused", id, *box, ariaName(tid), got)
-		}
-		return tid, tep, grant, nil
+	box := resp.Snapshot.Lookup("system.sandbox")
+	if box == nil || *box == "" {
+		return rpc.RoleHolder{Holder: *target}, nil
 	}
-	report(ctx, "role %s → aria %s", ariaName(id), ariaName(*target))
-	return resolveTargetGrant(ctx, loaded, acli, *target, false, dressing{})
+	held := *target
+	if foreignNode(id) != "" {
+		held = onNodeOf(id, held)
+	}
+	tid, tep, _, err := resolveTargetGrant(ctx, loaded, acli, held, false, dressing{})
+	if err != nil {
+		return none, err
+	}
+	if got := sandboxOfAria(ctx, tep); got != *box {
+		return rpc.RoleHolder{Refused: fmt.Sprintf("role %s is held in sandbox %s but points at %s, which runs in %q: refused", id, *box, ariaName(tid), got)}, nil
+	}
+	return rpc.RoleHolder{Holder: *target, Sandbox: *box}, nil
 }
 
 func sandboxOfAria(ctx context.Context, ep sdk.Addr) string {

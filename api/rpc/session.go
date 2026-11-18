@@ -69,8 +69,15 @@ type AttachRequest struct {
 }
 
 type AttachResponse struct {
-	FigaroID string `json:"figaro_id"`
-	May      []Verb `json:"may,omitempty"`
+	FigaroID string      `json:"figaro_id"`
+	May      []Verb      `json:"may,omitempty"`
+	Role     *RoleHolder `json:"role,omitempty"`
+}
+
+type RoleHolder struct {
+	Holder  string `json:"holder,omitempty"`
+	Sandbox string `json:"sandbox,omitempty"`
+	Refused string `json:"refused,omitempty"`
 }
 
 func (r AttachResponse) MayNot(v Verb) bool {
