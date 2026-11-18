@@ -3,6 +3,7 @@ package aria
 import (
 	"reflect"
 	"sync"
+	"sync/atomic"
 
 	"github.com/jack-work/figaro/api/livedoc"
 )
@@ -11,6 +12,7 @@ import (
 type Server struct {
 	mu     sync.Mutex
 	cache  *TurnCache // the sealed section; mutated only under mu
+	last   atomic.Uint64
 	open   *openTurn
 	subs   map[int]func(Page)
 	nextID int
@@ -61,9 +63,7 @@ func (s *Server) BindCache(node string, shared *ComposedCache) {
 
 // LastTurn is the newest known turn id, 0 if none.
 func (s *Server) LastTurn() uint64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.cache.LastID()
+	return s.last.Load()
 }
 
 // Turns materializes the whole log; the paging path never uses it.
@@ -83,6 +83,7 @@ func (s *Server) HasOpen() bool {
 func (s *Server) Restore(turns []Turn) {
 	s.mu.Lock()
 	s.cache.ReplaceAll(turns)
+	s.last.Store(s.cache.LastID())
 	s.open = nil
 	s.mu.Unlock()
 }
@@ -96,6 +97,7 @@ func (s *Server) AdoptIfEmpty(turns []Turn) bool {
 		return false
 	}
 	s.cache.ReplaceAll(turns)
+	s.last.Store(s.cache.LastID())
 	return true
 }
 
@@ -106,6 +108,7 @@ func (s *Server) OpenTurn(id uint64) {
 	defer s.mu.Unlock()
 	if s.cache.Len() == 0 || s.cache.LastID() != id {
 		s.cache.Append(Turn{ID: id})
+		s.last.Store(s.cache.LastID())
 	}
 	if s.baseTurn != id {
 		s.baseTurn = id
@@ -250,6 +253,7 @@ func (s *Server) Abandon() {
 func (s *Server) Commit(t Turn) {
 	s.mu.Lock()
 	s.cache.Append(t)
+	s.last.Store(s.cache.LastID())
 	subs := s.subsLocked()
 	s.mu.Unlock()
 	deliver(subs, Page{Parts: []TurnPart{{Turn: t}}})
@@ -513,6 +517,7 @@ func (s *Server) OpenInquiry(id uint64, inquiry string, deltas map[string]livedo
 	s.mu.Lock()
 	if s.cache.Len() == 0 || s.cache.LastID() != id {
 		s.cache.Append(Turn{ID: id})
+		s.last.Store(s.cache.LastID())
 	}
 	tl := s.cache.Tail()
 	tl.Inquiry = inquiry
