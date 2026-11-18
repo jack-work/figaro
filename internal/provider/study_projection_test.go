@@ -142,8 +142,8 @@ func TestStudyWindowIsFoldedToItsResult(t *testing.T) {
 	if !strings.Contains(joined, `"removed":["doomed"]`) {
 		t.Errorf("a removal must be stated: %s", joined)
 	}
-	if !strings.Contains(joined, `"form":"@r"`) {
-		t.Errorf("the block must name its form: %s", joined)
+	if !strings.Contains(joined, `<system-reminder name="study:@r">`) || strings.Contains(joined, `"form"`) {
+		t.Errorf("the key path names the form, and only the key path: %s", joined)
 	}
 	withVersion := msg
 	withVersion.StudyAt = map[string]uint64{"@r": 7}
