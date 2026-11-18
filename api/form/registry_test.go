@@ -37,6 +37,22 @@ func TestNoRowSitsUnderARowOfAnotherWriter(t *testing.T) {
 	}
 }
 
+// A placeholder row matches nothing itself: a root row must carry its class.
+func TestEveryRowResolvesToItsOwnWriter(t *testing.T) {
+	literal := strings.NewReplacer("<name>", "x", "<id>", "x")
+	for _, s := range form.Registry() {
+		paths := []string{literal.Replace(s.Path)}
+		if !s.Exact && s.Writer != form.WriterSelf {
+			paths = append(paths, paths[0]+".x")
+		}
+		for _, p := range paths {
+			if got := form.WriterOf(p); got != s.Writer {
+				t.Errorf("%s resolves to %s; its row says %s", p, got, s.Writer)
+			}
+		}
+	}
+}
+
 func TestRuntimeKeysAreExactAndNothingElseIs(t *testing.T) {
 	for _, s := range form.Registry() {
 		if s.Exact != (s.Writer == form.WriterRuntime) {
