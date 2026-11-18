@@ -73,10 +73,12 @@ func TestADefaultLaneSendsToItsParentAndToItsRole(t *testing.T) {
 	stranger := r.newEmptyAria()
 	lane := r.laneOf(parent)
 
+	t.Logf("lane %s under %s holds %s", lane, parent, grantsOf(t, r, lane))
 	if out, err := r.as(lane, "send", "-f", "--id", parent, "--", "lane to its parent"); err != nil {
 		t.Fatalf("a default lane could not send to its parent: %v\n%s", err, out)
 	}
 	prov.awaitAsk(t, 0, 30*time.Second, "lane to its parent")
+	t.Logf("lane -> parent: sent and asked of the provider")
 	if out, err := r.as(lane, "send", "-f", "--id", stranger, "--", "lane to a stranger"); err == nil {
 		t.Fatalf("a default lane sent to a figaro outside its grant:\n%s", out)
 	}
@@ -87,11 +89,13 @@ func TestADefaultLaneSendsToItsParentAndToItsRole(t *testing.T) {
 	}
 	r.run("set", "--id", parent, "system.child_policy", `{"system.scopes": ["send:parent", "send:role:`+desk+`", "read:aria:self", "write:aria:self#@self", "delete:aria:self#@self"]}`)
 	clerk := r.laneOf(parent)
+	t.Logf("lane %s holds %s; role %s is held by %s", clerk, grantsOf(t, r, clerk), desk, stranger)
 	n := prov.count()
 	if out, err := r.as(clerk, "send", "-f", "--id", desk, "--", "lane to its role"); err != nil {
 		t.Fatalf("a lane holding send:role:%s could not send to it: %v\n%s", desk, err, out)
 	}
 	prov.awaitAsk(t, n, 30*time.Second, "lane to its role")
+	t.Logf("lane -> %s: sent, resolved by the daemon, asked of the provider", desk)
 }
 
 // Guards a holder-run hard succession, the one succession/hard.md prescribes:
@@ -121,6 +125,7 @@ func TestAHolderRunSucceedKeepsTheHoldersGrantAndChildPolicy(t *testing.T) {
 	r.run("set", "--id", seat, "succession-policy.outfit", "default,seatgrants")
 
 	out, _ := r.as(holder, "succeed", seat, "-O", "route", "--abdication", "linger", "--stay", "-j", "--", "you hold the seat")
+	t.Logf("holder-run succeed report: %s", strings.TrimSpace(out))
 	var rep struct {
 		Successor string `json:"successor"`
 	}
@@ -139,6 +144,7 @@ func TestAHolderRunSucceedKeepsTheHoldersGrantAndChildPolicy(t *testing.T) {
 	if got := compactJSON(t, board.System["child_policy"]); got != policy {
 		t.Errorf("the successor holds child policy %s, want the holder's %s", got, policy)
 	}
+	t.Logf("successor %s: scopes %s, child_policy %s", rep.Successor, compactJSON(t, board.System["scopes"]), compactJSON(t, board.System["child_policy"]))
 }
 
 func compactJSON(t *testing.T, raw json.RawMessage) string {
@@ -226,4 +232,50 @@ func grantsOf(t *testing.T, r *restartRig, id string) string {
 		t.Fatal(err)
 	}
 	return compactJSON(t, board.System["scopes"])
+}
+
+// Shows an outfit's child policy through the real CLI: the owner dresses a
+// fork in an outfit whose [system.child_policy] uses a dotted key, and the
+// lane that fork makes is born with the outfit's keys, path by path.
+func TestAnOutfitsChildPolicyReachesALaneThroughTheCLI(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns a daemon; skipped under -short")
+	}
+	prov := newScriptedProvider(t, func(string) (bool, string) { return false, sseText("noted") })
+	r := newRestartRig(t)
+	r.enforceAll()
+	r.env = append(r.env, "ANTHROPIC_BASE_URL="+prov.srv.URL, "FIGARO_NO_BIND=1")
+	body := "[system.child_policy]\nsystem.scopes = [\"send:parent\", \"read:aria:self\"]\nmantra = \"a lane\"\n"
+	if err := os.WriteFile(filepath.Join(r.root, "config", "outfits", "lanes.toml"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	parent := r.newEmptyAria()
+	r.run("set", "--id", parent, "system.child_policy", `{"system.scopes": ["send:parent", "read:*"]}`)
+	raw := r.run("fork", parent, "-O", "lanes", "-j")
+	var out struct {
+		Alternative string `json:"alternative"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &out); err != nil || out.Alternative == "" {
+		t.Fatalf("fork -O lanes -j printed %q", raw)
+	}
+	seat := out.Alternative
+	r.run("set", "--id", seat, "system.scopes", `["*:*"]`)
+	var board struct {
+		System map[string]json.RawMessage `json:"system"`
+	}
+	if err := json.Unmarshal([]byte(r.run("state", "show", "--id", seat, "-j")), &board); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("dressed %s carries child_policy %s", seat, compactJSON(t, board.System["child_policy"]))
+	lane := r.laneOf(seat)
+	if got := grantsOf(t, r, lane); got != `["send:parent","read:aria:self"]` {
+		t.Errorf("the lane holds %s, want the outfit's policy", got)
+	}
+	var laneBoard struct {
+		Mantra string `json:"mantra"`
+	}
+	if err := json.Unmarshal([]byte(r.run("state", "show", "--id", lane, "-j")), &laneBoard); err != nil || laneBoard.Mantra != "a lane" {
+		t.Errorf("the lane's mantra %q (%v), want the outfit's", laneBoard.Mantra, err)
+	}
+	t.Logf("lane %s holds %s", lane, grantsOf(t, r, lane))
 }
