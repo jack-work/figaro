@@ -106,8 +106,9 @@
 
       nixosModules = {
         default = { lib, pkgs, ... }: {
-          imports = [ ./nix/module.nix ];
+          imports = [ ./nix/module.nix ./nix/valet.nix ];
           services.figaro.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.figaro;
+          services.figaro-valet.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.figaro;
         };
         container = { lib, pkgs, ... }: {
           imports = [ ./nix/container.nix ];
@@ -210,6 +211,7 @@
         container-vm = import ./nix/tests/container.nix { inherit pkgs self; };
         module-vm = import ./nix/tests/module.nix { inherit pkgs self; };
         socket-activation-vm = import ./nix/tests/socket-activation.nix { inherit pkgs self; };
+        valet-vm = import ./nix/tests/valet.nix { inherit pkgs self; };
         hm-module = import ./nix/tests/hm-module.nix { inherit pkgs self; };
       });
 
