@@ -564,21 +564,7 @@ func (p *Provider) inputFor(ctx context.Context, in provider.SendInput) ([]json.
 		Fingerprint: p.Fingerprint(),
 		Provider:    p.Namespace(),
 		Encode: func(msg message.Message, snap form.Snapshot) ([]json.RawMessage, error) {
-			encoded, err := encodeResponseMessage(msg, msg.Patches, snap, templates)
-			if err != nil {
-				return nil, fmt.Errorf("responses: encode message %d: %w", msg.LogicalTime, err)
-			}
-			for _, text := range append(provider.StudyReminderTexts(msg, snap),
-				provider.ForkReminderTexts(msg, snap)...) {
-				part, merr := json.Marshal(map[string]any{
-					"role":    "user",
-					"content": []map[string]any{{"type": "input_text", "text": text}},
-				})
-				if merr == nil {
-					encoded = append(encoded, part)
-				}
-			}
-			return encoded, nil
+			return encodeEntry(msg, snap, templates)
 		},
 		ReportWriteError: func(lt uint64, err error) {
 			slog.Error("responses write row", "aria", in.AriaID, "lt", lt, "err", err)
@@ -1363,4 +1349,22 @@ func logPromptCacheEconomics(usage responseUsage, breakpoints int) {
 		"cache_write_tokens", writes,
 		"uncached_input_tokens", usage.InputTokens-reads-writes,
 		"explicit_breakpoints", breakpoints)
+}
+
+func encodeEntry(msg message.Message, snap form.Snapshot, templates *template.Template) ([]json.RawMessage, error) {
+	encoded, err := encodeResponseMessage(msg, msg.Patches, snap, templates)
+	if err != nil {
+		return nil, fmt.Errorf("responses: encode message %d: %w", msg.LogicalTime, err)
+	}
+	for _, text := range append(provider.StudyReminderTexts(msg, snap),
+		provider.ForkReminderTexts(msg, snap)...) {
+		part, merr := json.Marshal(map[string]any{
+			"role":    "user",
+			"content": []map[string]any{{"type": "input_text", "text": text}},
+		})
+		if merr == nil {
+			encoded = append(encoded, part)
+		}
+	}
+	return encoded, nil
 }
