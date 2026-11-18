@@ -5,6 +5,7 @@ package toolcgroup
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,33 +17,52 @@ import (
 const Mount = "/sys/fs/cgroup"
 
 type Tree struct {
-	root  string
 	mount string
 	reg   *Registry
 	mu    sync.Mutex
+	root  string
+	err   error
 	fds   map[string]int
 }
 
-func Own(reg *Registry) (*Tree, error) {
-	cg, err := ProcCgroupOf(os.Getpid())
-	if err != nil {
-		return nil, err
-	}
-	return At(Mount, cg, reg)
+func Own(reg *Registry) *Tree {
+	return &Tree{mount: Mount, reg: reg, fds: map[string]int{}}
 }
 
-func At(mount, root string, reg *Registry) (*Tree, error) {
-	dir := filepath.Join(mount, root)
+func At(mount, root string, reg *Registry) *Tree {
+	return &Tree{mount: mount, root: root, reg: reg, fds: map[string]int{}}
+}
+
+func (t *Tree) Root() (string, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.placed()
+}
+
+func (t *Tree) placed() (string, error) {
+	if t.root == "" && t.err == nil {
+		t.root, t.err = ProcCgroupOf(os.Getpid())
+		if t.err == nil {
+			t.err = writable(filepath.Join(t.mount, t.root), t.root)
+		}
+		if t.err != nil {
+			slog.Error("peer check: tools cannot start until this daemon may create cgroups; [authz] peer_check = false runs them unattributed", "err", t.err)
+		} else {
+			slog.Info("peer check: each figaro's tools run in its own cgroup", "under", t.root)
+		}
+	}
+	return t.root, t.err
+}
+
+func writable(dir, root string) error {
 	if err := unix.Access(filepath.Join(dir, "cgroup.procs"), unix.W_OK); err != nil {
-		return nil, fmt.Errorf("toolcgroup: this daemon may not create cgroups under %s (%v); run it in a scope or unit with Delegate=yes", root, err)
+		return fmt.Errorf("toolcgroup: this daemon may not create cgroups under %s (%v); run it in a scope or unit with Delegate=yes", root, err)
 	}
-	return &Tree{root: root, mount: mount, reg: reg, fds: map[string]int{}}, nil
+	return nil
 }
 
-func (t *Tree) Root() string { return t.root }
-
-func (t *Tree) CgroupOf(figaro string) string {
-	return filepath.Join(t.root, "tools-"+figaro)
+func cgroupOf(root, figaro string) string {
+	return filepath.Join(root, "tools-"+figaro)
 }
 
 func (t *Tree) FD(figaro string) (int, error) {
@@ -54,7 +74,11 @@ func (t *Tree) FD(figaro string) (int, error) {
 	if fd, ok := t.fds[figaro]; ok {
 		return fd, nil
 	}
-	cg := t.CgroupOf(figaro)
+	root, err := t.placed()
+	if err != nil {
+		return -1, err
+	}
+	cg := cgroupOf(root, figaro)
 	dir := filepath.Join(t.mount, cg)
 	if err := os.Mkdir(dir, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
 		return -1, fmt.Errorf("toolcgroup: %w", err)
