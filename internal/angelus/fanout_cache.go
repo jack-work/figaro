@@ -170,12 +170,12 @@ func (a *Angelus) fanoutCounts() *fanoutCache {
 }
 
 func (a *Angelus) fanoutNodes() []fanoutNode {
-	over := a.Backend.HierarchyEngine().Overrides()
+	h := a.topology()
 	views := a.Backend.EveryNode()
 	out := make([]fanoutNode, 0, len(views))
 	for _, v := range views {
 		parent := v.Parent
-		if p := over[v.ID]; p != "" {
+		if p, ok := h.Drawn(v.ID); ok {
 			parent = p
 		}
 		out = append(out, fanoutNode{id: v.ID, parent: parent, live: a.isLiveAria(v.ID)})
@@ -213,7 +213,7 @@ func (a *Angelus) nodeKept(id string) bool {
 }
 
 func (a *Angelus) drawnParentOf(id string) string {
-	if p := a.Backend.HierarchyEngine().Overrides()[id]; p != "" {
+	if p, ok := a.topology().Drawn(id); ok {
 		return p
 	}
 	v, _ := a.Backend.Node(id)
