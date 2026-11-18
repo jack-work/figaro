@@ -155,7 +155,7 @@ func (a *Angelus) pastGrace(g reapedGroup, now time.Time) bool {
 	if g.atMS == 0 {
 		return false
 	}
-	if !g.killed() && a.overBudget(g.root) {
+	if !g.killed() && a.overBudget(g.root) && now.Sub(time.UnixMilli(g.atMS)) >= a.Settings.ReapedMinAge() {
 		return true
 	}
 	return a.pastAgeCap(g, now)

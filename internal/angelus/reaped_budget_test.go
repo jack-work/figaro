@@ -5,6 +5,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/internal/config"
 )
 
 const mb = 1 << 20
@@ -75,5 +77,18 @@ func TestAHeldGroupStaysChosenAndTheNextOldestGoesToo(t *testing.T) {
 	}
 	if got := chosen(chooseOverBudget(groups, 100*mb, 0, now)); !slices.Equal(got, []string{"held", "next"}) {
 		t.Errorf("chose %v, want the held group retried and the next oldest taken in its place", got)
+	}
+}
+
+func TestABudgetPickReapedAgainWithinTheFloorIsNotPurged(t *testing.T) {
+	budget := 1
+	a := &Angelus{Settings: &config.Loaded{Config: config.Config{Memory: config.MemoryConfig{ReapedBudgetMB: &budget}}}}
+	a.budget.over = map[string]bool{"r": true}
+	now := time.Now()
+	if a.pastGrace(reapedGroup{root: "r", atMS: reapedAgo(now, time.Hour)}, now) {
+		t.Error("a group restored and reaped again an hour ago was purged on the last sweep's pick")
+	}
+	if !a.pastGrace(reapedGroup{root: "r", atMS: reapedAgo(now, 48*time.Hour)}, now) {
+		t.Error("a pick past the floor was not purged")
 	}
 }
