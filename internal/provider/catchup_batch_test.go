@@ -777,7 +777,8 @@ const batchWaitLimit = 20 * time.Second
 
 // A batch holds its own figaro's lineage for as long as its sync takes, and
 // nothing else: while the sync is stalled, a reader of another figaro opens
-// its node and reads without waiting for it.
+// its node and reads, and a fork of another figaro is born, without waiting
+// for it.
 func TestAStalledBatchSyncDoesNotHoldBackAReaderOfAnotherFigaro(t *testing.T) {
 	f := openBatchFixture(t, t.TempDir(), 0)
 	f.newAria(t, 40)
@@ -811,18 +812,27 @@ func TestAStalledBatchSyncDoesNotHoldBackAReaderOfAnotherFigaro(t *testing.T) {
 		t.Error("a reader of another figaro waited on a batch whose sync was stalled")
 	}
 
+	forked := make(chan struct{})
+	go func() {
+		f.backend.Fork(other)
+		close(forked)
+	}()
+	select {
+	case <-forked:
+	case <-time.After(batchWaitLimit):
+		t.Error("a fork of another figaro waited on a batch whose sync was stalled")
+	}
+
 	close(stall.release)
 	if err := <-caughtUp; err != nil {
 		t.Fatal(err)
 	}
 }
 
-// What does wait on a stalled batch: a reader of the same figaro, by design,
-// and a fork anywhere, which needs the tree the batch is reading. Each waits
-// holding the store's own lock, so a reader of another figaro that arrives
-// behind one of them waits too. The bound on all of them is one batch: when a
-// catch-up is cut into several, everything queued behind the first is through
-// before the second is written.
+// What does wait on a stalled batch: a reader of the same figaro, by design.
+// The bound on it is one batch: when a catch-up is cut into several,
+// everything queued behind the first is through before the second is
+// written.
 func TestWhatQueuesBehindAStalledBatchSyncIsFreedByThatOneSync(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -830,9 +840,6 @@ func TestWhatQueuesBehindAStalledBatchSyncIsFreedByThatOneSync(t *testing.T) {
 	}{
 		{"behind a reader of the same figaro", func(f *batchFixture, _ string) {
 			f.backend.OpenNode(f.aria).Len()
-		}},
-		{"behind a fork of a third figaro", func(f *batchFixture, third string) {
-			f.backend.Fork(third)
 		}},
 	}
 	for _, tc := range cases {

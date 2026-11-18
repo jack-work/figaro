@@ -304,10 +304,6 @@ func (t *Trunks) beginTrackedRead() (func(), error) {
 	}, nil
 }
 
-// beginFlatCreate: a flat fork writes only its own new sibling directory and
-// one index entry, never freezing or rewriting anything a live head reads,
-// so it takes no root topology mutation and does not wait for other arias to
-// close their heads.
 func (t *Trunks) beginFlatCreate() (func(), error) {
 	if t.sealed.Load() {
 		return nil, ErrClosed
@@ -326,6 +322,26 @@ func (t *Trunks) beginFlatCreate() (func(), error) {
 		t.rootEpoch.Store(epoch)
 	}
 	return func() { t.mu.Unlock() }, nil
+}
+
+func (t *Trunks) beginSpawn() (func(), error) {
+	if t.sealed.Load() {
+		return nil, ErrClosed
+	}
+	if err := t.ensureCurrentTopology(); err != nil {
+		return nil, err
+	}
+	t.cutMu.RLock()
+	t.mu.RLock()
+	if err := t.syncHot(); err != nil {
+		t.mu.RUnlock()
+		t.cutMu.RUnlock()
+		return nil, fmt.Errorf("xwal: refusing create, hot flush failing: %w", err)
+	}
+	return func() {
+		t.mu.RUnlock()
+		t.cutMu.RUnlock()
+	}, nil
 }
 
 func (t *Trunks) beginTopologyMutation() (func(), error) {
