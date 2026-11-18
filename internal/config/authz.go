@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -15,6 +16,7 @@ type AuthzConfig struct {
 	Issuers       []IssuerConfig `toml:"issuers"`
 	APIKeys       []APIKeyConfig `toml:"api_keys"`
 	ProtectedKeys string         `toml:"protected_keys"`
+	PeerCheck     *bool          `toml:"peer_check"`
 }
 
 type APIKeyConfig struct {
@@ -60,6 +62,13 @@ func (c AuthzConfig) checkProtectedKeys() error {
 		return nil
 	}
 	return fmt.Errorf("[authz] protected_keys = %q: want %q or %q", c.ProtectedKeys, ProtectedByLineage, ProtectedOpen)
+}
+
+func (c AuthzConfig) ChecksPeers() bool {
+	if c.PeerCheck != nil {
+		return *c.PeerCheck
+	}
+	return runtime.GOOS == "linux"
 }
 
 func (c AuthzConfig) TakesTroupeIssuers() bool {
