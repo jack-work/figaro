@@ -22,7 +22,7 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 | 4 | P4 peer caller check | fork anagram-erratic `0e15cab0` | `lane/peer-caller-check` de5d64574 | fixes in (finite ttl from tools, succeed carries the seat ttl, peer-check.md); waits on v0.74.4 to restack, then review |
 | 5 | E2 hush as a system service | fork erasable-unzip `56faa8d6`; drop-box refresh by the Strategist | hush `lane/hush-system-service` 70d3782 + `lane/hush-drop-refresh` | E2 SHIP; E2R SHIP (neither-register) with F1 exec pacing being folded; Knight prepares landing: anthropic-max, E2, E2R |
 | 6 | P3 admission ledger | fork dominoes-elusive `439448d3` | `lane/admission-ledger` a7ec40e88 | restacked on 0911f728f with the shared seat op (figaro.seat); restacks onto v0.74.4, then lands |
-| 7 | E1 angelus socket activation | fork tavern-culprit `df4d5475` (Engineer slot) | `lane/socket-activation` b4bf913cb | READY; review requested (Steward) |
+| 7 | E1 angelus socket activation | fork tavern-culprit `df4d5475` (Engineer slot) | `lane/socket-activation` b4bf913cb | review FIX (goldfish-cyclist: rest wakes the socket, switch ignores socketMode, doctor unit, fd hygiene); the E3 fork fixes; the callerOwns local-door hole goes to v0.74.4 |
 | 8 | P2 runtime.* migration | fork hydrant-rocket `78718b5c` | `lane/runtime-namespace` | building, stacked on P1; readers listed before landing |
 | 9 | E3 figaro valet and the fence | fork cognitive-backpack `3006ff4b` | `lane/valet` on b4bf913cb | building |
 | 10 | P5 key-path grants, selectors, child_policy | hydrant-rocket, after P2 | `lane/key-grants` | queued |

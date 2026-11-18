@@ -62,3 +62,7 @@ Both gate spain's daytime window, not tonight's work.
 ## Deferred: scoping the drop box (from rou2's review, 11-18)
 
 The drop box's sign-in and refresh routes reach every instance. A drop user can re-sign or refresh any of them. Neither route ever returns a token. If house mode wants this narrower, one change scopes both: a per-principal list of instances the principal may manage, kept separate from `credentials` (which grants `GET /cred`). Raise it when E4 shapes the owner principal config.
+
+## E4 obligation from E1's review (11-18)
+
+`a.owner()` (`internal/angelus/sandbox_grant.go:141-146`) returns `a.Peercred.Self()`, the daemon's own uid (`user:2001` in house mode). So `callerIsOwner` rejects the human owner (`user:1000`): `form apply --managed system.fanout.*` and studying a figaro both fail for him. E4 wires `[authz] owner` into `a.owner()`, with a VM row where the human owner applies a managed fanout.
