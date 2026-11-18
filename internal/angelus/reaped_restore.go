@@ -73,6 +73,7 @@ func (h *handlers) restoreGroup(ctx context.Context, group reapedGroup, keep boo
 		}
 	}
 	unreap := form.Build(form.Snapshot{}, nil, reapKeys)
+	defer func() { h.angelus.settleFanout(hierarchy.Plan{Op: hierarchy.Restore, Revive: resp.Restored}) }()
 	for _, id := range group.nodes {
 		patch := unreap
 		if keep && id == group.root {
