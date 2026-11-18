@@ -164,3 +164,40 @@ func TestADroppedClaimIsNotTheOwner(t *testing.T) {
 		t.Fatalf("control: the owner at the terminal: %v, under %q", err, r.drawnUnder(t, r.kid))
 	}
 }
+
+// Review of F2: a parked proposal is shown to the owner, to whoever may
+// adopt on its parent, and to the figaro that proposed it; not to another
+// figaro on the same uid.
+func TestAParkedProposalIsNotShownToAnotherFigaro(t *testing.T) {
+	r := newOwnerRig(t, func(r ownerRig) []string {
+		return []string{"*:aria:self", "*:aria:" + r.kid, "read:*"}
+	})
+	spy, _ := json.Marshal([]string{"read:aria:" + r.q})
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.holder, rpc.SetRequest{Patch: form.Build(form.Snapshot{}, map[string]json.RawMessage{form.ScopesKey: spy}, nil)})); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.arrange(t, r.self, r.kid, r.q); err == nil {
+		t.Fatal("the shed did not park, so this test proves nothing")
+	}
+	list := func(figaro string) []rpc.Proposal {
+		t.Helper()
+		raw := withAria(t, r.q, rpc.ParkedRequest{FigaroID: r.q})
+		if figaro != "" {
+			raw = claimed(t, figaro, raw)
+		}
+		out, err := r.h[rpc.MethodParked](localOwner(), raw)
+		if err != nil {
+			t.Fatalf("parked as %q: %v", figaro, err)
+		}
+		return out.(rpc.ParkedResponse).Proposals
+	}
+	if got := list(r.holder); len(got) != 0 {
+		t.Errorf("an unrelated figaro sees %d proposals parked on %s: %+v", len(got), r.q, got)
+	}
+	if got := list(r.self); len(got) != 1 {
+		t.Errorf("the proposer sees %d of its own proposals", len(got))
+	}
+	if got := list(""); len(got) != 1 || got[0].Withheld != 0 {
+		t.Errorf("the owner at the terminal sees %+v", got)
+	}
+}

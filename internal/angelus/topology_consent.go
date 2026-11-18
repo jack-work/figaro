@@ -40,6 +40,9 @@ func (h *handlers) consentsOn(ctx context.Context, parent string) bool {
 	if h.allowed(ctx, rpc.VerbAdopt, authz.Aria(parent)) == nil {
 		return true
 	}
+	if authz.FigaroOf(ctx) != "" || authz.Claimed(ctx) || authz.DoorOf(ctx) == authz.DoorBox {
+		return false
+	}
 	by, err := h.angelus.topologyPrincipal(ctx)
 	if err != nil || by.Name == "" {
 		return false
@@ -98,7 +101,7 @@ func (h *handlers) parked(ctx context.Context, params json.RawMessage) (interfac
 	readable := h.readsIDs(ctx)
 	resp := rpc.ParkedResponse{Proposals: []rpc.Proposal{}}
 	for _, p := range h.angelus.topology().Parked(req.FigaroID) {
-		if !adopter && p.By.Name != by.Name {
+		if !adopter && !proposedBy(p, by) {
 			continue
 		}
 		resp.Proposals = append(resp.Proposals, h.shownProposal(p, readable, counts))
@@ -136,4 +139,13 @@ func (h *handlers) refuse(ctx context.Context, params json.RawMessage) (interfac
 	}
 	slog.Info("refused a parked move", "parent", req.FigaroID, "proposal", req.ID, "by", by.Name)
 	return rpc.ConsentResponse{OK: true}, nil
+}
+
+func proposedBy(p hierarchy.Proposal, by hierarchy.Principal) bool {
+	if p.By.Name != by.Name {
+		return false
+	}
+	asked, _ := p.By.Subject.(authz.TopologyCaller)
+	asks, _ := by.Subject.(authz.TopologyCaller)
+	return asked.Figaro == asks.Figaro && !(asks.Claimed && asks.Figaro == "")
 }
