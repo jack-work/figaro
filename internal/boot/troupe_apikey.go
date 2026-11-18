@@ -60,7 +60,7 @@ func readPrivateFile(path string) ([]byte, error) {
 	if st.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("%s is mode %#o; a key file is readable by its owner alone (chmod 600)", path, st.Mode().Perm())
 	}
-	if uid, ok := fileOwner(st); ok && uid != os.Getuid() {
+	if uid, ok := FileOwner(st); ok && uid != os.Getuid() {
 		return nil, fmt.Errorf("%s belongs to uid %d, not this process (%d)", path, uid, os.Getuid())
 	}
 	buf := make([]byte, 4096)

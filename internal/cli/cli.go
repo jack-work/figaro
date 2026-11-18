@@ -2128,8 +2128,8 @@ the daemon neither reads nor writes it.`,
 	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
-		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; pprof arms the profiler on the running daemon; provider shows recent provider round-trips (including in-flight) and the decision routes methods have stopped asking; librettos recounts derived-form observers; normalize makes every aria own its history and drops the overrides its history now agrees with, and with --from opens a stopped store to move daemon-written keys under runtime.* (--revert moves them back); skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent; residents lists live agents, open endpoints and _meta sidecars whose id the store no longer holds; admission compares the daemon's cached fan-out counts with the tree; snapshot copies the most recently active arias, with their history and every form, into a new store; misread-lineage lists, read-only, the nodes whose stored chain has a falling fork base and what a translations v4 to v5 open does to them (clears their derived channels, refolds their _meta counters); quarantine lists the segments a corrupt frame keeps closed and releases one by cutting it at the bad frame, after copying it aside (owner only); unit says whether the daemon on the socket is the systemd unit's",
-		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] [--from <store> [--revert]] | prune-channel-dirs [-n|--dry-run] [-j] | skills [-j] | keys | form-keys [--audit] [-j] | ttl [-j] | tombstones [-j] [-n|--dry-run] [--reap] | residents [-j] | admission [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | misread-lineage [--from <store>] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>",
+		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; pprof arms the profiler on the running daemon; provider shows recent provider round-trips (including in-flight) and the decision routes methods have stopped asking; librettos recounts derived-form observers; normalize makes every aria own its history and drops the overrides its history now agrees with, and with --from opens a stopped store to move daemon-written keys under runtime.* (--revert moves them back); skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent; residents lists live agents, open endpoints and _meta sidecars whose id the store no longer holds; admission compares the daemon's cached fan-out counts with the tree; snapshot copies the most recently active arias, with their history and every form, into a new store; misread-lineage lists, read-only, the nodes whose stored chain has a falling fork base and what a translations v4 to v5 open does to them (clears their derived channels, refolds their _meta counters); quarantine lists the segments a corrupt frame keeps closed and releases one by cutting it at the bad frame, after copying it aside (owner only); unit says whether the daemon on the socket is the systemd unit's; mode says home or house, whether user namespaces let a valet fence tools, and whether the valet and each box answer",
+		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] [--from <store> [--revert]] | prune-channel-dirs [-n|--dry-run] [-j] | skills [-j] | keys | form-keys [--audit] [-j] | ttl [-j] | tombstones [-j] [-n|--dry-run] [--reap] | residents [-j] | admission [-j] | unit [-j] | mode [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | misread-lineage [--from <store>] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
 			{Long: "reap", IsBool: true, Description: "tombstones: reap listed tombstoned arias through kill"},
@@ -2161,7 +2161,7 @@ the daemon neither reads nor writes it.`,
 				return runDoctorMisreadLineage(ctx.Flag("from"), ctx.BoolFlag("json"))
 			}
 			if len(ctx.Args) != 1 {
-				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] [--from <store> [--revert]] | prune-channel-dirs [-n|--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | residents [-j] | admission [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | misread-lineage [--from <store>] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>")
+				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] [--from <store> [--revert]] | prune-channel-dirs [-n|--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | residents [-j] | admission [-j] | unit [-j] | mode [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | misread-lineage [--from <store>] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>")
 			}
 			switch ctx.Args[0] {
 			case "gc":
@@ -2202,8 +2202,10 @@ the daemon neither reads nor writes it.`,
 				return runDoctorAdmission(loaded, ctx.BoolFlag("json"))
 			case "unit":
 				return runDoctorUnit(ctx.BoolFlag("json"))
+			case "mode":
+				return runDoctorMode(loaded, ctx.BoolFlag("json"))
 			}
-			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] [--from <store> [--revert]] | prune-channel-dirs [-n|--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | residents [-j] | admission [-j] | unit [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | misread-lineage [--from <store>] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>")
+			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] [--from <store> [--revert]] | prune-channel-dirs [-n|--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | ttl [-j] | residents [-j] | admission [-j] | unit [-j] | mode [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | misread-lineage [--from <store>] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>")
 		},
 		CompleteArgs: completeWords([][2]string{
 			{"gc", "remove dead channels"}, {"schema", "channel versions"}, {"term", "terminal capabilities"},
@@ -2215,6 +2217,7 @@ the daemon neither reads nor writes it.`,
 			{"residents", "agents, endpoints and sidecars the store no longer holds"},
 			{"admission", "the cached fan-out counts against the tree"},
 			{"unit", "whether the daemon on the socket is the systemd unit's"},
+			{"mode", "home or house, user namespaces, and whether the valet answers"},
 			{"snapshot", "copy recent arias into a new store"},
 			{"misread-lineage", "nodes whose stored chain falls, read-only"},
 			{"quarantine", "segments a corrupt frame keeps closed, and releasing one"},

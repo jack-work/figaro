@@ -7,7 +7,7 @@ import (
 	"syscall"
 )
 
-func fileOwner(st fs.FileInfo) (int, bool) {
+func FileOwner(st fs.FileInfo) (int, bool) {
 	s, ok := st.Sys().(*syscall.Stat_t)
 	if !ok {
 		return 0, false
