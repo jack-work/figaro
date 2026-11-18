@@ -1,0 +1,321 @@
+package admission
+
+import (
+	"errors"
+	"fmt"
+	"sync"
+)
+
+var (
+	ErrMaxChildren = errors.New("admission: max_children")
+	ErrQuota       = errors.New("admission: fan-out quota")
+	ErrUnknown     = errors.New("admission: unknown node")
+	ErrHasChildren = errors.New("admission: node has children")
+	ErrCycle       = errors.New("admission: a move under its own descendant")
+)
+
+type Limits struct {
+	MaxChildren    int
+	HasMaxChildren bool
+	Quota          int
+	HasQuota       bool
+}
+
+type Node struct {
+	ID     string
+	Parent string
+	Live   bool
+	Limits Limits
+}
+
+type Ticket uint64
+
+type entry struct {
+	parent string
+	live   bool
+	limits Limits
+	kids   int
+	used   int
+	nkids  int
+}
+
+type Ledger struct {
+	mu   sync.Mutex
+	at   map[string]*entry
+	next Ticket
+}
+
+func New() *Ledger { return &Ledger{at: map[string]*entry{}} }
+
+func (l *Ledger) Rebuild(nodes []Node) {
+	at := make(map[string]*entry, len(nodes))
+	for _, n := range nodes {
+		at[n.ID] = &entry{parent: n.Parent, live: n.Live, limits: n.Limits}
+	}
+	for _, n := range nodes {
+		if p := at[n.Parent]; p != nil {
+			p.nkids++
+			if n.Live {
+				p.kids++
+			}
+		}
+	}
+	ready := make([]string, 0, len(nodes))
+	waiting := make(map[string]int, len(nodes))
+	for id, e := range at {
+		waiting[id] = e.nkids
+		if e.nkids == 0 {
+			ready = append(ready, id)
+		}
+	}
+	for len(ready) > 0 {
+		id := ready[len(ready)-1]
+		ready = ready[:len(ready)-1]
+		e := at[id]
+		p := at[e.parent]
+		if p == nil {
+			continue
+		}
+		p.used += chargeOf(e)
+		if waiting[e.parent]--; waiting[e.parent] == 0 {
+			ready = append(ready, e.parent)
+		}
+	}
+	l.mu.Lock()
+	l.at = at
+	l.mu.Unlock()
+}
+
+func chargeOf(e *entry) int {
+	switch {
+	case !e.live:
+		return e.used
+	case e.limits.HasQuota:
+		return 1 + e.limits.Quota
+	default:
+		return 1 + e.used
+	}
+}
+
+func absorbs(e *entry) bool { return e.live && e.limits.HasQuota }
+
+func (l *Ledger) fits(from string, d int) error {
+	if d <= 0 {
+		return nil
+	}
+	for id := from; id != ""; {
+		e := l.at[id]
+		if e == nil {
+			return nil
+		}
+		if e.limits.HasQuota && e.used+d > e.limits.Quota {
+			return fmt.Errorf("%w: %s uses %d of %d and needs %d more", ErrQuota, id, e.used, e.limits.Quota, d)
+		}
+		if absorbs(e) {
+			return nil
+		}
+		id = e.parent
+	}
+	return nil
+}
+
+func (l *Ledger) carry(from string, d int) {
+	if d == 0 {
+		return
+	}
+	for id := from; id != ""; {
+		e := l.at[id]
+		if e == nil {
+			return
+		}
+		e.used += d
+		if absorbs(e) {
+			return
+		}
+		id = e.parent
+	}
+}
+
+func (l *Ledger) Reserve(parent string, grant Limits) (Ticket, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if p := l.at[parent]; p != nil && p.limits.HasMaxChildren && p.kids >= p.limits.MaxChildren {
+		return 0, fmt.Errorf("%w: %s holds %d live children of %d", ErrMaxChildren, parent, p.kids, p.limits.MaxChildren)
+	}
+	e := &entry{parent: parent, live: true, limits: grant}
+	if err := l.fits(parent, chargeOf(e)); err != nil {
+		return 0, err
+	}
+	l.next++
+	t := l.next
+	l.at[ticketID(t)] = e
+	l.attach(e)
+	return t, nil
+}
+
+func ticketID(t Ticket) string { return fmt.Sprintf("\x00ticket/%d", t) }
+
+func (l *Ledger) attach(e *entry) {
+	if p := l.at[e.parent]; p != nil {
+		p.nkids++
+		if e.live {
+			p.kids++
+		}
+	}
+	l.carry(e.parent, chargeOf(e))
+}
+
+func (l *Ledger) detach(e *entry) {
+	if p := l.at[e.parent]; p != nil {
+		p.nkids--
+		if e.live {
+			p.kids--
+		}
+	}
+	l.carry(e.parent, -chargeOf(e))
+}
+
+func (l *Ledger) Commit(t Ticket, id string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if e := l.at[ticketID(t)]; e != nil {
+		delete(l.at, ticketID(t))
+		l.at[id] = e
+	}
+}
+
+func (l *Ledger) Abort(t Ticket) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if e := l.at[ticketID(t)]; e != nil {
+		l.detach(e)
+		delete(l.at, ticketID(t))
+	}
+}
+
+func (l *Ledger) Add(n Node) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, ok := l.at[n.ID]; ok {
+		return
+	}
+	e := &entry{parent: n.Parent, live: n.Live, limits: n.Limits}
+	l.at[n.ID] = e
+	l.attach(e)
+}
+
+func (l *Ledger) SetLive(id string, live bool) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	e := l.at[id]
+	if e == nil {
+		return fmt.Errorf("%w: %s", ErrUnknown, id)
+	}
+	if e.live == live {
+		return nil
+	}
+	next := *e
+	next.live = live
+	if live {
+		if p := l.at[e.parent]; p != nil && p.limits.HasMaxChildren && p.kids >= p.limits.MaxChildren {
+			return fmt.Errorf("%w: %s holds %d live children of %d", ErrMaxChildren, e.parent, p.kids, p.limits.MaxChildren)
+		}
+		if err := l.fits(e.parent, chargeOf(&next)-chargeOf(e)); err != nil {
+			return err
+		}
+	}
+	l.detach(e)
+	e.live = live
+	l.attach(e)
+	return nil
+}
+
+func (l *Ledger) SetLimits(id string, lim Limits) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	e := l.at[id]
+	if e == nil {
+		return fmt.Errorf("%w: %s", ErrUnknown, id)
+	}
+	if lim.HasQuota && e.used > lim.Quota {
+		return fmt.Errorf("%w: %s already uses %d, more than %d", ErrQuota, id, e.used, lim.Quota)
+	}
+	next := *e
+	next.limits = lim
+	if err := l.fits(e.parent, chargeOf(&next)-chargeOf(e)); err != nil {
+		return err
+	}
+	l.detach(e)
+	e.limits = lim
+	l.attach(e)
+	return nil
+}
+
+func (l *Ledger) Move(id, to string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	e := l.at[id]
+	if e == nil {
+		return fmt.Errorf("%w: %s", ErrUnknown, id)
+	}
+	if e.parent == to {
+		return nil
+	}
+	for up := to; up != ""; {
+		if up == id {
+			return fmt.Errorf("%w: %s under %s", ErrCycle, id, to)
+		}
+		u := l.at[up]
+		if u == nil {
+			break
+		}
+		up = u.parent
+	}
+	from := e.parent
+	l.detach(e)
+	e.parent = to
+	err := l.admitArrival(e)
+	if err != nil {
+		e.parent = from
+	}
+	l.attach(e)
+	return err
+}
+
+func (l *Ledger) admitArrival(e *entry) error {
+	if p := l.at[e.parent]; e.live && p != nil && p.limits.HasMaxChildren && p.kids >= p.limits.MaxChildren {
+		return fmt.Errorf("%w: %s holds %d live children of %d", ErrMaxChildren, e.parent, p.kids, p.limits.MaxChildren)
+	}
+	return l.fits(e.parent, chargeOf(e))
+}
+
+func (l *Ledger) Remove(id string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	e := l.at[id]
+	if e == nil {
+		return nil
+	}
+	if e.nkids > 0 {
+		return fmt.Errorf("%w: %s holds %d", ErrHasChildren, id, e.nkids)
+	}
+	l.detach(e)
+	delete(l.at, id)
+	return nil
+}
+
+type Count struct {
+	LiveChildren int
+	Used         int
+	Charge       int
+}
+
+func (l *Ledger) Of(id string) (Count, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	e := l.at[id]
+	if e == nil {
+		return Count{}, false
+	}
+	return Count{LiveChildren: e.kids, Used: e.used, Charge: chargeOf(e)}, true
+}
