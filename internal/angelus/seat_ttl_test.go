@@ -60,3 +60,23 @@ func TestAForkWithoutASeatKeepsItsOwnLifetime(t *testing.T) {
 		t.Fatalf("a plain fork's system.ttl = %s, want its own \"1h\"", got)
 	}
 }
+
+// A seat fork by another figaro is a lane, so it takes no holder's lifetime.
+func TestASeatForkByAnotherFigaroKeepsItsOwnLifetime(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	pred, _ := b.CreateConversation(outfit)
+	stranger, _ := b.CreateConversation(outfit)
+	applyKeys(t, b, pred, map[string]any{store.SystemTTLKey: "0"})
+	role := mintRoleFor(t, hs, pred)
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemTTLKey: json.RawMessage(`"1h"`)}, nil)
+	raw, _ := json.Marshal(rpc.ForkRequest{FigaroID: pred, Seat: role, Patch: &patch})
+	ctx := authz.WithToolOf(authz.WithDoor(inProcess(context.Background()), authz.DoorLocal), stranger)
+	out, err := hs.Map[rpc.MethodFork](ctx, raw)
+	if err != nil {
+		t.Fatalf("a stranger's seat fork: %v", err)
+	}
+	snap, _ := b.FormState(out.(rpc.ForkResponse).Alternative)
+	if got, _ := snap.Get(store.SystemTTLKey); string(got) != `"1h"` {
+		t.Fatalf("a stranger's seat fork took system.ttl %s, want its own \"1h\"", got)
+	}
+}

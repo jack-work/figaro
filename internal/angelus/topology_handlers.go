@@ -292,13 +292,15 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	holder := inherited
 	claimed := authz.FigaroOf(ctx) != ""
-	if claimed && req.Patch != nil {
+	heir := req.Seat != "" && (!claimed || authz.FigaroOf(ctx) == req.FigaroID)
+	lane := claimed && !heir
+	if lane && req.Patch != nil {
 		if e, ok := req.Patch.Entry(form.FanoutMaxChildrenKey); ok && e.IsRemoval() {
 			p := withFanoutBirthDefault(*req.Patch)
 			req.Patch = &p
 		}
 	}
-	if claimed {
+	if lane {
 		inherited, req.Patch = withoutInheritedMint(inherited, req.Patch)
 	}
 	asked, err := h.dress(req.Outfits, req.Patch)
@@ -312,9 +314,11 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.refuseCallerKeys(ctx, birthUnder(req.FigaroID), base, &asked); err != nil {
 		return nil, err
 	}
-	policy, err := form.ChildPolicyPatch(inherited, claimed)
-	if err != nil {
-		return nil, fmt.Errorf("fork: %w", err)
+	var policy form.Patch
+	if !heir {
+		if policy, err = form.ChildPolicyPatch(inherited, claimed); err != nil {
+			return nil, fmt.Errorf("fork: %w", err)
+		}
 	}
 	if err := h.refuseUnheldSandbox(ctx, req.Patch); err != nil {
 		return nil, fmt.Errorf("fork: %w", err)
@@ -356,7 +360,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		return nil, err
 	}
-	if req.Seat != "" {
+	if heir {
 		dress = withHolderTTL(dress, holder)
 	}
 	// interior is read off the coordinate, not the LT: forking at turn 1 has
@@ -392,7 +396,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			return err
 		}
 		reapedBefore := h.angelus.isReaped(req.FigaroID)
-		alt, _, err = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID, claimed, policy), mintedBy(ctx), ariaIDStamp())
+		alt, _, err = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID, lane, policy), mintedBy(ctx), ariaIDStamp())
 		release()
 		if err != nil {
 			return err
