@@ -345,3 +345,60 @@ func rawJSON(t *testing.T, v any) json.RawMessage {
 	}
 	return raw
 }
+
+func (r lineageRig) ariaCall(t *testing.T, local bool, figaro, method, id string, req any) error {
+	t.Helper()
+	raw := claimed(t, figaro, withAria(t, id, req))
+	if local {
+		_, err := r.h[method](localOwner(), raw)
+		return err
+	}
+	return r.dial(t).Call(t.Context(), method, raw, nil)
+}
+
+// Defends study, drop and cast against a keyed set: a mantra grant must not
+// let one figaro make another study a form (prompt injection), take a seat,
+// or mint a role. The rows are the P2+P5 review's F3 repros, on the box door
+// and on the local door.
+func TestStudyDropAndCastNeedMoreThanAKeyedSet(t *testing.T) {
+	r := newLineageRig(t, "")
+	note, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: heldPatch(t, map[string]any{"public": "read me"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := note.(rpc.FormCreateResponse).FormID
+	parent, _ := json.Marshal(r.parent)
+	seat, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: heldPatch(t, map[string]any{"name": "seat", "target-aria": json.RawMessage(parent)})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	role := seat.(rpc.FormCreateResponse).FormID
+	r.ownerSets(t, r.child, map[string]any{form.ScopesKey: []string{
+		"read:aria:" + r.sibling, "read:aria:" + pub, "write:aria:" + r.sibling + "#mantra", "write:aria:" + role + "#notes", "write:aria:self#mantra",
+	}})
+	for _, local := range []bool{false, true} {
+		door := map[bool]string{false: "box", true: "local"}[local]
+		if err := r.ariaCall(t, local, r.child, rpc.MethodStudy, r.sibling, rpc.StudyRequest{FormID: pub}); err == nil {
+			t.Errorf("%s door: a mantra grant made another figaro study a form", door)
+		}
+		if err := r.ariaCall(t, local, r.child, rpc.MethodDrop, r.sibling, rpc.StudyRequest{FormID: pub}); err == nil {
+			t.Errorf("%s door: a mantra grant dropped another figaro's study", door)
+		}
+		if err := r.ariaCall(t, local, r.child, rpc.MethodCast, r.child, rpc.CastRequest{FormID: role}); err == nil {
+			t.Errorf("%s door: a notes grant on a role cast its holder's descendant into it", door)
+		}
+		minted := heldPatch(t, map[string]any{"name": "minted " + door})
+		if err := r.ariaCall(t, local, r.child, rpc.MethodCast, r.child, rpc.CastRequest{RolePatch: minted}); err == nil {
+			t.Errorf("%s door: a figaro holding no create minted a role through cast", door)
+		}
+	}
+	if v, _ := keyOn(t, r.grantRig, role, "target-aria"); string(v) != string(parent) {
+		t.Fatalf("the seat moved: target-aria %s", v)
+	}
+	if err := r.ariaCall(t, true, r.parent, rpc.MethodStudy, r.sibling, rpc.StudyRequest{FormID: pub}); err != nil {
+		t.Fatalf("canary: a figaro holding set on the observer was refused a study: %v", err)
+	}
+	if err := r.ariaCall(t, true, r.parent, rpc.MethodDrop, r.sibling, rpc.StudyRequest{FormID: pub}); err != nil {
+		t.Fatalf("canary: a figaro holding set on the observer was refused a drop: %v", err)
+	}
+}

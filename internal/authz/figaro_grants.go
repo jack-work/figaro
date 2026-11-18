@@ -601,6 +601,11 @@ func (v FigaroView) AllowsKey(s jkauthz.Subject, verb rpc.Verb, r Resource, key 
 	return false
 }
 
+func (v FigaroView) AllowWhole(s jkauthz.Subject, verb rpc.Verb, r Resource) bool {
+	all, _ := v.KeyGlobs(s, verb, r)
+	return all
+}
+
 func (v FigaroView) KeyGlobs(s jkauthz.Subject, verb rpc.Verb, r Resource) (all bool, globs []string) {
 	if v.figaro == "" {
 		return true, nil
