@@ -2,6 +2,7 @@ package angelus
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -74,5 +75,56 @@ func TestAReconcileRebuildsASkewedCache(t *testing.T) {
 	requireCacheMatchesTree(t, hs, "a reconcile")
 	if n, want := hs.h.angelus.liveChildCount(top), len(hs.h.angelus.liveChildrenOf(top)); n != want {
 		t.Fatalf("top holds %d live children in the cache and %d in the tree", n, want)
+	}
+}
+
+func callMethod(t *testing.T, hs *Handlers, method string, req any) error {
+	t.Helper()
+	raw, _ := json.Marshal(req)
+	_, err := hs.Map[method](inProcess(context.Background()), raw)
+	return err
+}
+
+func TestAKilledAndRestoredChildStillHoldsItsSlot(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	top, _ := b.CreateConversation(outfit)
+	setMaxChildren(t, b, top, 1)
+	kid, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for round := range 3 {
+		if err := callMethod(t, hs, rpc.MethodKill, rpc.KillRequest{FigaroID: kid.Alternative}); err != nil {
+			t.Fatalf("round %d: kill: %v", round, err)
+		}
+		requireCacheMatchesTree(t, hs, "a kill")
+		if err := callMethod(t, hs, rpc.MethodReapedRestore, rpc.ReapedRestoreRequest{FigaroID: kid.Alternative}); err != nil {
+			t.Fatalf("round %d: restore: %v", round, err)
+		}
+		requireCacheMatchesTree(t, hs, "a restore")
+		if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top}); err == nil {
+			t.Fatalf("round %d: a fork past max_children 1 was admitted after a kill and a restore", round)
+		}
+	}
+}
+
+func TestARestoreCountsAChildTheCacheHadForgotten(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	top, _ := b.CreateConversation(outfit)
+	setMaxChildren(t, b, top, 1)
+	kid, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := callMethod(t, hs, rpc.MethodKill, rpc.KillRequest{FigaroID: kid.Alternative}); err != nil {
+		t.Fatal(err)
+	}
+	hs.h.angelus.fanoutCounts().forget(kid.Alternative)
+	if err := callMethod(t, hs, rpc.MethodReapedRestore, rpc.ReapedRestoreRequest{FigaroID: kid.Alternative}); err != nil {
+		t.Fatal(err)
+	}
+	requireCacheMatchesTree(t, hs, "a restore")
+	if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: top}); err == nil {
+		t.Fatal("a fork past max_children 1 was admitted: the restore did not put the child back")
 	}
 }

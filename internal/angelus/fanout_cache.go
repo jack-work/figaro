@@ -193,8 +193,31 @@ func (a *Angelus) settleFanout(p hierarchy.Plan) {
 		c.move(m.Node, m.To)
 	}
 	for _, id := range p.Delete {
+		if a.nodeKept(id) {
+			c.setLive(id, false)
+			continue
+		}
 		c.forget(id)
 	}
+	for _, id := range p.Revive {
+		c.put(fanoutNode{id: id, parent: a.drawnParentOf(id), live: a.isLiveAria(id)})
+	}
+}
+
+func (a *Angelus) nodeKept(id string) bool {
+	if a.Backend == nil {
+		return false
+	}
+	_, ok := a.Backend.Node(id)
+	return ok
+}
+
+func (a *Angelus) drawnParentOf(id string) string {
+	if p := a.Backend.HierarchyEngine().Overrides()[id]; p != "" {
+		return p
+	}
+	v, _ := a.Backend.Node(id)
+	return v.Parent
 }
 
 func (a *Angelus) fanoutDrift() []rpc.FanoutDrift {
