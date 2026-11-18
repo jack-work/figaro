@@ -203,10 +203,18 @@ func (a *Angelus) take(keeper ttlKeeper, e store.TTLEntry, taken []string) error
 		return err
 	}
 	if g := a.purgeGraceIn(a.sandboxOf(e.ID), a.Settings.ReapedGrace()); g > 0 {
+		var d softDeletion
 		_, err := a.topology().Under(sweepingAt(context.Background(), time.Now()), hierarchy.System,
 			hierarchy.Plan{Op: hierarchy.Reap, Node: e.ID, Delete: taken},
-			func(p hierarchy.Plan) error { return a.softDelete(e, p.Delete, g) })
-		return a.notYetIfMoved(err)
+			func(p hierarchy.Plan) error {
+				d = a.submitSoftDelete(e, p.Delete, g)
+				return d.failed
+			})
+		if err != nil {
+			_ = d.await()
+			return a.notYetIfMoved(err)
+		}
+		return a.notYetIfMoved(d.await())
 	}
 	if err := a.removeDecided(e.ID, taken); err != nil {
 		return err

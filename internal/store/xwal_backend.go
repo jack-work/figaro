@@ -598,6 +598,26 @@ func (b *XwalBackend) ApplyFormEffectPrivilegedIf(ariaID string, patch message.P
 	return v, applied, err
 }
 
+func (b *XwalBackend) SubmitFormPrivileged(ariaID string, patch message.Patch) (func() (uint64, error), error) {
+	f, err := b.form(ariaID)
+	if err != nil {
+		return nil, err
+	}
+	t, err := f.submit(&formWrite{patch: patch, intent: Ensure, priv: true})
+	if err != nil {
+		return nil, err
+	}
+	return func() (uint64, error) {
+		v, _, err := f.Await(context.Background(), t)
+		if errors.Is(err, ErrFormSealed) {
+			if mirrored, ok, merr := b.applySealedLifetimeWrite(ariaID, v, FormWrite{Patch: patch}, true); ok {
+				return mirrored.Version, merr
+			}
+		}
+		return v, err
+	}, nil
+}
+
 func (b *XwalBackend) ApplyFormWrite(ariaID string, w FormWrite) (FormVerdict, error) {
 	if touchesRetention(w.Patch) && b.conversationBound(ariaID) {
 		return FormVerdict{}, ErrRetentionOnConversation

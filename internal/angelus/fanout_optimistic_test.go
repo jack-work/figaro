@@ -1,6 +1,7 @@
 package angelus
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 	"testing"
@@ -167,5 +168,67 @@ func TestAKillTakesAChildBornAfterItsDeleteSetWasRead(t *testing.T) {
 	}
 	if !hs.h.angelus.isReaped(late) {
 		t.Fatal("a child born during its parent's kill stayed live under a reaped parent")
+	}
+}
+
+type stalledSyncBackend struct {
+	*store.XwalBackend
+	stall chan struct{}
+}
+
+func (s *stalledSyncBackend) SubmitFormPrivileged(id string, patch form.Patch) (func() (uint64, error), error) {
+	wait, err := s.XwalBackend.SubmitFormPrivileged(id, patch)
+	if err != nil {
+		return nil, err
+	}
+	return func() (uint64, error) {
+		<-s.stall
+		return wait()
+	}, nil
+}
+
+func TestAReapWaitingOnItsFormSyncHoldsNoHierarchyLock(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	slow := &stalledSyncBackend{XwalBackend: b, stall: make(chan struct{})}
+	hs.h.angelus.Backend = slow
+	victim, _ := b.CreateConversation(outfit)
+	other, _ := b.CreateConversation(outfit)
+	killed := make(chan error, 1)
+	go func() {
+		raw, _ := json.Marshal(rpc.KillRequest{FigaroID: victim, GraceMS: time.Hour.Milliseconds()})
+		_, err := hs.Map[rpc.MethodKill](inProcess(context.Background()), raw)
+		killed <- err
+	}()
+	deadline := time.After(10 * time.Second)
+	for !hs.h.angelus.isReaped(victim) {
+		select {
+		case <-deadline:
+			close(slow.stall)
+			t.Fatal("the kill never marked its figaro")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	locked := make(chan struct{})
+	go func() {
+		_ = hs.h.angelus.topology().WithLock(func() error { return nil })
+		close(locked)
+	}()
+	select {
+	case <-locked:
+	case <-time.After(5 * time.Second):
+		close(slow.stall)
+		t.Fatal("a reap waiting on its form sync held the hierarchy lock")
+	}
+	if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: other}); err != nil {
+		t.Fatalf("a fork while a reap waited on its form sync: %v", err)
+	}
+	select {
+	case err := <-killed:
+		t.Fatalf("the kill returned before its form sync: %v", err)
+	default:
+	}
+	close(slow.stall)
+	if err := <-killed; err != nil {
+		t.Fatalf("kill: %v", err)
 	}
 }

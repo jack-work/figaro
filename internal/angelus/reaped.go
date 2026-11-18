@@ -14,28 +14,54 @@ import (
 type reapedKeeper interface {
 	Reaped() []store.ReapedEntry
 	ApplyFormPrivileged(id string, patch form.Patch) (uint64, error)
+	SubmitFormPrivileged(id string, patch form.Patch) (func() (uint64, error), error)
 }
 
-func (a *Angelus) softDelete(e store.TTLEntry, taken []string, grace time.Duration) error {
+type softDeletion struct {
+	e       store.TTLEntry
+	grace   time.Duration
+	nodes   []string
+	pending []func() (uint64, error)
+	failed  error
+}
+
+func (a *Angelus) submitSoftDelete(e store.TTLEntry, taken []string, grace time.Duration) softDeletion {
+	d := softDeletion{e: e, grace: grace}
 	keeper, ok := a.Backend.(reapedKeeper)
 	if !ok {
-		return nil
+		return d
 	}
 	raw, _ := json.Marshal(e.ID)
 	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.ReapedKey: raw}, []string{store.ReapedUntilKey})
-	marked := 0
-	var failed error
 	for _, id := range taken {
-		if _, err := keeper.ApplyFormPrivileged(id, patch); err != nil {
+		wait, err := keeper.SubmitFormPrivileged(id, patch)
+		if err != nil {
 			slog.Warn("lifetime spent, soft delete failed", "node", id, "root", e.ID, "err", err)
-			failed = errors.Join(failed, fmt.Errorf("soft delete %s: %w", id, err))
+			d.failed = errors.Join(d.failed, fmt.Errorf("soft delete %s: %w", id, err))
+			continue
+		}
+		d.nodes = append(d.nodes, id)
+		d.pending = append(d.pending, wait)
+	}
+	return d
+}
+
+func (d softDeletion) await() error {
+	failed := d.failed
+	marked := 0
+	for i, wait := range d.pending {
+		if _, err := wait(); err != nil {
+			slog.Warn("lifetime spent, soft delete failed", "node", d.nodes[i], "root", d.e.ID, "err", err)
+			failed = errors.Join(failed, fmt.Errorf("soft delete %s: %w", d.nodes[i], err))
 			continue
 		}
 		marked++
 	}
-	slog.Info("soft-deleted a node whose lifetime was spent",
-		"node", e.ID, "ttl", e.TTL, "taken", marked,
-		"purge", time.Now().Add(grace).Format(time.RFC3339))
+	if marked > 0 || failed == nil {
+		slog.Info("soft-deleted a node whose lifetime was spent",
+			"node", d.e.ID, "ttl", d.e.TTL, "taken", marked,
+			"purge", time.Now().Add(d.grace).Format(time.RFC3339))
+	}
 	return failed
 }
 
