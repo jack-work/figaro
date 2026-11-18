@@ -519,6 +519,22 @@ func TestSuccessionCarriesTheFanoutLimit(t *testing.T) {
 	require.JSONEq(t, "1", string(got))
 }
 
+// Defends a seat's laws across a hard succession: without the copy a holder
+// sheds every law on its own form by succeeding itself.
+func TestSuccessionCarriesTheLaws(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	ownerSets(t, r.a, old, map[string]any{"law.report": "Report to the role."})
+	r.p.set(func() { r.p.holdOthers = true })
+	r.cross(old)
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "ramping" }, "the succession never reached its ramp")
+	snap, err := r.a.Backend.FormState(r.hs.SuccessorOf(old))
+	require.NoError(t, err)
+	got, ok := snap.Get(form.LawRoot)
+	require.True(t, ok, "the successor was born without its predecessor's laws")
+	require.JSONEq(t, `{"report":"Report to the role."}`, string(got))
+}
+
 func TestSuccessionCarriesTheChildPolicy(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(succeeding(nil))

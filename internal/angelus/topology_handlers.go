@@ -196,7 +196,7 @@ func (h *handlers) createWith(ctx context.Context, params json.RawMessage, birth
 			return nil, serr
 		}
 		var cerr error
-		id, _, cerr = backend.ForkWith(formID, 0, childBirthPatch(dress, cwd), mintedBy(ctx), bootStamp(cwd))
+		id, _, cerr = backend.ForkWith(formID, 0, childBirthPatch(form.Merge(h.makersLaws(ctx), dress), cwd), mintedBy(ctx), bootStamp(cwd))
 		if cerr != nil {
 			return nil, fmt.Errorf("mint aria: %w", cerr)
 		}
@@ -410,9 +410,13 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if heir {
 		dress = withHolderTTL(dress, holder)
 	}
+	dress = form.UnderLawsOf(inherited, dress)
 	// interior is read off the coordinate, not the LT: forking at turn 1 has
 	// LT 0, which is also the head-fork sentinel.
 	interior := req.AtTurn > 0 || req.AtLT > 0
+	if interior {
+		policy = form.Merge(form.LawsAsTheyStand(inherited), policy)
+	}
 	where := fmt.Sprintf("turn %d", req.AtTurn)
 	if req.AtLT > 0 {
 		where = fmt.Sprintf("LT %d", req.AtLT)
@@ -1002,6 +1006,9 @@ func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rp
 	h.seated.Store(successor, pred)
 	slog.Info("seated figaro", "predecessor", pred, "successor", successor)
 	r.Demote = rpc.DemoteResponse{FigaroID: pred, Under: successor, Preferred: true}
+	if lerr := h.angelus.carryLaws(pred, successor); lerr != nil {
+		r.FailedAt, r.Error = "laws", fmt.Sprintf("%s holds the seat but not %s's laws: %v", successor, pred, lerr)
+	}
 	return r
 }
 
@@ -1238,4 +1245,29 @@ func sameMembers(a, b []string) bool {
 		seen[id]--
 	}
 	return true
+}
+
+func (h *handlers) makersLaws(ctx context.Context) form.Patch {
+	f := authz.FigaroOf(ctx)
+	if f == "" {
+		return form.Patch{}
+	}
+	snap, err := h.angelus.Backend.FormState(f)
+	if err != nil {
+		return form.Patch{}
+	}
+	return form.LawsAdded(snap)
+}
+
+func (a *Angelus) carryLaws(from, to string) error {
+	snap, err := a.Backend.FormState(from)
+	if err != nil {
+		return err
+	}
+	laws := form.LawsAdded(snap)
+	if laws.IsIdentity() {
+		return nil
+	}
+	_, err = a.Backend.ApplyForm(to, laws)
+	return err
 }
