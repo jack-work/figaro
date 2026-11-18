@@ -24,3 +24,7 @@ func escapeReminderName(s string) string {
 	s = strings.ReplaceAll(s, "<", "&lt;")
 	return s
 }
+
+func JoinReminders(texts []string) string {
+	return strings.Join(texts, "")
+}
