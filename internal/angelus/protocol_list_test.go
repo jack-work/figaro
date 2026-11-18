@@ -21,6 +21,10 @@ type metadataListBackend struct {
 
 func (b *metadataListBackend) LastTS(string) int64 { return 20 }
 
+func (b *metadataListBackend) Feed(store.TopologyFeed) {}
+
+func (b *metadataListBackend) EveryNode() []store.NodeView { return nil }
+
 func (b *metadataListBackend) Conversations() []store.NodeView {
 	return []store.NodeView{{
 		ID: "dormant", Kind: conversationKind, Trunk: "dormant", Vector: []int{0},

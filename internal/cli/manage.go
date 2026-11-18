@@ -76,6 +76,7 @@ const (
 	fieldCwd    = "cwd"
 	fieldDetail = "detail"
 	fieldKind   = "kind"
+	fieldFan    = "fan"
 )
 
 func listColumns(width int, global bool) []figtree.Column {
@@ -105,6 +106,7 @@ func listColumns(width int, global bool) []figtree.Column {
 			{Header: "AGE", Field: fieldAge},
 			{Header: "MSGS", Field: fieldMsgs},
 			{Header: "CTX", Field: fieldCtx},
+			{Header: "FAN", Field: fieldFan},
 			{Header: "CWD", Field: fieldCwd},
 		}
 	}
@@ -356,6 +358,7 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 				fieldAge:    relAge(f.LastActive),
 				fieldMsgs:   fmt.Sprintf("%d", f.MessageCount),
 				fieldCtx:    ctxStr,
+				fieldFan:    fanCell(f),
 				fieldCwd:    shortCwd(f.Cwd),
 			},
 		}
@@ -1343,4 +1346,15 @@ func runHop(loaded *config.Loaded, verb string, steps int) {
 		fmt.Fprintf(stderrw, "attending %s (%d/%d)%s\n", ariaName(h.FigaroID), h.Pos, h.Total, dropped)
 		return nil
 	})
+}
+
+func fanCell(f rpc.FigaroInfoResponse) string {
+	if f.FanQuota == nil {
+		return "-"
+	}
+	cell := fmt.Sprintf("%d/%d", f.FanUsed, *f.FanQuota)
+	if f.FanUsed > *f.FanQuota {
+		cell += "!"
+	}
+	return cell
 }

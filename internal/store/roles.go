@@ -73,6 +73,7 @@ func noted(m *map[string]string, id, v string) {
 func (b *XwalBackend) roleCommitted(formID string, patch message.Patch, after form.Snapshot) {
 	if reaches(patch, targetAriaKey) {
 		b.roleNoted(formID, listedValue(after, targetAriaKey))
+		b.limitsChanged(formID)
 	}
 	if reaches(patch, nameKey) {
 		b.nameNoted(formID, listedValue(after, nameKey))

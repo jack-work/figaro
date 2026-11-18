@@ -54,10 +54,11 @@ type ForkRequest struct {
 	// no turn boundary exists.
 	AtLT uint64 `json:"at_lt,omitempty"`
 	// Patch dresses the alternative in the same call that mints it.
-	Patch   *FormPatch  `json:"patch,omitempty"`
-	Outfits []string    `json:"outfits,omitempty"`
-	Studies ForkStudies `json:"studies,omitempty"`
-	Seat    string      `json:"seat,omitempty"`
+	Patch     *FormPatch  `json:"patch,omitempty"`
+	Outfits   []string    `json:"outfits,omitempty"`
+	Studies   ForkStudies `json:"studies,omitempty"`
+	Seat      string      `json:"seat,omitempty"`
+	Abdicates bool        `json:"abdicates,omitempty"`
 }
 
 type ForkStudies string

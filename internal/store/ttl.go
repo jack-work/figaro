@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -114,6 +115,8 @@ type lifetimeChange struct {
 	reapedRoot   *string
 	reapedUntil  *int64
 	reapedBy     *string
+	quotaSpoke   bool
+	quota        *int
 }
 
 func lifetimeOf(id string, patch message.Patch) (lifetimeChange, bool) {
@@ -170,7 +173,17 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 		by := strings.TrimSpace(raw)
 		c.reapedBy = &by
 	}
-	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapIfEmpty != nil || c.reapedRoot != nil || c.reapedUntil != nil || c.reapedBy != nil
+	if raw, spoke := valueOf(form.FanoutQuotaKey); spoke {
+		c.quotaSpoke = true
+		if raw != "" {
+			if n, err := strconv.Atoi(raw); err != nil || n < 0 {
+				slog.Warn("system.fanout.quota ignored", "node", id, "value", raw)
+			} else {
+				c.quota = &n
+			}
+		}
+	}
+	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapIfEmpty != nil || c.reapedRoot != nil || c.reapedUntil != nil || c.reapedBy != nil || c.quotaSpoke
 }
 
 func retiredValue(raw string) bool { return form.Truthy(raw) }
@@ -217,13 +230,17 @@ func (c lifetimeChange) applyTo(m *AriaMeta, now int64) {
 	if m.ReapedAtMS == 0 {
 		m.ReapedUntilMS, m.ReapedBy = 0, ""
 	}
+	if c.quotaSpoke {
+		m.FanoutQuota = c.quota
+	}
 }
 
 func sameLifetime(a, b *AriaMeta) bool {
 	ka, kb := a.KeepaliveMS, b.KeepaliveMS
 	return a.TTLMS == b.TTLMS && a.RetiredAtMS == b.RetiredAtMS && a.RetiredReason == b.RetiredReason && a.ReapIfEmpty == b.ReapIfEmpty &&
 		a.ReapedAtMS == b.ReapedAtMS && a.ReapedRoot == b.ReapedRoot && a.ReapedUntilMS == b.ReapedUntilMS && a.ReapedBy == b.ReapedBy &&
-		(ka == nil) == (kb == nil) && (ka == nil || *ka == *kb)
+		(ka == nil) == (kb == nil) && (ka == nil || *ka == *kb) &&
+		(a.FanoutQuota == nil) == (b.FanoutQuota == nil) && (a.FanoutQuota == nil || *a.FanoutQuota == *b.FanoutQuota)
 }
 
 func (b *XwalBackend) ttlCommitted(id string, patch message.Patch) {
@@ -271,6 +288,9 @@ func (b *XwalBackend) mirrorLifetime(id string, c lifetimeChange) {
 	b.ttlNoted(id, &meta)
 	if c.retired != nil || c.reapedRoot != nil {
 		b.livenessChanged(id, &meta)
+	}
+	if c.quotaSpoke {
+		b.limitsChanged(id)
 	}
 	if c.ttl != nil {
 		if *c.ttl > 0 {

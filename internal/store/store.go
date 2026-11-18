@@ -66,6 +66,8 @@ type AriaMeta struct {
 
 	MintedBy       string `json:"minted_by,omitempty"`
 	TombstonedAtMS int64  `json:"tombstoned_at_ms,omitempty"`
+
+	FanoutQuota *int `json:"fanout_quota,omitempty"`
 }
 
 type Lifetime struct {

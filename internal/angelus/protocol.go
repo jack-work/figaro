@@ -591,8 +591,9 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 			return nil, fmt.Errorf("form.bind: the board of %s cannot be read to check the patch against it: %w", parent, err)
 		}
 	}
+	inherited, req.Patch = withoutInherited(form.FanoutQuotaKey, inherited, req.Patch)
 	if authz.FigaroOf(ctx) != "" {
-		inherited, req.Patch = withoutInheritedMint(inherited, req.Patch)
+		inherited, req.Patch = withoutInherited(form.FanoutMintKey, inherited, req.Patch)
 	}
 	if err := h.refuseBoxOutfits(ctx, req.Outfits, true); err != nil {
 		return nil, err

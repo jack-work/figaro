@@ -67,12 +67,12 @@ func TestRenderedListGolden(t *testing.T) {
   └─○ grandchild                                  tallness-hefty  sonn5      -    1     -
 ○ aria username-prune                             username-prune  -          -    0     -
 `},
-		{"full", 160, false, `ARIA                                              ID              OUTFIT     VER  FORK  AGE  MSGS  CTX   CWD
-○ the first tree                                  onward-office   opus5-ant  v1   -     -    12    12k   /home/x/dev/figaro
-├─▸ first child                                   pushup-upright  opus5-ant  v1   yes   -    3     ~900  /home/x/dev/figaro
-└─○ second child which has a very long mantra ..  senator-copier  sonn5      v2   yes   -    7     ~4k   /tmp
-  └─○ grandchild                                  tallness-hefty  sonn5      v2   yes   -    1     -     /tmp
-○ aria username-prune                             username-prune  -          -    -     -    0     -     -
+		{"full", 160, false, `ARIA                                              ID              OUTFIT     VER  FORK  AGE  MSGS  CTX   FAN  CWD
+○ the first tree                                  onward-office   opus5-ant  v1   -     -    12    12k   -    /home/x/dev/figaro
+├─▸ first child                                   pushup-upright  opus5-ant  v1   yes   -    3     ~900  -    /home/x/dev/figaro
+└─○ second child which has a very long mantra ..  senator-copier  sonn5      v2   yes   -    7     ~4k   -    /tmp
+  └─○ grandchild                                  tallness-hefty  sonn5      v2   yes   -    1     -     -    /tmp
+○ aria username-prune                             username-prune  -          -    -     -    0     -     -    -
 `},
 		{"global", 120, true, `ARIA                                                    ID              DETAIL
 ○ null                                                  null            genesis root · ceremonial

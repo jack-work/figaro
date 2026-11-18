@@ -436,6 +436,9 @@ func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before for
 	if _, err := form.FanoutMint(after); err != nil {
 		return err
 	}
+	if _, _, err := form.FanoutQuota(after); err != nil {
+		return err
+	}
 	if err := refuseMisshapenKeys(after, *patch); err != nil {
 		return err
 	}
@@ -455,6 +458,9 @@ func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before for
 	c := h.callerKeysOf(ctx)
 	if c.owns && !c.boxed {
 		if err := h.refuseFanoutByLabelAlone(ctx, line, before, after); err != nil {
+			return err
+		}
+		if err := h.refuseQuotaByLabelAlone(ctx, line, before, after); err != nil {
 			return err
 		}
 		return h.refuseMintByLabelAlone(ctx, line, before, after)
@@ -479,7 +485,40 @@ func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before for
 	if err := h.refuseFanoutBeyondGranter(ctx, before, after); err != nil {
 		return err
 	}
+	if err := h.refuseQuotaBeyondBudget(ctx, line, before, after); err != nil {
+		return err
+	}
 	return h.refuseMintBeyondGranter(ctx, before, after)
+}
+
+func (h *handlers) refuseQuotaByLabelAlone(ctx context.Context, line lineage, before, after form.Snapshot) error {
+	f := authz.FigaroOf(ctx)
+	if f == "" || !keyChanged(before, after, form.FanoutQuotaKey) {
+		return nil
+	}
+	if line.of == "" || !slices.Contains(h.ancestorsOf(line), f) {
+		return fmt.Errorf("%s is protected, and figaro %s is no ancestor of the aria", form.FanoutQuotaKey, f)
+	}
+	return h.refuseQuotaBeyondBudget(ctx, line, before, after)
+}
+
+func (h *handlers) refuseQuotaBeyondBudget(ctx context.Context, line lineage, before, after form.Snapshot) error {
+	if authz.FigaroOf(ctx) == "" || line.self || line.of == "" || !keyChanged(before, after, form.FanoutQuotaKey) {
+		return nil
+	}
+	n, capped, err := form.FanoutQuota(after)
+	if err != nil {
+		return err
+	}
+	c := h.angelus.fanoutCounts()
+	from, d, used := c.chargeChange(line.of, n, capped)
+	if capped && n < used {
+		return fmt.Errorf("%s: %s already uses %d of its subtree's budget, more than %d; retire under it first", form.FanoutQuotaKey, shortID(line.of), used, n)
+	}
+	if err := c.fits(from, d); err != nil {
+		return fmt.Errorf("%s: %w", form.FanoutQuotaKey, err)
+	}
+	return nil
 }
 
 func keyChanged(before, after form.Snapshot, key string) bool {

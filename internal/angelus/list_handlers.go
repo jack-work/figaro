@@ -53,6 +53,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 				entry.RetiredAt, entry.RetiredReason = meta.RetiredAtMS, meta.RetiredReason
 				entry.ReapedAt = meta.ReapedAtMS
 			}
+			h.fillFanout(&entry)
 		}
 		result = append(result, entry)
 	}
@@ -321,6 +322,14 @@ func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoRespo
 	}
 	entry.RetiredAt, entry.RetiredReason = meta.RetiredAtMS, meta.RetiredReason
 	entry.ReapedAt = meta.ReapedAtMS
+	h.fillFanout(entry)
+}
+
+func (h *handlers) fillFanout(entry *rpc.FigaroInfoResponse) {
+	b := h.angelus.fanoutCounts().budget(entry.ID)
+	if b.capped {
+		entry.FanUsed, entry.FanQuota = b.used, &b.quota
+	}
 }
 
 func (h *handlers) fillFromNode(nodes map[string]store.NodeView, vers map[string][2]string, entry *rpc.FigaroInfoResponse) {

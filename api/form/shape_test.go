@@ -103,6 +103,10 @@ func TestShapesAgreeWithTheReadersThatJudgeAValue(t *testing.T) {
 			_, _, err := FanoutMaxChildren(s)
 			return err == nil
 		},
+		FanoutQuotaKey: func(s Snapshot) bool {
+			_, _, err := FanoutQuota(s)
+			return err == nil
+		},
 		FanoutMintKey: func(s Snapshot) bool {
 			_, err := FanoutMint(s)
 			return err == nil

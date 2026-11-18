@@ -29,6 +29,7 @@ DecideRequest.Score
 DemoteRequest.FigaroID
 DemoteRequest.Prefer
 FollowRequest.Channels
+ForkRequest.Abdicates
 ForkRequest.AtLT
 ForkRequest.AtTurn
 ForkRequest.FigaroID

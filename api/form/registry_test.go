@@ -84,7 +84,7 @@ func TestEveryRowIsDocumentedOrGroupsDocumentedRows(t *testing.T) {
 
 func TestTheNamedKeysCarryTheirWriterClass(t *testing.T) {
 	for want, keys := range map[form.Writer][]string{
-		form.WriterLineage: {form.ScopesKey, form.RetiredGrantsKey, form.FanoutMaxChildrenKey, form.FanoutMintKey, "system.sandbox"},
+		form.WriterLineage: {form.ScopesKey, form.RetiredGrantsKey, form.FanoutMaxChildrenKey, form.FanoutQuotaKey, form.FanoutMintKey, "system.sandbox"},
 		form.WriterRuntime: {form.FailureReasonKey, form.FailureCategoryKey, form.FailureTurnKey, form.FailureAtKey, "system.forked_from", "system.studies", "system.tombstone", "system.checkpoint.marks", "system.succession_warned",
 			form.ForkedFromKey, form.StudiesKey, form.TombstoneKey, form.CheckpointMarksKey, form.SuccessionWarnedKey, form.RetiredKey, "runtime", "runtime.anything.below"},
 		form.WriterOwner: {"system.provider", "system.model", "system.ttl", "system.retired", "system.retention.mode", "system.methods.pick.key"},

@@ -82,6 +82,7 @@ type TopologyGuard struct {
 	LiveChildren func(id string) int
 	Live         func(id string) bool
 	SwapLimit    func(pred, succ string) (max int, ok, swap bool)
+	Quota        func(p hierarchy.Plan) error
 	Committed    func(p hierarchy.Plan)
 }
 
@@ -93,6 +94,9 @@ func (g TopologyGuard) AfterCommit(p hierarchy.Plan) {
 
 func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hierarchy.Plan) (hierarchy.Verdict, error) {
 	if err := g.fanout(p); err != nil {
+		return hierarchy.Verdict{}, err
+	}
+	if err := g.quota(p); err != nil {
 		return hierarchy.Verdict{}, err
 	}
 	if err := g.rehomes(p); err != nil {
@@ -354,6 +358,16 @@ func (g TopologyGuard) fanout(p hierarchy.Plan) error {
 		}
 	}
 	return nil
+}
+
+func (g TopologyGuard) quota(p hierarchy.Plan) error {
+	if g.Quota == nil {
+		return nil
+	}
+	if succ, _, _ := g.swapOf(p); succ != "" {
+		return nil
+	}
+	return g.Quota(p)
 }
 
 func (g TopologyGuard) swapOf(p hierarchy.Plan) (succ string, max int, ok bool) {

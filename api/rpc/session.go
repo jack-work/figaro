@@ -61,6 +61,9 @@ type FigaroInfoResponse struct {
 	Sandbox    string `json:"sandbox,omitempty"`
 
 	Roles []string `json:"roles,omitempty"`
+
+	FanUsed  int  `json:"fan_used,omitempty"`
+	FanQuota *int `json:"fan_quota,omitempty"`
 }
 
 // AttachRequest restores a dormant aria without binding a pid.
