@@ -79,7 +79,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 	req.Cwd = hostCwdOf(ctx, req.Cwd)
-	if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, req.Patch); err != nil {
+	if err := h.refuseCallerKeys(ctx, rootBirth(), form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
 	}
 
