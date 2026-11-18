@@ -36,6 +36,10 @@ func (t *Trunks) Retain(node, channel string, dryRun bool) (Retention, error) {
 
 func (t *Trunks) RetainBelow(node, channel string, floor uint64, dryRun bool) (Retention, error) {
 	r := Retention{Node: node, Channel: channel}
+	if !dryRun {
+		t.retainMu.Lock()
+		defer t.retainMu.Unlock()
+	}
 	end, err := t.beginTrackedRead()
 	if err != nil {
 		return r, err

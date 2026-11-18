@@ -22,7 +22,7 @@ func (t *Trunks) readForkBase(key string) (uint64, error) {
 func (t *Trunks) ForkTail(trunk string) (string, error) {
 	unlockLineage := t.lockLineage(trunk)
 	defer unlockLineage()
-	endMutation, err := t.beginFlatCreate()
+	endMutation, err := t.beginSpawn()
 	if err != nil {
 		return "", err
 	}
@@ -174,7 +174,7 @@ func (t *Trunks) channelBases(node string, at uint64) (map[string]uint64, error)
 func (t *Trunks) ForkAt(trunk string, atMainLT uint64) (string, error) {
 	unlockLineage := t.lockLineage(trunk)
 	defer unlockLineage()
-	endMutation, err := t.beginFlatCreate()
+	endMutation, err := t.beginSpawn()
 	if err != nil {
 		return "", err
 	}
@@ -234,7 +234,7 @@ func (t *Trunks) forkFlatAt(parentKey string, atMainLT uint64) (string, error) {
 // appendable; a fork snapshots the parent's channels at their bases and later
 // parent appends belong to the parent alone.
 func (t *Trunks) SpawnChildKind(parent TrunkID, kind string) (TrunkID, error) {
-	endMutation, err := t.beginFlatCreate()
+	endMutation, err := t.beginSpawn()
 	if err != nil {
 		return "", err
 	}
@@ -254,7 +254,7 @@ func (t *Trunks) SpawnUnderRoot() (TrunkID, error) {
 // SpawnUnderRootKind: the kind lands in the node marker, is immutable from
 // then on (a fork never converts), and is what listings discriminate by.
 func (t *Trunks) SpawnUnderRootKind(kind string) (TrunkID, error) {
-	endMutation, err := t.beginFlatCreate()
+	endMutation, err := t.beginSpawn()
 	if err != nil {
 		return "", err
 	}

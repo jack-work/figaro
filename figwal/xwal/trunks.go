@@ -22,6 +22,8 @@ type Trunks struct {
 	mu  sync.RWMutex
 	idx *Index
 
+	retainMu sync.RWMutex
+
 	// version is the local rebuild cookie; rootEpoch tracks mutations made
 	// through any in-process peer for the same canonical root.
 	rootEpoch atomic.Uint64

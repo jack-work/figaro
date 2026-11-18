@@ -95,7 +95,7 @@ func (t *Trunks) SpawnUnderStump(name string) (TrunkID, error) {
 
 // SpawnUnderStumpKind: the kind is recorded in the child's marker.
 func (t *Trunks) SpawnUnderStumpKind(name, kind string) (TrunkID, error) {
-	endMutation, err := t.beginFlatCreate()
+	endMutation, err := t.beginSpawn()
 	if err != nil {
 		return "", err
 	}
