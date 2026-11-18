@@ -268,8 +268,15 @@ and reports three; it is not an error to ask for more than the tree has.
 **`figaro doctor normalize [-n] [-j]`** makes every figaro own its history
 outright, so no delete can owe anything at its boundary, then drops every
 override the history now agrees with. It is the one operation here that is
-not instant (it copies the prefix each promoted figaro borrows), so it suits
-an off-hours job. `-n` reports what each half would do and touches nothing.
+not instant (it copies the prefix each promoted figaro borrows), so the
+daemon runs it on its own once it has been quiet for a minute: no turn in
+flight and no call that changes anything (a read or a status probe does not
+count). `[store] normalize_after_quiet_seconds` sets the minute; 0 turns it
+off. The copy is built beside the live history with no lock held and
+published one figaro at a time under the topology lock, so a reader sees a
+figaro before its detach or after it, never between. A call that does work
+stops the pass at once; the next quiet minute resumes it. `-n` reports what
+each half would do and touches nothing.
 `figaro normalize` is a hidden alias for it until 0.57.
 
 An override is **redundant** when dropping it changes no delete set: its

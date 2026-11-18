@@ -25,7 +25,10 @@ const resumeSender = "angelus"
 
 const spoolSlowWarn = time.Second
 
-const StateSuspended = "suspended"
+const (
+	StateSuspended = "suspended"
+	StateActive    = "active"
+)
 
 type Spool struct {
 	dir  string
