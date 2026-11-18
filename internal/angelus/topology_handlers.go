@@ -415,7 +415,7 @@ func (h *handlers) admitFork(parent string) error {
 	if !ok {
 		return nil
 	}
-	if n := len(h.angelus.liveChildrenOf(parent)); n >= max {
+	if n := h.angelus.liveChildCount(parent); n >= max {
 		return fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one or fork elsewhere", parent, n, max)
 	}
 	return nil

@@ -41,10 +41,10 @@ func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
 		Empty:        a.ownsNoMessages,
 		MintPlaces:   a.mintPlaces,
 		FanoutLimit:  a.fanoutLimitOf,
-		LiveChildren: a.liveChildrenOf,
+		LiveChildren: a.liveChildCount,
 		Live:         a.isLiveAria,
 		SwapLimit:    a.swapLimit,
-		Committed:    a.moveSwappedLimit,
+		Committed:    a.topologyCommitted,
 	}
 }
 
@@ -142,6 +142,11 @@ func (a *Angelus) swapLimit(pred, succ string) (int, bool, bool) {
 	return max, ok, true
 }
 
+func (a *Angelus) topologyCommitted(p hierarchy.Plan) {
+	a.settleFanout(p)
+	a.moveSwappedLimit(p)
+}
+
 func (a *Angelus) moveSwappedLimit(p hierarchy.Plan) {
 	if p.Op != hierarchy.Demote || a.Backend == nil {
 		return
@@ -193,16 +198,6 @@ func (a *Angelus) swapFanoutKeys(pred, succ string) error {
 	}
 	_, err = a.Backend.ApplyForm(pred, form.Build(ps, predSet, predDrop))
 	return err
-}
-
-func (a *Angelus) liveChildrenOf(id string) []string {
-	var out []string
-	for _, kid := range a.topology().Children(id) {
-		if a.isLiveAria(kid) {
-			out = append(out, kid)
-		}
-	}
-	return out
 }
 
 func (a *Angelus) isLiveAria(id string) bool {
