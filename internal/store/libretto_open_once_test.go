@@ -40,3 +40,41 @@ func TestConcurrentFirstReadsOfALibrettoReplayItOnce(t *testing.T) {
 		}
 	}
 }
+
+func TestReadersWaitingOnAPanickedLibrettoOpenAreReleased(t *testing.T) {
+	be, sourceID, _ := librettoFixture(t)
+	real := openLibretto
+	started := make(chan struct{})
+	openLibretto = func(s *XwalStore, id string) (*Libretto, error) {
+		close(started)
+		time.Sleep(50 * time.Millisecond)
+		panic("replay failed")
+	}
+	t.Cleanup(func() { openLibretto = real })
+	go func() {
+		defer func() { _ = recover() }()
+		_, _ = be.Libretto(sourceID)
+	}()
+	<-started
+	errs := make(chan error, 3)
+	for range 3 {
+		go func() {
+			_, err := be.Libretto(sourceID)
+			errs <- err
+		}()
+	}
+	for range 3 {
+		select {
+		case err := <-errs:
+			if err == nil {
+				t.Fatal("a reader waiting on a panicked open got a libretto")
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("a reader waiting on a panicked open never returned")
+		}
+	}
+	openLibretto = real
+	if _, err := be.Libretto(sourceID); err != nil {
+		t.Fatalf("an open after the panicked one: %v", err)
+	}
+}

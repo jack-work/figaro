@@ -235,9 +235,17 @@ func (b *XwalBackend) librettoInstance(sourceFormID string) (*Libretto, error) {
 	}
 	b.opening[key] = o
 	b.mu.Unlock()
+	o.err = errLibrettoOpenPanicked
+	defer b.settleOpening(key, o)
 
 	// Outside the lock: this replays a form and reads files.
 	o.lib, o.err = openLibretto(b.store, sourceFormID)
+	return o.lib, o.err
+}
+
+var errLibrettoOpenPanicked = errors.New("libretto: opening it panicked")
+
+func (b *XwalBackend) settleOpening(key string, o *librettoOpening) {
 	b.mu.Lock()
 	delete(b.opening, key)
 	if o.err == nil {
@@ -248,7 +256,6 @@ func (b *XwalBackend) librettoInstance(sourceFormID string) (*Libretto, error) {
 	}
 	b.mu.Unlock()
 	close(o.done)
-	return o.lib, o.err
 }
 
 var openLibretto = OpenLibretto
