@@ -2130,7 +2130,7 @@ the daemon neither reads nor writes it.`,
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
 			{Long: "reap", IsBool: true, Description: "tombstones: reap listed tombstoned arias through kill"},
 			{Long: "audit", IsBool: true, Description: "form-keys: read every form through the daemon and name the values that fail their shape"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem, provider, normalize, prune-channel-dirs, tombstones, residents, misread-lineage)"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem, provider, form-keys, normalize, prune-channel-dirs, tombstones, residents, misread-lineage)"},
 			{Long: "id", Description: "Restrict to one aria (provider)"},
 			// -n is already dry-run on this command.
 			{Long: "count", Short: "c", Description: "How many rows to show (provider); default 20"},
