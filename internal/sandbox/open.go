@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"github.com/jack-work/figaro/internal/sandbox/box"
 	"github.com/jack-work/figaro/internal/sandbox/local"
 )
+
+var ErrLocalToolsOff = errors.New("this daemon runs no tools as itself ([sandbox] local_tools = false): set system.sandbox to a box from [sandbox.boxes]")
 
 type Opened struct {
 	api.Sandbox
@@ -26,6 +29,9 @@ func Open(ctx context.Context, host *local.Host, loaded *config.Loaded, kind, ar
 	}
 	switch kind {
 	case "", "local":
+		if !loaded.LocalTools() {
+			return Opened{}, ErrLocalToolsOff
+		}
 	case "bwrap":
 		return Opened{}, fmt.Errorf("bwrap was removed; set system.sandbox to local, or to a box from [sandbox.boxes]")
 	default:

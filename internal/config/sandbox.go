@@ -10,7 +10,13 @@ import (
 )
 
 type SandboxConfig struct {
-	Boxes map[string]BoxConfig `toml:"boxes"`
+	Boxes      map[string]BoxConfig `toml:"boxes"`
+	LocalTools *bool                `toml:"local_tools"`
+}
+
+func (l *Loaded) LocalTools() bool {
+	t := l.cfg().Sandbox.LocalTools
+	return t == nil || *t
 }
 
 type BoxConfig struct {

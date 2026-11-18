@@ -862,6 +862,13 @@ The daemon listens on each `door` (0660) at start; `box serve --door
 `FIGARO_RUNTIME_DIR`, so `figaro` in the box calls back as the box and
 never starts a daemon there.
 
+`[sandbox] local_tools = false` takes `local` away: a figaro whose
+`system.sandbox` is `local` or unset is refused when it opens (at birth, or
+when it wakes) with the way out, naming a box. House and estate mode set it,
+since a tool run as the daemon's uid can rewrite any figaro's store. Setting
+`system.sandbox` on a refused figaro does not open it, so that is how one is
+moved.
+
 ### Removed: bwrap
 
 `system.sandbox = "bwrap"` named a bubblewrap provider on the daemon's
