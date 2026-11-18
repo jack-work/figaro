@@ -19,7 +19,7 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 - E4 house mode: utensil-slapping `ef74d1d6`
 - S1 auto-normalize: oven-receipt `ae2fc7c2`
 
-In review: v0.74.5, P3+H1+P1b (dandelion-kabob, Opus); P2+P5 (hyacinth-obtain, Sonnet).
+v0.74.5 review FIX, the Knight fixing (F-A cap overfill on kill+restore, plus F-B to F-G); P2+P5 in review (hyacinth-obtain).
 
 | # | part | builder | branch | state (2026-11-18 02:xx) |
 |---|---|---|---|---|
