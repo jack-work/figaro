@@ -94,6 +94,10 @@ func TestAccessStampsMatrix(t *testing.T) {
 			_, err := acli.Status(ctx)
 			return err
 		},
+		"a quiet form read (doctor form-keys --audit)": func(ctx context.Context, _ *angelus.Angelus, acli *sdk.Angelus, id string) error {
+			_, err := acli.FormQuiet(ctx, id)
+			return err
+		},
 		"a refused prompt": func(ctx context.Context, a *angelus.Angelus, _ *sdk.Angelus, id string) error {
 			retired := a.Backend.(interface {
 				UpdateMeta(string, func(*store.AriaMeta)) error

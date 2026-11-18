@@ -224,7 +224,7 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 			}
 			hb = h.hubFor(id)
 		}
-		if f := followerOf(ctx); f != nil && rpc.MethodFollows(method) && h.allowed(ctx, rpc.VerbListen, authz.Aria(id)) == nil {
+		if f := followerOf(ctx); f != nil && rpc.MethodFollows(method) && !(method == rpc.MethodForm && rpc.QuietOf(params)) && h.allowed(ctx, rpc.VerbListen, authz.Aria(id)) == nil {
 			follow := f.followUnlessFollowing
 			if method == rpc.MethodFollow {
 				ch, err := followChannels(params)

@@ -390,7 +390,7 @@ func (h *handlers) touching(method string, next jkrpc.HandlerFunc) jkrpc.Handler
 	}
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
 		res, err := next(ctx, params)
-		if err == nil {
+		if err == nil && !(method == rpc.MethodForm && rpc.QuietOf(params)) {
 			if id := rpc.AriaOf(params); id != "" && !strings.Contains(id, rpc.NodeSeparator) {
 				if t, ok := h.angelus.Backend.(toucher); ok {
 					t.Touch(id, time.Now())

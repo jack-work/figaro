@@ -21,7 +21,7 @@ func (d fakeFormDoor) ListGlobal(context.Context) (*rpc.ListResponse, error) {
 	return out, nil
 }
 
-func (d fakeFormDoor) Form(_ context.Context, id string) (*rpc.FormResponse, error) {
+func (d fakeFormDoor) FormQuiet(_ context.Context, id string) (*rpc.FormResponse, error) {
 	return &rpc.FormResponse{Snapshot: form.FromMap(d[id])}, nil
 }
 
