@@ -24,6 +24,12 @@ Under the Engineer: composed Seat plan, neither-blimp `a107c3b5` (`lane/seat-pla
 
 v0.74.5 review FIX, the Knight fixing (F-A cap overfill on kill+restore, plus F-B to F-G); P2+P5 in review (hyacinth-obtain).
 
+**North star (Gluck 11:2x): keel `kingdom/north-star`, now at a07b06838 (= v0.75.0: fixed v0.74.5 + E1 + P2).** One integration branch for the whole remaining plan.
+- **Folding:** a lane rebases onto the north-star tip and gates there; then the Strategist fast-forwards. The branch stays linear, one idea per commit.
+- **Review:** one Opus reviewer, kept warm, reviews the north star and then each delta, with findings to the Strategist.
+- **Landing:** the Knight lands slices. Each slice gets a Sonnet check: a range-diff against the last north-star sha the Opus reviewer passed, a green gate, and notes. A slice that diverges goes back to Opus.
+- **Fold order as lanes are READY:** E3, P4, P5 (fix), P6, P7b, E4, reaped-budget, fork-latency, seat-plan, optimistic-fork. E8 is cheroot-config, and S1 comes last.
+
 **Release rules (Gluck 13:3x, for the rest of the drive):**
 1. Only High findings block a ship. Medium and Low become tracked follow-ups (an issue or the next lane), named in the notes when user-visible.
 2. A fix round with a sabotage-checked test per finding gets the Engineer's diff read, not a delta review. A full delta review only when a High's fix redesigns something.
