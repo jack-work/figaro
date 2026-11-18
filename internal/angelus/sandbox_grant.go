@@ -211,9 +211,15 @@ func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, param
 	keyed := func(err error) error { return h.angelus.Policies.Shadow(authz.KeyGrants, err) }
 	switch method {
 	case rpc.MethodDrop:
-		return keyed(h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(id), func(v authz.FigaroView, s jkauthz.Subject) bool {
+		if err := keyed(h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(id), func(v authz.FigaroView, s jkauthz.Subject) bool {
 			return v.AllowWhole(s, rpc.VerbSet, authz.Aria(id))
-		}, "holds only keyed set there, and a drop writes the observer's studies"))
+		}, "holds only keyed set there, and a drop writes the observer's studies")); err != nil {
+			return err
+		}
+		var req rpc.StudyRequest
+		if json.Unmarshal(params, &req) == nil && req.FormID != "" {
+			return h.refuseHidingLaws(ctx, id, req.FormID, nil, params)
+		}
 	case rpc.MethodStudy:
 		if err := keyed(h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(id), func(v authz.FigaroView, s jkauthz.Subject) bool {
 			return v.AllowWhole(s, rpc.VerbSet, authz.Aria(id))
@@ -229,6 +235,9 @@ func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, param
 			}
 			if h.studiesAFigaro(req.FormID) && !h.callerIsOwner(ctx) {
 				return authz.NotFound(method, req.FormID)
+			}
+			if len(req.Keys) > 0 {
+				return h.refuseHidingLaws(ctx, id, req.FormID, req.Keys, params)
 			}
 		}
 	case rpc.MethodCast:
@@ -418,4 +427,31 @@ func (h *handlers) studiesOnlyReadableKeys(ctx context.Context, req rpc.StudyReq
 
 func readCovers(globs []string, key string) bool {
 	return slices.ContainsFunc(globs, func(g string) bool { return authz.GlobCovers(g, key+".**") })
+}
+
+func (h *handlers) refuseHidingLaws(ctx context.Context, holder, role string, keys []string, params json.RawMessage) error {
+	if h.ownerItself(ctx, params) {
+		return nil
+	}
+	snap, err := h.angelus.Backend.FormState(role)
+	if err != nil {
+		return nil
+	}
+	if target := snap.Lookup("target-aria"); target == nil || *target != holder {
+		return nil
+	}
+	var hidden []string
+	for k := range snap.All() {
+		if form.IsLaw(k) && (keys == nil || !form.StudyKeyShown(k, keys)) {
+			hidden = append(hidden, k)
+		}
+	}
+	if len(hidden) == 0 {
+		return nil
+	}
+	verb := "drop"
+	if keys != nil {
+		verb = "study --keys " + strings.Join(keys, ",")
+	}
+	return fmt.Errorf("%s %s: %s holds that role, and this would hide its laws (%s); a law leaves its holder's view only by the owner's hand", verb, role, holder, strings.Join(hidden, ", "))
 }
