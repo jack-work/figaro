@@ -17,11 +17,12 @@ type fanoutNode struct {
 }
 
 type fanoutCache struct {
-	mu     sync.Mutex
-	parent map[string]string
-	live   map[string]bool
-	kids   map[string]int
-	held   map[string]int
+	mu      sync.Mutex
+	parent  map[string]string
+	live    map[string]bool
+	kids    map[string]int
+	held    map[string]int
+	suspect map[string]bool
 }
 
 func newFanoutCache() *fanoutCache {
@@ -279,13 +280,28 @@ func (a *Angelus) reconcileFanout() {
 	if a.Backend == nil {
 		return
 	}
-	_ = a.topology().WithLock(func() error {
-		nodes := a.fanoutNodes()
-		c := a.fanoutCounts()
-		if d := c.drift(nodes); len(d) > 0 {
-			slog.Warn("fanout: the cached counts drifted from the tree and were rebuilt", "nodes", len(d), "first", d[0].ID)
-			c.reset(nodes)
-		}
-		return nil
-	})
+	nodes := a.fanoutNodes()
+	c := a.fanoutCounts()
+	d := c.drift(nodes)
+	if !c.driftPersists(d) {
+		return
+	}
+	slog.Warn("fanout: the cached counts drifted from the tree across two sweeps and were rebuilt", "nodes", len(d), "first", d[0].ID)
+	c.reset(nodes)
+}
+
+func (c *fanoutCache) driftPersists(d []rpc.FanoutDrift) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	before := c.suspect
+	c.suspect = make(map[string]bool, len(d))
+	persists := false
+	for _, x := range d {
+		c.suspect[x.ID] = true
+		persists = persists || before[x.ID]
+	}
+	if persists {
+		c.suspect = nil
+	}
+	return persists
 }

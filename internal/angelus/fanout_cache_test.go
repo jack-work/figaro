@@ -81,7 +81,8 @@ func TestAReconcileRebuildsASkewedCache(t *testing.T) {
 		t.Fatalf("a cache that lost its count refused a fork: %v", err)
 	}
 	hs.h.angelus.reconcileFanout()
-	requireCacheMatchesTree(t, hs, "a reconcile")
+	hs.h.angelus.reconcileFanout()
+	requireCacheMatchesTree(t, hs, "two reconciles")
 	if n, want := hs.h.angelus.liveChildCount(top), len(hs.h.angelus.liveChildrenOf(top)); n != want {
 		t.Fatalf("top holds %d live children in the cache and %d in the tree", n, want)
 	}

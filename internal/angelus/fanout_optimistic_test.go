@@ -107,6 +107,21 @@ func TestAForkOfAnAlreadyReapedFigaroIsKept(t *testing.T) {
 	}
 }
 
+func TestADriftSeenOnceIsNotRebuilt(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	top, _ := b.CreateConversation(outfit)
+	c := hs.h.angelus.fanoutCounts()
+	c.put(fanoutNode{id: "in-flight", parent: top, live: true})
+	hs.h.angelus.reconcileFanout()
+	if n := c.liveChildren(top); n != 1 {
+		t.Fatalf("one sweep rebuilt a drift that may be a birth in flight: top holds %d, want 1", n)
+	}
+	hs.h.angelus.reconcileFanout()
+	if n := c.liveChildren(top); n != 0 {
+		t.Fatalf("a drift seen in two sweeps was kept: top holds %d, want 0", n)
+	}
+}
+
 func benchmarkConcurrentForks(b *testing.B, n int) {
 	hs, back, outfit := fanoutHandlers(b)
 	top, _ := back.CreateConversation(outfit)
