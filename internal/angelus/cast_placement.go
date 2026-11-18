@@ -35,6 +35,9 @@ func (h *handlers) refuseCastPlacement(ctx context.Context, method, id string, p
 	if h.mayTakeRole(id, *holder) {
 		return nil
 	}
+	if parent, ok := h.angelus.topology().Drawn(*holder); ok && parent == id {
+		return fmt.Errorf("placement: %s stands over the holder %s of %s, but this daemon has no record of seating it there (a restart forgets seats); seat it again: figaro succeed --successor %s", id, *holder, roleID, id)
+	}
 	return fmt.Errorf("placement: %s is neither under the holder %s of %s nor seated in its place; fork the holder or seat it instead", id, *holder, roleID)
 }
 

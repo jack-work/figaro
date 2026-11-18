@@ -193,6 +193,25 @@ func TestAFigaroSeatsANamedSuccessorAndCastsItIntoItsRole(t *testing.T) {
 	}
 }
 
+func TestACastRefusedAfterARestartForgotTheSeatSaysToSeatAgain(t *testing.T) {
+	f := newSeatFixture(t)
+	role := mintRoleFor(t, f.hs, f.pred)
+	if seat := f.seatAs(t, f.pred, f.pred, f.successor); seat.FailedAt != "" {
+		t.Fatalf("seat failed at %s: %s", seat.FailedAt, seat.Error)
+	}
+	f.hs.h.seated.Delete(f.successor)
+	err := castAs(t, f.hs, f.pred, f.successor, role)
+	if err == nil || !strings.Contains(err.Error(), "figaro succeed --successor "+f.successor) {
+		t.Fatalf("a cast refused for a forgotten seat must say how to seat again: %v", err)
+	}
+	if seat := f.seatAs(t, f.pred, f.pred, f.successor); seat.FailedAt != "" {
+		t.Fatalf("the rerun seat failed at %s: %s", seat.FailedAt, seat.Error)
+	}
+	if err := castAs(t, f.hs, f.pred, f.successor, role); err != nil {
+		t.Fatalf("the cast after the rerun seat was refused: %v", err)
+	}
+}
+
 func TestASeatOpensOnlyItsOwnPredecessorsRoles(t *testing.T) {
 	f := newSeatFixture(t)
 	other := mintRoleFor(t, f.hs, f.kid)
