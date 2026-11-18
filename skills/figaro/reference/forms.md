@@ -248,9 +248,10 @@ the new provider's default applies; a provider with no default refuses the
 succession and asks for `system.model` on the role.
 
 The steps, each landing before the next runs: fork (or take
-`--successor`); `demote` the predecessor beneath the successor, so its
-branches outlive it (a successor not drawn under it stays put and the
-earliest branch takes the place); prompt the successor, steering it if it is
+`--successor` and `place` it under the predecessor, where a fork is born;
+a refused or parked place stops the succession with nothing moved);
+`demote` the predecessor beneath the successor, so its
+branches outlive it; prompt the successor, steering it if it is
 mid-turn; cast it into the role and into every other role that targets
 the predecessor (the report lists them); the predecessor drops them, its mantra gains
 `SUCCEEDED: `, and it is retired (or, with `linger`, not) with `system.ttl`

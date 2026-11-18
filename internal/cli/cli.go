@@ -1363,10 +1363,11 @@ In order, stopping at the first step that fails:
      It studies what the predecessor studies now, with the same --keys,
      whatever turn it was cut at; --no-studies keeps only what the
      predecessor studied at that turn.
-     --successor names an existing aria instead and skips the fork.
+     --successor names an existing aria instead and skips the fork; it is
+     drawn under the predecessor, where a fork is born (figaro place), and
+     the succession stops there if the guard refuses or parks that move.
   2. demote the predecessor beneath the successor (figaro demote), so its
-     branches survive its end. A successor not drawn under it is left where
-     it is, and the branch forked earliest takes its place.
+     branches survive its end.
   3. send the prompt to the successor. A successor mid-turn is steered.
   4. cast the successor into the role, and into every other role that
      targets the predecessor.

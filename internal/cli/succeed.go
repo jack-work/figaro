@@ -270,6 +270,10 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 
 	if parties.successor != nil {
 		r.Successor = parties.successor.ID
+		progress(fmt.Sprintf("drawing %s under %s", ariaName(r.Successor), ariaName(old.ID)))
+		if err := placeSuccessor(ctx, acli, r.Successor, old.ID); err != nil {
+			return r, r.fail("place", err)
+		}
 		if plan.title != "" {
 			if err := withAria(r.Successor, func(a *sdk.Aria) error {
 				_, err := a.Set(ctx, *mantraPatch(plan.title), 0)
@@ -394,6 +398,18 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 	return r, nil
 }
 
+func placeSuccessor(ctx context.Context, acli *sdk.Angelus, successor, predecessor string) error {
+	pl, err := acli.Place(ctx, successor, predecessor)
+	switch {
+	case err != nil:
+		return fmt.Errorf("%s cannot be drawn under %s, where a forked successor is born, so nothing moved: %w", ariaName(successor), ariaName(predecessor), err)
+	case pl.Parked != nil:
+		return fmt.Errorf("drawing %s under %s waits on %s as proposal %s, so nothing moved; once its holder runs `figaro adopt accept %s %s`, succeed again",
+			ariaName(successor), ariaName(predecessor), ariaName(pl.Parked.Parent), pl.Parked.ID, pl.Parked.Parent, pl.Parked.ID)
+	}
+	return nil
+}
+
 func splitPromptArgs(args, tail []string) (positional []string, prompt string) {
 	return args[:len(args)-len(tail)], strings.Join(tail, " ")
 }
@@ -416,7 +432,7 @@ func withAria(id string, fn func(*sdk.Aria) error) error {
 
 func (r succeedReport) recovery(plan succeedPlan) []string {
 	var out []string
-	if r.Successor == "" {
+	if r.Successor == "" || r.FailedAt == "place" {
 		return nil
 	}
 	if r.DemotedUnder == "" && r.FailedAt == "demote" {
