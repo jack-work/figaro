@@ -67,7 +67,7 @@ func withoutInheritedMint(inherited form.Snapshot, patch *form.Patch) (form.Snap
 			return inherited.DeletePath(form.FanoutMintKey), patch
 		}
 	}
-	drop := form.Build(inherited, nil, []string{form.FanoutMintKey})
+	drop := form.Build(form.Snapshot{}, nil, []string{form.FanoutMintKey})
 	if patch != nil {
 		drop = form.Merge(*patch, drop)
 	}
