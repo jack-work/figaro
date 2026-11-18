@@ -4,9 +4,7 @@ package provider
 
 import (
 	"encoding/json"
-	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
@@ -82,8 +80,7 @@ func studyBlock(name string, body any) string {
 	if err != nil {
 		return ""
 	}
-	return fmt.Sprintf("<system-reminder name=%q>\n%s\n</system-reminder>",
-		escapeStudyAttr(name), b)
+	return Reminder(name, string(b))
 }
 
 // studyFold is nil when nothing readable changed.
@@ -187,11 +184,4 @@ func touchesShown(p message.Patch, keys []string) bool {
 		}
 	}
 	return false
-}
-
-func escapeStudyAttr(s string) string {
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, `"`, "&quot;")
-	s = strings.ReplaceAll(s, "<", "&lt;")
-	return s
 }

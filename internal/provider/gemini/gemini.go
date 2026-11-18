@@ -453,7 +453,7 @@ func (p *Provider) renderPatches(patches []message.Patch, snap form.Snapshot) []
 	var out []string
 	form.FoldRender(snap, patches, p.templates(),
 		func(r form.RenderedEntry) {
-			out = append(out, fmt.Sprintf("<system-reminder name=\"%s\">\n%s\n</system-reminder>", escapeAttr(r.Key), r.Body))
+			out = append(out, provider.Reminder(r.Key, r.Body))
 		},
 		func(err error) { slog.Warn("gemini: render patch", "err", err) },
 	)

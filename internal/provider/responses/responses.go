@@ -885,7 +885,7 @@ func encodeResponseMessage(
 					if r := provider.SenderReminder(content.Sender); r != "" {
 						userContent = append(userContent, responseContent{Type: "input_text", Text: r})
 					}
-					userContent = append(userContent, responseContent{Type: "input_text", Text: content.Text})
+					userContent = append(userContent, responseContent{Type: "input_text", Text: provider.SenderProse(content.Sender, content.Text)})
 				}
 			case message.ContentImage:
 				if content.Data != "" {
@@ -1055,15 +1055,9 @@ func renderResponsePatch(
 	}
 	out := make([]string, 0, len(rendered))
 	for _, reminder := range rendered {
-		out = append(out, "<system-reminder name=\""+escapeResponseAttr(reminder.Key)+"\">\n"+reminder.Body+"\n</system-reminder>")
+		out = append(out, provider.Reminder(reminder.Key, reminder.Body))
 	}
 	return out, nil
-}
-
-func escapeResponseAttr(value string) string {
-	value = strings.ReplaceAll(value, "&", "&amp;")
-	value = strings.ReplaceAll(value, `"`, "&quot;")
-	return strings.ReplaceAll(value, "<", "&lt;")
 }
 
 func responseInstructions(snap form.Snapshot) string {

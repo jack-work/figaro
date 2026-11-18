@@ -176,7 +176,7 @@ func encodeMessage(msg message.Message, reminders []string) ([]Content, error) {
 				if sr := provider.SenderReminder(c.Sender); sr != "" {
 					parts = append(parts, Part{Text: sr})
 				}
-				parts = append(parts, Part{Text: c.Text})
+				parts = append(parts, Part{Text: provider.SenderProse(c.Sender, c.Text)})
 			}
 		}
 		parts = placeReminders(parts, reminders)
@@ -812,12 +812,6 @@ func joinText(acc, add string) string {
 		return add
 	}
 	return acc + "\n\n" + add
-}
-
-func escapeAttr(s string) string {
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, `"`, "&quot;")
-	return strings.ReplaceAll(s, "<", "&lt;")
 }
 
 func bodyFuncGemini(frame GenerateRequest, rows provider.RowSeq) provider.BodyFunc {

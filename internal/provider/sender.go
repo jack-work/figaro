@@ -8,10 +8,8 @@ import (
 )
 
 func SenderReminder(sender string) string {
-	id, _ := strings.CutPrefix(sender, rpc.AriaLabelPrefix)
-	_, bare := rpc.SplitNode(id)
-	body := strings.TrimPrefix(bare, "@")
-	if !rpc.IsHexID(bare) || len(body) < rpc.OldIDLen {
+	bare, body, ok := figaroSender(sender)
+	if !ok {
 		return ""
 	}
 	short := bare[:len(bare)-len(body)] + body[:min(rpc.ShortIDLen, len(body))]
@@ -19,5 +17,19 @@ func SenderReminder(sender string) string {
 	if words := handle.Words(bare, handle.MinWords); words != "" {
 		name = "figaro " + words + " (" + short + ")"
 	}
-	return "<system-reminder name=\"sender\">\n" + name + "\n</system-reminder>"
+	return Reminder("sender", name)
+}
+
+func SenderProse(sender, text string) string {
+	if _, _, ok := figaroSender(sender); !ok {
+		return text
+	}
+	return NeutraliseReservedTags(text)
+}
+
+func figaroSender(sender string) (bare, body string, ok bool) {
+	id, _ := strings.CutPrefix(sender, rpc.AriaLabelPrefix)
+	_, bare = rpc.SplitNode(id)
+	body = strings.TrimPrefix(bare, "@")
+	return bare, body, rpc.IsHexID(bare) && len(body) >= rpc.OldIDLen
 }
