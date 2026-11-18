@@ -8,8 +8,9 @@ import (
 	"syscall"
 )
 
-func procAttr() *syscall.SysProcAttr {
-	return &syscall.SysProcAttr{Setpgid: true}
+func procAttr(a *syscall.SysProcAttr) *syscall.SysProcAttr {
+	a.Setpgid = true
+	return a
 }
 
 func afterStart(_ *exec.Cmd) {}

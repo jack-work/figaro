@@ -34,6 +34,10 @@ type process struct {
 }
 
 func Start(ctx context.Context, argv []string, dir string, env []string, req sandbox.ExecRequest) (sandbox.Process, error) {
+	return StartIn(ctx, argv, dir, env, req, -1)
+}
+
+func StartIn(ctx context.Context, argv []string, dir string, env []string, req sandbox.ExecRequest, cgroupFD int) (sandbox.Process, error) {
 	cancel := context.CancelFunc(func() {})
 	if req.Timeout > 0 {
 		ctx, cancel = context.WithTimeoutCause(ctx, req.Timeout, errTimeout)
@@ -47,6 +51,7 @@ func Start(ctx context.Context, argv []string, dir string, env []string, req san
 		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 		cmd.Dir, cmd.Env, cmd.WaitDelay = dir, env, waitDelay
 		cmd.Cancel = func() error { killTree(cmd); return nil }
+		cmd.SysProcAttr = intoCgroup(&syscall.SysProcAttr{}, cgroupFD)
 		return cmd
 	}
 	p := &process{done: make(chan struct{})}
@@ -63,7 +68,7 @@ func Start(ctx context.Context, argv []string, dir string, env []string, req san
 	}
 	if p.cmd == nil {
 		cmd := mk()
-		cmd.SysProcAttr = procAttr()
+		cmd.SysProcAttr = procAttr(cmd.SysProcAttr)
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
 			cancel()

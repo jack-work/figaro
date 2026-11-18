@@ -15,10 +15,15 @@ const (
 )
 
 type Host struct {
+	Tools    ToolCgroups
 	mu       sync.Mutex
 	seq      uint64
 	ttl      time.Duration
 	sessions map[string]*session
+}
+
+type ToolCgroups interface {
+	FD(figaro string) (int, error)
 }
 
 func NewHost(ttl time.Duration) *Host {
