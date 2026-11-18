@@ -123,5 +123,13 @@ func stampGeneration(root string, gen int) error {
 		return err
 	}
 	f.StoreVersion = gen
+	f.Downgrade = ""
+	if gen >= runtimeNamesGeneration {
+		f.Downgrade = DowngradeCommand(root)
+	}
 	return writeSchema(root, f)
+}
+
+func DowngradeCommand(root string) string {
+	return "figaro doctor normalize --from " + root + " --revert"
 }

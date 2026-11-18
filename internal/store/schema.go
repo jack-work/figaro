@@ -82,6 +82,7 @@ const closedGeneration = 2
 type schemaFile struct {
 	StoreVersion int            `json:"store-version"`
 	Channels     map[string]int `json:"channels"`
+	Downgrade    string         `json:"downgrade,omitempty"`
 }
 
 func readSchema(root string) (schemaFile, error) {
@@ -127,10 +128,14 @@ func ensureSchema(root string, trunks *xwal.Store) error {
 // refuse first with a message about a missing reducer.
 func checkGeneration(f schemaFile, root string, trunks *xwal.Store) error {
 	if f.StoreVersion > storeVersion {
-		return fmt.Errorf(
+		err := fmt.Errorf(
 			"store is generation %d but this figaro understands %d: "+
 				"refusing to open a store written by a newer build (upgrade figaro)",
 			f.StoreVersion, storeVersion)
+		if f.Downgrade != "" {
+			err = fmt.Errorf("%w; or take the store back with the figaro that wrote it: %s", err, f.Downgrade)
+		}
+		return err
 	}
 	if trunks == nil {
 		return nil // pre-open pass: the version is all that can be checked
