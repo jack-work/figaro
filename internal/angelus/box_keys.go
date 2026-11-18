@@ -369,6 +369,23 @@ func refuseReapKeys(before form.Snapshot, patch form.Patch) error {
 	return nil
 }
 
+func touchedPaths(patch form.Patch) []string {
+	entries := patch.Entries()
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		out[i] = e.Key
+	}
+	return out
+}
+
+func refuseMisshapenKeys(after form.Snapshot, patch form.Patch) error {
+	faults := form.TouchedShapeFaults(after, touchedPaths(patch))
+	if len(faults) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", faults[0].Path, faults[0].Err)
+}
+
 func refuseMalformedRetirement(before form.Snapshot, patch form.Patch) error {
 	touched := false
 	for _, e := range patch.Entries() {
@@ -411,6 +428,9 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 		return err
 	}
 	if _, err := form.FanoutMint(after); err != nil {
+		return err
+	}
+	if err := refuseMisshapenKeys(after, *patch); err != nil {
 		return err
 	}
 	if _, _, err := form.ChildPolicy(after); err != nil && keyChanged(before, after, form.ChildPolicyKey) {
@@ -597,12 +617,14 @@ func (h *handlers) callerOwns(ctx context.Context) bool {
 	return authz.DoorOf(ctx) == authz.DoorInProcess || authz.IsOwner(h.angelus.owner(), sub)
 }
 
+func ownerKeyRulesSkip(params json.RawMessage) bool {
+	return !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retired")) && !bytes.Contains(params, []byte("retirement")) && !bytes.Contains(params, []byte("grants")) && !bytes.Contains(params, []byte("scopes")) && !bytes.Contains(params, []byte("fanout")) && !bytes.Contains(params, []byte("child_policy")) && !bytes.ContainsRune(params, '\\')
+}
+
 func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, params json.RawMessage) error {
 	_, boxed := callerBox(ctx)
 	owner := !boxed && h.callerOwns(ctx)
-	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retired")) && !bytes.Contains(params, []byte("retirement")) && !bytes.Contains(params, []byte("grants")) && !bytes.Contains(params, []byte("scopes")) && !bytes.Contains(params, []byte("fanout")) && !bytes.Contains(params, []byte("child_policy")) && !bytes.ContainsRune(params, '\\') {
-		return nil
-	}
+	shapesOnly := owner && ownerKeyRulesSkip(params)
 	var patch *form.Patch
 	switch method {
 	case rpc.MethodSet:
@@ -618,12 +640,17 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 		}
 		if req.Form != nil {
 			patch = req.Form.Patch
-			if open := openKeys(req.Form.Context); len(open) > 0 && !owner {
+			if open := openKeys(req.Form.Context); len(open) > 0 {
 				snap, err := h.angelus.Backend.FormState(id)
 				if err != nil {
 					return err
 				}
-				if err := h.refuseCallerKeys(ctx, lineage{of: id}, snap, ptr(form.FromMap(open).AsPatch())); err != nil {
+				openPatch := form.FromMap(open).AsPatch()
+				if owner {
+					if err := refuseMisshapenKeys(snap.Apply(openPatch), openPatch); err != nil {
+						return err
+					}
+				} else if err := h.refuseCallerKeys(ctx, lineage{of: id}, snap, &openPatch); err != nil {
 					return err
 				}
 			}
@@ -643,6 +670,9 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 	snap, err := h.angelus.Backend.FormState(id)
 	if err != nil {
 		return err
+	}
+	if shapesOnly {
+		return refuseMisshapenKeys(snap.Apply(*patch), *patch)
 	}
 	line := lineage{of: id}
 	if method == rpc.MethodCast {

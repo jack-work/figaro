@@ -46,7 +46,7 @@ func TestGetAndPwdAgainstARealDaemon(t *testing.T) {
 		}
 		return string(out)
 	}
-	rig.must(t, "set", "--id", id, "system.ttl", "3600")
+	rig.must(t, "set", "--id", id, "system.ttl", "1h")
 
 	if got := run("get", "--id", id, "system.cwd"); got != work+"\n" {
 		t.Fatalf("get system.cwd = %q, want %q", got, work)
@@ -57,7 +57,7 @@ func TestGetAndPwdAgainstARealDaemon(t *testing.T) {
 	if got := run("show", "--id", id, ".system.cwd"); got != work+"\n" {
 		t.Fatalf("show .system.cwd = %q", got)
 	}
-	if got := run("get", "--id", id, "system.ttl", "system.cwd"); got != "3600\n"+work+"\n" {
+	if got := run("get", "--id", id, "system.ttl", "system.cwd"); got != "1h\n"+work+"\n" {
 		t.Fatalf("get of two paths = %q", got)
 	}
 	if got := run("get", "--id", id, "-j", "system.cwd"); got != `"`+work+`"`+"\n" {
