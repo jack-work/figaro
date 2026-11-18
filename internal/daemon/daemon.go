@@ -539,6 +539,7 @@ func Run() {
 	for _, name := range sockets.Names() {
 		slog.Warn("socket activation passed a socket no door here serves", "name", name)
 	}
+	_ = sockets.Close()
 
 	handlers.LoadNav()
 	angelus.RestoreBindings(a.Registry, a.BindingsPath(), handlers.RequireAria)
