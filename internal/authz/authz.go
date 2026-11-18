@@ -43,6 +43,7 @@ type callerKey struct{}
 
 type caller struct {
 	subject jkauthz.Subject
+	tool    string
 	session *Session
 	key     *KeySession
 	bearer  string
@@ -50,6 +51,7 @@ type caller struct {
 
 func Authenticated(authn Authenticator, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
+		params = pinnedToTool(ctx, params)
 		return next(withIdentity(ctx, authn.Authenticate(PrincipalOf(ctx), params)), params)
 	}
 }
@@ -69,6 +71,9 @@ func identityOf(ctx context.Context) (Identity, bool) {
 }
 
 func FigaroOf(ctx context.Context) string {
+	if f, ok := ToolOf(ctx); ok {
+		return f
+	}
 	id, _ := identityOf(ctx)
 	return id.FigaroID
 }
@@ -88,6 +93,46 @@ func Admit(ctx context.Context, conn net.Conn) (context.Context, error) {
 
 func WithSubject(ctx context.Context, s jkauthz.Subject) context.Context {
 	return context.WithValue(ctx, callerKey{}, caller{subject: s})
+}
+
+func WithToolOf(ctx context.Context, figaro string) context.Context {
+	c, _ := ctx.Value(callerKey{}).(caller)
+	c.tool = figaro
+	return context.WithValue(ctx, callerKey{}, c)
+}
+
+func ToolOf(ctx context.Context) (string, bool) {
+	c, _ := ctx.Value(callerKey{}).(caller)
+	return c.tool, c.tool != ""
+}
+
+func OwnerCall(ctx context.Context, owner jkauthz.Principal, s jkauthz.Subject) bool {
+	_, tool := ToolOf(ctx)
+	return !tool && IsOwner(owner, s)
+}
+
+func pinnedToTool(ctx context.Context, params json.RawMessage) json.RawMessage {
+	f, ok := ToolOf(ctx)
+	if !ok {
+		return params
+	}
+	fields := map[string]json.RawMessage{}
+	if len(params) > 0 && string(params) != "null" {
+		if json.Unmarshal(params, &fields) != nil {
+			return params
+		}
+	}
+	if claimed := rpc.CallerOf(params); claimed != "" && claimed != f {
+		slog.Info("authz: a tool caller's claim replaced by the figaro whose cgroup it runs in", "claimed", claimed, "figaro", f)
+	}
+	id, _ := json.Marshal(f)
+	fields[rpc.CallerKey] = id
+	delete(fields, rpc.CallerLabelKey)
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return params
+	}
+	return out
 }
 
 func WithSession(ctx context.Context, s *Session) context.Context {
@@ -193,6 +238,7 @@ func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Po
 	for name, h := range handlers {
 		method, next := name, h
 		out[method] = func(ctx context.Context, params json.RawMessage) (any, error) {
+			params = pinnedToTool(ctx, params)
 			subject, err := SubjectOf(ctx)
 			if err != nil {
 				return nil, &jkrpc.Error{Code: ErrCode, Message: err.Error()}

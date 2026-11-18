@@ -103,11 +103,13 @@ type callerKeys struct {
 	box     string
 	lineage bool
 	heir    bool
+	tool    string
 }
 
 func (h *handlers) callerKeysOf(ctx context.Context) callerKeys {
 	box, boxed := callerBox(ctx)
-	return callerKeys{owns: h.callerOwns(ctx), boxed: boxed, box: box, lineage: h.protectsByLineage()}
+	tool, _ := authz.ToolOf(ctx)
+	return callerKeys{owns: h.callerOwns(ctx), boxed: boxed, box: box, lineage: h.protectsByLineage(), tool: tool}
 }
 
 func (h *handlers) callerKeysOn(ctx context.Context, line lineage) callerKeys {
@@ -138,8 +140,14 @@ func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line linea
 	if key == "" {
 		key = "a protected key"
 	}
+	if c.tool != "" {
+		if line.of == "" || !slices.Contains(h.ancestorsOf(line), c.tool) {
+			return fmt.Errorf("figaro %s may not set %s: it is protected, and %s is no ancestor of the aria", c.tool, key, c.tool)
+		}
+		return nil
+	}
 	if !c.boxed {
-		return fmt.Errorf("%s is protected: only the owner or an ancestor figaro sets it, and a figaro is known only through its box door", key)
+		return fmt.Errorf("%s is protected: only the owner or an ancestor figaro sets it, and a figaro is known only through its box door or its tool cgroup", key)
 	}
 	f := authz.FigaroOf(ctx)
 	if f == "" {
@@ -187,7 +195,7 @@ func (h *handlers) refuseScopesBeyondWriter(ctx context.Context, c callerKeys, l
 		return err
 	}
 	f := authz.FigaroOf(ctx)
-	if p := h.angelus.Policies; p != nil && c.boxed && f != "" && h.sandboxOf(f) == c.box {
+	if p := h.angelus.Policies; p != nil && f != "" && (c.tool == f || c.boxed && h.sandboxOf(f) == c.box) {
 		if err := p.HoldsGrants(f, want, line.of); err != nil {
 			return fmt.Errorf("%s: %w", form.ScopesKey, err)
 		}
@@ -258,6 +266,9 @@ func (c callerKeys) refusal(path string) error {
 		case rpc.DenyOwnerHeld:
 			if c.boxed {
 				return fmt.Errorf("box %s may not set %s: it is owner-held", c.box, d.Key)
+			}
+			if c.tool != "" {
+				return fmt.Errorf("figaro %s may not set %s: it is owner-held, and a figaro's tools are never the owner", c.tool, d.Key)
 			}
 			return fmt.Errorf("%s is owner-held: only the owner sets it", d.Key)
 		case rpc.DenyBoxHeld:
@@ -505,6 +516,9 @@ func (h *handlers) callerOwns(ctx context.Context) bool {
 	sub, err := authz.SubjectOf(ctx)
 	if err != nil {
 		return false
+	}
+	if _, tool := authz.ToolOf(ctx); tool {
+		return h.callerIsOwner(ctx)
 	}
 	if h.angelus.Policies == nil {
 		return h.passesUnpoliced(ctx, sub)

@@ -24,22 +24,27 @@ func peer(conn net.Conn) (rpc.Principal, error) {
 }
 
 func PeerUID(conn net.Conn) (uint32, error) {
+	uid, _, err := PeerCred(conn)
+	return uid, err
+}
+
+func PeerCred(conn net.Conn) (uint32, int32, error) {
 	uc, ok := conn.(*net.UnixConn)
 	if !ok {
-		return 0, fmt.Errorf("%w: peercred vouches only for a unix socket, not %T", ErrUnadmitted, conn)
+		return 0, 0, fmt.Errorf("%w: peercred vouches only for a unix socket, not %T", ErrUnadmitted, conn)
 	}
 	raw, err := uc.SyscallConn()
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	var cred *unix.Ucred
 	if cerr := raw.Control(func(fd uintptr) {
 		cred, err = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
 	}); cerr != nil {
-		return 0, cerr
+		return 0, 0, cerr
 	}
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	return cred.Uid, nil
+	return cred.Uid, cred.Pid, nil
 }

@@ -36,5 +36,5 @@ func (h *handlers) trustTraceparent(ctx context.Context, method string, params j
 
 func (h *handlers) callerIsOwner(ctx context.Context) bool {
 	sub, err := authz.SubjectOf(ctx)
-	return err == nil && authz.IsOwner(h.angelus.owner(), sub)
+	return err == nil && authz.OwnerCall(ctx, h.angelus.owner(), sub)
 }
