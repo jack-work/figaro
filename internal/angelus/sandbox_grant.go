@@ -59,12 +59,15 @@ func sandboxName(kind string) string {
 }
 
 func (h *handlers) grantSandboxOn(ctx context.Context, id string) error {
-	if h.angelus.Policies == nil {
-		return nil
-	}
 	snap, err := h.angelus.Backend.FormState(id)
 	if err != nil {
 		return err
+	}
+	if snap, err = h.bornInTheDefaultBox(id, snap); err != nil {
+		return err
+	}
+	if h.angelus.Policies == nil {
+		return nil
 	}
 	pin, err := h.grantSandbox(ctx, snap)
 	if err != nil {
@@ -75,6 +78,23 @@ func (h *handlers) grantSandboxOn(ctx context.Context, id string) error {
 	}
 	_, err = h.angelus.Backend.ApplyFormPrivileged(id, pin)
 	return err
+}
+
+func (h *handlers) bornInTheDefaultBox(id string, snap form.Snapshot) (form.Snapshot, error) {
+	if s := snap.Lookup("system.sandbox"); s != nil && *s != "" {
+		return snap, nil
+	}
+	loaded, _ := h.settings()
+	box := loaded.DefaultSandbox()
+	if box == "" {
+		return snap, nil
+	}
+	raw, _ := json.Marshal(box)
+	pin := form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.sandbox": raw}, nil)
+	if _, err := h.angelus.Backend.ApplyFormPrivileged(id, pin); err != nil {
+		return snap, err
+	}
+	return snap.Apply(pin), nil
 }
 
 func (h *handlers) discardBirth(id string) {

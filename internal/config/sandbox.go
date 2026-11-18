@@ -12,7 +12,10 @@ import (
 type SandboxConfig struct {
 	Boxes      map[string]BoxConfig `toml:"boxes"`
 	LocalTools *bool                `toml:"local_tools"`
+	Default    string               `toml:"default"`
 }
+
+func (l *Loaded) DefaultSandbox() string { return l.cfg().Sandbox.Default }
 
 func (l *Loaded) LocalTools() bool {
 	t := l.cfg().Sandbox.LocalTools
@@ -123,6 +126,11 @@ func (l *Loaded) BoxDoorWithoutLists(name string) error {
 }
 
 func (c Config) validateSandbox() error {
+	if d := c.Sandbox.Default; d != "" {
+		if _, ok := c.Sandbox.Boxes[d]; !ok {
+			return fmt.Errorf("sandbox.default = %q: name a box from [sandbox.boxes]", d)
+		}
+	}
 	doors := map[string]string{}
 	for _, name := range sortedKeys(c.Sandbox.Boxes) {
 		b := c.Sandbox.Boxes[name]
