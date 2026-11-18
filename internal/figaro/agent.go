@@ -733,7 +733,7 @@ func (a *Agent) Info() FigaroInfo {
 	case a.suspended.Load() && !a.turnRunning.Load():
 		state = StateSuspended
 	case !a.inbox.Quiet():
-		state = "active"
+		state = StateActive
 	}
 	info := FigaroInfo{
 		ID:               a.id,

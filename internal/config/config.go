@@ -148,6 +148,8 @@ type StoreConfig struct {
 	CheckpointMaxMarks     *int `toml:"checkpoint_max_marks"`
 
 	RetentionMode string `toml:"retention_mode"`
+
+	NormalizeAfterQuietSeconds *int `toml:"normalize_after_quiet_seconds"`
 }
 
 // MemoryConfig tunes when the daemon reclaims an idle aria.
@@ -482,6 +484,16 @@ const (
 	defaultCheckpointEveryPatches = 512
 	defaultCheckpointMaxMarks     = 5
 )
+
+const defaultNormalizeAfterQuiet = time.Minute
+
+func (l *Loaded) NormalizeAfterQuiet() time.Duration {
+	n := l.cfg().Store.NormalizeAfterQuietSeconds
+	if n == nil {
+		return defaultNormalizeAfterQuiet
+	}
+	return time.Duration(max(*n, 0)) * time.Second
+}
 
 func (l *Loaded) Checkpoints() (everyPatches, everySeconds, maxMarks int) {
 	st := l.cfg().Store

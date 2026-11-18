@@ -106,6 +106,7 @@ type Angelus struct {
 	cancel   context.CancelFunc
 	pprof    pprofState
 	inflight inflight
+	activity activity
 	joinFor  time.Duration
 
 	boxDoorsMu sync.Mutex
@@ -148,6 +149,8 @@ func New(cfg Config) *Angelus {
 	}
 	a.uiProj = uiir.New(nil).Naming(a.senderName)
 	a.UICache = aria.NewComposedCache(uiBudget(cfg.Settings), a.composeTurns, a.uiLineage)
+	a.activity.wake = make(chan struct{}, 1)
+	a.activity.last.Store(time.Now().UnixNano())
 	return a
 }
 
@@ -213,6 +216,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 	a.Go("reclaimer", func() { a.reclaims().run(ctx) })
 	a.Go("retention", func() { a.retention(ctx) })
 	a.Go("topology clean", func() { a.topologyClean(ctx) })
+	a.Go("quiet normalize", func() { a.normalizeWhenQuiet(ctx) })
 	a.Go("list warm-up", func() { a.warmListing(ctx) })
 	a.Go("memory pressure", func() { a.watchMemPressure(ctx) })
 	a.seedRoles(ctx)

@@ -22,7 +22,10 @@ var ErrStopping = errors.New(rpc.DaemonStopping + ": send again once it is back"
 
 const resumeSender = "angelus"
 
-const StateSuspended = "suspended"
+const (
+	StateSuspended = "suspended"
+	StateActive    = "active"
+)
 
 type Spool struct{ dir string }
 

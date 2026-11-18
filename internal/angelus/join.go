@@ -153,12 +153,17 @@ func (a *Angelus) refusingWhenStopping(next jkrpc.HandlerFunc) jkrpc.HandlerFunc
 }
 
 func (a *Angelus) joined(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
+	work := isWork(method)
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
 		id, ok := a.inflight.enter(flight{name: method, call: true, door: authz.DoorOf(ctx), params: params})
 		if !ok {
 			return nil, errStopping
 		}
 		defer a.inflight.leave(id)
+		if work {
+			a.activity.enter()
+			defer a.activity.leave()
+		}
 		return next(ctx, params)
 	}
 }
