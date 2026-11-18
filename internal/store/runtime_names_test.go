@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
@@ -197,5 +198,37 @@ func TestAnOlderFigaroRefusesAMigratedStore(t *testing.T) {
 	}
 	if f.StoreVersion <= closedGeneration {
 		t.Fatalf("generation %d: a figaro that knows only %d would open it and misread the keys", f.StoreVersion, closedGeneration)
+	}
+}
+
+func TestARefusedNewerStoreNamesTheCommandThatTakesItBack(t *testing.T) {
+	ls := writeLegacyStore(t)
+	openStore(t, ls.root).Close()
+	f, err := readSchema(ls.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Downgrade != DowngradeCommand(ls.root) {
+		t.Fatalf("schema.json downgrade = %q", f.Downgrade)
+	}
+	f.StoreVersion = storeVersion + 1
+	if err := writeSchema(ls.root, f); err != nil {
+		t.Fatal(err)
+	}
+	err = CheckStoreGeneration(ls.root)
+	if err == nil || !strings.Contains(err.Error(), "--revert") || !strings.Contains(err.Error(), ls.root) {
+		t.Fatalf("refusal %v", err)
+	}
+	f.StoreVersion = runtimeNamesGeneration
+	if err := writeSchema(ls.root, f); err != nil {
+		t.Fatal(err)
+	}
+	be := openStore(t, ls.root)
+	if _, err := be.RevertRuntimeNames(); err != nil {
+		t.Fatal(err)
+	}
+	be.Close()
+	if f, _ := readSchema(ls.root); f.Downgrade != "" {
+		t.Errorf("a reverted store still names a downgrade: %q", f.Downgrade)
 	}
 }
