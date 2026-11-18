@@ -322,8 +322,17 @@ func TestAnOutfitIsCheckedAsTheCallersOwnPatch(t *testing.T) {
 		t.Fatalf("canary: a fork in a listed outfit with nothing to grant was refused: %v", err)
 	}
 
-	if err := forkIn(localOwner(), r.child, "judged-elsewhere"); err == nil || !strings.Contains(err.Error(), "system.provider") {
-		t.Errorf("a labelled figaro gave its child another provider through an outfit: %v", err)
+	if err := forkIn(localOwner(), r.child, "judged-elsewhere"); err != nil {
+		t.Errorf("an outfit's owner-held values (another provider) were refused to a labelled fork: %v", err)
+	}
+	if err := forkIn(localOwner(), r.child, "seatfull"); err == nil || !strings.Contains(err.Error(), "only the owner names an outfit") {
+		t.Errorf("a labelled figaro forked a child in an outfit carrying scopes: %v", err)
+	}
+	if _, err := r.h[rpc.MethodSet](localOwner(), claimed(t, r.child, withAria(t, r.child, rpc.SetRequest{Patch: mantra, Outfits: []string{"seatfull"}}))); err == nil || !strings.Contains(err.Error(), "only the owner names an outfit") {
+		t.Errorf("state outfit seatfull: a labelled figaro dressed itself in scopes: %v", err)
+	}
+	if got := grantsOn(t, r, r.child); strings.Contains(got, `"*:*"`) {
+		t.Fatalf("the outfit's scopes landed through the local door: %s", got)
 	}
 	if _, err := r.h[rpc.MethodFork](localOwner(), rawJSON(t, rpc.ForkRequest{FigaroID: r.child, Outfits: []string{"judged-elsewhere"}})); err != nil {
 		t.Errorf("the owner forked in another provider's outfit and was refused: %v", err)
