@@ -306,6 +306,10 @@ policy with `on = "role:@<id>"`. Changing a sealed law is a deploy.
 
 ## Part 2: the fan-out quota
 
+Revised by [fork admission](fork-admission.md): `max_children` stays beside
+the quota, an uncapped child charges `1 + used`, and both are checked in
+O(height) by an in-memory ledger. Stage 4 below is replaced there.
+
 ### Why `max_children` is the wrong shape
 
 `system.fanout.max_children` caps a figaro's **direct** live children. It
