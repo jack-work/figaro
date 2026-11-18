@@ -98,3 +98,22 @@ func TestForkSilentWithoutIncantation(t *testing.T) {
 		t.Fatalf("no incantation must render nothing, got %v", got)
 	}
 }
+
+func TestForkIncantationSkipsAMoveButNotARefork(t *testing.T) {
+	legacy := form.FromMap(map[string]json.RawMessage{
+		form.ForkIncantationKey: json.RawMessage(`"you are a branch"`),
+		"system.forked_from":    json.RawMessage(`"abc123"`),
+	})
+	moved := message.Message{Patches: []message.Patch{form.MigrateRuntimeNames(legacy)}}
+	if got := provider.ForkReminderTexts(moved, legacy); len(got) != 0 {
+		t.Fatalf("renaming the birth mark is not a birth: %v", got)
+	}
+
+	migrated := legacy.Apply(form.MigrateRuntimeNames(legacy))
+	reborn := message.Message{Patches: []message.Patch{form.Build(migrated, map[string]json.RawMessage{
+		form.ForkedFromKey: json.RawMessage(`"def456"`),
+	}, nil)}}
+	if s := strings.Join(provider.ForkReminderTexts(reborn, migrated), ""); !strings.Contains(s, "from def456") {
+		t.Fatalf("forking a branch is a birth: %q", s)
+	}
+}
