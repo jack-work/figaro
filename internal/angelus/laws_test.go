@@ -220,3 +220,62 @@ func TestTheOwnersRepealReachesTheWholeLineageInOneCall(t *testing.T) {
 		require.JSONEq(t, `{"spend":"Opus only under the throttle."}`, lawsOn(t, r.grantRig, id), id)
 	}
 }
+
+func (r lineageRig) roleHeldBy(t *testing.T, holder string, keys map[string]any) string {
+	t.Helper()
+	out, err := r.h[rpc.MethodFormCreate](asOwner(), mustJSON(t, rpc.FormCreateRequest{Patch: heldPatch(t, keys)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	role := out.(rpc.FormCreateResponse).FormID
+	if _, err := r.h[rpc.MethodCast](asOwner(), withAria(t, holder, rpc.CastRequest{FormID: role})); err != nil {
+		t.Fatal(err)
+	}
+	return role
+}
+
+func mustJSON(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// Defends a role's laws against its holder: without the guard the holder
+// drops the role, or restudies it naming only the keys it likes, and reads
+// no law again.
+func TestAHolderCannotDropOrNarrowAwayItsRolesLaws(t *testing.T) {
+	r := newLineageRig(t, "")
+	c := r.dial(t)
+	role := r.roleHeldBy(t, r.child, map[string]any{"law.report": lawText, "phase": "two"})
+	asChild := func(method string, req rpc.StudyRequest) error {
+		_, err := r.h[method](asOwner(), claimed(t, r.child, withAria(t, r.child, req)))
+		return err
+	}
+	if err := c.Call(context.Background(), rpc.MethodDrop, claimed(t, r.child, withAria(t, r.child, rpc.StudyRequest{FormID: role})), nil); err == nil || !strings.Contains(err.Error(), "law.report") {
+		t.Fatalf("the holder dropped its role's laws through its box door: %v", err)
+	}
+	if err := asChild(rpc.MethodDrop, rpc.StudyRequest{FormID: role}); err == nil || !strings.Contains(err.Error(), "law.report") {
+		t.Fatalf("the holder dropped its role's laws under its claim on the local door: %v", err)
+	}
+	out, err := r.h[rpc.MethodFormCreate](asOwner(), mustJSON(t, rpc.FormCreateRequest{Patch: heldPatch(t, map[string]any{"law.report": lawText, "phase": "two", "target-aria": r.child})}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unstudied := out.(rpc.FormCreateResponse).FormID
+	if err := asChild(rpc.MethodStudy, rpc.StudyRequest{FormID: unstudied, Keys: []string{"phase"}}); err == nil || !strings.Contains(err.Error(), "law.report") {
+		t.Fatalf("the holder studied its role past the law: %v", err)
+	}
+	if err := asChild(rpc.MethodStudy, rpc.StudyRequest{FormID: unstudied, Keys: []string{"phase", "law"}}); err != nil {
+		t.Fatalf("a study that keeps the laws was refused: %v", err)
+	}
+	plain := r.roleHeldBy(t, r.sibling, map[string]any{"phase": "one"})
+	if err := c.Call(context.Background(), rpc.MethodDrop, claimed(t, r.sibling, withAria(t, r.sibling, rpc.StudyRequest{FormID: plain})), nil); err != nil {
+		t.Fatalf("a role with no law could not be dropped: %v", err)
+	}
+	if _, err := r.h[rpc.MethodDrop](asOwner(), withAria(t, r.child, rpc.StudyRequest{FormID: role})); err != nil {
+		t.Fatalf("the owner's drop was refused: %v", err)
+	}
+}
