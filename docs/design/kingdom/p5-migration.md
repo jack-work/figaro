@@ -187,6 +187,28 @@ figaro to write one: a seat that switched its own model through a labelled
 `figaro set system.model` now asks Gluck, or carries the model in its
 outfit.
 
+## An outfit gives only what its namer could write
+
+The keys an outfit carries are now judged as the caller's own patch when a
+figaro names it on `set`, `state outfit`, `fork`, `form bind` and `cast`. A
+labelled figaro cannot give itself or a child, by naming an outfit:
+- an owner-held key that differs from what the child inherits
+  (system.model, system.provider, system.ttl, system.keepalive, ...);
+- system.scopes beyond its own, fanout beyond its own, a child policy on a
+  figaro not below it;
+- anything under runtime.* (refused for Gluck too).
+
+A box's listed outfit still gives its owner-held values and the box's own
+sandbox: the owner listed it for the box. On `figaro new` and `form new`
+the outfit is the owner's template for a new figaro: any caller may name
+one, but only Gluck one that carries scopes, fanout or a child policy.
+
+To pick a model or provider for a figaro's children, Gluck writes it in the
+parent's `system.child_policy` (an owner-held key there is accepted only
+when Gluck writes it), or forks unlabelled. The Review Steward's reviewer
+forks of the Strategist on gemini are refused as labelled forks with a
+gemini outfit; they need one of the two.
+
 ## Order
 
 1. Before the P5 binary runs: write `["*:*"]` on the King, Engineer,
