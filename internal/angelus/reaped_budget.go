@@ -20,7 +20,7 @@ type budgetGroup struct {
 func chooseOverBudget(groups []budgetGroup, budget int64, floor time.Duration, now time.Time) map[string]bool {
 	var total int64
 	for _, g := range groups {
-		if !g.capped {
+		if !g.capped || g.held {
 			total += g.bytes
 		}
 	}

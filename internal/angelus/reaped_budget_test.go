@@ -92,3 +92,14 @@ func TestABudgetPickReapedAgainWithinTheFloorIsNotPurged(t *testing.T) {
 		t.Error("a pick past the floor was not purged")
 	}
 }
+
+func TestAGroupTheAgeCapCannotTakeBecauseItIsHeldStillTakesRoom(t *testing.T) {
+	now := time.Now()
+	groups := []budgetGroup{
+		{root: "capped-held", atMS: reapedAgo(now, 90*24*time.Hour), bytes: 80 * mb, capped: true, held: true},
+		{root: "kept", atMS: reapedAgo(now, 5*24*time.Hour), bytes: 40 * mb},
+	}
+	if got := chosen(chooseOverBudget(groups, 100*mb, 0, now)); !slices.Equal(got, []string{"kept"}) {
+		t.Errorf("chose %v, want the next group: a held group frees nothing however old", got)
+	}
+}
