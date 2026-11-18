@@ -74,7 +74,7 @@ func (a *Angelus) overBudget(root string) bool {
 func (a *Angelus) overBudgetSet() map[string]bool {
 	a.budget.mu.Lock()
 	defer a.budget.mu.Unlock()
-	return a.budget.over
+	return maps.Clone(a.budget.over)
 }
 
 func (a *Angelus) planReapedBudget(groups []reapedGroup, now time.Time) {

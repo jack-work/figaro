@@ -88,8 +88,21 @@ func TestReapedListsWhatTheBudgetTakesFirstAndUndatedGroupsLast(t *testing.T) {
 	if !strings.Contains(lines[3], "by size") {
 		t.Errorf("an undated group reads %q, want by size", lines[3])
 	}
-	if !strings.Contains(out.String(), "3 reaped, 8.0 MiB") {
+	if !strings.Contains(out.String(), "3 reaped, 8.0MiB") {
 		t.Errorf("no total in %q", out.String())
+	}
+}
+
+func TestAReapedGroupWithNoReapTimeIsNotSaidToWaitOnSize(t *testing.T) {
+	var out bytes.Buffer
+	old := stdout
+	stdout = &out
+	t.Cleanup(func() { stdout = old })
+	if err := printReaped([]reapedGroup{{Root: "bare", Nodes: []string{"bare"}}}, false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "by size") {
+		t.Errorf("a group with no reap time reads %q; without a budget nothing waits on size", out.String())
 	}
 }
 

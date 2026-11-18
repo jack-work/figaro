@@ -183,12 +183,15 @@ func printReaped(groups []reapedGroup, asJSON bool) error {
 			purge = shortDuration(left)
 		}
 		if !g.Over && g.PurgeMS == 0 {
-			purge = "by size"
+			purge = "-"
+			if g.AtMS > 0 {
+				purge = "by size"
+			}
 		}
 		fmt.Fprintf(stdout, "%-22s %-5d %-9s %-10s %-10s %-25s %s\n",
 			truncRunes(ariaName(g.Root), 22), len(g.Nodes), compactBytes(g.Bytes), relAge(g.AtMS), purge, dash(g.By), truncRunes(g.Mantra, 48))
 		total += g.Bytes
 	}
-	fmt.Fprintf(stdout, "\n%d reaped, %s\n", len(groups), humanBytes(total))
+	fmt.Fprintf(stdout, "\n%d reaped, %s\n", len(groups), compactBytes(total))
 	return nil
 }
