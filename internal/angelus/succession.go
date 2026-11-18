@@ -470,6 +470,7 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 	if narrowed {
 		keys[form.ScopesKey] = scopes
 	}
+	roleless := outfit == ""
 	if outfit == "" {
 		if v := snap.Lookup("system.outfit_name"); v != nil {
 			outfit = *v
@@ -477,7 +478,7 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 		copied(snap, keys, "system.provider", "system.model", "system.thinking_effort", "system.thinking_budget")
 	}
 	var drops []string
-	if seat, alone := seatProviderAlone(route); alone && outfit == "" {
+	if seat, alone := seatProviderAlone(route); alone && roleless {
 		under := ""
 		if v := snap.Lookup("system.provider"); v != nil {
 			under = *v

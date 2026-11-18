@@ -1329,6 +1329,8 @@ In order, stopping at the first step that fails:
      role's succession-policy.outfit, and last the predecessor's board at
      the fork turn. A role with no route keys and no outfit leaves the
      fork on the route its turn was recorded with.
+     A role naming a provider and no model drops a model that belongs to
+     another provider, so the provider's default applies.
      It studies what the predecessor studies now, with the same --keys,
      whatever turn it was cut at; --no-studies keeps only what the
      predecessor studied at that turn.

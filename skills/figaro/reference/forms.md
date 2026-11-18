@@ -242,7 +242,10 @@ then the predecessor's board at the fork turn. The route keys are
 `system.thinking_effort`, `system.thinking_budget`, `system.methods` and
 `system.decide`: what picks where a turn goes and how it is asked. A role
 carrying none of them leaves the fork on the route its turn was recorded
-with.
+with. A role naming `system.provider` and no model, where no outfit or
+caller names one either, drops a model that belongs to another provider so
+the new provider's default applies; a provider with no default refuses the
+succession and asks for `system.model` on the role.
 
 The steps, each landing before the next runs: fork (or take
 `--successor`); `demote` the predecessor beneath the successor, so its
