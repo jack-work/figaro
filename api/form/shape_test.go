@@ -141,3 +141,29 @@ func TestAPlaceholderRowGivesItsShapeToEachName(t *testing.T) {
 		t.Fatal("an unregistered key has a shape")
 	}
 }
+
+func TestTheAuditNamesEachValueThatFailsItsShape(t *testing.T) {
+	snap := FromMap(map[string]json.RawMessage{
+		"system.max_tokens":           json.RawMessage(`0`),
+		"system.study_incantation":    json.RawMessage(`{"onstudied":"x"}`),
+		"system.environment.wire_dir": json.RawMessage(`7`),
+		"system.environment.other":    json.RawMessage(`"/tmp"`),
+		"system.methods.enabled":      json.RawMessage(`true`),
+		"system.methods.pick":         json.RawMessage(`"not an object"`),
+		"system.model":                json.RawMessage(`"claude"`),
+		"mantra":                      json.RawMessage(`42`),
+	})
+	got := map[string]bool{}
+	for _, f := range AuditShapes(snap) {
+		got[f.Path] = true
+	}
+	want := []string{"system.max_tokens", "system.study_incantation", "system.environment.wire_dir", "system.methods.pick"}
+	for _, p := range want {
+		if !got[p] {
+			t.Errorf("%s fails its shape and the audit did not name it", p)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("the audit named %v; want exactly %v", got, want)
+	}
+}
