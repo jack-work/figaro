@@ -799,7 +799,43 @@ func (h *handlers) seat(ctx context.Context, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	return h.seatInPlaceOf(ctx, req.Successor, req.FigaroID), nil
+	ttl, err := h.seatLifetime(ctx, req.FigaroID)
+	if err != nil {
+		return nil, err
+	}
+	r := h.seatInPlaceOf(ctx, req.Successor, req.FigaroID)
+	if r.FailedAt != "" || ttl == nil {
+		return r, nil
+	}
+	ss, err := h.angelus.Backend.FormState(req.Successor)
+	if err == nil {
+		_, err = h.angelus.Backend.ApplyForm(req.Successor, form.Build(ss, map[string]json.RawMessage{store.SystemTTLKey: ttl}, nil))
+	}
+	if err != nil {
+		r.FailedAt, r.Error = "ttl", fmt.Sprintf("%s holds the seat but kept its own system.ttl: %v", req.Successor, err)
+	}
+	return r, nil
+}
+
+func (h *handlers) seatLifetime(ctx context.Context, pred string) (json.RawMessage, error) {
+	caller := authz.FigaroOf(ctx)
+	if caller == "" && !h.callerOwns(ctx) {
+		return nil, fmt.Errorf("seat: only %s itself or the owner seats a successor in its place", pred)
+	}
+	if caller != "" && caller != pred {
+		return nil, fmt.Errorf("seat: only %s itself or the owner seats a successor in its place, not figaro %s", pred, caller)
+	}
+	snap, err := h.angelus.Backend.FormState(pred)
+	if err != nil {
+		return nil, fmt.Errorf("seat: read %s: %w", pred, err)
+	}
+	if raw, ok := snap.Get(store.SystemRetiredKey); ok && store.RetiredReason(lifetimeText(raw)) != "" {
+		return nil, nil
+	}
+	if ttl, ok := snap.Get(store.SystemTTLKey); ok {
+		return ttl, nil
+	}
+	return json.RawMessage(`"0"`), nil
 }
 
 func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rpc.SeatResponse {
