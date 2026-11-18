@@ -174,3 +174,31 @@ func TestADefaultChildWritesOnlyItsOwnSelfClassKeys(t *testing.T) {
 		t.Error("default child set its parent's mantra")
 	}
 }
+
+// Defends the child policy's shapes: a policy that would give a child a value
+// outside its row's shape is refused when it is written, owner included, and
+// a leaf it carries is judged as the key it lands under.
+func TestAChildPolicyCarriesOnlyWellShapedValues(t *testing.T) {
+	r := newLineageRig(t, "")
+	for want, policy := range map[string]map[string]any{
+		"system.fanout.max_children": {form.FanoutMaxChildrenKey: "many"},
+		form.ScopesKey:               {form.ScopesKey: "read:*"},
+		"system.study_incantation":   {"system.study_incantation.onstudied": "x"},
+	} {
+		_, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.parent, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{form.ChildPolicyKey: policy})}))
+		if err == nil || !strings.Contains(err.Error(), "a child would be born with "+want) {
+			t.Errorf("policy %v: %v", policy, err)
+		}
+	}
+	r.ownerSets(t, r.parent, map[string]any{form.ChildPolicyKey: map[string]any{
+		"system.study_incantation.onstudy": "hello",
+		"system.thinking_budget":           2048,
+	}})
+	kid := r.forkAsFigaro(t, r.parent)
+	if v, _ := keyOn(t, r.grantRig, kid, "system.study_incantation"); string(v) != `{"onstudy":"hello"}` {
+		t.Fatalf("policy incantation %s", v)
+	}
+	if v, _ := keyOn(t, r.grantRig, kid, "system.thinking_budget"); string(v) != `2048` {
+		t.Fatalf("policy thinking_budget %s", v)
+	}
+}
