@@ -441,7 +441,10 @@ effective set, and so does `figaro.scopes`.
 **Key paths, parent and children.** A scope may end in `#<key-glob>`:
 `write:lineage:self#system.thinking_*`, `read:parent#comments.**`,
 `write:*#system.**`. In a glob `*` matches within one dotted segment and `**`
-any number of segments. A keyed scope reaches only the keys its glob matches:
+any number of segments. A glob may instead name a writer class from the key
+registry, `@self` or `@lineage` (`figaro doctor keys` lists each key's
+class): `write:aria:self#@self` reaches every self-class key on the figaro's
+own form. A keyed scope reaches only the keys its glob matches:
 a `figaro set` is checked key by key, a set key needing `write` and a removed
 one `delete`, and the whole patch is refused if any key is not reached. A
 keyed `read` opens no whole-form read; it lets `figaro study <id> --keys <glob>`
@@ -458,9 +461,11 @@ effective set covers, key globs included.
 only, that is written into the birth patch of every fork of it. It is applied
 at birth and never kept linked: changing it touches no living child. When it
 is unset, a fork made by a figaro is born with `system.scopes =
-["send:parent", "read:aria:self"]`: it can report to its parent, by id or by
-any role that resolves to it, read its own form, and nothing else, until
-someone holding a grant on it widens it. A fork the owner makes keeps its
+["send:parent", "read:aria:self", "write:aria:self#@self",
+"delete:aria:self#@self"]`: it can report to its parent, by id or by any role
+that resolves to it, read its own form, write and remove its own self-class
+keys (its mantra, its notes), and nothing else, until someone holding a grant
+on it widens it. Its lineage, owner and runtime keys stay out of its reach. A fork the owner makes keeps its
 parent's scopes as before.
 
 `system.grants` is the key's old name. 0.64 reads it when `system.scopes` is

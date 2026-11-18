@@ -66,6 +66,13 @@ func TestKeyGrantMatrix(t *testing.T) {
 		{`["read:aria:self"]`, rpc.VerbSet, "kid", "mantra", false},
 		{`["write:aria:sib"]`, rpc.VerbSet, "sib", "anything.at.all", true},
 		{`["write:aria:sib"]`, rpc.VerbSet, "niece", "mantra", false},
+		{`["write:aria:self#@self"]`, rpc.VerbSet, "kid", "mantra", true},
+		{`["write:aria:self#@self"]`, rpc.VerbSet, "kid", "notes.x", true},
+		{`["write:aria:self#@self"]`, rpc.VerbSet, "kid", "system.scopes", false},
+		{`["write:aria:self#@self"]`, rpc.VerbSet, "kid", "system.model", false},
+		{`["write:aria:self#@self"]`, rpc.VerbSet, "kid", "runtime.forked_from", false},
+		{`["write:aria:self#@self"]`, rpc.VerbSet, "sib", "mantra", false},
+		{`["write:aria:self#@lineage"]`, rpc.VerbSet, "kid", "system.scopes", true},
 	}
 	for _, c := range cells {
 		v := viewOf(map[string]string{"kid": c.scopes}, "kid")

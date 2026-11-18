@@ -101,10 +101,10 @@ func TestAWriterOnAnotherFigarosScopesGrantsOnlyWhatItHolds(t *testing.T) {
 func TestAForkMadeByAFigaroCanReachOnlyItsParent(t *testing.T) {
 	r := newLineageRig(t, "")
 	kid := r.forkAsFigaro(t, r.parent)
-	if got := grantsOn(t, r, kid); got != `["send:parent","read:aria:self"]` {
+	if got := grantsOn(t, r, kid); got != `["send:parent","read:aria:self","write:aria:self#@self","delete:aria:self#@self"]` {
 		t.Fatalf("default child scopes %s", got)
 	}
-	if got := strings.Join(grantsOf(t, r.grantRig, kid).Effective, ", "); got != "read:aria:"+kid+", send:aria:"+r.parent {
+	if got := strings.Join(grantsOf(t, r.grantRig, kid).Effective, ", "); got != "read:aria:"+kid+", send:aria:"+r.parent+", set:aria:"+kid+"#@self, delete:aria:"+kid+"#@self" {
 		t.Fatalf("effective %s", got)
 	}
 	out, err := r.call(asOwner(), rpc.MethodFork, rpc.ForkRequest{FigaroID: r.parent})
@@ -140,5 +140,37 @@ func TestAChildPolicyIsAppliedAtBirthAndNotKeptLinked(t *testing.T) {
 	_, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.parent, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{form.ChildPolicyKey: map[string]any{"system.model": "x"}})}))
 	if err == nil || !strings.Contains(err.Error(), "owner class") {
 		t.Fatalf("a policy carrying an owner-class key was accepted: %v", err)
+	}
+}
+
+// A default child writes its own board (mantra above all) and nothing of
+// another class on itself, and nothing at all on anyone else.
+func TestADefaultChildWritesOnlyItsOwnSelfClassKeys(t *testing.T) {
+	r := newLineageRig(t, "")
+	c := r.dial(t)
+	kid := r.forkAsFigaro(t, r.parent)
+	for keys, ok := range map[string]bool{
+		`{"mantra":"lane"}`:                      true,
+		`{"notes.today":"x"}`:                    true,
+		`{"system.thinking_effort":"low"}`:       true,
+		`{"system.scopes":["*:*"]}`:              false,
+		`{"system.child_policy":{"mantra":"x"}}`: false,
+		`{"system.model":"x"}`:                   false,
+		`{"system.ttl":"1h"}`:                    false,
+		`{"runtime.forked_from":"x"}`:            false,
+		`{"system.fanout.max_children":3}`:       false,
+	} {
+		var m map[string]any
+		_ = json.Unmarshal([]byte(keys), &m)
+		err := r.setAs(t, c, kid, kid, *heldPatch(t, m))
+		if (err == nil) != ok {
+			t.Errorf("default child sets %s on itself: %v, want ok=%v", keys, err, ok)
+		}
+	}
+	if err := r.setAs(t, c, kid, kid, form.Build(form.Snapshot{}, nil, []string{"mantra"})); err != nil {
+		t.Errorf("default child could not unset its own mantra: %v", err)
+	}
+	if err := r.setAs(t, c, kid, r.parent, *heldPatch(t, map[string]any{"mantra": "x"})); err == nil {
+		t.Error("default child set its parent's mantra")
 	}
 }
