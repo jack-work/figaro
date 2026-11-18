@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -133,6 +135,15 @@ func forkDress(dress form.Patch, parent string, capByDefault bool, policy form.P
 	return form.Merge(dress, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		form.ForkedFromKey: json.RawMessage(`"` + parent + `"`),
 	}, nil))
+}
+
+func birthPolicyNote(parent string, policy form.Patch, err error) string {
+	if err != nil {
+		return fmt.Sprintf("a fork of %s: %v", parent, err)
+	}
+	keys := touchedPaths(policy)
+	sort.Strings(keys)
+	return fmt.Sprintf("a fork of %s would be born under its child policy (%s)", parent, strings.Join(keys, ", "))
 }
 
 func withFanoutBirthDefault(dress form.Patch) form.Patch {

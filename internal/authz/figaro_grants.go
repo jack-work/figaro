@@ -648,6 +648,10 @@ func (p *Policies) HoldsGrants(figaro string, want jkauthz.Grants, target, paren
 }
 
 func (p *Policies) TopologyReach(s jkauthz.Subject, figaro string, verb rpc.Verb, target string) error {
+	return p.Shadow(LineageReach, p.lineageReach(s, figaro, verb, target))
+}
+
+func (p *Policies) lineageReach(s jkauthz.Subject, figaro string, verb rpc.Verb, target string) error {
 	ff, m, ok := p.figaroFacts()
 	if !ok || figaro == "" || target == figaro || m.facts.DescendsFrom(target, figaro) {
 		return nil

@@ -12,6 +12,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 )
 
 // dress is the only place in the daemon that reads an outfit file on a
@@ -146,6 +147,13 @@ func remarshalWithSender(orig json.RawMessage, req any) (json.RawMessage, error)
 var outfitGrantRoots = []string{form.ScopesKey, form.RetiredGrantsKey, "system.fanout", form.ChildPolicyKey}
 
 func (h *handlers) refuseOutfitGrants(ctx context.Context, outfits []string) error {
+	if err := h.refuseOutfitRuntimeKeys(outfits); err != nil {
+		return err
+	}
+	return h.angelus.Policies.Shadow(authz.KeyGrants, h.refuseOutfitAuthority(ctx, outfits))
+}
+
+func (h *handlers) refuseOutfitRuntimeKeys(outfits []string) error {
 	if len(outfits) == 0 {
 		return nil
 	}
@@ -153,7 +161,15 @@ func (h *handlers) refuseOutfitGrants(ctx context.Context, outfits []string) err
 	if err != nil {
 		return err
 	}
-	if err := refuseRuntimeKeys(form.Snapshot{}, dressed); err != nil {
+	return refuseRuntimeKeys(form.Snapshot{}, dressed)
+}
+
+func (h *handlers) refuseOutfitAuthority(ctx context.Context, outfits []string) error {
+	if len(outfits) == 0 {
+		return nil
+	}
+	dressed, err := h.dress(outfits, nil)
+	if err != nil {
 		return err
 	}
 	if c := h.callerKeysOf(ctx); c.owns && !c.boxed {

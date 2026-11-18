@@ -303,5 +303,12 @@ type FanoutDrift struct {
 }
 
 type AdmissionResponse struct {
-	Drift []FanoutDrift `json:"drift,omitempty"`
+	Drift    []FanoutDrift       `json:"drift,omitempty"`
+	Switches []EnforcementSwitch `json:"switches,omitempty"`
+}
+
+type EnforcementSwitch struct {
+	Name        string `json:"name"`
+	On          bool   `json:"on"`
+	WouldRefuse uint64 `json:"would_refuse"`
 }

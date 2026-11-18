@@ -12,6 +12,18 @@ import (
 	"time"
 )
 
+func (r *restartRig) enforceAll() {
+	r.t.Helper()
+	f, err := os.OpenFile(filepath.Join(r.root, "config", "config.toml"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString("[authz]\nenforce_key_grants = true\nenforce_child_policy = true\nenforce_lineage_reach = true\n"); err != nil {
+		r.t.Fatal(err)
+	}
+}
+
 func (r *restartRig) as(figaro string, args ...string) (string, error) {
 	c := r.cmd(args...)
 	c.Env = append(c.Env, "FIGARO_ARIA="+figaro)
@@ -55,6 +67,7 @@ func TestADefaultLaneSendsToItsParentAndToItsRole(t *testing.T) {
 	}
 	prov := newScriptedProvider(t, func(string) (bool, string) { return false, sseText("noted") })
 	r := newRestartRig(t)
+	r.enforceAll()
 	r.env = append(r.env, "ANTHROPIC_BASE_URL="+prov.srv.URL, "FIGARO_NO_BIND=1")
 	parent := r.newEmptyAria()
 	stranger := r.newEmptyAria()
@@ -90,6 +103,7 @@ func TestAHolderRunSucceedKeepsTheHoldersGrantAndChildPolicy(t *testing.T) {
 	}
 	prov := newScriptedProvider(t, func(string) (bool, string) { return false, sseText("noted") })
 	r := newRestartRig(t)
+	r.enforceAll()
 	r.env = append(r.env, "ANTHROPIC_BASE_URL="+prov.srv.URL, "FIGARO_NO_BIND=1")
 	for name, body := range map[string]string{
 		"seatgrants": "[system]\nscopes = [\"*:*\"]\n",
@@ -137,4 +151,79 @@ func compactJSON(t *testing.T, raw json.RawMessage) string {
 		t.Fatal(err)
 	}
 	return b.String()
+}
+
+// Defends the rollout default through a real daemon: with no switch in its
+// config, a figaro's fork is born with its parent's scopes, and doctor
+// admission shows every switch off and counts the child policy it would have
+// applied.
+func TestTheEnforcementSwitchesShipOffInTheDaemon(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns a daemon; skipped under -short")
+	}
+	prov := newScriptedProvider(t, func(string) (bool, string) { return false, sseText("noted") })
+	r := newRestartRig(t)
+	r.env = append(r.env, "ANTHROPIC_BASE_URL="+prov.srv.URL, "FIGARO_NO_BIND=1")
+	parent := r.newEmptyAria()
+	r.run("set", "--id", parent, "system.scopes", `["*:*"]`)
+	lane := r.laneOf(parent)
+	var board struct {
+		System map[string]json.RawMessage `json:"system"`
+	}
+	if err := json.Unmarshal([]byte(r.run("state", "show", "--id", lane, "-j")), &board); err != nil {
+		t.Fatal(err)
+	}
+	if got := compactJSON(t, board.System["scopes"]); got != `["*:*"]` {
+		t.Errorf("with the switches off a figaro's fork holds %s, want its parent's", got)
+	}
+	var doc struct {
+		Switches []struct {
+			Name        string `json:"name"`
+			On          bool   `json:"on"`
+			WouldRefuse uint64 `json:"would_refuse"`
+		} `json:"switches"`
+	}
+	if err := json.Unmarshal([]byte(r.run("doctor", "admission", "--json")), &doc); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, s := range doc.Switches {
+		seen[s.Name] = true
+		if s.On {
+			t.Errorf("%s is on with no config", s.Name)
+		}
+		if s.Name == "enforce_child_policy" && s.WouldRefuse == 0 {
+			t.Error("the child policy the fork was not given was not counted")
+		}
+	}
+	for _, name := range []string{"enforce_key_grants", "enforce_child_policy", "enforce_lineage_reach"} {
+		if !seen[name] {
+			t.Errorf("doctor admission does not show %s", name)
+		}
+	}
+
+	r.enforceAll()
+	r.run("state", "outfit", "--refresh")
+	if err := json.Unmarshal([]byte(r.run("doctor", "admission", "--json")), &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range doc.Switches {
+		if !s.On {
+			t.Errorf("%s stayed off after the config turned it on and the daemon re-read it", s.Name)
+		}
+	}
+	if got := grantsOf(t, r, r.laneOf(parent)); got != `["send:parent","read:aria:self","write:aria:self#@self","delete:aria:self#@self"]` {
+		t.Errorf("with enforce_child_policy on a figaro's fork holds %s, want the lane set", got)
+	}
+}
+
+func grantsOf(t *testing.T, r *restartRig, id string) string {
+	t.Helper()
+	var board struct {
+		System map[string]json.RawMessage `json:"system"`
+	}
+	if err := json.Unmarshal([]byte(r.run("state", "show", "--id", id, "-j")), &board); err != nil {
+		t.Fatal(err)
+	}
+	return compactJSON(t, board.System["scopes"])
 }

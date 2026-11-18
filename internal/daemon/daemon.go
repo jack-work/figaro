@@ -436,6 +436,7 @@ func Run() {
 	a.Policies.SetPoolDaemon(loaded.PoolDaemon())
 	a.Policies.SetBoxes(loaded.DooredBoxes())
 	a.Policies.SetBoxesRequiringClaim(loaded.BoxesRequiringClaim())
+	a.Policies.SetEnforcement(authz.EnforcementOf(loaded.Config.Authz))
 	a.Policies.SetIssuerScopes(authz.IssuerScopes(loaded.Config.Authz))
 	if a.Issuers, err = newIssuers(loaded.Config.Authz.Issuers); err != nil {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)

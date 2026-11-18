@@ -124,6 +124,7 @@ func (h *handlers) reloadPolicy() error {
 	loaded, _ := h.settings()
 	p.SetBoxes(loaded.DooredBoxes())
 	p.SetBoxesRequiringClaim(loaded.BoxesRequiringClaim())
+	p.SetEnforcement(authz.EnforcementOf(loaded.Config.Authz))
 	if err := p.Reload(loaded.PolicyPath()); err != nil {
 		slog.Error("authz: policy reload failed; the previous policy stays in force", "err", err)
 		return err
@@ -207,21 +208,22 @@ func (h *handlers) figaroGrant(ctx context.Context, verb rpc.Verb, res authz.Res
 }
 
 func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, params json.RawMessage) error {
+	keyed := func(err error) error { return h.angelus.Policies.Shadow(authz.KeyGrants, err) }
 	switch method {
 	case rpc.MethodDrop:
-		return h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(id), func(v authz.FigaroView, s jkauthz.Subject) bool {
+		return keyed(h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(id), func(v authz.FigaroView, s jkauthz.Subject) bool {
 			return v.AllowWhole(s, rpc.VerbSet, authz.Aria(id))
-		}, "holds only keyed set there, and a drop writes the observer's studies")
+		}, "holds only keyed set there, and a drop writes the observer's studies"))
 	case rpc.MethodStudy:
-		if err := h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(id), func(v authz.FigaroView, s jkauthz.Subject) bool {
+		if err := keyed(h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(id), func(v authz.FigaroView, s jkauthz.Subject) bool {
 			return v.AllowWhole(s, rpc.VerbSet, authz.Aria(id))
-		}, "holds only keyed set there, and a study writes the observer's studies"); err != nil {
+		}, "holds only keyed set there, and a study writes the observer's studies")); err != nil {
 			return err
 		}
 		var req rpc.StudyRequest
 		if json.Unmarshal(params, &req) == nil && req.FormID != "" {
 			if h.allowed(ctx, rpc.VerbRead, authz.Aria(req.FormID)) != nil {
-				if err := h.studiesOnlyReadableKeys(ctx, req); err != nil {
+				if err := keyed(h.studiesOnlyReadableKeys(ctx, req)); err != nil {
 					return err
 				}
 			}
@@ -235,14 +237,14 @@ func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, param
 			break
 		}
 		if req.FormID == "" {
-			return h.allowed(ctx, rpc.VerbCreate, authz.Daemon)
+			return keyed(h.allowed(ctx, rpc.VerbCreate, authz.Daemon))
 		}
 		if err := h.allowed(ctx, rpc.VerbSet, authz.Aria(req.FormID)); err != nil {
 			return err
 		}
-		return h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(req.FormID), func(v authz.FigaroView, s jkauthz.Subject) bool {
+		return keyed(h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(req.FormID), func(v authz.FigaroView, s jkauthz.Subject) bool {
 			return v.AllowsKey(s, rpc.VerbSet, authz.Aria(req.FormID), "target-aria")
-		}, "may not set target-aria there, which a cast writes")
+		}, "may not set target-aria there, which a cast writes"))
 	case rpc.MethodSet:
 		var req rpc.SetRequest
 		if err := json.Unmarshal(params, &req); err != nil {

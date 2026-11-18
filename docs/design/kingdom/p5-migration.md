@@ -235,11 +235,32 @@ Making another figaro study or drop a form needs an unkeyed set on it, a
 cast into an existing role needs set on its target-aria, and a cast that
 mints a role needs create. Seats holding `*:*` keep all three.
 
+## Switches
+
+P5 ships its three enforcements off, each behind an owner-held switch in
+the daemon config `[authz]` table: `enforce_key_grants` (key-by-key writes,
+study/drop/cast, a label on the local door never the owner, outfit
+authority keys, studies dropped when their read goes), `enforce_child_policy`
+(the default lane scopes and `system.child_policy` at birth) and
+`enforce_lineage_reach` (reach beyond the lineage needs a written grant).
+Off, the daemon computes the same decision, logs `authz: would refuse` with
+the switch and the reason, counts it (`figaro doctor admission`), and lets
+the call through as it would have before P5. Rules older than P5 hold
+either way, the peer check among them: with enforce_key_grants off a label
+is the owner again, but a tool shell is still its figaro. The daemon reads
+the switches at start and on `figaro state outfit --refresh`, which
+re-reads its config.
+
 ## Order
 
 1. Before the P5 binary runs: write `["*:*"]` on the King, Engineer,
    Knight and Review Steward holders.
 2. Write the child policies above on the seats that fork lanes.
-3. Restart onto the P5 build (Gluck's take).
+3. Restart onto the P5 build (Gluck's take). Nothing is enforced yet.
 4. Check with `figaro scopes <holder>` (effective `*:*`, own `*:*`) and
    `figaro form show <holder>` (`system.child_policy`).
+5. Watch `figaro doctor admission` and the `authz: would refuse` lines for a
+   working day; each count is a call the switch would have refused.
+6. Turn the switches on one at a time, `enforce_lineage_reach` first, then
+   `enforce_child_policy`, then `enforce_key_grants`, each followed by
+   `figaro state outfit --refresh`.

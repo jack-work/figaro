@@ -5,6 +5,7 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/jkauthz"
 	"slices"
+	"strings"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -82,6 +83,10 @@ func (h *handlers) dropUnreadableStudies(id string) error {
 	gone, err := h.unreadableStudies(id)
 	if err != nil {
 		return err
+	}
+	if p := h.angelus.Policies; len(gone) > 0 && !p.Enforces(authz.KeyGrants) {
+		p.WouldRefuse(authz.KeyGrants, fmt.Sprintf("%s keeps studies it may no longer read: %s", id, strings.Join(gone, ", ")))
+		return nil
 	}
 	for _, f := range gone {
 		if _, err := h.studyForHub(id, f, nil, true); err != nil {
