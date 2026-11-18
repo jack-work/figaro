@@ -65,7 +65,6 @@ func StudyReminderTexts(msg message.Message, bound form.Snapshot) []string {
 				if v, ok := msg.StudyAt[fid]; ok {
 					body["version"] = v
 				}
-				delete(body, "form")
 				if incantation.OnUpdate != "" {
 					body["say"] = incantation.OnUpdate
 				}
@@ -132,7 +131,7 @@ func studyFold(fid string, patches []message.Patch, keys []string, limits form.D
 	if len(set) == 0 && len(removed) == 0 && !dead {
 		return nil
 	}
-	body := map[string]any{"form": fid, "changes": changes}
+	body := map[string]any{"changes": changes}
 	if dead {
 		body["exists"] = false
 	}
