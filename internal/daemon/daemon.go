@@ -47,29 +47,31 @@ const lockHandoff = 10 * time.Second
 
 // lockStore returns the flock handle that admits one angelus per store; closing it
 // releases the lock.
-func lockStore(answers func() bool) (*os.File, bool) {
+func lockStore(answers func() bool) (*os.File, error) {
 	return lockStoreWithin(lockHandoff, os.Stderr, answers)
 }
 
-func lockStoreWithin(handoff time.Duration, notice io.Writer, answers func() bool) (*os.File, bool) {
+var errStoreHeld = errors.New("another angelus already owns this store")
+
+func lockStoreWithin(handoff time.Duration, notice io.Writer, answers func() bool) (*os.File, error) {
 	dir := boot.StateDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, false
+		return nil, fmt.Errorf("store lock: %w", err)
 	}
 	f, err := os.OpenFile(boot.StoreLockPath(), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return nil, false
+		return nil, fmt.Errorf("store lock: %w", err)
 	}
 	deadline := time.Now().Add(handoff)
 	said := false
 	for {
 		if err := boot.TryLockFile(f); err == nil {
 			boot.RecordStoreLockOwner(f)
-			return f, true
+			return f, nil
 		}
 		if answers() || time.Now().After(deadline) {
 			f.Close()
-			return nil, false
+			return nil, errStoreHeld
 		}
 		if !said {
 			if who, _, held := boot.StoreLockHolder(); held {
@@ -365,10 +367,14 @@ func Run() {
 
 	// Lock before the backend opens or the socket binds, so a losing daemon
 	// never opens the store or steals the socket.
-	lockF, ok := lockStore(incumbentAnswersOn(sockets))
-	if !ok {
+	lockF, err := lockStore(incumbentAnswersOn(sockets))
+	if errors.Is(err, errStoreHeld) {
 		slog.Info("another angelus already owns this store; exiting")
 		os.Exit(0)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
 	}
 	defer lockF.Close()
 
