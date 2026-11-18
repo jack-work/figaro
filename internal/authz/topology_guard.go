@@ -130,6 +130,10 @@ func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hier
 		if g.freshPlacement(by, p) {
 			return hierarchy.Verdict{}, nil
 		}
+	case hierarchy.Seat:
+		if err := g.each(caller, rpc.VerbKill, []string{p.Node, p.To}); err != nil {
+			return hierarchy.Verdict{}, err
+		}
 	}
 	if err := g.killFloor(caller, p); err != nil {
 		return hierarchy.Verdict{}, err
@@ -174,7 +178,9 @@ func (g TopologyGuard) Readmit(ctx context.Context, by hierarchy.Principal) (hie
 	return by, nil
 }
 
-func swaps(op hierarchy.Op) bool { return op == hierarchy.Demote || op == hierarchy.Promote }
+func swaps(op hierarchy.Op) bool {
+	return op == hierarchy.Demote || op == hierarchy.Promote || op == hierarchy.Seat
+}
 
 func (g TopologyGuard) consent(ctx context.Context, by hierarchy.Principal, c TopologyCaller, p hierarchy.Plan) (hierarchy.Verdict, error) {
 	var waits []string
@@ -371,7 +377,7 @@ func (g TopologyGuard) quota(p hierarchy.Plan) error {
 }
 
 func (g TopologyGuard) swapOf(p hierarchy.Plan) (succ string, max int, ok bool) {
-	if p.Op != hierarchy.Demote || g.SwapLimit == nil {
+	if p.Op != hierarchy.Demote && p.Op != hierarchy.Seat || g.SwapLimit == nil {
 		return "", 0, false
 	}
 	for _, m := range p.Moves {

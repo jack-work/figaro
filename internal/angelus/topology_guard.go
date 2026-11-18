@@ -151,7 +151,7 @@ func (a *Angelus) topologyCommitted(p hierarchy.Plan) {
 }
 
 func (a *Angelus) moveSwappedLimit(p hierarchy.Plan) {
-	if p.Op != hierarchy.Demote || a.Backend == nil {
+	if p.Op != hierarchy.Demote && p.Op != hierarchy.Seat || a.Backend == nil {
 		return
 	}
 	for _, m := range p.Moves {
