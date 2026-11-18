@@ -132,3 +132,23 @@ func TestAHostDoorLivesWhereNoBoxCanReach(t *testing.T) {
 		}
 	}
 }
+
+func TestTheDefaultSandboxNamesAConfiguredBox(t *testing.T) {
+	for body, ok := range map[string]bool{
+		"[sandbox]\ndefault = \"judge\"\n[sandbox.boxes.judge]\nexec = \"/run/judge.sock\"\n":   true,
+		"[sandbox]\ndefault = \"nowhere\"\n[sandbox.boxes.judge]\nexec = \"/run/judge.sock\"\n": false,
+		"[sandbox]\ndefault = \"local\"\n": false,
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := Load(dir)
+		if ok && (err != nil || loaded.DefaultSandbox() != "judge") {
+			t.Errorf("%q: %v", body, err)
+		}
+		if !ok && err == nil {
+			t.Errorf("%q loaded", body)
+		}
+	}
+}

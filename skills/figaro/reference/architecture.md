@@ -867,7 +867,10 @@ never starts a daemon there.
 when it wakes) with the way out, naming a box. House and estate mode set it,
 since a tool run as the daemon's uid can rewrite any figaro's store. Setting
 `system.sandbox` on a refused figaro does not open it, so that is how one is
-moved.
+moved. `[sandbox] default = "<box>"` names the box a figaro born naming no
+sandbox runs in: the birth (new, fork, bind, import) writes it on the form,
+so a house mints into the owner's valet without every outfit saying so. A
+figaro that names `local` is not moved.
 
 ### Removed: bwrap
 
