@@ -110,8 +110,12 @@ type callerKeys struct {
 
 func (h *handlers) callerKeysOf(ctx context.Context) callerKeys {
 	box, boxed := callerBox(ctx)
+	owns := h.callerOwns(ctx)
 	tool, _ := authz.ToolOf(ctx)
-	return callerKeys{owns: h.callerOwns(ctx), boxed: boxed, box: box, lineage: h.protectsByLineage(), tool: tool}
+	if tool == "" && owns && !boxed {
+		tool = authz.FigaroOf(ctx)
+	}
+	return callerKeys{owns: owns && tool == "", boxed: boxed, box: box, lineage: h.protectsByLineage(), tool: tool}
 }
 
 func (h *handlers) callerKeysOn(ctx context.Context, line lineage) callerKeys {
@@ -152,7 +156,7 @@ func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line linea
 		return nil
 	}
 	if !c.boxed {
-		return fmt.Errorf("%s is protected: only the owner or an ancestor figaro sets it, and a figaro is known only through its box door or its tool cgroup", key)
+		return fmt.Errorf("%s is protected: only the owner or an ancestor figaro sets it, and a figaro is known only through its box door, its tool cgroup or its label on the local door", key)
 	}
 	f := authz.FigaroOf(ctx)
 	if f == "" {
@@ -624,8 +628,8 @@ func ownerKeyRulesSkip(params json.RawMessage) bool {
 }
 
 func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, params json.RawMessage) error {
-	_, boxed := callerBox(ctx)
-	owner := !boxed && h.callerOwns(ctx)
+	c := h.callerKeysOf(ctx)
+	owner := c.owns && !c.boxed
 	shapesOnly := owner && ownerKeyRulesSkip(params)
 	var patch *form.Patch
 	switch method {

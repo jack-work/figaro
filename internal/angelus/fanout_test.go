@@ -609,18 +609,22 @@ func TestARoleCapsForkAdmissionAndTheGrant(t *testing.T) {
 	}
 }
 
-// The trusted-door honour rule covers system.fanout.max_children only:
-// a labeled figaro's writes to other keys pass exactly as before.
-func TestTheLabelRuleLeavesOtherKeysAlone(t *testing.T) {
+// On the trusted door a label only narrows: a labeled figaro writes the
+// self-class keys its scopes reach, and a protected key only below itself.
+func TestALabelOnlyNarrowsTheOwnersDoor(t *testing.T) {
 	hs, b, outfit := fanoutHandlers(t)
 	x, _ := b.CreateConversation(outfit)
 	y, _ := b.CreateConversation(outfit)
 	setMaxChildren(t, b, x, 1)
-	for key, val := range map[string]string{"mantra": `"hi"`, form.ScopesKey: `["read:*"]`, "system.fanout.other": `"x"`} {
+	for key, val := range map[string]string{"mantra": `"hi"`, "system.fanout.other": `"x"`} {
 		p := form.Build(form.Snapshot{}, map[string]json.RawMessage{key: json.RawMessage(val)}, nil)
 		if err := setAsFigaro(t, hs, x, y, p); err != nil {
 			t.Fatalf("labeled write of %s on an unrelated aria: %v", key, err)
 		}
+	}
+	scopes := form.Build(form.Snapshot{}, map[string]json.RawMessage{form.ScopesKey: json.RawMessage(`["read:*"]`)}, nil)
+	if err := setAsFigaro(t, hs, x, y, scopes); err == nil || !strings.Contains(err.Error(), "no ancestor") {
+		t.Fatalf("a labeled figaro set system.scopes on an unrelated aria: %v", err)
 	}
 	if err := setAsFigaro(t, hs, x, y, *fanoutPatch(0)); err == nil {
 		t.Fatal("a labeled figaro set max_children on an unrelated aria")

@@ -165,6 +165,28 @@ succession carries it to the successor with `system.scopes`,
 (added in this change). A holder minted by hand needs it written, or carried
 by its seat outfit once E6 renders per-seat outfits.
 
+## A label on the local door is never the owner
+
+A call on the local door that names a figaro (FIGARO_ARIA set, as in every
+figaro's own shell) is judged as that figaro's tools are under the peer
+check (skills/figaro/reference/peer-check.md), never as the owner. The label
+only narrows, so it needs no proof. It writes the keys its scopes reach, a
+protected key (system.scopes, system.sandbox, the fanout keys,
+system.child_policy, target-aria) only on a figaro below it, and an
+owner-held key (system.model, system.provider, system.tools,
+system.retirement, succession-policy, ...) nowhere. Of the lifetime it only
+shortens one or retires, within its reach. With the peer check on, a tool
+shell is already its figaro by its cgroup; the label decides for a shell
+outside every tool cgroup that names a figaro, and for every shell when
+peer_check is off. Before P5 such a call skipped every key rule unless its
+params named one of a few words.
+
+Gluck writes owner-held keys from his own terminal, unlabelled:
+`env -u FIGARO_ARIA figaro set ...`. Nothing in the fleet's routine needs a
+figaro to write one: a seat that switched its own model through a labelled
+`figaro set system.model` now asks Gluck, or carries the model in its
+outfit.
+
 ## Order
 
 1. Before the P5 binary runs: write `["*:*"]` on the King, Engineer,

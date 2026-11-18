@@ -233,3 +233,44 @@ func TestAChildPolicyGivesMaxChildrenUpToItsHoldersOwn(t *testing.T) {
 		t.Fatalf("a policy silent on fanout gave a figaro's fork %s, not the cap of 0", v)
 	}
 }
+
+func (r lineageRig) setLocal(t *testing.T, figaro, target string, keys map[string]any) error {
+	t.Helper()
+	_, err := r.h[rpc.MethodSet](localOwner(), claimed(t, figaro, withAria(t, target, rpc.SetRequest{Patch: *heldPatch(t, keys)})))
+	return err
+}
+
+// Defends the local door against a label: a labelled call is never the owner
+// and takes every key rule the box door does. The four refusals are the
+// P2+P5 review's DoorLocal repros (F5); each landed before.
+func TestOnTheLocalDoorALabelOnlyNarrows(t *testing.T) {
+	r := newLineageRig(t, "")
+	kid := r.forkAsFigaro(t, r.parent)
+	r.ownerSets(t, kid, map[string]any{"system.ttl": "30m"})
+	for _, key := range []string{"system.model", "system.ttl"} {
+		if err := r.setLocal(t, kid, kid, map[string]any{key: "1h"}); err == nil {
+			t.Errorf("a default child set %s on itself through the local door", key)
+		}
+	}
+	if err := r.setLocal(t, kid, kid, map[string]any{"mantra": "mine"}); err != nil {
+		t.Errorf("a default child could not set its own mantra through the local door: %v", err)
+	}
+
+	r.ownerSets(t, r.child, map[string]any{form.ScopesKey: []string{"read:*", "write:aria:self#mantra"}})
+	if err := r.setLocal(t, r.child, r.child, map[string]any{"ungranted_key": "x"}); err == nil {
+		t.Error("a figaro holding only its mantra wrote another key through the local door")
+	}
+
+	r.ownerSets(t, r.parent, map[string]any{form.ScopesKey: []string{"read:*", "set:children#system.scopes"}})
+	if err := r.setLocal(t, r.parent, r.sibling, map[string]any{form.ScopesKey: []string{"*:*"}}); err == nil || !strings.Contains(err.Error(), "does not hold") {
+		t.Errorf("a holder of set:children#system.scopes granted *:* through the local door: %v", err)
+	}
+	if err := r.setLocal(t, r.parent, r.sibling, map[string]any{form.ScopesKey: []string{"read:*"}}); err != nil {
+		t.Errorf("a holder granted what it holds through the local door and was refused: %v", err)
+	}
+
+	r.ownerSets(t, r.sibling, map[string]any{form.ScopesKey: []string{"read:*", "write:aria:self#@lineage"}})
+	if err := r.setLocal(t, r.sibling, r.sibling, map[string]any{form.ScopesKey: []string{"*:*"}}); err == nil {
+		t.Error("a figaro holding write:aria:self#@lineage set its own scopes through the local door")
+	}
+}
