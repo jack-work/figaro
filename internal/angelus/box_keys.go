@@ -470,6 +470,11 @@ func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before for
 	if _, err := form.FanoutMint(after); err != nil {
 		return err
 	}
+	if h.angelus.Policies.Enforces(authz.KeyGrants) {
+		if err := form.RefuseRetiredMintWrite(before, after); err != nil {
+			return err
+		}
+	}
 	if _, _, err := form.FanoutQuota(after); err != nil {
 		return err
 	}
@@ -530,7 +535,13 @@ func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before for
 
 func (h *handlers) refuseQuotaByLabelAlone(ctx context.Context, line lineage, before, after form.Snapshot) error {
 	f := authz.FigaroOf(ctx)
-	if f == "" || !keyChanged(before, after, form.FanoutQuotaKey) {
+	if !keyChanged(before, after, form.FanoutQuotaKey) {
+		return nil
+	}
+	if f == "" {
+		if claimsUnheld(ctx) {
+			return fmt.Errorf("%s is protected, and the caller names a figaro this daemon does not hold", form.FanoutQuotaKey)
+		}
 		return nil
 	}
 	if line.of == "" || !slices.Contains(h.ancestorsOf(line), f) {

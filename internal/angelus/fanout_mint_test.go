@@ -27,7 +27,15 @@ func newLicenseRig(t *testing.T, policy string) licenseRig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return licenseRig{grantRig: r, root: root.FigaroID, x: ariasFork(t, r, root.FigaroID)}
+	l := licenseRig{grantRig: r, root: root.FigaroID, x: ariasFork(t, r, root.FigaroID)}
+	keyGrants(l, false)
+	return l
+}
+
+// system.fanout.mint licenses only while enforce_key_grants is off, so the
+// rig starts there; the tests of the mint grant turn it on.
+func keyGrants(r licenseRig, on bool) {
+	r.a.Policies.SetEnforcement(enforcingAllBut(authz.KeyGrants, on))
 }
 
 func (r licenseRig) createAs(t *testing.T, figaro string) (rpc.CreateResponse, error) {

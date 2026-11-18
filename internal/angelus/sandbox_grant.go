@@ -242,9 +242,12 @@ func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, param
 		if err := h.allowed(ctx, rpc.VerbSet, authz.Aria(req.FormID)); err != nil {
 			return err
 		}
-		return keyed(h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(req.FormID), func(v authz.FigaroView, s jkauthz.Subject) bool {
+		if err := keyed(h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(req.FormID), func(v authz.FigaroView, s jkauthz.Subject) bool {
 			return v.AllowsKey(s, rpc.VerbSet, authz.Aria(req.FormID), "target-aria")
-		}, "may not set target-aria there, which a cast writes"))
+		}, "may not set target-aria there, which a cast writes")); err != nil {
+			return err
+		}
+		return h.refuseCastWithoutGrant(ctx, req.FormID)
 	case rpc.MethodSet:
 		var req rpc.SetRequest
 		if err := json.Unmarshal(params, &req); err != nil {

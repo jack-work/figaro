@@ -63,12 +63,28 @@ func (h *handlers) refuseUnlicensedMint(ctx context.Context) error {
 	if _, boxed := callerBox(ctx); boxed {
 		return nil
 	}
+	granted := false
+	if p := h.angelus.Policies; p != nil {
+		if sub, err := authz.SubjectOf(ctx); err == nil {
+			granted = p.WrittenGrant(sub, f, rpc.VerbMint, authz.Daemon)
+		}
+	}
+	refusal := fmt.Errorf("mint: %s may not create a top-level figaro; fork yourself instead (figaro fork %s:1 ...), or have mint:* written in its %s", f, f, form.ScopesKey)
+	if h.angelus.Policies.Enforces(authz.KeyGrants) {
+		if granted {
+			return nil
+		}
+		return refusal
+	}
 	ok, err := h.angelus.mayMint(f)
 	if err != nil {
 		return fmt.Errorf("mint: reading %s's %s: %w", f, form.FanoutMintKey, err)
 	}
 	if !ok {
 		return fmt.Errorf("mint: %s may not create a top-level figaro; fork yourself instead (figaro fork %s:1 ...)", f, f)
+	}
+	if !granted {
+		return h.angelus.Policies.Shadow(authz.KeyGrants, refusal)
 	}
 	return nil
 }
@@ -379,6 +395,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	seatProvider := ""
 	if req.Seat != "" {
+		if err := h.refuseSucceedWithoutGrant(ctx, req.Seat); err != nil {
+			return nil, fmt.Errorf("fork: %w", err)
+		}
 		if req, seatProvider, err = h.dressForSeat(req); err != nil {
 			return nil, err
 		}
@@ -888,6 +907,10 @@ func (h *handlers) demote(ctx context.Context, params json.RawMessage) (interfac
 func (h *handlers) seat(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.SeatRequest
 	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, err
+	}
+	roles, _ := h.angelus.roles()
+	if err := h.refuseSucceedWithoutGrant(ctx, roles.holding(req.FigaroID)...); err != nil {
 		return nil, err
 	}
 	ttl, err := h.seatLifetime(ctx, req.FigaroID)

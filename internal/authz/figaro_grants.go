@@ -39,6 +39,9 @@ func ParseFigaroGrants(texts []string) (jkauthz.Grants, error) {
 		if g.Verb == verbWrite {
 			g.Verb = string(rpc.VerbSet)
 		}
+		if roleVerb(g.Verb) && strings.HasPrefix(g.Object, "@") {
+			g.Object = selAria + g.Object
+		}
 		sel, glob := splitKeyed(g.Object)
 		if strings.Contains(g.Object, keySep) {
 			if err := validateKeyGlob(glob); err != nil {
@@ -669,6 +672,15 @@ func (p *Policies) ReachGranted(s jkauthz.Subject, figaro string, verb rpc.Verb,
 
 func (p *Policies) grantsReach(ff FigaroFacts, s jkauthz.Subject, figaro string, verb rpc.Verb, target string) bool {
 	return p.writtenScopes(ff, figaro) && p.Figaro(figaro).refuses(s, verb, Aria(target)) == ""
+}
+
+func roleVerb(v string) bool {
+	return v == string(rpc.VerbCast) || v == string(rpc.VerbSucceed)
+}
+
+func (p *Policies) WrittenGrant(s jkauthz.Subject, figaro string, verb rpc.Verb, r Resource) bool {
+	ff, _, ok := p.figaroFacts()
+	return ok && figaro != "" && p.writtenScopes(ff, figaro) && p.Figaro(figaro).refuses(s, verb, r) == ""
 }
 
 func (p *Policies) writtenScopes(ff FigaroFacts, figaro string) bool {
