@@ -290,3 +290,52 @@ func placeholderMatches(pattern, path string) bool {
 	}
 	return true
 }
+
+type ShapeFault struct {
+	Path  string
+	Value json.RawMessage
+	Err   error
+}
+
+func AuditShapes(snap Snapshot) []ShapeFault {
+	var out []ShapeFault
+	check := func(path string, shape Shape) {
+		raw, ok := snap.Get(path)
+		if !ok {
+			return
+		}
+		if err := shape.Check(raw); err != nil {
+			out = append(out, ShapeFault{Path: path, Value: raw, Err: err})
+		}
+	}
+	exact := map[string]bool{}
+	for _, s := range registry {
+		if !s.placeholder() {
+			exact[s.Path] = true
+			check(s.Path, s.Shape)
+		}
+	}
+	for _, s := range registry {
+		if !s.placeholder() {
+			continue
+		}
+		n := len(strings.Split(s.Path, "."))
+		seen := map[string]bool{}
+		for leaf := range snap.All() {
+			parts := strings.Split(leaf, ".")
+			if len(parts) < n {
+				continue
+			}
+			path := strings.Join(parts[:n], ".")
+			if i := strings.IndexByte(path, '['); i >= 0 {
+				continue
+			}
+			if seen[path] || exact[path] || !placeholderMatches(s.Path, path) {
+				continue
+			}
+			seen[path] = true
+			check(path, s.Shape)
+		}
+	}
+	return out
+}
