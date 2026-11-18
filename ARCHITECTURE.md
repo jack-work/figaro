@@ -404,6 +404,15 @@ the service is stopped waits in the socket's queue and starts it. Admission
 does not move: peer credentials and policy still judge every connection. Box
 doors bind their own sockets, because a config reload reopens them.
 
+**House and estate mode** (`services.figaro.mode`, NixOS) run the angelus as
+system user `figaro`: the store is `/var/lib/figaro` (0700 figaro), the
+config a read-only directory the module renders, and the CLI never starts a
+daemon (`FIGARO_NO_SELF_SPAWN=1`). In house mode a person owns it:
+`[authz] owner = "user:<uid>"`, and he and `services.figaro.users` reach
+`/run/figaro/angelus.sock` (0660, group `figaro-door`) as `user:<uid>`. Both
+modes set `[sandbox] local_tools = false`, since a tool run as uid figaro
+could rewrite the store; tools run in boxes.
+
 ## Roadmap
 
 - **A public frontend protocol.** `figaro.hello` carries a version and

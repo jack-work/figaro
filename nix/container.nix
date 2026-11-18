@@ -250,6 +250,7 @@ in
           stateDir = "/var/lib/figaro";
           runtimeDir = "/run/figaro";
           credentials = lib.mapAttrs (_: _: "") cfg.credentials;
+          localTools = lib.mkDefault true;
         };
         networking.useHostResolvConf = false;
         systemd.services.resolvconf.preStart = "rm -f /etc/resolv.conf";

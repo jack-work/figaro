@@ -212,6 +212,7 @@
         module-vm = import ./nix/tests/module.nix { inherit pkgs self; };
         socket-activation-vm = import ./nix/tests/socket-activation.nix { inherit pkgs self; };
         valet-vm = import ./nix/tests/valet.nix { inherit pkgs self; };
+        house-mode-vm = import ./nix/tests/house-mode.nix { inherit pkgs self; };
         hm-module = import ./nix/tests/hm-module.nix { inherit pkgs self; };
       });
 
