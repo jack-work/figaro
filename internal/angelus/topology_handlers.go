@@ -800,7 +800,15 @@ func (h *handlers) seat(ctx context.Context, params json.RawMessage) (interface{
 
 func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rpc.SeatResponse {
 	var r rpc.SeatResponse
+	intent := h.seatIntent(successor, pred)
 	if have, _ := h.angelus.topology().Drawn(successor); have != pred {
+		if h.seats != nil {
+			if err := h.seats.begin(intent); err != nil {
+				r.FailedAt, r.Error = "place", "record the seat before drawing it: "+err.Error()
+				return r
+			}
+			defer h.seats.end(successor)
+		}
 		_, err := h.drawUnder(ctx, successor, pred)
 		if prop, ok := h.parkedProposal(ctx, err); ok {
 			r.FailedAt, r.PlaceParked = "place", prop
@@ -814,10 +822,33 @@ func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rp
 	}
 	dem, err := h.demoteUnder(ctx, rpc.DemoteRequest{FigaroID: pred, Prefer: successor})
 	r.Demote = dem
+	if err == nil && dem.Parked != nil && r.Placed {
+		err = h.withdrawSeatDemote(*dem.Parked)
+	}
 	if err != nil {
 		r.FailedAt, r.Error = "demote", err.Error()
+		if r.Placed {
+			if uerr := h.unseat(intent); uerr != nil {
+				r.Error += "; putting the successor back where it was also failed: " + uerr.Error()
+			} else {
+				r.Placed = false
+				r.Error += "; the successor is back where it was, so nothing moved"
+			}
+		}
 	}
 	return r
+}
+
+func (h *handlers) withdrawSeatDemote(p rpc.Proposal) error {
+	why := fmt.Errorf("demoting the predecessor waits on %s as proposal %s, and a seat does not wait half drawn", p.Parent, p.ID)
+	by, err := h.angelus.topologyPrincipal(h.ownerContext())
+	if err != nil {
+		return fmt.Errorf("%w; withdrawing the proposal failed: %w", why, err)
+	}
+	if err := h.angelus.topology().Refuse(h.ownerContext(), by, p.Parent, p.ID); err != nil {
+		return fmt.Errorf("%w; withdrawing the proposal failed: %w", why, err)
+	}
+	return fmt.Errorf("%w; the proposal is withdrawn", why)
 }
 
 func (h *handlers) demoteUnder(ctx context.Context, req rpc.DemoteRequest) (rpc.DemoteResponse, error) {
