@@ -289,7 +289,11 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 		if atCut && plan.turn > 0 {
 			r.warn("the daemon does not report %s: the successor studies only what %s studied at turn %d; restart the daemon to carry its live studies", rpc.CapForkStudies, ariaName(old.ID), plan.turn)
 		}
-		req := rpc.ForkRequest{FigaroID: old.ID, AtTurn: plan.turn, Outfits: outfits, Patch: patch, Studies: studies}
+		req := rpc.ForkRequest{FigaroID: old.ID, AtTurn: plan.turn, Outfits: outfits, Patch: patch, Studies: studies, Seat: role}
+		if daemonLacks(rpc.CapForkSeat) {
+			req.Seat = ""
+			r.warn("the daemon does not report %s: the successor keeps the route %s was recorded with, not %s's; restart the daemon to dress it from the role", rpc.CapForkSeat, ariaName(old.ID), ariaName(role))
+		}
 		if err := refuseUnknownFields(req); err != nil {
 			return r, r.fail("fork", err)
 		}

@@ -322,6 +322,11 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.checkForkLT(req.FigaroID, req.AtLT); err != nil {
 		return nil, err
 	}
+	if req.Seat != "" {
+		if req, err = h.dressForSeat(req); err != nil {
+			return nil, err
+		}
+	}
 	if err := h.refuseBoxOutfits(ctx, req.Outfits, !h.headForkOfAConversation(req)); err != nil {
 		return nil, err
 	}

@@ -864,3 +864,52 @@ func TestASuccessionAtItsMintStepWhenTheStopBeginsMintsNothing(t *testing.T) {
 	require.NotContains(t, logs.String(), "successor minted and cast")
 	require.Equal(t, "handoff", r.hs.SuccessionPhase(old), "the record was not left for the next start")
 }
+
+func (r *successionRig) successorOf(old string) string {
+	r.t.Helper()
+	r.eventually(func() bool { return r.retired(old) }, "the predecessor never retired")
+	for _, id := range r.arias() {
+		if id != old {
+			return id
+		}
+	}
+	r.t.Fatal("no successor")
+	return ""
+}
+
+// The King, 11-17: a seat whose role names a route came up on the route its
+// predecessor wandered onto. The role's route keys win over the
+// predecessor's, and over the role's own outfit.
+func TestSuccessionSeatsTheSuccessorOnTheRolesRoute(t *testing.T) {
+	for name, policy := range map[string]map[string]any{
+		"no outfit":   nil,
+		"over outfit": {"outfit": "heir"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := successionDaemon(t)
+			old := r.aria(succeeding(nil))
+			ownerSets(t, r.a, old, map[string]any{"system.model": "lane-model", "system.thinking_effort": "low"})
+			keys := map[string]any{"name": "warden", "system.model": "seat-model", "system.thinking_effort": "high"}
+			if policy != nil {
+				keys["succession-policy"] = policy
+			}
+			r.role(old, keys)
+			r.cross(old)
+			next := r.successorOf(old)
+			require.Equal(t, "seat-model", r.key(next, "system.model"))
+			require.Equal(t, "high", r.key(next, "system.thinking_effort"))
+			require.Equal(t, "mock", r.key(next, "system.provider"))
+		})
+	}
+}
+
+func TestSuccessionRefusesDisagreeingRoutes(t *testing.T) {
+	r := successionDaemon(t)
+	king := r.aria(nil)
+	old := r.aria(succeeding(map[string]any{"page": king}))
+	a := r.role(old, map[string]any{"system.model": "seat-model"})
+	b := r.role(old, map[string]any{"system.model": "other-model"})
+	r.cross(old)
+	r.requireUnretiredAndPaged(old, king, "roles disagree on the successor's system.model", a, b)
+	require.NotContains(t, r.heard(old), "write your handoff now", "the refusal must come before the final turn is spent")
+}

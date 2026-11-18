@@ -258,6 +258,7 @@ func (h *handlers) advanceSuccession(e figaro.TurnEnd) {
 
 type heldRole struct {
 	id, name, handoff, outfit string
+	route                     map[string]json.RawMessage
 }
 
 func nested(snap form.Snapshot, table, field string) string {
@@ -291,7 +292,7 @@ func (h *handlers) rolesHeldBy(id string) ([]heldRole, error) {
 		if v := snap.Lookup("target-aria"); v == nil || *v != id {
 			continue
 		}
-		r := heldRole{id: f.ID, outfit: nested(snap, successionPolicyKey, "outfit")}
+		r := heldRole{id: f.ID, outfit: nested(snap, successionPolicyKey, "outfit"), route: seatRoute(snap)}
 		for _, k := range []string{"name", "role-name"} {
 			if v := snap.Lookup(k); v != nil && r.name == "" {
 				r.name = *v
@@ -376,6 +377,10 @@ func (h *handlers) beginSuccession(ctx context.Context, e figaro.TurnEnd) {
 		h.failSuccession(ctx, rec, err.Error())
 		return
 	}
+	if _, err := successorRoute(roles); err != nil {
+		h.failSuccession(ctx, rec, err.Error())
+		return
+	}
 	for _, r := range roles {
 		if err := store.RequireCastTarget(h.angelus.Backend, r.id); err != nil {
 			h.failSuccession(ctx, rec, fmt.Sprintf("role %s cannot be cast: %s", r.id, err))
@@ -450,6 +455,11 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 		h.failSuccession(ctx, rec, err.Error())
 		return
 	}
+	route, err := successorRoute(roles)
+	if err != nil {
+		h.failSuccession(ctx, rec, err.Error())
+		return
+	}
 	keys := map[string]json.RawMessage{store.SystemTTLKey: json.RawMessage(`"0"`)}
 	copied(snap, keys, store.SystemRetirementKey, "system.sandbox", "system.tools", form.FanoutMaxChildrenKey, form.FanoutMintKey)
 	scopes, narrowed, err := h.carriedScopes(rec.Old, snap)
@@ -465,6 +475,9 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 			outfit = *v
 		}
 		copied(snap, keys, "system.provider", "system.model", "system.thinking_effort", "system.thinking_budget")
+	}
+	for k, v := range route {
+		keys[k] = v
 	}
 	mantra := ""
 	if v := snap.Lookup("mantra"); v != nil {

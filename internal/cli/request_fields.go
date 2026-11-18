@@ -23,6 +23,7 @@ var requestFieldCapabilities = map[string]rpc.Capability{
 	"FormApplyRequest.ExpectedOutfit": rpc.CapFormApply,
 	"FormApplyRequest.Check":          rpc.CapFormApply,
 	"ForkRequest.Studies":             rpc.CapForkStudies,
+	"ForkRequest.Seat":                rpc.CapForkSeat,
 }
 
 type quaer interface {

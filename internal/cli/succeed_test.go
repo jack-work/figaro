@@ -401,3 +401,58 @@ func TestSucceedLeavesARoleTakenMidSuccession(t *testing.T) {
 	require.Empty(t, r.Recast)
 	require.NotContains(t, strings.Join(r.recovery(plan), "\n"), other)
 }
+
+func strKeys(t *testing.T, keys map[string]string) form.Patch {
+	t.Helper()
+	set := map[string]json.RawMessage{}
+	for k, v := range keys {
+		raw, err := json.Marshal(v)
+		require.NoError(t, err)
+		set[k] = raw
+	}
+	return form.Build(form.Snapshot{}, set, nil)
+}
+
+// The King, 11-17: El Pregonero's successor came up on the chatgpt route its
+// predecessor's turn was recorded on, while its role says anthropic/opus.
+// The successor of a seat takes the seat's route; the caller's -S/-D and -O
+// still win, and a role naming no route leaves the recorded one.
+func TestSucceedSeatsTheSuccessorOnTheRolesRoute(t *testing.T) {
+	recorded := map[string]string{"system.provider": "chatgpt-personal", "system.model": "gpt-5.5", "system.thinking_effort": "low"}
+	seat := map[string]string{"system.provider": "anthropic", "system.model": "claude-opus-5", "system.thinking_effort": "high"}
+	for name, tc := range map[string]struct {
+		role map[string]string
+		argv []string
+		want map[string]string
+	}{
+		"role route":       {seat, nil, seat},
+		"caller -S wins":   {seat, []string{"-S", "system.model=claude-sonnet-5"}, map[string]string{"system.provider": "anthropic", "system.model": "claude-sonnet-5", "system.thinking_effort": "high"}},
+		"caller -D wins":   {seat, []string{"-D", "system.thinking_effort"}, map[string]string{"system.provider": "anthropic", "system.model": "claude-opus-5", "system.thinking_effort": ""}},
+		"no route on role": {nil, nil, recorded},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := seatedPredecessor(t, func(b *store.XwalBackend, pred string, turn uint64) {
+				if turn == 0 {
+					_, err := b.ApplyForm(pred, strKeys(t, recorded))
+					require.NoError(t, err)
+				}
+			})
+			if tc.role != nil {
+				_, err := s.backend.ApplyForm(s.role, strKeys(t, tc.role))
+				require.NoError(t, err)
+			}
+			plan, err := succeedArgs(t, append(append([]string{s.role}, tc.argv...), "--", "you hold the seat")...)
+			require.NoError(t, err)
+			r := s.succeed(t, plan)
+			f, err := s.acli.Form(s.ctx, r.Successor)
+			require.NoError(t, err)
+			for k, want := range tc.want {
+				got := ""
+				if v := f.Snapshot.Lookup(k); v != nil {
+					got = *v
+				}
+				require.Equal(t, want, got, k)
+			}
+		})
+	}
+}
