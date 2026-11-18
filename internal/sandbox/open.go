@@ -33,6 +33,9 @@ func Open(ctx context.Context, host *local.Host, loaded *config.Loaded, kind, ar
 			return Opened{}, ErrLocalToolsOff
 		}
 	case "bwrap":
+		if !loaded.LocalTools() {
+			return Opened{}, fmt.Errorf("bwrap was removed; set system.sandbox to a box from [sandbox.boxes]")
+		}
 		return Opened{}, fmt.Errorf("bwrap was removed; set system.sandbox to local, or to a box from [sandbox.boxes]")
 	default:
 		return Opened{}, fmt.Errorf("sandbox: unknown provider %q", kind)

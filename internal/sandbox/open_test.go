@@ -67,3 +67,19 @@ func TestLocalIsRefusedWhenTheDaemonRunsNoToolsAsItself(t *testing.T) {
 		}
 	}
 }
+
+// Where local is refused, the way out of bwrap is a box, not local.
+func TestBwrapPointsOnlyAtABoxWhereLocalIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[sandbox]\nlocal_tools = false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = Open(context.Background(), local.NewHost(local.DefaultTTL), loaded, "bwrap", "a1", t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "box") || strings.Contains(err.Error(), "to local") {
+		t.Fatalf("bwrap under local_tools = false: %v", err)
+	}
+}
