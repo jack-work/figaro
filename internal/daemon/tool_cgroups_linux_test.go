@@ -58,8 +58,16 @@ func admitFrom(t *testing.T, host *local.Host, peer *authz.Peercred, figaro, she
 	return peer.Admit(t.Context(), conn)
 }
 
+func spawnedByAFigaro(t *testing.T) {
+	t.Setenv("FIGARO_ARIA", "0123456789abcdef0123456789abcdef")
+	t.Setenv("FIGARO_CALLER", "spawner")
+}
+
+// A daemon started from a figaro's shell carries that shell's FIGARO_ARIA;
+// neither its callers nor its tools may inherit it.
 func TestACallerInAFigarosToolCgroupIsThatFigaro(t *testing.T) {
 	delegated(t)
+	spawnedByAFigaro(t)
 	peer, err := authz.NewPeercred(uint32(os.Getuid()), config.PeercredConfig{})
 	if err != nil {
 		t.Fatal(err)
@@ -71,6 +79,7 @@ func TestACallerInAFigarosToolCgroupIsThatFigaro(t *testing.T) {
 		"plain":       `env -u FIGARO_ARIA $C`,
 		"setsid":      `setsid -w $C`,
 		"double fork": `( ( setsid $C & ) & ); sleep 6`,
+		"env clean":   `[ -z "${FIGARO_CALLER:-}" ] && [ "$FIGARO_ARIA" != 0123456789abcdef0123456789abcdef ] && $C`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx, err := admitFrom(t, host, peer, figaro, shell)
@@ -90,6 +99,7 @@ func TestACallerInAFigarosToolCgroupIsThatFigaro(t *testing.T) {
 
 func TestACallerOutsideEveryToolCgroupIsTheOwner(t *testing.T) {
 	delegated(t)
+	spawnedByAFigaro(t)
 	peer, err := authz.NewPeercred(uint32(os.Getuid()), config.PeercredConfig{})
 	if err != nil {
 		t.Fatal(err)
@@ -118,7 +128,7 @@ func TestACallerOutsideEveryToolCgroupIsTheOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	sub, _ := authz.SubjectOf(ctx)
-	if _, tool := authz.ToolOf(ctx); tool || !authz.OwnerCall(ctx, peer.Self(), sub) {
+	if _, tool := authz.ToolOf(ctx); tool || authz.FigaroOf(ctx) != "" || !authz.OwnerCall(ctx, peer.Self(), sub) {
 		t.Fatal("the owner outside every tool cgroup was not the owner")
 	}
 }

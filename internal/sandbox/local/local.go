@@ -16,6 +16,8 @@ var DaemonEnvDenylist = []string{
 	"HUSH_MANAGED_CONFIG_DIR",
 	"HUSH_MANAGED_STATE_DIR",
 	"HUSH_MANAGED_RUNTIME_DIR",
+	"FIGARO_ARIA",
+	"FIGARO_CALLER",
 }
 
 func Environ() []string {
