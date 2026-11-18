@@ -32,7 +32,7 @@ v0.74.5 review FIX, the Knight fixing (F-A cap overfill on kill+restore, plus F-
 4. A green gate stays mandatory.
 5. Any breaking change ships in a minor.
 
-Train: fixed v0.74.5 (P3+H1+P1b, seat break) ships as **v0.75.0**; E1 + P2 (store migration) as **v0.76.0**; then P4, P5+P6, P7b, E3 and E4 each as minors.
+Train: **v0.75.0** = fixed v0.74.5 (P3+H1+P1b) + E1 + P2 (rel/v0.75.0 a07b06838), one minor and one restart. Later lanes go together on one cut whenever that is faster. S1 ships last.
 
 | # | part | builder | branch | state (2026-11-18 02:xx) |
 |---|---|---|---|---|
