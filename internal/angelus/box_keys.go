@@ -373,6 +373,9 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 	if _, err := form.FanoutMint(after); err != nil {
 		return err
 	}
+	if _, _, err := form.ChildPolicy(after); err != nil && keyChanged(before, after, form.ChildPolicyKey) {
+		return err
+	}
 	if err := h.refuseKeysBeyondGrants(ctx, line, before, after); err != nil {
 		return err
 	}
@@ -542,7 +545,7 @@ func (h *handlers) callerOwns(ctx context.Context) bool {
 func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, params json.RawMessage) error {
 	_, boxed := callerBox(ctx)
 	owner := !boxed && h.callerOwns(ctx)
-	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retirement")) && !bytes.Contains(params, []byte("grants")) && !bytes.Contains(params, []byte("scopes")) && !bytes.Contains(params, []byte("fanout")) && !bytes.ContainsRune(params, '\\') {
+	if owner && !bytes.Contains(params, []byte("reaped")) && !bytes.Contains(params, []byte("retirement")) && !bytes.Contains(params, []byte("grants")) && !bytes.Contains(params, []byte("scopes")) && !bytes.Contains(params, []byte("fanout")) && !bytes.Contains(params, []byte("child_policy")) && !bytes.ContainsRune(params, '\\') {
 		return nil
 	}
 	var patch *form.Patch
