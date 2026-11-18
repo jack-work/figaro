@@ -82,15 +82,18 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 	req.Cwd = hostCwdOf(ctx, req.Cwd)
+	if err := h.refuseBoxOutfits(ctx, req.Outfits, true); err != nil {
+		return nil, err
+	}
 	if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, req.Patch); err != nil {
+		return nil, err
+	}
+	if err := h.refuseOutfitGrants(ctx, req.Outfits); err != nil {
 		return nil, err
 	}
 
 	loaded, _ := h.settings()
 
-	if err := h.refuseBoxOutfits(ctx, req.Outfits, true); err != nil {
-		return nil, err
-	}
 	outfitName := loaded.Config.DefaultOutfit
 	named := len(req.Outfits) > 0
 	if named {
@@ -296,7 +299,15 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if claimed {
 		inherited, req.Patch = withoutInheritedMint(inherited, req.Patch)
 	}
-	if err := h.refuseCallerKeys(ctx, birthUnder(req.FigaroID), inherited, req.Patch); err != nil {
+	asked, err := h.dress(req.Outfits, req.Patch)
+	if err != nil {
+		return nil, err
+	}
+	base, err := h.listedOutfitKeys(ctx, inherited, req.Outfits)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.refuseCallerKeys(ctx, birthUnder(req.FigaroID), base, &asked); err != nil {
 		return nil, err
 	}
 	policy, err := form.ChildPolicyPatch(inherited, claimed)

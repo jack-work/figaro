@@ -277,3 +277,57 @@ func TestOnTheLocalDoorALabelOnlyNarrows(t *testing.T) {
 		t.Error("a figaro holding write:aria:self#@lineage set its own scopes through the local door")
 	}
 }
+
+// Defends the dressed check: an outfit's keys are judged as the caller's own
+// patch, so naming an outfit gives the caller or its child nothing the caller
+// could not write. The box rows are the P2+P5 review's F2 repros (seatfull is
+// on the box's list); the runtime rows its F7 outfit gap.
+func TestAnOutfitIsCheckedAsTheCallersOwnPatch(t *testing.T) {
+	r := newLineageRig(t, "outfits = [\"judged\", \"seatfull\"]\n")
+	c := r.dial(t)
+	r.ownerSets(t, r.child, map[string]any{form.ScopesKey: []string{"read:*", "fork:*", "use:*", "write:aria:self#mantra"}})
+	mantra := *heldPatch(t, map[string]any{"mantra": "dressed"})
+	if err := c.Call(t.Context(), rpc.MethodSet, claimed(t, r.child, withAria(t, r.child, rpc.SetRequest{Patch: mantra, Outfits: []string{"seatfull"}})), nil); err == nil {
+		t.Error("a box figaro dressed itself in an outfit carrying scopes")
+	}
+	if got := grantsOn(t, r, r.child); strings.Contains(got, `"*:*"`) {
+		t.Fatalf("the outfit's scopes landed: %s", got)
+	}
+	forkIn := func(ctx context.Context, figaro string, outfits ...string) error {
+		raw, _ := json.Marshal(rpc.ForkRequest{FigaroID: r.child, Outfits: outfits})
+		if ctx == nil {
+			return c.Call(t.Context(), rpc.MethodFork, claimed(t, figaro, raw), nil)
+		}
+		_, err := r.h[rpc.MethodFork](ctx, claimed(t, figaro, raw))
+		return err
+	}
+	if err := forkIn(nil, r.child, "seatfull"); err == nil {
+		t.Error("a box figaro gave its child an outfit's scopes and fanout")
+	}
+	if err := forkIn(nil, r.child, "judged"); err != nil {
+		t.Fatalf("canary: a fork in a listed outfit with nothing to grant was refused: %v", err)
+	}
+
+	if err := forkIn(localOwner(), r.child, "judged-elsewhere"); err == nil || !strings.Contains(err.Error(), "system.provider") {
+		t.Errorf("a labelled figaro gave its child another provider through an outfit: %v", err)
+	}
+	if _, err := r.h[rpc.MethodFork](localOwner(), rawJSON(t, rpc.ForkRequest{FigaroID: r.child, Outfits: []string{"judged-elsewhere"}})); err != nil {
+		t.Errorf("the owner forked in another provider's outfit and was refused: %v", err)
+	}
+
+	if _, err := r.h[rpc.MethodFork](localOwner(), rawJSON(t, rpc.ForkRequest{FigaroID: r.child, Outfits: []string{"runtimebad"}})); err == nil || !strings.Contains(err.Error(), "runtime") {
+		t.Errorf("the owner forked in an outfit carrying runtime.forked_from: %v", err)
+	}
+	if _, err := r.h[rpc.MethodCreate](localOwner(), rawJSON(t, rpc.CreateRequest{Outfits: []string{"runtimebad"}})); err == nil || !strings.Contains(err.Error(), "runtime") {
+		t.Errorf("the owner minted in an outfit carrying runtime.forked_from: %v", err)
+	}
+}
+
+func rawJSON(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
