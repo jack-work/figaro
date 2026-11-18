@@ -812,6 +812,11 @@ func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rp
 		r.Demote = rpc.DemoteResponse{FigaroID: pred, Under: successor, Preferred: true}
 		return r
 	}
+	if (authz.FigaroOf(ctx) != "" || authz.Claimed(ctx)) && !h.angelus.forkDescends(successor, pred) {
+		r.FailedAt = "place"
+		r.Error = fmt.Sprintf("figaro %s is not a fork of %s, and a figaro seats only its own fork; nothing moved. The owner may seat it: run figaro succeed --successor %s from a shell outside any figaro", successor, pred, successor)
+		return r
+	}
 	if have, _ := h.angelus.topology().Drawn(successor); have != pred {
 		if h.seats != nil {
 			if err := h.seats.begin(intent); err != nil {
