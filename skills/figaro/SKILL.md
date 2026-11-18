@@ -49,7 +49,7 @@ Five rules that are not guessable:
   and stays until the turn ends. With it, the daemon keeps working and you get
   your shell back. Follow along later with `figaro listen <id>`.
 - **Inside a figaro, `send` without `--id` reaches you.** `FIGARO_ARIA`
-  outranks `-A`; mint with `new` instead, if you hold `system.fanout.mint`,
+  outranks `-A`; mint with `new` instead, if `mint:*` is written in your scopes,
   or fork. See [subagents.md](subagents.md).
 - **A fork's prompt is a nudge, never a brief.** The branch holds your whole
   conversation already, so `go` or `take the second option` is a complete
@@ -111,8 +111,8 @@ about changing figaro rather than using it live under
 | [reference/outfits.md](reference/outfits.md) | Composing outfits, the `-O`/`-S`/`-D` grammar, or dressing did not do what you expected. |
 | [reference/forms.md](reference/forms.md) | Using unbound forms and roles: the verbs, the listings, the matrix. |
 | [reference/peer-check.md](reference/peer-check.md) | A command from your bash tool was refused as owner-held, protected or "never the owner", what a tool shell may still do (shorten a lifetime, retire a descendant), and how to get the rest done. |
-| [reference/fanout.md](reference/fanout.md) | `system.fanout.max_children`, why a figaro-forked fork is born at 0, how a succession swap moves the limit, who may take a held role, `system.fanout.mint` (who may `figaro new`, and granting it to the King's role), or the `create`/`mint` verb split. |
-| [reference/permissions.md](reference/permissions.md) | A send, write, fork, study or kill was refused or logged as would-refuse; writing `system.scopes`, a `#key` grant or a `system.child_policy`; sending to a role from a lane; or what `enforce_key_grants`, `enforce_child_policy` and `enforce_lineage_reach` do. |
+| [reference/fanout.md](reference/fanout.md) | `system.fanout.max_children` and `system.fanout.quota`, why a figaro-forked fork is born at 0, what a fork or a succession costs, who may take a held or empty role (`cast`, `succeed`), or who may `figaro new` (`mint:*`). |
+| [reference/permissions.md](reference/permissions.md) | A send, write, fork, study or kill was refused or logged as would-refuse; writing `system.scopes`, a `#key` grant or a `system.child_policy`; sending to a role from a lane; or what `enforce_key_grants`, `enforce_child_policy`, `enforce_lineage_reach` and `enforce_quota` do. |
 | [reference/key-writers.md](reference/key-writers.md) | Who may write a form key: which keys are owner-held, protected for the lineage, or written by the daemon alone, and where to change that. Generated from `api/form/registry.go`. |
 | [debugging/tapes.md](debugging/tapes.md) | Record a figaro's wire and replay it: a rendering bug someone SAW and you cannot reproduce, or one recorded for CI. |
 | [reference/mantra.md](reference/mantra.md) | Maintaining your figaro's mantra. |
