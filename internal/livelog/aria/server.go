@@ -589,3 +589,42 @@ func (s *Server) TailBracket() uint64 {
 	}
 	return tl.LTs[1]
 }
+
+// AdoptBelow seeds an empty server with src's turns that end at or below
+// base but the last, and returns where the caller projects from to finish:
+// see TurnCache.prefixBelow. A server already holding turns is left alone.
+func (s *Server) AdoptBelow(src *Server, base uint64) (from uint64, ok bool) {
+	if src == nil || src == s {
+		return 0, false
+	}
+	src.mu.Lock()
+	keys, pinned, from, ok := src.cache.prefixBelow(base)
+	src.mu.Unlock()
+	if !ok {
+		return 0, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.open != nil || !s.cache.adopt(keys, pinned) {
+		return 0, false
+	}
+	return from, true
+}
+
+// ReopenTail drops the newest sealed turn and returns its opening LT, for a
+// caller that recomposes it with the records appended since.
+func (s *Server) ReopenTail() (from uint64, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.open != nil {
+		return 0, false
+	}
+	return s.cache.reopenTail()
+}
+
+// AppendSealed adds composed turns at the tail without broadcasting.
+func (s *Server) AppendSealed(turns []Turn) {
+	s.mu.Lock()
+	s.cache.appendSealed(turns)
+	s.mu.Unlock()
+}
