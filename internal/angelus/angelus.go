@@ -42,6 +42,7 @@ type Angelus struct {
 	Backend    store.Backend
 	SocketPath string
 	RuntimeDir string
+	inherited  net.Listener
 	Spool      *figaro.Spool
 	StopSelf   func()
 	StartedAt  time.Time
@@ -125,6 +126,7 @@ type Config struct {
 	Backend         store.Backend
 	Settings        *config.Loaded // nil = defaults
 	Models          *modelcat.Catalog
+	Listener        net.Listener
 }
 
 // New creates an Angelus; set Handlers before Run.
@@ -134,6 +136,7 @@ func New(cfg Config) *Angelus {
 		Backend:         cfg.Backend,
 		SocketPath:      filepath.Join(cfg.RuntimeDir, "angelus.sock"),
 		RuntimeDir:      cfg.RuntimeDir,
+		inherited:       cfg.Listener,
 		SuccessionsPath: cfg.SuccessionsPath,
 		Spool:           figaro.NewSpool(cfg.SpoolDir),
 		pprofDir:        cfg.PprofDir,
@@ -177,18 +180,8 @@ func (a *Angelus) Run(ctx context.Context) error {
 	)
 	defer span.End()
 
-	if err := os.MkdirAll(filepath.Dir(a.SocketPath), 0o700); err != nil {
-		return err
-	}
-	os.Remove(a.SocketPath)
-
-	ln, err := net.Listen("unix", a.SocketPath)
+	ln, err := a.listenCLI()
 	if err != nil {
-		return err
-	}
-
-	if err := os.Chmod(a.SocketPath, 0600); err != nil {
-		ln.Close()
 		return err
 	}
 
@@ -217,6 +210,27 @@ func (a *Angelus) Run(ctx context.Context) error {
 	err = a.Serve(ctx, ln, authz.DoorLocal, a.cliAdmit())
 	slog.Info("angelus shutting down")
 	return err
+}
+
+func (a *Angelus) InheritedSocket() bool { return a.inherited != nil }
+
+func (a *Angelus) listenCLI() (net.Listener, error) {
+	if a.inherited != nil {
+		return a.inherited, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(a.SocketPath), 0o700); err != nil {
+		return nil, err
+	}
+	os.Remove(a.SocketPath)
+	ln, err := net.Listen("unix", a.SocketPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(a.SocketPath, 0600); err != nil {
+		ln.Close()
+		return nil, err
+	}
+	return ln, nil
 }
 
 func (a *Angelus) startSweeps(ctx context.Context) {

@@ -36,7 +36,7 @@ func (a *Angelus) keepReachable(ctx context.Context, pidPath string) {
 }
 
 func (a *Angelus) restoreReachability(ctx context.Context, pidPath string) {
-	if _, err := os.Stat(a.SocketPath); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(a.SocketPath); errors.Is(err, fs.ErrNotExist) && !a.InheritedSocket() {
 		if err := os.MkdirAll(a.RuntimeDir, 0o700); err != nil {
 			slog.Warn("socket removed; runtime dir cannot be recreated", "dir", a.RuntimeDir, "err", err)
 			return
