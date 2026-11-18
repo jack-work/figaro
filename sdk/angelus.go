@@ -234,6 +234,12 @@ func (c *Angelus) Demote(ctx context.Context, figaroID, prefer string) (*rpc.Dem
 	return &resp, err
 }
 
+func (c *Angelus) Place(ctx context.Context, figaroID, under string) (*rpc.PlaceResponse, error) {
+	var resp rpc.PlaceResponse
+	err := c.call(ctx, rpc.MethodPlace, rpc.PlaceRequest{FigaroID: figaroID, Under: under}, &resp)
+	return &resp, err
+}
+
 func (c *Angelus) Parked(ctx context.Context, parent string) (*rpc.ParkedResponse, error) {
 	var resp rpc.ParkedResponse
 	err := c.call(ctx, rpc.MethodParked, rpc.ParkedRequest{FigaroID: parent}, &resp)
