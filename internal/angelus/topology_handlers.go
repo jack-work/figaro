@@ -742,7 +742,7 @@ func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (inter
 			return nil, err
 		}
 	}
-	report, err := h.angelus.Backend.Normalize(req.DryRun)
+	report, err := h.angelus.Backend.Normalize(context.WithoutCancel(ctx), req.DryRun)
 	if errors.Is(err, store.ErrNoTrunkCapability) {
 		return rpc.NormalizeResponse{Unsupported: true}, nil
 	}

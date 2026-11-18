@@ -1,6 +1,7 @@
 package wire_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -195,7 +196,7 @@ func TestNormalizeMakesDeletesFree(t *testing.T) {
 	if b.Store().Tree().Normalized() {
 		t.Fatal("a promoted forest must not be normalized")
 	}
-	r, err := b.Normalize(false)
+	r, err := b.Normalize(context.Background(), false)
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
@@ -220,7 +221,7 @@ func TestNormalizeMakesDeletesFree(t *testing.T) {
 // Normalize on a trunkless figaro is a no-op, not an error.
 func TestNormalizeIsANoOpWithoutTheCapability(t *testing.T) {
 	b, _ := backend(t, false)
-	r, err := b.Normalize(false)
+	r, err := b.Normalize(context.Background(), false)
 	if err != nil {
 		t.Fatalf("normalize without the capability: %v", err)
 	}
@@ -242,7 +243,7 @@ func TestNormalizeIsIdempotent(t *testing.T) {
 	if _, err := hierarchytest.Of(b).Promote(alt, 1); err != nil {
 		t.Fatal(err)
 	}
-	first, err := b.Normalize(false)
+	first, err := b.Normalize(context.Background(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +253,7 @@ func TestNormalizeIsIdempotent(t *testing.T) {
 	if !b.Store().Tree().Normalized() {
 		t.Error("after normalize the tree must report itself normalized")
 	}
-	second, err := b.Normalize(false)
+	second, err := b.Normalize(context.Background(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

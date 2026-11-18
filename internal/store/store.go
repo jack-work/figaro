@@ -3,6 +3,7 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 
@@ -218,7 +219,7 @@ type Backend interface {
 	// get fresh ids.
 	ForkAt(ariaID string, atMainLT uint64) (cont, alt string, err error)
 
-	Normalize(dryRun bool) (NormalizeReport, error)
+	Normalize(ctx context.Context, dryRun bool) (NormalizeReport, error)
 
 	OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo, error)
 

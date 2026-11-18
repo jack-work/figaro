@@ -5,6 +5,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -1112,11 +1113,12 @@ func (s *XwalStore) collectStump(name string) {
 }
 
 type NormalizeReport struct {
-	Detached []string
-	Dropped  []topo.Stale
+	Detached  []string
+	Dropped   []topo.Stale
+	Remaining []string
 }
 
-func (s *XwalStore) Normalize(dryRun bool) (NormalizeReport, error) {
+func (s *XwalStore) Normalize(ctx context.Context, dryRun bool) (NormalizeReport, error) {
 	var r NormalizeReport
 	if s.tree == nil {
 		return r, nil
@@ -1132,22 +1134,38 @@ func (s *XwalStore) Normalize(dryRun bool) (NormalizeReport, error) {
 		r.Dropped = dropped
 		return r, err
 	}
-	if err := s.carryOut(detach); err != nil {
-		return r, fmt.Errorf("normalize: %w", err)
-	}
-	for _, id := range detach {
-		node, ok := s.trunks.HeadNode(id)
-		if !ok {
-			return r, fmt.Errorf("normalize: no node for %s", id)
+	for i, id := range detach {
+		if err := ctx.Err(); err != nil {
+			r.Remaining = detach[i:]
+			return r, err
 		}
-		if err := s.trunks.Detach(node); err != nil {
-			return r, fmt.Errorf("normalize %s: %w", id, err)
+		if err := s.detachOne(ctx, id); err != nil {
+			r.Remaining = detach[i:]
+			return r, err
 		}
 		r.Detached = append(r.Detached, id)
 	}
 	dropped, err := s.CleanTopology(false)
 	r.Dropped = dropped
 	return r, err
+}
+
+func (s *XwalStore) detachOne(ctx context.Context, id string) error {
+	if err := s.carryOut([]string{id}); err != nil {
+		return fmt.Errorf("normalize: %w", err)
+	}
+	node, ok := s.trunks.HeadNode(id)
+	if !ok {
+		return fmt.Errorf("normalize: no node for %s", id)
+	}
+	if err := s.trunks.DetachContext(ctx, node); err != nil {
+		return fmt.Errorf("normalize %s: %w", id, err)
+	}
+	return nil
+}
+
+func (s *XwalStore) NormalizePending() bool {
+	return s.tree != nil && len(s.tree.Overridden()) > 0
 }
 
 type cleanMark struct{ trunks, present uint64 }
