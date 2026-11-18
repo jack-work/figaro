@@ -510,7 +510,7 @@ func (l *xwalLog[T]) Append(e arialog.Entry[T]) (arialog.Entry[T], error) {
 		}
 		e.LT = lt
 		e.FigaroLT = lt
-		if serr := l.store.trunks.SyncChannelThrough(l.ariaID, l.channel, lt); serr != nil {
+		if serr := l.store.syncChannel(l.ariaID, l.channel, lt); serr != nil {
 			return arialog.Entry[T]{}, fmt.Errorf("sync %s: %w", l.channel, serr)
 		}
 		// The stamp comes back from the append that wrote it, computed under
@@ -523,7 +523,7 @@ func (l *xwalLog[T]) Append(e arialog.Entry[T]) (arialog.Entry[T], error) {
 	if aerr != nil {
 		return arialog.Entry[T]{}, aerr
 	}
-	if serr := l.store.trunks.SyncChannelThrough(l.ariaID, l.channel, lt); serr != nil {
+	if serr := l.store.syncChannel(l.ariaID, l.channel, lt); serr != nil {
 		return arialog.Entry[T]{}, fmt.Errorf("sync %s: %w", l.channel, serr)
 	}
 	e.LT = lt

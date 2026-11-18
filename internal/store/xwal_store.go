@@ -198,6 +198,8 @@ type XwalStore struct {
 	deleting sync.Mutex
 
 	detachCarry atomic.Pointer[func(ids []string) error]
+
+	syncs syncers
 }
 
 // xwalTopology is the .from adjacency, the only lineage figwal considers authoritative.
@@ -343,7 +345,10 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	return x, nil
 }
 
-func (s *XwalStore) Close() error { return s.trunks.Close() }
+func (s *XwalStore) Close() error {
+	s.syncs.flush()
+	return s.trunks.Close()
+}
 
 // migrateLayout brings an older layout up to this build's: every node at
 // depth 1, lineage in its own marker. Automatic, not silent, not partial:
@@ -978,6 +983,7 @@ func (s *XwalStore) removeLocked(id string, recursive bool) error {
 	if err := s.trunks.Remove(id, recursive); err != nil {
 		return err
 	}
+	s.syncs.forget(id)
 	if err := os.RemoveAll(checkpointDirOf(s.root, id)); err != nil {
 		slog.Warn("remove checkpoints", "id", id, "err", err)
 	}

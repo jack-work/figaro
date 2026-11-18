@@ -1060,7 +1060,7 @@ func (l *xwalFormLog) DiscardFrom(index uint64) error {
 }
 
 func (l *xwalFormLog) SyncThrough(index uint64) error {
-	return l.backend.store.trunks.SyncChannelThrough(l.ariaID, chanForm, index)
+	return l.backend.store.syncChannel(l.ariaID, chanForm, index)
 }
 
 func (l *xwalFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) error) error {

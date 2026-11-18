@@ -304,6 +304,7 @@ func (s *XwalStore) removeEach(taken []string) error {
 		if err := s.trunks.Remove(t, true); err != nil {
 			return fmt.Errorf("remove %s: %w", t, err)
 		}
+		s.syncs.forget(t)
 	}
 	var left []string
 	for _, t := range taken {
