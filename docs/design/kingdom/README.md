@@ -19,6 +19,8 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 - E4 house mode: utensil-slapping `ef74d1d6`
 - S1 auto-normalize: oven-receipt `ae2fc7c2`
 
+Queued for the next free slot: the composed Seat plan (docs/design/h1-seat-plan.md), the full fix for F-E (the cheap guard ships in v0.74.5) and F-F.
+
 v0.74.5 review FIX, the Knight fixing (F-A cap overfill on kill+restore, plus F-B to F-G); P2+P5 in review (hyacinth-obtain).
 
 | # | part | builder | branch | state (2026-11-18 02:xx) |
