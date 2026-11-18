@@ -153,12 +153,30 @@ func (r Request) Grant(now time.Time) (Grant, error) {
 	if path == "/" || within(r.Home, path) {
 		return Grant{}, fmt.Errorf("%s holds the home directory; grant a working tree, not a home", path)
 	}
-	for _, g := range r.Guarded {
-		if g != "" && (within(path, g) || within(g, path)) {
-			return Grant{}, fmt.Errorf("%s overlaps %s, which the valet keeps from every tool", path, g)
-		}
+	if g, ok := Overlaps(path, r.Guarded); ok {
+		return Grant{}, fmt.Errorf("%s overlaps %s, which the valet keeps from every tool", path, g)
 	}
 	return Grant{Figaro: r.Figaro, Path: path, Mode: r.Mode, Granted: now.UTC(), Expires: now.Add(r.For).UTC()}, nil
+}
+
+func Overlaps(path string, guarded []string) (string, bool) {
+	for _, g := range guarded {
+		if g != "" && (within(path, g) || within(g, path)) {
+			return g, true
+		}
+	}
+	return "", false
+}
+
+func CanonicalOrClean(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	if c, err := filepath.EvalSymlinks(abs); err == nil {
+		return c, nil
+	}
+	return abs, nil
 }
 
 func Canonical(path string) (string, error) {

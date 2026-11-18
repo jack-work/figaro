@@ -43,8 +43,8 @@ func TestMain(m *testing.M) {
 }
 
 type world struct {
-	dir, state, granted, readonly, secret, door string
-	v                                           Valet
+	dir, state, granted, readonly, secret, hidden, door string
+	v                                                   Valet
 }
 
 func newWorld(t *testing.T) world {
@@ -62,18 +62,19 @@ func newWorld(t *testing.T) world {
 		granted:  filepath.Join(dir, "home", "dev", "tree"),
 		readonly: filepath.Join(dir, "home", "dev", "docs"),
 		secret:   filepath.Join(dir, "home", "dev", "private"),
+		hidden:   filepath.Join(dir, "home", "dev", "conf"),
 		door:     filepath.Join(dir, "run", "figaro", "angelus.sock"),
 	}
-	for _, d := range []string{w.state, filepath.Join(w.granted, ".hidden"), w.readonly, w.secret, filepath.Dir(w.door)} {
+	for _, d := range []string{w.state, w.granted, w.hidden, w.readonly, w.secret, filepath.Dir(w.door)} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for path, body := range map[string]string{
-		filepath.Join(w.granted, "file"):           "granted\n",
-		filepath.Join(w.granted, ".hidden", "key"): "hidden\n",
-		filepath.Join(w.readonly, "file"):          "readonly\n",
-		filepath.Join(w.secret, "file"):            "secret\n",
+		filepath.Join(w.granted, "file"):  "granted\n",
+		filepath.Join(w.hidden, "key"):    "hidden\n",
+		filepath.Join(w.readonly, "file"): "readonly\n",
+		filepath.Join(w.secret, "file"):   "secret\n",
 	} {
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
@@ -87,6 +88,7 @@ func newWorld(t *testing.T) world {
 	tab := Table{}
 	tab.Add(Grant{Figaro: Anyone, Path: w.granted, Mode: "rw", Granted: time.Now(), Expires: time.Now().Add(time.Hour)})
 	tab.Add(Grant{Figaro: "3006ff4b42ca", Path: w.readonly, Mode: "ro", Granted: time.Now(), Expires: time.Now().Add(time.Hour)})
+	tab.Add(Grant{Figaro: Anyone, Path: w.hidden, Mode: "rw", Granted: time.Now(), Expires: time.Now().Add(time.Hour)})
 	if err := tab.Save(w.state); err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +101,7 @@ func newWorld(t *testing.T) world {
 		State:    w.state,
 		MaxGrant: DefaultMaxGrant,
 		Home:     filepath.Join(dir, "home"),
-		Hide:     []string{filepath.Join(w.granted, ".hidden")},
+		Hide:     []string{w.hidden},
 		Self:     self,
 		Log:      os.Stderr,
 	}
@@ -171,7 +173,7 @@ func TestAToolSeesOnlyWhatItsFigaroWasGranted(t *testing.T) {
 		"{ echo x > " + filepath.Join(w.readonly, "new") + "; } 2>/dev/null || echo readonly-refused",
 		"test -e " + filepath.Join(w.secret, "file") + " && echo SECRET-VISIBLE || echo secret-absent",
 		"test -e " + GrantsPath(w.state) + " && echo TABLE-VISIBLE || echo table-absent",
-		"test -e " + filepath.Join(w.granted, ".hidden", "key") + " && echo HIDDEN-VISIBLE || echo hidden-absent",
+		"test -e " + filepath.Join(w.hidden, "key") + " && echo HIDDEN-VISIBLE || echo hidden-absent",
 		"test -S " + w.door + " && echo DAEMON-VISIBLE || echo daemon-absent",
 		"test -e /run/user && echo RUNTIME-VISIBLE || echo runtime-absent",
 		"ls /proc | grep -c '^[0-9]'",
@@ -396,5 +398,28 @@ func TestASymlinkPlantedOverANestedGrantRedirectsNothing(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(w.secret, "planted")); err == nil {
 		t.Error("a write landed in an ungranted tree on the host")
+	}
+}
+
+// A hide below a grant could be uncovered by renaming its parent between
+// calls, so a grant that holds a hide is dropped instead of shadowed.
+func TestAGrantHoldingAHideIsDropped(t *testing.T) {
+	w := newWorld(t)
+	vault := filepath.Join(w.granted, "deep", "vault")
+	if err := os.MkdirAll(vault, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vault, "key"), []byte("vault\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w.v.Hide = append(w.v.Hide, vault)
+	b, _, err := w.open(t, "3006ff4b42cafe", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := run(t, b, "test -e "+filepath.Join(w.granted, "file")+" && echo TREE-VISIBLE || echo tree-absent; "+
+		"test -e "+filepath.Join(w.readonly, "file")+" && echo ro-visible || echo RO-ABSENT")
+	if strings.TrimSpace(got) != "tree-absent\nro-visible" {
+		t.Errorf("probe printed %q", got)
 	}
 }

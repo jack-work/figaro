@@ -51,7 +51,7 @@ socket, and an outfit picks it with system.sandbox.
 		{Long: "json", Short: "j", IsBool: true, Description: "grants: machine-readable output"},
 		{Long: "peer", Repeats: true, Description: "serve: a user or uid that may call the valet; repeats"},
 		{Long: "door", Description: "serve: the daemon's door socket for this box, bound into the fence"},
-		{Long: "hide", Repeats: true, Description: "serve: a path kept from tools even inside a grant; repeats"},
+		{Long: "hide", Repeats: true, Description: "serve: a path no tool sees; a grant overlapping it is dropped; repeats"},
 	},
 	ArgsMin: 1,
 	Run: func(ctx *cmdkit.RunContext) error {
@@ -120,11 +120,11 @@ func runValetGrant(state, figaro, path, mode, forRaw, maxRaw string) error {
 	if err := os.MkdirAll(state, 0o700); err != nil {
 		return err
 	}
-	guarded, err := valet.Canonical(state)
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
-	home, err := os.UserHomeDir()
+	guarded, err := canonicalPaths(append(valetBuiltinHides(home), state))
 	if err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func runValetGrant(state, figaro, path, mode, forRaw, maxRaw string) error {
 		home = h
 	}
 	now := time.Now()
-	g, err := valet.Request{Figaro: figaro, Path: path, Mode: mode, For: span, Max: max, Home: home, Guarded: []string{guarded}}.Grant(now)
+	g, err := valet.Request{Figaro: figaro, Path: path, Mode: mode, For: span, Max: max, Home: home, Guarded: guarded}.Grant(now)
 	if err != nil {
 		return fmt.Errorf("valet grant: %w", err)
 	}
@@ -206,7 +206,7 @@ func valetFromFlags(state, peers, maxRaw, door, hides string) (valet.Valet, erro
 	if v.Home, err = os.UserHomeDir(); err != nil {
 		return v, err
 	}
-	if v.State, err = filepath.Abs(state); err != nil {
+	if v.State, err = valet.CanonicalOrClean(state); err != nil {
 		return v, err
 	}
 	v.Peers = []int{os.Getuid()}
@@ -220,17 +220,34 @@ func valetFromFlags(state, peers, maxRaw, door, hides string) (valet.Valet, erro
 			v.Peers = append(v.Peers, uid)
 		}
 	}
-	v.Hide = []string{
-		filepath.Join(v.Home, ".ssh"),
-		filepath.Join(v.Home, ".gnupg"),
+	hide := valetBuiltinHides(v.Home)
+	if hides != "" {
+		hide = append(hide, strings.Split(hides, ",")...)
+	}
+	v.Hide, err = canonicalPaths(hide)
+	return v, err
+}
+
+func valetBuiltinHides(home string) []string {
+	return []string{
+		filepath.Join(home, ".ssh"),
+		filepath.Join(home, ".gnupg"),
 		boot.StateDir(),
 		boot.CacheDir(),
 		config.DefaultConfigDir(),
 	}
-	if hides != "" {
-		v.Hide = append(v.Hide, strings.Split(hides, ",")...)
+}
+
+func canonicalPaths(paths []string) ([]string, error) {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		c, err := valet.CanonicalOrClean(p)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
 	}
-	return v, nil
+	return out, nil
 }
 
 func lookupUID(name string) (int, error) {
