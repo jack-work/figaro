@@ -9,16 +9,6 @@ import (
 	"testing"
 )
 
-func (l *Ledger) snapshot() map[string]entry {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	out := make(map[string]entry, len(l.at))
-	for id, e := range l.at {
-		out[id] = *e
-	}
-	return out
-}
-
 // oracle recomputes every counter from parent edges alone, so a test can
 // prove the incremental bookkeeping never drifts from a fresh rebuild.
 func oracle(t *testing.T, l *Ledger) {
@@ -212,6 +202,7 @@ func TestConcurrentAdmissionHoldsEveryCap(t *testing.T) {
 			return all[r.IntN(len(all))]
 		}
 		var seq atomic.Int64
+		var topo sync.Mutex
 		var wg sync.WaitGroup
 		for w := range 16 {
 			wg.Add(1)
@@ -219,7 +210,7 @@ func TestConcurrentAdmissionHoldsEveryCap(t *testing.T) {
 				defer wg.Done()
 				r := rand.New(rand.NewPCG(uint64(round), uint64(w)))
 				for range 400 {
-					switch r.IntN(10) {
+					switch r.IntN(14) {
 					case 0, 1, 2, 3, 4:
 						grant := Limits{}
 						if r.IntN(3) == 0 {
@@ -237,11 +228,33 @@ func TestConcurrentAdmissionHoldsEveryCap(t *testing.T) {
 						l.Commit(tk, id)
 						ids.Store(id, true)
 					case 5, 6:
+						topo.Lock()
 						_ = l.SetLive(pick(r), r.IntN(2) == 0)
+						topo.Unlock()
 					case 7, 8:
+						topo.Lock()
 						_ = l.Move(pick(r), pick(r))
+						topo.Unlock()
 					case 9:
+						topo.Lock()
 						_ = l.SetLimits(pick(r), quota(r.IntN(6)))
+						topo.Unlock()
+					case 10:
+						l.Mark(pick(r), false)
+					case 11, 12, 13:
+						topo.Lock()
+						a, b, c := pick(r), pick(r), pick(r)
+						s, err := l.Admit([]Arrival{{Node: a, To: b}, {Node: b, To: c}})
+						if err != nil {
+							topo.Unlock()
+							continue
+						}
+						if r.IntN(3) == 0 {
+							l.Settle(s, nil, nil)
+						} else {
+							l.Settle(s, []Placement{{ID: a, Parent: b}, {ID: b, Parent: c}}, nil)
+						}
+						topo.Unlock()
 					}
 				}
 			}()
@@ -302,5 +315,112 @@ func BenchmarkRebuild(b *testing.B) {
 	}
 	for b.Loop() {
 		New().Rebuild(nodes)
+	}
+}
+
+func capped(n int) Limits { return Limits{MaxChildren: n, HasMaxChildren: true} }
+
+func TestExactlyTheCapOfConcurrentForksIsAdmitted(t *testing.T) {
+	for range 50 {
+		l := New()
+		l.Rebuild([]Node{{ID: "p", Live: true, Limits: capped(4)}})
+		var ok atomic.Int64
+		var wg sync.WaitGroup
+		for i := range 16 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				tk, err := l.Reserve("p", Limits{})
+				if err != nil {
+					return
+				}
+				ok.Add(1)
+				l.Commit(tk, fmt.Sprintf("c%d", i))
+			}()
+		}
+		wg.Wait()
+		if ok.Load() != 4 {
+			t.Fatalf("%d forks admitted under max_children 4", ok.Load())
+		}
+		oracle(t, l)
+	}
+}
+
+func TestAShiftCreditsDeparturesAndRefusesWhole(t *testing.T) {
+	l := New()
+	l.Rebuild([]Node{
+		{ID: "p", Live: true, Limits: capped(2)},
+		{ID: "a", Parent: "p", Live: true},
+		{ID: "b", Parent: "p", Live: true},
+		{ID: "q", Live: true},
+		{ID: "x", Parent: "q", Live: true},
+		{ID: "y", Parent: "q", Live: true},
+	})
+	s, err := l.Admit([]Arrival{{Node: "a", To: "q"}, {Node: "x", To: "p"}})
+	if err != nil {
+		t.Fatalf("a swap that keeps p at 2: %v", err)
+	}
+	l.Settle(s, []Placement{{ID: "a", Parent: "q"}, {ID: "x", Parent: "p"}}, nil)
+	if _, err := l.Admit([]Arrival{{Node: "y", To: "p"}}); !errors.Is(err, ErrMaxChildren) {
+		t.Fatalf("a third live child of p: %v", err)
+	}
+	if c, _ := l.Of("q"); c.LiveChildren != 2 {
+		t.Fatalf("the refused shift moved something: q holds %d", c.LiveChildren)
+	}
+	oracle(t, l)
+}
+
+func TestAnUncommittedShiftPutsEveryNodeBack(t *testing.T) {
+	l := New()
+	l.Rebuild([]Node{
+		{ID: "p", Live: true, Limits: capped(1)},
+		{ID: "a", Parent: "p", Live: true},
+		{ID: "q", Live: true},
+	})
+	s, err := l.Admit([]Arrival{{Node: "a", To: "q"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Reserve("p", Limits{}); !errors.Is(err, ErrMaxChildren) {
+		t.Fatalf("a departure in flight freed its slot early: %v", err)
+	}
+	l.Settle(s, nil, nil)
+	if c, _ := l.Of("p"); c.LiveChildren != 1 {
+		t.Fatalf("p holds %d after the shift was dropped", c.LiveChildren)
+	}
+	oracle(t, l)
+}
+
+func TestSettleForgetsADeletedSubtree(t *testing.T) {
+	l := New()
+	l.Rebuild([]Node{
+		{ID: "p", Live: true, Limits: capped(2)},
+		{ID: "a", Parent: "p", Live: true},
+		{ID: "a1", Parent: "a", Live: true},
+		{ID: "a2", Parent: "a", Live: true},
+	})
+	l.Settle(nil, []Placement{{ID: "a2", Parent: "p"}}, []string{"a", "a1"})
+	if c, _ := l.Of("p"); c.LiveChildren != 1 || c.Used != 1 {
+		t.Fatalf("p after the delete: %+v", c)
+	}
+	oracle(t, l)
+}
+
+func TestAuditNamesEveryDrift(t *testing.T) {
+	l := New()
+	nodes := []Node{{ID: "p", Live: true}, {ID: "a", Parent: "p", Live: true}}
+	l.Rebuild(nodes)
+	if d := l.Audit(nodes); len(d) != 0 {
+		t.Fatalf("a fresh ledger drifts: %v", d)
+	}
+	tk, _ := l.Reserve("p", Limits{})
+	if d := l.Audit(nodes); len(d) != 0 {
+		t.Fatalf("a fork in flight reads as drift: %v", d)
+	}
+	l.Abort(tk)
+	l.Mark("a", false)
+	d := l.Audit(nodes)
+	if len(d) != 2 {
+		t.Fatalf("a retirement the store never made: %v", d)
 	}
 }

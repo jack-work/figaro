@@ -12,6 +12,7 @@ var (
 	ErrUnknown     = errors.New("admission: unknown node")
 	ErrHasChildren = errors.New("admission: node has children")
 	ErrCycle       = errors.New("admission: a move under its own descendant")
+	ErrMoving      = errors.New("admission: a move above is in flight")
 )
 
 type Limits struct {
@@ -37,6 +38,7 @@ type entry struct {
 	kids   int
 	used   int
 	nkids  int
+	ghost  *entry
 }
 
 type Ledger struct {
@@ -114,9 +116,28 @@ func (l *Ledger) fits(from string, d int) error {
 		if absorbs(e) {
 			return nil
 		}
+		if e.ghost != nil && l.quotaOver(e.ghost.parent) {
+			return fmt.Errorf("%w: %s is moving between two budgets", ErrMoving, id)
+		}
 		id = e.parent
 	}
 	return nil
+}
+
+func (l *Ledger) quotaOver(from string) bool {
+	seen := map[string]bool{}
+	for id := from; id != "" && !seen[id]; {
+		seen[id] = true
+		e := l.at[id]
+		if e == nil {
+			return false
+		}
+		if e.limits.HasQuota {
+			return true
+		}
+		id = e.parent
+	}
+	return false
 }
 
 func (l *Ledger) carry(from string, d int) {
@@ -261,15 +282,8 @@ func (l *Ledger) Move(id, to string) error {
 	if e.parent == to {
 		return nil
 	}
-	for up := to; up != ""; {
-		if up == id {
-			return fmt.Errorf("%w: %s under %s", ErrCycle, id, to)
-		}
-		u := l.at[up]
-		if u == nil {
-			break
-		}
-		up = u.parent
+	if l.under(to, id) {
+		return fmt.Errorf("%w: %s under %s", ErrCycle, id, to)
 	}
 	from := e.parent
 	l.detach(e)
@@ -318,4 +332,236 @@ func (l *Ledger) Of(id string) (Count, bool) {
 		return Count{}, false
 	}
 	return Count{LiveChildren: e.kids, Used: e.used, Charge: chargeOf(e)}, true
+}
+
+func (l *Ledger) Mark(id string, live bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	e := l.at[id]
+	if e == nil || e.live == live {
+		return
+	}
+	l.detach(e)
+	e.live = live
+	l.attach(e)
+}
+
+func (l *Ledger) Refresh(id string, lim Limits) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	e := l.at[id]
+	if e == nil || e.limits == lim {
+		return
+	}
+	l.detach(e)
+	e.limits = lim
+	l.attach(e)
+}
+
+type Placement struct {
+	ID, Parent string
+}
+
+type Arrival struct {
+	Node, To string
+}
+
+type Shift struct {
+	l     *Ledger
+	moves []shifted
+}
+
+type shifted struct {
+	id, from string
+	ghost    Ticket
+}
+
+func (l *Ledger) Admit(arrivals []Arrival) (*Shift, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	gain, loss := map[string]int{}, map[string]int{}
+	var moving []Arrival
+	var targets []string
+	for _, a := range arrivals {
+		e := l.at[a.Node]
+		if e == nil || e.parent == a.To || e.ghost != nil {
+			continue
+		}
+		if l.under(a.To, a.Node) {
+			return nil, fmt.Errorf("%w: %s under %s", ErrCycle, a.Node, a.To)
+		}
+		moving = append(moving, a)
+		if !e.live {
+			continue
+		}
+		if gain[a.To] == 0 {
+			targets = append(targets, a.To)
+		}
+		gain[a.To]++
+		loss[e.parent]++
+	}
+	for _, to := range targets {
+		p := l.at[to]
+		if p == nil || !p.limits.HasMaxChildren {
+			continue
+		}
+		if final := p.kids - loss[to] + gain[to]; final > p.limits.MaxChildren {
+			return nil, fmt.Errorf("%w: %s would hold %d live children of %d", ErrMaxChildren, to, final, p.limits.MaxChildren)
+		}
+	}
+	s := &Shift{l: l}
+	for _, a := range moving {
+		e := l.at[a.Node]
+		if l.under(a.To, a.Node) {
+			s.revertLocked(nil)
+			return nil, fmt.Errorf("%w: %s under %s", ErrCycle, a.Node, a.To)
+		}
+		if err := l.fits(a.To, chargeOf(e)); err != nil {
+			s.revertLocked(nil)
+			return nil, err
+		}
+		g := &entry{parent: e.parent, live: e.live, limits: e.limits, used: e.used}
+		l.next++
+		l.at[ticketID(l.next)] = g
+		from := e.parent
+		l.detach(e)
+		l.attach(g)
+		e.parent = a.To
+		e.ghost = g
+		l.attach(e)
+		s.moves = append(s.moves, shifted{id: a.Node, from: from, ghost: l.next})
+	}
+	return s, nil
+}
+
+func (s *Shift) revertLocked(kept map[string]bool) {
+	l := s.l
+	for i := len(s.moves) - 1; i >= 0; i-- {
+		m := s.moves[i]
+		g := l.at[ticketID(m.ghost)]
+		e := l.at[m.id]
+		if e != nil {
+			e.ghost = nil
+		}
+		if e != nil && !kept[m.id] {
+			l.detach(e)
+			e.parent = m.from
+			l.attach(e)
+		}
+		if g != nil {
+			l.detach(g)
+			delete(l.at, ticketID(m.ghost))
+		}
+	}
+	s.moves = nil
+}
+
+func (l *Ledger) Settle(s *Shift, placed []Placement, gone []string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if s != nil && s.l == l {
+		kept := make(map[string]bool, len(placed))
+		for _, p := range placed {
+			kept[p.ID] = true
+		}
+		s.revertLocked(kept)
+	}
+	for _, p := range placed {
+		e := l.at[p.ID]
+		if e == nil || e.parent == p.Parent || l.under(p.Parent, p.ID) {
+			continue
+		}
+		l.detach(e)
+		e.parent = p.Parent
+		l.attach(e)
+	}
+	for _, id := range gone {
+		if e := l.at[id]; e != nil {
+			l.detach(e)
+			delete(l.at, id)
+		}
+	}
+}
+
+type Drift struct {
+	ID   string
+	Have string
+	Want string
+}
+
+func (l *Ledger) Audit(nodes []Node) []Drift {
+	l.mu.Lock()
+	inFlight := make([]Node, 0)
+	limits := make(map[string]Limits, len(l.at))
+	for id, e := range l.at {
+		limits[id] = e.limits
+		if isTicket(id) {
+			inFlight = append(inFlight, Node{ID: id, Parent: e.parent, Live: e.live, Limits: e.limits})
+		}
+	}
+	l.mu.Unlock()
+	seen := make(map[string]bool, len(nodes))
+	all := make([]Node, 0, len(nodes)+len(inFlight))
+	for _, n := range nodes {
+		n.Limits = limits[n.ID]
+		seen[n.ID] = true
+		all = append(all, n)
+	}
+	all = append(all, inFlight...)
+	fresh := New()
+	fresh.Rebuild(all)
+	have, want := l.snapshot(), fresh.snapshot()
+	var out []Drift
+	for id, w := range want {
+		h, ok := have[id]
+		if !ok {
+			out = append(out, Drift{ID: id, Have: "absent", Want: describe(w)})
+			continue
+		}
+		if h.parent != w.parent || h.live != w.live || h.kids != w.kids || h.nkids != w.nkids || h.used != w.used {
+			out = append(out, Drift{ID: id, Have: describe(h), Want: describe(w)})
+		}
+	}
+	for id, h := range have {
+		if _, ok := want[id]; !ok && !seen[id] {
+			out = append(out, Drift{ID: id, Have: describe(h), Want: "absent"})
+		}
+	}
+	return out
+}
+
+func isTicket(id string) bool { return len(id) > 0 && id[0] == 0 }
+
+func describe(e entry) string {
+	return fmt.Sprintf("parent=%q live=%t kids=%d nodes=%d used=%d", e.parent, e.live, e.kids, e.nkids, e.used)
+}
+
+func (l *Ledger) snapshot() map[string]entry {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make(map[string]entry, len(l.at))
+	for id, e := range l.at {
+		out[id] = *e
+	}
+	return out
+}
+
+func (l *Ledger) Len() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.at)
+}
+
+func (l *Ledger) under(id, ancestor string) bool {
+	for up := id; up != ""; {
+		if up == ancestor {
+			return true
+		}
+		u := l.at[up]
+		if u == nil {
+			return false
+		}
+		up = u.parent
+	}
+	return false
 }
