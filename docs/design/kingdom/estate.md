@@ -52,3 +52,9 @@ Gluck's cutover to deploy. E5 to E8 are after this night.
 Questions 3 to 5 of the deployment-modes revision: rename `my.figaro.mode`
 `system` to `house`; regiment kinds as new roster kinds; remote mode after
 house mode.
+
+## Obligations before a host leaves hush-cred (from E2's runbook)
+
+1. rou2 needs a control socket against the new layout (status and refresh moved to the admin socket) before any rou2 host switches from `services.hush-cred` to `services.hush`. Owner: rou2's Engineer, via the King.
+2. hush `feat/anthropic-max-login` (worktree /var/tmp/hush-anthropic-max) must merge before the move, so the anthropic-max sign-in state moves under the new service. Owner: the Figaro Engineer (hush).
+Both gate spain's daytime window, not tonight's work.
