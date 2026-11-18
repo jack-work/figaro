@@ -906,12 +906,13 @@ func encodeResponseMessage(
 					})
 				}
 			case message.ContentToolResult:
-				raw, err := marshalResponseItem(responseFunctionOutput(content.ToolCallID, content.Text))
+				output := provider.ToolOutput(content.Text)
+				raw, err := marshalResponseItem(responseFunctionOutput(content.ToolCallID, output))
 				if err != nil {
 					return nil, err
 				}
 				beforeMessage = append(beforeMessage, raw)
-				lastOutput, lastCall, lastText = len(beforeMessage)-1, content.ToolCallID, content.Text
+				lastOutput, lastCall, lastText = len(beforeMessage)-1, content.ToolCallID, output
 			}
 		case message.RoleOutput:
 			switch content.Type {

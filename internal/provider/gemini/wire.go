@@ -138,13 +138,13 @@ func encodeMessage(msg message.Message, reminders []string) ([]Content, error) {
 				}
 				var respObj map[string]any
 				if c.IsError {
-					txt := c.Text
+					txt := provider.ToolOutput(c.Text)
 					if txt == "" {
 						txt = "tool failed"
 					}
 					respObj = map[string]any{"error": txt, "is_error": true}
 				} else {
-					respObj = map[string]any{"output": c.Text}
+					respObj = map[string]any{"output": provider.ToolOutput(c.Text)}
 				}
 				parts = append(parts, Part{
 					FunctionResponse: &FuncResponse{

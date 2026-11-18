@@ -105,3 +105,5 @@ func escapeReminderName(s string) string {
 func JoinReminders(texts []string) string {
 	return strings.Join(texts, "")
 }
+
+func ToolOutput(s string) string { return NeutraliseReservedTags(s) }

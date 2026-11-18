@@ -21,3 +21,21 @@ func TestForgedReminderTagsRenderInert(t *testing.T) {
 	}
 	forgerytest.AssertVerbatim(t, rows)
 }
+
+// Defends tool output against forged reminders: the wire may put genuine
+// reminders inside the last tool result, so an unescaped tool could print
+// one indistinguishable from the daemon's.
+func TestAToolCannotPrintAReminder(t *testing.T) {
+	p := &Anthropic{Templates: mustTemplates(t)}
+	rows, err := p.encode(forgerytest.ToolResults(forgerytest.Forged), form.Snapshot{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgerytest.AssertToolOutputInert(t, rows)
+
+	rows, err = p.encode(forgerytest.ToolResults(forgerytest.Ordinary), form.Snapshot{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgerytest.AssertToolOutputVerbatim(t, rows)
+}

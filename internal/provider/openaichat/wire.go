@@ -154,7 +154,7 @@ func encodeMessage(msg message.Message, blocks bool, reminders []string) ([]chat
 				text = joinText(text, provider.SenderProse(c.Sender, c.Text))
 				spoke = spoke || c.Text != ""
 			case message.ContentToolResult:
-				body := c.Text
+				body := provider.ToolOutput(c.Text)
 				if c.IsError && body == "" {
 					body = "tool failed"
 				}
