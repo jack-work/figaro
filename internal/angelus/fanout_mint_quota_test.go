@@ -5,10 +5,14 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/figaro/wire"
 )
 
 func TestALabeledMintIsChargedToTheMinter(t *testing.T) {
 	r := newLicenseRig(t, defaultPolicy)
+	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+		t.Fatal(err)
+	}
 	giveMint(t, r, r.x)
 	if _, err := r.backend.ApplyForm(r.x, *heldPatch(t, map[string]any{form.FanoutQuotaKey: 1})); err != nil {
 		t.Fatal(err)

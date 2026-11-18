@@ -45,6 +45,9 @@ func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
 		Live:         a.isLiveAria,
 		SwapLimit:    a.swapLimit,
 		Quota: func(p hierarchy.Plan) error {
+			if len(p.Moves) == 0 {
+				return nil
+			}
 			return a.Policies.Shadow(authz.Quota, a.fanoutCounts().fitsMoves(p.Moves))
 		},
 		Committed: a.topologyCommitted,

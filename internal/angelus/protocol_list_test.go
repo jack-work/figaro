@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/arialog"
+	"github.com/jack-work/figaro/internal/hierarchy"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
@@ -24,6 +25,8 @@ func (b *metadataListBackend) LastTS(string) int64 { return 20 }
 func (b *metadataListBackend) Feed(store.TopologyFeed) {}
 
 func (b *metadataListBackend) EveryNode() []store.NodeView { return nil }
+
+func (b *metadataListBackend) HierarchyEngine() hierarchy.Engine { return nil }
 
 func (b *metadataListBackend) Conversations() []store.NodeView {
 	return []store.NodeView{{

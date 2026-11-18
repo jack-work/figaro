@@ -334,7 +334,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		p := withFanoutBirthDefault(*req.Patch)
 		req.Patch = &p
 	}
-	inherited, req.Patch = withoutInherited(form.FanoutQuotaKey, inherited, req.Patch)
+	inherited = inherited.DeletePath(form.FanoutQuotaKey)
 	if lane {
 		inherited, req.Patch = withoutInherited(form.FanoutMintKey, inherited, req.Patch)
 	}
@@ -369,7 +369,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	_, boxed := callerBox(ctx)
 	ownerMade := !claimed && !boxed && h.callerOwns(ctx)
 	abdicating := req.Seat != "" && req.Abdicates
-	if err := h.admitFork(req.FigaroID, forkCharge(forkDress(asked, req.FigaroID, lane, policy, ownerMade)), abdicating, ownerMade); err != nil {
+	if err := h.precheckFork(req.FigaroID, forkCharge(forkDress(asked, req.FigaroID, lane, policy, ownerMade)), abdicating, ownerMade); err != nil {
 		return nil, err
 	}
 	var cont, alt string
@@ -488,19 +488,38 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 }
 
 func (h *handlers) admitFork(parent string, charge int, abdicating, ownerMade bool) error {
+	maxErr, quotaErr := h.forkRefusals(parent, charge, abdicating, ownerMade)
+	if maxErr != nil {
+		return maxErr
+	}
+	return h.angelus.Policies.Shadow(authz.Quota, quotaErr)
+}
+
+func (h *handlers) precheckFork(parent string, charge int, abdicating, ownerMade bool) error {
+	maxErr, quotaErr := h.forkRefusals(parent, charge, abdicating, ownerMade)
+	if maxErr != nil {
+		return maxErr
+	}
+	if h.angelus.Policies.Enforces(authz.Quota) {
+		return quotaErr
+	}
+	return nil
+}
+
+func (h *handlers) forkRefusals(parent string, charge int, abdicating, ownerMade bool) (maxErr, quotaErr error) {
 	if ownerMade {
-		return nil
+		return nil, nil
 	}
 	if abdicating {
 		if err := h.angelus.fanoutCounts().over(parent); err != nil {
-			return h.angelus.Policies.Shadow(authz.Quota, fmt.Errorf("%w; a succession that retires its predecessor fits only a budget that is not already overdrawn", err))
+			return nil, fmt.Errorf("%w; a succession that retires its predecessor fits only a budget that is not already overdrawn", err)
 		}
-		return nil
+		return nil, nil
 	}
 	if err := h.admitMaxChildren(parent); err != nil {
-		return err
+		return err, nil
 	}
-	return h.angelus.Policies.Shadow(authz.Quota, h.angelus.fanoutCounts().fits(parent, charge))
+	return nil, h.angelus.fanoutCounts().fits(parent, charge)
 }
 
 func (h *handlers) admitMaxChildren(parent string) error {

@@ -19,6 +19,11 @@ func quotaPatch(n int) *form.Patch {
 	return &p
 }
 
+func grantPatch(maxChildren, quota int) *form.Patch {
+	p := form.Merge(*fanoutPatch(maxChildren), *quotaPatch(quota))
+	return &p
+}
+
 func setQuota(t *testing.T, b *store.XwalBackend, id string, n int) {
 	t.Helper()
 	applyKeys(t, b, id, map[string]any{form.FanoutQuotaKey: n})
@@ -70,7 +75,7 @@ func TestAGrantAtForkComesOutOfTheParentsFreeBudget(t *testing.T) {
 	if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top, Patch: quotaPatch(3)}); err == nil {
 		t.Fatal("a fork granted 3 fit a parent with 3 free: the child costs itself too")
 	}
-	lead := forkOK(t, hs, top, top, quotaPatch(2))
+	lead := forkOK(t, hs, top, top, grantPatch(3, 2))
 	if got := budgetOf(hs, top); got.used != 3 {
 		t.Fatalf("a child granted 2 charges %d, want 3", got.used)
 	}
@@ -112,7 +117,7 @@ func TestRaisingAChildsQuotaNeedsTheParentsFreeBudget(t *testing.T) {
 	hs, b, outfit := fanoutHandlers(t)
 	top, _ := b.CreateConversation(outfit)
 	setQuota(t, b, top, 3)
-	kid := forkOK(t, hs, top, top, nil)
+	kid := forkOK(t, hs, top, top, fanoutPatch(1))
 	if err := setAsFigaro(t, hs, top, kid, *quotaPatch(2)); err != nil {
 		t.Fatalf("raising a child within the free budget: %v", err)
 	}
@@ -256,7 +261,7 @@ func TestAnOwnerForkSkipsAdmissionButCounts(t *testing.T) {
 	}
 	setMaxChildren(t, b, top, 3)
 	_, err = callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top})
-	if err == nil || !strings.Contains(err.Error(), "the owner made "+shortID(a)) {
+	if err == nil || !strings.Contains(err.Error(), "the owner made ") || !strings.Contains(err.Error(), shortID(a)) || !strings.Contains(err.Error(), shortID(c)) {
 		t.Fatalf("the quota refusal does not name the owner's forks: %v", err)
 	}
 	for _, id := range []string{a, c} {

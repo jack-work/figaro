@@ -93,7 +93,7 @@ func TestTheLabelChecksRefuseADroppedClaim(t *testing.T) {
 	local := authz.WithDoor(asOwner(), authz.DoorLocal)
 	for name, keys := range map[string]map[string]any{
 		"max_children": {"system.fanout.max_children": 2},
-		"mint":         {"system.fanout.mint": true},
+		"quota":        {"system.fanout.quota": 2},
 		"retire":       {"system.retired": "manual"},
 	} {
 		_, err := r.h[rpc.MethodSet](local, claimed(t, ghost, withAria(t, target.FigaroID, rpc.SetRequest{Patch: *heldPatch(t, keys)})))

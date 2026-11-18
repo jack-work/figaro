@@ -11,6 +11,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/boot"
+	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/sdk"
 )
@@ -55,6 +56,7 @@ func (s seated) fan(t *testing.T, id string) (used int, quota *int) {
 func fullPredecessor(t *testing.T) seated {
 	t.Helper()
 	s := seatedPredecessor(t, nil)
+	require.NoError(t, wire.Install(s.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}))
 	for range 2 {
 		_, _, err := s.backend.Fork(s.pred)
 		require.NoError(t, err)
