@@ -19,12 +19,7 @@ func ForkReminderTexts(msg message.Message, bound form.Snapshot) []string {
 	if say == "" {
 		return nil
 	}
-	body := map[string]any{"forked_from": parent, "say": say}
-	b, err := json.Marshal(body)
-	if err != nil {
-		return nil
-	}
-	return []string{Reminder("fork", string(b))}
+	return []string{Reminder("fork", "from "+parent+"\n"+say)}
 }
 
 func forkedFrom(patches []message.Patch) (string, bool) {
