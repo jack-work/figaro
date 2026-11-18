@@ -65,6 +65,27 @@ in
       description = "Where the angelus binds its sockets.";
     };
 
+    socketActivation = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Let systemd hold the CLI door, `''${runtimeDir}/angelus.sock`, in
+        figaro.socket and start the angelus on the first connection instead
+        of at boot. A call made while the service is stopped waits in the
+        socket's queue and is answered by the start it triggers; stopping
+        the service leaves the socket in place. Admission stays the
+        daemon's: every connection is still judged by peer credentials and
+        policy. False binds the socket in the daemon, as before.
+      '';
+    };
+
+    socketMode = mkOption {
+      type = types.str;
+      default = "0600";
+      example = "0660";
+      description = "Mode of the CLI door when figaro.socket holds it; group is the service user's group.";
+    };
+
     settings = mkOption {
       type = toml.type;
       default = { };
@@ -128,13 +149,28 @@ in
     };
     users.groups.${cfg.user}.gid = cfg.gid;
 
-    systemd.tmpfiles.rules = [ "d ${cfg.stateDir} 0700 ${cfg.user} ${cfg.user} -" ];
+    systemd.tmpfiles.rules = [ "d ${cfg.stateDir} 0700 ${cfg.user} ${cfg.user} -" ]
+      ++ lib.optional cfg.socketActivation "d ${cfg.runtimeDir} 0750 ${cfg.user} ${cfg.user} -";
+
+    systemd.sockets.figaro = lib.mkIf cfg.socketActivation {
+      description = "figaro angelus CLI door";
+      wantedBy = [ "sockets.target" ];
+      listenStreams = [ "${cfg.runtimeDir}/angelus.sock" ];
+      socketConfig = {
+        FileDescriptorName = "angelus";
+        SocketUser = cfg.user;
+        SocketGroup = cfg.user;
+        SocketMode = cfg.socketMode;
+        DirectoryMode = "0750";
+      };
+    };
 
     systemd.services.figaro = {
       description = "figaro angelus";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
+      wantedBy = lib.optional (!cfg.socketActivation) "multi-user.target";
+      after = [ "network-online.target" ] ++ lib.optional cfg.socketActivation "figaro.socket";
       wants = [ "network-online.target" ];
+      requires = lib.optional cfg.socketActivation "figaro.socket";
       path = cfg.toolPackages;
       environment = {
         HOME = cfg.stateDir;
