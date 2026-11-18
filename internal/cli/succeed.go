@@ -307,11 +307,19 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 		}
 	}
 
-	progress("demoting " + ariaName(old.ID))
-	dem, err := acli.Demote(ctx, old.ID, r.Successor)
+	progress(fmt.Sprintf("seating %s in %s's place", ariaName(r.Successor), ariaName(old.ID)))
+	if err := lacksForUse(rpc.CapSeat, "succeed"); err != nil {
+		return r, r.fail("place", err)
+	}
+	seat, err := acli.Seat(ctx, old.ID, r.Successor)
+	if err != nil {
+		return r, r.fail("place", err)
+	}
+	if err := seatRefusal(seat, r.Successor, old.ID); err != nil {
+		return r, r.fail(seat.FailedAt, err)
+	}
+	dem := seat.Demote
 	switch {
-	case err != nil:
-		return r, r.fail("demote", err)
 	case dem.Parked != nil:
 		return r, r.fail("demote", fmt.Errorf("nothing moved yet: the demote waits on %s as proposal %s", dem.Parked.Parent, dem.Parked.ID))
 	case dem.Unsupported:
@@ -396,6 +404,20 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 	return r, nil
 }
 
+func seatRefusal(seat *rpc.SeatResponse, successor, predecessor string) error {
+	switch {
+	case seat.PlaceParked != nil:
+		pl := seat.PlaceParked
+		return fmt.Errorf("drawing %s under %s waits on %s as proposal %s, so nothing moved; once its holder runs `figaro adopt accept %s %s`, succeed again",
+			ariaName(successor), ariaName(predecessor), ariaName(pl.Parent), pl.ID, pl.Parent, pl.ID)
+	case seat.FailedAt == "place":
+		return fmt.Errorf("%s cannot be drawn under %s, where a forked successor is born, so nothing moved: %s", ariaName(successor), ariaName(predecessor), seat.Error)
+	case seat.FailedAt != "":
+		return errors.New(seat.Error)
+	}
+	return nil
+}
+
 func splitPromptArgs(args, tail []string) (positional []string, prompt string) {
 	return args[:len(args)-len(tail)], strings.Join(tail, " ")
 }
@@ -418,7 +440,7 @@ func withAria(id string, fn func(*sdk.Aria) error) error {
 
 func (r succeedReport) recovery(plan succeedPlan) []string {
 	var out []string
-	if r.Successor == "" {
+	if r.Successor == "" || r.FailedAt == "place" {
 		return nil
 	}
 	if r.DemotedUnder == "" && r.FailedAt == "demote" {

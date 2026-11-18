@@ -19,6 +19,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/sdk"
@@ -490,4 +491,73 @@ func seatWithRoute(t *testing.T, recorded, role map[string]string) seated {
 		require.NoError(t, err)
 	}
 	return s
+}
+
+// figaro succeed and the daemon's succession share one seat: a named
+// successor, a forked one and (in angelus) a daemon-minted one all end in the
+// predecessor's place with the predecessor and its branch beneath them.
+func TestANamedSuccessorIsDrawnWhereAForkedOneGoes(t *testing.T) {
+	shape := func(t *testing.T, named bool) map[string]string {
+		s := seatedPredecessor(t, nil)
+		require.NoError(t, wire.Install(s.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}))
+		_, kid, err := s.backend.Fork(s.pred)
+		require.NoError(t, err)
+		was, _ := s.backend.Node(s.pred)
+		var plan succeedPlan
+		var r succeedReport
+		if named {
+			other, err := s.backend.CreateConversation(was.Parent)
+			require.NoError(t, err)
+			_, succ, err := s.backend.Fork(other)
+			require.NoError(t, err)
+			plan, err = succeedArgs(t, s.role, "--successor", succ, "--", "you hold the seat")
+			require.NoError(t, err)
+			r, err = succeedVerb(s.ctx, s.acli, plan, succeedHooks{})
+			require.Equal(t, "prompt", r.FailedAt, "the named succession stopped early: %v", err)
+		} else {
+			plan, err = succeedArgs(t, s.role, "--", "you hold the seat")
+			require.NoError(t, err)
+			r = s.succeed(t, plan)
+		}
+		require.Equal(t, r.Successor, r.DemotedUnder)
+		names := map[string]string{was.Present: "top", s.pred: "pred", r.Successor: "succ", kid: "kid"}
+		got := map[string]string{}
+		for id, name := range map[string]string{s.pred: "pred", r.Successor: "succ", kid: "kid"} {
+			n, _ := s.backend.Node(id)
+			got[name] = names[n.Present]
+		}
+		return got
+	}
+	forked := shape(t, false)
+	require.Equal(t, map[string]string{"succ": "top", "pred": "succ", "kid": "succ"}, forked)
+	require.Equal(t, forked, shape(t, true))
+}
+
+func TestANamedSuccessorTheGuardRefusesStopsTheSuccession(t *testing.T) {
+	s := seatedPredecessor(t, nil)
+	require.NoError(t, wire.Install(s.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}))
+	_, _, err := s.backend.Fork(s.pred)
+	require.NoError(t, err)
+	was, _ := s.backend.Node(s.pred)
+	other, err := s.backend.CreateConversation(was.Parent)
+	require.NoError(t, err)
+	_, succ, err := s.backend.Fork(other)
+	require.NoError(t, err)
+	snap, err := s.backend.FormState(s.pred)
+	require.NoError(t, err)
+	one, _ := json.Marshal(1)
+	_, err = s.backend.ApplyForm(s.pred, form.Build(snap, map[string]json.RawMessage{form.FanoutMaxChildrenKey: one}, nil))
+	require.NoError(t, err)
+
+	plan, err := succeedArgs(t, s.role, "--successor", succ, "--", "you hold the seat")
+	require.NoError(t, err)
+	r, err := succeedVerb(s.ctx, s.acli, plan, succeedHooks{})
+	require.Error(t, err)
+	require.Equal(t, "place", r.FailedAt)
+	require.Contains(t, r.Error, "fanout")
+	require.Empty(t, r.recovery(plan))
+	n, _ := s.backend.Node(succ)
+	require.Equal(t, other, n.Present, "a refused successor moved")
+	p, _ := s.backend.Node(s.pred)
+	require.Equal(t, was.Present, p.Present, "the predecessor moved after the refusal")
 }

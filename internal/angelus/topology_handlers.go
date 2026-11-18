@@ -786,9 +786,43 @@ func (h *handlers) demote(ctx context.Context, params json.RawMessage) (interfac
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
+	return h.demoteUnder(ctx, req)
+}
+
+func (h *handlers) seat(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.SeatRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, err
+	}
+	return h.seatInPlaceOf(ctx, req.Successor, req.FigaroID), nil
+}
+
+func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rpc.SeatResponse {
+	var r rpc.SeatResponse
+	if have, _ := h.angelus.topology().Drawn(successor); have != pred {
+		err := h.place(ctx, successor, pred)
+		if prop, ok := h.parkedProposal(ctx, err); ok {
+			r.FailedAt, r.PlaceParked = "place", prop
+			return r
+		}
+		if err != nil {
+			r.FailedAt, r.Error = "place", err.Error()
+			return r
+		}
+		r.Placed = true
+	}
+	dem, err := h.demoteUnder(ctx, rpc.DemoteRequest{FigaroID: pred, Prefer: successor})
+	r.Demote = dem
+	if err != nil {
+		r.FailedAt, r.Error = "demote", err.Error()
+	}
+	return r
+}
+
+func (h *handlers) demoteUnder(ctx context.Context, req rpc.DemoteRequest) (rpc.DemoteResponse, error) {
 	by, err := h.angelus.topologyPrincipal(ctx)
 	if err != nil {
-		return nil, err
+		return rpc.DemoteResponse{}, err
 	}
 	p, err := h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Demote, Node: req.FigaroID, To: req.Prefer})
 	if prop, ok := h.parkedProposal(ctx, err); ok {
@@ -798,7 +832,7 @@ func (h *handlers) demote(ctx context.Context, params json.RawMessage) (interfac
 		return rpc.DemoteResponse{FigaroID: req.FigaroID, Unsupported: true}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("demote %q: %w", req.FigaroID, err)
+		return rpc.DemoteResponse{}, fmt.Errorf("demote %q: %w", req.FigaroID, err)
 	}
 	under := p.To
 	slog.Info("demoted figaro", "trunk", req.FigaroID, "under", under)
