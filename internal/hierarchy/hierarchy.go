@@ -457,7 +457,12 @@ func (h *Hierarchy) Under(ctx context.Context, by Principal, p Plan, commit func
 		return plan, err
 	}
 	if plan.Op == Depart {
-		return plan, h.forgetDeparted(plan)
+		if err := h.forgetDeparted(plan); err != nil {
+			return plan, err
+		}
+	}
+	if c, ok := h.guard.(afterCommitter); ok {
+		c.AfterCommit(plan)
 	}
 	return plan, nil
 }
