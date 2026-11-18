@@ -3,6 +3,7 @@ package form
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -39,24 +40,36 @@ func CheckScopes(s Snapshot) error {
 	if err != nil || !ok {
 		return err
 	}
+	if err := checkScopeList(raw); err != nil {
+		return fmt.Errorf("%s %w", key, err)
+	}
+	return nil
+}
+
+func checkScopeList(raw json.RawMessage) error {
 	var scopes []string
 	if err := json.Unmarshal(raw, &scopes); err != nil || scopes == nil {
-		return fmt.Errorf("%s must be a JSON array of strings, got %s", key, raw)
+		return fmt.Errorf("must be a JSON array of strings, got %s", raw)
 	}
 	for _, g := range scopes {
 		if g == "" || strings.TrimSpace(g) != g {
-			return fmt.Errorf("%s: %q is empty or has surrounding whitespace", key, g)
+			return fmt.Errorf("has %q, which is empty or has surrounding whitespace", g)
 		}
 	}
 	return nil
 }
+
+var (
+	maxChildrenShape = ShapeInt(0, math.MaxInt64)
+	mintShape        = ShapeBool()
+)
 
 func FanoutMaxChildren(s Snapshot) (n int, ok bool, err error) {
 	raw, has := s.Get(FanoutMaxChildrenKey)
 	if !has {
 		return 0, false, nil
 	}
-	if err := json.Unmarshal(raw, &n); err != nil || n < 0 {
+	if maxChildrenShape.Check(raw) != nil || json.Unmarshal(raw, &n) != nil {
 		return 0, false, fmt.Errorf("%s must be a non-negative integer, got %s", FanoutMaxChildrenKey, raw)
 	}
 	return n, true, nil
@@ -68,7 +81,7 @@ func FanoutMint(s Snapshot) (bool, error) {
 		return false, nil
 	}
 	var b bool
-	if err := json.Unmarshal(raw, &b); err != nil {
+	if mintShape.Check(raw) != nil || json.Unmarshal(raw, &b) != nil {
 		return false, fmt.Errorf("%s must be true or false, got %s", FanoutMintKey, raw)
 	}
 	return b, nil
