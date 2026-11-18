@@ -13,12 +13,12 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-func fanoutHandlers(t *testing.T) (*Handlers, *store.XwalBackend, string) {
+func fanoutHandlers(t testing.TB) (*Handlers, *store.XwalBackend, string) {
 	t.Helper()
 	return demoteHandlers(t)
 }
 
-func callFork(t *testing.T, hs *Handlers, req rpc.ForkRequest) (rpc.ForkResponse, error) {
+func callFork(t testing.TB, hs *Handlers, req rpc.ForkRequest) (rpc.ForkResponse, error) {
 	t.Helper()
 	raw, _ := json.Marshal(req)
 	out, err := hs.Map[rpc.MethodFork](inProcess(context.Background()), raw)
@@ -635,9 +635,10 @@ func TestTheLabelRuleLeavesOtherKeysAlone(t *testing.T) {
 }
 
 // A fork racing a demote into the same parent: each fits alone, both
-// together would overfill. p is no fork of g, so the demote moves no
-// limit and p's own 2 holds. The shared lock admits at most the limit.
-func TestAForkRacingADemoteNeverOverfills(t *testing.T) {
+// together overfill. Admission is optimistic, so the race may land one
+// over the limit, never more, and the parent then refuses forks until it
+// is back under.
+func TestAForkRacingADemoteOvershootsByAtMostOne(t *testing.T) {
 	for i := range 40 {
 		hs, b, outfit := fanoutHandlers(t)
 		g, _ := b.CreateConversation(outfit)
@@ -654,14 +655,18 @@ func TestAForkRacingADemoteNeverOverfills(t *testing.T) {
 		go func() { defer wg.Done(); _, _ = callFork(t, hs, rpc.ForkRequest{FigaroID: p}) }()
 		go func() { defer wg.Done(); _ = swapUnder(t, hs, "", g, p) }()
 		wg.Wait()
-		if n := len(hs.h.angelus.liveChildrenOf(p)); n > 2 {
-			t.Fatalf("round %d: %d live children under max_children 2", i, n)
+		n := len(hs.h.angelus.liveChildrenOf(p))
+		if n > 3 {
+			t.Fatalf("round %d: %d live children under max_children 2, want at most one over", i, n)
+		}
+		requireCacheMatchesTree(t, hs, "the race")
+		if _, err := callFork(t, hs, rpc.ForkRequest{FigaroID: p}); n >= 2 && err == nil {
+			t.Fatalf("round %d: a fork was admitted with %d live children under max_children 2", i, n)
 		}
 	}
 }
 
-// Fork admission holds the topology lock across the birth: concurrent
-// forks, demotes and grants under one parent must all finish.
+// Concurrent forks, demotes and grants under one parent must all finish.
 func TestForkAdmissionDoesNotDeadlockAgainstTopologyOrGrants(t *testing.T) {
 	hs, b, outfit := fanoutHandlers(t)
 	top, _ := b.CreateConversation(outfit)

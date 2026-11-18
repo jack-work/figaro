@@ -12,7 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-func demoteHandlers(t *testing.T) (*Handlers, *store.XwalBackend, string) {
+func demoteHandlers(t testing.TB) (*Handlers, *store.XwalBackend, string) {
 	t.Helper()
 	root := t.TempDir()
 	b, err := store.NewXwalBackend(root, 0)

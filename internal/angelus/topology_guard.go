@@ -308,3 +308,11 @@ func sweepTime(ctx context.Context) time.Time {
 	}
 	return time.Now()
 }
+
+func (a *Angelus) isReaped(id string) bool {
+	if a.Backend == nil {
+		return false
+	}
+	meta, _ := a.Backend.Meta(id)
+	return meta != nil && meta.ReapedAtMS != 0
+}

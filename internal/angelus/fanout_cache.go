@@ -21,10 +21,11 @@ type fanoutCache struct {
 	parent map[string]string
 	live   map[string]bool
 	kids   map[string]int
+	held   map[string]int
 }
 
 func newFanoutCache() *fanoutCache {
-	return &fanoutCache{parent: map[string]string{}, live: map[string]bool{}, kids: map[string]int{}}
+	return &fanoutCache{parent: map[string]string{}, live: map[string]bool{}, kids: map[string]int{}, held: map[string]int{}}
 }
 
 func (c *fanoutCache) reset(nodes []fanoutNode) {
@@ -112,6 +113,31 @@ func (c *fanoutCache) liveChildren(id string) int {
 	return c.kids[id]
 }
 
+func (c *fanoutCache) admitted(id string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.kids[id] + c.held[id]
+}
+
+func (c *fanoutCache) hold(parent string, max int) (int, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := c.kids[parent] + c.held[parent]
+	if n >= max {
+		return n, false
+	}
+	c.held[parent]++
+	return n, true
+}
+
+func (c *fanoutCache) release(parent string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.held[parent]--; c.held[parent] <= 0 {
+		delete(c.held, parent)
+	}
+}
+
 func (c *fanoutCache) drift(nodes []fanoutNode) []rpc.FanoutDrift {
 	tree := newFanoutCache()
 	tree.reset(nodes)
@@ -184,7 +210,24 @@ func (a *Angelus) fanoutNodes() []fanoutNode {
 }
 
 func (a *Angelus) liveChildCount(id string) int {
-	return a.fanoutCounts().liveChildren(id)
+	return a.fanoutCounts().admitted(id)
+}
+
+func (a *Angelus) holdForkSlot(parent string) (func(), error) {
+	max, ok, err := a.fanoutLimit(parent)
+	if err != nil {
+		return nil, fmt.Errorf("fork: the limit of %s cannot be read to admit the fork: %w", parent, err)
+	}
+	if !ok {
+		return func() {}, nil
+	}
+	c := a.fanoutCounts()
+	n, held := c.hold(parent, max)
+	if !held {
+		return nil, fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one or fork elsewhere", parent, n, max)
+	}
+	var once sync.Once
+	return func() { once.Do(func() { c.release(parent) }) }, nil
 }
 
 func (a *Angelus) settleFanout(p hierarchy.Plan) {

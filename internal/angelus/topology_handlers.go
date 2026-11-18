@@ -364,15 +364,20 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		if interior {
 			at = atMainLT
 		}
-		if err := h.angelus.topology().WithLock(func() error {
-			if err := h.admitFork(req.FigaroID); err != nil {
-				return err
-			}
-			var cerr error
-			alt, _, cerr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID, claimed), mintedBy(ctx), ariaIDStamp())
-			return cerr
-		}); err != nil {
+		release, err := h.angelus.holdForkSlot(req.FigaroID)
+		if err != nil {
 			return err
+		}
+		reapedBefore := h.angelus.isReaped(req.FigaroID)
+		alt, _, err = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID, claimed), mintedBy(ctx), ariaIDStamp())
+		release()
+		if err != nil {
+			return err
+		}
+		if !reapedBefore && h.angelus.isReaped(req.FigaroID) {
+			h.discardBirth(alt)
+			alt = ""
+			return fmt.Errorf("fork: %s was killed while its fork was being born; the fork was discarded", req.FigaroID)
 		}
 		if seatProvider != "" {
 			if serr := h.fixSeatProvider(alt, seatProvider); serr != nil {
