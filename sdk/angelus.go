@@ -222,7 +222,12 @@ func (c *Angelus) Promote(ctx context.Context, figaroID string, levels int) (*rp
 	return &resp, err
 }
 
-// Import restores an exported aria as a new conversation.
+func (c *Angelus) Seat(ctx context.Context, predecessor, successor string) (*rpc.SeatResponse, error) {
+	var resp rpc.SeatResponse
+	err := c.call(ctx, rpc.MethodSeat, rpc.SeatRequest{FigaroID: predecessor, Successor: successor}, &resp)
+	return &resp, err
+}
+
 func (c *Angelus) Demote(ctx context.Context, figaroID, prefer string) (*rpc.DemoteResponse, error) {
 	var resp rpc.DemoteResponse
 	err := c.call(ctx, rpc.MethodDemote, rpc.DemoteRequest{FigaroID: figaroID, Prefer: prefer}, &resp)

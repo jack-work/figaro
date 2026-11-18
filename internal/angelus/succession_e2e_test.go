@@ -485,6 +485,26 @@ func TestSuccessionDrawsTheSuccessorBesideIt(t *testing.T) {
 	require.Equal(t, parent, under)
 }
 
+func TestACompletedSuccessionDrawsTheTreeSucceedDraws(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	parent := r.aria(nil)
+	require.NoError(t, r.a.Backend.HierarchyEngine().WriteDrawn(map[string]string{old: parent}, nil))
+	lane := r.forkOf(old)
+	r.p.set(func() { r.p.holdOthers = true })
+	r.cross(old)
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "ramping" }, "the succession never reached its ramp")
+	next := r.hs.SuccessorOf(old)
+	r.p.set(func() { close(r.p.release); r.p.release = make(chan struct{}); r.p.holdOthers = false })
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "" }, "the succession never finished")
+	eng := r.a.Backend.HierarchyEngine()
+	under := func(id string) string { p, _ := eng.Drawn(id); return p }
+	require.Equal(t, parent, under(next), "the successor takes its predecessor's place")
+	require.Equal(t, next, under(old), "the predecessor is demoted under its successor")
+	require.Equal(t, next, under(lane), "the predecessor's children follow the successor")
+	require.Empty(t, r.hs.FanoutDriftForTest())
+}
+
 func TestSuccessionCarriesTheFanoutLimit(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(succeeding(nil))

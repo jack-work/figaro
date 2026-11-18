@@ -80,6 +80,7 @@ var methodVerbs = map[string]Verb{
 	MethodCast:      VerbSet,
 	MethodPromote:   VerbSet,
 	MethodDemote:    VerbSet,
+	MethodSeat:      VerbSet,
 
 	MethodParked: VerbRead,
 	MethodAccept: VerbAdopt,

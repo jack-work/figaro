@@ -74,6 +74,7 @@ const (
 	MethodFork          = "figaro.fork"
 	MethodPromote       = "figaro.promote"
 	MethodDemote        = "figaro.demote"
+	MethodSeat          = "figaro.seat"
 	MethodParked        = "figaro.topology.parked"
 	MethodAccept        = "figaro.topology.accept"
 	MethodRefuse        = "figaro.topology.refuse"
