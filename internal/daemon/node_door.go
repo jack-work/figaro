@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/activation"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/boot"
@@ -279,12 +280,12 @@ func troupeCredentials(a *angelus.Angelus) *peer.Credentials {
 	return &peer.Credentials{Certificate: a.Troupe.Current, Roots: a.Troupe.Roots}
 }
 
-func serveNodeDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) error {
+func serveNodeDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded, sockets *activation.Sockets) error {
 	door, ok, err := loaded.TLSDoor()
 	if err != nil || !ok {
 		return err
 	}
-	ln, err := net.Listen("tcp", door.Listen)
+	ln, _, err := doorListener(sockets, nodeSocketName, func() (net.Listener, error) { return net.Listen("tcp", door.Listen) })
 	if err != nil {
 		return fmt.Errorf("door.tls: %w", err)
 	}

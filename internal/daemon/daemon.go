@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/activation"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/boot"
@@ -45,11 +47,11 @@ const lockHandoff = 10 * time.Second
 
 // lockStore returns the flock handle that admits one angelus per store; closing it
 // releases the lock.
-func lockStore() (*os.File, bool) {
-	return lockStoreWithin(lockHandoff, os.Stderr)
+func lockStore(answers func() bool) (*os.File, bool) {
+	return lockStoreWithin(lockHandoff, os.Stderr, answers)
 }
 
-func lockStoreWithin(handoff time.Duration, notice io.Writer) (*os.File, bool) {
+func lockStoreWithin(handoff time.Duration, notice io.Writer, answers func() bool) (*os.File, bool) {
 	dir := boot.StateDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, false
@@ -65,7 +67,7 @@ func lockStoreWithin(handoff time.Duration, notice io.Writer) (*os.File, bool) {
 			boot.RecordStoreLockOwner(f)
 			return f, true
 		}
-		if incumbentAnswers() || time.Now().After(deadline) {
+		if answers() || time.Now().After(deadline) {
 			f.Close()
 			return nil, false
 		}
@@ -78,6 +80,13 @@ func lockStoreWithin(handoff time.Duration, notice io.Writer) (*os.File, bool) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+func incumbentAnswersOn(sockets *activation.Sockets) func() bool {
+	if sockets.Active() {
+		return func() bool { return false }
+	}
+	return incumbentAnswers
 }
 
 func incumbentAnswers() bool {
@@ -336,6 +345,11 @@ func registerOnAppend(backend store.Backend, p providerPkg.Provider) {
 func Run() {
 	mark.Init("angelus")
 	mark.Mark("boot.begin")
+	sockets, err := activation.TakeEnv()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
+	}
 	hushGate := boot.TakeHushGate()
 	boot.PromptPassphrase = nil
 	if err := boot.MissingConfigDir(os.Getenv); err != nil {
@@ -351,7 +365,7 @@ func Run() {
 
 	// Lock before the backend opens or the socket binds, so a losing daemon
 	// never opens the store or steals the socket.
-	lockF, ok := lockStore()
+	lockF, ok := lockStore(incumbentAnswersOn(sockets))
 	if !ok {
 		slog.Info("another angelus already owns this store; exiting")
 		os.Exit(0)
@@ -385,7 +399,14 @@ func Run() {
 	armMemoryLimit(loaded)
 	applyCacheSettings(loaded, backend)
 
+	cliDoor, err := cliListener(sockets)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
+	}
+
 	a := angelus.New(angelus.Config{
+		Listener:        cliDoor,
 		RuntimeDir:      runtimeDir,
 		PprofDir:        boot.StateDir(),
 		SpoolDir:        filepath.Join(boot.StateDir(), "spool"),
@@ -500,7 +521,7 @@ func Run() {
 		fmt.Fprintf(os.Stderr, "angelus: %v; exiting\n", boot.ErrHushGateShut)
 		os.Exit(1)
 	}
-	if err := serveWebDoor(ctx, a, loaded); err != nil {
+	if err := serveWebDoor(ctx, a, loaded, sockets); err != nil {
 		slog.Error("angelus web door", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
@@ -510,10 +531,13 @@ func Run() {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
-	if err := serveNodeDoor(ctx, a, loaded); err != nil {
+	if err := serveNodeDoor(ctx, a, loaded, sockets); err != nil {
 		slog.Error("angelus node door", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
+	}
+	for _, name := range sockets.Names() {
+		slog.Warn("socket activation passed a socket no door here serves", "name", name)
 	}
 
 	handlers.LoadNav()
@@ -540,7 +564,9 @@ func Run() {
 			slog.Error("angelus drain deadline exceeded, exiting with turns unsealed")
 		}
 	}
-	os.Remove(a.SocketPath)
+	if !a.InheritedSocket() {
+		os.Remove(a.SocketPath)
+	}
 	if err != nil {
 		slog.Error("angelus run", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
@@ -548,12 +574,41 @@ func Run() {
 	}
 }
 
-func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded) error {
+func cliListener(sockets *activation.Sockets) (net.Listener, error) {
+	if !sockets.Active() {
+		return nil, nil
+	}
+	ln, ok, err := sockets.Listener(cliSocketName)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("socket activation passed %q and no socket named %q: give the CLI door's socket FileDescriptorName=%s",
+			sockets.Names(), cliSocketName, cliSocketName)
+	}
+	return ln, nil
+}
+
+const (
+	cliSocketName  = "angelus"
+	webSocketName  = "web"
+	nodeSocketName = "node"
+)
+
+func doorListener(sockets *activation.Sockets, name string, bind func() (net.Listener, error)) (ln net.Listener, inherited bool, err error) {
+	if ln, ok, err := sockets.Listener(name); ok || err != nil {
+		return ln, ok, err
+	}
+	ln, err = bind()
+	return ln, false, err
+}
+
+func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded, sockets *activation.Sockets) error {
 	web, ok, err := loaded.WebDoor()
 	if err != nil || !ok {
 		return err
 	}
-	ln, err := angelus.ListenUnix(web.Path, web.Mode)
+	ln, inherited, err := doorListener(sockets, webSocketName, func() (net.Listener, error) { return angelus.ListenUnix(web.Path, web.Mode) })
 	if err != nil {
 		return fmt.Errorf("door.web: %w", err)
 	}
@@ -567,9 +622,11 @@ func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded
 		ln.Close()
 		return err
 	}
-	slog.Info("web door listening", "path", web.Path, "authn", web.Authn, "max_conn_age", web.MaxConnAge.String(), "edge_follow_max_age", door.FollowMaxAge.String(), "admits", admit != nil)
+	slog.Info("web door listening", "path", web.Path, "inherited", inherited, "authn", web.Authn, "max_conn_age", web.MaxConnAge.String(), "edge_follow_max_age", door.FollowMaxAge.String(), "admits", admit != nil)
 	a.Go("web door socket", func() {
-		defer os.Remove(web.Path)
+		if !inherited {
+			defer os.Remove(web.Path)
+		}
 		if err := a.ServeWeb(ctx, ln, door); err != nil {
 			slog.Error("web door", "err", err)
 		}

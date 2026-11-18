@@ -46,7 +46,7 @@ func noticeLines(b *bytes.Buffer) []string {
 func TestARefusedStoreLockNamesItsHolderOnce(t *testing.T) {
 	holdStoreLock(t)
 	var notice bytes.Buffer
-	if f, ok := lockStoreWithin(400*time.Millisecond, &notice); ok {
+	if f, ok := lockStoreWithin(400*time.Millisecond, &notice, incumbentAnswers); ok {
 		f.Close()
 		t.Fatal("took a store lock another handle holds")
 	}
@@ -70,7 +70,7 @@ func TestAStoreLockReleasedDuringTheWaitIsTaken(t *testing.T) {
 		outgoing.Close()
 	}()
 	var notice bytes.Buffer
-	f, ok := lockStoreWithin(30*time.Second, &notice)
+	f, ok := lockStoreWithin(30*time.Second, &notice, incumbentAnswers)
 	if !ok {
 		t.Fatalf("the lock was released and never taken:\n%s", notice.String())
 	}
@@ -104,7 +104,7 @@ func TestAnAnsweringIncumbentIsStoodDownForInSilence(t *testing.T) {
 
 	var notice bytes.Buffer
 	start := time.Now()
-	if f, ok := lockStoreWithin(30*time.Second, &notice); ok {
+	if f, ok := lockStoreWithin(30*time.Second, &notice, incumbentAnswers); ok {
 		f.Close()
 		t.Fatal("took a store lock another handle holds")
 	}
@@ -119,7 +119,7 @@ func TestAnAnsweringIncumbentIsStoodDownForInSilence(t *testing.T) {
 func TestAFreeStoreLockIsTakenInSilence(t *testing.T) {
 	holdStoreLock(t).Close()
 	var notice bytes.Buffer
-	f, ok := lockStoreWithin(time.Second, &notice)
+	f, ok := lockStoreWithin(time.Second, &notice, incumbentAnswers)
 	if !ok {
 		t.Fatal("a free store lock was refused")
 	}
