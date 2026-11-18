@@ -30,9 +30,9 @@ func ChildPolicy(s Snapshot) (map[string]json.RawMessage, bool, error) {
 	sort.Strings(names)
 	for _, k := range names {
 		switch w := WriterOf(k); w {
-		case WriterSelf, WriterLineage:
+		case WriterSelf, WriterLineage, WriterOwner:
 		default:
-			return nil, true, fmt.Errorf("%s: %s is %s class; a child policy carries only self- and lineage-class keys", ChildPolicyKey, k, w)
+			return nil, true, fmt.Errorf("%s: %s is %s class; a child policy carries only self-, lineage- and owner-class keys", ChildPolicyKey, k, w)
 		}
 	}
 	if faults := TouchedShapeFaults(s.Apply(Build(s, keys, nil)), names); len(faults) > 0 {
@@ -70,6 +70,19 @@ func policyFanoutOver(holder Snapshot, policy Patch) (n, own int, over bool) {
 		return n, 0, false
 	}
 	return n, own, n > own
+}
+
+func ChildPolicyOwnerKeysChanged(before, after Snapshot) []string {
+	was, _, _ := ChildPolicy(before)
+	now, _, _ := ChildPolicy(after)
+	var out []string
+	for k, v := range now {
+		if WriterOf(k) == WriterOwner && string(was[k]) != string(v) {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func CheckChildPolicyFanout(holder Snapshot) error {
