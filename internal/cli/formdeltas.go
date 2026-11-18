@@ -249,8 +249,6 @@ func groupDeltas(deltas map[string]livedoc.FormDelta) (map[string]*deltaGroup, [
 	return groups, order
 }
 
-// forkParent comes off the fork's birth patch, which stamps runtime.forked_from
-// (system.forked_from before P2: history keeps the old name).
 func forkParent(g *deltaGroup) string {
 	if g.kind != livedoc.FormBound {
 		return ""
