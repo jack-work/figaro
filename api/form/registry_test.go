@@ -21,11 +21,12 @@ func TestTheRegistryHasOneRowPerPath(t *testing.T) {
 	}
 }
 
+// A self row claims nothing beneath it: system.fanout groups lineage keys.
 func TestNoRowSitsUnderARowOfAnotherWriter(t *testing.T) {
 	rows := form.Registry()
 	for _, s := range rows {
 		for _, o := range rows {
-			if o.Path == s.Path || o.Exact {
+			if o.Path == s.Path || o.Exact || o.Writer == form.WriterSelf {
 				continue
 			}
 			literal := strings.NewReplacer("<name>", "x", "<id>", "x").Replace(s.Path)

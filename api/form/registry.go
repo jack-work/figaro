@@ -38,12 +38,15 @@ func Writers() []Writer {
 // Spec is one row of the registry. A spec covers its path and, unless Exact,
 // everything under it. An empty Short marks a root that only groups the
 // documented keys beneath it. A "<name>" segment is a placeholder and
-// documents a family without matching a literal path.
+// documents a family without matching a literal path. An Operator row is
+// one the owner at the terminal may name in managed apply, whatever its
+// class; the daemon's writer rules still judge the patch.
 type Spec struct {
 	Path      string
 	Writer    Writer
 	Exact     bool
 	Ephemeral bool
+	Operator  bool
 	Short     string
 }
 
@@ -110,6 +113,7 @@ var registry = []Spec{
 	{Path: "system.keepalive", Short: `Owner-held; a node whose lifetime is spent survives while it was used within this window (default one day; 0 reaps at the deadline)`, Writer: WriterOwner},
 	{Path: "system.retired", Short: `Owner-held; set when a figaro retires, with the reason (e.g. "context"); a box may set it on the figaros inside it`, Writer: WriterOwner},
 	{Path: "system.methods", Writer: WriterOwner},
+	{Path: "system.fanout", Writer: WriterSelf, Operator: true},
 	{Path: "system.environment", Writer: WriterOwner},
 	{Path: "system.retention", Writer: WriterOwner},
 }
@@ -148,6 +152,16 @@ var roots = func() map[Writer][]Spec {
 	}
 	return m
 }()
+
+func OperatorPaths() []string {
+	var out []string
+	for _, s := range registry {
+		if s.Operator {
+			out = append(out, s.Path)
+		}
+	}
+	return out
+}
 
 func RootsOf(w Writer) []string {
 	out := make([]string, len(roots[w]))

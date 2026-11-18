@@ -9,7 +9,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-var OperatorPrefixes = []string{"system.fanout"}
+var OperatorPrefixes = form.OperatorPaths()
 
 func Plan(current, desired form.Snapshot, managed, held, operator []string) (form.Patch, error) {
 	if len(managed) == 0 {
