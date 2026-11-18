@@ -240,5 +240,8 @@ type Backend interface {
 
 	HierarchyEngine() hierarchy.Engine
 
+	Feed(TopologyFeed)
+	EveryNode() []NodeView
+
 	Close() error
 }
