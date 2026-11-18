@@ -23,9 +23,9 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 | 5 | E2 hush as a system service | fork erasable-unzip `56faa8d6`; drop-box refresh by the Strategist | hush `lane/hush-system-service` 70d3782 + `lane/hush-drop-refresh` | SHIP; landing branch hush lane/hush-landing e2497c5be (gate green) with the Engineer to merge |
 | 6 | P3 admission ledger | fork dominoes-elusive `439448d3` | `lane/admission-ledger` a7ec40e88 | restacked on 0911f728f with the shared seat op (figaro.seat); restacks onto v0.74.4, then lands |
 | 7 | E1 angelus socket activation | fork tavern-culprit `df4d5475` (Engineer slot) | `lane/socket-activation` 5d80c21ad | review fixes in (F1, F3, F4, F5 with VM rows); delta review requested |
-| 8 | P2 runtime.* migration | fork hydrant-rocket `78718b5c` | `lane/runtime-namespace` fa6ebdddb on P1 | READY (store gen 3, runtime.reaped* moved, no caller patch writes runtime keys); review batched with P5 |
+| 8 | P2 runtime.* migration | fork hydrant-rocket `78718b5c` | `lane/runtime-namespace` ffe9ba6d5 on P1 | READY; in one Opus review with P5 |
 | 9 | E3 figaro valet and the fence | fork cognitive-backpack `3006ff4b` | `lane/valet` on b4bf913cb | building |
-| 10 | P5 key-path grants, selectors, child_policy | hydrant-rocket | `lane/key-grants` 7740d2012 | built; F2 control row passes on a snapshot; adding self-key writes to the default child and the fleet-grant migration doc, then one review with P2 |
+| 10 | P5 key-path grants, selectors, child_policy | hydrant-rocket | `lane/key-grants` 0783d56c8 | READY (default child writes its own self-class keys; seats take *:* per p5-migration.md); in review with P2 |
 | 11 | P6 quota, role verbs, succession charging | after P3, P5 | `lane/quota` | queued |
 | 12 | E4 house mode module (staged) | after E1-E3 | `lane/house-mode` + cheroot-config | queued; deploys only after Gluck's Merlin cutover |
 | 12b | P7a reminder coalescing | fork fossil-anklet `6483d245` | `lane/reminder-coalesce` 5fb4c9345 | SHIP (buckle-hugeness); to the Knight for the next cut; Anthropic savings measured after release; P7b waits on P5 |
