@@ -179,3 +179,71 @@ func TestCastOfAFigaroIsStillRefused(t *testing.T) {
 	_, err = cc.c.Study(callCtx, parent)
 	require.NoError(t, err, "control: the same figaro is studiable")
 }
+
+type heldRenderer struct {
+	*studyRenderer
+	holdFor string
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (r *heldRenderer) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+	if in.AriaID == r.holdFor {
+		select {
+		case r.entered <- struct{}{}:
+		default:
+		}
+		<-r.release
+	}
+	return r.studyRenderer.Send(ctx, in, bus)
+}
+
+// #145: a study declared mid-turn gets its began mark at the next round
+// boundary. A parent change that lands in between must still reach the next
+// turn, in the mark's baseline, and that turn must stamp the change.
+func TestAChangeBeforeALateBeganMarkReachesTheNextTurn(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
+	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\n"), 0o600))
+	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte("default_outfit = \"mock\"\n"), 0o600))
+	base := &studyRenderer{seen: map[string][]string{}}
+	r := &heldRenderer{studyRenderer: base, entered: make(chan struct{}, 1), release: make(chan struct{})}
+	a, acli, ctx, _ := daemonWithProvider(t, dir, nil, func() provider.Provider { return r })
+	p, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	c, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	parent, child := p.FigaroID, c.FigaroID
+	pc, cc := dialNode(t, a, parent), dialNode(t, a, child)
+	r.holdFor = child
+	callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	_, _, err = cc.c.Qua(callCtx, "busy", nil)
+	require.NoError(t, err)
+	<-r.entered
+	_, err = cc.c.Study(callCtx, parent)
+	require.NoError(t, err)
+	commentAndMantra(t, callCtx, a, pc, parent)
+	close(r.release)
+	<-cc.done
+	cc.turn(t, callCtx, "anything for me?")
+
+	lib, err := a.Backend.(*store.XwalBackend).Libretto(parent)
+	require.NoError(t, err)
+	lg, err := a.Backend.OpenFigIR(child)
+	require.NoError(t, err)
+	var prompt arialog.Entry[message.Message]
+	for _, e := range lg.Read() {
+		if e.Payload.Role == message.RoleInput && e.Payload.Study == nil {
+			prompt = e
+		}
+	}
+	require.Equal(t, lib.Version(), prompt.StudyVersions[parent], "the turn stamped a stale study")
+
+	require.Empty(t, base.blocks(child, "study:"+parent), "the change was reported twice")
+	began := base.blocks(child, "study")
+	require.Len(t, began, 1, "%q", began)
+	require.Contains(t, began[0], "why this design?")
+	require.Contains(t, began[0], "parent busy")
+}
