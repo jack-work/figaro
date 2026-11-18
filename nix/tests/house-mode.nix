@@ -152,5 +152,20 @@ pkgs.testers.runNixOSTest {
         print(alice(f"figaro form apply --id {role} -O fanout --managed system.fanout.max_children -j"))
         got = json.loads(alice(f"figaro state show {role} -j"))
         assert got["system"]["fanout"]["max_children"] == 3, got
+
+    with subtest("a daemon that cannot start never fails its socket, and fixing the cause is enough"):
+        house.succeed("systemctl stop figaro.service")
+        house.succeed("chmod 000 /var/lib/figaro/arias")
+        since = house.succeed("date +%s").strip()
+        for _ in range(6):
+            house.execute("su - alice -c 'timeout 5 figaro ls --json' >/dev/null 2>&1")
+        starts = int(house.succeed(f"journalctl -u figaro.service --since @{since} -o cat | grep -c '^Starting figaro angelus' || true").strip())
+        print(f"KPI crash loop: {starts} starts in 30 s of calls")
+        house.succeed("systemctl is-active figaro.socket")
+        assert house.succeed("systemctl show figaro.socket -p Result --value").strip() == "success"
+        assert 0 < starts <= 15, starts
+        house.succeed("chmod 700 /var/lib/figaro/arias")
+        house.wait_until_succeeds("su - alice -c 'timeout 10 figaro ls --json'", timeout=60)
+        house.succeed("systemctl is-active figaro.service")
   '';
 }
