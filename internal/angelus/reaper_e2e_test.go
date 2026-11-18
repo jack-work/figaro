@@ -19,6 +19,7 @@ type metaWriter interface {
 	Meta(string) (*store.AriaMeta, error)
 	SetMeta(string, *store.AriaMeta) error
 	ApplyForm(string, form.Patch) (uint64, error)
+	ApplyFormPrivileged(string, form.Patch) (uint64, error)
 	CreateForm(string, form.Patch, ...store.BirthOption) (string, uint64, error)
 }
 
@@ -263,7 +264,7 @@ func setReapedUntil(t *testing.T, a *angelus.Angelus, until time.Time, ids ...st
 	t.Helper()
 	raw, _ := json.Marshal(store.ReapedUntilValue(until))
 	for _, id := range ids {
-		_, err := backend(t, a).ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemReapedUntilKey: raw}, nil))
+		_, err := backend(t, a).ApplyFormPrivileged(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{store.ReapedUntilKey: raw}, nil))
 		require.NoError(t, err)
 	}
 }
@@ -338,6 +339,6 @@ func TestReapedDeadline(t *testing.T) {
 		require.Zero(t, meta.ReapedUntilMS)
 		snap, err := a.Backend.FormState(fork.Alternative)
 		require.NoError(t, err)
-		require.Nil(t, snap.Lookup(store.SystemReapedUntilKey), "the fork inherited its parent's purge deadline")
+		require.Nil(t, snap.Lookup(store.ReapedUntilKey), "the fork inherited its parent's purge deadline")
 	})
 }

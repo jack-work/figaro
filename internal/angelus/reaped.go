@@ -13,7 +13,7 @@ import (
 
 type reapedKeeper interface {
 	Reaped() []store.ReapedEntry
-	ApplyForm(id string, patch form.Patch) (uint64, error)
+	ApplyFormPrivileged(id string, patch form.Patch) (uint64, error)
 }
 
 func (a *Angelus) softDelete(e store.TTLEntry, taken []string, grace time.Duration) error {
@@ -22,11 +22,11 @@ func (a *Angelus) softDelete(e store.TTLEntry, taken []string, grace time.Durati
 		return nil
 	}
 	raw, _ := json.Marshal(e.ID)
-	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemReapedKey: raw}, []string{store.SystemReapedUntilKey})
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.ReapedKey: raw}, []string{store.ReapedUntilKey})
 	marked := 0
 	var failed error
 	for _, id := range taken {
-		if _, err := keeper.ApplyForm(id, patch); err != nil {
+		if _, err := keeper.ApplyFormPrivileged(id, patch); err != nil {
 			slog.Warn("lifetime spent, soft delete failed", "node", id, "root", e.ID, "err", err)
 			failed = errors.Join(failed, fmt.Errorf("soft delete %s: %w", id, err))
 			continue

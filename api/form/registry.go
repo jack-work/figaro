@@ -117,7 +117,11 @@ func withLegacyRuntimeRows(rows []Spec) []Spec {
 		if r.Old == RetireRequestKey {
 			continue
 		}
-		rows = append(rows, Spec{Path: r.Old, Short: "Old name of " + r.New + ": read for one release, never written", Writer: WriterRuntime, Exact: true, Shape: shapes[r.New]})
+		shape, ok := shapes[r.New]
+		if !ok {
+			shape = ShapeAny()
+		}
+		rows = append(rows, Spec{Path: r.Old, Short: "Old name of " + r.New + ": read for one release, never written", Writer: WriterRuntime, Exact: true, Shape: shape})
 	}
 	return rows
 }

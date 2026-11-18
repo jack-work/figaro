@@ -445,7 +445,7 @@ grace_hours
 
 `nodes` is every node the group holds (the root first or not; order is not
 meaningful). It changes when the sweep reaps or purges, and when a node is
-restored (`figaro reaped restore`, or removing `system.reaped` by hand).
+restored (`figaro reaped restore`; `runtime.reaped` is the daemon's, so no hand edit does it).
 
 ## `@successions`: handovers in flight
 

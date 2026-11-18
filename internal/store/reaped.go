@@ -5,13 +5,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jack-work/figaro/api/form"
 )
 
-const SystemReapedKey = "system.reaped"
-
-const SystemReapedUntilKey = "system.reaped_until"
-
-const SystemReapedByKey = "system.reaped_by"
+const (
+	ReapedKey      = form.ReapedKey
+	ReapedUntilKey = form.ReapedUntilKey
+	ReapedByKey    = form.ReapedByKey
+)
 
 type ReapedEntry struct {
 	ID      string

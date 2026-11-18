@@ -55,6 +55,9 @@ Written by the daemon alone. An unprivileged patch that names one, to set or to 
 - `system.failure.category`
 - `system.failure.turn`
 - `system.failure.at`
+- `system.reaped`
+- `system.reaped_until`
+- `system.reaped_by`
 
 ## managed apply
 

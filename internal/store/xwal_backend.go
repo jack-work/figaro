@@ -588,7 +588,13 @@ func (b *XwalBackend) ApplyFormEffectPrivilegedIf(ariaID string, patch message.P
 	if err != nil {
 		return 0, message.Patch{}, err
 	}
-	return f.ApplyEffectPrivileged(patch, ifVersion)
+	v, applied, err := f.ApplyEffectPrivileged(patch, ifVersion)
+	if errors.Is(err, ErrFormSealed) && ifVersion == 0 {
+		if mirrored, ok, merr := b.applySealedLifetimeWrite(ariaID, v, FormWrite{Patch: patch}, true); ok {
+			return mirrored.Version, mirrored.Applied, merr
+		}
+	}
+	return v, applied, err
 }
 
 func (b *XwalBackend) ApplyFormWrite(ariaID string, w FormWrite) (FormVerdict, error) {
@@ -601,14 +607,14 @@ func (b *XwalBackend) ApplyFormWrite(ariaID string, w FormWrite) (FormVerdict, e
 	}
 	v, err := f.ApplyWrite(w)
 	if errors.Is(err, ErrFormSealed) {
-		if mirrored, ok, merr := b.applySealedLifetimeWrite(ariaID, v.Version, w); ok {
+		if mirrored, ok, merr := b.applySealedLifetimeWrite(ariaID, v.Version, w, false); ok {
 			return mirrored, merr
 		}
 	}
 	return v, err
 }
 
-func (b *XwalBackend) applySealedLifetimeWrite(ariaID string, version uint64, w FormWrite) (FormVerdict, bool, error) {
+func (b *XwalBackend) applySealedLifetimeWrite(ariaID string, version uint64, w FormWrite, priv bool) (FormVerdict, bool, error) {
 	if b.Buried(ariaID) || !isLifetimeOnlyPatch(w.Patch) {
 		return FormVerdict{}, false, nil
 	}
@@ -623,7 +629,7 @@ func (b *XwalBackend) applySealedLifetimeWrite(ariaID string, version uint64, w 
 		return FormVerdict{Version: version}, true, fmt.Errorf("%w: at version %d, not %d: re-read and retry",
 			ErrFormMoved, version, w.IfVersion)
 	}
-	if err := form.CheckWritable(w.Patch, false); err != nil {
+	if err := form.CheckWritable(w.Patch, priv); err != nil {
 		return FormVerdict{Version: version}, true, err
 	}
 	b.ttlCommitted(ariaID, w.Patch)
@@ -646,7 +652,7 @@ func isLifetimeOnlyPatch(patch message.Patch) bool {
 func isLifetimeKey(key string) bool {
 	switch key {
 	case SystemTTLKey, SystemKeepaliveKey, SystemRetiredKey, RetiredKey, SystemReapIfEmptyKey,
-		SystemReapedKey, SystemReapedUntilKey, SystemReapedByKey:
+		ReapedKey, ReapedUntilKey, ReapedByKey, "system.reaped", "system.reaped_until", "system.reaped_by":
 		return true
 	}
 	return false
@@ -672,7 +678,7 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemSuccessionFailedKey}))
 	}
 	if pm, _ := b.Meta(parent); pm != nil && pm.ReapedAtMS > 0 {
-		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemReapedKey, SystemReapedUntilKey, SystemReapedByKey}))
+		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, form.RuntimeDrops(ReapedKey, ReapedUntilKey, ReapedByKey)))
 	}
 	release := b.holdMarks(parent)
 	child, version, stamped, err := b.store.ForkWith(parent, atMainLT, patch, opts...)

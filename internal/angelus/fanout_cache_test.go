@@ -2,8 +2,10 @@ package angelus
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -12,6 +14,14 @@ func requireCacheMatchesTree(t *testing.T, hs *Handlers, step string) {
 	t.Helper()
 	if d := hs.h.angelus.fanoutDrift(); len(d) != 0 {
 		t.Fatalf("after %s the cache drifted from the tree: %+v", step, d)
+	}
+}
+
+func stampReaped(t *testing.T, b *store.XwalBackend, id, root string) {
+	t.Helper()
+	raw, _ := json.Marshal(root)
+	if _, err := b.ApplyFormPrivileged(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{store.ReapedKey: raw}, nil)); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -34,9 +44,9 @@ func TestTheFanoutCacheFollowsTheTreeThroughEveryChange(t *testing.T) {
 	}
 	retireAria(t, b, kids[0])
 	requireCacheMatchesTree(t, hs, "a retirement")
-	applyKeys(t, b, kids[1], map[string]any{store.SystemReapedKey: kids[1]})
+	stampReaped(t, b, kids[1], kids[1])
 	requireCacheMatchesTree(t, hs, "a reap")
-	applyKeys(t, b, kids[1], map[string]any{store.SystemReapedKey: ""})
+	stampReaped(t, b, kids[1], "")
 	requireCacheMatchesTree(t, hs, "a revival")
 	if err := hs.h.place(inProcess(context.Background()), kids[2], other); err != nil {
 		t.Fatal(err)
