@@ -24,6 +24,12 @@ Under the Engineer: composed Seat plan, neither-blimp `a107c3b5` (`lane/seat-pla
 
 v0.74.5 review FIX, the Knight fixing (F-A cap overfill on kill+restore, plus F-B to F-G); P2+P5 in review (hyacinth-obtain).
 
+**BUG BASH FIRST (Gluck 12:1x).** No feature folds into the north star until two live v0.74.4 bugs are fixed:
+- Queued messages land late or hit "context deadline" (lane chlorine-kleenex).
+- A turn stalls for minutes after a tool completes, with a form CAS conflict, while forks of it wait for a "safe boundary" (lane dibs-violin, bisecting v0.74.3 against v0.74.4).
+
+Queue and fork must be free and instant; avoid locks. Lanes keep building but don't land. Any lane on the turn path, forms or the hierarchy lock checks itself against both bugs.
+
 **North star (Gluck 11:2x): keel `kingdom/north-star`, now at b877e4faf (= rel/v0.75.0: fixed v0.74.5 + E1 + P2 + the boundary fix).** One integration branch for the whole remaining plan.
 - **Folding:** a lane rebases onto the north-star tip and gates there; then the Strategist fast-forwards. The branch stays linear, one idea per commit.
 - **Review in post (Gluck 11:4x).** A slice ships on a green gate plus the Knight's Sonnet slice check. Folds don't wait on Opus. listless-oncoming `92aa6e78` (Opus, warm) reviews each shipped batch afterwards, and its findings ship as follow-up patches the same day, High first.
