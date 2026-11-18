@@ -190,27 +190,23 @@ figaro to write one: a seat that switched its own model through a labelled
 `figaro set system.model` now asks Gluck, or carries the model in its
 outfit.
 
-## An outfit gives only what its namer could write
+## Outfits are the owner's templates
 
-The keys an outfit carries are now judged as the caller's own patch when a
-figaro names it on `set`, `state outfit`, `fork`, `form bind` and `cast`. A
-labelled figaro cannot give itself or a child, by naming an outfit:
-- an owner-held key that differs from what the child inherits
-  (system.model, system.provider, system.ttl, system.keepalive, ...);
-- system.scopes beyond its own, fanout beyond its own, a child policy on a
-  figaro not below it;
-- anything under runtime.* (refused for Gluck too).
+An outfit is owner-authored. Whoever may name one gets its owner-held
+values (system.provider, system.model, system.credo, system.ttl, ...) on
+every path: `set`/`state outfit`, prompts, `cast`, `fork -O`, `form bind`,
+`figaro new`, `form new`. Its authority keys (system.scopes, system.fanout,
+system.child_policy) come only when the unlabelled owner names it: any
+other caller, a labelled figaro or a box, is refused on every path, and no
+outfit may carry runtime.* for anyone. The rest of an outfit's keys are
+checked as the caller's own patch.
 
-A box's listed outfit still gives its owner-held values and the box's own
-sandbox: the owner listed it for the box. On `figaro new` and `form new`
-the outfit is the owner's template for a new figaro: any caller may name
-one, but only Gluck one that carries scopes, fanout or a child policy.
+Limit: a tool shell running as Gluck's uid can still edit the outfit files
+on disk, and so the templates, until the valet fence (E3) separates them.
 
-To pick a model or provider for a figaro's children, Gluck writes it in the
-parent's `system.child_policy` (an owner-held key there is accepted only
-when Gluck writes it), or forks unlabelled. The Review Steward's reviewer
-forks of the Strategist on gemini are refused as labelled forks with a
-gemini outfit; they need one of the two.
+To give a figaro's children authority keys or a fixed model, Gluck writes
+them in the parent's `system.child_policy` (an owner-held key there is
+accepted only when Gluck writes it).
 
 ## Studies follow the observer's reads
 

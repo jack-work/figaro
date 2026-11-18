@@ -307,6 +307,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		return nil, err
 	}
+	if err := h.refuseOutfitGrants(ctx, req.Outfits); err != nil {
+		return nil, err
+	}
 	base, err := h.listedOutfitKeys(ctx, inherited, req.Outfits)
 	if err != nil {
 		return nil, err

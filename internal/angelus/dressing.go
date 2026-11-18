@@ -171,7 +171,7 @@ func (h *handlers) refuseOutfitGrants(ctx context.Context, outfits []string) err
 
 func (h *handlers) listedOutfitKeys(ctx context.Context, before form.Snapshot, outfits []string) (form.Snapshot, error) {
 	box, boxed := callerBox(ctx)
-	if !boxed || len(outfits) == 0 {
+	if len(outfits) == 0 {
 		return before, nil
 	}
 	dressed, err := h.dress(outfits, nil)
@@ -180,10 +180,40 @@ func (h *handlers) listedOutfitKeys(ctx context.Context, before form.Snapshot, o
 	}
 	held := map[string]json.RawMessage{}
 	for _, e := range dressed.Entries() {
-		own := e.Key == "system.sandbox" && e.NewString() == box
+		own := boxed && e.Key == "system.sandbox" && e.NewString() == box
 		if !e.IsRemoval() && (own || form.WriterOf(e.Key) == form.WriterOwner) {
 			held[e.Key] = e.New
 		}
 	}
 	return before.Apply(form.Build(before, held, nil)), nil
+}
+
+type requestOutfitsKey struct{}
+
+func withRequestOutfits(ctx context.Context, method string, params json.RawMessage) context.Context {
+	if !mightCarryOutfits(params) {
+		return ctx
+	}
+	var req struct {
+		Outfits []string `json:"outfits"`
+		Form    *struct {
+			Outfits []string `json:"outfits"`
+		} `json:"form"`
+	}
+	if json.Unmarshal(params, &req) != nil {
+		return ctx
+	}
+	names := req.Outfits
+	if method == rpc.MethodQua && req.Form != nil {
+		names = req.Form.Outfits
+	}
+	if len(names) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, requestOutfitsKey{}, names)
+}
+
+func requestOutfits(ctx context.Context) []string {
+	names, _ := ctx.Value(requestOutfitsKey{}).([]string)
+	return names
 }
