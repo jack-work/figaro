@@ -258,6 +258,7 @@ func (h *handlers) advanceSuccession(e figaro.TurnEnd) {
 
 type heldRole struct {
 	id, name, handoff, outfit string
+	route                     map[string]json.RawMessage
 }
 
 func nested(snap form.Snapshot, table, field string) string {
@@ -291,7 +292,7 @@ func (h *handlers) rolesHeldBy(id string) ([]heldRole, error) {
 		if v := snap.Lookup("target-aria"); v == nil || *v != id {
 			continue
 		}
-		r := heldRole{id: f.ID, outfit: nested(snap, successionPolicyKey, "outfit")}
+		r := heldRole{id: f.ID, outfit: nested(snap, successionPolicyKey, "outfit"), route: seatRoute(snap)}
 		for _, k := range []string{"name", "role-name"} {
 			if v := snap.Lookup(k); v != nil && r.name == "" {
 				r.name = *v
@@ -376,6 +377,10 @@ func (h *handlers) beginSuccession(ctx context.Context, e figaro.TurnEnd) {
 		h.failSuccession(ctx, rec, err.Error())
 		return
 	}
+	if _, err := successorRoute(roles); err != nil {
+		h.failSuccession(ctx, rec, err.Error())
+		return
+	}
 	for _, r := range roles {
 		if err := store.RequireCastTarget(h.angelus.Backend, r.id); err != nil {
 			h.failSuccession(ctx, rec, fmt.Sprintf("role %s cannot be cast: %s", r.id, err))
@@ -450,6 +455,11 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 		h.failSuccession(ctx, rec, err.Error())
 		return
 	}
+	route, err := successorRoute(roles)
+	if err != nil {
+		h.failSuccession(ctx, rec, err.Error())
+		return
+	}
 	keys := map[string]json.RawMessage{store.SystemTTLKey: json.RawMessage(`"0"`)}
 	copied(snap, keys, store.SystemRetirementKey, "system.sandbox", "system.tools", form.FanoutMaxChildrenKey, form.FanoutMintKey)
 	scopes, narrowed, err := h.carriedScopes(rec.Old, snap)
@@ -460,18 +470,38 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 	if narrowed {
 		keys[form.ScopesKey] = scopes
 	}
+	roleless := outfit == ""
 	if outfit == "" {
 		if v := snap.Lookup("system.outfit_name"); v != nil {
 			outfit = *v
 		}
 		copied(snap, keys, "system.provider", "system.model", "system.thinking_effort", "system.thinking_budget")
 	}
+	var drops []string
+	if seat, alone := seatProviderAlone(route); alone && roleless {
+		under := ""
+		if v := snap.Lookup("system.provider"); v != nil {
+			under = *v
+		}
+		drop, err := orphanedModel(seat, under)
+		if err != nil {
+			h.failSuccession(ctx, rec, err.Error())
+			return
+		}
+		if drop {
+			delete(keys, "system.model")
+			drops = append(drops, "system.model")
+		}
+	}
+	for k, v := range route {
+		keys[k] = v
+	}
 	mantra := ""
 	if v := snap.Lookup("mantra"); v != nil {
 		mantra = *v
 	}
 	keys["mantra"], _ = json.Marshal("succeeding " + rec.Old[:min(8, len(rec.Old))] + ": " + mantra)
-	patch := form.Build(form.Snapshot{}, keys, nil)
+	patch := form.Build(form.Snapshot{}, keys, drops)
 	req := rpc.CreateRequest{Patch: &patch}
 	if outfit != "" {
 		req.Outfits = strings.Split(outfit, ",")

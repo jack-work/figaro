@@ -57,6 +57,7 @@ type ForkRequest struct {
 	Patch   *FormPatch  `json:"patch,omitempty"`
 	Outfits []string    `json:"outfits,omitempty"`
 	Studies ForkStudies `json:"studies,omitempty"`
+	Seat    string      `json:"seat,omitempty"`
 }
 
 type ForkStudies string
@@ -67,7 +68,10 @@ const (
 	ForkStudiesNone  ForkStudies = "none"
 )
 
-const CapForkStudies Capability = "fork.studies"
+const (
+	CapForkStudies Capability = "fork.studies"
+	CapForkSeat    Capability = "fork.seat"
+)
 
 // ForkResponse: the parent freezes and keeps its id as a read-only index
 // node. OwnerNote announces that an interior <id>:<LT> resolved to an owning

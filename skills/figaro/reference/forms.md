@@ -234,6 +234,19 @@ fig succeed @role --no-studies -- go                 # study only what it studie
 The fork studies what the predecessor studies now, with the same `--keys`,
 however early it was cut; `--no-studies` keeps the studies of the fork turn.
 
+The fork is dressed for the seat, not for the turn it was cut at. Each key
+comes from the first of these that sets it: the caller's `-S`/`-D`, the
+caller's `-O`, the role's route keys, the role's `succession-policy.outfit`,
+then the predecessor's board at the fork turn. The route keys are
+`system.provider`, `system.model`, `system.max_tokens`,
+`system.thinking_effort`, `system.thinking_budget`, `system.methods` and
+`system.decide`: what picks where a turn goes and how it is asked. A role
+carrying none of them leaves the fork on the route its turn was recorded
+with. A role naming `system.provider` and no model, where no outfit or
+caller names one either, drops a model that belongs to another provider so
+the new provider's default applies; a provider with no default refuses the
+succession and asks for `system.model` on the role.
+
 The steps, each landing before the next runs: fork (or take
 `--successor`); `demote` the predecessor beneath the successor, so its
 branches outlive it (a successor not drawn under it stays put and the
@@ -255,10 +268,11 @@ predecessor is retired, unless `--stay`.
 says `action = "succeed"` is replaced by the daemon when its context reaches
 the threshold: a final handoff turn, a successor minted clean (no fork) and
 cast into every role the holder has, and the holder retired once the
-successor's first turn ends. The daemon reads two keys of each role:
-`succession-policy.outfit` dresses the successor (roles that disagree stop
-the succession), and `succession-policy.handoff-key` names the key whose
-value is the handoff path (`handoff` when unset). `succession-policy` is
+successor's first turn ends. The daemon reads three things of each role:
+`succession-policy.outfit` dresses the successor, the route keys above
+override that outfit (roles that disagree on either stop the succession),
+and `succession-policy.handoff-key` names the key whose value is the
+handoff path (`handoff` when unset). `succession-policy` is
 box-held: a box cannot pick the outfit the daemon dresses its successor in.
 The whole flow and its failure modes are under `system.retirement` in
 [cli.md](../cli.md).
