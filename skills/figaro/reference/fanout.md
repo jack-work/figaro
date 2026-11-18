@@ -20,7 +20,9 @@ The daemon refuses:
 
 - `fork`, when the figaro being forked already holds `max_children` live
   children. Counted under the topology lock together with the birth, so
-  concurrent forks and reparents cannot overfill; nothing is created.
+  concurrent forks and reparents cannot overfill; nothing is created. The
+  refusal names the grant its parent can run:
+  `figaro set --id <it> system.fanout.max_children <n>`.
 - `demote`, `adopt` (the `figaro.accept` consent step), and any other move
   that redraws the topology, when it would leave some node holding more live
   children than its limit. The topology is left exactly as it was.
@@ -119,13 +121,23 @@ any count that drifted from the tree, and `figaro doctor admission` lists
 every figaro over `max_children` or its quota.
 
 **A refusal names the budget** at every live capped ancestor on the way up,
-and the owner's forks under the one that refused:
+the owner's forks under the one that refused, and the grant its parent can
+run:
 
 ```
-fanout: this needs 1 of budget, and 9a5715d8 has 0 free of quota 2; retire a figaro under it (the owner made 3f0c11aa) or ask your parent for more
+fanout: this needs 1 of budget, and 9a5715d8 has 0 free of quota 2; retire a figaro under it (the owner made 3f0c11aa), or have its parent grant more (figaro set --id 9a5715d8 system.fanout.quota 3)
 ```
 
-There is no verb to ask for budget: ask the parent in words.
+There is no verb to ask for budget: ask the parent in words, and quote it
+the command.
+
+**Reserved is reserved.** Admission checks only the nearest live capped
+ancestor, because a child's charge already covers everything under it. A
+figaro over its quota (owner forks, a quota lowered below use, a race)
+refuses its own forks, but a capped figaro under it with room left keeps
+admitting: what was granted to it stays its own. So `doctor admission`
+showing `A uses 14 of quota 10` while A's children still fork is the rule,
+not a fault. A's own forks wait until it is back under.
 
 **Minting spends budget.** A labeled `figaro new` is charged to the minter as
 a fork would be: the new figaro is born at quota 0, drawn under its minter,

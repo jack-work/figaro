@@ -136,6 +136,11 @@ enforce_quota = true           # system.fanout.quota refuses forks, reparents an
 | `enforce_lineage_reach` | reach beyond the lineage needs a written grant | the call goes through |
 | `enforce_quota` | a fork, reparent, mint or quota grant past a subtree's budget is refused | it lands and is counted against the budget; `max_children` still refuses |
 
+With `enforce_quota` on, only the nearest live capped ancestor of a fork is
+checked. A figaro over its quota refuses its own forks, while a capped
+figaro under it with budget left keeps forking: budget granted down is
+reserved. See [fanout.md](fanout.md), "Reserved is reserved".
+
 Off, the daemon still decides, logs `authz: would refuse` with the switch and
 the reason, and counts it:
 
