@@ -624,7 +624,7 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 		}
 		if req.Form != nil {
 			patch = req.Form.Patch
-			if open := openKeys(req.Form.Context); len(open) > 0 {
+			if open := contextWrites(req.Form.Context); len(open) > 0 {
 				snap, err := h.angelus.Backend.FormState(id)
 				if err != nil {
 					return err
@@ -671,10 +671,10 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 	return h.refuseCallerKeys(ctx, line, snap, patch)
 }
 
-func openKeys(m map[string]json.RawMessage) map[string]json.RawMessage {
+func contextWrites(m map[string]json.RawMessage) map[string]json.RawMessage {
 	out := map[string]json.RawMessage{}
 	for k, v := range m {
-		if !form.HarnessKey(k) {
+		if !form.HarnessKey(k) && !form.Ephemeral(k) {
 			out[k] = v
 		}
 	}

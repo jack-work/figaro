@@ -519,3 +519,27 @@ func TestASeatForkInheritsItsHoldersGrant(t *testing.T) {
 		t.Errorf("a stranger's seat fork took the holder's grant: %s", got)
 	}
 }
+
+// Defends the context a send carries: the per-turn datetime rides on the send
+// grant, and any other context key is a write on the receiver that needs its
+// own grant.
+func TestASendCarriesItsDatetimeAndNoOtherUngrantedKey(t *testing.T) {
+	r := newLineageRig(t, "")
+	kid := r.forkAsFigaro(t, r.parent)
+	send := func(keys map[string]any) rpc.QuaRequest {
+		ctx := map[string]json.RawMessage{}
+		for k, v := range keys {
+			ctx[k] = rawJSON(t, v)
+		}
+		return rpc.QuaRequest{Text: "hi", Form: &rpc.FormInput{Context: ctx}}
+	}
+	for _, local := range []bool{true, false} {
+		if err := r.ariaCall(t, local, kid, rpc.MethodQua, r.parent, send(map[string]any{"datetime": "Wednesday"})); err != nil {
+			t.Errorf("local door %v: a default child's send to its parent was refused: %v", local, err)
+		}
+		err := r.ariaCall(t, local, kid, rpc.MethodQua, r.parent, send(map[string]any{"datetime": "Wednesday", "mantra": "taken"}))
+		if err == nil || !strings.Contains(err.Error(), "mantra") {
+			t.Errorf("local door %v: a send wrote the parent's mantra through its context: %v", local, err)
+		}
+	}
+}

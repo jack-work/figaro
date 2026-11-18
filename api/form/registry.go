@@ -197,6 +197,15 @@ func rootOf(w Writer, path string) (string, bool) {
 	return "", false
 }
 
+func Ephemeral(path string) bool {
+	for _, s := range registry {
+		if s.Ephemeral && s.covers(path) {
+			return true
+		}
+	}
+	return false
+}
+
 func WriterOf(path string) Writer {
 	for _, w := range []Writer{WriterRuntime, WriterOwner, WriterLineage} {
 		if _, ok := rootOf(w, path); ok {
