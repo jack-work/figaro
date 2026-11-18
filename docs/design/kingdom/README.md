@@ -10,7 +10,16 @@ One Strategist plans both tracks and fans out forks that build parts. The Knight
 
 Working agreement: REVISION 2 of the plan root. The Strategist builds everything at once with its forks, keeps the final vision, and restacks it into non-conflicting commits for the Knight as main moves. Reviewers fork the Strategist at turn 1 (the common fork point) on Gemini.
 
-**Resumed 11-18 09:00 (Gluck lifted the hold).** P4: varied-username `f0fbbf89`. E1 LOWs then E3: llama-widow `937e1be4`. v0.74.5 (P3+H1+P1b) is in Opus review. The P2+P5 review is resuming (hyacinth-obtain, sonnet); after it, P2+P5 restack on v0.74.5 with the fixes.
+**Running through the day (Gluck 10:0x: until all of it ships; no quota pauses).** Strategist forks, 7 of 7:
+- P4: varied-username `f0fbbf89`
+- E1 LOWs, then E3: llama-widow `937e1be4`
+- P2+P5 landing: blouse-pretzel `1f6e3ae2`
+- P6: keepsake-avalanche `874637fe`
+- P7b laws: urchin-yacht `ee3ef672`
+- E4 house mode: utensil-slapping `ef74d1d6`
+- S1 auto-normalize: oven-receipt `ae2fc7c2`
+
+In review: v0.74.5, P3+H1+P1b (dandelion-kabob, Opus); P2+P5 (hyacinth-obtain, Sonnet).
 
 | # | part | builder | branch | state (2026-11-18 02:xx) |
 |---|---|---|---|---|
