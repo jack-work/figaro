@@ -56,7 +56,8 @@ pkgs.testers.runNixOSTest {
         activated.succeed("test -S /run/figaro/angelus.sock")
         out = fig(activated, "rest 2>&1")
         assert "not running" in out, out
-        activated.fail("systemctl is-active figaro.service")
+        activated.succeed("sleep 0.5")
+        assert activated.succeed("systemctl show -p ActiveState --value figaro.service").strip() == "inactive"
         fig(activated, "ls --json")
         activated.succeed("systemctl is-active figaro.service")
         assert activated.succeed("stat -c %i /run/figaro/angelus.sock").strip() == inode, "the socket was replaced"
