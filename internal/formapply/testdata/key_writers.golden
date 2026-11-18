@@ -331,6 +331,10 @@ scopes.scopes.grants.runtime	owner= lineage= set=false remove=false apply.owner=
 scopes.scopes.scopes.base_url	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 scopes.turn.x.model	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 scopes.x.sandbox.x	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
+succession-policy	owner=succession-policy lineage= set=false remove=false apply.owner=ok apply.figaro=ok
+succession-policy.x	owner=succession-policy lineage= set=false remove=false apply.owner=ok apply.figaro=ok
+succession-policy[0]	owner=succession-policy lineage= set=false remove=false apply.owner=refused apply.figaro=refused
+succession-policy_x	owner= lineage= set=false remove=false apply.owner=ok apply.figaro=ok
 system	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.base_url	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.cache_control	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
@@ -358,6 +362,10 @@ system.checkpoint.max_marks	owner= lineage= set=false remove=false apply.owner=r
 system.checkpoint.max_marks.x	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.checkpoint.max_marks[0]	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.checkpoint.max_marks_x	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
+system.child_policy	owner= lineage=system.child_policy set=false remove=false apply.owner=refused apply.figaro=refused
+system.child_policy.x	owner= lineage=system.child_policy set=false remove=false apply.owner=refused apply.figaro=refused
+system.child_policy[0]	owner= lineage=system.child_policy set=false remove=false apply.owner=refused apply.figaro=refused
+system.child_policy_x	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.context_tier	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.context_tier.x	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.context_tier[0]	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
@@ -598,6 +606,10 @@ system.verbosity	owner= lineage= set=false remove=false apply.owner=refused appl
 system.verbosity.x	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.verbosity[0]	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.verbosity_x	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
+target-aria	owner= lineage=target-aria set=false remove=false apply.owner=refused apply.figaro=refused
+target-aria.x	owner= lineage=target-aria set=false remove=false apply.owner=refused apply.figaro=refused
+target-aria[0]	owner= lineage=target-aria set=false remove=false apply.owner=refused apply.figaro=refused
+target-aria_x	owner= lineage= set=false remove=false apply.owner=ok apply.figaro=ok
 token_budget	owner= lineage= set=true remove=true apply.owner=ok apply.figaro=ok
 token_budget.x	owner= lineage= set=false remove=false apply.owner=ok apply.figaro=ok
 token_budget[0]	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
