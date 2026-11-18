@@ -120,6 +120,9 @@ A fork made by a figaro is born with
 `["send:parent", "read:aria:self", "write:aria:self#@self", "delete:aria:self#@self"]`.
 Its parent is the figaro it was drawn under at birth. A send to a role
 counts as a send to the parent only while that role resolves to the parent.
+The datetime every send carries is the receiver's per-turn key and rides on
+the send grant; any other key in a send's context is a write on the
+receiver and needs its own grant.
 
 Sends a lane makes today that a default child loses:
 
