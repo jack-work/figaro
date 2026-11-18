@@ -262,6 +262,16 @@ func (c callerKeys) refusal(path string) error {
 
 var reapKeys = form.RuntimeDrops(store.ReapedKey, store.ReapedUntilKey, store.ReapedByKey)
 
+func refuseRuntimeKeys(before form.Snapshot, patch form.Patch) error {
+	after := before.Apply(patch)
+	for _, p := range changedPaths(before, after) {
+		if form.WriterOf(p) == form.WriterRuntime {
+			return fmt.Errorf("a caller may not set %s: only the daemon writes it", p)
+		}
+	}
+	return nil
+}
+
 func refuseReapKeys(before form.Snapshot, patch form.Patch) error {
 	var after *form.Snapshot
 	for _, e := range patch.Entries() {
@@ -306,6 +316,9 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 		return nil
 	}
 	if err := refuseReapKeys(before, *patch); err != nil {
+		return err
+	}
+	if err := refuseRuntimeKeys(before, *patch); err != nil {
 		return err
 	}
 	if err := refuseMalformedRetirement(before, *patch); err != nil {
