@@ -98,15 +98,13 @@ func (n *ledgerNode) start() *peer.Ledger {
 	ctx, cancel := context.WithCancel(context.Background())
 	n.stop = cancel
 	n.a = angelus.New(angelus.Config{RuntimeDir: t.TempDir(), Backend: n.backend})
-	pc, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
-	require.NoError(t, err)
-	n.a.Peercred = pc
+	require.NoError(t, admitLocal(n.a, loaded.Config.Authz))
 	path := ""
 	if n.policy != "" {
 		path = filepath.Join(n.cfgDir, "policy.toml")
 		require.NoError(t, os.WriteFile(path, []byte(n.policy), 0o600))
 	}
-	n.a.Policies = authz.NewPolicies(pc.Self(), angelus.StoreFacts(n.backend))
+	n.a.Policies = authz.NewPolicies(n.a.Owner, angelus.StoreFacts(n.backend))
 	require.NoError(t, n.a.Policies.Reload(path))
 	require.NoError(t, federateIn(ctx, n.a, loaded, n.stateDir))
 	n.a.Handlers = angelus.NewHandlers(angelus.ServerConfig{Angelus: n.a, Config: loaded, Ctx: ctx}).Map

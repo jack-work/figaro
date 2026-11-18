@@ -419,16 +419,14 @@ func Run() {
 	if err := a.Spool.Prepare(); err != nil {
 		slog.Error("spool: queued prompts from before this start may not be redelivered", "err", err)
 	}
-	peer, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
-	if err != nil {
+	if err := admitLocal(a, loaded.Config.Authz); err != nil {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
-	a.Peercred = peer
 	if loaded.Config.Authz.ChecksPeers() {
-		a.ToolCgroups = attributeTools(a.Sessions, peer)
+		a.ToolCgroups = attributeTools(a.Sessions, a.Peercred)
 	}
-	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
+	a.Policies = authz.NewPolicies(a.Owner, angelus.StoreFacts(backend))
 	a.Policies.SetPoolDaemon(loaded.PoolDaemon())
 	a.Policies.SetBoxes(loaded.DooredBoxes())
 	a.Policies.SetBoxesRequiringClaim(loaded.BoxesRequiringClaim())
@@ -646,6 +644,19 @@ func webDoorLimits(loaded *config.Loaded, web config.WebDoor, admit angelus.WebA
 	var err error
 	door.FollowMaxAge, err = loaded.EdgeFollowMaxAge()
 	return door, err
+}
+
+func admitLocal(a *angelus.Angelus, cfg config.AuthzConfig) error {
+	peer, err := authz.NewPeercred(uint32(os.Getuid()), cfg.Peercred)
+	if err != nil {
+		return err
+	}
+	owner, err := authz.OwnerOf(cfg, peer.Self())
+	if err != nil {
+		return err
+	}
+	a.Peercred, a.Owner = peer, owner
+	return nil
 }
 
 func webAuthenticator(name, listen, cliDoor string, cfg config.AuthzConfig, b authz.Bearers) (angelus.WebAdmit, error) {

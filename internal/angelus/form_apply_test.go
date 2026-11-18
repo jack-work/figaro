@@ -1,6 +1,7 @@
 package angelus_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -20,10 +21,15 @@ func managedRole(t *testing.T) (grantRig, string) {
 func managedRoleUnder(t *testing.T, policy string) (grantRig, string) {
 	t.Helper()
 	r := newRigWith(t, policy)
+	return r, managedRoleBy(t, r, asOwner())
+}
+
+func managedRoleBy(t *testing.T, r grantRig, ctx context.Context) string {
+	t.Helper()
 	if err := os.WriteFile(filepath.Join(r.a.Settings.ConfigDir, "outfits", "role.toml"), []byte("[charter]\npurpose = \"new\"\n[system]\nprovider = \"ignored\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	holder, err := r.create(asOwner(), "mock")
+	holder, err := r.create(ctx, "mock")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,11 +41,11 @@ func managedRoleUnder(t *testing.T, policy string) (grantRig, string) {
 		"charter.note":    json.RawMessage(`"keep"`),
 		"handoff":         json.RawMessage(`"keep.md"`),
 	}, nil)
-	out, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: &patch})
+	out, err := r.call(ctx, rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: &patch})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return r, out.(rpc.FormCreateResponse).FormID
+	return out.(rpc.FormCreateResponse).FormID
 }
 
 func checkManagedRole(t *testing.T, r grantRig, id string) rpc.FormApplyResponse {

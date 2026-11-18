@@ -9,6 +9,7 @@ import (
 )
 
 type AuthzConfig struct {
+	Owner         string         `toml:"owner"`
 	Policy        string         `toml:"policy"`
 	TroupeIssuers *bool          `toml:"troupe_issuers"`
 	Peercred      PeercredConfig `toml:"peercred"`
