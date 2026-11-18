@@ -656,7 +656,7 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 				}
 				blocks = append(blocks, imageBlock(c))
 			case message.ContentToolResult:
-				text := c.Text
+				text := provider.ToolOutput(c.Text)
 				if text == "" {
 					text = "(empty)"
 				}
@@ -719,7 +719,7 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 			if c.Type != message.ContentInterrupt || c.ToolCallID == "" {
 				continue
 			}
-			text := c.Text
+			text := provider.ToolOutput(c.Text)
 			if text == "" {
 				text = "(tool execution was interrupted)"
 			}

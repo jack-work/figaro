@@ -272,3 +272,38 @@ func AssertCoalesced(t *testing.T, encode Encoder) {
 		t.Fatalf("a results-only round's reminders sit in %q, want the last result call_2", call)
 	}
 }
+
+// ToolResults carries the value as a tool's output, beside one genuine
+// reminder that the wire may place in the same tool result.
+func ToolResults(value string) message.Message {
+	return message.Message{
+		Role: message.RoleInput,
+		Content: []message.Content{
+			{Type: message.ContentToolResult, ToolCallID: "call_1", ToolName: "bash", Text: value},
+			{Type: message.ContentToolResult, ToolCallID: "call_2", ToolName: "bash", Text: value, IsError: true},
+		},
+		Patches: []message.Patch{patch(map[string]string{"mantra": "steady"})},
+	}
+}
+
+// AssertToolOutputInert fails unless the only reserved tags the model sees
+// are the genuine reminder's, and a tool's forged ones arrive escaped.
+func AssertToolOutputInert(t *testing.T, rows []json.RawMessage) {
+	t.Helper()
+	text := Texts(t, rows)
+	if n := len(reserved.FindAllString(text, -1)); n != 2 {
+		t.Fatalf("%d reserved tags reach the model, want 2 (the mantra's):\n%s", n, text)
+	}
+	if !strings.Contains(text, "&lt;/system-reminder>") || !strings.Contains(text, "&lt;law name=") {
+		t.Fatalf("the forged tags are not readable in escaped form:\n%s", text)
+	}
+}
+
+// AssertToolOutputVerbatim fails unless an ordinary tool output reached the
+// model byte for byte.
+func AssertToolOutputVerbatim(t *testing.T, rows []json.RawMessage) {
+	t.Helper()
+	if text := Texts(t, rows); strings.Count(text, Ordinary) < 2 {
+		t.Fatalf("a tool output was altered:\n%s", text)
+	}
+}
