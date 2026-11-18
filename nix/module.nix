@@ -141,6 +141,11 @@ in
         the service leaves the socket in place. Admission stays the
         daemon's: every connection is still judged by peer credentials and
         policy. False binds the socket in the daemon, as before.
+
+        A daemon that cannot start never fails the socket: calls waiting on
+        it trigger at most three starts in ten seconds, systemd retries in
+        the background with a backoff growing to five minutes, and fixing
+        the cause is enough to bring the door back.
       '';
     };
 
@@ -265,6 +270,9 @@ in
         SocketMode = cfg.socketMode;
         DirectoryMode = runtimeMode;
         RemoveOnStop = true;
+        TriggerLimitIntervalSec = 0;
+        PollLimitIntervalSec = "10s";
+        PollLimitBurst = 3;
       };
     };
 
@@ -274,6 +282,7 @@ in
       after = [ "network-online.target" ] ++ lib.optional cfg.socketActivation "figaro.socket";
       wants = [ "network-online.target" ];
       requires = lib.optional cfg.socketActivation "figaro.socket";
+      startLimitIntervalSec = lib.mkIf cfg.socketActivation 0;
       restartTriggers = lib.optional cfg.socketActivation config.systemd.units."figaro.socket".unit;
       path = cfg.toolPackages;
       environment = {
@@ -309,7 +318,11 @@ in
         LoadCredential = lib.mapAttrsToList (id: src: "${id}:${src}") (lib.filterAttrs (_: src: src != "") cfg.credentials);
         SetCredential = lib.mapAttrsToList (id: _: "${id}:") (lib.filterAttrs (_: src: src != "") cfg.credentials);
         ImportCredential = lib.attrNames (lib.filterAttrs (_: src: src == "") cfg.credentials);
-      } // lib.optionalAttrs cfg.socketActivation { Sockets = "figaro.socket"; }
+      } // lib.optionalAttrs cfg.socketActivation {
+        Sockets = "figaro.socket";
+        RestartSteps = 6;
+        RestartMaxDelaySec = "5min";
+      }
         // lib.optionalAttrs (cfg.memoryMax != null) { MemoryMax = cfg.memoryMax; };
     };
 
