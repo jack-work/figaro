@@ -94,7 +94,10 @@ On the holder's own bound form, written once by the owner:
 env -u FIGARO_ARIA figaro set --id <holder> system.scopes '["*:*"]'
 ```
 
-- Succession copies them. The successor's `system.scopes` are the old
+- Succession copies them, daemon-side or through `figaro succeed` (a fork
+  with Seat, run by the holder or by Gluck: it takes no child policy and no
+  birth cap, so the successor inherits the holder's scopes, fanout and
+  child policy). The successor's `system.scopes` are the old
   holder's own (or its effective set when ancestors narrowed it), so a seat
   keeps its grant through every hard, overlap or familial succession with no
   further write. This is the path that matters, and it needs nothing new.

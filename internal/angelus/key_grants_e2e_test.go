@@ -463,3 +463,50 @@ func TestAStudyReadsOnlyWhatItsObserverMayRead(t *testing.T) {
 		t.Errorf("a revoked read left the study standing: %s", studiesOn(t, r, m))
 	}
 }
+
+// Defends a seat's grant through a hard succession (P2+P5 review, F1): the
+// successor `figaro succeed` forks with Seat inherits its holder's scopes,
+// fanout and child policy, whether the holder or the owner runs it; the
+// child policy is for the holder's lanes. A stranger's seat fork stays a lane.
+func TestASeatForkInheritsItsHoldersGrant(t *testing.T) {
+	r := newLineageRig(t, "")
+	r.ownerSets(t, r.parent, map[string]any{
+		form.ScopesKey:            []string{"*:*"},
+		form.FanoutMaxChildrenKey: 8,
+		form.ChildPolicyKey:       map[string]any{form.ScopesKey: []string{"send:parent", "read:aria:self"}},
+	})
+	holder, _ := json.Marshal(r.parent)
+	made, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: heldPatch(t, map[string]any{"name": "seat", "target-aria": json.RawMessage(holder)})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	role := made.(rpc.FormCreateResponse).FormID
+	seatFork := func(ctx context.Context, figaro string) string {
+		t.Helper()
+		raw := rawJSON(t, rpc.ForkRequest{FigaroID: r.parent, Seat: role})
+		if figaro != "" {
+			raw = claimed(t, figaro, raw)
+		}
+		out, err := r.h[rpc.MethodFork](ctx, raw)
+		if err != nil {
+			t.Fatalf("seat fork by %q: %v", figaro, err)
+		}
+		return out.(rpc.ForkResponse).Alternative
+	}
+	for who, ctx := range map[string]context.Context{r.parent: localOwner(), "": asOwner()} {
+		heir := seatFork(ctx, who)
+		if got := grantsOn(t, r, heir); got != `["*:*"]` {
+			t.Errorf("successor forked by %q holds scopes %s, want the holder's", who, got)
+		}
+		if got := keyOnString(t, r, heir, form.FanoutMaxChildrenKey); got != `8` {
+			t.Errorf("successor forked by %q holds max_children %s, want 8", who, got)
+		}
+		if got := keyOnString(t, r, heir, form.ChildPolicyKey); !strings.Contains(got, "send:parent") {
+			t.Errorf("successor forked by %q lost the child policy: %s", who, got)
+		}
+	}
+	lane := seatFork(localOwner(), r.child)
+	if got := grantsOn(t, r, lane); got == `["*:*"]` {
+		t.Errorf("a stranger's seat fork took the holder's grant: %s", got)
+	}
+}
