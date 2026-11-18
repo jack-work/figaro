@@ -125,13 +125,31 @@ func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) 
 }
 
 func layerOver(dst map[string]json.RawMessage, p form.Patch) {
-	src, roots := map[string]json.RawMessage{}, map[string]bool{}
-	for _, e := range p.Entries() {
-		if !e.IsRemoval() {
-			src[e.Key], roots[e.Key] = e.New, true
-		}
+	src := setKeys(p)
+	roots := make(map[string]bool, len(src))
+	for k := range src {
+		roots[k] = true
 	}
 	overlay(dst, src, roots)
+}
+
+func setKeys(p form.Patch) map[string]json.RawMessage {
+	out := map[string]json.RawMessage{}
+	policy := false
+	for _, e := range p.Entries() {
+		switch {
+		case e.Key == form.ChildPolicyKey || strings.HasPrefix(e.Key, form.ChildPolicyKey+"."):
+			policy = true
+		case !e.IsRemoval():
+			out[e.Key] = e.New
+		}
+	}
+	if policy {
+		if raw, ok := (form.Snapshot{}).Apply(p).Get(form.ChildPolicyKey); ok {
+			out[form.ChildPolicyKey] = raw
+		}
+	}
+	return out
 }
 
 func (o *Outfitter) defaults(defaultName string) (form.Patch, error) {
@@ -148,10 +166,8 @@ func (o *Outfitter) defaults(defaultName string) (form.Patch, error) {
 		if ferr != nil {
 			return form.Patch{}, ferr
 		}
-		for _, e := range folded.Entries() {
-			if !e.IsRemoval() {
-				out[e.Key] = e.New
-			}
+		for k, v := range setKeys(folded) {
+			out[k] = v
 		}
 	}
 	return form.Build(form.Snapshot{}, out, nil), nil
@@ -182,13 +198,7 @@ func (o *Outfitter) nameKeys(name string) (map[string]json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	keys := map[string]json.RawMessage{}
-	for _, e := range patch.Entries() {
-		if !e.IsRemoval() {
-			keys[e.Key] = e.New
-		}
-	}
-	return keys, nil
+	return setKeys(patch), nil
 }
 
 func literalKeys(part string) (map[string]json.RawMessage, error) {

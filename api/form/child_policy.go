@@ -19,9 +19,15 @@ func ChildPolicy(s Snapshot) (map[string]json.RawMessage, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
-	var keys map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &keys); err != nil || keys == nil {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil || top == nil {
 		return nil, true, fmt.Errorf("%s must be an object of key paths to values, got %s", ChildPolicyKey, raw)
+	}
+	keys := map[string]json.RawMessage{}
+	for k, v := range top {
+		if err := policyLeaves(k, v, keys); err != nil {
+			return nil, true, err
+		}
 	}
 	names := make([]string, 0, len(keys))
 	for k := range keys {
@@ -39,6 +45,23 @@ func ChildPolicy(s Snapshot) (map[string]json.RawMessage, bool, error) {
 		return nil, true, fmt.Errorf("%s: a child would be born with %s: %w", ChildPolicyKey, faults[0].Path, faults[0].Err)
 	}
 	return keys, true, nil
+}
+
+func policyLeaves(path string, raw json.RawMessage, out map[string]json.RawMessage) error {
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) != nil || obj == nil {
+		if _, twice := out[path]; twice {
+			return fmt.Errorf("%s names %s twice", ChildPolicyKey, path)
+		}
+		out[path] = raw
+		return nil
+	}
+	for k, v := range obj {
+		if err := policyLeaves(path+"."+k, v, out); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ChildPolicyPatch(parent Snapshot, figaroMade bool) (Patch, error) {

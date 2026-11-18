@@ -82,6 +82,7 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 		"judged-elsewhere": "[system]\nprovider = \"anthropic\"\nmodel = \"m\"\nsandbox = \"judge\"\n",
 		"seatfull":         "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"judge\"\nscopes = [\"*:*\"]\n[system.fanout]\nmax_children = 4\n",
 		"runtimebad":       "[system]\nprovider = \"mock\"\nmodel = \"m\"\n[runtime]\nforked_from = \"x\"\n",
+		"lanepolicy":       "[system]\nprovider = \"mock\"\nmodel = \"m\"\n[system.child_policy]\nsystem.scopes = [\"send:parent\", \"read:aria:self\"]\nmantra = \"a lane\"\n",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, "outfits", name+".toml"), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
