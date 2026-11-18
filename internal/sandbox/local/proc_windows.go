@@ -13,8 +13,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func procAttr() *syscall.SysProcAttr {
-	return &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
+func procAttr(a *syscall.SysProcAttr) *syscall.SysProcAttr {
+	a.CreationFlags |= syscall.CREATE_NEW_PROCESS_GROUP
+	return a
 }
 
 var (
