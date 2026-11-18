@@ -295,3 +295,9 @@ type QuarantineReleaseResponse struct {
 	Applied       bool           `json:"applied"`
 	Warning       string         `json:"warning,omitempty"`
 }
+
+type FanoutDrift struct {
+	ID     string `json:"id"`
+	Cached string `json:"cached"`
+	Tree   string `json:"tree"`
+}
