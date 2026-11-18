@@ -20,6 +20,14 @@ type FormRequest struct {
 	Intrinsic string `json:"intrinsic,omitempty"`
 	Since     uint64 `json:"since,omitempty"`
 	Client    string `json:"client,omitempty"`
+	Quiet     bool   `json:"quiet,omitempty"`
+}
+
+func QuietOf(params json.RawMessage) bool {
+	var q struct {
+		Quiet bool `json:"quiet"`
+	}
+	return json.Unmarshal(params, &q) == nil && q.Quiet
 }
 
 type FormVersionedPatch struct {

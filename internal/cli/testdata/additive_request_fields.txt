@@ -43,6 +43,7 @@ FormCreateRequest.Parent
 FormCreateRequest.Patch
 FormRequest.Intrinsic
 FormRequest.Since
+FormRequest.Quiet
 GCApplyRequest.Run
 GCPlanRequest.Selector
 GCRequest.DryRun
