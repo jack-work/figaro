@@ -72,6 +72,37 @@ pkgs.testers.runNixOSTest {
     environment.systemPackages = [ pkgs.jq ];
   };
 
+  nodes.moving = { ... }: {
+    imports = [
+      self.nixosModules.default
+      standIn
+    ];
+    virtualisation.memorySize = 2048;
+    services.figaro = {
+      enable = true;
+      owner = "alice";
+      importFrom = "/home/alice/.local/state/figaro";
+      providers.gateway.base_url = "http://127.0.0.1:8099/v1";
+      settings.sandbox.boxes.stand-in.exec = "/run/stand-in/exec.sock";
+    };
+    environment.etc."figaro-home/providers/gateway.toml".text = ''
+      base_url = "http://127.0.0.1:8099/v1"
+    '';
+    environment.etc."figaro-home/outfits/home.toml".text = ''
+      [system]
+      provider = "gateway"
+      model = "stub"
+    '';
+    users.users.alice = {
+      isNormalUser = true;
+      uid = 1000;
+    };
+    systemd.services.stub-model = {
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig.ExecStart = "${pkgs.python3}/bin/python3 ${./stub_model.py} ${probe}";
+    };
+  };
+
   testScript = ''
     import json
 
@@ -167,5 +198,58 @@ pkgs.testers.runNixOSTest {
         house.succeed("chmod 700 /var/lib/figaro/arias")
         house.wait_until_succeeds("su - alice -c 'timeout 10 figaro ls --json'", timeout=60)
         house.succeed("systemctl is-active figaro.service")
+    home_env = "env -u FIGARO_NO_SELF_SPAWN FIGARO_RUNTIME_DIR=/tmp/fighome FIGARO_CONFIG_DIR=/etc/figaro-home FIGARO_HUSH_APP=figaro-house-test FIGARO_HUSH_DIR=/tmp/fighush FIGARO_HUSH_PASSPHRASE=house-test"
+
+    def moving_alice(cmd):
+        return moving.succeed(f"su - alice -c {json.dumps(cmd)}")
+
+    def moving_idle(fig_id, env=""):
+        moving.wait_until_succeeds(
+            f"su - alice -c '{env} figaro status {fig_id} -j' | grep -Eq '\"state\": ?\"idle\"'", timeout=90)
+
+    with subtest("a home-mode store: alice's own daemon, her tools run as her"):
+        moving.wait_for_unit("figaro.socket")
+        moving.wait_for_unit("stub-model.service")
+        moving.fail("test -e /var/lib/figaro/arias")
+        home_fig = json.loads(moving_alice(f"{home_env} figaro new -j -O home -- hello").strip().splitlines()[-1])["aria_id"]
+        moving_idle(home_fig, home_env)
+        shown = moving_alice(f"{home_env} figaro show {home_fig}")
+        assert "uid=1000" in shown, shown
+        home_role = json.loads(moving_alice(f"{home_env} figaro form new -S name=moved-role,target-aria={home_fig} -j"))["form_id"]
+        before = moving.succeed("find /home/alice/.local/state/figaro/arias -type f | sort | xargs sha256sum | sha256sum")
+
+    with subtest("while her home daemon holds the store, the house refuses to start and says why"):
+        status, out = moving.execute("su - alice -c 'timeout 15 figaro ls --json' 2>&1")
+        print(out)
+        assert status != 0, out
+        moving.wait_until_succeeds("journalctl -u figaro.service -o cat | grep -q 'a home-mode angelus holds /home/alice/.local/state/figaro'", timeout=30)
+        moving.fail("test -e /var/lib/figaro/arias")
+        moving.succeed("systemctl is-active figaro.socket")
+
+    with subtest("after figaro rest the next start imports, and the house is hers"):
+        moving_alice(f"{home_env} figaro rest")
+        listed = moving.wait_until_succeeds("su - alice -c 'timeout 20 figaro ls --json'", timeout=120)
+        print(listed)
+        assert home_fig in listed, listed
+        print(moving.succeed("stat -c '%U %G %a %n' /var/lib/figaro /var/lib/figaro/arias /var/lib/figaro/imported-from"))
+        assert moving.succeed("find /var/lib/figaro/arias ! -user figaro | wc -l").strip() == "0"
+        assert moving.succeed("cat /var/lib/figaro/imported-from").startswith("/home/alice/.local/state/figaro ")
+        after = moving.succeed("find /home/alice/.local/state/figaro/arias -type f | sort | xargs sha256sum | sha256sum")
+        assert before == after, "the import changed the home store"
+        state = json.loads(moving_alice(f"figaro state show {home_role} -j"))
+        assert state["name"] == "moved-role", state
+
+    with subtest("an imported figaro on local is refused until it names a box, then runs there"):
+        status, out = moving.execute(f"su - alice -c 'figaro send --id {home_fig} -- again' 2>&1")
+        print(out)
+        assert status != 0 and "local_tools = false" in out, out
+        moving_alice(f"figaro set --id {home_fig} system.sandbox stand-in")
+        moving_alice(f"figaro send --id {home_fig} -f -- again")
+        moving_idle(home_fig)
+        assert "uid=1500" in moving_alice(f"figaro show {home_fig}")
+
+    with subtest("a restart does not import again"):
+        moving.succeed("systemctl restart figaro.service")
+        moving.succeed("journalctl -u figaro.service -o cat | grep -c 'is now /var/lib/figaro/arias' | grep -qx 1")
   '';
 }
