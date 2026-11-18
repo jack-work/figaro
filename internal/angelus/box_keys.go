@@ -441,6 +441,11 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 		if err := form.CheckChildPolicyFanout(after); err != nil {
 			return err
 		}
+		if c := h.callerKeysOf(ctx); !(c.owns && !c.boxed) {
+			if keys := form.ChildPolicyOwnerKeysChanged(before, after); len(keys) > 0 {
+				return fmt.Errorf("%s: %s is owner-held: only the owner puts it in a child policy", form.ChildPolicyKey, keys[0])
+			}
+		}
 	}
 	if err := h.refuseKeysBeyondGrants(ctx, line, before, *patch, after); err != nil {
 		return err

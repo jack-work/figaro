@@ -464,8 +464,9 @@ key it names, the one above it (`system.retirement.action` is judged as all of
 fields). A bad value the write does not reach does not block it.
 
 **Child policy.** `system.child_policy` on a figaro (same writers as
-`system.scopes`) is an object of key paths to values, self- or lineage-class
-only, that is written into the birth patch of every fork of it. It is applied
+`system.scopes`) is an object of key paths to values, self-, lineage- or
+owner-class (an owner-class key only when the owner writes it), that is
+written into the birth patch of every fork of it. It is applied
 at birth and never kept linked: changing it touches no living child. A
 policy is refused when written if a child born of the figaro as it stands
 would carry a value outside its key's shape; a leaf it carries is judged as

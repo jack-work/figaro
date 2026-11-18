@@ -141,10 +141,24 @@ func TestAChildPolicyIsAppliedAtBirthAndNotKeptLinked(t *testing.T) {
 	if v, _ := keyOn(t, r.grantRig, kid, "mantra"); string(v) != `"a lane"` {
 		t.Fatalf("a policy edit reached a living child: %s", v)
 	}
-	_, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.parent, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{form.ChildPolicyKey: map[string]any{"system.model": "x"}})}))
-	if err == nil || !strings.Contains(err.Error(), "owner class") {
-		t.Fatalf("a policy carrying an owner-class key was accepted: %v", err)
+	r.ownerSets(t, r.parent, map[string]any{form.ChildPolicyKey: map[string]any{"system.model": "picked"}})
+	if kid := r.forkAsFigaro(t, r.parent); keyOnString(t, r, kid, "system.model") != `"picked"` {
+		t.Fatalf("the owner's policy model did not reach the child: %s", keyOnString(t, r, kid, "system.model"))
 	}
+	c := r.dial(t)
+	if err := r.setAs(t, c, r.parent, r.child, *heldPatch(t, map[string]any{form.ChildPolicyKey: map[string]any{"system.provider": "other"}})); err == nil || !strings.Contains(err.Error(), "only the owner puts it in a child policy") {
+		t.Fatalf("an ancestor figaro put an owner-held key in a child policy: %v", err)
+	}
+	_, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.parent, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{form.ChildPolicyKey: map[string]any{form.ForkedFromKey: "x"}})}))
+	if err == nil || !strings.Contains(err.Error(), "runtime") {
+		t.Fatalf("a policy carrying a runtime key was accepted: %v", err)
+	}
+}
+
+func keyOnString(t *testing.T, r lineageRig, id, key string) string {
+	t.Helper()
+	v, _ := keyOn(t, r.grantRig, id, key)
+	return string(v)
 }
 
 // A default child writes its own board (mantra above all) and nothing of
