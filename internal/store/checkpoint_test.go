@@ -21,10 +21,17 @@ func checkpointEvery(t testing.TB, patches, maxMarks int) {
 	t.Cleanup(func() { SetCheckpointDefaults(p, s, m) })
 }
 
+// settleCheckpoints returns once no checkpoint is due or running on the form.
+// A write is answered before its batch starts the checkpoint it made due, so
+// an empty write queued behind it is the barrier: its batch runs after that
+// one has counted the checkpoint.
 func settleCheckpoints(t testing.TB, b *XwalBackend, id string) {
 	t.Helper()
 	f, err := b.form(id)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Apply(form.Build(form.Snapshot{}, nil, nil), 0); err != nil {
 		t.Fatal(err)
 	}
 	f.ckptGate.Lock()

@@ -130,6 +130,10 @@ func TestAForkTreeFourDeepSurvivesRetentionByMarks(t *testing.T) {
 		patchBoard(t, b, child, 1000*depth+500, 150)
 		parent = child
 	}
+	for id := range kids {
+		settleCheckpoints(t, b, id)
+	}
+	settleCheckpoints(t, b, root)
 	for id, k := range kids {
 		head, err := b.FormState(id)
 		if err != nil {
@@ -138,10 +142,6 @@ func TestAForkTreeFourDeepSurvivesRetentionByMarks(t *testing.T) {
 		k.head = snapJSON(t, head)
 		kids[id] = k
 	}
-	for id := range kids {
-		settleCheckpoints(t, b, id)
-	}
-	settleCheckpoints(t, b, root)
 	dropped := 0
 	for pass := 0; pass < 2; pass++ {
 		out, err := b.RetainForms(context.Background(), false, 0)
