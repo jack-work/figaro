@@ -36,11 +36,16 @@ class Model(BaseHTTPRequestHandler):
         with open("/tmp/stub-requests.jsonl", "a") as f:
             f.write(json.dumps(req) + "\n")
         answered = any(m.get("role") == "tool" for m in req.get("messages", []))
+        command = COMMAND
+        for m in req.get("messages", []):
+            text = m.get("content") if isinstance(m.get("content"), str) else json.dumps(m.get("content"))
+            if m.get("role") == "user" and "STUB-RUN<<" in text:
+                command = text.split("STUB-RUN<<", 1)[1].split(">>", 1)[0]
         if answered:
             frames = [chunk({"role": "assistant", "content": "done"}), chunk({}, "stop")]
         else:
             call = {"index": 0, "id": "call_1", "type": "function",
-                    "function": {"name": "bash", "arguments": json.dumps({"command": COMMAND})}}
+                    "function": {"name": "bash", "arguments": json.dumps({"command": command})}}
             frames = [chunk({"role": "assistant", "tool_calls": [call]}), chunk({}, "tool_calls")]
         frames.append({"id": "stub", "object": "chat.completion.chunk", "model": "stub", "choices": [],
                        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})

@@ -62,6 +62,7 @@ pkgs.testers.runNixOSTest {
 
   testScript = ''
     import json
+    import shlex
 
     def alice(cmd):
         return machine.succeed(f"su - alice -c {json.dumps(cmd)}")
@@ -73,7 +74,7 @@ pkgs.testers.runNixOSTest {
         return machine.succeed(f"systemctl --user --machine=alice@.host {args}")
 
     def call(name):
-        out = as_figaro(f"figaro new -j -O valet -S system.provider=gateway -S system.model=stub -S system.cwd=${home}/dev/granted -- {name}")
+        out = as_figaro(f"figaro new -j -O valet -S system.provider=gateway -S system.model=stub -S system.cwd=${home}/dev/granted -- {shlex.quote(name)}")
         fig_id = json.loads(out.strip().splitlines()[-1])["aria_id"]
         machine.wait_until_succeeds(
             f"runuser -u figaro -- env HOME=/var/lib/figaro figaro status {fig_id} -j | grep -Eq '\"state\": ?\"idle\"'", timeout=90)
@@ -135,6 +136,17 @@ pkgs.testers.runNixOSTest {
         assert int(got["procs"]) < 10, got
         assert got.get("nnp") == "1", got
         assert "/figaro-valet@" in got["cgroup"] and "app.slice" in got["cgroup"], got["cgroup"]
+
+    with subtest("a symlink a tool plants over a nested grant redirects nothing on the next call"):
+        alice("mkdir -p ~/dev/granted/a/b && echo inner > ~/dev/granted/a/b/file")
+        alice("figaro valet grant '*' ~/dev/granted/a/b rw --for 1h")
+        _, shown = call("STUB-RUN<<cat a/b/file; mv a a2 && mkdir a && ln -s ../.. a/b && echo planted>>")
+        assert "inner" in shown and "planted" in shown, shown
+        _, shown = call("STUB-RUN<<test -e ${home}/dev/private/file && echo PRIVATE-VISIBLE || echo private-absent; "
+                        "{ echo pwned > ${home}/dev/private/planted; } 2>/dev/null && echo PRIVATE-WRITABLE || echo private-unwritable>>")
+        assert "private-absent" in shown and "private-unwritable" in shown, shown
+        machine.fail("test -e ${home}/dev/private/planted")
+        alice("rm ~/dev/granted/a/b && rmdir ~/dev/granted/a && mv ~/dev/granted/a2 ~/dev/granted/a")
 
     with subtest("memory per call"):
         units = user_systemctl("list-units --state=active --no-legend --plain 'figaro-valet@*.service'").split()
