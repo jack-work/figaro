@@ -17,7 +17,8 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 - P6: keepsake-avalanche `874637fe`
 - P7b laws: urchin-yacht `ee3ef672`
 - E4 house mode: utensil-slapping `ef74d1d6`
-- S1 auto-normalize: oven-receipt `ae2fc7c2`
+- S1 auto-normalize: PARKED at `lane/auto-normalize` 67af48da5 (harvest kingdom-s1-auto-normalize.md); restacked last by a fresh fork
+- E8 kingdom module: jogging-ropelike `8271a1b8` (cheroot-config `lane/kingdom-module` on R1)
 
 Under the Engineer: composed Seat plan, neither-blimp `a107c3b5` (`lane/seat-plan` on rel/v0.75.0). Optimistic fork part 1 (the store's birth lock), iphone-sushi `7c36bb41` (`lane/optimistic-fork`). Part 2 (admission off the Hierarchy mutex) waits on P6.
 
@@ -46,7 +47,7 @@ Train: **v0.75.0** = fixed v0.74.5 (P3+H1+P1b) + E1 + P2 (rel/v0.75.0 a07b06838)
 | 6 | P3 admission ledger | fork dominoes-elusive `439448d3` | `lane/admission-ledger` a7ec40e88 | restacked on 0911f728f with the shared seat op (figaro.seat); restacks onto v0.74.4, then lands |
 | 7 | E1 angelus socket activation | fork tavern-culprit `df4d5475` (Engineer slot) | `lane/socket-activation` f7a95a444 | SHIP plus the two LOW fixes; with the Knight for v0.74.6 |
 | 8 | P2 runtime.* migration | fork hydrant-rocket `78718b5c` | `lane/runtime-namespace` 2dd22739c on v0.74.5 | SHIP (hyacinth-obtain); with the Knight for v0.74.6 |
-| 9 | E3 figaro valet and the fence | fork cognitive-backpack `3006ff4b` | `lane/valet` on b4bf913cb | building |
+| 9 | E3 figaro valet and the fence | llama-widow `937e1be4` | `lane/valet` 0920abcba | READY; Opus review listless-oncoming `92aa6e78`; restacking onto v0.75.0 |
 | 10 | P5 key-path grants, selectors, child_policy | hydrant-rocket | `lane/key-grants` 4d7c45342 | review FIX (F1 succeed strips the seat, F2 outfits dressed after checks, F3 study/cast via keyed set, F4 glob subsumption, F5 local-door label, F6-F8); blouse-pretzel fixing, delta review next |
 | 11 | P6 quota, role verbs, succession charging | after P3, P5 | `lane/quota` | queued |
 | 12 | E4 house mode module (staged) | after E1-E3 | `lane/house-mode` + cheroot-config | queued; deploys only after Gluck's Merlin cutover |
