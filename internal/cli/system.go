@@ -181,15 +181,17 @@ func stopPid(pid int, force bool, afterExit func()) {
 	sockPath := boot.AngelusSocketPath()
 
 	if force {
-		killPid(pid, syscall.SIGKILL)
-		waitForExit(pid, 5*time.Second)
+		signalOrDie(pid, syscall.SIGKILL)
+		if !waitForExit(pid, 5*time.Second) {
+			die("angelus (pid %d) is still alive 5s after SIGKILL; %s was left in place", pid, sockPath)
+		}
 		removeUnheldSocket(sockPath)
 		fmt.Fprintf(stderrw, "angelus (pid %d) forcefully terminated\n", pid)
 		afterExit()
 		return
 	}
 
-	killPid(pid, syscall.SIGTERM)
+	signalOrDie(pid, syscall.SIGTERM)
 
 	if waitForExit(pid, 15*time.Second) {
 		fmt.Fprintf(stderrw, "angelus (pid %d) put to rest\n", pid)
@@ -198,6 +200,12 @@ func stopPid(pid int, force bool, afterExit func()) {
 	}
 
 	die("angelus (pid %d) did not rest within 15s; try `figaro rest --force`", pid)
+}
+
+func signalOrDie(pid int, sig syscall.Signal) {
+	if err := killPid(pid, sig); errors.Is(err, syscall.EPERM) {
+		die("may not signal angelus (pid %d): it runs as another user; stop a system angelus through its service manager", pid)
+	}
 }
 
 func storeHasNoDaemon() bool {
