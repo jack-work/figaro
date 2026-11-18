@@ -134,3 +134,31 @@ func TestASeatDrawsTheSuccessorWithoutMovingItsHistory(t *testing.T) {
 		t.Fatalf("N's history moved from %q to %q", before.Parent, after.Parent)
 	}
 }
+
+// A seat whose demote would wait on the successor's consent does not leave
+// the successor drawn under its predecessor with a proposal pending: the
+// proposal is withdrawn and the successor goes back.
+func TestASeatWhoseDemoteWouldParkPutsTheSuccessorBack(t *testing.T) {
+	r, p, _, _ := guardChain(t)
+	other, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := ariasFork(t, r, other.FigaroID)
+	grantTo(t, r, "user:mallory", "read:*", "set:*", "kill:*", "adopt:aria:"+p)
+
+	out, err := r.call(mallory(), rpc.MethodSeat, rpc.SeatRequest{FigaroID: p, Successor: n})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seat := out.(rpc.SeatResponse)
+	if seat.FailedAt != "demote" || seat.Placed || !strings.Contains(seat.Error, "withdrawn") {
+		t.Fatalf("seat = %+v, want the parked demote withdrawn and the place undone", seat)
+	}
+	if up := presentedUnder(t, r, n); up != other.FigaroID {
+		t.Fatalf("N is drawn under %q, want back under %s", up, other.FigaroID)
+	}
+	if left := parkedOn(t, r, n); len(left) != 0 {
+		t.Fatalf("proposals still wait on N: %+v", left)
+	}
+}
