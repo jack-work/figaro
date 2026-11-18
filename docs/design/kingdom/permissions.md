@@ -55,6 +55,17 @@ P1 registry ── P4 peer caller check ── P3 admission ledger ── P2 run
 
 Every change below states what it does, what proves it done, what it breaks, and which numbers it may move. Numbers are measured on a store snapshot (`figaro doctor snapshot`, about 2,500 figaros) in the `.#snapshot` devshell, inside a tmux server on its own socket. The live store and the live daemon are never touched.
 
+## Rollout switches and figaro docs (Gluck 11:5x)
+
+**Switches.** Four owner-held switches in the daemon config `[authz]` table, all false by default: `enforce_key_grants` (P5 key-path grants), `enforce_child_policy` (P5 default `send:parent` and child_policy at birth), `enforce_lineage_reach` (P5 lineage-only topology for unscoped figaros), `enforce_quota` (P6). While a switch is off, the decision is computed and logged as would-refuse: one slog line, plus a counter in `figaro doctor admission` / `doctor keys`. It is never enforced. Gluck turns each on when ready. Tests cover both settings, and a sabotage that enforces when off (or the reverse) turns them red.
+
+**Skill docs for figaros.** Figaros get their own pages in skills/figaro/reference/, indexed from skills/figaro/SKILL.md "when to open". Plain, short, with examples and no design history:
+- permissions.md: scopes, key-path grants, child_policy, and what each switch does (P5);
+- fanout.md, extended: max_children vs quota, carve-down, owner-made forks, over budget, optimistic admission (P6);
+- laws.md: law.* keys and how a law reads in a reminder (P7b).
+
+Each page lands with the lane that implements it. reference/architecture.md stays for contributors.
+
 ## P1. Key registry (no change in behaviour)
 
 **What.** One table in `api/form` (say `registry.go`). It lists every known key path or prefix with:
