@@ -301,3 +301,7 @@ type FanoutDrift struct {
 	Cached string `json:"cached"`
 	Tree   string `json:"tree"`
 }
+
+type AdmissionResponse struct {
+	Drift []FanoutDrift `json:"drift,omitempty"`
+}

@@ -91,6 +91,12 @@ func (c *Angelus) Residents(ctx context.Context) (*rpc.ResidentsResponse, error)
 	return &resp, err
 }
 
+func (c *Angelus) Admission(ctx context.Context) (*rpc.AdmissionResponse, error) {
+	var resp rpc.AdmissionResponse
+	err := c.call(ctx, rpc.MethodAdmission, nil, &resp)
+	return &resp, err
+}
+
 // ProviderLedger reads the daemon's recent and in-flight provider round-trips.
 func (c *Angelus) ProviderLedger(ctx context.Context, aria string, limit int) (*rpc.ProviderLedgerResponse, error) {
 	var resp rpc.ProviderLedgerResponse
