@@ -181,6 +181,9 @@ law at the tail of every turn's reminders, where recency works for it. It
 costs its length in tokens per turn, so it is off unless Gluck sets it; the
 obvious use is a one-line spend rule.
 
+How a law is told apart from a study delta and the other reminders on each
+provider's wire is in [reminder kinds](reminder-kinds.md).
+
 ### Where laws live
 
 Three sources. Each law is named `<source>/<name>`, so two sources can never
