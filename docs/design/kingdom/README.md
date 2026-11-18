@@ -18,7 +18,7 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 - P7b laws: urchin-yacht `ee3ef672`
 - E4 house mode: utensil-slapping `ef74d1d6`
 - S1 auto-normalize: PARKED at `lane/auto-normalize` 67af48da5 (harvest kingdom-s1-auto-normalize.md); restacked last by a fresh fork
-- E8 kingdom module: jogging-ropelike `8271a1b8`, cheroot-config `lane/kingdom-module` b2f1d6d. READY, with one fix: no seat may start over quota. Lands after the release carrying P5+P6
+- E8 kingdom module: cheroot-config `lane/kingdom-module` 45fa9c1, staged with El Mayor; lands after the P5+P6 release; Sonnet check requested
 
 Under the Engineer: composed Seat plan, neither-blimp `a107c3b5` (`lane/seat-plan` on rel/v0.75.0). Optimistic fork part 1 (the store's birth lock), iphone-sushi `7c36bb41` (`lane/optimistic-fork`). Part 2 (admission off the Hierarchy mutex) waits on P6.
 
