@@ -66,6 +66,10 @@ capabilities.
   older daemon succeed fails with nothing done; restart the daemon on the
   new build first. If a seat stops after a fork and nothing was seated, the
   recovery names `figaro kill <fork>`.
+  A seat lands whole or moves nothing, and a successor it seats
+  may take its predecessor's roles even when it is not the predecessor's
+  fork. A 0.75.0 daemon refuses a figaro's seat of a non-fork, with nothing
+  moved.
 - **`figaro gc` plans before it acts.** It calls `figaro.gc.plan`,
   `figaro.gc.apply` and `figaro.gc.undo`, methods a daemon before them
   lacks; against one the verb fails with an unknown method and changes

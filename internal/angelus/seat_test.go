@@ -176,14 +176,30 @@ func TestASeatOfAForkAtTheCapsTakesThePlaceAndTheLimit(t *testing.T) {
 	}
 }
 
-func TestAFigaroSeatsOnlyItsOwnForkAndMovesNothingOtherwise(t *testing.T) {
+// rel/v0.74.5 review F-E: a figaro holding a role seats a successor that
+// is not its fork and casts it into the role; the seat no longer lands
+// half way with the cast refused.
+func TestAFigaroSeatsANamedSuccessorAndCastsItIntoItsRole(t *testing.T) {
 	f := newSeatFixture(t)
-	before := f.overrides(t)
-	seat := f.seatAs(t, f.pred, f.pred, f.successor)
-	if seat.FailedAt != "place" || !strings.Contains(seat.Error, "owner") {
-		t.Fatalf("seat = %+v, want a refusal at place that names the owner", seat)
+	role := mintRoleFor(t, f.hs, f.pred)
+	if seat := f.seatAs(t, f.pred, f.pred, f.successor); seat.FailedAt != "" {
+		t.Fatalf("seat failed at %s: %s", seat.FailedAt, seat.Error)
 	}
-	if after := f.overrides(t); !bytes.Equal(before, after) {
-		t.Fatalf("a refused seat moved something: before %s, after %s", before, after)
+	if err := castAs(t, f.hs, f.pred, f.successor, role); err != nil {
+		t.Fatalf("the seated successor could not take the role: %v", err)
+	}
+	if got := roleTarget(t, f.hs, role); got != f.successor {
+		t.Fatalf("role targets %q, want %s", got, f.successor)
+	}
+}
+
+func TestASeatOpensOnlyItsOwnPredecessorsRoles(t *testing.T) {
+	f := newSeatFixture(t)
+	other := mintRoleFor(t, f.hs, f.kid)
+	if seat := f.seat(t); seat.FailedAt != "" {
+		t.Fatalf("seat failed at %s: %s", seat.FailedAt, seat.Error)
+	}
+	if err := castAs(t, f.hs, f.successor, f.successor, other); err == nil || !strings.Contains(err.Error(), "placement") {
+		t.Fatalf("a successor seated over %s took a role held by %s: %v", f.pred, f.kid, err)
 	}
 }

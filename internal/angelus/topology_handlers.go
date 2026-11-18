@@ -986,11 +986,6 @@ func (h *handlers) seatLifetime(ctx context.Context, pred string) (json.RawMessa
 
 func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rpc.SeatResponse {
 	var r rpc.SeatResponse
-	if (authz.FigaroOf(ctx) != "" || authz.Claimed(ctx)) && !h.angelus.forkDescends(successor, pred) {
-		r.FailedAt = "place"
-		r.Error = fmt.Sprintf("figaro %s is not a fork of %s, and a figaro seats only its own fork; nothing moved. The owner may seat it: run figaro succeed --successor %s from a shell outside any figaro", successor, pred, successor)
-		return r
-	}
 	by, err := h.angelus.topologyPrincipal(ctx)
 	var p hierarchy.Plan
 	if err == nil {
@@ -1010,6 +1005,7 @@ func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rp
 			slog.Error("fanout: the seat moved the figaro but not its quota", "pred", pred, "succ", successor, "err", qerr)
 		}
 	}
+	h.seated.Store(successor, pred)
 	slog.Info("seated figaro", "predecessor", pred, "successor", successor)
 	r.Demote = rpc.DemoteResponse{FigaroID: pred, Under: successor, Preferred: true}
 	return r

@@ -35,7 +35,7 @@ func (h *handlers) refuseCastPlacement(ctx context.Context, method, id string, p
 	if h.mayTakeRole(id, *holder) {
 		return nil
 	}
-	return fmt.Errorf("placement: %s is neither under the holder %s of %s nor a fork of it demoted over it; fork the holder instead", id, *holder, roleID)
+	return fmt.Errorf("placement: %s is neither under the holder %s of %s nor seated in its place; fork the holder or seat it instead", id, *holder, roleID)
 }
 
 func (h *handlers) mayTakeRole(candidate, holder string) bool {
@@ -43,7 +43,13 @@ func (h *handlers) mayTakeRole(candidate, holder string) bool {
 		return true
 	}
 	parent, ok := h.angelus.topology().Drawn(holder)
-	return ok && parent == candidate && h.angelus.forkDescends(candidate, holder)
+	if !ok || parent != candidate {
+		return false
+	}
+	if seatedOver, ok := h.seated.Load(candidate); ok && seatedOver == holder {
+		return true
+	}
+	return h.angelus.forkDescends(candidate, holder)
 }
 
 func (h *handlers) ancestorInDrawnTree(id, ancestor string) bool {
