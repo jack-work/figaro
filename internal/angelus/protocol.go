@@ -113,6 +113,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodPromote:            h.promote,
 		rpc.MethodDemote:             h.demote,
 		rpc.MethodPlace:              h.placeUnder,
+		rpc.MethodSeat:               h.seat,
 		rpc.MethodParked:             h.parked,
 		rpc.MethodAccept:             h.accept,
 		rpc.MethodRefuse:             h.refuse,

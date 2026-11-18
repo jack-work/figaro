@@ -235,6 +235,12 @@ func (c *Angelus) Place(ctx context.Context, figaroID, under string) (*rpc.Place
 	return &resp, err
 }
 
+func (c *Angelus) Seat(ctx context.Context, predecessor, successor string) (*rpc.SeatResponse, error) {
+	var resp rpc.SeatResponse
+	err := c.call(ctx, rpc.MethodSeat, rpc.SeatRequest{FigaroID: predecessor, Successor: successor}, &resp)
+	return &resp, err
+}
+
 func (c *Angelus) Parked(ctx context.Context, parent string) (*rpc.ParkedResponse, error) {
 	var resp rpc.ParkedResponse
 	err := c.call(ctx, rpc.MethodParked, rpc.ParkedRequest{FigaroID: parent}, &resp)
