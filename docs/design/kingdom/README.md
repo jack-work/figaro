@@ -25,6 +25,15 @@ Queued for the next free slot: the composed Seat plan (docs/design/h1-seat-plan.
 
 v0.74.5 review FIX, the Knight fixing (F-A cap overfill on kill+restore, plus F-B to F-G); P2+P5 in review (hyacinth-obtain).
 
+**Release rules (Gluck 13:3x, for the rest of the drive):**
+1. Only High findings block a ship. Medium and Low become tracked follow-ups (an issue or the next lane), named in the notes when user-visible.
+2. A fix round with a sabotage-checked test per finding gets the Engineer's diff read, not a delta review. A full delta review only when a High's fix redesigns something.
+3. Opus reviews only authz, hierarchy, store and hush; Sonnet reviews the rest.
+4. A green gate stays mandatory.
+5. Any breaking change ships in a minor.
+
+Train: fixed v0.74.5 (P3+H1+P1b, seat break) ships as **v0.75.0**; E1 + P2 (store migration) as **v0.76.0**; then P4, P5+P6, P7b, E3 and E4 each as minors.
+
 | # | part | builder | branch | state (2026-11-18 02:xx) |
 |---|---|---|---|---|
 | 1 | IF1 study_incantation string | Knight | `lane/study-incantation-string` | in v0.74.3 (cutting) |
