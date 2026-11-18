@@ -323,6 +323,7 @@ func TestAHaltIsDurableBeforeTheTurnItHaltsHasEnded(t *testing.T) {
 	})
 	a1.SubmitPrompt(rpc.QuaRequest{Text: "runaway"})
 	<-stubborn.started
+	a1.FlushSpool()
 	data, err := os.ReadFile(filepath.Join(dir, id+".json"))
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"cut"`, "a running turn is marked on disk")

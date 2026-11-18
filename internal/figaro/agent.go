@@ -157,7 +157,14 @@ type Agent struct {
 	spoolMu    sync.Mutex
 	spoolArmed bool
 	spoolLast  []byte
-	cut        *cutTurn
+	spoolStale bool
+
+	spoolWMu     sync.Mutex
+	spoolPending []byte
+	spoolDirty   bool
+	spoolWriting bool
+	spoolIdle    chan struct{}
+	cut          *cutTurn
 
 	mu   sync.RWMutex
 	subs map[Notifier]struct{}
@@ -600,6 +607,7 @@ func (a *Agent) Halt() bool {
 	a.suspended.Store(true)
 	stopped := a.Hangup(rpc.QueueKeep).Stopped
 	a.persistSpool()
+	a.FlushSpool()
 	return stopped
 }
 
@@ -789,6 +797,7 @@ func (a *Agent) OnTeardown(fn func()) {
 func (a *Agent) Kill() {
 	a.cancel()
 	<-a.done
+	a.FlushSpool()
 
 	a.mu.Lock()
 	a.subs = nil

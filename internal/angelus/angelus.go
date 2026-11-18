@@ -687,11 +687,16 @@ func (a *Angelus) HaltTurns(grace time.Duration) int {
 		go func(f figaro.Figaro) {
 			defer wg.Done()
 			waitForIdle(f, grace)
+			if sf, ok := f.(spoolFlusher); ok {
+				sf.FlushSpool()
+			}
 		}(f)
 	}
 	wg.Wait()
 	return halted
 }
+
+type spoolFlusher interface{ FlushSpool() }
 
 func waitForIdle(f figaro.Figaro, grace time.Duration) {
 	deadline := time.Now().Add(grace)

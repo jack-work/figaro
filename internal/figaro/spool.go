@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
@@ -22,9 +23,14 @@ var ErrStopping = errors.New(rpc.DaemonStopping + ": send again once it is back"
 
 const resumeSender = "angelus"
 
+const spoolSlowWarn = time.Second
+
 const StateSuspended = "suspended"
 
-type Spool struct{ dir string }
+type Spool struct {
+	dir  string
+	hold func()
+}
 
 func NewSpool(dir string) *Spool {
 	if dir == "" {
@@ -85,6 +91,9 @@ func (s *Spool) read(ariaID string) ([]byte, spoolFile, error) {
 }
 
 func (s *Spool) write(ariaID string, data []byte) error {
+	if s.hold != nil {
+		s.hold()
+	}
 	if data == nil {
 		return s.Remove(ariaID)
 	}
@@ -253,14 +262,65 @@ func (a *Agent) persistSpool() {
 			return
 		}
 	}
-	if bytes.Equal(data, a.spoolLast) {
+	if !a.spoolStale && bytes.Equal(data, a.spoolLast) {
 		return
 	}
-	if err := a.spool.write(a.id, data); err != nil {
-		slog.Error("spool write; a restart now loses this aria's queue", "aria", a.id, "err", err)
+	a.spoolLast, a.spoolStale = data, false
+	a.queueSpoolWrite(data)
+}
+
+// queueSpoolWrite hands the newest snapshot to the one writer, under spoolMu so
+// an older snapshot can never land after a newer one.
+func (a *Agent) queueSpoolWrite(data []byte) {
+	a.spoolWMu.Lock()
+	a.spoolPending, a.spoolDirty = data, true
+	if a.spoolWriting {
+		a.spoolWMu.Unlock()
 		return
 	}
-	a.spoolLast = data
+	a.spoolWriting = true
+	a.spoolIdle = make(chan struct{})
+	a.spoolWMu.Unlock()
+	go a.drainSpool()
+}
+
+func (a *Agent) drainSpool() {
+	for {
+		a.spoolWMu.Lock()
+		if !a.spoolDirty {
+			a.spoolWriting = false
+			close(a.spoolIdle)
+			a.spoolWMu.Unlock()
+			return
+		}
+		data := a.spoolPending
+		a.spoolPending, a.spoolDirty = nil, false
+		a.spoolWMu.Unlock()
+
+		started := time.Now()
+		err := a.spool.write(a.id, data)
+		if took := time.Since(started); took >= spoolSlowWarn {
+			slog.Warn("spool write slow", "aria", a.id, "ms", took.Milliseconds())
+		}
+		if err != nil {
+			slog.Error("spool write; a restart now loses this aria's queue", "aria", a.id, "err", err)
+			a.spoolMu.Lock()
+			a.spoolStale = true
+			a.spoolMu.Unlock()
+		}
+	}
+}
+
+// FlushSpool waits for the spool writer to land the newest snapshot.
+func (a *Agent) FlushSpool() {
+	a.spoolWMu.Lock()
+	if !a.spoolWriting {
+		a.spoolWMu.Unlock()
+		return
+	}
+	idle := a.spoolIdle
+	a.spoolWMu.Unlock()
+	<-idle
 }
 
 func (a *Agent) markCut(turn uint64, resumed bool) {
