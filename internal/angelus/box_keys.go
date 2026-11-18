@@ -655,6 +655,9 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 	if err != nil {
 		return err
 	}
+	if snap, err = h.listedOutfitKeys(ctx, snap, requestOutfits(ctx)); err != nil {
+		return err
+	}
 	if shapesOnly {
 		if err := refuseRuntimeKeys(snap, *patch); err != nil {
 			return err

@@ -250,6 +250,10 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if method == rpc.MethodFollow {
 			return rpc.FollowResponse{OK: true, FigaroID: id}, nil
 		}
+		ctx = withRequestOutfits(ctx, method, params)
+		if err := h.refuseOutfitGrants(ctx, requestOutfits(ctx)); err != nil {
+			return nil, err
+		}
 		dressed, err := h.dressParams(ctx, method, params)
 		if err != nil {
 			return nil, err
@@ -595,6 +599,9 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	}
 	dress, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
+		return nil, err
+	}
+	if err := h.refuseOutfitGrants(ctx, req.Outfits); err != nil {
 		return nil, err
 	}
 	base, err := h.listedOutfitKeys(ctx, inherited, req.Outfits)
