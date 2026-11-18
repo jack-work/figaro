@@ -14,7 +14,12 @@ import (
 
 func managedRole(t *testing.T) (grantRig, string) {
 	t.Helper()
-	r := newRigWith(t, doorPolicy)
+	return managedRoleUnder(t, doorPolicy)
+}
+
+func managedRoleUnder(t *testing.T, policy string) (grantRig, string) {
+	t.Helper()
+	r := newRigWith(t, policy)
 	if err := os.WriteFile(filepath.Join(r.a.Settings.ConfigDir, "outfits", "role.toml"), []byte("[charter]\npurpose = \"new\"\n[system]\nprovider = \"ignored\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
