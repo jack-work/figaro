@@ -302,8 +302,14 @@ type FanoutDrift struct {
 	Tree   string `json:"tree"`
 }
 
+type FanoutOver struct {
+	ID   string `json:"id"`
+	Over string `json:"over"`
+}
+
 type AdmissionResponse struct {
 	Drift    []FanoutDrift       `json:"drift,omitempty"`
+	Over     []FanoutOver        `json:"over,omitempty"`
 	Switches []EnforcementSwitch `json:"switches,omitempty"`
 }
 

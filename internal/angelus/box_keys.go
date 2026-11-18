@@ -559,10 +559,7 @@ func (h *handlers) refuseQuotaBeyondBudget(ctx context.Context, line lineage, be
 		return err
 	}
 	c := h.angelus.fanoutCounts()
-	from, d, used := c.chargeChange(line.of, n, capped)
-	if capped && n < used {
-		return fmt.Errorf("%s: %s already uses %d of its subtree's budget, more than %d; retire under it first", form.FanoutQuotaKey, shortID(line.of), used, n)
-	}
+	from, d, _ := c.chargeChange(line.of, n, capped)
 	if err := c.fits(from, d); err != nil {
 		return fmt.Errorf("%s: %w", form.FanoutQuotaKey, err)
 	}

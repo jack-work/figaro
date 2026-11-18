@@ -70,7 +70,7 @@ func (h *handlers) pprofArm(ctx context.Context, params json.RawMessage) (interf
 }
 
 func (h *handlers) admission(context.Context, json.RawMessage) (interface{}, error) {
-	return rpc.AdmissionResponse{Drift: h.angelus.fanoutDrift(), Switches: h.enforcementSwitches()}, nil
+	return rpc.AdmissionResponse{Drift: h.angelus.fanoutDrift(), Over: h.angelus.fanoutOver(), Switches: h.enforcementSwitches()}, nil
 }
 
 func (h *handlers) enforcementSwitches() []rpc.EnforcementSwitch {

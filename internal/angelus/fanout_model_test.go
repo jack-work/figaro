@@ -9,10 +9,11 @@ import (
 )
 
 type modelNode struct {
-	parent string
-	live   bool
-	quota  int
-	capped bool
+	parent  string
+	live    bool
+	quota   int
+	capped  bool
+	lowered int
 }
 
 type quotaModel map[string]*modelNode
@@ -33,7 +34,7 @@ func (m quotaModel) charge(id string) int {
 	case !n.live:
 		return m.used(id)
 	case n.capped:
-		return 1 + n.quota
+		return 1 + max(n.quota, m.used(id))
 	}
 	return 1 + m.used(id)
 }
@@ -72,7 +73,8 @@ func requireModel(t *testing.T, c *fanoutCache, m quotaModel, step string) {
 		if want := m.used(id); b.used != want {
 			t.Fatalf("%s: %s uses %d in the cache, %d in the model", step, id, b.used, want)
 		}
-		if n.live && n.capped && b.used > n.quota {
+		n.lowered = min(n.lowered, b.used)
+		if n.live && n.capped && b.used > max(n.quota, n.lowered) {
 			t.Fatalf("%s: %s uses %d of quota %d", step, id, b.used, n.quota)
 		}
 	}
@@ -81,9 +83,10 @@ func requireModel(t *testing.T, c *fanoutCache, m quotaModel, step string) {
 	}
 }
 
-// Random forks, retirements, reparents, re-grants and hard successions keep
-// the cache equal to a model that recounts the tree, and no live capped
-// figaro ever uses more than its quota.
+// Random forks, retirements, reparents, re-grants (lowerings below use
+// included) and hard successions keep the cache equal to a model that
+// recounts the tree, and no live capped figaro ever grows past its quota:
+// one lowered below its use only shrinks back under it.
 func TestRandomTopologyChangesKeepEveryQuotaAgainstAModel(t *testing.T) {
 	for seed := uint64(1); seed <= 40; seed++ {
 		r := rand.New(rand.NewPCG(seed, 7))
@@ -134,10 +137,10 @@ func TestRandomTopologyChangesKeepEveryQuotaAgainstAModel(t *testing.T) {
 				}
 				q := r.IntN(4)
 				from, d, used := c.chargeChange(x, q, true)
-				if q < used || c.fits(from, d) != nil {
+				if c.fits(from, d) != nil {
 					continue
 				}
-				m[x].quota, m[x].capped = q, true
+				m[x].quota, m[x].capped, m[x].lowered = q, true, used
 				c.setOwn(x, q, true)
 			default:
 				if x == "king" || c.over(x) != nil {
@@ -151,7 +154,7 @@ func TestRandomTopologyChangesKeepEveryQuotaAgainstAModel(t *testing.T) {
 				m[y].parent, m[x].parent = gp, y
 				c.move(y, gp)
 				c.move(x, y)
-				m[y].quota, m[y].capped = m[x].quota, m[x].capped
+				m[y].quota, m[y].capped, m[y].lowered = m[x].quota, m[x].capped, m[x].lowered
 				c.setOwn(y, m[x].quota, m[x].capped)
 				m[x].capped = false
 				c.setOwn(x, 0, false)
