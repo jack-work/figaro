@@ -73,7 +73,7 @@ func TestAFigaroCannotApplyARoleFanoutLimit(t *testing.T) {
 	r, id := managedRole(t)
 	fanoutOutfits(t, r)
 	err := applyFanout(t, r, id, "fanout", []string{form.FanoutMaxChildrenKey}, keyOnForm(t, r, id, "target-aria"))
-	if err == nil || !strings.Contains(err.Error(), "runtime-owned") {
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
 		t.Fatalf("a figaro applied system.fanout: %v", err)
 	}
 	if got, ok := keyOn(t, r, id, form.FanoutMaxChildrenKey); ok {
@@ -113,8 +113,8 @@ func TestOnlyTheOwnerItselfGetsTheOperatorPaths(t *testing.T) {
 	} {
 		r, id := managedRoleUnder(t, doorPolicy+setterPolicy)
 		fanoutOutfits(t, r)
-		if err := applyFanoutAs(t, r, c.ctx, id, "fanout", managed, c.claim); err == nil || !strings.Contains(err.Error(), "runtime-owned") {
-			t.Errorf("%s: want the operator paths refused as runtime-owned, got %v", name, err)
+		if err := applyFanoutAs(t, r, c.ctx, id, "fanout", managed, c.claim); err == nil || !strings.Contains(err.Error(), "reserved") {
+			t.Errorf("%s: want the operator paths refused as reserved, got %v", name, err)
 		}
 		if got, ok := keyOn(t, r, id, form.FanoutMaxChildrenKey); ok {
 			t.Errorf("%s: max_children landed: %s", name, got)

@@ -74,6 +74,10 @@ func TestNoGrantWritesARuntimeKey(t *testing.T) {
 	if err := r.setAs(t, c, r.parent, r.child, grantsPatch(t, []string{"write:*#runtime.**"})); err == nil {
 		t.Error("a grant on runtime.* was accepted")
 	}
+	role := *heldPatch(t, map[string]any{"name": "minted", form.ForkedFromKey: "x"})
+	if _, err := r.h[rpc.MethodCast](asOwner(), withAria(t, r.child, rpc.CastRequest{RolePatch: &role})); err == nil || !strings.Contains(err.Error(), "runtime") {
+		t.Errorf("the owner minted a role carrying %s: %v", form.ForkedFromKey, err)
+	}
 }
 
 func TestAWriterOnAnotherFigarosScopesGrantsOnlyWhatItHolds(t *testing.T) {

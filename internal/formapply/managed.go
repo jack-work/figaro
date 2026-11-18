@@ -66,6 +66,9 @@ func validatePath(path string, operator []string) error {
 			return fmt.Errorf("form apply: invalid managed path %q", path)
 		}
 	}
+	if form.WriterOf(path) == form.WriterRuntime {
+		return fmt.Errorf("form apply: %q is written only by the daemon", path)
+	}
 	if under(path, operator) {
 		return nil
 	}
@@ -75,7 +78,7 @@ func validatePath(path string, operator []string) error {
 	}
 	switch root {
 	case "aria_id", "target-aria", "handoff", "system", "comments", "credentials", "api_key", "service_tokens", "permissions", "scopes", "grants":
-		return fmt.Errorf("form apply: %q is runtime-owned", path)
+		return fmt.Errorf("form apply: %q is reserved: form apply never manages it", path)
 	}
 	return nil
 }
