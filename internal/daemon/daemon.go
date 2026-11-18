@@ -404,6 +404,9 @@ func Run() {
 		os.Exit(1)
 	}
 	a.Peercred = peer
+	if loaded.Config.Authz.ChecksPeers() {
+		a.ToolCgroups = attributeTools(a.Sessions, peer)
+	}
 	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
 	a.Policies.SetPoolDaemon(loaded.PoolDaemon())
 	a.Policies.SetBoxes(loaded.DooredBoxes())
