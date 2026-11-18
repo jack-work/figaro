@@ -43,6 +43,22 @@ func openLazyStore(t *testing.T) (*Store, string) {
 	return s, dir
 }
 
+// openLazyStoreWithoutFlusher is for tests that assert what a removal or a
+// prune leaves on disk: the background flusher borrows every dirty head each
+// SyncInterval, and a borrowed head makes both wait or skip.
+func openLazyStoreWithoutFlusher(t *testing.T) (*Store, string) {
+	t.Helper()
+	dir := t.TempDir()
+	opts := lazyStoreOptions()
+	opts.NoBackgroundFlush = true
+	s, err := OpenStore(dir, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s, dir
+}
+
 // openAfterUpgrade spawns trunks with turns in a store that declares only
 // main, then reopens it declaring the variant channels, as an upgrade that
 // adds a channel does. Those trunks' nodes predate every variant channel.

@@ -33,7 +33,12 @@ var variantChannels = func() []string {
 
 func openRegisteredLazyStore(t *testing.T) (*Store, string) {
 	t.Helper()
-	s, root := openLazyStore(t)
+	return registerLazyVariants(t, openLazyStore)
+}
+
+func registerLazyVariants(t *testing.T, open func(*testing.T) (*Store, string)) (*Store, string) {
+	t.Helper()
+	s, root := open(t)
 	other := spawnTurns(t, s, 1)
 	for _, v := range lazyVariants {
 		v.write(t, s, other, "other")
@@ -225,7 +230,7 @@ func TestLazyDirs_TheSweepNeitherReportsNorCreatesMissingDirs(t *testing.T) {
 }
 
 func TestLazyDirs_LineageWalkersSkipMissingDirs(t *testing.T) {
-	s, root := openRegisteredLazyStore(t)
+	s, root := registerLazyVariants(t, openLazyStoreWithoutFlusher)
 	notes := lazyVariants[0]
 	p := spawnTurns(t, s, 3)
 	k, err := s.Fork(p, mainTailOf(t, s, p))
