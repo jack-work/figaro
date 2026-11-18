@@ -110,6 +110,7 @@ const (
 	MethodMemCollect = "angelus.mem.collect"
 	MethodPprofArm   = "angelus.pprof.arm"
 	MethodResidents  = "angelus.residents"
+	MethodAdmission  = "angelus.admission"
 
 	MethodQuarantineList    = "angelus.quarantine.ls"
 	MethodQuarantineRelease = "angelus.quarantine.release"
