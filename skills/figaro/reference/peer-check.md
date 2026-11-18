@@ -29,9 +29,12 @@ trusted every same-uid caller as the owner and the claim was honour only.
     the current one;
   - `figaro retire --id <child> --ttl 10m`, and `figaro succeed`'s
     abdication of itself.
-- `figaro succeed`: the successor forked with the seat takes the holder's
-  `system.ttl` from the daemon, so it holds the seat as long as the holder did
-  without setting anything.
+- `figaro succeed`: the successor takes the holder's `system.ttl` from the
+  daemon, so it holds the seat as long as the holder did without setting
+  anything. A forked successor takes it at the fork; one named with
+  `--successor` takes it when `figaro.seat` seats it, if the holder has not
+  retired and the caller is the holder or Gluck. No other figaro may seat a
+  successor in a holder's place.
 
 ## What it may not, and the move for each
 
@@ -42,6 +45,7 @@ trusted every same-uid caller as the owner and the claim was honour only.
 | Protected keys on a figaro that is not your descendant, or on a role form | Gluck from his terminal. `~/notes/spain/bin/domesday-grant.sh` is one of these: run it from Gluck's terminal, never from a figaro's tool. |
 | `figaro study <figaro id>` (another figaro's bound form) | Study the role it holds (`figaro study @role`) or an unbound form it writes to; or ask Gluck to add the study. |
 | Owner-only topology moves, managed apply's operator paths | Gluck from his terminal. |
+| `figaro succeed` on a role you do not hold | The holder runs it from its own shell, or Gluck from his terminal. |
 
 ## What it does not stop
 
