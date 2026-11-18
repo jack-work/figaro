@@ -68,6 +68,10 @@ func (h *handlers) pprofArm(ctx context.Context, params json.RawMessage) (interf
 	return rpc.PprofArmResponse{Socket: path}, nil
 }
 
+func (h *handlers) admission(context.Context, json.RawMessage) (interface{}, error) {
+	return rpc.AdmissionResponse{Drift: h.angelus.fanoutDrift()}, nil
+}
+
 func (h *handlers) residents(context.Context, json.RawMessage) (interface{}, error) {
 	return rpc.ResidentsResponse{Residents: h.angelus.Residents()}, nil
 }
