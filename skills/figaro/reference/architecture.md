@@ -433,6 +433,21 @@ it; a call naming no figaro, or one held elsewhere, is decided by its
 principal. `figaro scopes <id>` shows each level, the ceiling and the
 effective set, and so does `figaro.scopes`.
 
+**Key paths, parent and children.** A scope may end in `#<key-glob>`:
+`write:lineage:self#system.thinking_*`, `read:parent#comments.**`,
+`write:*#system.**`. In a glob `*` matches within one dotted segment and `**`
+any number of segments. A keyed scope reaches only the keys its glob matches:
+a `figaro set` is checked key by key, a set key needing `write` and a removed
+one `delete`, and the whole patch is refused if any key is not reached. A
+keyed `read` opens no whole-form read; it lets `figaro study <id> --keys <glob>`
+study the keys it names, and a study is refused for any other. `write` is the
+name of `set`, which still parses: an old `set:X` means `write:X` and
+`delete:X`. Two selectors are relative to the figaro holding the scope:
+`parent` (the figaro it was drawn under) and `children` (every figaro below
+it, not itself). A scope on `runtime.*` is refused: only the daemon writes
+there. A figaro writing another's `system.scopes` gives only what its own
+effective set covers, key globs included.
+
 `system.grants` is the key's old name. 0.64 reads it when `system.scopes` is
 absent, logging one warning per aria per daemon run; an aria carrying both
 holds nothing; no caller may write `system.grants`, though removing it is

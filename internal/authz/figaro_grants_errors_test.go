@@ -43,7 +43,7 @@ func TestAFigaroWhoseScopesCannotBeReadIsRefusedAndToldSo(t *testing.T) {
 	if d.Allowed || !d.Unreadable() || !strings.Contains(d.Reason(), "cannot be read") {
 		t.Fatalf("allowed=%v unreadable=%v: %s", d.Allowed, d.Unreadable(), d.Reason())
 	}
-	if err := p.HoldsGrants("kid", nil, "kid"); err == nil {
+	if err := p.HoldsGrants("kid", nil, "kid", ""); err == nil {
 		t.Fatal("a figaro whose scopes cannot be read was found to hold what it gives")
 	}
 }

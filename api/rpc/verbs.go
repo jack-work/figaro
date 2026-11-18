@@ -23,10 +23,11 @@ const (
 	VerbAdopt  Verb = "adopt"
 	VerbLease  Verb = "lease"
 	VerbSay    Verb = "say"
+	VerbDelete Verb = "delete"
 )
 
 func Verbs() []Verb {
-	return []Verb{VerbRead, VerbListen, VerbSend, VerbFork, VerbSet, VerbCreate, VerbMint, VerbKill, VerbAdmin, VerbUse, VerbJoin, VerbDecide, VerbAdopt, VerbLease, VerbSay}
+	return []Verb{VerbRead, VerbListen, VerbSend, VerbFork, VerbSet, VerbCreate, VerbMint, VerbKill, VerbAdmin, VerbUse, VerbJoin, VerbDecide, VerbAdopt, VerbLease, VerbSay, VerbDelete}
 }
 
 const VerbNone Verb = ""
