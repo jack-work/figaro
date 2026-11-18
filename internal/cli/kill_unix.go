@@ -2,13 +2,19 @@
 
 package cli
 
-import "syscall"
+import (
+	"errors"
+	"syscall"
+)
 
 func killPid(pid int, sig syscall.Signal) error {
 	return syscall.Kill(pid, sig)
 }
 
-// Signal 0 outlives every file the daemon removes on its way out.
 func pidAlive(pid int) bool {
-	return syscall.Kill(pid, 0) == nil
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
