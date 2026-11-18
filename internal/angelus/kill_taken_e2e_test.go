@@ -145,7 +145,7 @@ func TestAReapedGroupsPurgeLeavesNoTakenChildServed(t *testing.T) {
 	require.NoError(t, err)
 	past, _ := json.Marshal(store.ReapedUntilValue(time.Now().Add(-time.Minute)))
 	for _, id := range append([]string{root}, kids...) {
-		_, err := backend(t, a).ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemReapedUntilKey: past}, nil))
+		_, err := backend(t, a).ApplyFormPrivileged(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{store.ReapedUntilKey: past}, nil))
 		require.NoError(t, err)
 	}
 	a.SweepLifetimesNow()

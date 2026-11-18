@@ -54,7 +54,13 @@ succession) and provider (fork render).
 
 - `turn.*`, `inflight`: on the status form, not the bound form; that form is
   runtime class already.
-- `system.reaped`, `system.reaped_until`, `system.reaped_by`: daemon-written
-  by kill, but not on P2's list. Open question for the Strategist.
+
 - `model`, `token_budget`, `truncation`: runtime rows at top level, not
   under system; left where they are.
+
+## Moved in a later commit
+
+- `system.reaped`, `system.reaped_until`, `system.reaped_by` ->
+  `runtime.reaped*`: written only by kill, gc, the lifetime sweep and reaped
+  restore, never by a caller. No reader outside the repo reads them; doctor ttl
+  and ls take the reaped state off the _meta sidecar.

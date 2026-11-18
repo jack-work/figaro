@@ -35,7 +35,7 @@ func TestCommitSinksAnswerAsTheExpandingLookupsDid(t *testing.T) {
 }
 
 var sinkKeys = []string{
-	SystemTTLKey, SystemKeepaliveKey, SystemRetiredKey, SystemReapedKey, SystemReapedUntilKey,
+	SystemTTLKey, SystemKeepaliveKey, SystemRetiredKey, ReapedKey, ReapedUntilKey,
 	keyOutfitName, keyOutfitVer, keyLegacyName, keyLegacyVer,
 }
 

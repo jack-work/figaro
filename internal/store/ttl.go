@@ -147,7 +147,7 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 			c.keepalive, c.keepaliveSet = &ka, strings.TrimSpace(raw) != ""
 		}
 	}
-	if raw, spoke := retiredFrom(valueOf); spoke {
+	if raw, spoke := runtimeFrom(valueOf, RetiredKey); spoke {
 		reason := RetiredReason(raw)
 		c.retired = &reason
 	}
@@ -155,18 +155,18 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 		on := retiredValue(raw)
 		c.reapIfEmpty = &on
 	}
-	if raw, spoke := valueOf(SystemReapedKey); spoke {
+	if raw, spoke := runtimeFrom(valueOf, ReapedKey); spoke {
 		root := strings.TrimSpace(raw)
 		c.reapedRoot = &root
 	}
-	if raw, spoke := valueOf(SystemReapedUntilKey); spoke {
+	if raw, spoke := runtimeFrom(valueOf, ReapedUntilKey); spoke {
 		if ms, err := parseReapedUntil(raw); err != nil {
-			slog.Warn("system.reaped_until ignored", "node", id, "value", raw, "err", err)
+			slog.Warn("runtime.reaped_until ignored", "node", id, "value", raw, "err", err)
 		} else {
 			c.reapedUntil = &ms
 		}
 	}
-	if raw, spoke := valueOf(SystemReapedByKey); spoke {
+	if raw, spoke := runtimeFrom(valueOf, ReapedByKey); spoke {
 		by := strings.TrimSpace(raw)
 		c.reapedBy = &by
 	}
@@ -474,9 +474,10 @@ func KeepSet(snap form.Snapshot) bool {
 	return ok && retiredValue(lifetimeString(raw))
 }
 
-func retiredFrom(valueOf func(key string) (string, bool)) (string, bool) {
-	now, nowSpoke := valueOf(RetiredKey)
-	old, oldSpoke := valueOf(SystemRetiredKey)
+func runtimeFrom(valueOf func(key string) (string, bool), key string) (string, bool) {
+	now, nowSpoke := valueOf(key)
+	legacy, _ := form.LegacyName(key)
+	old, oldSpoke := valueOf(legacy)
 	switch {
 	case nowSpoke && (now != "" || !oldSpoke):
 		return now, true

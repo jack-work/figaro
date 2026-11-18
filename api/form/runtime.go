@@ -20,6 +20,9 @@ const (
 	FailureCategoryKey  = "runtime.failure.category"
 	FailureTurnKey      = "runtime.failure.turn"
 	FailureAtKey        = "runtime.failure.at"
+	ReapedKey           = "runtime.reaped"
+	ReapedUntilKey      = "runtime.reaped_until"
+	ReapedByKey         = "runtime.reaped_by"
 )
 
 const RetireRequestKey = "system.retired"
@@ -37,6 +40,9 @@ var runtimeRenames = []RuntimeRename{
 	{"system.failure.category", FailureCategoryKey},
 	{"system.failure.turn", FailureTurnKey},
 	{"system.failure.at", FailureAtKey},
+	{"system.reaped", ReapedKey},
+	{"system.reaped_until", ReapedUntilKey},
+	{"system.reaped_by", ReapedByKey},
 }
 
 var legacyOf = func() map[string]string {
