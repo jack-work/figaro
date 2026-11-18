@@ -22,9 +22,9 @@ Working agreement: REVISION 2 of the plan root. The Strategist builds everything
 | 4 | P4 peer caller check | fork anagram-erratic `0e15cab0` | `lane/peer-caller-check` de5d64574 | fixes in (finite ttl from tools, succeed carries the seat ttl, peer-check.md); waits on v0.74.4 to restack, then review |
 | 5 | E2 hush as a system service | fork erasable-unzip `56faa8d6`; drop-box refresh by the Strategist | hush `lane/hush-system-service` 70d3782 + `lane/hush-drop-refresh` | delta review; drop.sock now serves `POST /refresh/<name>` (status only) so rou2 can take `minter_control_socket` |
 | 6 | P3 admission ledger | fork dominoes-elusive `439448d3` | `lane/admission-ledger` | building |
-| 7 | E1 angelus socket activation | fork tavern-culprit `df4d5475` (Engineer slot) | `lane/socket-activation` | queued |
+| 7 | E1 angelus socket activation | fork tavern-culprit `df4d5475` (Engineer slot) | `lane/socket-activation` b4bf913cb | READY; review requested (Steward) |
 | 8 | P2 runtime.* migration | fork hydrant-rocket `78718b5c` | `lane/runtime-namespace` | building, stacked on P1; readers listed before landing |
-| 9 | E3 figaro valet and the fence | tavern-culprit, after E1 | `lane/valet` | queued |
+| 9 | E3 figaro valet and the fence | fork cognitive-backpack `3006ff4b` | `lane/valet` on b4bf913cb | building |
 | 10 | P5 key-path grants, selectors, child_policy | hydrant-rocket, after P2 | `lane/key-grants` | queued |
 | 11 | P6 quota, role verbs, succession charging | after P3, P5 | `lane/quota` | queued |
 | 12 | E4 house mode module (staged) | after E1-E3 | `lane/house-mode` + cheroot-config | queued; deploys only after Gluck's Merlin cutover |
