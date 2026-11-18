@@ -1,9 +1,12 @@
 package angelus
 
-import "sync"
+import (
+	"log/slog"
+	"sync"
+)
 
 type ownBytesBatcher interface {
-	OwnBytesOf(ids []string) map[string]int64
+	OwnBytesOf(ids []string) (map[string]int64, error)
 }
 
 type reapedBytes struct {
@@ -34,9 +37,12 @@ func (a *Angelus) reapedGroupBytes(groups []reapedGroup) map[string]int64 {
 		}
 	}
 	if len(missing) > 0 {
-		got := b.OwnBytesOf(missing)
-		for _, n := range missing {
-			c.byNode[n] = got[n]
+		got, err := b.OwnBytesOf(missing)
+		if err != nil {
+			slog.Warn("reaped sizes not measured; the budget counts them next sweep", "nodes", len(missing), "err", err)
+		}
+		for n, size := range got {
+			c.byNode[n] = size
 		}
 	}
 	for n := range c.byNode {

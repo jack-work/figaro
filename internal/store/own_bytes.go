@@ -10,7 +10,7 @@ func (b *XwalBackend) OwnBytes(id string) int64 {
 	return b.store.trunks.TrunkBytes(id, b.ownChannels())
 }
 
-func (b *XwalBackend) OwnBytesOf(ids []string) map[string]int64 {
+func (b *XwalBackend) OwnBytesOf(ids []string) (map[string]int64, error) {
 	return b.store.trunks.TrunksBytes(ids, b.ownChannels())
 }
 

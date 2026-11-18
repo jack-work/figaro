@@ -6,20 +6,24 @@ import (
 )
 
 func (t *Trunks) TrunkBytes(trunk string, channels []string) int64 {
-	return t.TrunksBytes([]string{trunk}, channels)[trunk]
+	got, _ := t.TrunksBytes([]string{trunk}, channels)
+	return got[trunk]
 }
 
-func (t *Trunks) TrunksBytes(trunks []string, channels []string) map[string]int64 {
-	out := make(map[string]int64, len(trunks))
+func (t *Trunks) TrunksBytes(trunks []string, channels []string) (map[string]int64, error) {
 	want := make(map[string]bool, len(trunks))
 	for _, tr := range trunks {
 		want[tr] = true
 	}
 	end, err := t.beginTrackedRead()
 	if err != nil {
-		return out
+		return nil, err
 	}
 	defer end()
+	out := make(map[string]int64, len(trunks))
+	for _, tr := range trunks {
+		out[tr] = 0
+	}
 	for key, node := range t.idx.All() {
 		if !want[node.Trunk] {
 			continue
@@ -28,7 +32,7 @@ func (t *Trunks) TrunksBytes(trunks []string, channels []string) map[string]int6
 			out[node.Trunk] += dirBytes(filepath.Join(t.root, filepath.FromSlash(ch), fsName(key)))
 		}
 	}
-	return out
+	return out, nil
 }
 
 func dirBytes(dir string) int64 {
