@@ -135,6 +135,19 @@ type DemoteResponse struct {
 	Parked      *Proposal `json:"parked,omitempty"`
 }
 
+type PlaceRequest struct {
+	FigaroID string `json:"figaro_id"`
+	Under    string `json:"under"`
+}
+
+type PlaceResponse struct {
+	FigaroID    string    `json:"figaro_id"`
+	Under       string    `json:"under,omitempty"`
+	Moved       bool      `json:"moved,omitempty"`
+	Unsupported bool      `json:"unsupported,omitempty"`
+	Parked      *Proposal `json:"parked,omitempty"`
+}
+
 // Proposal is a move held on its receiving parent until that parent's
 // holder accepts or refuses it. Proposals live in the daemon's memory: a
 // restart drops them, as expiry does.

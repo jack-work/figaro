@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -803,6 +804,43 @@ func (h *handlers) demote(ctx context.Context, params json.RawMessage) (interfac
 	under := p.To
 	slog.Info("demoted figaro", "trunk", req.FigaroID, "under", under)
 	return rpc.DemoteResponse{FigaroID: req.FigaroID, Under: under, Preferred: under != "" && under == req.Prefer}, nil
+}
+
+func (h *handlers) placeUnder(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.PlaceRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, err
+	}
+	if req.Under == "" {
+		return nil, fmt.Errorf("place %q: name the figaro or form to draw it under", req.FigaroID)
+	}
+	under, err := h.canonicalID(ctx, req.Under)
+	if err != nil {
+		return nil, err
+	}
+	if h.allowed(ctx, rpc.VerbRead, authz.Aria(under)) != nil {
+		return nil, fmt.Errorf("aria %s not found", req.Under)
+	}
+	by, err := h.angelus.topologyPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	resp := rpc.PlaceResponse{FigaroID: req.FigaroID, Under: under}
+	p, err := h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Arrange, Parents: map[string]string{req.FigaroID: under}})
+	if prop, ok := h.parkedProposal(ctx, err); ok {
+		resp.Parked = prop
+		return resp, nil
+	}
+	if errors.Is(err, hierarchy.ErrUnsupported) {
+		resp.Unsupported = true
+		return resp, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("place %q under %q: %w", req.FigaroID, under, err)
+	}
+	resp.Moved = slices.ContainsFunc(p.Moves, func(m hierarchy.Move) bool { return m.Node == req.FigaroID })
+	slog.Info("placed figaro", "trunk", req.FigaroID, "under", under, "moved", resp.Moved)
+	return resp, nil
 }
 
 func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{}, error) {
