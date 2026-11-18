@@ -2,7 +2,10 @@ package daemon
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"net"
 	"os"
 	"strings"
@@ -46,7 +49,7 @@ func noticeLines(b *bytes.Buffer) []string {
 func TestARefusedStoreLockNamesItsHolderOnce(t *testing.T) {
 	holdStoreLock(t)
 	var notice bytes.Buffer
-	if f, ok := lockStoreWithin(400*time.Millisecond, &notice, incumbentAnswers); ok {
+	if f, err := lockStoreWithin(400*time.Millisecond, &notice, incumbentAnswers); err == nil {
 		f.Close()
 		t.Fatal("took a store lock another handle holds")
 	}
@@ -70,8 +73,8 @@ func TestAStoreLockReleasedDuringTheWaitIsTaken(t *testing.T) {
 		outgoing.Close()
 	}()
 	var notice bytes.Buffer
-	f, ok := lockStoreWithin(30*time.Second, &notice, incumbentAnswers)
-	if !ok {
+	f, err := lockStoreWithin(30*time.Second, &notice, incumbentAnswers)
+	if err != nil {
 		t.Fatalf("the lock was released and never taken:\n%s", notice.String())
 	}
 	defer f.Close()
@@ -104,7 +107,7 @@ func TestAnAnsweringIncumbentIsStoodDownForInSilence(t *testing.T) {
 
 	var notice bytes.Buffer
 	start := time.Now()
-	if f, ok := lockStoreWithin(30*time.Second, &notice, incumbentAnswers); ok {
+	if f, err := lockStoreWithin(30*time.Second, &notice, incumbentAnswers); err == nil {
 		f.Close()
 		t.Fatal("took a store lock another handle holds")
 	}
@@ -119,12 +122,35 @@ func TestAnAnsweringIncumbentIsStoodDownForInSilence(t *testing.T) {
 func TestAFreeStoreLockIsTakenInSilence(t *testing.T) {
 	holdStoreLock(t).Close()
 	var notice bytes.Buffer
-	f, ok := lockStoreWithin(time.Second, &notice, incumbentAnswers)
-	if !ok {
+	f, err := lockStoreWithin(time.Second, &notice, incumbentAnswers)
+	if err != nil {
 		t.Fatal("a free store lock was refused")
 	}
 	defer f.Close()
 	if notice.Len() != 0 {
 		t.Fatalf("a free lock drew a notice: %s", notice.String())
+	}
+}
+
+// A store the daemon may not open is broken, not owned by another angelus:
+// reported as owned, the daemon exited 0 with a misleading line and systemd
+// never restarted it.
+func TestAStoreLockThatCannotBeOpenedIsAnErrorNotAnOwner(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root opens a mode 000 directory")
+	}
+	dir := t.TempDir()
+	t.Setenv("FIGARO_STATE_DIR", dir)
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+	f, err := lockStoreWithin(time.Second, io.Discard, incumbentAnswers)
+	if err == nil {
+		f.Close()
+		t.Fatal("took a store lock in a directory it may not open")
+	}
+	if errors.Is(err, errStoreHeld) || !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("want a permission error, not %v", err)
 	}
 }
