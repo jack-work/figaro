@@ -406,8 +406,10 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 	if err := refuseMisshapenKeys(after, *patch); err != nil {
 		return err
 	}
-	if _, _, err := form.ChildPolicy(after); err != nil && keyChanged(before, after, form.ChildPolicyKey) {
-		return err
+	if keyChanged(before, after, form.ChildPolicyKey) {
+		if err := form.CheckChildPolicyFanout(after); err != nil {
+			return err
+		}
 	}
 	if err := h.refuseKeysBeyondGrants(ctx, line, before, after); err != nil {
 		return err

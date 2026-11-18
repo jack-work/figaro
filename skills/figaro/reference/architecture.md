@@ -464,7 +464,10 @@ only, that is written into the birth patch of every fork of it. It is applied
 at birth and never kept linked: changing it touches no living child. A
 policy is refused when written if a child born of the figaro as it stands
 would carry a value outside its key's shape; a leaf it carries is judged as
-the key it lands under. When it
+the key it lands under. A policy may give `system.fanout.max_children` up to
+the figaro's own (refused above it when written; a child born after the
+figaro's own was lowered gets the figaro's own), and what it gives beats the
+cap of 0 a figaro's fork is otherwise born with. When it
 is unset, a fork made by a figaro is born with `system.scopes =
 ["send:parent", "read:aria:self", "write:aria:self#@self",
 "delete:aria:self#@self"]`: it can report to its parent, by id or by any role
