@@ -65,7 +65,7 @@ func HandoverWarning(used, threshold int) string {
 
 func (a *Agent) handoverWarning() (string, bool) {
 	snap := a.Snapshot()
-	if snap.Has(store.SystemSuccessionWarnedKey) || store.RetiredIn(snap) {
+	if form.RuntimeHas(snap, store.SystemSuccessionWarnedKey) || store.RetiredIn(snap) {
 		return "", false
 	}
 	r, err := store.RetirementOf(snap)
@@ -83,7 +83,7 @@ func (a *Agent) handoverWarning() (string, bool) {
 }
 
 func (a *Agent) markHandoverWarned() {
-	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemSuccessionWarnedKey: json.RawMessage("true")}, nil)
+	patch := form.RuntimeSet(a.Snapshot(), map[string]json.RawMessage{store.SystemSuccessionWarnedKey: json.RawMessage("true")})
 	if a.backend != nil {
 		if _, err := a.backend.ApplyFormPrivileged(a.id, patch); err != nil {
 			slog.Error("record the handover warning: it will be repeated", "aria", a.id, "err", err)

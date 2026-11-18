@@ -218,7 +218,7 @@ func openFormFrom(log FormLog, st *formState, from uint64) (*Form, error) {
 		return nil, err
 	}
 	f.state.Store(st)
-	if st.snap.Has(TombstoneKey) {
+	if form.RuntimeHas(st.snap, TombstoneKey) {
 		f.sealed.Store(true)
 	}
 	tick := make(chan struct{})
@@ -715,7 +715,11 @@ func (f *Form) judge(st *formState, w *formWrite) formResult {
 			}
 		}
 	}
-	next, applied := st.snap.ApplyEffective(w.patch)
+	patch := w.patch
+	if !w.priv {
+		patch = form.RecordRetireRequest(st.snap, patch)
+	}
+	next, applied := st.snap.ApplyEffective(patch)
 	return formResult{version: st.version, applied: applied, next: next}
 }
 

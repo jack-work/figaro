@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
@@ -51,11 +52,11 @@ func collectTombstones(ctx context.Context, door tombstoneDoor, reap bool) ([]to
 			continue
 		}
 		formResp, err := door.Form(ctx, f.ID)
-		if err != nil || formResp == nil || !formResp.Snapshot.Has(store.TombstoneKey) {
+		if err != nil || formResp == nil || !form.RuntimeHas(formResp.Snapshot, store.TombstoneKey) {
 			continue
 		}
 		reason := "tombstoned"
-		if v := formResp.Snapshot.Lookup(store.TombstoneKey); v != nil && *v != "" {
+		if v := form.RuntimeLookup(formResp.Snapshot, store.TombstoneKey); v != nil && *v != "" {
 			reason = *v
 		}
 		row := tombstoneRow{

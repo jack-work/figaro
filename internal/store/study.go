@@ -325,6 +325,11 @@ func (b *XwalBackend) setStudies(observerID string, ids []string, edit studyKeys
 	case edit.clear:
 		remove = append(remove, studyKeysPath(edit.source))
 	}
+	if snap, err := b.FormState(observerID); err == nil {
+		if old, ok := form.LegacyName(StudiesKey); ok && snap.Has(old) {
+			remove = append(remove, old)
+		}
+	}
 	version, _, err := b.ApplyFormEffectPrivilegedIf(observerID,
 		form.Build(form.Snapshot{}, set, remove), ifVersion)
 	return version, err

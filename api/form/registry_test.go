@@ -55,6 +55,9 @@ func TestEveryRowResolvesToItsOwnWriter(t *testing.T) {
 
 func TestRuntimeKeysAreExactAndNothingElseIs(t *testing.T) {
 	for _, s := range form.Registry() {
+		if s.Path == form.RuntimeRoot {
+			continue
+		}
 		if s.Exact != (s.Writer == form.WriterRuntime) {
 			t.Errorf("%s: writer %s, exact %v", s.Path, s.Writer, s.Exact)
 		}
@@ -82,9 +85,10 @@ func TestEveryRowIsDocumentedOrGroupsDocumentedRows(t *testing.T) {
 func TestTheNamedKeysCarryTheirWriterClass(t *testing.T) {
 	for want, keys := range map[form.Writer][]string{
 		form.WriterLineage: {form.ScopesKey, form.RetiredGrantsKey, form.FanoutMaxChildrenKey, form.FanoutMintKey, "system.sandbox"},
-		form.WriterRuntime: {form.FailureReasonKey, form.FailureCategoryKey, form.FailureTurnKey, form.FailureAtKey, "system.forked_from", "system.studies", "system.tombstone", "system.checkpoint.marks", "system.succession_warned"},
-		form.WriterOwner:   {"system.provider", "system.model", "system.ttl", "system.retired", "system.retention.mode", "system.methods.pick.key"},
-		form.WriterSelf:    {"system.cwd", "system.cache_control", "system.checkpoint.every_patches", "mantra", "datetime", "system.fanout"},
+		form.WriterRuntime: {form.FailureReasonKey, form.FailureCategoryKey, form.FailureTurnKey, form.FailureAtKey, "system.forked_from", "system.studies", "system.tombstone", "system.checkpoint.marks", "system.succession_warned",
+			form.ForkedFromKey, form.StudiesKey, form.TombstoneKey, form.CheckpointMarksKey, form.SuccessionWarnedKey, form.RetiredKey, "runtime", "runtime.anything.below"},
+		form.WriterOwner: {"system.provider", "system.model", "system.ttl", "system.retired", "system.retention.mode", "system.methods.pick.key"},
+		form.WriterSelf:  {"system.cwd", "system.cache_control", "system.checkpoint.every_patches", "mantra", "datetime", "system.fanout"},
 	} {
 		for _, k := range keys {
 			if got := form.WriterOf(k); got != want {

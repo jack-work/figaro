@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/sdk"
 	"io"
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/jack-work/figaro/sdk"
 
 	"sort"
 
@@ -307,7 +308,7 @@ func printFormStatusPanel(out io.Writer, f *rpc.FigaroInfoResponse, snap form.Sn
 		row("parent", dash(f.Parent))
 		names := make([]string, 0, snap.Len())
 		for k := range snap.All() {
-			if !strings.HasPrefix(k, "system.") {
+			if !form.HarnessKey(k) {
 				names = append(names, k)
 			}
 		}

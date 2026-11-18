@@ -3,7 +3,6 @@ package figaro
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/jack-work/figaro/api/decide"
 
@@ -118,7 +117,7 @@ func decisionModelError(model string) error {
 func withoutSystemNS(s form.Snapshot) form.Snapshot {
 	var drop []string
 	for k := range s.All() {
-		if strings.HasPrefix(k, "system.") {
+		if form.HarnessKey(k) {
 			drop = append(drop, k)
 		}
 	}

@@ -98,7 +98,7 @@ func TestABoxStillRetiresItsOwnAria(t *testing.T) {
 	if err := boxOnAria(t, c, rpc.MethodSet, inBox.FigaroID, rpc.SetRequest{Patch: *retired}, nil); err != nil {
 		t.Fatalf("the box could not retire its own aria: %v", err)
 	}
-	if _, ok := keyOn(t, d.grantRig, inBox.FigaroID, store.SystemRetiredKey); !ok {
+	if _, ok := keyOn(t, d.grantRig, inBox.FigaroID, store.RetiredKey); !ok {
 		t.Fatal("the box's retire did not land")
 	}
 	for key, val := range map[string]any{store.SystemKeepaliveKey: "0", store.SystemTTLKey: "1m"} {

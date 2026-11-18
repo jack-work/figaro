@@ -66,7 +66,7 @@ func LoadOverrideTemplates(base *template.Template, dir string) (*template.Templ
 	return root, nil
 }
 
-// Render skips `system.*` keys, which providers consume directly; a key
+// Render skips `system.*` and `runtime.*` keys, which providers consume directly; a key
 // without a template gets a generic body.
 func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, error) {
 	if p.IsIdentity() {
@@ -78,7 +78,7 @@ func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, 
 	entries := PatchEntries(p, prev)
 	out := make([]RenderedEntry, 0, len(entries))
 	for _, e := range entries {
-		if strings.HasPrefix(e.Key, "system.") {
+		if HarnessKey(e.Key) {
 			continue
 		}
 		t := tmpls.Lookup(e.Key)

@@ -93,7 +93,7 @@ func TestCastPointsRoleAndRegistersStudy(t *testing.T) {
 	require.Equal(t, `"`+created.FigaroID+`"`, target)
 
 	// The study is on the bound form, not just in memory.
-	studies, ok := fc.formValue(t, callCtx, "system.studies")
+	studies, ok := fc.formValue(t, callCtx, "runtime.studies")
 	require.True(t, ok, "system.studies missing from the caster's bound form")
 	require.Contains(t, studies, role.FormID)
 

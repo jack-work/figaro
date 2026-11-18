@@ -38,7 +38,7 @@ type Spec struct {
 	Short     string
 }
 
-var registry = []Spec{
+var registry = withLegacyRuntimeRows([]Spec{
 	{Path: "duke-title", Short: `What this aria calls its END USER (default "user"); set it in an outfit and a human's prompts are attributed to that name`, Writer: WriterSelf, Shape: ShapeString()},
 	{Path: "system.credo", Short: "Credo source (string or {content,filePath,frontmatter}); providers read this as the system prompt. Fixed at birth: set by the outfit or birth patch, refused once the figaro has spoken (fork -S or succeed for another)", Writer: WriterOwner, Shape: ShapeStringOrObject()},
 	{Path: "system.provider", Short: "Provider this figaro talks to (anthropic, copilot, ...); switching mid-conversation is the owner's call", Writer: WriterOwner, Shape: ShapeString()},
@@ -71,7 +71,7 @@ var registry = []Spec{
 	{Path: "system.tools", Short: "Owner-held allowlist of tool names the aria may use; [] means none, unset means all. Owner-held does not bind an unboxed aria whose tools include bash or process (issue #57)", Writer: WriterOwner, Shape: ShapeStringList()},
 	{Path: "system.cwd", Short: "Working directory the tools resolve relative paths against (`figaro cd`)", Writer: WriterSelf, Shape: ShapeString()},
 	{Path: "system.retirement", Short: `Owner-held {context_threshold, fallback_tokens, ttl, action, page, timeout, ramp, ramp_turns}: fallback_tokens is an absolute token threshold when the context capacity is unknown; otherwise context_threshold applies. At the end of a turn whose last request carried at least context_threshold input tokens (a count, or "60%" of the context window), the aria retires itself (system.retired = "context"); ttl counts from then. action = "succeed" hands over first: a warning at 80%, one final handoff turn, a successor minted, cast into every role the aria holds and prompted to ramp on, and the aria retires only when that first turn ends; a failure or timeout leaves it unretired and tells page (an aria or @role; default the holder of its drawn parent)`, Writer: WriterOwner, Shape: ShapeRetirement()},
-	{Path: "system.succession_warned", Short: "Set once the aria has been told to start handing over (80% of its retirement threshold)", Writer: WriterRuntime, Exact: true, Shape: ShapeAny()},
+	{Path: SuccessionWarnedKey, Short: "Set once the aria has been told to start handing over (80% of its retirement threshold)", Writer: WriterRuntime, Exact: true, Shape: ShapeAny()},
 	{Path: "system.succession_failed", Short: "Owner-held; why the aria's succession stopped. While set no new succession starts; unset it to let the next turn try again", Writer: WriterOwner, Shape: ShapeString()},
 	{Path: "system.sandbox", Short: "Protected; the sandbox the aria's tools run in (a box name, or unset for local). A figaro cannot set its own: only the owner or an ancestor figaro of the aria ([authz] protected_keys)", Writer: WriterLineage, Shape: ShapeString()},
 	{Path: "system.scopes", Short: "Protected; the aria's scopes as a JSON array of verb:object strings, narrowing its parent's and enforced on calls that name it. Providers read the effective set from figaro.scopes, not this key. Same writers as system.sandbox; a figaro gives only what it holds. system.grants is its old name: still read, no longer written", Writer: WriterLineage, Shape: ShapeScopes()},
@@ -79,15 +79,15 @@ var registry = []Spec{
 	{Path: FanoutMaxChildrenKey, Short: "Protected; how many children the figaro may fork (non-negative integer). Same writers as system.scopes", Writer: WriterLineage, Shape: maxChildrenShape},
 	{Path: FanoutMintKey, Short: "Protected; true lets the figaro mint a new one with figaro new. Same writers as system.scopes", Writer: WriterLineage, Shape: mintShape},
 	{Path: "system.keep", Short: "Owner-held; true and `figaro gc` never chooses this aria, nor anything whose delete would take it", Writer: WriterOwner, Shape: ShapeTruthy()},
-	{Path: "system.checkpoint.marks", Short: "Logical times this form's state is checkpointed at, keyed by version: the tail mark moves with the writes, and past system.checkpoint.max_marks the least recently used goes", Writer: WriterRuntime, Exact: true, Shape: ShapeAny()},
+	{Path: CheckpointMarksKey, Short: "Logical times this form's state is checkpointed at, keyed by version: the tail mark moves with the writes, and past system.checkpoint.max_marks the least recently used goes", Writer: WriterRuntime, Exact: true, Shape: ShapeAny()},
 	{Path: "system.checkpoint.every_patches", Short: "Move the tail checkpoint every N records (floor 64); unset takes [store] checkpoint_every_patches", Writer: WriterSelf, Shape: ShapeInt(math.MinInt64, math.MaxInt64)},
 	{Path: "system.checkpoint.every_seconds", Short: "Move the tail checkpoint every N seconds when something was written (floor 5); unset takes [store] checkpoint_every_seconds", Writer: WriterSelf, Shape: ShapeInt(math.MinInt64, math.MaxInt64)},
 	{Path: "system.checkpoint.max_marks", Short: "How many checkpoints the form keeps (floor 2, default 5)", Writer: WriterSelf, Shape: ShapeInt(math.MinInt64, math.MaxInt64)},
 	{Path: "system.retention.mode", Short: `"marks" drops this form's records below its lowest live checkpoint mark, "none" keeps every record; unset takes [store] retention_mode, and with that unset the store-wide sweep decides. Owner-held; refused on a conversation-bound form`, Writer: WriterOwner, Shape: ShapeEnum("marks", "none")},
 	{Path: "system.retention.writers", Short: "Figaro ids or principals the owner lets set system.retention.* besides itself; only the owner sets this", Writer: WriterOwner, Shape: ShapeStringList()},
-	{Path: "system.forked_from", Short: "The trunk this branch was forked from (stamped at birth)", Writer: WriterRuntime, Exact: true, Shape: ShapeString()},
-	{Path: "system.tombstone", Short: "Set when a form is deleted: the record subscribers hear the death through, after which the form is sealed", Writer: WriterRuntime, Exact: true, Shape: ShapeAny()},
-	{Path: "system.studies", Short: "The forms this figaro observes. Written by the study verb only: each entry is refcounted on a shared libretto, and a hand-written one would declare a study nothing counted", Writer: WriterRuntime, Exact: true, Shape: ShapeAny()},
+	{Path: ForkedFromKey, Short: "The trunk this branch was forked from (stamped at birth)", Writer: WriterRuntime, Exact: true, Shape: ShapeString()},
+	{Path: TombstoneKey, Short: "Set when a form is deleted: the record subscribers hear the death through, after which the form is sealed", Writer: WriterRuntime, Exact: true, Shape: ShapeAny()},
+	{Path: StudiesKey, Short: "The forms this figaro observes. Written by the study verb only: each entry is refcounted on a shared libretto, and a hand-written one would declare a study nothing counted", Writer: WriterRuntime, Exact: true, Shape: ShapeAny()},
 	{Path: "model", Short: "Active model ID", Writer: WriterRuntime, Exact: true, Shape: ShapeAny()},
 	{Path: "token_budget", Short: "Context window usage indicator", Writer: WriterRuntime, Exact: true, Shape: ShapeAny()},
 	{Path: "truncation", Short: "Last tool truncation notice", Writer: WriterRuntime, Exact: true, Shape: ShapeAny()},
@@ -99,11 +99,27 @@ var registry = []Spec{
 	{Path: "system.ttl", Short: `Owner-held; a lifetime counted from creation, after which the sweep deletes the node and its subtree (Go duration plus d and w; 0 or unset means none)`, Writer: WriterOwner, Shape: ShapeLifetime()},
 	{Path: "system.reap_if_empty", Short: `Owner-held; true and the sweep reaps a figaro that never had a message`, Writer: WriterOwner, Shape: ShapeTruthy()},
 	{Path: "system.keepalive", Short: `Owner-held; a node whose lifetime is spent survives while it was used within this window (default one day; 0 reaps at the deadline)`, Writer: WriterOwner, Shape: ShapeLifetime()},
-	{Path: "system.retired", Short: `Owner-held; set when a figaro retires, with the reason (e.g. "context"); a box may set it on the figaros inside it`, Writer: WriterOwner, Shape: ShapeTruthy()},
+	{Path: RetireRequestKey, Short: `Owner-held; the request to retire a figaro, with the reason (e.g. "manual"); a box may set it on the figaros inside it. The daemon records it at runtime.retired and never keeps it here; removing it unretires`, Writer: WriterOwner, Shape: ShapeTruthy()},
+	{Path: RetiredKey, Short: `Set when a figaro retires, with the reason ("manual", "context"); written by the daemon from system.retired or its own retirement`, Writer: WriterRuntime, Exact: true, Shape: ShapeTruthy()},
+	{Path: RuntimeRoot, Writer: WriterRuntime, Shape: ShapeObject()},
 	{Path: "system.methods", Writer: WriterOwner, Shape: ShapeObject()},
 	{Path: "system.fanout", Writer: WriterSelf, Operator: true, Shape: ShapeObject()},
 	{Path: "system.environment", Writer: WriterOwner, Shape: ShapeObject()},
 	{Path: "system.retention", Writer: WriterOwner, Shape: ShapeObject()},
+})
+
+func withLegacyRuntimeRows(rows []Spec) []Spec {
+	shapes := make(map[string]Shape, len(rows))
+	for _, s := range rows {
+		shapes[s.Path] = s.Shape
+	}
+	for _, r := range runtimeRenames {
+		if r.Old == RetireRequestKey {
+			continue
+		}
+		rows = append(rows, Spec{Path: r.Old, Short: "Old name of " + r.New + ": read for one release, never written", Writer: WriterRuntime, Exact: true, Shape: shapes[r.New]})
+	}
+	return rows
 }
 
 func Registry() []Spec { return slices.Clone(registry) }

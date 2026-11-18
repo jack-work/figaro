@@ -208,7 +208,7 @@ func (h *handlers) ancestorsOf(line lineage) []string {
 func (c callerKeys) deny() []rpc.KeyDeny {
 	var out []rpc.KeyDeny
 	for _, k := range form.SystemManagedKeys() {
-		out = append(out, rpc.KeyDeny{Key: k, Exact: true, Kind: rpc.DenySystemManaged,
+		out = append(out, rpc.KeyDeny{Key: k, Exact: k != form.RuntimeRoot, Kind: rpc.DenySystemManaged,
 			Reason: "written by the harness, not by hand"})
 	}
 	if !c.owns {
@@ -547,7 +547,7 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 func openKeys(m map[string]json.RawMessage) map[string]json.RawMessage {
 	out := map[string]json.RawMessage{}
 	for k, v := range m {
-		if !strings.HasPrefix(k, "system.") && k != "system" {
+		if !form.HarnessKey(k) {
 			out[k] = v
 		}
 	}

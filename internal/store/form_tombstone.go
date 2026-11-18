@@ -7,8 +7,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 )
 
-// TombstoneKey is harness-owned: nothing off a wire may write or clear it.
-const TombstoneKey = "system.tombstone"
+const TombstoneKey = form.TombstoneKey
 
 var ErrFormClosed = errors.New("form is closed")
 
@@ -22,7 +21,7 @@ var ErrFormMoved = errors.New("form moved")
 // Tombstone marks the form dead durably and seals it. Idempotent, so a delete
 // retried after a crash need not know whether it got there the first time.
 func (f *Form) Tombstone(reason string) (uint64, error) {
-	if snap, v := f.Snapshot(); snap.Has(TombstoneKey) {
+	if snap, v := f.Snapshot(); form.RuntimeHas(snap, TombstoneKey) {
 		return v, nil
 	}
 	if reason == "" {
@@ -32,8 +31,9 @@ func (f *Form) Tombstone(reason string) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
+	snap, _ := f.Snapshot()
 	v, _, err := f.ApplyEffectPrivileged(
-		form.Build(form.Snapshot{}, map[string]json.RawMessage{TombstoneKey: raw}, nil), 0)
+		form.RuntimeSet(snap, map[string]json.RawMessage{TombstoneKey: raw}), 0)
 	if err != nil {
 		return 0, err
 	}
@@ -43,7 +43,7 @@ func (f *Form) Tombstone(reason string) (uint64, error) {
 
 func (f *Form) Tombstoned() bool {
 	snap, _ := f.Snapshot()
-	return snap.Has(TombstoneKey)
+	return form.RuntimeHas(snap, TombstoneKey)
 }
 
 var ErrFormSealed = errors.New("form is tombstoned: no further patches")

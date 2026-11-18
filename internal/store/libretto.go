@@ -306,7 +306,7 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) bool {
 		}
 		// A tombstone on the source is the death notice. The copy stays,
 		// which is what makes a studied form deletable at all.
-		if _, isDead := ev.Applied.Entry(TombstoneKey); isDead {
+		if _, isDead := form.RuntimeEntry(ev.Applied, TombstoneKey); isDead {
 			dead = true
 		}
 		last = maxVersion(last, ev.Version)
@@ -363,6 +363,12 @@ func (l *Libretto) Close() {
 
 // isLibrettoKey names the keys a verbatim mirror must NOT copy.
 func isLibrettoKey(k string) bool {
+	if old, ok := form.LegacyName(TombstoneKey); ok && k == old {
+		return true
+	}
+	if old, ok := form.LegacyName(KeyCheckpointMarks); ok && k == old {
+		return true
+	}
 	return strings.HasPrefix(k, "system.libretto.") || k == TombstoneKey || k == KeyCheckpointMarks
 }
 

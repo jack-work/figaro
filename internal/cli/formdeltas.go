@@ -8,6 +8,7 @@ import (
 
 	"github.com/mattn/go-runewidth"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
@@ -248,21 +249,22 @@ func groupDeltas(deltas map[string]livedoc.FormDelta) (map[string]*deltaGroup, [
 	return groups, order
 }
 
-const forkedFromKey = "system.forked_from"
-
-// forkParent comes off the fork's birth patch, which stamps system.forked_from.
+// forkParent comes off the fork's birth patch, which stamps runtime.forked_from
+// (system.forked_from before P2: history keeps the old name).
 func forkParent(g *deltaGroup) string {
 	if g.kind != livedoc.FormBound {
 		return ""
 	}
-	if d, ok := g.byKey[forkedFromKey]; ok && d.Event == livedoc.FormSet {
-		return unquote(d.Value).text
+	for _, k := range form.RuntimeDrops(form.ForkedFromKey) {
+		if d, ok := g.byKey[k]; ok && d.Event == livedoc.FormSet {
+			return unquote(d.Value).text
+		}
 	}
 	return ""
 }
 
 func forkKey(kind livedoc.FormKind, key string) bool {
-	return kind == livedoc.FormBound && (key == forkedFromKey || key == "aria_id")
+	return kind == livedoc.FormBound && (isForkedFromKey(key) || key == "aria_id")
 }
 
 // The bound form is unnamed; every other form is named by id.
@@ -288,4 +290,9 @@ func unquote(raw []byte) deltaCell {
 		return deltaCell{text: s[1 : len(s)-1], present: true}
 	}
 	return deltaCell{text: s, present: true}
+}
+
+func isForkedFromKey(key string) bool {
+	old, _ := form.LegacyName(form.ForkedFromKey)
+	return key == form.ForkedFromKey || key == old
 }

@@ -1,13 +1,14 @@
 package angelus
 
 import (
-	"github.com/jack-work/figaro/api/rpc"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/jack-work/figaro/api/rpc"
 
 	"github.com/jack-work/figaro/api/form"
 )
@@ -78,7 +79,7 @@ func TestEveryOpenKeyTheDaemonReadsIsClassifiedForBoxes(t *testing.T) {
 		t.Fatal("the scan missed a key it must see; it proves nothing")
 	}
 	for key, where := range found {
-		if strings.HasPrefix(key, "system.") || key == "system" {
+		if form.HarnessKey(key) {
 			continue
 		}
 		if _, refused := boxRefusal(key); refused {

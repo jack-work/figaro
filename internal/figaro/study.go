@@ -24,7 +24,7 @@ import (
 const StudiesKey = store.StudiesKey
 
 func StudiesFromSnapshot(snap form.Snapshot) []string {
-	raw, ok := snap.Get(StudiesKey)
+	raw, ok := form.RuntimeGet(snap, StudiesKey)
 	if !ok {
 		return nil
 	}
@@ -121,7 +121,7 @@ func (a *Agent) publishStudies(decl store.StudyDecl) {
 		return
 	}
 	a.studiesVersion = decl.Version
-	a.form.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{StudiesKey: raw}, nil))
+	a.form.Apply(form.RuntimeSet(a.form.Snapshot(), map[string]json.RawMessage{StudiesKey: raw}))
 	if a.backend != nil {
 		a.backend.SetObservedForms(a.id, decl.Studies)
 	}

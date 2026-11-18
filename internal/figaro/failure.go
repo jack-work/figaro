@@ -68,9 +68,9 @@ func (a *Agent) recordFailure(reason string) {
 		} {
 			set[k], _ = json.Marshal(v)
 		}
-		patch = form.Build(snap, set, nil)
+		patch = form.RuntimeSet(snap, set)
 	} else {
-		patch = form.Build(snap, nil, []string{form.FailureReasonKey, form.FailureCategoryKey, form.FailureTurnKey, form.FailureAtKey})
+		patch = form.Build(snap, nil, presentOf(snap, form.RuntimeDrops(form.FailureReasonKey, form.FailureCategoryKey, form.FailureTurnKey, form.FailureAtKey)))
 	}
 	if patch.IsIdentity() {
 		return
@@ -127,4 +127,14 @@ func (a *Agent) SubmitFailureNotice(from, text string) error {
 
 func figaroSender(sender string) bool {
 	return !strings.HasPrefix(sender, "@") && len(sender) >= rpc.OldIDLen && rpc.IsHexID(sender)
+}
+
+func presentOf(snap form.Snapshot, keys []string) []string {
+	var out []string
+	for _, k := range keys {
+		if snap.Has(k) {
+			out = append(out, k)
+		}
+	}
+	return out
 }
