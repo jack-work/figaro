@@ -1255,16 +1255,20 @@ func (a *Agent) toolDefs(snap form.Snapshot) []provider.Tool {
 
 func (a *Agent) fanOut(n rpc.Notification) {
 	a.mu.RLock()
-	defer a.mu.RUnlock()
-
 	ctx := a.turnCtx
+	subs := make([]Notifier, 0, len(a.subs))
+	for sub := range a.subs {
+		subs = append(subs, sub)
+	}
+	a.mu.RUnlock()
+
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	slog.DebugContext(ctx, "rpc notify", "aria", a.id, "method", n.Method, "params", n.Params)
 	mark.Mark("fanout", "aria", a.id, "method", n.Method)
 
-	for sub := range a.subs {
+	for _, sub := range subs {
 		if err := sub.Notify(n.Method, n.Params); err != nil {
 			slog.Warn("notify subscriber", "aria", a.id, "err", err)
 		}
