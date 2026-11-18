@@ -261,6 +261,7 @@ Each owner gets a ready commit, or a one-line diff, before P2 is merged.
 - **Succession charges by how long the predecessor stays alive.**
   - Hard `succeed` is net zero: the two figaros swap quotas.
   - Overlap and familial succession cost 1, and are refused if the budget is not there.
+  - Charter note (review of P6, 11-18): the charge follows the flag, not the variant's name. The `hard` variant in `~/.config/figaro/succession/hard.md` runs `figaro succeed --abdication linger`, so it is charged as familial: it costs 1 and is refused at a full budget. Either `hard` drops `--abdication linger`, or a seat that succeeds hard keeps 1 of budget free.
 - **No `fanout ask` verb.** A refusal names the free budget at every capped ancestor, so the figaro asks its parent in plain words.
 - **Managed apply** can set quota from the charter.
 - **Owner forks (Gluck, 11-18).** A fork made by an unclaimed caller, the owner, skips fan-out and quota admission, but it still counts in its parent's live children and in every ancestor's usage. The child records that the owner made it in a runtime key (`runtime.owner_made`). A figaro at its cap may retire owner-made figaros in its own subtree to make room. Its refusal names them, so the figaro knows what it may clear. Gluck accepts that his forks can be cleaned up this way.
