@@ -283,6 +283,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		return nil, fmt.Errorf("fork: the board of %s cannot be read to check the patch against it: %w", req.FigaroID, err)
 	}
+	holder := inherited
 	claimed := authz.FigaroOf(ctx) != ""
 	if claimed && req.Patch != nil {
 		if e, ok := req.Patch.Entry(form.FanoutMaxChildrenKey); ok && e.IsRemoval() {
@@ -335,6 +336,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	dress, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
 		return nil, err
+	}
+	if req.Seat != "" {
+		dress = withHolderTTL(dress, holder)
 	}
 	// interior is read off the coordinate, not the LT: forking at turn 1 has
 	// LT 0, which is also the head-fork sentinel.
