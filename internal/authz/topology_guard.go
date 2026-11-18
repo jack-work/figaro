@@ -78,7 +78,7 @@ type TopologyGuard struct {
 	Reaped       func(ctx context.Context, root string) (nodes []string, due bool)
 	Empty        func(id string) bool
 	MintPlaces   func(box, node, under string) error
-	FanoutLimit  func(id string) (max int, ok bool)
+	FanoutLimit  func(id string) (max int, ok bool, err error)
 	LiveChildren func(id string) int
 	Live         func(id string) bool
 	SwapLimit    func(pred, succ string) (max int, ok, swap bool)
@@ -338,7 +338,10 @@ func (g TopologyGuard) fanout(p hierarchy.Plan) error {
 		if arrivals[to] == 0 {
 			continue
 		}
-		max, ok := g.FanoutLimit(to)
+		max, ok, err := g.FanoutLimit(to)
+		if err != nil {
+			return fmt.Errorf("fanout: %s's max_children cannot be read, so the reparent is refused and nothing moved: %w", to, err)
+		}
 		if to == swapTo {
 			max, ok = swapMax, swapOK
 		}
