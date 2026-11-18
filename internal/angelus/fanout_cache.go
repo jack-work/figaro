@@ -116,7 +116,7 @@ func (c *fanoutCache) chargeOf(id string) int {
 		return c.used[id]
 	}
 	if q, ok := c.eff[id]; ok {
-		return 1 + q
+		return 1 + max(q, c.used[id])
 	}
 	return 1 + c.used[id]
 }
@@ -127,17 +127,13 @@ func (c *fanoutCache) absorbs(id string) bool {
 }
 
 func (c *fanoutCache) carry(from string, d int) {
-	if d == 0 {
-		return
-	}
-	for id, steps := from, len(c.parent); id != "" && steps >= 0; steps-- {
+	for id, steps := from, len(c.parent); id != "" && d != 0 && steps >= 0; steps-- {
 		if _, known := c.parent[id]; !known {
 			return
 		}
+		before := c.chargeOf(id)
 		c.used[id] += d
-		if c.absorbs(id) {
-			return
-		}
+		d = c.chargeOf(id) - before
 		id = c.parent[id]
 	}
 }
@@ -376,7 +372,7 @@ func (c *fanoutCache) chargeChange(id string, quota int, capped bool) (from stri
 	}
 	after := 1 + used
 	if capped {
-		after = 1 + quota
+		after = 1 + max(quota, used)
 	}
 	return c.parent[id], after - c.chargeOf(id), used
 }
@@ -618,6 +614,48 @@ func (a *Angelus) reconcileFanout() {
 		}
 		return nil
 	})
+	if over := a.fanoutOver(); len(over) > 0 {
+		slog.Info("fanout: over budget, so no forks until under", "nodes", len(over), "first", over[0].ID, "over", over[0].Over)
+	}
+}
+
+func (c *fanoutCache) overQuota() []rpc.FanoutOver {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []rpc.FanoutOver
+	for id, q := range c.eff {
+		if c.live[id] && c.used[id] > q {
+			out = append(out, rpc.FanoutOver{ID: id, Over: fmt.Sprintf("uses %d of quota %d", c.used[id], q)})
+		}
+	}
+	return out
+}
+
+func (c *fanoutCache) parents() map[string]int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := map[string]int{}
+	for id, n := range c.kids {
+		if n > 0 && c.live[id] {
+			out[id] = n
+		}
+	}
+	return out
+}
+
+func (a *Angelus) fanoutOver() []rpc.FanoutOver {
+	if a.Backend == nil {
+		return nil
+	}
+	c := a.fanoutCounts()
+	out := c.overQuota()
+	for id, n := range c.parents() {
+		if max, ok, err := a.fanoutLimit(id); err == nil && ok && n > max {
+			out = append(out, rpc.FanoutOver{ID: id, Over: fmt.Sprintf("holds %d live children of max_children %d", n, max)})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID+out[i].Over < out[j].ID+out[j].Over })
+	return out
 }
 
 func shortID(id string) string { return id[:min(8, len(id))] }

@@ -3,7 +3,9 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
@@ -117,18 +119,25 @@ func TestRaisingAChildsQuotaNeedsTheParentsFreeBudget(t *testing.T) {
 	if err := setAsFigaro(t, hs, top, kid, *quotaPatch(3)); err == nil {
 		t.Fatal("top raised its child past its own free budget")
 	}
-	forkOK(t, hs, kid, kid, nil)
-	if err := setAsFigaro(t, hs, top, kid, *quotaPatch(0)); err == nil {
-		t.Fatal("a quota was lowered below what the subtree already uses")
-	}
+	grandkid := forkOK(t, hs, kid, kid, nil)
 	if err := setAsFigaro(t, hs, kid, kid, *quotaPatch(3)); err == nil {
 		t.Fatal("a figaro wrote its own quota")
 	}
-	if err := setAsFigaro(t, hs, top, kid, *quotaPatch(1)); err != nil {
-		t.Fatalf("lowering to what the subtree uses: %v", err)
+	if err := setAsFigaro(t, hs, top, kid, *quotaPatch(0)); err != nil {
+		t.Fatalf("Gluck's call: lowering below use is allowed: %v", err)
 	}
 	if got := budgetOf(hs, top); got.used != 2 {
-		t.Fatalf("top uses %d after lowering its child to 1, want 2", got.used)
+		t.Fatalf("top uses %d with its child lowered to 0 but using 1, want 1 + max(0, 1) = 2", got.used)
+	}
+	if _, err := callForkAsFigaro(t, hs, kid, rpc.ForkRequest{FigaroID: kid}); err == nil {
+		t.Fatal("a child lowered below its use forked")
+	}
+	if !hs.h.angelus.isLiveAria(grandkid) {
+		t.Fatal("lowering a quota reaped what was under it")
+	}
+	retireAria(t, b, grandkid)
+	if got := budgetOf(hs, top); got.used != 1 {
+		t.Fatalf("top uses %d once its child's use dropped, want 1", got.used)
 	}
 	requireCacheMatchesTree(t, hs, "re-grants")
 }
@@ -286,4 +295,47 @@ func TestAForkNeverCopiesItsParentsQuota(t *testing.T) {
 		t.Fatalf("top uses %d, want 3: a claimed child (1) and a carved one (2)", got.used)
 	}
 	requireCacheMatchesTree(t, hs, "carves")
+}
+
+// Gluck's call: admission is optimistic. Forks and quota writes read the
+// counts without the hierarchy lock, so a race may overshoot, but only by
+// what was in flight, and the counts converge on the tree: an overdrawn
+// figaro is reported and refused every fork until it is back under.
+func TestRacingForksAndQuotaWritesOvershootBoundedlyAndConverge(t *testing.T) {
+	const quota, raisers, step = 6, 6, 3
+	for round := range 10 {
+		hs, b, outfit := fanoutHandlers(t)
+		top, _ := b.CreateConversation(outfit)
+		setQuota(t, b, top, quota)
+		kids := []string{forkOK(t, hs, top, top, nil), forkOK(t, hs, top, top, nil)}
+		var wg sync.WaitGroup
+		for i := range 2 * raisers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if i%2 == 0 {
+					_, _ = callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top})
+					return
+				}
+				_ = setAsFigaro(t, hs, top, kids[i%4/2], *quotaPatch(1 + i%step))
+			}()
+		}
+		wg.Wait()
+		used := budgetOf(hs, top).used
+		if used > quota+raisers*step {
+			t.Fatalf("round %d: top uses %d, past its quota %d plus everything in flight", round, used, quota)
+		}
+		hs.h.angelus.reconcileFanout()
+		requireCacheMatchesTree(t, hs, fmt.Sprintf("round %d", round))
+		over := false
+		for _, o := range hs.h.angelus.fanoutOver() {
+			over = over || o.ID == top
+		}
+		if over != (used > quota) {
+			t.Fatalf("round %d: top uses %d of %d and is reported over budget: %v", round, used, quota, over)
+		}
+		if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); (err == nil) != (used < quota) {
+			t.Fatalf("round %d: top at %d of %d forked: %v", round, used, quota, err)
+		}
+	}
 }
