@@ -200,7 +200,11 @@ func (h *handlers) refuseScopesBeyondWriter(ctx context.Context, c callerKeys, l
 	}
 	f := authz.FigaroOf(ctx)
 	if p := h.angelus.Policies; p != nil && f != "" && (c.tool == f || c.boxed && h.sandboxOf(f) == c.box) {
-		if err := p.HoldsGrants(f, want, line.of); err != nil {
+		target, parent := line.of, ""
+		if line.self {
+			target, parent = "", line.of
+		}
+		if err := p.HoldsGrants(f, want, target, parent); err != nil {
 			return fmt.Errorf("%s: %w", form.ScopesKey, err)
 		}
 		return nil
@@ -209,6 +213,35 @@ func (h *handlers) refuseScopesBeyondWriter(ctx context.Context, c callerKeys, l
 		return nil
 	}
 	return fmt.Errorf("%s: the writer does not hold %q, and a figaro gives only what it holds", form.ScopesKey, want[0])
+}
+
+func (h *handlers) refuseKeysBeyondGrants(ctx context.Context, line lineage, before form.Snapshot, patch form.Patch, after form.Snapshot) error {
+	f, p := authz.FigaroOf(ctx), h.angelus.Policies
+	if f == "" || p == nil || line.of == "" || line.self {
+		return nil
+	}
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil {
+		return err
+	}
+	view := p.Figaro(f)
+	for _, key := range writtenPaths(before, patch, after) {
+		verb := rpc.VerbSet
+		if !after.Has(key) {
+			verb = rpc.VerbDelete
+		}
+		if !view.AllowsKey(sub, verb, authz.Aria(line.of), key) {
+			return fmt.Errorf("figaro %s may not %s %s on %s: its scopes do not reach that key", f, keyVerbName(verb), key, line.of)
+		}
+	}
+	return nil
+}
+
+func keyVerbName(v rpc.Verb) string {
+	if v == rpc.VerbSet {
+		return "write"
+	}
+	return string(v)
 }
 
 func (h *handlers) ancestorsOf(line lineage) []string {
@@ -365,6 +398,9 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 		return err
 	}
 	if _, err := form.FanoutMint(after); err != nil {
+		return err
+	}
+	if err := h.refuseKeysBeyondGrants(ctx, line, before, *patch, after); err != nil {
 		return err
 	}
 	c := h.callerKeysOf(ctx)

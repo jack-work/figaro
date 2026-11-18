@@ -60,7 +60,7 @@ func TestAFigarosGrantsNarrowItsCallsThroughTheBoxDoor(t *testing.T) {
 	if err := r.setAs(t, c, r.parent, r.sibling, note); err != nil {
 		t.Fatalf("the parent holds *:*: %v", err)
 	}
-	if g := grantsOf(t, r.grantRig, r.child); strings.Join(g.Effective, ",") != "read:*,set:aria:"+r.child {
+	if g := grantsOf(t, r.grantRig, r.child); strings.Join(g.Effective, ",") != "read:*,set:aria:"+r.child+",delete:aria:"+r.child {
 		t.Fatalf("effective %v", g.Effective)
 	}
 }

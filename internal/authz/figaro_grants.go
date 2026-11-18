@@ -36,15 +36,29 @@ func ParseFigaroGrants(texts []string) (jkauthz.Grants, error) {
 		if err != nil {
 			return nil, err
 		}
-		if figaroVerb(g.Verb) && g.Object != jkauthz.Any {
-			if err := schema.Selectors.Validate(g.Object); err != nil {
+		if g.Verb == verbWrite {
+			g.Verb = string(rpc.VerbSet)
+		}
+		sel, glob := splitKeyed(g.Object)
+		if strings.Contains(g.Object, keySep) {
+			if err := validateKeyGlob(glob); err != nil {
 				return nil, fmt.Errorf("grant %q: %w", t, err)
 			}
+		}
+		if figaroVerb(g.Verb) && sel != jkauthz.Any && sel != selParent && sel != selChildren {
+			if err := schema.Selectors.Validate(sel); err != nil {
+				return nil, fmt.Errorf("grant %q: %w", t, err)
+			}
+		}
+		if g.Verb == string(rpc.VerbSet) && !strings.HasPrefix(t, verbWrite+":") {
+			gs = append(gs, jkauthz.Grant{Verb: string(rpc.VerbDelete), Object: g.Object})
 		}
 		gs = append(gs, g)
 	}
 	return canonicalGrants(selectors{}, gs), nil
 }
+
+const verbWrite = "write"
 
 func DecodeFigaroGrants(raw json.RawMessage) (jkauthz.Grants, error) {
 	var texts []string
@@ -59,8 +73,26 @@ func verbCovers(a, b string) bool {
 }
 
 func (m selectors) objectCovers(a, b string) bool {
+	if a == b {
+		return true
+	}
+	sa, ga := splitKeyed(a)
+	sb, gb := splitKeyed(b)
+	return globCovers(ga, gb) && m.selectorCovers(sa, sb)
+}
+
+func (m selectors) selectorCovers(a, b string) bool {
 	if a == jkauthz.Any || a == b {
 		return true
+	}
+	descends := func(id, root string) bool { return m.facts != nil && m.facts.DescendsFrom(id, root) }
+	if root, ok := strings.CutPrefix(a, selBelow); ok {
+		for _, prefix := range []string{selBelow, selLineage, selAria} {
+			if id, ok := strings.CutPrefix(b, prefix); ok {
+				return (prefix == selBelow && id == root) || (id != root && descends(id, root))
+			}
+		}
+		return false
 	}
 	root, ok := strings.CutPrefix(a, selLineage)
 	if !ok {
@@ -70,7 +102,10 @@ func (m selectors) objectCovers(a, b string) bool {
 	if !ok {
 		id, ok = strings.CutPrefix(b, selAria)
 	}
-	return ok && (id == root || (m.facts != nil && m.facts.DescendsFrom(id, root)))
+	if !ok {
+		id, ok = strings.CutPrefix(b, selBelow)
+	}
+	return ok && (id == root || descends(id, root))
 }
 
 func (m selectors) grantCovers(a, b jkauthz.Grant) bool {
@@ -91,14 +126,26 @@ func (m selectors) meet(a, b jkauthz.Grant) (jkauthz.Grant, bool) {
 	default:
 		return g, false
 	}
+	sa, ga := splitKeyed(a.Object)
+	sb, gb := splitKeyed(b.Object)
+	var sel, glob string
 	switch {
-	case m.objectCovers(a.Object, b.Object):
-		g.Object = b.Object
-	case m.objectCovers(b.Object, a.Object):
-		g.Object = a.Object
+	case m.selectorCovers(sa, sb):
+		sel = sb
+	case m.selectorCovers(sb, sa):
+		sel = sa
 	default:
 		return g, false
 	}
+	switch {
+	case globCovers(ga, gb):
+		glob = gb
+	case globCovers(gb, ga):
+		glob = ga
+	default:
+		return g, false
+	}
+	g.Object = keyed(sel, glob)
 	return g, true
 }
 
@@ -156,15 +203,19 @@ func canonicalGrants(m selectors, gs jkauthz.Grants) jkauthz.Grants {
 	return out
 }
 
-func resolveSelf(gs jkauthz.Grants, id string) jkauthz.Grants {
+func resolveSelf(gs jkauthz.Grants, id, parent string) jkauthz.Grants {
 	var out jkauthz.Grants
 	for i, g := range gs {
-		obj := g.Object
-		switch obj {
+		sel, glob := splitKeyed(g.Object)
+		switch sel {
 		case selAria + selSelf:
-			obj = selAria + id
+			sel = selAria + id
 		case selLineage + selSelf:
-			obj = selLineage + id
+			sel = selLineage + id
+		case selParent:
+			sel = selAria + parent
+		case selChildren:
+			sel = selBelow + id
 		default:
 			if out != nil {
 				out = append(out, g)
@@ -174,7 +225,10 @@ func resolveSelf(gs jkauthz.Grants, id string) jkauthz.Grants {
 		if out == nil {
 			out = append(make(jkauthz.Grants, 0, len(gs)), gs[:i]...)
 		}
-		out = append(out, jkauthz.Grant{Verb: g.Verb, Object: obj})
+		if sel == selAria {
+			continue
+		}
+		out = append(out, jkauthz.Grant{Verb: g.Verb, Object: keyed(sel, glob)})
 	}
 	if out == nil {
 		return gs
@@ -185,11 +239,14 @@ func resolveSelf(gs jkauthz.Grants, id string) jkauthz.Grants {
 func unresolveSelf(gs jkauthz.Grants, id string) jkauthz.Grants {
 	out := slices.Clone(gs)
 	for i, g := range out {
-		switch g.Object {
+		sel, glob := splitKeyed(g.Object)
+		switch sel {
 		case selAria + id:
-			out[i].Object = selAria + selSelf
+			out[i].Object = keyed(selAria+selSelf, glob)
 		case selLineage + id:
-			out[i].Object = selLineage + selSelf
+			out[i].Object = keyed(selLineage+selSelf, glob)
+		case selBelow + id:
+			out[i].Object = keyed(selChildren, glob)
 		}
 	}
 	return out
@@ -296,7 +353,11 @@ func (p *Policies) effectiveDown(chain []string) (jkauthz.Grants, error) {
 		if err != nil {
 			return nil, fmt.Errorf("the scopes of %s cannot be read: %w", id, err)
 		}
-		own = resolveSelf(own, id)
+		parent := ""
+		if i > 0 {
+			parent = chain[i-1]
+		}
+		own = resolveSelf(own, id, parent)
 		switch {
 		case i > 0:
 			if present {
@@ -307,7 +368,7 @@ func (p *Policies) effectiveDown(chain []string) (jkauthz.Grants, error) {
 		default:
 			eff = own
 			if ceiling, set := p.ceiling(); set {
-				eff = m.intersect(resolveSelf(ceiling, id), own)
+				eff = m.intersect(resolveSelf(ceiling, id, ""), own)
 			}
 		}
 	}
@@ -498,7 +559,11 @@ func (v FigaroView) refuses(s jkauthz.Subject, verb rpc.Verb, r Resource) string
 	}
 	m, _ := v.p.schema.Selectors.(selectors)
 	for _, g := range v.eff {
-		if verbCovers(g.Verb, string(verb)) && (g.Object == jkauthz.Any || m.Match(g.Object, s, r)) {
+		sel, glob := splitKeyed(g.Object)
+		if glob != "" && verb != rpc.VerbSet && verb != rpc.VerbDelete {
+			continue
+		}
+		if verbCovers(g.Verb, string(verb)) && v.reaches(m, sel, s, verb, r) {
 			return ""
 		}
 	}
@@ -508,7 +573,56 @@ func (v FigaroView) refuses(s jkauthz.Subject, verb rpc.Verb, r Resource) string
 	return fmt.Sprintf("%s%s may not %s on %s: its scopes (%s) do not reach it", figaroPrefix, v.figaro, verb, r, v.eff)
 }
 
-func (p *Policies) HoldsGrants(figaro string, want jkauthz.Grants, target string) error {
+func (v FigaroView) reaches(m selectors, sel string, s jkauthz.Subject, verb rpc.Verb, r Resource) bool {
+	if sel == jkauthz.Any || m.Match(sel, s, r) {
+		return true
+	}
+	if verb != rpc.VerbSend || r.Kind != ResourceAria || !strings.HasPrefix(r.ID, "@") || m.facts == nil {
+		return false
+	}
+	target := m.facts.RoleTarget(r.ID)
+	return target != "" && m.Match(sel, s, Aria(target))
+}
+
+func (v FigaroView) AllowsKey(s jkauthz.Subject, verb rpc.Verb, r Resource, key string) bool {
+	if v.figaro == "" {
+		return true
+	}
+	if !v.held || v.err != nil {
+		return false
+	}
+	m, _ := v.p.schema.Selectors.(selectors)
+	for _, g := range v.eff {
+		sel, glob := splitKeyed(g.Object)
+		if verbCovers(g.Verb, string(verb)) && (glob == "" || KeyGlobMatch(glob, key)) && v.reaches(m, sel, s, verb, r) {
+			return true
+		}
+	}
+	return false
+}
+
+func (v FigaroView) KeyGlobs(s jkauthz.Subject, verb rpc.Verb, r Resource) (all bool, globs []string) {
+	if v.figaro == "" {
+		return true, nil
+	}
+	if !v.held || v.err != nil {
+		return false, nil
+	}
+	m, _ := v.p.schema.Selectors.(selectors)
+	for _, g := range v.eff {
+		sel, glob := splitKeyed(g.Object)
+		if !verbCovers(g.Verb, string(verb)) || !v.reaches(m, sel, s, verb, r) {
+			continue
+		}
+		if glob == "" {
+			return true, nil
+		}
+		globs = append(globs, glob)
+	}
+	return false, globs
+}
+
+func (p *Policies) HoldsGrants(figaro string, want jkauthz.Grants, target, parent string) error {
 	held, ok, err := p.Effective(figaro)
 	if !ok {
 		return fmt.Errorf("figaro %s is not held here, so it holds no scopes to give", figaro)
@@ -516,8 +630,11 @@ func (p *Policies) HoldsGrants(figaro string, want jkauthz.Grants, target string
 	if err != nil {
 		return fmt.Errorf("figaro %s gives nothing: %w", figaro, err)
 	}
-	_, m, _ := p.figaroFacts()
-	for _, g := range resolveSelf(want, target) {
+	ff, m, _ := p.figaroFacts()
+	if chain, ok := ff.Ancestry(target); parent == "" && ok && len(chain) > 1 {
+		parent = chain[len(chain)-2]
+	}
+	for _, g := range resolveSelf(want, target, parent) {
 		if !m.covered(held, g) {
 			return fmt.Errorf("the writer does not hold %q, and a figaro gives only what it holds", g)
 		}

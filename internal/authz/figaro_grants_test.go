@@ -187,7 +187,7 @@ func TestAWriterHoldsWhatItsEffectiveSetCovers(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := p.HoldsGrants("top", gs, "kid"); (err == nil) != ok {
+		if err := p.HoldsGrants("top", gs, "kid", ""); (err == nil) != ok {
 			t.Errorf("%s: %v", want, err)
 		}
 	}
@@ -240,7 +240,7 @@ func TestExportedSetsSpellEveryStarVerbOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := ExportGrants(gs)
-	want := "read:*, listen:aria:x, send:aria:x, fork:aria:x, set:aria:x, create:aria:x, mint:aria:x, kill:aria:x, admin:aria:x, use:aria:x, join:aria:x, decide:aria:x, adopt:aria:x, lease:aria:x, say:aria:x, egress:*"
+	want := "read:*, listen:aria:x, send:aria:x, fork:aria:x, set:aria:x, create:aria:x, mint:aria:x, kill:aria:x, admin:aria:x, use:aria:x, join:aria:x, decide:aria:x, adopt:aria:x, lease:aria:x, say:aria:x, delete:aria:x, egress:*"
 	if strings.Join(got, ", ") != want {
 		t.Fatalf("got  %s\nwant %s", strings.Join(got, ", "), want)
 	}
