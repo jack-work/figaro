@@ -21,7 +21,7 @@
 
 ## Ledger
 
-- Status: rule and motion built 2026-11-12 on lane/layer1 (86233533..97777758), gated, waiting to land. Rule 5a58a47e is row 10 of scripts/check-boundary.sh; motion 97777758 empties its allowlist.
+- Status: landed in v0.66.0 (2026-11-12; on main as 532fd9112 and its motion). Built 2026-11-12 on lane/layer1 (86233533..97777758). Rule 5a58a47e is row 10 of scripts/check-boundary.sh; motion 97777758 empties its allowlist.
 - Rulings (Gluck, 2026-11-11, relayed by the Engineer):
   - A. `figaro box serve` stays in the figaro binary. `internal/cli/box.go` importing `internal/sandbox/box` is the one allowed edge, written into the rule itself and not into the allowlist.
   - B. RunAs for tool calls (#38) is left out of this pinch.

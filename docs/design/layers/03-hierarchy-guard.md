@@ -10,7 +10,7 @@ Already decided by you on 2026-11-10 (Telegram with King XII, routed to the Figa
 
 ## Ledger
 
-- Status: step 1 landed in v0.65.0 (2026-11-11): internal/hierarchy is a leaf under boundary rule 9; only hierarchy and store write edges. Step 2 (parking, two-phase accept) open.
+- Status: step 1 landed in v0.65.0 (2026-11-11): internal/hierarchy is a leaf under boundary rule 9; only hierarchy and store write edges. Step 2 landed in v0.66.0 (2026-11-11..12): proposals, parking, receiving-parent consent, adopt; b27162c2c makes every topology edit a plan applied under an injected guard. What remains for this layer (fork admission in O(height), daemon-side succession, quota, grants on key paths) is Track P of the kingdom plan: design/kingdom, docs/design/kingdom/permissions.md.
 - Rulings:
   - 2026-11-10, Gluck: separate the hierarchy from authorization; constraints are hooks, and authz is injected through them. Wants receiving-parent acceptance (two-phase). "If we could structure it that way today as part of this change or in fast follows, that would be great."
   - 2026-11-10, El Inspector XIV: severity LOW today. Blocks any future grant that gives `set` without `kill` until the fix lands. Fix: authorize every node whose drawn position changes.

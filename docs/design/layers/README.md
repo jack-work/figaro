@@ -4,6 +4,10 @@ El Cantero, 2026-11-10, on figaro v0.62.1 (29315dad). This branch is `design/lay
 
 Each layer below gets one file: a short page for Gluck on top (what the pinch does, what it costs, the decisions it needs, each answerable in a line), then the ledger: status, his rulings with dates, open questions, hidden variables surfaced, rollbacks.
 
+## Status, 2026-11-18 (Figaro Strategist (Permissions))
+
+On main ee767e87c (v0.74.2): layer 1 landed in v0.66.0; layer 3 steps 1 and 2 landed in v0.65.0 and v0.66.0; layers 2, 4, 5, 6 and 7 not started. The boundary ratchet holds 11 rules, 25 allowed edges, 0 new, 0 stale. The rest of layer 3 continues as Track P of the kingdom plan (keel design/kingdom, docs/design/kingdom/permissions.md): key registry, peer caller check, admission ledger, runtime.* migration, grants on key paths, quota, laws.
+
 ## Ranked: which layer to pinch off first
 
 Measured on 0.62.1 with the plan's layer map: 154,661 non-test lines, 114 imports that point the wrong way. "Edges to cut" counts production imports a pinch must remove.
