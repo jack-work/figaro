@@ -24,8 +24,7 @@ type stopOptions struct {
 	hup            bool
 }
 
-func haltAndStop(cli *sdk.Angelus, o stopOptions, afterExit func()) {
-	pid := daemonPID()
+func haltAndStop(cli *sdk.Angelus, pid int, o stopOptions, afterExit func()) {
 	if !o.forgetBindings {
 		saveBindingsBeforeStop(cli)
 	}
@@ -36,7 +35,7 @@ func haltAndStop(cli *sdk.Angelus, o stopOptions, afterExit func()) {
 	var answered *jkrpc.Error
 	switch {
 	case errors.As(err, &answered) && (answered.Code == methodNotFound || strings.Contains(answered.Message, "has no verb")):
-		die("this angelus predates stop --hup: nothing was hung up and nothing was stopped; `figaro hup <aria>` hangs up one aria")
+		die("this angelus predates stop --hup: nothing was hung up and nothing was stopped; `figaro hup <figaro>` hangs up one figaro")
 	case errors.As(err, &answered):
 		die("the angelus refused to hang up its turns: %s\n  nothing was stopped", answered.Message)
 	case err != nil:
@@ -52,17 +51,31 @@ func haltAndStop(cli *sdk.Angelus, o stopOptions, afterExit func()) {
 
 const methodNotFound = -32601
 
-func daemonPID() int {
-	if b, err := os.ReadFile(filepath.Join(boot.AngelusRuntimeDir(), "angelus.pid")); err == nil {
-		var pid int
-		if _, err := fmt.Sscanf(string(b), "%d", &pid); err == nil && pid > 0 {
-			return pid
-		}
+func readPidFile(path string) (int, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	var pid int
+	if _, err := fmt.Sscanf(strings.TrimSpace(string(b)), "%d", &pid); err != nil || pid <= 0 {
+		return 0, fmt.Errorf("unreadable pid in %s", path)
+	}
+	return pid, nil
+}
+
+func liveDaemonPID() (int, error) {
+	pidPath := filepath.Join(boot.AngelusRuntimeDir(), "angelus.pid")
+	pid, pidErr := readPidFile(pidPath)
+	if pidErr == nil && pidAlive(pid) {
+		return pid, nil
 	}
 	if owner, held := boot.StoreLockOwner(); held && owner > 0 && pidAlive(owner) {
-		return owner
+		return owner, nil
 	}
-	return 0
+	if errors.Is(pidErr, fs.ErrPermission) {
+		return 0, pidErr
+	}
+	return 0, nil
 }
 
 func runStop(o stopOptions) {
@@ -82,8 +95,30 @@ func runStop(o stopOptions) {
 		die("stop retires the daemon this shell started; %s is configured as the troupe, and figaro does not stop a daemon it reaches that way", d.label)
 	}
 	sockPath := boot.AngelusSocketPath()
-	ep := transport.UnixEndpoint(sockPath)
-	if cli, err := sdk.DialAngelus(ep); err == nil {
+	pidPath := filepath.Join(boot.AngelusRuntimeDir(), "angelus.pid")
+	pid, permErr := liveDaemonPID()
+	if permErr != nil {
+		die("cannot read %s (%s); stop a system angelus through its service manager", pidPath, permErr)
+	}
+	if pid == 0 {
+		if known, listening := socketListening(sockPath); known {
+			if listening {
+				fmt.Fprintf(stderrw, "angelus is not running; %s is held open by its service manager, which starts it on the next call\n", sockPath)
+			} else {
+				removeUnheldSocket(sockPath)
+				fmt.Fprintln(stderrw, "angelus is not running")
+			}
+			afterExit()
+			return
+		}
+		ep := transport.UnixEndpoint(sockPath)
+		cli, err := sdk.DialAngelus(ep)
+		if err != nil {
+			removeUnheldSocket(sockPath)
+			fmt.Fprintln(stderrw, "angelus is not running")
+			afterExit()
+			return
+		}
 		if storeHasNoDaemon() {
 			cli.Close()
 			fmt.Fprintf(stderrw, "angelus is not running; %s is held open by its service manager, which starts it on the next call\n", sockPath)
@@ -91,41 +126,32 @@ func runStop(o stopOptions) {
 			return
 		}
 		if o.hup {
-			haltAndStop(cli, o, afterExit)
+			haltAndStop(cli, 0, o, afterExit)
 			return
 		}
 		if !o.forgetBindings {
 			saveBindingsBeforeStop(cli)
 		}
 		cli.Close()
-	} else if owner, held := boot.StoreLockOwner(); held && owner > 0 && pidAlive(owner) {
-		if o.hup {
-			die("angelus (pid %d) does not answer on %s, so its turns cannot be hung up; nothing was stopped", owner, sockPath)
-		}
-		fmt.Fprintf(stderrw, "angelus (pid %d) holds the store but does not answer on %s\n", owner, sockPath)
-		stopPid(owner, o.force, afterExit)
-		return
-	} else {
-		fmt.Fprintln(stderrw, "angelus is not running")
-		afterExit()
+		fmt.Fprintln(stderrw, "angelus pid file missing; nothing was stopped")
 		return
 	}
 
-	pidBytes, err := os.ReadFile(filepath.Join(boot.AngelusRuntimeDir(), "angelus.pid"))
-	if err != nil {
-		if owner, held := boot.StoreLockOwner(); held && owner > 0 && pidAlive(owner) {
-			stopPid(owner, o.force, afterExit)
+	ep := transport.UnixEndpoint(sockPath)
+	if cli, err := sdk.DialAngelus(ep); err == nil {
+		if o.hup {
+			haltAndStop(cli, pid, o, afterExit)
 			return
 		}
-		os.Remove(sockPath)
-		fmt.Fprintln(stderrw, "angelus pid file missing; socket removed")
-		return
-	}
-	var pid int
-	if _, err := fmt.Sscanf(string(pidBytes), "%d", &pid); err != nil {
-		os.Remove(sockPath)
-		fmt.Fprintln(stderrw, "angelus pid file unreadable; socket removed")
-		return
+		if !o.forgetBindings {
+			saveBindingsBeforeStop(cli)
+		}
+		cli.Close()
+	} else {
+		if o.hup {
+			die("angelus (pid %d) does not answer on %s, so its turns cannot be hung up; nothing was stopped", pid, sockPath)
+		}
+		fmt.Fprintf(stderrw, "angelus (pid %d) holds the store but does not answer on %s\n", pid, sockPath)
 	}
 	stopPid(pid, o.force, afterExit)
 }
@@ -171,7 +197,6 @@ func stopPid(pid int, force bool, afterExit func()) {
 		return
 	}
 
-	// keepHushAlive would respawn anything retired while the daemon is up.
 	die("angelus (pid %d) did not rest within 15s; try `figaro rest --force`", pid)
 }
 
@@ -189,11 +214,17 @@ func storeHasNoDaemon() bool {
 }
 
 func removeUnheldSocket(path string) {
+	if known, listening := socketListening(path); known {
+		if !listening {
+			_ = os.Remove(path)
+		}
+		return
+	}
 	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(path)); err == nil {
 		cli.Close()
 		return
 	}
-	os.Remove(path)
+	_ = os.Remove(path)
 }
 
 func waitForExit(pid int, within time.Duration) bool {
