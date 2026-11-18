@@ -300,6 +300,18 @@ func (c *Angelus) Form(ctx context.Context, figaroID string) (*rpc.FormResponse,
 	return &resp, nil
 }
 
+func (c *Angelus) FormQuiet(ctx context.Context, figaroID string) (*rpc.FormResponse, error) {
+	var resp rpc.FormResponse
+	req := struct {
+		rpc.AriaIDRequest
+		rpc.FormRequest
+	}{rpc.AriaIDRequest{FigaroID: figaroID}, rpc.FormRequest{Quiet: true}}
+	if err := c.call(ctx, rpc.MethodForm, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // ListIDs returns the aria list with only ids populated.
 func (c *Angelus) ListIDs(ctx context.Context) (*rpc.ListResponse, error) {
 	var resp rpc.ListResponse

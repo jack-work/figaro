@@ -42,7 +42,7 @@ const auditConnections = 8
 
 type formReader interface {
 	ListGlobal(ctx context.Context) (*rpc.ListResponse, error)
-	Form(ctx context.Context, figaroID string) (*rpc.FormResponse, error)
+	FormQuiet(ctx context.Context, figaroID string) (*rpc.FormResponse, error)
 }
 
 func runDoctorFormKeys(loaded *config.Loaded, audit, jsonOut bool) error {
@@ -103,7 +103,7 @@ func auditFormShapes(ctx context.Context, doors []formReader) (shapeAudit, error
 		go func() {
 			defer wg.Done()
 			for id := range ids {
-				got, err := door.Form(ctx, id)
+				got, err := door.FormQuiet(ctx, id)
 				if err != nil || got == nil {
 					results <- result{id: id}
 					continue
