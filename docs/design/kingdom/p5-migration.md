@@ -76,6 +76,10 @@ and the Knight that is at least:
  "mint:*", "kill:*", "adopt:*", "decide:*", "use:*"]
 ```
 
+`*:*` covers `adopt:lineage:self` (consenting to a figaro moved under the
+seat) and `use:sandbox:local` (naming a host cwd), which every seat needs: a
+`*` verb is every figaro verb and a `*` object every resource. A seat given a
+narrower list must name both, or `adopt:*` and `use:*` as in the list above.
 `kill:*` covers demote, promote and kill everywhere. `set:*` (or
 `write:*#system.retired`) covers retire everywhere. `send:*` covers messages
 to Gluck's other seats. `admin`, `join`, `lease` and `say` are left out: no
