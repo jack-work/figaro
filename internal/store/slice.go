@@ -211,7 +211,7 @@ func copyEntry(from, to string, d fs.DirEntry) error {
 }
 
 func copyFile(from, to string, fi fs.FileInfo) error {
-	in, err := os.Open(from)
+	in, err := os.OpenFile(from, os.O_RDONLY|openNoFollow, 0)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
