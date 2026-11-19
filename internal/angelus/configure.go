@@ -112,6 +112,7 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 	h.configMu.Lock()
 	h.config = fresh
 	if h.outfitter != nil {
+		h.outfitter.SetRoots(fresh.OutfitRoots())
 		h.outfitter.Reload()
 	} else {
 		h.outfitter = newOutfitter(h.angelus, fresh)

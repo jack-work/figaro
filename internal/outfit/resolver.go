@@ -11,6 +11,7 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"sync"
 	"time"
@@ -45,7 +46,7 @@ type epoch struct {
 	taints  map[string]error
 	touched map[string]dep
 	checked time.Time
-	index   map[string][]string
+	index   config.OutfitIndex
 }
 
 type node struct {
@@ -136,14 +137,15 @@ type reader struct {
 	ep *epoch
 }
 
-func (r *reader) outfitIndex(name string) (map[string][]string, error) {
+func (r *reader) outfitIndex(name string) (config.OutfitIndex, error) {
 	r.o.mu.Lock()
 	idx := r.ep.index
+	roots := r.o.roots
 	r.o.mu.Unlock()
 	if idx != nil && idx[name] != nil {
 		return idx, nil
 	}
-	idx, err := walkOutfits(r.o.configDir, r.stat)
+	idx, err := walkOutfits(roots, r.stat)
 	if err != nil {
 		return nil, err
 	}
@@ -153,9 +155,9 @@ func (r *reader) outfitIndex(name string) (map[string][]string, error) {
 	return idx, nil
 }
 
-func walkOutfits(configDir string, visit func(dir string)) (map[string][]string, error) {
+func walkOutfits(roots config.OutfitRoots, visit func(path string)) (config.OutfitIndex, error) {
 	start := time.Now()
-	files, err := config.OutfitFiles(configDir, visit)
+	files, err := config.OutfitFiles(roots, visit)
 	figOtel.RecordOutfitWalk(context.Background(), time.Since(start), len(files))
 	return files, err
 }
@@ -344,6 +346,22 @@ func (o *Outfitter) rollLocked() {
 		touched: map[string]dep{},
 		checked: time.Now(),
 	}
+}
+
+func (o *Outfitter) rootsNow() config.OutfitRoots {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.roots
+}
+
+func (o *Outfitter) SetRoots(roots config.OutfitRoots) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if reflect.DeepEqual(o.roots, roots) {
+		return
+	}
+	o.roots = roots
+	o.rollLocked()
 }
 
 // Reload turns the epoch over now; nothing is read until asked for.

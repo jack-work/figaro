@@ -14,11 +14,13 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/config"
 )
 
 // Outfitter is safe for concurrent use; reads are snapshotted and cached per epoch.
 type Outfitter struct {
 	configDir string
+	roots     config.OutfitRoots
 	snaps     *snapStore
 
 	mu          sync.Mutex
@@ -38,6 +40,7 @@ func New(configDir string) *Outfitter {
 func NewAt(configDir, snapDir string) *Outfitter {
 	return &Outfitter{
 		configDir:   configDir,
+		roots:       config.DefaultOutfitRoots(configDir),
 		snaps:       newSnapStore(snapDir),
 		folds:       map[string]foldEntry{},
 		budget:      foldBudget,
@@ -304,30 +307,34 @@ func decodeTOML(b []byte, path string) (map[string]any, error) {
 }
 
 func (o *Outfitter) resolvePath(name string, r *reader) (string, error) {
-	var files map[string][]string
+	var idx config.OutfitIndex
 	var err error
 	if r != nil {
-		files, err = r.outfitIndex(name)
+		idx, err = r.outfitIndex(name)
 	} else {
-		files, err = walkOutfits(o.configDir, nil)
+		idx, err = walkOutfits(o.rootsNow(), nil)
 	}
 	if err != nil {
 		return "", fmt.Errorf("outfit: %w", err)
 	}
-	switch paths := files[name]; len(paths) {
+	var e config.OutfitEntry
+	if found := idx[name]; found != nil {
+		e = *found
+	}
+	switch len(e.Paths) {
 	case 1:
-		return paths[0], nil
+		return e.Paths[0], nil
 	case 0:
-		canonical := filepath.Join(o.configDir, "outfits", name+".toml")
+		canonical := filepath.Join(o.rootsNow().Overlay(), name+".toml")
 		if r != nil {
 			r.stat(canonical)
 		}
 		return "", &os.PathError{Op: "open", Path: canonical, Err: os.ErrNotExist}
 	default:
-		rel := make([]string, len(paths))
-		for i, p := range paths {
+		rel := make([]string, len(e.Paths))
+		for i, p := range e.Paths {
 			rel[i] = p
-			if r, err := filepath.Rel(o.configDir, p); err == nil {
+			if r, err := filepath.Rel(filepath.Dir(e.Root.Path), p); err == nil {
 				rel[i] = r
 			}
 		}

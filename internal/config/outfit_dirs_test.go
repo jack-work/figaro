@@ -32,7 +32,7 @@ func TestOutfitFilesWalksSubdirectories(t *testing.T) {
 		"outfits/notes.md",
 	)
 	var visited []string
-	files, err := OutfitFiles(dir, func(d string) { visited = append(visited, d) })
+	files, err := defaultOutfitPaths(dir, func(d string) { visited = append(visited, d) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestOutfitFilesSkipsHiddenEntries(t *testing.T) {
 		"outfits/.git/HEAD.toml",
 		"outfits/.draft.toml",
 	)
-	files, err := OutfitFiles(dir, nil)
+	files, err := defaultOutfitPaths(dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestOutfitFilesSkipsHiddenEntries(t *testing.T) {
 func TestOutfitFilesReportsEveryPathOfADuplicate(t *testing.T) {
 	dir := t.TempDir()
 	writeTree(t, dir, "outfits/jev.toml", "outfits/old/jev.toml")
-	files, err := OutfitFiles(dir, nil)
+	files, err := defaultOutfitPaths(dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestTheLegacyDirectoryIsShadowedNotDuplicated(t *testing.T) {
 	if err := os.Symlink("outfits", filepath.Join(dir, "loadouts")); err != nil {
 		t.Fatal(err)
 	}
-	files, err := OutfitFiles(dir, nil)
+	files, err := defaultOutfitPaths(dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestTheLegacyDirectoryIsShadowedNotDuplicated(t *testing.T) {
 }
 
 func TestNoOutfitsDirectoryIsNoOutfits(t *testing.T) {
-	files, err := OutfitFiles(t.TempDir(), nil)
+	files, err := defaultOutfitPaths(t.TempDir(), nil)
 	if err != nil || len(files) != 0 {
 		t.Fatalf("files = %v, err = %v", files, err)
 	}
@@ -124,5 +124,56 @@ func TestListOutfitsAndOutfitPathSeeNestedFiles(t *testing.T) {
 	}
 	if got := l.OutfitPath("new"); got != filepath.Join(dir, "outfits/new.toml") {
 		t.Fatalf("a name that does not exist yet goes at the top: %s", got)
+	}
+}
+
+func defaultOutfitPaths(dir string, visit func(string)) (map[string][]string, error) {
+	idx, err := OutfitFiles(DefaultOutfitRoots(dir), visit)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]string{}
+	for name, e := range idx {
+		out[name] = e.Paths
+	}
+	return out, nil
+}
+
+func TestUnsetRootsIsTheOneConfigRoot(t *testing.T) {
+	dir := t.TempDir()
+	l := &Loaded{ConfigDir: dir}
+	if got, want := l.OutfitRoots(), DefaultOutfitRoots(dir); !reflect.DeepEqual(got, want) {
+		t.Fatalf("roots = %+v, want %+v", got, want)
+	}
+	if got := l.OutfitsDir(); got != filepath.Join(dir, "outfits") {
+		t.Fatalf("OutfitsDir = %s", got)
+	}
+}
+
+func TestConfiguredRootsAreManagedUntilTheLast(t *testing.T) {
+	dir := t.TempDir()
+	home, _ := os.UserHomeDir()
+	l := &Loaded{ConfigDir: dir, Config: Config{Outfits: OutfitsConfig{Roots: []string{"/etc/figaro/outfits", "~/x", "mine"}}}}
+	want := OutfitRoots{Dirs: []OutfitRoot{
+		{Path: "/etc/figaro/outfits", Managed: true},
+		{Path: filepath.Join(home, "x"), Managed: true},
+		{Path: filepath.Join(dir, "mine")},
+	}}
+	if got := l.OutfitRoots(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("roots = %+v, want %+v", got, want)
+	}
+}
+
+func TestOutfitRootsLoadFromTheConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[outfits]\nroots = [\"/m\", \"/u\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := l.OutfitRoots().Overlay(); got != "/u" {
+		t.Fatalf("overlay = %s", got)
 	}
 }

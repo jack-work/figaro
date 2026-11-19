@@ -30,7 +30,9 @@ func newOutfitter(a *Angelus, loaded *config.Loaded) *outfit.Outfitter {
 	if a != nil && a.RuntimeDir != "" {
 		snap = filepath.Join(a.RuntimeDir, "outfit-snapshots")
 	}
-	return outfit.NewAt(dir, snap)
+	o := outfit.NewAt(dir, snap)
+	o.SetRoots(loaded.OutfitRoots())
+	return o
 }
 
 func outfitVerLabel(stamped, current, legacy string) string {

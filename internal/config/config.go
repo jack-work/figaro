@@ -55,6 +55,12 @@ type Config struct {
 	Troupe TroupeConfig          `toml:"troupe"`
 
 	Federation FederationConfig `toml:"federation"`
+
+	Outfits OutfitsConfig `toml:"outfits"`
+}
+
+type OutfitsConfig struct {
+	Roots []string `toml:"roots"`
 }
 
 type ServiceToken struct {
@@ -900,13 +906,37 @@ func (l *Loaded) TroupesDir() string {
 }
 
 func (l *Loaded) OutfitsDir() string {
-	return filepath.Join(l.dir(), "outfits")
+	return l.OutfitRoots().Overlay()
+}
+
+func (l *Loaded) OutfitRoots() OutfitRoots {
+	if l == nil || len(l.Config.Outfits.Roots) == 0 {
+		return DefaultOutfitRoots(l.dir())
+	}
+	home, _ := os.UserHomeDir()
+	var roots OutfitRoots
+	for i, p := range l.Config.Outfits.Roots {
+		switch {
+		case p == "~":
+			p = home
+		case strings.HasPrefix(p, "~/"):
+			p = filepath.Join(home, p[2:])
+		case !filepath.IsAbs(p):
+			p = filepath.Join(l.dir(), p)
+		}
+		roots.Dirs = append(roots.Dirs, OutfitRoot{Path: filepath.Clean(p), Managed: i < len(l.Config.Outfits.Roots)-1})
+	}
+	return roots
+}
+
+func (l *Loaded) OutfitIndex() (OutfitIndex, error) {
+	return OutfitFiles(l.OutfitRoots(), nil)
 }
 
 func (l *Loaded) OutfitPath(name string) string {
-	files, err := OutfitFiles(l.dir(), nil)
-	if err == nil && len(files[name]) > 0 {
-		return files[name][0]
+	idx, err := l.OutfitIndex()
+	if e := idx[name]; err == nil && e != nil && len(e.Paths) > 0 {
+		return e.Paths[0]
 	}
 	return filepath.Join(l.OutfitsDir(), name+".toml")
 }
@@ -932,11 +962,11 @@ func (l *Loaded) ListProviders() []string {
 }
 
 func (l *Loaded) ListOutfits() []string {
-	files, err := OutfitFiles(l.dir(), nil)
+	idx, err := l.OutfitIndex()
 	if err != nil {
 		return nil
 	}
-	return outfitNames(files)
+	return idx.Names()
 }
 
 func (l *Loaded) serviceTokenOf(provider string) string {
