@@ -301,7 +301,7 @@ func TestOnTheLocalDoorALabelOnlyNarrows(t *testing.T) {
 func TestAnOutfitIsCheckedAsTheCallersOwnPatch(t *testing.T) {
 	r := newLineageRig(t, "outfits = [\"judged\", \"seatfull\"]\n")
 	c := r.dial(t)
-	r.ownerSets(t, r.child, map[string]any{form.ScopesKey: []string{"read:*", "fork:*", "use:*", "write:aria:self#mantra"}})
+	r.ownerSets(t, r.child, map[string]any{form.ScopesKey: []string{"read:*", "fork:*", "use:*", "write:aria:self#mantra"}, form.OutfitGrantsKey: []string{"judged*", "seatfull"}})
 	mantra := *heldPatch(t, map[string]any{"mantra": "dressed"})
 	if err := c.Call(t.Context(), rpc.MethodSet, claimed(t, r.child, withAria(t, r.child, rpc.SetRequest{Patch: mantra, Outfits: []string{"seatfull"}})), nil); err == nil {
 		t.Error("a box figaro dressed itself in an outfit carrying scopes")
