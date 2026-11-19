@@ -100,6 +100,7 @@ func OpenStore(root string, opts StoreOptions) (*Store, error) {
 			unlockRoot(lockFile)
 			return nil, err
 		}
+		t.sweepAbsorbScratch()
 	}
 	if err := markUnclean(root); err != nil {
 		t.Close()

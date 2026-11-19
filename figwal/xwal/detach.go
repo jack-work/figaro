@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/jack-work/figaro/figwal/disk"
@@ -354,6 +356,45 @@ func finishInterruptedAbsorb(dir string, l *log.Log, initial []byte, codec segme
 	}
 	l.AdoptAbsorbedPrefix()
 	return nil
+}
+
+func (t *Trunks) sweepAbsorbScratch() {
+	names, err := channelNames(t.root)
+	if err != nil {
+		slog.Warn("xwal: the scratch of copies cut short stays, the channel list cannot be read", "err", err)
+		return
+	}
+	removed := 0
+	for _, ch := range names {
+		nodes, err := os.ReadDir(filepath.Join(t.root, ch))
+		if err != nil {
+			continue
+		}
+		for _, n := range nodes {
+			if !n.IsDir() {
+				continue
+			}
+			dir := filepath.Join(t.root, ch, n.Name())
+			ents, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
+			for _, e := range ents {
+				if e.IsDir() || !strings.HasPrefix(e.Name(), ".absorb-") {
+					continue
+				}
+				p := filepath.Join(dir, e.Name())
+				if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+					slog.Warn("xwal: a copy's scratch from before an unclean shutdown stays", "path", p, "err", err)
+					continue
+				}
+				removed++
+			}
+		}
+	}
+	if removed > 0 {
+		slog.Warn("xwal: removed the scratch of copies an unclean shutdown cut short", "count", removed)
+	}
 }
 
 func sameFileBytes(a, b string) (bool, error) {
