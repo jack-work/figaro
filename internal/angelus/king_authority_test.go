@@ -319,3 +319,36 @@ func TestAKingsSucceedRefusesAnOutfitItWasNotGranted(t *testing.T) {
 		t.Fatalf("role holder = %q after a refused succeed, want %q", got, r.grandchild)
 	}
 }
+
+func (r kingRig) mintPolicyOnGrandchild(t *testing.T) error {
+	t.Helper()
+	return r.setFrom(toolOf(r.king), t, r.grandchild, map[string]any{form.ChildPolicyKey: map[string]any{form.FanoutMintKey: true}})
+}
+
+func TestAKingsChildPolicyCannotCarryTheRetiredMintKey(t *testing.T) {
+	r := newKingRig(t)
+	if err := r.mintPolicyOnGrandchild(t); err == nil || !strings.Contains(err.Error(), "retired") {
+		t.Fatalf("the king's child policy carried %s under enforce_key_grants: %v", form.FanoutMintKey, err)
+	}
+}
+
+func TestAKingsChildPolicyGivesMintOnlyIfTheKingMayMint(t *testing.T) {
+	r := newKingRig(t)
+	keyGrants(r.licenseRig, false)
+	if err := r.mintPolicyOnGrandchild(t); err == nil || !strings.Contains(err.Error(), "does not hold") {
+		t.Fatalf("a king without mint gave it in a child policy: %v", err)
+	}
+	out, err := r.h[rpc.MethodFork](localOwner(), claimed(t, r.grandchild, mustJSON(t, rpc.ForkRequest{FigaroID: r.grandchild})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := keyOn(t, r.grantRig, out.(rpc.ForkResponse).Alternative, form.FanoutMintKey); ok && string(v) == "true" {
+		t.Fatal("a fork of the grandchild was born with mint after the policy was refused")
+	}
+	if err := r.setFrom(localOwner(), t, r.king, map[string]any{form.FanoutMintKey: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.mintPolicyOnGrandchild(t); err != nil {
+		t.Fatalf("a king holding mint could not give it in a child policy: %v", err)
+	}
+}

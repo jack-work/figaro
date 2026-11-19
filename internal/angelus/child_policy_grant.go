@@ -47,5 +47,19 @@ func (h *handlers) refuseChildPolicyBeyondWriter(ctx context.Context, c callerKe
 			return fmt.Errorf("%s: %s gives at most its own %s (%d), not %d", form.ChildPolicyKey, f, form.FanoutQuotaKey, own, n)
 		}
 	}
+	if mint, err := form.FanoutMint(policy); err != nil {
+		return err
+	} else if mint {
+		if h.angelus.Policies.Enforces(authz.KeyGrants) {
+			return fmt.Errorf("%s: %s is retired while [authz] enforce_key_grants is on: the license to mint is the grant mint:* in %s", form.ChildPolicyKey, form.FanoutMintKey, form.ScopesKey)
+		}
+		own, err := h.angelus.mayMint(f)
+		if err != nil {
+			return fmt.Errorf("%s: reading %s's own %s: %w", form.ChildPolicyKey, f, form.FanoutMintKey, err)
+		}
+		if !own {
+			return fmt.Errorf("%s: %s does not hold %s itself, so it cannot give it", form.ChildPolicyKey, f, form.FanoutMintKey)
+		}
+	}
 	return nil
 }
