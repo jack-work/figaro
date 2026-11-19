@@ -345,3 +345,20 @@ func TestTheTreeNamesARefusalOnALockedNameWithNoManagedFile(t *testing.T) {
 	assert.False(t, c.Found)
 	assert.Equal(t, []config.OutfitSource{{Path: refused, Root: user}}, c.Refused, "a not-found closure must still say what the lock refused")
 }
+
+func TestAUserOutfitNamedLikeALockedOutfitsManagedLayerIsNoCycle(t *testing.T) {
+	o, managed, user := layeredOutfitter(t)
+	writeRootFile(t, managed, "seat.toml", "layers = [\"base\"]\n[system]\nrole = \"seat\"\n")
+	writeRootFile(t, managed, "base.toml", "[system]\nmodel = \"managed-base\"\n")
+	writeRootFile(t, managed, ".locked", "seat\n")
+	writeRootFile(t, user, "base.toml", "layers = [\"seat\"]\n[system]\nvoice = \"user-base\"\n")
+
+	o.Resolve("base").Walk(func(c *outfit.Closure) {
+		assert.False(t, c.Cycle, "user base and managed base are two nodes, not a cycle")
+	})
+	patch, err := o.Load("base")
+	require.NoError(t, err)
+	assert.Equal(t, `"managed-base"`, string(mustEntry(patch, "system.model")))
+	assert.Equal(t, `"user-base"`, string(mustEntry(patch, "system.voice")))
+	assert.Equal(t, `"seat"`, string(mustEntry(patch, "system.role")))
+}

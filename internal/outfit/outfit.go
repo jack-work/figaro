@@ -184,12 +184,12 @@ func scopedKey(name string, managedOnly bool) string {
 }
 
 func (o *Outfitter) resolveNode(ep *epoch, name string, managedOnly bool, stack []string, memo map[string]*Closure) *Closure {
+	key := scopedKey(name, managedOnly)
 	for _, s := range stack {
-		if s == name {
+		if s == key {
 			return &Closure{Name: name, Found: true, Cycle: true}
 		}
 	}
-	key := scopedKey(name, managedOnly)
 	if c, ok := memo[key]; ok {
 		return c
 	}
@@ -214,7 +214,7 @@ func (o *Outfitter) resolveNode(ep *epoch, name string, managedOnly bool, stack 
 		c.Origin = OutfitOrigin(n.view.Root.Managed)
 	}
 	for _, l := range n.layers {
-		c.Layers = append(c.Layers, o.resolveNode(ep, l, n.closesOverManaged(managedOnly), append(stack, name), memo))
+		c.Layers = append(c.Layers, o.resolveNode(ep, l, n.closesOverManaged(managedOnly), append(stack, key), memo))
 	}
 	memo[key] = c
 	return c
@@ -282,9 +282,9 @@ func (o *Outfitter) foldIn(ep *epoch, name string, managedOnly bool, stack []str
 		return nil, err
 	}
 	for i, s := range stack {
-		if s == name {
+		if s == key {
 			err := &CycleError{At: name}
-			o.taint(ep, scopedKeys(append(stack[i:], name), managedOnly), err)
+			o.taint(ep, append(stack[i:], key), err)
 			return nil, err
 		}
 	}
@@ -300,7 +300,7 @@ func (o *Outfitter) foldIn(ep *epoch, name string, managedOnly bool, stack []str
 	}
 	flat := map[string]json.RawMessage{}
 	for _, layer := range n.layers {
-		sub, serr := o.foldIn(ep, layer, n.closesOverManaged(managedOnly), append(stack, name))
+		sub, serr := o.foldIn(ep, layer, n.closesOverManaged(managedOnly), append(stack, key))
 		if serr != nil {
 			return nil, serr
 		}
@@ -325,14 +325,6 @@ func (o *Outfitter) foldIn(ep *epoch, name string, managedOnly bool, stack []str
 	overlay(flat, own, roots)
 	o.putFold(ep.gen, key, flat)
 	return flat, nil
-}
-
-func scopedKeys(names []string, managedOnly bool) []string {
-	out := make([]string, len(names))
-	for i, n := range names {
-		out[i] = scopedKey(n, managedOnly)
-	}
-	return out
 }
 
 func (o *Outfitter) taintOf(ep *epoch, name string) error {
