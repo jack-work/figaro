@@ -1,6 +1,7 @@
 package xwal
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -97,7 +98,7 @@ func (t *Trunks) repairForkMarkers() error {
 		}
 		for _, ch := range slices.Sorted(maps.Keys(m.bases)) {
 			dir := t.channelDir(ch, key)
-			if _, err := readForkBaseFile(dir); err == nil {
+			if forkMarkerWhole(dir) {
 				continue
 			}
 			if err := mkdirAllSynced(dir); err != nil {
@@ -114,4 +115,12 @@ func (t *Trunks) repairForkMarkers() error {
 		slog.Warn("xwal: fork markers rebuilt after an unclean shutdown", "count", repaired)
 	}
 	return nil
+}
+
+func forkMarkerWhole(dir string) bool {
+	if _, err := readForkBaseFile(dir); err != nil {
+		return false
+	}
+	body, err := os.ReadFile(filepath.Join(dir, ".fork"))
+	return err == nil && bytes.HasSuffix(body, []byte("\n"))
 }

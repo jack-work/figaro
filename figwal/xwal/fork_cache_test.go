@@ -38,7 +38,7 @@ func auxRecords(t *testing.T, s *Store, trunk string) []string {
 // would own its channels from 1 and lose what it inherited; the open after
 // the crash must rebuild them from .node instead.
 func TestAForkMarkerLostInACrashIsRebuiltFromTheNode(t *testing.T) {
-	for _, loss := range []string{"missing", "empty", "dir gone", "missing after a reparent"} {
+	for _, loss := range []string{"missing", "empty", "dir gone", "missing after a reparent", "torn to a valid prefix"} {
 		t.Run(loss, func(t *testing.T) {
 			dir := t.TempDir()
 			s := forkCacheStore(t, dir)
@@ -91,6 +91,10 @@ func TestAForkMarkerLostInACrashIsRebuiltFromTheNode(t *testing.T) {
 					if err := os.Truncate(filepath.Join(d, ".fork"), 0); err != nil {
 						t.Fatal(err)
 					}
+				}
+			case "torn to a valid prefix":
+				if err := os.WriteFile(filepath.Join(auxDir, ".fork"), []byte("base=1"), 0o644); err != nil {
+					t.Fatal(err)
 				}
 			case "dir gone":
 				if err := os.RemoveAll(auxDir); err != nil {
