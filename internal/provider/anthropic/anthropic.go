@@ -1464,7 +1464,7 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 				if json.Unmarshal([]byte(s), &args) == nil {
 					b.Input = args
 				}
-			} else if b.Input == nil {
+			} else if b.Input == nil || ok {
 				b.Input = map[string]interface{}{}
 			}
 			figOtel.Event(ctx, "provider.tool_use.block_stop",
