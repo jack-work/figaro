@@ -3,7 +3,6 @@ package boot
 import (
 	"errors"
 	"net"
-	"os"
 	"sync"
 	"syscall"
 	"time"
@@ -36,19 +35,13 @@ func RenewHushAgent(h *managed.Hush, margin time.Duration) (renewed bool, err er
 	if err := h.Client().Shutdown(); err != nil && !dialRefused(err) {
 		return false, err
 	}
-	awaitSocketGone(HushAgentSocket(h.Config().RuntimeDir), 5*time.Second)
+	if err := awaitAgentGone(h.Config().RuntimeDir, hushAgentDrainCeiling); err != nil {
+		return false, err
+	}
 	return true, h.EnsureReady()
 }
 
-func awaitSocketGone(sock string, within time.Duration) {
-	deadline := time.Now().Add(within)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(sock); errors.Is(err, os.ErrNotExist) {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
+const hushAgentDrainCeiling = 2 * time.Minute
 
 func dialRefused(err error) bool {
 	return errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED)
