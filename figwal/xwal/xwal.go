@@ -82,6 +82,7 @@ type Config struct {
 	// ltsReg retains each node's lastTS counter across open/close/evict cycles.
 	ltsReg     *lastTSRegistry
 	channelGen func() uint64
+	newSegment func(dir string)
 	// Now is a test seam; every record carries a server timestamp stamped by
 	// xwal at append, never by the caller.
 	Now func() time.Time
@@ -249,6 +250,7 @@ func codecByName(name string) (segment.SegmentCodec, error) {
 func (x *XWAL) channelOpts(ch *channel) disk.Options {
 	opts := disk.Options{
 		Codec: x.codec, SegmentSize: x.cfg.SegmentSize, MaxUnflushedBytes: x.cfg.MaxUnflushedBytes,
+		AfterNewSegment: x.cfg.newSegment,
 	}
 	if ch.kind == ChannelReducible {
 		opts.OnSegmentOpen = reducibleFold(ch.fold, ch.initial)

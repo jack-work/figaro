@@ -514,6 +514,9 @@ func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.P
 	if err := s.syncChannel(child, chanIR, mainLT); err != nil {
 		return "", 0, message.Patch{}, fmt.Errorf("xwal store: %s birth sync: %w", child, err)
 	}
+	if err := s.trunks.CommitBirth(child); err != nil {
+		return "", 0, message.Patch{}, fmt.Errorf("xwal store: %s birth commit: %w", child, err)
+	}
 	if err := s.syncChannel(child, chanForm, version); err != nil {
 		return "", 0, message.Patch{}, fmt.Errorf("xwal store: %s birth sync: %w", child, err)
 	}
@@ -524,21 +527,22 @@ func (s *XwalStore) bear(parent string, atMainLT uint64, patch message.Patch, ki
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	commit := xwal.CommitWithFirstSegment()
 	switch {
 	case parent == "":
-		child, err = s.trunks.SpawnUnderRootKind(kind)
+		child, err = s.trunks.SpawnUnderRootKind(kind, commit)
 	case s.isStumpLocked(parent):
 		// A stump has no tail to fork: spawning beneath it is what "fork the
 		// outfit" means, and the child inherits the birth record every sibling reads.
-		child, err = s.trunks.SpawnUnderStumpKind(parent, kind)
+		child, err = s.trunks.SpawnUnderStumpKind(parent, kind, commit)
 	case s.isFormLocked(parent):
 		// A live, patchable forking point: a new trunk beneath it. The form is
 		// not written or frozen; later patches belong to the form alone.
-		child, err = s.trunks.SpawnChildKind(parent, kind)
+		child, err = s.trunks.SpawnChildKind(parent, kind, commit)
 	case atMainLT == 0:
-		child, err = s.trunks.ForkTail(parent)
+		child, err = s.trunks.ForkTail(parent, commit)
 	default:
-		child, err = s.forkAtLocked(parent, atMainLT)
+		child, err = s.forkAtLocked(parent, atMainLT, commit)
 	}
 	if err != nil {
 		return "", 0, message.Patch{}, 0, err
@@ -683,7 +687,7 @@ func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err er
 }
 
 // Caller holds s.mu.
-func (s *XwalStore) forkAtLocked(id string, atMainLT uint64) (string, error) {
+func (s *XwalStore) forkAtLocked(id string, atMainLT uint64, opts ...xwal.SpawnOption) (string, error) {
 	var alt string
 	var err error
 	owner, oerr := s.trunks.Owner(id, atMainLT)
@@ -692,11 +696,11 @@ func (s *XwalStore) forkAtLocked(id string, atMainLT uint64) (string, error) {
 	}
 	switch {
 	case owner.IsRoot:
-		alt, err = s.trunks.SpawnUnderRoot()
+		alt, err = s.trunks.SpawnUnderRootKind(string(kindConversation), opts...)
 	case owner.Stump != "":
-		alt, err = s.trunks.SpawnUnderStump(owner.Stump)
+		alt, err = s.trunks.SpawnUnderStumpKind(owner.Stump, string(kindConversation), opts...)
 	default:
-		alt, err = s.trunks.ForkAt(id, atMainLT)
+		alt, err = s.trunks.ForkAt(id, atMainLT, opts...)
 	}
 	if err != nil {
 		return "", err

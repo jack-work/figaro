@@ -353,11 +353,15 @@ const markerBasePrefix = "base."
 func writeNodeMarker(dir string, n nodeMarker) error {
 	// writeSyncedFile already fsyncs the directory after its rename; a
 	// second SyncDir here made every fork commit pay two.
+	return writeSyncedFile(filepath.Join(dir, nodeMarkerName), nodeMarkerBody(n))
+}
+
+func nodeMarkerBody(n nodeMarker) []byte {
 	body := fmt.Appendf(nil, "from=%s\nkind=%s\ntrunk=%s\n", n.from, n.kind, n.trunk)
 	for _, ch := range slices.Sorted(maps.Keys(n.bases)) {
 		body = fmt.Appendf(body, "%s%s=%d\n", markerBasePrefix, ch, n.bases[ch])
 	}
-	return writeSyncedFile(filepath.Join(dir, nodeMarkerName), body)
+	return body
 }
 
 // readNodeMarker returns the node's identity and whether it was found. It

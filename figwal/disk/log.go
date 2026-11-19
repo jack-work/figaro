@@ -46,8 +46,9 @@ type Options struct {
 	// opaque block-0 header, not part of the index, computed on each new
 	// segment from the previous header (nil for the first) and the sealed
 	// payloads. Stored verbatim; the fold lives in the caller.
-	OnSegmentOpen func(prevHeader []byte, sealed [][]byte) ([]byte, error)
-	MayBeAbsent   bool
+	OnSegmentOpen   func(prevHeader []byte, sealed [][]byte) ([]byte, error)
+	MayBeAbsent     bool
+	AfterNewSegment func(dir string)
 }
 
 type Log struct {
@@ -700,6 +701,9 @@ func (l *Log) openActiveLocked(baseIndex uint64) error {
 		return err
 	}
 	l.active = s
+	if l.opts.AfterNewSegment != nil {
+		l.opts.AfterNewSegment(l.dir)
+	}
 	return nil
 }
 

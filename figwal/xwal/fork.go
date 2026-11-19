@@ -19,7 +19,7 @@ func (t *Trunks) readForkBase(key string) (uint64, error) {
 }
 
 // ForkTail mints a sibling sharing the trunk's whole present.
-func (t *Trunks) ForkTail(trunk string) (string, error) {
+func (t *Trunks) ForkTail(trunk string, opts ...SpawnOption) (string, error) {
 	unlockLineage := t.lockLineage(trunk)
 	defer unlockLineage()
 	endMutation, err := t.beginSpawn()
@@ -27,20 +27,20 @@ func (t *Trunks) ForkTail(trunk string) (string, error) {
 		return "", err
 	}
 	defer endMutation()
-	return t.forkTailLocked(trunk)
+	return t.forkTailLocked(trunk, spawnConfigOf(opts))
 }
 
-func (t *Trunks) forkTailLocked(trunk string) (string, error) {
+func (t *Trunks) forkTailLocked(trunk string, sc spawnConfig) (string, error) {
 	headKey, ok := t.idx.Head(trunk)
 	if !ok {
 		return "", fmt.Errorf("%w %q", ErrUnknownTrunk, trunk)
 	}
-	return t.forkFlat(headKey, "conversation", true)
+	return t.forkFlat(headKey, "conversation", true, sc)
 }
 
 // forkFlat mints a depth-1 sibling sharing the parent prefix. Nothing the
 // parent owns is written: no freeze, no continuation, no rehome.
-func (t *Trunks) forkFlat(parentKey, kind string, mintTrunk bool) (string, error) {
+func (t *Trunks) forkFlat(parentKey, kind string, mintTrunk bool, sc spawnConfig) (string, error) {
 	child := t.mintNode()
 	var trunk string
 	if mintTrunk {
@@ -56,7 +56,7 @@ func (t *Trunks) forkFlat(parentKey, kind string, mintTrunk bool) (string, error
 	}
 	// One marker, written last: it is the commit point. Writing lineage and
 	// trunk id as a pair left a node with one and not the other after a crash.
-	if err := writeNodeMarker(t.irDir(child), nodeMarker{from: parentKey, kind: kind, trunk: trunk, bases: written}); err != nil {
+	if err := t.commitNode(child, nodeMarker{from: parentKey, kind: kind, trunk: trunk, bases: written}, sc); err != nil {
 		return "", err
 	}
 	t.idx.SpawnFlat(parentKey, child, trunk, kind)
@@ -157,7 +157,7 @@ func (t *Trunks) channelBases(node string, at uint64) (map[string]uint64, error)
 // ForkAt shares [1..atMainLT] and creates an empty alternative trunk
 // diverging at atMainLT+1; the original keeps its id and its suffix. At or
 // past the tail it degenerates to a tail fork.
-func (t *Trunks) ForkAt(trunk string, atMainLT uint64) (string, error) {
+func (t *Trunks) ForkAt(trunk string, atMainLT uint64, opts ...SpawnOption) (string, error) {
 	unlockLineage := t.lockLineage(trunk)
 	defer unlockLineage()
 	endMutation, err := t.beginSpawn()
@@ -178,7 +178,7 @@ func (t *Trunks) ForkAt(trunk string, atMainLT uint64) (string, error) {
 	x.Close()
 
 	if atMainLT == 0 || atMainLT >= tail {
-		return t.forkTailLocked(trunk)
+		return t.forkTailLocked(trunk, spawnConfigOf(opts))
 	}
 	if atMainLT < ownFirst {
 		// Flat: fork the ancestor that owns atMainLT, in place.
@@ -187,17 +187,17 @@ func (t *Trunks) ForkAt(trunk string, atMainLT uint64) (string, error) {
 		if oerr != nil {
 			return "", oerr
 		}
-		return t.forkFlatAt(owner, atMainLT)
+		return t.forkFlatAt(owner, atMainLT, spawnConfigOf(opts))
 	}
 
 	// Interior fork: a sibling sharing [1..atMainLT]. The parent keeps its
 	// suffix; nothing it owns is rewritten.
-	return t.forkFlatAt(branch, atMainLT)
+	return t.forkFlatAt(branch, atMainLT, spawnConfigOf(opts))
 }
 
 // forkFlatAt is forkFlat sharing a prefix that ends at an interior main LT.
 // Related channels share up to their last entry keyed at or below it.
-func (t *Trunks) forkFlatAt(parentKey string, atMainLT uint64) (string, error) {
+func (t *Trunks) forkFlatAt(parentKey string, atMainLT uint64, sc spawnConfig) (string, error) {
 	child := t.mintNode()
 	// Interior forks re-split conversations; nothing else has a tail to
 	// split at an interior LT.
@@ -210,7 +210,7 @@ func (t *Trunks) forkFlatAt(parentKey string, atMainLT uint64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := writeNodeMarker(t.irDir(child), nodeMarker{from: parentKey, kind: "conversation", trunk: trunk, bases: written}); err != nil {
+	if err := t.commitNode(child, nodeMarker{from: parentKey, kind: "conversation", trunk: trunk, bases: written}, sc); err != nil {
 		return "", err
 	}
 	t.idx.SpawnFlat(parentKey, child, trunk, "conversation")
@@ -220,7 +220,7 @@ func (t *Trunks) forkFlatAt(parentKey string, atMainLT uint64) (string, error) {
 // SpawnChildKind: the parent is not written, not frozen, and stays
 // appendable; a fork snapshots the parent's channels at their bases and later
 // parent appends belong to the parent alone.
-func (t *Trunks) SpawnChildKind(parent TrunkID, kind string) (TrunkID, error) {
+func (t *Trunks) SpawnChildKind(parent TrunkID, kind string, opts ...SpawnOption) (TrunkID, error) {
 	endMutation, err := t.beginSpawn()
 	if err != nil {
 		return "", err
@@ -230,7 +230,7 @@ func (t *Trunks) SpawnChildKind(parent TrunkID, kind string) (TrunkID, error) {
 	if !ok {
 		return "", fmt.Errorf("%w %q", ErrUnknownTrunk, parent)
 	}
-	return t.forkFlat(nodeKey, kind, true)
+	return t.forkFlat(nodeKey, kind, true, spawnConfigOf(opts))
 }
 
 // SpawnUnderRoot mints a top-level trunk with no stump.
@@ -240,13 +240,13 @@ func (t *Trunks) SpawnUnderRoot() (TrunkID, error) {
 
 // SpawnUnderRootKind: the kind lands in the node marker, is immutable from
 // then on (a fork never converts), and is what listings discriminate by.
-func (t *Trunks) SpawnUnderRootKind(kind string) (TrunkID, error) {
+func (t *Trunks) SpawnUnderRootKind(kind string, opts ...SpawnOption) (TrunkID, error) {
 	endMutation, err := t.beginSpawn()
 	if err != nil {
 		return "", err
 	}
 	defer endMutation()
-	return t.forkFlat("", kind, true)
+	return t.forkFlat("", kind, true, spawnConfigOf(opts))
 }
 
 // forkTurnName is a derived sidecar beside .fork: self-validating (it names

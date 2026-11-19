@@ -162,6 +162,13 @@ func recoverAtomicReplacement(final string) error {
 // writeSyncedFile replaces path atomically: a reader sees the whole old
 // content or the whole new content, never a torn or empty file.
 func writeSyncedFile(path string, body []byte) error {
+	if err := replaceFileSynced(path, body); err != nil {
+		return err
+	}
+	return disk.SyncDir(filepath.Dir(path))
+}
+
+func replaceFileSynced(path string, body []byte) error {
 	// A unique temp: a fixed path+".tmp" lets two writers of the same marker
 	// clobber each other's scratch.
 	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
@@ -188,5 +195,5 @@ func writeSyncedFile(path string, body []byte) error {
 		os.Remove(tmp)
 		return err
 	}
-	return disk.SyncDir(filepath.Dir(path))
+	return nil
 }

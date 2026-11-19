@@ -94,7 +94,7 @@ func (t *Trunks) SpawnUnderStump(name string) (TrunkID, error) {
 }
 
 // SpawnUnderStumpKind: the kind is recorded in the child's marker.
-func (t *Trunks) SpawnUnderStumpKind(name, kind string) (TrunkID, error) {
+func (t *Trunks) SpawnUnderStumpKind(name, kind string, opts ...SpawnOption) (TrunkID, error) {
 	endMutation, err := t.beginSpawn()
 	if err != nil {
 		return "", err
@@ -103,7 +103,7 @@ func (t *Trunks) SpawnUnderStumpKind(name, kind string) (TrunkID, error) {
 	if n := t.node(name); n == nil || n.Kind != "loadout" {
 		return "", fmt.Errorf("xwal: no stump %q", name)
 	}
-	return t.forkFlat(name, kind, true)
+	return t.forkFlat(name, kind, true, spawnConfigOf(opts))
 }
 
 func (t *Trunks) IsStump(name string) bool {

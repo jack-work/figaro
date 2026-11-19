@@ -150,6 +150,9 @@ func (s *Store) run() {
 			if err := s.Trunks.syncForkCaches(); err != nil {
 				slog.Warn("xwal: fork marker flush failed; retried next tick", "err", err)
 			}
+			if err := s.Trunks.syncPendingBirths(); err != nil {
+				slog.Warn("xwal: node directory flush failed; retried next tick", "err", err)
+			}
 		}
 		s.evictIdle()
 	}

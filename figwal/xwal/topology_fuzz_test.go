@@ -40,7 +40,7 @@ func spawnWithNode(f *Trunks) (string, string, error) {
 		return "", "", err
 	}
 	defer end()
-	id, err := f.forkFlat("", "conversation", true)
+	id, err := f.forkFlat("", "conversation", true, spawnConfig{})
 	if err != nil {
 		return "", "", err
 	}
@@ -56,7 +56,7 @@ func forkTailWithNode(f *Trunks, trunk string) (string, string, error) {
 		return "", "", err
 	}
 	defer end()
-	child, err := f.forkTailLocked(trunk)
+	child, err := f.forkTailLocked(trunk, spawnConfig{})
 	if err != nil {
 		return "", "", err
 	}

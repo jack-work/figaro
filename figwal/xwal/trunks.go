@@ -43,8 +43,10 @@ type Trunks struct {
 	validatedForkBranches    map[string]uint64
 
 	forkCaches forkCaches
+	births     pendingBirths
 
 	testAfterReadLock func()
+	testSyncNodeDir   func(dir string)
 	testRemovalStep   func(string)
 	testStoreClose    func()
 	testAppendBorrow  func()
@@ -128,6 +130,7 @@ func createTrunks(dir string, cfg Config) (*Trunks, error) {
 	t.cfg.ltsReg = t.ltsReg
 	t.cfg.probeTS = t.probeLastTS
 	t.cfg.ParentOf = t.idx.ParentOf
+	t.cfg.newSegment = t.births.segmentSynced
 	t.idx.onSpawn = t.reviveNode
 	t.cfg.channelGen = channelGenFor(t.registryRoot)
 	if err := t.rebuild(); err != nil {
@@ -199,6 +202,7 @@ func openTrunks(dir string, cfg Config) (*Trunks, error) {
 	t.cfg.ltsReg = t.ltsReg
 	t.cfg.probeTS = t.probeLastTS
 	t.cfg.ParentOf = t.idx.ParentOf
+	t.cfg.newSegment = t.births.segmentSynced
 	t.idx.onSpawn = t.reviveNode
 	t.cfg.channelGen = channelGenFor(t.registryRoot)
 	if err := t.rebuild(); err != nil {
@@ -268,6 +272,9 @@ func (t *Trunks) headKey(trunk string) (string, error) {
 // closed first. The topology cache remains usable.
 func (t *Trunks) Close() error {
 	if err := t.syncForkCaches(); err != nil {
+		return err
+	}
+	if err := t.syncPendingBirths(); err != nil {
 		return err
 	}
 	t.hotMu.Lock()
