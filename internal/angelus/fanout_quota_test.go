@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
@@ -345,5 +346,39 @@ func TestRacingForksAndQuotaWritesOvershootBoundedlyAndConverge(t *testing.T) {
 		if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); (err == nil) != (used < quota) {
 			t.Fatalf("round %d: top at %d of %d forked: %v", round, used, quota, err)
 		}
+	}
+}
+
+// Defends M2 of the P6 review: forks no longer wait on the hierarchy lock,
+// so the quota charge must be held with the slot. N concurrent forks
+// against a quota of K admit exactly K.
+func TestConcurrentForksAgainstAQuotaAdmitExactlyIt(t *testing.T) {
+	const quota, forks = 5, 16
+	for round := range 20 {
+		hs, b, outfit := fanoutHandlers(t)
+		top, _ := b.CreateConversation(outfit)
+		setQuota(t, b, top, quota)
+		start := make(chan struct{})
+		var landed atomic.Int32
+		var wg sync.WaitGroup
+		for range forks {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); err == nil {
+					landed.Add(1)
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+		if got := landed.Load(); got != quota {
+			t.Fatalf("round %d: %d of %d concurrent forks landed against quota %d", round, got, forks, quota)
+		}
+		if got := budgetOf(hs, top); got.used != quota {
+			t.Fatalf("round %d: top uses %d, want %d", round, got.used, quota)
+		}
+		requireCacheMatchesTree(t, hs, "concurrent forks against a quota")
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -39,11 +40,12 @@ type fanoutCache struct {
 	eff     map[string]int
 	used    map[string]int
 	owners  map[string]bool
+	pending map[string]int
 }
 
 func newFanoutCache() *fanoutCache {
 	return &fanoutCache{parent: map[string]string{}, live: map[string]bool{}, kids: map[string]int{}, held: map[string]int{},
-		own: map[string]int{}, roles: map[string]fanoutRole{}, eff: map[string]int{}, used: map[string]int{}, owners: map[string]bool{}}
+		own: map[string]int{}, roles: map[string]fanoutRole{}, eff: map[string]int{}, used: map[string]int{}, owners: map[string]bool{}, pending: map[string]int{}}
 }
 
 func (c *fanoutCache) reset(nodes []fanoutNode, roles map[string]fanoutRole) {
@@ -278,23 +280,75 @@ func (c *fanoutCache) admitted(id string) int {
 	return c.kids[id] + c.held[id]
 }
 
-func (c *fanoutCache) hold(parent string, max int) (int, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	n := c.kids[parent] + c.held[parent]
-	if n >= max {
-		return n, false
-	}
-	c.held[parent]++
-	return n, true
+type fanoutHold struct {
+	parent string
+	slot   bool
+	at     string
+	charge int
 }
 
-func (c *fanoutCache) release(parent string) {
+func (c *fanoutCache) take(parent string, max int, capped bool, charge int, abdicating bool, judge func(error) error) (fanoutHold, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.held[parent]--; c.held[parent] <= 0 {
-		delete(c.held, parent)
+	if capped {
+		if n := c.kids[parent] + c.held[parent]; n >= max {
+			return fanoutHold{}, maxChildrenRefusal(parent, n, max)
+		}
 	}
+	if abdicating {
+		charge = 0
+		if err := c.overLocked(parent); err != nil {
+			if err = judge(fmt.Errorf("%w; a succession that retires its predecessor fits only a budget that is not already overdrawn", err)); err != nil {
+				return fanoutHold{}, err
+			}
+		}
+	} else if err := judge(c.fitsLocked(parent, charge)); err != nil {
+		return fanoutHold{}, err
+	}
+	h := fanoutHold{parent: parent, slot: capped}
+	if capped {
+		c.held[parent]++
+	}
+	h.at, h.charge = c.reserveLocked(parent, charge)
+	return h, nil
+}
+
+func (c *fanoutCache) reserveLocked(from string, charge int) (string, int) {
+	if charge <= 0 {
+		return "", 0
+	}
+	at, ok := c.absorberOf(from)
+	if !ok {
+		return "", 0
+	}
+	c.pending[at] += charge
+	return at, charge
+}
+
+func (c *fanoutCache) give(h fanoutHold) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if h.slot {
+		if c.held[h.parent]--; c.held[h.parent] <= 0 {
+			delete(c.held, h.parent)
+		}
+	}
+	c.settleLocked(h.at, h.charge)
+}
+
+func (c *fanoutCache) settleLocked(at string, charge int) {
+	if charge <= 0 {
+		return
+	}
+	if c.pending[at] -= charge; c.pending[at] <= 0 {
+		delete(c.pending, at)
+	}
+}
+
+func (c *fanoutCache) spent(id string) int { return c.used[id] + c.pending[id] }
+
+func maxChildrenRefusal(parent string, n, max int) error {
+	return fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one, fork elsewhere, or have its parent grant more (figaro set --id %s %s %d)", parent, n, max, shortID(parent), form.FanoutMaxChildrenKey, n+1)
 }
 
 type fanoutBudget struct {
@@ -327,8 +381,8 @@ func (c *fanoutCache) fitsLocked(from string, need int) error {
 		}
 		if c.absorbs(id) {
 			q := c.eff[id]
-			seen = append(seen, fmt.Sprintf("%s has %d free of quota %d", shortID(id), max(q-c.used[id], 0), q))
-			if short == "" && len(seen) == 1 && c.used[id]+need > q {
+			seen = append(seen, fmt.Sprintf("%s has %d free of quota %d", shortID(id), max(q-c.spent(id), 0), q))
+			if short == "" && len(seen) == 1 && c.spent(id)+need > q {
 				short = id
 			}
 		}
@@ -341,7 +395,7 @@ func (c *fanoutCache) fitsLocked(from string, need int) error {
 	if made := c.ownerMadeUnder(short, 5); len(made) > 0 {
 		under = " (the owner made " + strings.Join(made, ", ") + ")"
 	}
-	grant := fmt.Sprintf("figaro set --id %s %s %d", shortID(short), form.FanoutQuotaKey, c.used[short]+need)
+	grant := fmt.Sprintf("figaro set --id %s %s %d", shortID(short), form.FanoutQuotaKey, c.spent(short)+need)
 	return fmt.Errorf("fanout: this needs %d of budget, and %s; retire a figaro under it%s, or have its parent grant more (%s)", need, strings.Join(seen, ", "), under, grant)
 }
 
@@ -366,6 +420,10 @@ func (c *fanoutCache) ownerMadeUnder(root string, most int) []string {
 func (c *fanoutCache) over(from string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.overLocked(from)
+}
+
+func (c *fanoutCache) overLocked(from string) error {
 	if id, ok := c.absorberOf(from); ok && c.used[id] > c.eff[id] {
 		return fmt.Errorf("fanout: %s already uses %d of quota %d", shortID(id), c.used[id], c.eff[id])
 	}
@@ -584,21 +642,18 @@ func (a *Angelus) liveChildCount(id string) int {
 	return a.fanoutCounts().admitted(id)
 }
 
-func (a *Angelus) holdForkSlot(parent string) (func(), error) {
-	max, ok, err := a.fanoutLimit(parent)
+func (a *Angelus) holdFork(parent string, charge int, abdicating bool) (func(), error) {
+	max, capped, err := a.fanoutLimit(parent)
 	if err != nil {
 		return nil, fmt.Errorf("fork: the limit of %s cannot be read to admit the fork: %w", parent, err)
 	}
-	if !ok {
-		return func() {}, nil
-	}
 	c := a.fanoutCounts()
-	n, held := c.hold(parent, max)
-	if !held {
-		return nil, fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one, fork elsewhere, or have its parent grant more (figaro set --id %s %s %d)", parent, n, max, shortID(parent), form.FanoutMaxChildrenKey, n+1)
+	h, err := c.take(parent, max, capped, charge, abdicating, func(err error) error { return a.Policies.Shadow(authz.Quota, err) })
+	if err != nil {
+		return nil, err
 	}
 	var once sync.Once
-	return func() { once.Do(func() { c.release(parent) }) }, nil
+	return func() { once.Do(func() { c.give(h) }) }, nil
 }
 
 func (a *Angelus) settleFanout(p hierarchy.Plan) {

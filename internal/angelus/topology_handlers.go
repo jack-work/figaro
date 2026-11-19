@@ -38,9 +38,11 @@ func (h *handlers) createTopLevel(ctx context.Context, params json.RawMessage) (
 	if _, boxed := callerBox(ctx); minter == "" || boxed {
 		return h.create(ctx, params)
 	}
-	if err := h.admitFork(minter, 1, false, false); err != nil {
+	release, err := h.angelus.holdFork(minter, 1, false)
+	if err != nil {
 		return nil, fmt.Errorf("mint: %s pays for what it mints: %w", minter, err)
 	}
+	defer release()
 	out, err := h.createWith(ctx, params, withQuotaBirthDefault)
 	if err != nil {
 		return nil, err
@@ -443,13 +445,10 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			at = atMainLT
 		}
 		birth := forkDress(dress, req.FigaroID, lane, policy, ownerMade)
-		if err := h.admitFork(req.FigaroID, forkCharge(birth), abdicating, ownerMade); err != nil {
-			return err
-		}
 		release := func() {}
 		if !ownerMade {
 			var err error
-			if release, err = h.angelus.holdForkSlot(req.FigaroID); err != nil {
+			if release, err = h.angelus.holdFork(req.FigaroID, forkCharge(birth), abdicating); err != nil {
 				return err
 			}
 		}
@@ -503,14 +502,6 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note}, nil
 }
 
-func (h *handlers) admitFork(parent string, charge int, abdicating, ownerMade bool) error {
-	maxErr, quotaErr := h.forkRefusals(parent, charge, abdicating, ownerMade)
-	if maxErr != nil {
-		return maxErr
-	}
-	return h.angelus.Policies.Shadow(authz.Quota, quotaErr)
-}
-
 func (h *handlers) precheckFork(parent string, charge int, abdicating, ownerMade bool) error {
 	maxErr, quotaErr := h.forkRefusals(parent, charge, abdicating, ownerMade)
 	if maxErr != nil {
@@ -547,7 +538,7 @@ func (h *handlers) admitMaxChildren(parent string) error {
 		return nil
 	}
 	if n := h.angelus.liveChildCount(parent); n >= max {
-		return fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one, fork elsewhere, or have its parent grant more (figaro set --id %s %s %d)", parent, n, max, shortID(parent), form.FanoutMaxChildrenKey, n+1)
+		return maxChildrenRefusal(parent, n, max)
 	}
 	return nil
 }

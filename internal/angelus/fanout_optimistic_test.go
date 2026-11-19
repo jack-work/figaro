@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -78,21 +79,23 @@ func TestConcurrentForksUnderTheLimitAllLand(t *testing.T) {
 func TestAHeldForkSlotCountsUntilReleased(t *testing.T) {
 	c := newFanoutCache()
 	c.put(fanoutNode{id: "a", parent: "p", live: true})
-	if _, ok := c.hold("p", 2); !ok {
-		t.Fatal("the second slot of two was refused")
+	pass := func(err error) error { return err }
+	h, err := c.take("p", 2, true, 1, false, pass)
+	if err != nil {
+		t.Fatalf("the second slot of two was refused: %v", err)
 	}
-	if n, ok := c.hold("p", 2); ok || n != 2 {
-		t.Fatalf("a third hold at max 2 = (%d, %t), want refused at 2", n, ok)
+	if _, err := c.take("p", 2, true, 1, false, pass); err == nil || !strings.Contains(err.Error(), "holds 2 live children of max_children 2") {
+		t.Fatalf("a third hold at max 2: %v, want refused at 2", err)
 	}
 	if n := c.admitted("p"); n != 2 {
 		t.Fatalf("admitted with one child and one held slot = %d, want 2", n)
 	}
-	c.release("p")
+	c.give(h)
 	if n := c.admitted("p"); n != 1 {
 		t.Fatalf("admitted after the release = %d, want 1", n)
 	}
-	if _, ok := c.hold("p", 2); !ok {
-		t.Fatal("a released slot was not free again")
+	if _, err := c.take("p", 2, true, 1, false, pass); err != nil {
+		t.Fatalf("a released slot was not free again: %v", err)
 	}
 }
 
