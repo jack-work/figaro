@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -34,4 +35,12 @@ func TestForkRebuildsNoTopologySnapshot(t *testing.T) {
 	}
 	settle()
 	require.Zero(t, store.TopologyBuildsForTest()-before, "a fork by id rebuilt the topology snapshot")
+
+	r.a.Backend.Nodes()
+	before = store.TopologyBuildsForTest()
+	for range 3 {
+		fork(handle.Words(parent, handle.MaxWords))
+	}
+	settle()
+	require.Zero(t, store.TopologyBuildsForTest()-before, "a fork by handle rebuilt the topology snapshot")
 }
