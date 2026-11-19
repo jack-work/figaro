@@ -135,10 +135,9 @@ func TestASeatDrawsTheSuccessorWithoutMovingItsHistory(t *testing.T) {
 	}
 }
 
-// A seat whose demote would wait on the successor's consent does not leave
-// the successor drawn under its predecessor with a proposal pending: the
-// proposal is withdrawn and the successor goes back.
-func TestASeatWhoseDemoteWouldParkPutsTheSuccessorBack(t *testing.T) {
+// A seat that would wait on a parent's consent moves nothing and leaves no
+// proposal behind: a seat lands whole or not at all.
+func TestASeatThatWouldWaitOnConsentMovesNothing(t *testing.T) {
 	r, p, _, _ := guardChain(t)
 	other, err := r.create(asOwner(), "mock")
 	if err != nil {
@@ -152,16 +151,16 @@ func TestASeatWhoseDemoteWouldParkPutsTheSuccessorBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	seat := out.(rpc.SeatResponse)
-	if seat.FailedAt != "demote" || seat.Placed || !strings.Contains(seat.Error, "withdrawn") {
-		t.Fatalf("seat = %+v, want the parked demote withdrawn and the place undone", seat)
+	if seat.FailedAt != "place" || seat.Placed || !strings.Contains(seat.Error, "moved nothing") {
+		t.Fatalf("seat = %+v, want a refusal that moved nothing", seat)
 	}
-	if seat.Demote.Parked != nil {
-		t.Fatalf("the reply still names the withdrawn proposal %+v", *seat.Demote.Parked)
+	if seat.Demote.Parked != nil || seat.PlaceParked != nil {
+		t.Fatalf("the reply names a proposal: %+v", seat)
 	}
 	if up := presentedUnder(t, r, n); up != other.FigaroID {
-		t.Fatalf("N is drawn under %q, want back under %s", up, other.FigaroID)
+		t.Fatalf("N is drawn under %q, want still under %s", up, other.FigaroID)
 	}
-	if left := parkedOn(t, r, n); len(left) != 0 {
-		t.Fatalf("proposals still wait on N: %+v", left)
+	if left := append(parkedOn(t, r, n), parkedOn(t, r, p)...); len(left) != 0 {
+		t.Fatalf("proposals wait after a refused seat: %+v", left)
 	}
 }

@@ -958,3 +958,25 @@ func TestSuccessionKeepsTheModelWhenTheSeatNamesTheSameProvider(t *testing.T) {
 	next := r.successorOf(old)
 	require.Equal(t, "lane-model", r.key(next, "system.model"))
 }
+
+// rel/v0.74.5 review F-F, daemon path: a predecessor at its own cap is
+// still seated under its successor when the succession completes.
+func TestACompletedSuccessionSeatsAPredecessorAtItsCap(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	parent := r.aria(nil)
+	require.NoError(t, r.a.Backend.HierarchyEngine().WriteDrawn(map[string]string{old: parent}, nil))
+	lane := r.forkOf(old)
+	ownerSets(t, r.a, old, map[string]any{form.FanoutMaxChildrenKey: 1})
+	r.p.set(func() { r.p.holdOthers = true })
+	r.cross(old)
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "ramping" }, "the succession never reached its ramp")
+	next := r.hs.SuccessorOf(old)
+	r.p.set(func() { close(r.p.release); r.p.release = make(chan struct{}); r.p.holdOthers = false })
+	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "" }, "the succession never finished")
+	eng := r.a.Backend.HierarchyEngine()
+	under := func(id string) string { p, _ := eng.Drawn(id); return p }
+	require.Equal(t, parent, under(next), "the successor takes its predecessor's place")
+	require.Equal(t, next, under(old), "the predecessor at its cap is seated under its successor")
+	require.Equal(t, next, under(lane), "the predecessor's child follows the successor")
+}

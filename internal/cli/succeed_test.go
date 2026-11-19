@@ -582,10 +582,10 @@ func TestANamedSuccessorTheGuardRefusesStopsTheSuccession(t *testing.T) {
 	require.NoError(t, err)
 	_, succ, err := s.backend.Fork(other)
 	require.NoError(t, err)
-	snap, err := s.backend.FormState(s.pred)
+	snap, err := s.backend.FormState(succ)
 	require.NoError(t, err)
-	one, _ := json.Marshal(1)
-	_, err = s.backend.ApplyForm(s.pred, form.Build(snap, map[string]json.RawMessage{form.FanoutMaxChildrenKey: one}, nil))
+	none, _ := json.Marshal(0)
+	_, err = s.backend.ApplyForm(succ, form.Build(snap, map[string]json.RawMessage{form.FanoutMaxChildrenKey: none}, nil))
 	require.NoError(t, err)
 
 	plan, err := succeedArgs(t, s.role, "--successor", succ, "--", "you hold the seat")

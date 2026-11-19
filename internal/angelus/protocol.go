@@ -99,11 +99,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	h.noticeUpgrade()
 	h.startNav()
 	h.succ = newSuccessions(h.angelus.SuccessionsPath)
-	h.seats = newSeats(seatsPath(h.angelus.SuccessionsPath))
-	h.angelus.successionSweep = func() {
-		h.finishSeats()
-		h.sweepSuccessions()
-	}
+	h.angelus.successionSweep = h.sweepSuccessions
 	h.startReapedForm()
 	h.startTroupeForm()
 	h.publishCatalogs()
@@ -374,7 +370,6 @@ type handlers struct {
 	navForms           navForms
 	reapedMu           sync.Mutex
 	succ               *successions
-	seats              *seatIntents
 	successionCastHook func(role string) error
 
 	gcOnce      sync.Once

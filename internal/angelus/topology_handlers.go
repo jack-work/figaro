@@ -986,79 +986,33 @@ func (h *handlers) seatLifetime(ctx context.Context, pred string) (json.RawMessa
 
 func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rpc.SeatResponse {
 	var r rpc.SeatResponse
-	var intent seatRecord
-	var landed bool
-	_ = h.angelus.topology().WithLock(func() error {
-		intent = h.seatIntent(successor, pred)
-		have, _ := h.angelus.topology().Drawn(pred)
-		landed = have == successor
-		return nil
-	})
-	if landed {
-		r.Demote = rpc.DemoteResponse{FigaroID: pred, Under: successor, Preferred: true}
-		return r
-	}
 	if (authz.FigaroOf(ctx) != "" || authz.Claimed(ctx)) && !h.angelus.forkDescends(successor, pred) {
 		r.FailedAt = "place"
 		r.Error = fmt.Sprintf("figaro %s is not a fork of %s, and a figaro seats only its own fork; nothing moved. The owner may seat it: run figaro succeed --successor %s from a shell outside any figaro", successor, pred, successor)
 		return r
 	}
-	if have, _ := h.angelus.topology().Drawn(successor); have != pred {
-		if h.seats != nil {
-			if err := h.seats.begin(intent); err != nil {
-				r.FailedAt, r.Error = "place", "record the seat before drawing it: "+err.Error()
-				return r
-			}
-			defer h.seats.end(successor)
-		}
-		_, err := h.drawUnder(ctx, successor, pred)
-		if prop, ok := h.parkedProposal(ctx, err); ok {
-			r.FailedAt, r.PlaceParked = "place", prop
-			return r
-		}
-		if err != nil {
-			r.FailedAt, r.Error = "place", err.Error()
-			return r
-		}
-		r.Placed = true
+	by, err := h.angelus.topologyPrincipal(ctx)
+	var p hierarchy.Plan
+	if err == nil {
+		p, err = h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Seat, Node: pred, To: successor})
 	}
-	dem, err := h.demoteUnder(ctx, rpc.DemoteRequest{FigaroID: pred, Prefer: successor})
-	r.Demote = dem
-	if err == nil && dem.Preferred && !h.angelus.forkDescends(successor, pred) {
+	if errors.Is(err, hierarchy.ErrUnsupported) {
+		r.Demote = rpc.DemoteResponse{FigaroID: pred, Unsupported: true}
+		return r
+	}
+	if err != nil {
+		r.FailedAt, r.Error = "place", fmt.Sprintf("seating %s in %s's place moved nothing: %s", successor, pred, err)
+		return r
+	}
+	r.Placed = len(p.Moves) > 0
+	if r.Placed && !h.angelus.forkDescends(successor, pred) {
 		if qerr := h.angelus.moveQuota(pred, successor); qerr != nil {
 			slog.Error("fanout: the seat moved the figaro but not its quota", "pred", pred, "succ", successor, "err", qerr)
 		}
 	}
-	if err == nil && dem.Parked != nil && r.Placed {
-		var withdrawn bool
-		if withdrawn, err = h.withdrawSeatDemote(*dem.Parked); withdrawn {
-			r.Demote.Parked = nil
-		}
-	}
-	if err != nil {
-		r.FailedAt, r.Error = "demote", err.Error()
-		if r.Placed {
-			if uerr := h.unseat(intent); uerr != nil {
-				r.Error += "; putting the successor back where it was also failed: " + uerr.Error()
-			} else {
-				r.Placed = false
-				r.Error += "; the successor is back where it was, so nothing moved"
-			}
-		}
-	}
+	slog.Info("seated figaro", "predecessor", pred, "successor", successor)
+	r.Demote = rpc.DemoteResponse{FigaroID: pred, Under: successor, Preferred: true}
 	return r
-}
-
-func (h *handlers) withdrawSeatDemote(p rpc.Proposal) (bool, error) {
-	why := fmt.Errorf("demoting the predecessor waits on %s as proposal %s, and a seat does not wait half drawn", p.Parent, p.ID)
-	by, err := h.angelus.topologyPrincipal(h.ownerContext())
-	if err != nil {
-		return false, fmt.Errorf("%w; withdrawing the proposal failed: %w", why, err)
-	}
-	if err := h.angelus.topology().Refuse(h.ownerContext(), by, p.Parent, p.ID); err != nil {
-		return false, fmt.Errorf("%w; withdrawing the proposal failed: %w", why, err)
-	}
-	return true, fmt.Errorf("%w; the proposal is withdrawn", why)
 }
 
 func (h *handlers) demoteUnder(ctx context.Context, req rpc.DemoteRequest) (rpc.DemoteResponse, error) {
