@@ -222,3 +222,43 @@ func TestASeatOpensOnlyItsOwnPredecessorsRoles(t *testing.T) {
 		t.Fatalf("a successor seated over %s took a role held by %s: %v", f.pred, f.kid, err)
 	}
 }
+
+func TestANonForkSeatLeavesTheSuccessorWithinTheQuotaItTakes(t *testing.T) {
+	f := newSeatFixture(t)
+	setQuota(t, f.b, f.top, 10)
+	setQuota(t, f.b, f.pred, 3)
+	for range 2 {
+		if _, _, err := f.b.Fork(f.pred); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := budgetOf(f.hs, f.pred); got.used != 3 || got.quota != 3 {
+		t.Fatalf("the predecessor's budget = %+v, want 3 of 3", got)
+	}
+	if seat := f.seat(t); seat.FailedAt != "" {
+		t.Fatalf("seat failed at %s: %s", seat.FailedAt, seat.Error)
+	}
+	requireCacheMatchesTree(t, f.hs, "the seat")
+	if over := f.hs.h.angelus.fanoutOver(); len(over) != 0 {
+		t.Fatalf("the seat left figaros over their budgets: %+v", over)
+	}
+	if got := budgetOf(f.hs, f.successor); got.used != 4 || got.quota != 4 {
+		t.Fatalf("the successor's budget = %+v, want 4 of 4: the predecessor's three children and the predecessor", got)
+	}
+	if got := budgetOf(f.hs, f.top); got.used > 10 {
+		t.Fatalf("top's budget = %+v, over its quota of 10", got)
+	}
+}
+
+func TestANonForkSeatWithRoomKeepsTheQuotaItTakes(t *testing.T) {
+	f := newSeatFixture(t)
+	setQuota(t, f.b, f.top, 10)
+	setQuota(t, f.b, f.pred, 5)
+	if seat := f.seat(t); seat.FailedAt != "" {
+		t.Fatalf("seat failed at %s: %s", seat.FailedAt, seat.Error)
+	}
+	requireCacheMatchesTree(t, f.hs, "the seat")
+	if got := budgetOf(f.hs, f.successor); got.used != 2 || got.quota != 5 {
+		t.Fatalf("the successor's budget = %+v, want 2 of the predecessor's 5", got)
+	}
+}

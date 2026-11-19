@@ -181,7 +181,27 @@ func (a *Angelus) moveQuota(pred, succ string) error {
 	if _, err := a.Backend.ApplyForm(succ, form.Build(ss, map[string]json.RawMessage{form.FanoutQuotaKey: q}, nil)); err != nil {
 		return err
 	}
-	_, err = a.Backend.ApplyForm(pred, form.Build(ps, nil, []string{form.FanoutQuotaKey}))
+	if _, err = a.Backend.ApplyForm(pred, form.Build(ps, nil, []string{form.FanoutQuotaKey})); err != nil {
+		return err
+	}
+	return a.raiseQuotaToUse(succ)
+}
+
+func (a *Angelus) raiseQuotaToUse(id string) error {
+	snap, err := a.Backend.FormState(id)
+	if err != nil {
+		return err
+	}
+	quota, ok, err := form.FanoutQuota(snap)
+	if err != nil || !ok {
+		return err
+	}
+	used := a.fanoutCounts().budget(id).used
+	if used <= quota {
+		return nil
+	}
+	raw, _ := json.Marshal(used)
+	_, err = a.Backend.ApplyForm(id, form.Build(snap, map[string]json.RawMessage{form.FanoutQuotaKey: raw}, nil))
 	return err
 }
 
