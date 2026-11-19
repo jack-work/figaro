@@ -534,8 +534,11 @@ func seatWithRoute(t *testing.T, recorded, role map[string]string) seated {
 // predecessor's place with the predecessor and its branch beneath them.
 func TestANamedSuccessorIsDrawnWhereAForkedOneGoes(t *testing.T) {
 	shape := func(t *testing.T, named bool) map[string]string {
-		s := seatedPredecessor(t, nil)
-		require.NoError(t, wire.Install(s.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}))
+		s := seatedPredecessor(t, func(b *store.XwalBackend, _ string, turn uint64) {
+			if turn == 0 {
+				require.NoError(t, wire.Install(b.Store(), t.TempDir(), wire.Capabilities{Trunks: true}))
+			}
+		})
 		_, kid, err := s.backend.Fork(s.pred)
 		require.NoError(t, err)
 		was, _ := s.backend.Node(s.pred)
