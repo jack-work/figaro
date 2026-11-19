@@ -217,7 +217,7 @@ func outfitClosureNode(l *rpc.OutfitLayer) *figtree.Node {
 	case l.Cycle:
 		found, where = "no", "cycle: already a layer above this one"
 	case l.Found:
-		found, where = "yes", l.Path
+		found, where = "yes", outfitProvenance(l.Origin, l.Path, l.Shadowed, l.Refused)
 	}
 	n := &figtree.Node{
 		Marker: outfitClosureMarker(l),
@@ -228,6 +228,20 @@ func outfitClosureNode(l *rpc.OutfitLayer) *figtree.Node {
 		n.Children = append(n.Children, outfitClosureNode(child))
 	}
 	return n
+}
+
+func outfitProvenance(origin, path string, shadowed, refused []rpc.OutfitSource) string {
+	if origin == "" {
+		return path
+	}
+	parts := []string{origin + " " + path}
+	for _, s := range shadowed {
+		parts = append(parts, "shadows "+s.Origin+" "+s.Path)
+	}
+	for _, r := range refused {
+		parts = append(parts, "refused "+r.Origin+" "+r.Path+" (locked)")
+	}
+	return strings.Join(parts, "; ")
 }
 
 func outfitClosureMarker(l *rpc.OutfitLayer) string {
@@ -318,11 +332,19 @@ func runOutfitList(loaded *config.Loaded) {
 		fmt.Fprintln(stderrw, "no outfits found")
 		return
 	}
+	listings := map[string]rpc.OutfitListing{}
+	for _, l := range resp.Outfits {
+		listings[l.Name] = l
+	}
 	for _, n := range resp.Names {
 		marker := ""
 		if n == resp.Default {
 			marker = " (default)"
 		}
-		fmt.Fprintf(stdout, "%s%s\n", n, marker)
+		where := ""
+		if l, ok := listings[n]; ok && l.Origin != "" {
+			where = "  " + outfitProvenance(l.Origin, l.Path, l.Shadowed, nil)
+		}
+		fmt.Fprintf(stdout, "%s%s%s\n", n, marker, where)
 	}
 }

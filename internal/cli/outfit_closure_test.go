@@ -113,3 +113,24 @@ func TestOutfitTreeExitsNonZeroOnlyWhenTheClosureIsBroken(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderOutfitClosureTagsEachLayerWithItsRoot(t *testing.T) {
+	restore := term.SetColorMode(term.ColorNever)
+	defer restore()
+
+	closure := &rpc.OutfitLayer{Name: "role", Path: "/etc/o/role.toml", Found: true, Origin: "managed", Layers: []*rpc.OutfitLayer{
+		{Name: "model", Path: "/u/model.toml", Found: true, Origin: "user", Shadowed: []rpc.OutfitSource{{Path: "/etc/o/model.toml", Origin: "managed"}}},
+		{Name: "seat", Path: "/etc/o/seat.toml", Found: true, Origin: "managed", Refused: []rpc.OutfitSource{{Path: "/u/seat.toml", Origin: "user"}}},
+	}}
+	got := renderOutfitClosure(closure)
+	want := strings.Join([]string{
+		"OUTFIT     LAYERS FROM",
+		"✓ role     managed /etc/o/role.toml",
+		"├─✓ model  user /u/model.toml; shadows managed /etc/o/model.toml",
+		"└─✓ seat   managed /etc/o/seat.toml; refused user /u/seat.toml (locked)",
+		"",
+	}, "\n")
+	if got != want {
+		t.Fatalf("closure tree:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}

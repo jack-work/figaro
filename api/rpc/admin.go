@@ -14,6 +14,22 @@ type OutfitLayer struct {
 	Found  bool           `json:"found"`
 	Cycle  bool           `json:"cycle,omitempty"`
 	Layers []*OutfitLayer `json:"layers,omitempty"`
+
+	Origin   string         `json:"origin,omitempty"`
+	Shadowed []OutfitSource `json:"shadowed,omitempty"`
+	Refused  []OutfitSource `json:"refused,omitempty"`
+}
+
+type OutfitSource struct {
+	Path   string `json:"path"`
+	Origin string `json:"origin,omitempty"`
+}
+
+type OutfitListing struct {
+	Name     string         `json:"name"`
+	Path     string         `json:"path"`
+	Origin   string         `json:"origin,omitempty"`
+	Shadowed []OutfitSource `json:"shadowed,omitempty"`
 }
 
 // Spec is the `-O` syntax; empty means the configured default.
@@ -35,6 +51,7 @@ type OutfitsResponse struct {
 	Closure *OutfitLayer    `json:"closure,omitempty"`
 	Form    *form.Snapshot  `json:"form,omitempty"`
 	Refused []OutfitRefusal `json:"refused,omitempty"`
+	Outfits []OutfitListing `json:"outfits,omitempty"`
 }
 
 type OutfitRefusal struct {

@@ -62,3 +62,53 @@ func TestTheDaemonReportsAnOverlayALockRefused(t *testing.T) {
 		t.Fatalf("system.model = %v: the locked managed outfit must stay in force", v)
 	}
 }
+
+func TestTheTreeAndTheListTellManagedFromUser(t *testing.T) {
+	r, managed, user := layeredRig(t)
+	writeFile(t, filepath.Join(managed, "role.toml"), "layers = [\"voice\"]\n[system]\nprovider = \"mock\"\n")
+	writeFile(t, filepath.Join(managed, "voice.toml"), "[system]\nmodel = \"managed\"\n")
+	writeFile(t, filepath.Join(user, "voice.toml"), "[system]\nmodel = \"user\"\n")
+
+	out, err := r.call(asOwner(), rpc.MethodOutfits, rpc.OutfitsRequest{Spec: "role"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := out.(rpc.OutfitsResponse)
+	role := resp.Closure.Layers[0]
+	if role.Origin != "managed" || role.Path != filepath.Join(managed, "role.toml") {
+		t.Fatalf("role = %+v", role)
+	}
+	voice := role.Layers[0]
+	wantShadow := rpc.OutfitSource{Path: filepath.Join(managed, "voice.toml"), Origin: "managed"}
+	if voice.Origin != "user" || voice.Path != filepath.Join(user, "voice.toml") || len(voice.Shadowed) != 1 || voice.Shadowed[0] != wantShadow {
+		t.Fatalf("voice = %+v", voice)
+	}
+
+	listed := map[string]rpc.OutfitListing{}
+	for _, l := range resp.Outfits {
+		listed[l.Name] = l
+	}
+	if l := listed["voice"]; l.Origin != "user" || len(l.Shadowed) != 1 || l.Shadowed[0] != wantShadow {
+		t.Fatalf("listed voice = %+v", l)
+	}
+	if l := listed["role"]; l.Origin != "managed" || l.Path != filepath.Join(managed, "role.toml") {
+		t.Fatalf("listed role = %+v", l)
+	}
+}
+
+func TestOneRootTagsNothing(t *testing.T) {
+	r := newRigConfigured(t, grantPolicy, "")
+	out, err := r.call(asOwner(), rpc.MethodOutfits, rpc.OutfitsRequest{Spec: "mock"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := out.(rpc.OutfitsResponse)
+	if o := resp.Closure.Layers[0].Origin; o != "" {
+		t.Fatalf("origin %q with no roots configured: the tree must read as it did", o)
+	}
+	for _, l := range resp.Outfits {
+		if l.Origin != "" {
+			t.Fatalf("listing %+v tagged with no roots configured", l)
+		}
+	}
+}

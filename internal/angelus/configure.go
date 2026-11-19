@@ -32,6 +32,7 @@ func (h *handlers) outfits(_ context.Context, params json.RawMessage) (interface
 	if idx, err := loaded.OutfitIndex(); err == nil {
 		resp.Names = idx.Names()
 		resp.Refused = outfitRefusalsWire(idx)
+		resp.Outfits = outfitListingsWire(idx, loaded.OutfitRoots().Layered())
 	}
 	spec := req.Spec
 	if strings.TrimSpace(spec) == "" {
@@ -157,6 +158,20 @@ func outfitRefusalsWire(idx config.OutfitIndex) []rpc.OutfitRefusal {
 	var out []rpc.OutfitRefusal
 	for _, r := range idx.Refusals() {
 		out = append(out, rpc.OutfitRefusal{Name: r.Name, Path: r.Path, LockedBy: r.LockedBy})
+	}
+	return out
+}
+
+func outfitListingsWire(idx config.OutfitIndex, layered bool) []rpc.OutfitListing {
+	var out []rpc.OutfitListing
+	for _, name := range idx.Names() {
+		e := idx[name]
+		l := rpc.OutfitListing{Name: name, Path: e.Paths[0]}
+		if layered {
+			l.Origin = outfit.OutfitOrigin(e.Root.Managed)
+			l.Shadowed = figaro.OutfitSourcesWire(e.Shadowed)
+		}
+		out = append(out, l)
 	}
 	return out
 }

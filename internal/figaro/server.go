@@ -11,6 +11,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkrpc"
@@ -260,9 +261,21 @@ func OutfitClosureWire(c *outfit.Closure) *rpc.OutfitLayer {
 	if c == nil {
 		return nil
 	}
-	out := &rpc.OutfitLayer{Name: c.Name, Path: c.Path, Found: c.Found, Cycle: c.Cycle}
+	out := &rpc.OutfitLayer{Name: c.Name, Path: c.Path, Found: c.Found, Cycle: c.Cycle, Origin: c.Origin}
+	if c.Origin != "" {
+		out.Shadowed = OutfitSourcesWire(c.Shadowed)
+		out.Refused = OutfitSourcesWire(c.Refused)
+	}
 	for _, l := range c.Layers {
 		out.Layers = append(out.Layers, OutfitClosureWire(l))
+	}
+	return out
+}
+
+func OutfitSourcesWire(srcs []config.OutfitSource) []rpc.OutfitSource {
+	var out []rpc.OutfitSource
+	for _, s := range srcs {
+		out = append(out, rpc.OutfitSource{Path: s.Path, Origin: outfit.OutfitOrigin(s.Managed)})
 	}
 	return out
 }

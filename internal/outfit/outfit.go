@@ -58,10 +58,13 @@ func NewAt(configDir, snapDir string) *Outfitter {
 // Closure is one node of an outfit's layer graph, built even around missing
 // or broken layers.
 type Closure struct {
-	Name  string
-	Path  string
-	Found bool
-	Cycle bool
+	Name     string
+	Path     string
+	Found    bool
+	Cycle    bool
+	Origin   string
+	Shadowed []config.OutfitSource
+	Refused  []config.OutfitSource
 	// Err is a fault in the file itself; it rides on the node so the walk continues.
 	Err    error
 	Layers []*Closure
@@ -169,7 +172,10 @@ func (o *Outfitter) resolveNode(ep *epoch, name string, stack []string, memo map
 		memo[name] = c
 		return c
 	}
-	c := &Closure{Name: name, Path: n.path, Found: true}
+	c := &Closure{Name: name, Path: n.path, Found: true, Shadowed: n.entry.Shadowed, Refused: n.entry.Refused}
+	if o.rootsNow().Layered() {
+		c.Origin = OutfitOrigin(n.entry.Root.Managed)
+	}
 	for _, l := range n.layers {
 		c.Layers = append(c.Layers, o.resolveNode(ep, l, append(stack, name), memo))
 	}
@@ -306,7 +312,14 @@ func decodeTOML(b []byte, path string) (map[string]any, error) {
 	return raw, nil
 }
 
-func (o *Outfitter) resolvePath(name string, r *reader) (string, error) {
+func OutfitOrigin(managed bool) string {
+	if managed {
+		return "managed"
+	}
+	return "user"
+}
+
+func (o *Outfitter) resolveEntry(name string, r *reader) (string, config.OutfitEntry, error) {
 	var idx config.OutfitIndex
 	var err error
 	if r != nil {
@@ -315,7 +328,7 @@ func (o *Outfitter) resolvePath(name string, r *reader) (string, error) {
 		idx, err = walkOutfits(o.rootsNow(), nil)
 	}
 	if err != nil {
-		return "", fmt.Errorf("outfit: %w", err)
+		return "", config.OutfitEntry{}, fmt.Errorf("outfit: %w", err)
 	}
 	var e config.OutfitEntry
 	if found := idx[name]; found != nil {
@@ -323,13 +336,13 @@ func (o *Outfitter) resolvePath(name string, r *reader) (string, error) {
 	}
 	switch len(e.Paths) {
 	case 1:
-		return e.Paths[0], nil
+		return e.Paths[0], e, nil
 	case 0:
 		canonical := filepath.Join(o.rootsNow().Overlay(), name+".toml")
 		if r != nil {
 			r.stat(canonical)
 		}
-		return "", &os.PathError{Op: "open", Path: canonical, Err: os.ErrNotExist}
+		return "", e, &os.PathError{Op: "open", Path: canonical, Err: os.ErrNotExist}
 	default:
 		rel := make([]string, len(e.Paths))
 		for i, p := range e.Paths {
@@ -338,7 +351,7 @@ func (o *Outfitter) resolvePath(name string, r *reader) (string, error) {
 				rel[i] = r
 			}
 		}
-		return "", fmt.Errorf("outfit %q is ambiguous: %s; an outfit is named by its file, so rename one", name, strings.Join(rel, " and "))
+		return "", e, fmt.Errorf("outfit %q is ambiguous: %s; an outfit is named by its file, so rename one", name, strings.Join(rel, " and "))
 	}
 }
 

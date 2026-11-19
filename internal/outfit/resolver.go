@@ -55,6 +55,7 @@ type node struct {
 	found  bool
 	hash   string
 	layers []string
+	entry  config.OutfitEntry
 }
 
 type foldEntry struct {
@@ -381,7 +382,7 @@ func (o *Outfitter) nodeFor(ep *epoch, name string) (*node, error) {
 
 	n := &node{name: name}
 	r := &reader{o: o, ep: ep}
-	path, err := o.resolvePath(name, r)
+	path, entry, err := o.resolveEntry(name, r)
 	if errors.Is(err, os.ErrNotExist) {
 		o.mu.Lock()
 		ep.nodes[name] = n
@@ -391,7 +392,7 @@ func (o *Outfitter) nodeFor(ep *epoch, name string) (*node, error) {
 	if err != nil {
 		return nil, err
 	}
-	n.path, n.found = path, true
+	n.path, n.found, n.entry = path, true, entry
 
 	b, rerr := r.read(path)
 	if rerr != nil {
