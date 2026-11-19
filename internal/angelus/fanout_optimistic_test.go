@@ -90,7 +90,7 @@ func TestAHeldForkSlotCountsUntilReleased(t *testing.T) {
 	if n := c.admitted("p"); n != 2 {
 		t.Fatalf("admitted with one child and one held slot = %d, want 2", n)
 	}
-	c.give(h)
+	c.give(h, "")
 	if n := c.admitted("p"); n != 1 {
 		t.Fatalf("admitted after the release = %d, want 1", n)
 	}

@@ -38,7 +38,7 @@ func (h *handlers) createTopLevel(ctx context.Context, params json.RawMessage) (
 	if _, boxed := callerBox(ctx); minter == "" || boxed {
 		return h.create(ctx, params)
 	}
-	release, err := h.angelus.holdFork(minter, 1, false)
+	release, forNode, err := h.angelus.holdBirth(minter, 1, false)
 	if err != nil {
 		return nil, fmt.Errorf("mint: %s pays for what it mints: %w", minter, err)
 	}
@@ -48,6 +48,7 @@ func (h *handlers) createTopLevel(ctx context.Context, params json.RawMessage) (
 		return nil, err
 	}
 	id := out.(rpc.CreateResponse).FigaroID
+	forNode(id)
 	if err := h.place(h.ownerContext(), id, minter); err != nil {
 		slog.Warn("mint: the new figaro stays where it was born, and its minter is not charged", "figaro", id, "minter", minter, "err", err)
 	}

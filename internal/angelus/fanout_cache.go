@@ -41,11 +41,12 @@ type fanoutCache struct {
 	used    map[string]int
 	owners  map[string]bool
 	pending map[string]int
+	marks   map[string]fanoutHold
 }
 
 func newFanoutCache() *fanoutCache {
 	return &fanoutCache{parent: map[string]string{}, live: map[string]bool{}, kids: map[string]int{}, held: map[string]int{},
-		own: map[string]int{}, roles: map[string]fanoutRole{}, eff: map[string]int{}, used: map[string]int{}, owners: map[string]bool{}, pending: map[string]int{}}
+		own: map[string]int{}, roles: map[string]fanoutRole{}, eff: map[string]int{}, used: map[string]int{}, owners: map[string]bool{}, pending: map[string]int{}, marks: map[string]fanoutHold{}}
 }
 
 func (c *fanoutCache) reset(nodes []fanoutNode, roles map[string]fanoutRole) {
@@ -325,9 +326,26 @@ func (c *fanoutCache) reserveLocked(from string, charge int) (string, int) {
 	return at, charge
 }
 
-func (c *fanoutCache) give(h fanoutHold) {
+func (c *fanoutCache) mark(h fanoutHold, node string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.marks[node] = h
+}
+
+func (c *fanoutCache) markedAt(at string, moves []hierarchy.Move) int {
+	n := 0
+	for _, m := range moves {
+		if h, ok := c.marks[m.Node]; ok && h.at == at {
+			n += h.charge
+		}
+	}
+	return n
+}
+
+func (c *fanoutCache) give(h fanoutHold, node string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.marks, node)
 	if h.slot {
 		if c.held[h.parent]--; c.held[h.parent] <= 0 {
 			delete(c.held, h.parent)
@@ -514,8 +532,8 @@ func (c *fanoutCache) fitsMoves(moves []hierarchy.Move) error {
 	}
 	var err error
 	for _, m := range moves {
-		if id, ok := c.absorberOf(c.parent[m.Node]); ok && c.used[id] > c.eff[id] && c.used[id] > before[id] {
-			err = fmt.Errorf("fanout: %s would use %d of quota %d; the reparent is refused and nothing moved", shortID(id), c.used[id], c.eff[id])
+		if id, ok := c.absorberOf(c.parent[m.Node]); ok && c.spent(id)-c.markedAt(id, moves) > c.eff[id] && c.used[id] > before[id] {
+			err = fmt.Errorf("fanout: %s would use %d of quota %d; the reparent is refused and nothing moved", shortID(id), c.spent(id)-c.markedAt(id, moves), c.eff[id])
 			break
 		}
 	}
@@ -667,17 +685,23 @@ func (a *Angelus) liveChildCount(id string) int {
 }
 
 func (a *Angelus) holdFork(parent string, charge int, abdicating bool) (func(), error) {
+	release, _, err := a.holdBirth(parent, charge, abdicating)
+	return release, err
+}
+
+func (a *Angelus) holdBirth(parent string, charge int, abdicating bool) (release func(), forNode func(string), err error) {
 	max, capped, err := a.fanoutLimit(parent)
 	if err != nil {
-		return nil, fmt.Errorf("fork: the limit of %s cannot be read to admit the fork: %w", parent, err)
+		return nil, nil, fmt.Errorf("fork: the limit of %s cannot be read to admit the fork: %w", parent, err)
 	}
 	c := a.fanoutCounts()
 	h, err := c.take(parent, max, capped, charge, abdicating, func(err error) error { return a.Policies.Shadow(authz.Quota, err) })
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var once sync.Once
-	return func() { once.Do(func() { c.give(h) }) }, nil
+	node := ""
+	return func() { once.Do(func() { c.give(h, node) }) }, func(id string) { node = id; c.mark(h, id) }, nil
 }
 
 func (a *Angelus) settleFanout(p hierarchy.Plan) {

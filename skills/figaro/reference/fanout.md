@@ -115,8 +115,10 @@ figaro using more than its quota with `!`. Usage is never written to a form.
 no hierarchy lock. Each checks the budget and holds its charge in the
 daemon's counts in one step, and lets the hold go once the birth or the
 write has landed, so forks and raises racing each other never overdraw.
-A reparent (demote, adopt) is checked under the hierarchy lock instead, and
-one racing a fork into the same figaro can land it one over. An overshoot is
+A reparent (demote, adopt) is checked under the hierarchy lock instead,
+against what has landed and what forks and raises hold, so one racing them
+lands a figaro over by at most what was admitted while the reparent was
+decided. An overshoot is
 never undone: the figaro is over budget, refused every fork until it is back
 under, charges its parent `1 + max(quota, used)`, and nothing is reaped. The
 reconciler rebuilds any count that drifted from the tree, and `figaro doctor

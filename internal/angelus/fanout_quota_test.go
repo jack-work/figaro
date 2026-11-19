@@ -418,3 +418,26 @@ func TestConcurrentQuotaRaisesSpendABudgetOnce(t *testing.T) {
 		requireCacheMatchesTree(t, hs, "concurrent quota raises")
 	}
 }
+
+// Defends the reparent check against admissions in flight: a fork's held
+// charge counts when a subtree is moved in, so the move cannot spend it too.
+func TestAReparentCountsWhatForksHold(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	a, _ := b.CreateConversation(outfit)
+	other, _ := b.CreateConversation(outfit)
+	setQuota(t, b, a, 2)
+	s := forkOK(t, hs, "", other, nil)
+	c := hs.h.angelus.fanoutCounts()
+	held, err := c.take(a, 0, false, 2, false, func(err error) error { return err })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hs.h.place(inProcess(context.Background()), s, a); err == nil {
+		t.Fatal("a subtree moved into budget a fork already holds")
+	}
+	c.give(held, "")
+	if err := hs.h.place(inProcess(context.Background()), s, a); err != nil {
+		t.Fatalf("the move once the hold was let go: %v", err)
+	}
+	requireCacheMatchesTree(t, hs, "a reparent beside a held fork")
+}
