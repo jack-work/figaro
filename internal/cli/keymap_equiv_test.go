@@ -193,6 +193,8 @@ var oracleStates = map[string]func(*transcript){
 	"note": func(tr *transcript) { tr.noteOrClear("a passing remark"); tr.render() },
 	// A list with the conversation focused behind it: T hands the keys over.
 	"help+focus": func(tr *transcript) { tr.key('h'); tr.key('T') },
+	// A message pit holding the keys: the one pit that answers as a panel.
+	"message": func(tr *transcript) { tr.setCommandNote("first line\nsecond line") },
 	// A hosted view with letters of its own (the notifications pit's f).
 	"notifications": func(tr *transcript) { tr.openNotificationsPit(); tr.render() },
 	// The composer in NORMAL mode: '>' opens it, two words are typed,

@@ -37,10 +37,14 @@ func (t *transcript) mode() keyMode {
 	if t.headFocused() && (open == pitNothing || open.keys() == modePanel) {
 		return modeList
 	}
-	if k := open.keys(); k == modePanel && t.listMode() {
+	k := open.keys()
+	if k == modePanel && t.listMode() {
 		return modeList
 	}
-	return open.keys()
+	if k == modePanel && t.focused == focusTranscript {
+		return modeTranscript
+	}
+	return k
 }
 
 func (t *transcript) openPit() pitID {
@@ -155,10 +159,13 @@ func (t *transcript) dispatch(ev keyEvent) {
 			return
 		}
 		t.closePanels()
-	case modePanel:
-		if t.focused == focusTranscript && !pitCancels(ev) {
-			break
+	case modeTranscript:
+		if t.pit.open() && pitCancels(ev) {
+			pagerAct.pager(modePanel, ev)(t)
+			t.render()
+			return
 		}
+	case modePanel:
 		if t.viewTakesKey(ev) {
 			t.render()
 			return
