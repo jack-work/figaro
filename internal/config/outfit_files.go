@@ -141,7 +141,7 @@ func OutfitFiles(roots OutfitRoots, visit func(path string)) (OutfitIndex, error
 	}
 	idx := OutfitIndex{}
 	for _, root := range roots.Dirs {
-		files, err := walkOutfitRoot(root.Path, visit)
+		files, err := walkOutfitRoot(root, visit)
 		if err != nil {
 			return nil, err
 		}
@@ -208,9 +208,17 @@ type rootFiles struct {
 	reads []string
 }
 
-func walkOutfitRoot(root string, visit func(path string)) (map[string]*rootFiles, error) {
+func walkOutfitRoot(r OutfitRoot, visit func(path string)) (map[string]*rootFiles, error) {
+	root := r.Path
 	files := map[string]*rootFiles{}
+	_, lerr := os.Lstat(root)
+	if lerr != nil && !errors.Is(lerr, fs.ErrNotExist) {
+		return nil, lerr
+	}
 	resolved, err := filepath.EvalSymlinks(root)
+	if r.Managed && lerr == nil && errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("managed outfit root %s is a broken link: %w", root, err)
+	}
 	if errors.Is(err, fs.ErrNotExist) {
 		if visit != nil {
 			visit(root)
@@ -259,10 +267,12 @@ func readOutfitLock(path string, visit func(path string)) ([]string, error) {
 	if visit != nil {
 		visit(path)
 	}
-	b, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
+	} else if err != nil {
+		return nil, err
 	}
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}

@@ -251,3 +251,37 @@ func TestAWritePathThatResolvesIntoAManagedRootIsRefused(t *testing.T) {
 		t.Fatal("OutfitWritePath resolved into the managed root")
 	}
 }
+
+func TestABrokenLinkAtAManagedRootOrItsLockFailsClosed(t *testing.T) {
+	t.Run("root", func(t *testing.T) {
+		dir := t.TempDir()
+		managed, user := filepath.Join(dir, "managed"), filepath.Join(dir, "user")
+		if err := os.Symlink(filepath.Join(dir, "gone"), managed); err != nil {
+			t.Fatal(err)
+		}
+		writeTree(t, dir, "user/seat.toml")
+		roots := OutfitRoots{Dirs: []OutfitRoot{{Path: managed, Managed: true}, {Path: user}}}
+		if _, err := OutfitFiles(roots, nil); err == nil {
+			t.Fatal("a dangling managed root read as no managed outfits, freeing every locked name")
+		}
+	})
+	t.Run("lock", func(t *testing.T) {
+		dir := t.TempDir()
+		managed, user := filepath.Join(dir, "managed"), filepath.Join(dir, "user")
+		writeTree(t, dir, "managed/seat.toml", "user/seat.toml")
+		if err := os.Symlink(filepath.Join(dir, "gone"), filepath.Join(managed, OutfitLockFile)); err != nil {
+			t.Fatal(err)
+		}
+		roots := OutfitRoots{Dirs: []OutfitRoot{{Path: managed, Managed: true}, {Path: user}}}
+		if _, err := OutfitFiles(roots, nil); err == nil {
+			t.Fatal("a dangling .locked read as no lock")
+		}
+	})
+	t.Run("absent", func(t *testing.T) {
+		dir := t.TempDir()
+		roots := OutfitRoots{Dirs: []OutfitRoot{{Path: filepath.Join(dir, "managed"), Managed: true}, {Path: filepath.Join(dir, "user")}}}
+		if _, err := OutfitFiles(roots, nil); err != nil {
+			t.Fatalf("a managed root that is simply absent is no outfits: %v", err)
+		}
+	})
+}
