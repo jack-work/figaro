@@ -51,7 +51,7 @@ func (b *XwalBackend) RevertRuntimeNames() (RuntimeNamesReport, error) {
 	return rep, stampGeneration(b.root, runtimeNamesGeneration-1)
 }
 
-const renameWorkers = 128
+const formWorkers = 128
 
 func (b *XwalBackend) renameRuntimeKeys(rename func(form.Snapshot) form.Patch) (RuntimeNamesReport, error) {
 	start := time.Now()
@@ -61,14 +61,20 @@ func (b *XwalBackend) renameRuntimeKeys(rename func(form.Snapshot) form.Patch) (
 			ids = append(ids, n.ID)
 		}
 	}
+	renamed, err := eachForm(ids, func(id string) (bool, error) { return b.renameOne(id, rename) })
+	rep := RuntimeNamesReport{Forms: len(ids), Renamed: renamed, Millis: time.Since(start).Milliseconds()}
+	return rep, err
+}
+
+func eachForm(ids []string, do func(id string) (bool, error)) (int, error) {
 	var (
-		renamed atomic.Int64
-		next    atomic.Int64
-		errMu   sync.Mutex
-		first   error
-		wg      sync.WaitGroup
+		done  atomic.Int64
+		next  atomic.Int64
+		errMu sync.Mutex
+		first error
+		wg    sync.WaitGroup
 	)
-	for range min(renameWorkers, len(ids)) {
+	for range min(formWorkers, len(ids)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -77,7 +83,7 @@ func (b *XwalBackend) renameRuntimeKeys(rename func(form.Snapshot) form.Patch) (
 				if i >= len(ids) {
 					return
 				}
-				did, err := b.renameOne(ids[i], rename)
+				did, err := do(ids[i])
 				if err != nil {
 					errMu.Lock()
 					if first == nil {
@@ -87,14 +93,13 @@ func (b *XwalBackend) renameRuntimeKeys(rename func(form.Snapshot) form.Patch) (
 					return
 				}
 				if did {
-					renamed.Add(1)
+					done.Add(1)
 				}
 			}
 		}()
 	}
 	wg.Wait()
-	rep := RuntimeNamesReport{Forms: len(ids), Renamed: int(renamed.Load()), Millis: time.Since(start).Milliseconds()}
-	return rep, first
+	return int(done.Load()), first
 }
 
 func (b *XwalBackend) renameOne(id string, rename func(form.Snapshot) form.Patch) (bool, error) {
