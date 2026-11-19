@@ -232,7 +232,13 @@ func (b *XwalBackend) Normalize(ctx context.Context, dryRun bool) (NormalizeRepo
 
 func (b *XwalBackend) TopologyDirty() bool { return b.store.TopologyDirty() }
 
-func (b *XwalBackend) NormalizePending() bool { return b.store.NormalizePending() }
+func (b *XwalBackend) NormalizePending(skip func(id string) bool) bool {
+	return b.store.NormalizePending(skip)
+}
+
+func (b *XwalBackend) NormalizeSkipping(ctx context.Context, skip func(id string) bool) (NormalizeReport, error) {
+	return b.store.NormalizeSkipping(ctx, skip)
+}
 
 func (b *XwalBackend) CleanTopology(dryRun bool) ([]topo.Stale, error) {
 	return b.store.CleanTopology(dryRun)

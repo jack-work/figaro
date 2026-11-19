@@ -3,6 +3,8 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -19,12 +21,9 @@ type fakeQuietStore struct {
 	block   bool
 }
 
-func (f *fakeQuietStore) NormalizePending() bool { return f.pending }
+func (f *fakeQuietStore) NormalizePending(func(string) bool) bool { return f.pending }
 
-func (f *fakeQuietStore) Normalize(ctx context.Context, dryRun bool) (store.NormalizeReport, error) {
-	if dryRun {
-		panic("the quiet pass must not dry-run")
-	}
+func (f *fakeQuietStore) NormalizeSkipping(ctx context.Context, _ func(string) bool) (store.NormalizeReport, error) {
 	f.started <- time.Now()
 	if f.block {
 		<-ctx.Done()
@@ -140,7 +139,7 @@ func TestAQuietNormalizeLeavesEveryFigaroWhereItIsDrawn(t *testing.T) {
 	}
 	callDemote(t, hs, rpc.DemoteRequest{FigaroID: top, Prefer: kids[1]})
 	requireCacheMatchesTree(t, hs, "a place and a demote")
-	if !b.NormalizePending() {
+	if !b.NormalizePending(nil) {
 		t.Fatal("nothing is drawn away from its history; the test proves nothing")
 	}
 	a := hs.h.angelus
@@ -150,7 +149,7 @@ func TestAQuietNormalizeLeavesEveryFigaroWhereItIsDrawn(t *testing.T) {
 		drawn[id], counts[id] = a.drawnParentOf(id), a.liveChildCount(id)
 	}
 	a.normalizeQuietly(context.Background(), b, time.Nanosecond)
-	if b.NormalizePending() {
+	if b.NormalizePending(nil) {
 		t.Fatal("the quiet pass left a figaro to detach")
 	}
 	requireCacheMatchesTree(t, hs, "a quiet normalize")
@@ -161,5 +160,72 @@ func TestAQuietNormalizeLeavesEveryFigaroWhereItIsDrawn(t *testing.T) {
 		if got := a.liveChildCount(id); got != counts[id] {
 			t.Errorf("%s holds %d live children after the pass, %d before", id, got, counts[id])
 		}
+	}
+}
+
+type failingQuietStore struct {
+	store.Backend
+	left     []string
+	bad      string
+	attempts int
+}
+
+func (f *failingQuietStore) NormalizePending(skip func(string) bool) bool {
+	for _, id := range f.left {
+		if !skip(id) {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *failingQuietStore) NormalizeSkipping(_ context.Context, skip func(string) bool) (store.NormalizeReport, error) {
+	var r store.NormalizeReport
+	var err error
+	for _, id := range slices.Clone(f.left) {
+		switch {
+		case skip(id):
+		case id == f.bad:
+			f.attempts++
+			r.Failed = append(r.Failed, id)
+			err = errors.New("normalize: the carry refused")
+		default:
+			r.Detached = append(r.Detached, id)
+			f.left = slices.DeleteFunc(f.left, func(s string) bool { return s == id })
+		}
+	}
+	return r, err
+}
+
+// Defends the unattended pass against a figaro that never detaches: the
+// figaros after it still detach, and it is not copied again every quiet
+// minute but waits out a backoff that grows with each failure.
+func TestAFigaroThatWillNotDetachWaitsOutABackoff(t *testing.T) {
+	f := &failingQuietStore{left: []string{"a-bad", "b-good"}, bad: "a-bad"}
+	a := quietAngelus(t, &fakeQuietStore{}, 1)
+	a.activity.last.Store(time.Now().Add(-time.Hour).UnixNano())
+	a.normalizeQuietly(context.Background(), f, time.Second)
+	if f.attempts != 1 || !slices.Equal(f.left, []string{"a-bad"}) {
+		t.Fatalf("after one pass: %d attempts at the bad figaro, %v left; want 1 and only it", f.attempts, f.left)
+	}
+	first := a.activity.failed["a-bad"]
+	if wait := time.Until(first.until); wait < quietFailBackoff-time.Minute || wait > quietFailBackoff {
+		t.Fatalf("the first failure waits %v, want about %v", wait, quietFailBackoff)
+	}
+	if f.NormalizePending(a.activity.failed.waiting(time.Now())) {
+		t.Fatal("a figaro in its backoff still reads as pending work")
+	}
+	a.normalizeQuietly(context.Background(), f, time.Second)
+	if f.attempts != 1 {
+		t.Fatalf("a pass inside the backoff tried the bad figaro again (%d attempts)", f.attempts)
+	}
+	first.until = time.Now().Add(-time.Second)
+	a.activity.failed["a-bad"] = first
+	a.normalizeQuietly(context.Background(), f, time.Second)
+	if f.attempts != 2 {
+		t.Fatalf("a pass after the backoff made %d attempts in all, want 2", f.attempts)
+	}
+	if wait := time.Until(a.activity.failed["a-bad"].until); wait < 2*quietFailBackoff-time.Minute {
+		t.Fatalf("the second failure waits %v, want the backoff doubled", wait)
 	}
 }

@@ -13,8 +13,32 @@ import (
 )
 
 type quietNormalizer interface {
-	NormalizePending() bool
-	Normalize(ctx context.Context, dryRun bool) (store.NormalizeReport, error)
+	NormalizePending(skip func(id string) bool) bool
+	NormalizeSkipping(ctx context.Context, skip func(id string) bool) (store.NormalizeReport, error)
+}
+
+type detachFailure struct {
+	fails int
+	until time.Time
+}
+
+type detachBackoff map[string]detachFailure
+
+func (b detachBackoff) waiting(now time.Time) func(id string) bool {
+	return func(id string) bool { return now.Before(b[id].until) }
+}
+
+func (b detachBackoff) settle(r store.NormalizeReport, now time.Time) {
+	for _, id := range r.Detached {
+		delete(b, id)
+	}
+	for _, id := range r.Failed {
+		f := b[id]
+		f.fails++
+		f.until = now.Add(min(quietFailBackoff<<min(f.fails-1, 16), quietFailBackoffMax))
+		b[id] = f
+		slog.Warn("quiet normalize: a figaro would not detach", "id", id, "fails", f.fails, "retry_after", f.until.Sub(now).Round(time.Second))
+	}
 }
 
 type activity struct {
@@ -22,6 +46,7 @@ type activity struct {
 	last   atomic.Int64
 	wake   chan struct{}
 	cancel atomic.Pointer[context.CancelFunc]
+	failed detachBackoff
 }
 
 func isWork(method string) bool {
@@ -69,8 +94,10 @@ func (a *Angelus) turnInFlight() bool {
 }
 
 const (
-	quietTurnCheck   = time.Second
-	quietIdleRecheck = 10 * time.Minute
+	quietTurnCheck      = time.Second
+	quietIdleRecheck    = 10 * time.Minute
+	quietFailBackoff    = 10 * time.Minute
+	quietFailBackoffMax = 24 * time.Hour
 )
 
 func (a *Angelus) normalizeWhenQuiet(ctx context.Context) {
@@ -95,7 +122,7 @@ func (a *Angelus) normalizeWhenQuiet(ctx context.Context) {
 			timer.Reset(quiet)
 			continue
 		}
-		if !n.NormalizePending() {
+		if !n.NormalizePending(a.activity.failed.waiting(time.Now())) {
 			select {
 			case <-ctx.Done():
 				return
@@ -139,13 +166,17 @@ func (a *Angelus) normalizeQuietly(ctx context.Context, n quietNormalizer, quiet
 	}()
 	slog.Info("quiet normalize begins")
 	start := time.Now()
-	r, err := n.Normalize(pass, false)
+	if a.activity.failed == nil {
+		a.activity.failed = detachBackoff{}
+	}
+	r, err := n.NormalizeSkipping(pass, a.activity.failed.waiting(start))
+	a.activity.failed.settle(r, time.Now())
 	took := time.Since(start).Round(time.Millisecond)
 	switch {
 	case errors.Is(err, context.Canceled):
-		slog.Info("quiet normalize yielded to work", "detached", len(r.Detached), "remaining", len(r.Remaining), "took", took)
+		slog.Info("quiet normalize yielded to work", "detached", len(r.Detached), "failed", len(r.Failed), "remaining", len(r.Remaining), "took", took)
 	case err != nil:
-		slog.Warn("quiet normalize", "detached", len(r.Detached), "remaining", len(r.Remaining), "took", took, "err", err)
+		slog.Warn("quiet normalize", "detached", len(r.Detached), "failed", len(r.Failed), "dropped", len(r.Dropped), "took", took, "err", err)
 	default:
 		slog.Info("quiet normalize", "detached", len(r.Detached), "dropped", len(r.Dropped), "took", took)
 	}

@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -1116,14 +1117,23 @@ type NormalizeReport struct {
 	Detached  []string
 	Dropped   []topo.Stale
 	Remaining []string
+	Failed    []string
 }
 
 func (s *XwalStore) Normalize(ctx context.Context, dryRun bool) (NormalizeReport, error) {
+	return s.normalize(ctx, dryRun, nil)
+}
+
+func (s *XwalStore) NormalizeSkipping(ctx context.Context, skip func(id string) bool) (NormalizeReport, error) {
+	return s.normalize(ctx, false, skip)
+}
+
+func (s *XwalStore) normalize(ctx context.Context, dryRun bool, skip func(id string) bool) (NormalizeReport, error) {
 	var r NormalizeReport
 	if s.tree == nil {
 		return r, nil
 	}
-	detach := s.tree.Overridden()
+	detach := s.toDetach(skip)
 	if dryRun {
 		assume := make(map[string]string, len(detach))
 		for _, id := range detach {
@@ -1134,20 +1144,34 @@ func (s *XwalStore) Normalize(ctx context.Context, dryRun bool) (NormalizeReport
 		r.Dropped = dropped
 		return r, err
 	}
+	var errs []error
 	for i, id := range detach {
-		if err := ctx.Err(); err != nil {
-			r.Remaining = detach[i:]
-			return r, err
+		err := ctx.Err()
+		if err == nil {
+			err = s.detachOne(ctx, id)
 		}
-		if err := s.detachOne(ctx, id); err != nil {
+		switch {
+		case err == nil:
+			r.Detached = append(r.Detached, id)
+		case ctx.Err() != nil:
 			r.Remaining = detach[i:]
-			return r, err
+			return r, errors.Join(append(errs, err)...)
+		default:
+			r.Failed = append(r.Failed, id)
+			errs = append(errs, err)
 		}
-		r.Detached = append(r.Detached, id)
 	}
 	dropped, err := s.CleanTopology(false)
 	r.Dropped = dropped
-	return r, err
+	return r, errors.Join(append(errs, err)...)
+}
+
+func (s *XwalStore) toDetach(skip func(id string) bool) []string {
+	ids := s.tree.Overridden()
+	if skip == nil {
+		return ids
+	}
+	return slices.DeleteFunc(ids, skip)
 }
 
 func (s *XwalStore) detachOne(ctx context.Context, id string) error {
@@ -1164,8 +1188,8 @@ func (s *XwalStore) detachOne(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *XwalStore) NormalizePending() bool {
-	return s.tree != nil && len(s.tree.Overridden()) > 0
+func (s *XwalStore) NormalizePending(skip func(id string) bool) bool {
+	return s.tree != nil && len(s.toDetach(skip)) > 0
 }
 
 type cleanMark struct{ trunks, present uint64 }

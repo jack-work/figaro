@@ -3,7 +3,9 @@ package wire_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -216,14 +218,62 @@ func TestNormalizeStoppedMidwayResumesWhereItStopped(t *testing.T) {
 	if err == nil || len(r.Detached) != 0 || len(r.Remaining) != len(drawn) {
 		t.Fatalf("a cancelled normalize: %+v, %v; want nothing detached, all %d remaining and the cancel", r, err, len(drawn))
 	}
-	if !b.NormalizePending() {
+	if !b.NormalizePending(nil) {
 		t.Fatal("a cancelled normalize left nothing pending")
 	}
 	r, err = b.Normalize(context.Background(), false)
 	if err != nil || len(r.Detached) != len(drawn) {
 		t.Fatalf("the resumed normalize: %+v, %v; want all %d detached", r, err, len(drawn))
 	}
-	if b.NormalizePending() {
+	if b.NormalizePending(nil) {
 		t.Fatal("normalize finished and still reports work pending")
+	}
+}
+
+// Defends a pass that nobody watches: one figaro that will not detach is
+// reported with its error, and every figaro after it still detaches.
+func TestNormalizeGoesPastAFigaroThatWillNotDetach(t *testing.T) {
+	b, _ := backend(t, true)
+	stump, err := b.CreateOutfit("d", patch("system.model", "m"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conv, err := b.CreateConversation(stump)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendTurns(t, b, conv, "conv", 3)
+	drawn := map[string]string{}
+	for range 4 {
+		_, alt, err := b.Fork(conv)
+		if err != nil {
+			t.Fatal(err)
+		}
+		drawn[alt] = "null"
+	}
+	if err := b.HierarchyEngine().WriteDrawn(drawn, nil); err != nil {
+		t.Fatal(err)
+	}
+	ids := slices.Sorted(maps.Keys(drawn))
+	bad := ids[0]
+	refused := errors.New("the carry refused")
+	b.SetDetachCarry(func(carry []string) error {
+		if slices.Contains(carry, bad) {
+			return refused
+		}
+		return nil
+	})
+	r, err := b.Normalize(context.Background(), false)
+	if !errors.Is(err, refused) {
+		t.Fatalf("normalize past a refusal returned %v, want the refusal", err)
+	}
+	if !slices.Equal(r.Failed, []string{bad}) || !slices.Equal(r.Detached, ids[1:]) || len(r.Remaining) != 0 {
+		t.Fatalf("normalize past a refusal: %+v; want %s failed and %v detached", r, bad, ids[1:])
+	}
+	if !b.NormalizePending(nil) {
+		t.Fatal("the refused figaro no longer reads as pending")
+	}
+	if b.NormalizePending(func(id string) bool { return id == bad }) {
+		t.Fatal("work is pending beyond the refused figaro")
 	}
 }
