@@ -47,6 +47,7 @@ type epoch struct {
 	touched map[string]dep
 	checked time.Time
 	index   config.OutfitIndex
+	missed  map[string]bool
 }
 
 type node struct {
@@ -143,12 +144,12 @@ type reader struct {
 	ep *epoch
 }
 
-func (r *reader) outfitIndex(name string) (config.OutfitIndex, error) {
+func (r *reader) outfitIndex() (config.OutfitIndex, error) {
 	r.o.mu.Lock()
 	idx := r.ep.index
 	roots := r.o.roots
 	r.o.mu.Unlock()
-	if idx != nil && idx[name] != nil {
+	if idx != nil {
 		return idx, nil
 	}
 	idx, err := walkOutfits(roots, r.stat)
@@ -156,9 +157,11 @@ func (r *reader) outfitIndex(name string) (config.OutfitIndex, error) {
 		return nil, err
 	}
 	r.o.mu.Lock()
-	r.ep.index = idx
-	r.o.mu.Unlock()
-	return idx, nil
+	defer r.o.mu.Unlock()
+	if r.ep.index == nil {
+		r.ep.index = idx
+	}
+	return r.ep.index, nil
 }
 
 func walkOutfits(roots config.OutfitRoots, visit func(path string)) (config.OutfitIndex, error) {
@@ -210,6 +213,13 @@ func (r *reader) note(path, hash, key string, keyed bool) {
 	r.o.mu.Lock()
 	defer r.o.mu.Unlock()
 	if r.ep.gen != r.o.ep.gen {
+		return
+	}
+	if base, ok := r.ep.touched[path]; ok {
+		if base.hash == "" && hash != "" && base.sameFile(d) {
+			base.hash = hash
+			r.ep.touched[path] = base
+		}
 		return
 	}
 	r.ep.touched[path] = d
@@ -288,10 +298,31 @@ func (d dep) sameFile(other dep) bool {
 }
 
 // current revalidates once the stale window has passed, turning the epoch over if anything moved.
-func (o *Outfitter) current() *epoch {
+func (o *Outfitter) current() *epoch { return o.revalidate(false) }
+
+func (o *Outfitter) currentFor(names ...string) *epoch {
+	ep := o.current()
+	o.mu.Lock()
+	unseen := false
+	if ep.index != nil {
+		for _, name := range names {
+			if e := ep.index[name]; (e == nil || len(e.Paths) == 0) && !ep.missed[name] {
+				ep.missed[name] = true
+				unseen = true
+			}
+		}
+	}
+	o.mu.Unlock()
+	if !unseen {
+		return ep
+	}
+	return o.revalidate(true)
+}
+
+func (o *Outfitter) revalidate(force bool) *epoch {
 	o.mu.Lock()
 	ep := o.ep
-	if o.staleWindow > 0 && time.Since(ep.checked) < o.staleWindow {
+	if !force && o.staleWindow > 0 && time.Since(ep.checked) < o.staleWindow {
 		o.mu.Unlock()
 		return ep
 	}
@@ -351,6 +382,7 @@ func (o *Outfitter) rollLocked() {
 		taints:  map[string]error{},
 		touched: map[string]dep{},
 		checked: time.Now(),
+		missed:  map[string]bool{},
 	}
 }
 

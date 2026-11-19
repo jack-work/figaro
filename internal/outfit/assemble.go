@@ -336,7 +336,7 @@ func TermNames(text string) ([]string, error) {
 func (o *Outfitter) ResolveAll(names []string) *Closure {
 	root := &Closure{Found: true}
 	memo := map[string]*Closure{}
-	ep := o.current()
+	ep := o.currentFor(names...)
 	for _, n := range names {
 		root.Layers = append(root.Layers, o.resolveNode(ep, n, false, nil, memo))
 	}

@@ -3,6 +3,7 @@ package outfit_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -255,4 +256,82 @@ func TestALockedOutfitsTransitiveLayersStayManaged(t *testing.T) {
 	patch, err = o.Load("seat")
 	require.NoError(t, err)
 	assert.Equal(t, `"managed-leaf"`, string(mustEntry(patch, "system.model")), "the closure is managed at every depth, and a fold cached for the overlay must not leak in")
+}
+
+func TestAnUnknownNameInsideTheStaleWindowDoesNotHideALinkSwap(t *testing.T) {
+	base := t.TempDir()
+	link := filepath.Join(base, "managed")
+	user := filepath.Join(base, "user")
+	require.NoError(t, os.MkdirAll(user, 0o755))
+	swapLink(t, link, storeGeneration(t, "gen-a", "seat\n"))
+
+	o := outfit.New(t.TempDir())
+	o.SetRoots(layeredRoots(link, user))
+	_, err := o.Load("extra")
+	var missing *outfit.MissingError
+	require.ErrorAs(t, err, &missing)
+
+	gen := storeGeneration(t, "gen-b", "seat\n")
+	writeRootFile(t, gen, "extra.toml", "[system]\nmodel = \"extra\"\n")
+	epoch := time.Unix(1, 0)
+	for _, f := range []string{"extra.toml", "."} {
+		require.NoError(t, os.Chtimes(filepath.Join(gen, f), epoch, epoch))
+	}
+	swapLink(t, link, gen)
+	_, err = o.Load("unknown")
+	require.ErrorAs(t, err, &missing)
+
+	time.Sleep(150 * time.Millisecond)
+	patch, err := o.Load("extra")
+	require.NoError(t, err, "a walk inside the stale window must not overwrite the baseline that sees the swap")
+	assert.Equal(t, `"extra"`, string(mustEntry(patch, "system.model")))
+}
+
+func TestASecondReadInsideTheStaleWindowKeepsTheEpochsBaseline(t *testing.T) {
+	dir := t.TempDir()
+	writeOutfit(t, dir, "one", "skills = { dirName = \"skills\" }\n")
+	writeOutfit(t, dir, "two", "skills = { dirName = \"skills\" }\n")
+	writeRootFile(t, dir, "skills/a.md", "a")
+	o := outfit.New(dir)
+
+	_, err := o.Load("one")
+	require.NoError(t, err)
+	writeRootFile(t, dir, "skills/b.md", "b")
+	_, err = o.Load("two")
+	require.NoError(t, err)
+
+	time.Sleep(150 * time.Millisecond)
+	patch, err := o.Load("one")
+	require.NoError(t, err)
+	hasB := false
+	for _, e := range patch.Entries() {
+		if strings.HasPrefix(e.Key, "skills.b") {
+			hasB = true
+		}
+	}
+	assert.True(t, hasB, "a re-read of a path must not replace the baseline that sees the change")
+}
+
+func TestAMissWhenNothingMovedDoesNotRollTheEpoch(t *testing.T) {
+	dir := t.TempDir()
+	writeOutfit(t, dir, "seat", "[system]\nmodel = \"seat\"\n")
+	epoch := time.Unix(1, 0)
+	for _, p := range []string{"outfits/seat.toml", "outfits", "."} {
+		require.NoError(t, os.Chtimes(filepath.Join(dir, p), epoch, epoch))
+	}
+	o := outfit.New(dir)
+	o.SetStaleWindow(time.Hour)
+	_, err := o.Load("seat")
+	require.NoError(t, err)
+	gen := o.Generation()
+
+	_, err = o.Load("absent")
+	var missing *outfit.MissingError
+	require.ErrorAs(t, err, &missing)
+	assert.Equal(t, gen, o.Generation(), "a miss with nothing moved keeps the epoch and its folds")
+
+	writeOutfit(t, dir, "late", "[system]\nmodel = \"late\"\n")
+	_, err = o.Load("late")
+	require.NoError(t, err, "a miss after the disk moved rolls the epoch and walks once more")
+	assert.Greater(t, o.Generation(), gen)
 }

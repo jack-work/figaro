@@ -51,6 +51,7 @@ func NewAt(configDir, snapDir string) *Outfitter {
 			taints:  map[string]error{},
 			touched: map[string]dep{},
 			checked: time.Now(),
+			missed:  map[string]bool{},
 		},
 	}
 }
@@ -147,7 +148,7 @@ func (o *Outfitter) load(name string, strict bool) (form.Patch, error) {
 	if err := ValidName(name); err != nil {
 		return form.Patch{}, err
 	}
-	ep := o.current()
+	ep := o.currentFor(name)
 	if keys, ok := o.getFold(ep.gen, name); ok {
 		return form.Build(form.Snapshot{}, keys, nil), nil
 	}
@@ -168,7 +169,7 @@ func (o *Outfitter) load(name string, strict bool) (form.Patch, error) {
 
 // Resolve reads only each file's layer list.
 func (o *Outfitter) Resolve(name string) *Closure {
-	return o.resolveIn(o.current(), name)
+	return o.resolveIn(o.currentFor(name), name)
 }
 
 func (o *Outfitter) resolveIn(ep *epoch, name string) *Closure {
@@ -368,7 +369,7 @@ func (o *Outfitter) resolveEntry(name string, managedOnly bool, r *reader) (stri
 	var idx config.OutfitIndex
 	var err error
 	if r != nil {
-		idx, err = r.outfitIndex(name)
+		idx, err = r.outfitIndex()
 	} else {
 		idx, err = walkOutfits(o.rootsNow(), nil)
 	}
