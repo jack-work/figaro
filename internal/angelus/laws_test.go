@@ -11,7 +11,9 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/arialog"
+	"github.com/jack-work/figaro/internal/provider"
 )
 
 const lawText = "Report to the role, never to a person."
@@ -364,5 +366,27 @@ func TestAnAncestorNarrowingItsHoldersReadLeavesTheRolesLawsInView(t *testing.T)
 	require.Equal(t, []string{form.LawRoot}, form.StudyKeys(snap, role), "the holder's study of its role: %s", studiesOn(t, r, holder))
 	if err := r.ariaCall(t, true, holder, rpc.MethodStudy, holder, rpc.StudyRequest{FormID: role, Keys: []string{"phase"}}); err == nil {
 		t.Error("the implicit read of the laws let the holder read phase")
+	}
+}
+
+// Defends the drop guard failing closed: a role it cannot read is not a role
+// without laws.
+func TestADropTheGuardCannotCheckIsRefused(t *testing.T) {
+	ff := angelus.NewFormFault(nil)
+	r := newRigProviding(t, defaultPolicy, "", func(string, provider.Knobs) (provider.Provider, error) {
+		return &mockProviderForIntegration{}, nil
+	}, angelus.FormsThrough(ff))
+	holder, err := r.create(asOwner(), "mock")
+	require.NoError(t, err)
+	made, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: heldPatch(t, map[string]any{"law.report": lawText})})
+	require.NoError(t, err)
+	role := made.(rpc.FormCreateResponse).FormID
+	if _, err := r.h[rpc.MethodCast](asOwner(), withAria(t, holder.FigaroID, rpc.CastRequest{FormID: role})); err != nil {
+		t.Fatal(err)
+	}
+	ff.Break(role)
+	_, err = r.h[rpc.MethodDrop](toolOf(holder.FigaroID), withAria(t, holder.FigaroID, rpc.StudyRequest{FormID: role}))
+	if err == nil || !strings.Contains(err.Error(), "check for laws") {
+		t.Fatalf("a drop the guard could not check went through: %v", err)
 	}
 }

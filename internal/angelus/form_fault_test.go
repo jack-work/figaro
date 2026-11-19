@@ -65,3 +65,12 @@ func ReadsFormsThrough(f *FormFault) func(*ServerConfig) {
 		cfg.Angelus.Backend = f
 	}
 }
+
+// FormsThrough puts f under the handlers, so every form the daemon reads
+// can be broken by id.
+func FormsThrough(f *FormFault) func(*ServerConfig) {
+	return func(cfg *ServerConfig) {
+		f.XwalBackend = cfg.Angelus.Backend.(*store.XwalBackend)
+		cfg.Angelus.Backend = f
+	}
+}

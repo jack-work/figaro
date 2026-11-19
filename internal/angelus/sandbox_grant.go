@@ -435,7 +435,7 @@ func (h *handlers) refuseHidingLaws(ctx context.Context, holder, role string, ke
 	}
 	snap, err := h.angelus.Backend.FormState(role)
 	if err != nil {
-		return nil
+		return fmt.Errorf("%s: cannot read it to check for laws %s must keep in view: %w", role, holder, err)
 	}
 	if target := snap.Lookup("target-aria"); target == nil || *target != holder {
 		return nil
