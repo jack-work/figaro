@@ -129,14 +129,13 @@ func (t *Trunks) Stumps() []StumpInfo {
 	}
 	defer endRead()
 	var out []StumpInfo
+	kids := t.idx.ChildIndex()
 	for key, n := range t.idx.All() {
 		if n.Kind != "loadout" {
 			continue
 		}
-		// Range the key: stumpName() returns "" for an empty Branch, which
-		// would then ask for the root's children.
 		si := StumpInfo{Name: key}
-		for _, ck := range t.idx.ChildrenOf(key) {
+		for _, ck := range kids[key] {
 			if c := t.node(ck); c != nil && c.Trunk != "" {
 				si.Children = append(si.Children, c.Trunk)
 			}
