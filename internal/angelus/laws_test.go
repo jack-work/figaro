@@ -321,3 +321,19 @@ func TestAHolderCannotDropOrNarrowAwayItsRolesLaws(t *testing.T) {
 		t.Fatalf("the owner's drop was refused: %v", err)
 	}
 }
+
+// Defends the owner's hand at a fork: the parent's laws go over a figaro's
+// dress, never over the owner's, whose outfit or birth patch writes a law as
+// its figaro new does.
+func TestTheOwnersForkWritesALawByOutfitOrPatch(t *testing.T) {
+	r := outfittedLineageRig(t)
+	spokeTwice(t, r.grantRig, r.parent)
+	for _, at := range []uint64{0, 1} {
+		dressed, err := r.call(asOwner(), rpc.MethodFork, rpc.ForkRequest{FigaroID: r.parent, AtTurn: at, Outfits: []string{"lawful"}})
+		require.NoError(t, err)
+		require.JSONEq(t, `{"report":"the outfit's word","extra":"from the outfit"}`, lawsOn(t, r.grantRig, dressed.(rpc.ForkResponse).Alternative), "the owner's fork at turn %d dressed in lawful", at)
+		patched, err := r.call(asOwner(), rpc.MethodFork, rpc.ForkRequest{FigaroID: r.parent, AtTurn: at, Patch: heldPatch(t, map[string]any{"law.report": "the owner's word"})})
+		require.NoError(t, err)
+		require.JSONEq(t, `{"report":"the owner's word"}`, lawsOn(t, r.grantRig, patched.(rpc.ForkResponse).Alternative), "the owner's fork at turn %d with a law in its patch", at)
+	}
+}

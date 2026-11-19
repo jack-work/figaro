@@ -410,7 +410,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if heir {
 		dress = withHolderTTL(dress, holder)
 	}
-	dress = form.UnderLawsOf(inherited, dress)
+	if !ownerMade {
+		dress = form.UnderLawsOf(inherited, dress)
+	}
 	// interior is read off the coordinate, not the LT: forking at turn 1 has
 	// LT 0, which is also the head-fork sentinel.
 	interior := req.AtTurn > 0 || req.AtLT > 0
