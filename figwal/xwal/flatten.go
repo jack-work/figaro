@@ -495,7 +495,7 @@ func (p *FlattenPlan) apply() (FlattenReport, error) {
 	if err != nil {
 		return rep, err
 	}
-	if m.Layout != layoutVersion {
+	if !currentLayout(m.Layout) {
 		// Every store this runs on predates the cursor stamp, whether or not it
 		// was ever nested: the stamp and this layout shipped together.
 		m.UnstampedRecords, m.Layout = true, layoutVersion

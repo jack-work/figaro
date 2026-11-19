@@ -151,7 +151,7 @@ func settleManifest(dir, root string, cfg Config) (manifest, error) {
 	// RebuildFrom reads one directory. Either the store is this build's
 	// layout or it is refused; Flatten is the way through.
 	switch {
-	case man.Layout > layoutVersion:
+	case man.Layout > layoutOpen:
 		return manifest{}, fmt.Errorf("%w: store %s is layout %d, this build reads %d",
 			ErrFutureLayout, dir, man.Layout, layoutVersion)
 	case man.Layout < layoutVersion:

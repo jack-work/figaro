@@ -767,7 +767,7 @@ func TestOpenRefusesAStoreFromANewerBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.Layout = layoutVersion + 1
+	m.Layout = layoutOpen + 1
 	if err := writeManifest(dir, m); err != nil {
 		t.Fatal(err)
 	}

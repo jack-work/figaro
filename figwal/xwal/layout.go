@@ -17,7 +17,7 @@ func ReadLayout(root string) (Layout, error) {
 	if err != nil {
 		return Layout{}, err
 	}
-	if m.Layout != layoutVersion {
+	if !currentLayout(m.Layout) {
 		return Layout{}, fmt.Errorf("xwal: %s has layout %d, want %d", root, m.Layout, layoutVersion)
 	}
 	l := Layout{Main: m.Main, Nodes: map[string]NodeInfo{}}

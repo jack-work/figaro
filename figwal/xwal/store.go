@@ -99,6 +99,11 @@ func OpenStore(root string, opts StoreOptions) (*Store, error) {
 		unlockRoot(lockFile)
 		return nil, err
 	}
+	if err := stampLayout(root, true); err != nil {
+		t.Close()
+		unlockRoot(lockFile)
+		return nil, err
+	}
 	if opts.SyncInterval <= 0 {
 		opts.SyncInterval = defaultFlushInterval
 	}
@@ -558,6 +563,11 @@ func (s *Store) close(clean bool) error {
 		s.syncDirty()
 		s.Trunks.seal()
 		s.closeErr = s.Trunks.Close()
+		if s.closeErr == nil && clean {
+			s.closeErr = stampLayout(s.Trunks.root, false)
+		} else {
+			releaseLayout(s.Trunks.root)
+		}
 		if s.closeErr == nil && clean {
 			s.closeErr = clearUnclean(s.Trunks.root)
 		}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/jack-work/figaro/figwal/disk"
 )
@@ -30,6 +31,53 @@ type manifest struct {
 
 // layoutVersion is the flat layout: every node at depth 1, lineage in .node.
 const layoutVersion = 4
+
+const layoutOpen = layoutVersion + 1
+
+func currentLayout(layout int) bool { return layout == layoutVersion || layout == layoutOpen }
+
+var openLayouts = struct {
+	sync.Mutex
+	roots map[string]int
+}{roots: map[string]int{}}
+
+func layoutIsOpen(dir string) bool {
+	openLayouts.Lock()
+	defer openLayouts.Unlock()
+	return openLayouts.roots[canonicalDir(dir)] > 0
+}
+
+func releaseLayout(dir string) {
+	key := canonicalDir(dir)
+	openLayouts.Lock()
+	defer openLayouts.Unlock()
+	if openLayouts.roots[key]--; openLayouts.roots[key] <= 0 {
+		delete(openLayouts.roots, key)
+	}
+}
+
+func stampLayout(dir string, open bool) error {
+	key := canonicalDir(dir)
+	openLayouts.Lock()
+	if open {
+		openLayouts.roots[key]++
+	} else if openLayouts.roots[key]--; openLayouts.roots[key] <= 0 {
+		delete(openLayouts.roots, key)
+	}
+	openLayouts.Unlock()
+	m, err := readManifestFile(dir)
+	if err != nil {
+		return err
+	}
+	want := layoutVersion
+	if layoutIsOpen(dir) {
+		want = layoutOpen
+	}
+	if m.Layout == want || !currentLayout(m.Layout) {
+		return nil
+	}
+	return writeManifest(dir, m)
+}
 
 type manifestChannel struct {
 	Name    string `json:"name"`
@@ -207,6 +255,12 @@ func validateChannelSpec(root string, cfg Config, man manifest, spec ChannelSpec
 }
 
 func writeManifest(dir string, m manifest) error {
+	if currentLayout(m.Layout) {
+		m.Layout = layoutVersion
+		if layoutIsOpen(dir) {
+			m.Layout = layoutOpen
+		}
+	}
 	body, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
