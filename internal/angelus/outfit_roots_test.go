@@ -190,3 +190,22 @@ func TestAnOverlayOfALockedOutfitsLayerIsIgnoredAndReported(t *testing.T) {
 		t.Fatalf("born system.model = %v", v)
 	}
 }
+
+func TestAnOutfitIndexErrorReachesTheCaller(t *testing.T) {
+	r, managed, user := layeredRig(t)
+	writeFile(t, filepath.Join(managed, "seat.toml"), "[system]\nprovider = \"mock\"\n")
+	sealed := filepath.Join(user, "sealed")
+	if err := os.MkdirAll(sealed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sealed, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(sealed, 0o755) })
+	if _, err := r.call(asOwner(), rpc.MethodOutfits, rpc.OutfitsRequest{}); err == nil {
+		t.Error("outfits answered over an index that does not build")
+	}
+	if _, err := r.call(asOwner(), rpc.MethodConfigure, rpc.ConfigureRequest{Refresh: true}); err == nil {
+		t.Error("a refresh answered over an index that does not build")
+	}
+}

@@ -53,6 +53,7 @@ type epoch struct {
 type node struct {
 	name   string
 	path   string
+	read   string
 	found  bool
 	hash   string
 	layers []string
@@ -430,16 +431,19 @@ func (o *Outfitter) nodeFor(ep *epoch, name string, managedOnly bool) (*node, er
 	if err != nil {
 		return nil, err
 	}
-	n.path, n.found, n.entry, n.view = path, true, entry, view
+	n.path, n.read, n.found, n.entry, n.view = path, path, true, entry, view
+	if len(view.Reads) == 1 {
+		n.read = view.Reads[0]
+	}
 
-	b, rerr := r.read(path)
+	b, rerr := r.read(n.read)
 	if rerr != nil {
 		return nil, fmt.Errorf("outfit: read %s: %w", path, rerr)
 	}
 	n.hash = func() string {
 		o.mu.Lock()
 		defer o.mu.Unlock()
-		return ep.touched[path].hash
+		return ep.touched[n.read].hash
 	}()
 
 	raw, perr := decodeTOML(b, path)

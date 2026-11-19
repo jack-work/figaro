@@ -309,7 +309,7 @@ func (o *Outfitter) foldIn(ep *epoch, name string, managedOnly bool, stack []str
 		}
 	}
 	r := &reader{o: o, ep: ep}
-	b, rerr := r.read(n.path)
+	b, rerr := r.read(n.read)
 	if rerr != nil {
 		return nil, fmt.Errorf("outfit: read %s: %w", n.path, rerr)
 	}

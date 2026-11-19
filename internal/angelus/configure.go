@@ -29,13 +29,15 @@ func (h *handlers) outfits(_ context.Context, params json.RawMessage) (interface
 	loaded, ofit := h.settings()
 
 	resp := rpc.OutfitsResponse{Default: loaded.Config.DefaultOutfit}
-	if idx, err := loaded.OutfitIndex(); err == nil {
-		resp.Names = idx.Names()
-		resp.Refused = outfitRefusalsWire(idx)
-		resp.Outfits = outfitListingsWire(idx, loaded.OutfitRoots().Layered())
-		for _, lo := range ofit.LockedLayerOverlays(idx.Locked()) {
-			resp.LockedLayerOverlays = append(resp.LockedLayerOverlays, rpc.OutfitLockedOverlay{Locked: lo.Locked, Layer: lo.Layer, Path: lo.Path})
-		}
+	idx, err := loaded.OutfitIndex()
+	if err != nil {
+		return nil, fmt.Errorf("outfits: %w", err)
+	}
+	resp.Names = idx.Names()
+	resp.Refused = outfitRefusalsWire(idx)
+	resp.Outfits = outfitListingsWire(idx, loaded.OutfitRoots().Layered())
+	for _, lo := range ofit.LockedLayerOverlays(idx.Locked()) {
+		resp.LockedLayerOverlays = append(resp.LockedLayerOverlays, rpc.OutfitLockedOverlay{Locked: lo.Locked, Layer: lo.Layer, Path: lo.Path})
 	}
 	spec := req.Spec
 	if strings.TrimSpace(spec) == "" {
@@ -133,12 +135,14 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 	h.mintPoolNodes(fresh)
 	h.configMu.Unlock()
 	ofit.Warm(fresh.Config.DefaultOutfit)
-	if idx, err := fresh.OutfitIndex(); err == nil {
-		resp.Refused = outfitRefusalsWire(idx)
-	}
 	if err := h.reloadPolicy(); err != nil {
 		return nil, fmt.Errorf("configure: the new config and its box doors are in force, but the policy did not reload: %w", err)
 	}
+	idx, err := fresh.OutfitIndex()
+	if err != nil {
+		return nil, fmt.Errorf("configure: the new config is in force, but its outfits do not index: %w", err)
+	}
+	resp.Refused = outfitRefusalsWire(idx)
 	return resp, nil
 }
 

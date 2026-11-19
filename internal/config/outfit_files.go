@@ -44,6 +44,7 @@ type OutfitSource struct {
 
 type OutfitEntry struct {
 	Paths    []string
+	Reads    []string
 	Root     OutfitRoot
 	Shadowed []OutfitSource
 	LockedBy string
@@ -54,6 +55,7 @@ type OutfitEntry struct {
 
 type OutfitView struct {
 	Paths    []string
+	Reads    []string
 	Root     OutfitRoot
 	Shadowed []OutfitSource
 }
@@ -65,7 +67,7 @@ func (e *OutfitEntry) View(managedOnly bool) OutfitView {
 	if managedOnly {
 		return e.ManagedOnly
 	}
-	return OutfitView{Paths: e.Paths, Root: e.Root, Shadowed: e.Shadowed}
+	return OutfitView{Paths: e.Paths, Reads: e.Reads, Root: e.Root, Shadowed: e.Shadowed}
 }
 
 func (e *OutfitEntry) OverlaidBy() []OutfitSource {
@@ -143,10 +145,11 @@ func OutfitFiles(roots OutfitRoots, visit func(path string)) (OutfitIndex, error
 		if err != nil {
 			return nil, err
 		}
-		for name, paths := range files {
+		for name, found := range files {
+			paths, reads := found.paths, found.reads
 			e := idx[name]
 			if e == nil {
-				idx[name] = &OutfitEntry{Paths: paths, Root: root}
+				idx[name] = &OutfitEntry{Paths: paths, Reads: reads, Root: root}
 				continue
 			}
 			if e.LockedBy != "" {
@@ -158,7 +161,7 @@ func OutfitFiles(roots OutfitRoots, visit func(path string)) (OutfitIndex, error
 			for _, p := range e.Paths {
 				e.Shadowed = append(e.Shadowed, OutfitSource{Path: p, Root: e.Root.Path, Managed: e.Root.Managed})
 			}
-			e.Paths, e.Root = paths, root
+			e.Paths, e.Reads, e.Root = paths, reads, root
 		}
 		if !root.Managed {
 			continue
@@ -179,7 +182,7 @@ func OutfitFiles(roots OutfitRoots, visit func(path string)) (OutfitIndex, error
 			}
 		}
 		for _, e := range idx {
-			e.ManagedOnly = OutfitView{Paths: e.Paths, Root: e.Root, Shadowed: e.Shadowed}
+			e.ManagedOnly = OutfitView{Paths: e.Paths, Reads: e.Reads, Root: e.Root, Shadowed: e.Shadowed}
 		}
 	}
 	if roots.Legacy == "" {
@@ -194,13 +197,19 @@ func OutfitFiles(roots OutfitRoots, visit func(path string)) (OutfitIndex, error
 		if !ok || e.IsDir() || strings.HasPrefix(e.Name(), ".") || idx[stem] != nil {
 			continue
 		}
-		idx[stem] = &OutfitEntry{Paths: []string{filepath.Join(roots.Legacy, e.Name())}, Root: OutfitRoot{Path: roots.Legacy}}
+		path := filepath.Join(roots.Legacy, e.Name())
+		idx[stem] = &OutfitEntry{Paths: []string{path}, Reads: []string{path}, Root: OutfitRoot{Path: roots.Legacy}}
 	}
 	return idx, nil
 }
 
-func walkOutfitRoot(root string, visit func(path string)) (map[string][]string, error) {
-	files := map[string][]string{}
+type rootFiles struct {
+	paths []string
+	reads []string
+}
+
+func walkOutfitRoot(root string, visit func(path string)) (map[string]*rootFiles, error) {
+	files := map[string]*rootFiles{}
 	resolved, err := filepath.EvalSymlinks(root)
 	if errors.Is(err, fs.ErrNotExist) {
 		if visit != nil {
@@ -233,7 +242,13 @@ func walkOutfitRoot(root string, visit func(path string)) (map[string][]string, 
 			return nil
 		}
 		if stem, ok := strings.CutSuffix(d.Name(), ".toml"); ok {
-			files[stem] = append(files[stem], named)
+			f := files[stem]
+			if f == nil {
+				f = &rootFiles{}
+				files[stem] = f
+			}
+			f.paths = append(f.paths, named)
+			f.reads = append(f.reads, path)
 		}
 		return nil
 	})
