@@ -223,6 +223,7 @@ type Backend interface {
 	OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo, error)
 
 	Node(id string) (NodeView, bool)
+	NodeLink(id string) (NodeLink, bool)
 	Nodes() []NodeView
 	NodeID() string
 	MatchID(prefix string, limit int) []string

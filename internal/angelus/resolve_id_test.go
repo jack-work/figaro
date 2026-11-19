@@ -81,6 +81,11 @@ type fixedIDs struct {
 	ids []string
 }
 
+func (f fixedIDs) NodeLink(id string) (store.NodeLink, bool) {
+	n, ok := f.Node(id)
+	return store.NodeLink{ID: n.ID}, ok
+}
+
 func (f fixedIDs) Node(id string) (store.NodeView, bool) {
 	for _, x := range f.ids {
 		if x == id {

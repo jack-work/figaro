@@ -414,7 +414,7 @@ func (h *handlers) knownID(id string) bool {
 	if h.angelus.Backend == nil {
 		return false
 	}
-	_, ok := h.angelus.Backend.Node(id)
+	_, ok := h.angelus.Backend.NodeLink(id)
 	return ok
 }
 

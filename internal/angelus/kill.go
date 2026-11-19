@@ -73,7 +73,7 @@ func (h *handlers) markReaped(id string, recursive bool, until time.Time, expect
 	if !ok {
 		return reapStep{}, nil
 	}
-	if n, exists := h.angelus.Backend.Node(id); !exists || n.Kind != store.KindConversation {
+	if n, exists := h.angelus.Backend.NodeLink(id); !exists || n.Kind != store.KindConversation {
 		return reapStep{}, nil
 	}
 	root := id

@@ -58,7 +58,7 @@ func (h *handlers) requireAria(id string) error {
 		return nil
 	}
 	// Meta is not an existence check (nil,nil for unknown), and Open would decode the IR.
-	if _, ok := h.angelus.Backend.Node(id); !ok {
+	if _, ok := h.angelus.Backend.NodeLink(id); !ok {
 		return fmt.Errorf("aria %s not found", id)
 	}
 	return nil

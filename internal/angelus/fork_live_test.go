@@ -107,6 +107,11 @@ func (b *liveForkBackend) Node(id string) (store.NodeView, bool) {
 	return node, ok
 }
 
+func (b *liveForkBackend) NodeLink(id string) (store.NodeLink, bool) {
+	node, ok := b.nodes[id]
+	return store.NodeLink{ID: node.ID, Parent: node.Parent, Kind: node.Kind}, ok
+}
+
 func (b *liveForkBackend) Meta(string) (*store.AriaMeta, error) {
 	return b.parentMeta, nil
 }

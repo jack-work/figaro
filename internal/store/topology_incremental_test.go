@@ -161,6 +161,14 @@ func runIncrementalTopology(t *testing.T, seed int64, steps int) {
 		if rng.Intn(3) == 0 && op != "read" {
 			continue
 		}
+		opScans := trunkScanCount.Load() - before
+		full := fullSnapshot(b.store)
+		for _, n := range full.nodes {
+			if l, ok := b.store.NodeLink(n.ID); !ok || l != (NodeLink{ID: n.ID, Parent: n.Parent, Kind: n.Kind}) {
+				t.Fatalf("seed %d step %d after %s: NodeLink(%s) = %+v %v, the snapshot says %+v", seed, i, op, n.ID, l, ok, n)
+			}
+		}
+		before = trunkScanCount.Load() - opScans
 		inc := b.store.topologySnapshot()
 		if trunkScanCount.Load()-before == 1 {
 			incremental++

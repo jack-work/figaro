@@ -32,7 +32,7 @@ func (h *handlers) formApply(ctx context.Context, params json.RawMessage) (any, 
 	if declared, _ := ctx.Value(formApplyIDKey{}).(string); declared != req.FigaroID {
 		return nil, fmt.Errorf("form apply: supply the exact existing role ID, not an alias or prefix")
 	}
-	if node, ok := h.angelus.Backend.Node(req.FigaroID); !ok || node.Kind != kindFormNode {
+	if node, ok := h.angelus.Backend.NodeLink(req.FigaroID); !ok || node.Kind != kindFormNode {
 		return nil, fmt.Errorf("form apply: %s is not an existing unbound role", req.FigaroID)
 	}
 	if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {

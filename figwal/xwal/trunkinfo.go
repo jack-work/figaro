@@ -224,6 +224,19 @@ func (t *Trunks) Nodes() map[string]NodeInfo {
 	return out
 }
 
+func (t *Trunks) LightInfo(trunk TrunkID) (TrunkInfo, bool) {
+	endRead, err := t.beginTrackedRead()
+	if err != nil {
+		return TrunkInfo{}, false
+	}
+	defer endRead()
+	key, ok := t.idx.Head(trunk)
+	if !ok {
+		return TrunkInfo{}, false
+	}
+	return t.lightInfo(trunk, key), true
+}
+
 // Kind reads the founding node's kind from the index; no log opened.
 func (t *Trunks) Kind(trunk TrunkID) (string, bool) {
 	endRead, err := t.beginTrackedRead()

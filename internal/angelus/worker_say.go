@@ -142,7 +142,7 @@ func (h *handlers) speaksFor(box, figaroID string) error {
 	if figaroID == "" {
 		return errors.New("the call names no figaro")
 	}
-	n, ok := h.angelus.Backend.Node(figaroID)
+	n, ok := h.angelus.Backend.NodeLink(figaroID)
 	if !ok || n.Kind != store.KindConversation {
 		return fmt.Errorf("%s is no figaro here", figaroID)
 	}

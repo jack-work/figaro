@@ -580,7 +580,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		if err := h.allowed(ctx, rpc.VerbRead, authz.Aria(parent)); err != nil {
 			return nil, fmt.Errorf("form.bind: a fork of %s reads it: %w", parent, err)
 		}
-		n, ok := h.angelus.Backend.Node(parent)
+		n, ok := h.angelus.Backend.NodeLink(parent)
 		isStump := ok && n.Kind == "outfit"
 		if !ok || (n.Kind != store.KindForm && !isStump) {
 			return nil, fmt.Errorf("form.bind: %s is not an unbound form (bind forks forms; a figaro forks with `fig fork`)", req.Parent)
