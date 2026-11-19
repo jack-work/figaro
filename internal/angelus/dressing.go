@@ -147,6 +147,9 @@ func remarshalWithSender(orig json.RawMessage, req any) (json.RawMessage, error)
 var outfitGrantRoots = []string{form.ScopesKey, form.GrantsKey, "system.fanout", form.ChildPolicyKey}
 
 func (h *handlers) refuseOutfitGrants(ctx context.Context, outfits []string) error {
+	if err := h.refuseUngrantedOutfits(ctx, outfits); err != nil {
+		return err
+	}
 	if err := h.refuseOutfitRuntimeKeys(outfits); err != nil {
 		return err
 	}

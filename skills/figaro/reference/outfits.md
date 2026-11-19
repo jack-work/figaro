@@ -8,6 +8,10 @@ anything under `internal/outfit`.
 > the unbound FORM, and `reference/forms.md` is the current model. What remains
 > true here is the outfit grammar, the resolver, and how dressing travels.
 
+A figaro names only `default` and the outfits its `system.grants.outfits`
+grants; Gluck at his terminal names any. See
+[permissions.md](permissions.md), "Outfit grants".
+
 ## The three nouns
 
 | Noun | What it is |
