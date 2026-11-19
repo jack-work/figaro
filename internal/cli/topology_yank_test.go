@@ -46,8 +46,10 @@ func TestTopologyYankCopiesTheHandleAndMetaYTheID(t *testing.T) {
 	term.send([]byte("\x1by"))
 	waitClipboard(t, term, "ccc")
 
+	in.mu.Lock()
 	v.Activate("far")
 	v.Items(100)
+	in.mu.Unlock()
 	f.waitOpened(t, 2)
 	selectRow(t, in, "far"+mountSep+"arias.other")
 	term.send([]byte{'y'})
