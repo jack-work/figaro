@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 type kingRig struct {
@@ -155,5 +156,35 @@ func TestAHolderGainsNoReachOverItsOwnRoleFromAncestry(t *testing.T) {
 	role := r.role(t, r.child)
 	if err := r.castAs(t, r.child, r.grandchild, role); err == nil || !strings.Contains(err.Error(), "do not reach") {
 		t.Fatalf("the holder passed its role down without reach over the role form: %v", err)
+	}
+}
+
+func (r kingRig) retired(t *testing.T, id string) bool {
+	t.Helper()
+	snap, err := r.backend.FormState(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store.RetiredIn(snap)
+}
+
+func TestAKingsToolRetiresItsGrandchild(t *testing.T) {
+	r := newKingRig(t)
+	if err := r.setFrom(toolOf(r.king), t, r.grandchild, map[string]any{store.SystemRetiredKey: store.RetiredManual}); err != nil {
+		t.Fatalf("the king's tool could not retire its grandchild: %v", err)
+	}
+	if !r.retired(t, r.grandchild) {
+		t.Fatal("the retire did not record")
+	}
+}
+
+func TestAToolOutsideTheLineageCannotRetireIt(t *testing.T) {
+	r := newKingRig(t)
+	err := r.setFrom(toolOf(r.outsider), t, r.grandchild, map[string]any{store.SystemRetiredKey: store.RetiredManual})
+	if err == nil || !strings.Contains(err.Error(), "do not reach") {
+		t.Fatalf("an outsider's tool retired the king's grandchild: %v", err)
+	}
+	if r.retired(t, r.grandchild) {
+		t.Fatal("a refused retire recorded")
 	}
 }
