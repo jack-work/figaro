@@ -554,7 +554,9 @@ a box may dress in. A box naming any other outfit is refused at create, fork,
 set, prompt, cast and form.create/bind. Whatever mints a figaro from the box
 names a listed outfit, or is refused with the list: create and form.bind
 always, and a fork unless it is a head fork of a conversation, which carries
-its parent's dress. No implicit default. The owner is never limited by it.
+its parent's dress. No implicit default. A box with no `outfits` list
+dresses in `default` only, at every one of those calls and whether or not
+the call claims a figaro. The owner is never limited by it.
 
 **A door needs both lists.** A box with a `door` and no `outfits` or no
 `providers` list gets no door: the daemon logs "box door refused" naming the

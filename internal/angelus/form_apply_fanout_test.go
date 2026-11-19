@@ -111,7 +111,8 @@ func TestOnlyTheOwnerItselfGetsTheOperatorPaths(t *testing.T) {
 		"a principal granted everything on the trusted local door": {local(as("user", "setter")), ""},
 		"a box": {authz.WithPrincipal(context.Background(), rpc.Principal{Kind: "sandbox", ID: "judge@" + authz.BoxScope}), ""},
 	} {
-		r, id := managedRoleUnder(t, doorPolicy+setterPolicy)
+		r := newRigConfigured(t, doorPolicy+setterPolicy, "[sandbox.boxes.judge]\nexec = \"/judge.sock\"\n"+judgeListsAnyOutfit)
+		id := managedRoleBy(t, r, asOwner())
 		fanoutOutfits(t, r)
 		if err := applyFanoutAs(t, r, c.ctx, id, "fanout", managed, c.claim); err == nil || !strings.Contains(err.Error(), "reserved") {
 			t.Errorf("%s: want the operator paths refused as reserved, got %v", name, err)
