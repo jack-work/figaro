@@ -33,6 +33,7 @@ type AriaReader struct {
 // readAria caches metrics from its last refresh; the log growing is what triggers both.
 type readAria struct {
 	srv     *aria.Server
+	mu      sync.Mutex
 	metrics *aria.Metrics
 }
 
@@ -84,28 +85,28 @@ func (r *AriaReader) Context(id string) ([]message.Message, *aria.Metrics, error
 // Page serves sealed history; at.Turn == 0 with before means the tail, and
 // floor applies to a backward read only.
 func (r *AriaReader) Page(id string, at, floor aria.Anchor, budget int, before bool) (aria.Page, error) {
-	ra, err := r.serverFor(id)
+	srv, metrics, err := r.serverFor(id)
 	if err != nil {
 		return aria.Page{}, err
 	}
 	var page aria.Page
 	if before {
-		page = ra.srv.ReadBefore(at, floor, budget)
+		page = srv.ReadBefore(at, floor, budget)
 	} else {
-		page = ra.srv.Read(at, budget)
+		page = srv.Read(at, budget)
 	}
-	page.Metrics = ra.metrics
+	page.Metrics = metrics
 	return page, nil
 }
 
 // serverFor refreshes when the log has grown past the server's tail: a
 // dormant aria still takes hub writes. The tail probe is one ReadPage, not a walk.
-func (r *AriaReader) serverFor(id string) (*readAria, error) {
+func (r *AriaReader) serverFor(id string) (*aria.Server, *aria.Metrics, error) {
 	if r == nil || r.backend == nil {
-		return nil, errors.New("no backend")
+		return nil, nil, errors.New("no backend")
 	}
 	if id == "" {
-		return nil, errors.New("empty aria id")
+		return nil, nil, errors.New("empty aria id")
 	}
 	r.mu.Lock()
 	ra := r.servers[id]
@@ -117,20 +118,22 @@ func (r *AriaReader) serverFor(id string) (*readAria, error) {
 	}
 	r.mu.Unlock()
 
+	ra.mu.Lock()
+	defer ra.mu.Unlock()
 	log, err := r.backend.OpenFigIR(id)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", id, err)
+		return nil, nil, fmt.Errorf("open %s: %w", id, err)
 	}
 	tailLT := uint64(0)
 	if last, _ := log.ReadPage(0, ^uint64(0), 1); len(last) > 0 {
 		tailLT = last[0].LT
 	}
 	if b := ra.srv.TailBracket(); b != 0 && tailLT <= b {
-		return ra, nil
+		return ra.srv, ra.metrics, nil
 	}
 	msgs, entries, err := r.messages(id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	turns := []aria.Turn(nil)
 	if r.proj != nil {
@@ -141,7 +144,7 @@ func (r *AriaReader) serverFor(id string) (*readAria, error) {
 	}
 	ra.srv.Restore(turns)
 	ra.metrics = r.metrics(id, msgs)
-	return ra, nil
+	return ra.srv, ra.metrics, nil
 }
 
 func (r *AriaReader) FormSince(id string, since uint64) (store.FormSince, error) {
