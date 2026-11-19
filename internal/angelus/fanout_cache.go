@@ -840,3 +840,10 @@ func (a *Angelus) fanoutUnmirrored() []rpc.FanoutUnmirrored {
 	}
 	return out
 }
+
+func (c *fanoutCache) quotaOf(id string) (int, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	q, ok := c.eff[id]
+	return q, ok
+}

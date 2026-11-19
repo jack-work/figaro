@@ -492,6 +492,9 @@ func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before for
 		return err
 	}
 	c := h.callerKeysOf(ctx)
+	if err := h.refuseChildPolicyBeyondWriter(ctx, c, line, before, after); err != nil {
+		return err
+	}
 	if c.owns && !c.boxed {
 		if err := h.refuseFanoutByLabelAlone(ctx, line, before, after); err != nil {
 			return err

@@ -1,6 +1,8 @@
 package angelus_test
 
 import (
+	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"strings"
 	"testing"
 
@@ -186,5 +188,87 @@ func TestAToolOutsideTheLineageCannotRetireIt(t *testing.T) {
 	}
 	if r.retired(t, r.grandchild) {
 		t.Fatal("a refused retire recorded")
+	}
+}
+
+func TestAKingsChildPolicyOnADescendantGivesOnlyWhatItHolds(t *testing.T) {
+	r := newKingRig(t)
+	for policy, ok := range map[string]bool{
+		`{"system.scopes":["read:*","send:parent"]}`: true,
+		`{"system.scopes":["*:*"]}`:                  false,
+		`{"system.scopes":["kill:*"]}`:               false,
+		`{"system.scopes":["set:*"]}`:                false,
+	} {
+		var v map[string]any
+		if err := json.Unmarshal([]byte(policy), &v); err != nil {
+			t.Fatal(err)
+		}
+		err := r.setFrom(toolOf(r.king), t, r.grandchild, map[string]any{form.ChildPolicyKey: v})
+		if (err == nil) != ok {
+			t.Errorf("king writes child_policy %s on its grandchild: %v, want ok=%v", policy, err, ok)
+		}
+	}
+}
+
+func TestAKingsChildPolicyOnADescendantGrantsNoMoreChildrenThanItHas(t *testing.T) {
+	r := newKingRig(t)
+	if err := r.setFrom(localOwner(), t, r.king, map[string]any{form.FanoutMaxChildrenKey: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.setFrom(toolOf(r.king), t, r.grandchild, map[string]any{form.ChildPolicyKey: map[string]any{form.FanoutMaxChildrenKey: 2}}); err != nil {
+		t.Fatalf("the king could not give what it holds: %v", err)
+	}
+	if err := r.setFrom(toolOf(r.king), t, r.grandchild, map[string]any{form.ChildPolicyKey: map[string]any{form.FanoutMaxChildrenKey: 50}}); err == nil {
+		t.Fatal("the king's child policy gave 50 children while it holds 2")
+	}
+}
+
+func TestAKingsQuotaOnADescendantComesFromItsOwnBudget(t *testing.T) {
+	r := newKingRig(t)
+	if err := r.setFrom(localOwner(), t, r.king, map[string]any{form.FanoutQuotaKey: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.setFrom(toolOf(r.king), t, r.grandchild, map[string]any{form.FanoutQuotaKey: 1}); err != nil {
+		t.Fatalf("the king could not grant from its budget: %v", err)
+	}
+	if err := r.setFrom(toolOf(r.king), t, r.grandchild, map[string]any{form.FanoutQuotaKey: 100}); err == nil {
+		t.Fatal("the king granted a quota of 100 from a budget of 4")
+	}
+}
+
+func TestAKingsChildPolicyCannotCarryAQuotaBeyondItsBudget(t *testing.T) {
+	r := newKingRig(t)
+	if err := r.setFrom(localOwner(), t, r.king, map[string]any{form.FanoutQuotaKey: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.setFrom(toolOf(r.king), t, r.grandchild, map[string]any{form.ChildPolicyKey: map[string]any{form.FanoutQuotaKey: 100}}); err == nil {
+		t.Fatal("the king's child policy promised a quota of 100 from a budget of 4")
+	}
+}
+
+func TestALabelledKingIsHeldToItsOwnFanoutInAChildPolicy(t *testing.T) {
+	r := newKingRig(t)
+	if err := r.setFrom(localOwner(), t, r.king, map[string]any{form.FanoutMaxChildrenKey: 2, form.FanoutQuotaKey: 4}); err != nil {
+		t.Fatal(err)
+	}
+	labelled := func(kv map[string]any) error {
+		_, err := r.h[rpc.MethodSet](localOwner(), claimed(t, r.king, withAria(t, r.grandchild, rpc.SetRequest{Patch: *heldPatch(t, kv)})))
+		return err
+	}
+	if err := labelled(map[string]any{form.ChildPolicyKey: map[string]any{form.FanoutMaxChildrenKey: 50}}); err == nil {
+		t.Error("a labelled king's child policy gave 50 children while it holds 2")
+	}
+	if err := labelled(map[string]any{form.ChildPolicyKey: map[string]any{form.FanoutQuotaKey: 100}}); err == nil {
+		t.Error("a labelled king's child policy promised a quota of 100 from 4")
+	}
+}
+
+func TestTheOwnerWritesAnyChildPolicy(t *testing.T) {
+	r := newKingRig(t)
+	if err := r.setFrom(localOwner(), t, r.king, map[string]any{form.FanoutMaxChildrenKey: 2, form.FanoutQuotaKey: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.setFrom(localOwner(), t, r.grandchild, map[string]any{form.ChildPolicyKey: map[string]any{form.ScopesKey: []string{"*:*"}, form.FanoutQuotaKey: 100}}); err != nil {
+		t.Fatalf("the owner was refused a child policy: %v", err)
 	}
 }
