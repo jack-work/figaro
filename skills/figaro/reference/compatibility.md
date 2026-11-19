@@ -98,9 +98,10 @@ capabilities.
   against an older daemon, and reads either field.
 - **`system.grants` is an object of owner grants**, no longer the old name
   of `system.scopes`. A CLI from before the change drops `system.grants`
-  whenever it sets `system.scopes`: run by the owner it removes the
-  figaro's `system.grants.outfits` too, and run by a figaro it is refused
-  as an owner-held removal. Set scopes with a current CLI.
+  whenever it sets `system.scopes`. The daemon drops that removal from a
+  `figaro.set` that also writes `system.scopes` while the board's
+  `system.grants` is an object, so the outfit grants survive and a
+  figaro's scopes write is not refused as an owner-held removal.
 - **Folding rules.** The CLI folds form deltas with `api/form`. A change to
   how a patch folds (as in 0.52.1 and 0.52.2) bumps `FormDeltaSchema`, so
   an older mirror stops and refetches instead of folding wrongly.
