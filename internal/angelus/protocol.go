@@ -503,7 +503,7 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, req.Patch); err != nil {
+	if err := h.refuseCallerKeys(ctx, rootBirth(), form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
 	}
 	if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {

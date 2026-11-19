@@ -511,7 +511,7 @@ func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before for
 		if retentionGranted(ctx, before, p) {
 			continue
 		}
-		if h.toolShortensLifetime(ctx, c, line, before, after, p) {
+		if h.toolShortensLifetime(ctx, c, line, before, after, p) || h.creatorSetsLifetime(ctx, c, line, p) {
 			continue
 		}
 		if err := c.refusal(p); err != nil {
@@ -882,6 +882,21 @@ func (h *handlers) toolShortensLifetime(ctx context.Context, c callerKeys, line 
 		return true
 	}
 	return line.of != "" && (line.of == c.tool || slices.Contains(h.ancestorsOf(line), c.tool) || h.lifetimeGranted(ctx, c.tool, line.of, path))
+}
+
+func (h *handlers) creatorSetsLifetime(ctx context.Context, c callerKeys, line lineage, path string) bool {
+	if c.boxed || c.tool != "" || (path != store.SystemTTLKey && path != store.SystemKeepaliveKey) {
+		return false
+	}
+	if line.birth {
+		return true
+	}
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil || line.of == "" {
+		return false
+	}
+	owner, ok := StoreFacts(h.angelus.Backend).Owner(line.of)
+	return ok && owner == sub.Principal
 }
 
 func (h *handlers) lifetimeGranted(ctx context.Context, figaro, target, key string) bool {
