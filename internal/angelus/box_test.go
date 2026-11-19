@@ -191,8 +191,10 @@ func boxDoorRig(t *testing.T, command string) doorRig {
 
 func boxDoorRigWith(t *testing.T, policy, command string, opts ...func(*angelus.ServerConfig)) doorRig {
 	t.Helper()
-	return boxDoorRigConfigured(t, policy, command, "", opts...)
+	return boxDoorRigConfigured(t, policy, command, judgeListsAnyOutfit, opts...)
 }
+
+const judgeListsAnyOutfit = "outfits = [\"*\"]\n"
 
 func boxDoorRigConfigured(t *testing.T, policy, command, boxExtra string, opts ...func(*angelus.ServerConfig)) doorRig {
 	t.Helper()
