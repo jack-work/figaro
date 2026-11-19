@@ -98,7 +98,10 @@ func TestShapesAgreeWithTheReadersThatJudgeAValue(t *testing.T) {
 		StudyIncantationKey: func(s Snapshot) bool { return !warnsWhileReading(func() { ReadStudyIncantation(s) }) },
 		ForkIncantationKey:  func(s Snapshot) bool { return !warnsWhileReading(func() { ReadForkIncantation(s) }) },
 		ScopesKey:           func(s Snapshot) bool { return CheckScopes(s) == nil },
-		RetiredGrantsKey:    func(s Snapshot) bool { return CheckScopes(s) == nil },
+		GrantsKey: func(s Snapshot) bool {
+			_, _, err := OwnScopes(s)
+			return err == nil
+		},
 		FanoutMaxChildrenKey: func(s Snapshot) bool {
 			_, _, err := FanoutMaxChildren(s)
 			return err == nil

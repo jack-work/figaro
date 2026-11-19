@@ -491,14 +491,14 @@ keys (its mantra, its notes), and nothing else, until someone holding a grant
 on it widens it. Its lineage, owner and runtime keys stay out of its reach. A fork the owner makes keeps its
 parent's scopes as before.
 
-`system.grants` is the key's old name. 0.64 reads it when `system.scopes` is
-absent, logging one warning per aria per daemon run; an aria carrying both
-holds nothing; no caller may write `system.grants`, though removing it is
-allowed to those who may write `system.scopes`. `figaro set system.scopes`
-drops `system.grants` in the same write, an import renames it, and a figaro
-leaving its ancestors writes the new key. `figaro grants` and `figaro.grants`
-are the old names of the command and method; each level carries its set under
-both `scopes` and `grants`.
+`system.grants` was the key's old name; it is now an owner-held
+object of other grants (see `system.grants.outfits` in
+[permissions.md](permissions.md)). A board still holding a list there has
+its scopes fail closed: every call naming the figaro, or a figaro below it,
+is refused until the owner unsets `system.grants` and sets `system.scopes`
+to the list. `figaro grants` and `figaro.grants` are the old names of the
+command and method; each level carries its set under both `scopes` and
+`grants`.
 
 A provider must read the effective set from `figaro.scopes`, not the raw key:
 the key holds only that aria's own narrowing. A `*` verb means figaro's verbs

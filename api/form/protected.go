@@ -10,7 +10,7 @@ import (
 const (
 	ScopesKey = "system.scopes"
 
-	RetiredGrantsKey = "system.grants"
+	GrantsKey = "system.grants"
 
 	FanoutMaxChildrenKey = "system.fanout.max_children"
 
@@ -23,27 +23,21 @@ func ProtectedKeys() []string { return RootsOf(WriterLineage) }
 
 func Protected(path string) (string, bool) { return rootOf(WriterLineage, path) }
 
-func OwnScopes(s Snapshot) (raw json.RawMessage, key string, ok bool, err error) {
-	scopes, hasScopes := s.Get(ScopesKey)
-	grants, hasGrants := s.Get(RetiredGrantsKey)
-	switch {
-	case hasScopes && hasGrants:
-		return nil, "", false, fmt.Errorf("%s and %s are both set: %s is the old name for %s; unset it", ScopesKey, RetiredGrantsKey, RetiredGrantsKey, ScopesKey)
-	case hasGrants:
-		return grants, RetiredGrantsKey, true, nil
-	case hasScopes:
-		return scopes, ScopesKey, true, nil
+func OwnScopes(s Snapshot) (raw json.RawMessage, ok bool, err error) {
+	if grants, has := s.Get(GrantsKey); has && ShapeObject().Check(grants) != nil {
+		return nil, false, fmt.Errorf("%s holds %s: a list there was the old name of %s and is no longer read; the owner unsets %s and sets %s to it", GrantsKey, clip(grants), ScopesKey, GrantsKey, ScopesKey)
 	}
-	return nil, "", false, nil
+	raw, ok = s.Get(ScopesKey)
+	return raw, ok, nil
 }
 
 func CheckScopes(s Snapshot) error {
-	raw, key, ok, err := OwnScopes(s)
+	raw, ok, err := OwnScopes(s)
 	if err != nil || !ok {
 		return err
 	}
 	if err := checkScopeList(raw); err != nil {
-		return fmt.Errorf("%s %w", key, err)
+		return fmt.Errorf("%s %w", ScopesKey, err)
 	}
 	return nil
 }
@@ -107,13 +101,4 @@ func RefuseRetiredMintWrite(before, after Snapshot) error {
 		return nil
 	}
 	return fmt.Errorf("%s is retired while [authz] enforce_key_grants is on: the license to mint is the grant mint:* in %s, which a figaro gives only if it holds it", FanoutMintKey, ScopesKey)
-}
-
-func RefuseRetiredGrantsWrite(before, after Snapshot) error {
-	was, _ := before.Get(RetiredGrantsKey)
-	now, ok := after.Get(RetiredGrantsKey)
-	if !ok || string(was) == string(now) {
-		return nil
-	}
-	return fmt.Errorf("%s is now %s: set that instead (figaro set %s drops %s in the same write)", RetiredGrantsKey, ScopesKey, ScopesKey, RetiredGrantsKey)
 }
