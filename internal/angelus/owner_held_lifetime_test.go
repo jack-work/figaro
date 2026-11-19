@@ -34,7 +34,8 @@ principals = ["user:guest"]
 // and have its history deleted, mark an empty one for reaping, or bring an
 // owner's ttl forward. All four are owner-held: the guest is refused by set, a prompt's patch, a fork and a
 // birth, while the same guest may still set an open key, so the refusal is
-// the key's and not a missing grant.
+// the key's and not a missing grant. A fork or an aria the guest births is
+// its own, so it may give that one a ttl or keepalive (#155).
 func TestAnUnboxedGuestCannotGiveTheOwnersAriaALifetime(t *testing.T) {
 	r := newRigWith(t, lifetimeLentPolicy)
 	guest := as("user", "guest")
@@ -69,12 +70,25 @@ func TestAnUnboxedGuestCannotGiveTheOwnersAriaALifetime(t *testing.T) {
 		owner("set", err)
 		_, err = r.h[rpc.MethodQua](guest, withAria(t, id, rpc.QuaRequest{Text: "hi", Form: &rpc.FormInput{Patch: p}}))
 		owner("prompt patch", err)
+		mine := key == store.SystemTTLKey || key == store.SystemKeepaliveKey
 		raw, _ := json.Marshal(rpc.ForkRequest{FigaroID: id, Patch: p})
 		_, err = r.h[rpc.MethodFork](guest, raw)
-		owner("fork patch", err)
+		if mine {
+			if err != nil {
+				t.Errorf("fork patch %s on the guest's own fork: %v", key, err)
+			}
+		} else {
+			owner("fork patch", err)
+		}
 		raw, _ = json.Marshal(rpc.CreateRequest{Outfits: []string{"mock"}, Cwd: r.cwd, Patch: p})
 		_, err = r.h[rpc.MethodCreate](guest, raw)
-		owner("birth patch", err)
+		if mine {
+			if err != nil {
+				t.Errorf("birth patch %s on the guest's own aria: %v", key, err)
+			}
+		} else {
+			owner("birth patch", err)
+		}
 		if v, ok := keyOn(t, r, id, key); ok {
 			t.Errorf("%s = %s after the guest's attempts", key, v)
 		}
