@@ -272,3 +272,50 @@ func TestTheOwnerWritesAnyChildPolicy(t *testing.T) {
 		t.Fatalf("the owner was refused a child policy: %v", err)
 	}
 }
+
+func (r kingRig) forkSeatDressed(t *testing.T, figaro, holder, role string, outfits ...string) (string, error) {
+	t.Helper()
+	out, err := r.h[rpc.MethodFork](localOwner(), claimed(t, figaro, mustJSON(t, rpc.ForkRequest{FigaroID: holder, Seat: role, Abdicates: true, Outfits: outfits})))
+	if err != nil {
+		return "", err
+	}
+	return out.(rpc.ForkResponse).Alternative, nil
+}
+
+func TestAKingsSucceedDressesTheSuccessorInAGrantedOutfit(t *testing.T) {
+	r := newKingRig(t)
+	if err := r.setFrom(localOwner(), t, r.king, map[string]any{form.OutfitGrantsKey: []string{"mock", "heir"}}); err != nil {
+		t.Fatal(err)
+	}
+	role := r.role(t, r.grandchild)
+	if err := r.setFrom(localOwner(), t, role, map[string]any{"system.model": "role-model"}); err != nil {
+		t.Fatal(err)
+	}
+	successor, err := r.forkSeatDressed(t, r.king, r.grandchild, role, "heir")
+	if err != nil {
+		t.Fatalf("the king could not dress its grandchild's successor in a granted outfit: %v", err)
+	}
+	if v, _ := keyOn(t, r.grantRig, successor, "system.model"); string(v) != `"heir-model"` {
+		t.Fatalf("successor system.model = %s, want the outfit's heir-model", v)
+	}
+	if v, _ := keyOn(t, r.grantRig, successor, "system.provider"); string(v) != `"mock"` {
+		t.Fatalf("successor system.provider = %s, want the outfit's mock", v)
+	}
+}
+
+func TestAKingsSucceedRefusesAnOutfitItWasNotGranted(t *testing.T) {
+	r := newKingRig(t)
+	if err := r.setFrom(localOwner(), t, r.king, map[string]any{form.OutfitGrantsKey: []string{"mock", "heir"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.setFrom(localOwner(), t, r.grandchild, map[string]any{form.OutfitGrantsKey: []string{"mock", "heir", "stranger"}}); err != nil {
+		t.Fatal(err)
+	}
+	role := r.role(t, r.grandchild)
+	if _, err := r.forkSeatDressed(t, r.king, r.grandchild, role, "stranger"); err == nil || !strings.Contains(err.Error(), "stranger") {
+		t.Fatalf("the king dressed a successor in an outfit off its grants: %v", err)
+	}
+	if got := r.holder(t, role); got != r.grandchild {
+		t.Fatalf("role holder = %q after a refused succeed, want %q", got, r.grandchild)
+	}
+}

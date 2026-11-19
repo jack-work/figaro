@@ -79,6 +79,8 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 	}
 	for name, body := range map[string]string{
 		"mock":             "[system]\nprovider = \"mock\"\nmodel = \"m\"\n",
+		"heir":             "[system]\nprovider = \"mock\"\nmodel = \"heir-model\"\n",
+		"stranger":         "[system]\nprovider = \"mock\"\nmodel = \"stranger-model\"\n",
 		"judged":           "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"judge\"\n",
 		"judged-chat":      "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"judge\"\nttl = \"24h\"\nkeepalive = \"24h\"\n",
 		"judged-elsewhere": "[system]\nprovider = \"anthropic\"\nmodel = \"m\"\nsandbox = \"judge\"\n",
