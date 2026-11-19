@@ -42,11 +42,12 @@ type fanoutCache struct {
 	owners  map[string]bool
 	pending map[string]int
 	marks   map[string]fanoutHold
+	writing map[string]chan struct{}
 }
 
 func newFanoutCache() *fanoutCache {
 	return &fanoutCache{parent: map[string]string{}, live: map[string]bool{}, kids: map[string]int{}, held: map[string]int{},
-		own: map[string]int{}, roles: map[string]fanoutRole{}, eff: map[string]int{}, used: map[string]int{}, owners: map[string]bool{}, pending: map[string]int{}, marks: map[string]fanoutHold{}}
+		own: map[string]int{}, roles: map[string]fanoutRole{}, eff: map[string]int{}, used: map[string]int{}, owners: map[string]bool{}, pending: map[string]int{}, marks: map[string]fanoutHold{}, writing: map[string]chan struct{}{}}
 }
 
 func (c *fanoutCache) reset(nodes []fanoutNode, roles map[string]fanoutRole) {
@@ -470,6 +471,12 @@ func (c *fanoutCache) chargeChange(id string, quota int, capped bool) (from stri
 func (c *fanoutCache) takeCharge(id string, quota int, capped bool, judge func(error) error) (func(), error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	for c.writing[id] != nil {
+		inFlight := c.writing[id]
+		c.mu.Unlock()
+		<-inFlight
+		c.mu.Lock()
+	}
 	from, d, _ := c.chargeChangeLocked(id, quota, capped)
 	if err := c.fitsLocked(from, d); err != nil {
 		if err = judge(err); err != nil {
@@ -477,12 +484,16 @@ func (c *fanoutCache) takeCharge(id string, quota int, capped bool, judge func(e
 		}
 	}
 	at, charge := c.reserveLocked(from, d)
+	landed := make(chan struct{})
+	c.writing[id] = landed
 	var once sync.Once
 	return func() {
 		once.Do(func() {
 			c.mu.Lock()
 			defer c.mu.Unlock()
 			c.settleLocked(at, charge)
+			delete(c.writing, id)
+			close(landed)
 		})
 	}, nil
 }
