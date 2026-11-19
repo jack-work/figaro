@@ -154,6 +154,22 @@ func (t *Trunks) InfoLight(id string) (TrunkInfo, bool) {
 	return ti, true
 }
 
+func (t *Trunks) KindOf(id string) (string, bool) {
+	endRead, err := t.beginTrackedRead()
+	if err != nil {
+		return "", false
+	}
+	defer endRead()
+	key, ok := t.idx.Head(id)
+	if !ok {
+		return "", false
+	}
+	if n := t.node(key); n != nil {
+		return n.Kind, true
+	}
+	return "", true
+}
+
 // ListLight is List without Tip, which needs the head's log opened; it opens
 // no logs, so it is O(trunks) with no per-trunk disk scan.
 func (t *Trunks) ListLight() []TrunkInfo {

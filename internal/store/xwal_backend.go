@@ -853,6 +853,8 @@ func (b *XwalBackend) Node(id string) (NodeView, bool) {
 	return n, ok
 }
 
+func (b *XwalBackend) NodeKind(id string) (string, bool) { return b.store.NodeKind(id) }
+
 func (b *XwalBackend) Nodes() []NodeView { return b.labelAll(b.unburied(b.store.Nodes())) }
 func (b *XwalBackend) NodeID() string    { return b.store.NodeID() }
 func (b *XwalBackend) MatchID(prefix string, limit int) []string {

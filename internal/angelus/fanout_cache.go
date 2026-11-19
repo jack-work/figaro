@@ -619,8 +619,8 @@ func (a *Angelus) fanoutNodeOf(id, parent string) fanoutNode {
 }
 
 func (a *Angelus) chargesQuota(id string) bool {
-	n, ok := a.Backend.Node(id)
-	return ok && n.Kind == store.KindConversation
+	kind, ok := a.Backend.NodeKind(id)
+	return ok && kind == store.KindConversation
 }
 
 func (a *Angelus) fanoutLimitsChanged(c *fanoutCache, id string) {

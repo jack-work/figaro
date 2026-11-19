@@ -987,6 +987,14 @@ func (s *XwalStore) Node(id string) (NodeView, bool) {
 	return node, ok
 }
 
+func (s *XwalStore) NodeKind(id string) (string, bool) {
+	kind, ok := s.trunks.KindOf(id)
+	if ok && kind == "" {
+		kind = string(kindConversation)
+	}
+	return kind, ok
+}
+
 // removeLocked is the unlink; stump collection is deferred because it depends
 // on where the survivors end up.
 func (s *XwalStore) removeLocked(id string, recursive bool) error {
