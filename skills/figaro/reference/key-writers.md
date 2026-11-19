@@ -67,4 +67,5 @@ Written by the daemon alone. An unprivileged patch that names one, to set or to 
 
 Managed apply refuses every `system.*` path, except these, which the owner at the terminal may name (and everything under them). A figaro caller may not; the writer rules above still judge the patch.
 
+- `system.grants.outfits`
 - `system.fanout`

@@ -123,3 +123,24 @@ func TestOperatorPrefixesOpenOnlyThemselvesEvenWhereHeld(t *testing.T) {
 		t.Fatal("a caller without the operator prefixes managed system.fanout")
 	}
 }
+
+func TestTheOperatorManagesARolesOutfitGrantsAndNothingBesideThem(t *testing.T) {
+	current := snapshot(t, `{"system":{"model":"keep"}}`)
+	desired := snapshot(t, `{"system":{"model":"wrong","grants":{"outfits":["hk","model-*"],"other":["x"]}}}`)
+	patch, err := Plan(current, desired, []string{form.OutfitGrantsKey}, form.ProtectedKeys(), OperatorPrefixes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := snapshot(t, `{"system":{"model":"keep","grants":{"outfits":["hk","model-*"]}}}`)
+	if got := current.Apply(patch); !got.Diff(want).IsIdentity() {
+		t.Fatalf("wrong operator result: %s", got.Root().Raw())
+	}
+	for _, path := range []string{form.GrantsKey, form.GrantsKey + ".other"} {
+		if _, err := Plan(current, desired, []string{path}, form.ProtectedKeys(), OperatorPrefixes); err == nil {
+			t.Fatalf("operator managed %q", path)
+		}
+	}
+	if _, err := Plan(current, desired, []string{form.OutfitGrantsKey}, form.ProtectedKeys(), nil); err == nil {
+		t.Fatal("a caller without the operator prefixes managed system.grants.outfits")
+	}
+}

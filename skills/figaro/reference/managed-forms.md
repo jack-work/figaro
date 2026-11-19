@@ -29,8 +29,9 @@ inference configuration and security/credential paths cannot be managed by
 this operation, nor can any path that covers or enters a key the daemon holds
 for a box (`succession-policy`, `worker.pool`, `target-aria` and the rest of
 that list), a protected key, or the key the role's `succession-policy.handoff-key`
-names. The one exception is `system.fanout` and what is under it: the owner
-itself may manage it on a role, from an unboxed caller that names no figaro.
+names. The exceptions are `system.fanout` and what is under it, and
+`system.grants.outfits`: the owner itself may manage them on a role, from an
+unboxed caller that names no figaro.
 Any other caller, including another principal on the local door, a box, or
 a call carrying a figaro claim (held or not), is refused: the path is reserved. Ordinary
 caller read/set authorization and outfit restrictions still apply;
