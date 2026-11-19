@@ -217,7 +217,7 @@ func outfitClosureNode(l *rpc.OutfitLayer) *figtree.Node {
 	case l.Cycle:
 		found, where = "no", "cycle: already a layer above this one"
 	case l.Found:
-		found, where = "yes", outfitProvenance(l.Origin, l.Path, l.Shadowed, l.Refused)
+		found, where = "yes", outfitProvenance(l.Origin, l.Path, l.Shadowed, l.Refused, l.Overlaid)
 	}
 	n := &figtree.Node{
 		Marker: outfitClosureMarker(l),
@@ -230,7 +230,7 @@ func outfitClosureNode(l *rpc.OutfitLayer) *figtree.Node {
 	return n
 }
 
-func outfitProvenance(origin, path string, shadowed, refused []rpc.OutfitSource) string {
+func outfitProvenance(origin, path string, shadowed, refused, overlaid []rpc.OutfitSource) string {
 	if origin == "" {
 		return path
 	}
@@ -240,6 +240,9 @@ func outfitProvenance(origin, path string, shadowed, refused []rpc.OutfitSource)
 	}
 	for _, r := range refused {
 		parts = append(parts, "refused "+r.Origin+" "+r.Path+" (locked)")
+	}
+	for _, o := range overlaid {
+		parts = append(parts, "ignores "+o.Origin+" "+o.Path+" (layer of a locked outfit)")
 	}
 	return strings.Join(parts, "; ")
 }
@@ -314,6 +317,9 @@ func runDoctorOutfits(loaded *config.Loaded) error {
 	for _, line := range lines {
 		fmt.Fprintln(stdout, line)
 	}
+	for _, lo := range resp.LockedLayerOverlays {
+		fmt.Fprintf(stdout, "ignored: %s overlays %s, a layer of locked %s; the managed one stays in force there\n", lo.Path, lo.Layer, lo.Locked)
+	}
 	if len(lines) > 0 {
 		return fmt.Errorf("%s refused by a lock; rename or delete it", plural(len(lines), "outfit file"))
 	}
@@ -343,7 +349,7 @@ func runOutfitList(loaded *config.Loaded) {
 		}
 		where := ""
 		if l, ok := listings[n]; ok && l.Origin != "" {
-			where = "  " + outfitProvenance(l.Origin, l.Path, l.Shadowed, nil)
+			where = "  " + outfitProvenance(l.Origin, l.Path, l.Shadowed, nil, nil)
 		}
 		fmt.Fprintf(stdout, "%s%s%s\n", n, marker, where)
 	}

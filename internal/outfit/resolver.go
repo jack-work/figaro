@@ -56,6 +56,11 @@ type node struct {
 	hash   string
 	layers []string
 	entry  config.OutfitEntry
+	view   config.OutfitView
+}
+
+func (n *node) closesOverManaged(managedOnly bool) bool {
+	return managedOnly || n.entry.LockedBy != ""
 }
 
 type foldEntry struct {
@@ -372,9 +377,10 @@ func (o *Outfitter) Reload() {
 	o.rollLocked()
 }
 
-func (o *Outfitter) nodeFor(ep *epoch, name string) (*node, error) {
+func (o *Outfitter) nodeFor(ep *epoch, name string, managedOnly bool) (*node, error) {
+	key := scopedKey(name, managedOnly)
 	o.mu.Lock()
-	if n, ok := ep.nodes[name]; ok {
+	if n, ok := ep.nodes[key]; ok {
 		o.mu.Unlock()
 		return n, nil
 	}
@@ -382,17 +388,17 @@ func (o *Outfitter) nodeFor(ep *epoch, name string) (*node, error) {
 
 	n := &node{name: name}
 	r := &reader{o: o, ep: ep}
-	path, entry, err := o.resolveEntry(name, r)
+	path, entry, view, err := o.resolveEntry(name, managedOnly, r)
 	if errors.Is(err, os.ErrNotExist) {
 		o.mu.Lock()
-		ep.nodes[name] = n
+		ep.nodes[key] = n
 		o.mu.Unlock()
 		return n, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	n.path, n.found, n.entry = path, true, entry
+	n.path, n.found, n.entry, n.view = path, true, entry, view
 
 	b, rerr := r.read(path)
 	if rerr != nil {
@@ -415,7 +421,7 @@ func (o *Outfitter) nodeFor(ep *epoch, name string) (*node, error) {
 	n.layers = names
 
 	o.mu.Lock()
-	ep.nodes[name] = n
+	ep.nodes[key] = n
 	o.mu.Unlock()
 	return n, nil
 }

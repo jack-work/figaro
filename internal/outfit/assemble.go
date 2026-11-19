@@ -338,7 +338,7 @@ func (o *Outfitter) ResolveAll(names []string) *Closure {
 	memo := map[string]*Closure{}
 	ep := o.current()
 	for _, n := range names {
-		root.Layers = append(root.Layers, o.resolveNode(ep, n, nil, memo))
+		root.Layers = append(root.Layers, o.resolveNode(ep, n, false, nil, memo))
 	}
 	return root
 }

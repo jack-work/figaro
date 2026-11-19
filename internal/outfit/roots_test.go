@@ -213,3 +213,46 @@ func TestANameARebuildAddsBehindTheLinkIsSeen(t *testing.T) {
 	require.NoError(t, err, "the link itself is a dependency, not only the directory it pointed at")
 	assert.Equal(t, `"extra"`, string(mustEntry(patch, "system.model")))
 }
+
+func TestALockedOutfitFoldsItsLayersFromManagedRootsOnly(t *testing.T) {
+	o, managed, user := layeredOutfitter(t)
+	writeRootFile(t, managed, "seat.toml", "layers = [\"helper\"]\n[system]\nprovider = \"mock\"\n")
+	writeRootFile(t, managed, "helper.toml", "[system]\nmodel = \"managed-helper\"\n")
+	writeRootFile(t, managed, ".locked", "seat\n")
+	writeRootFile(t, managed, "free.toml", "layers = [\"helper\"]\n")
+	overlay := writeRootFile(t, user, "helper.toml", "[system]\nmodel = \"user-helper\"\n[system.grants]\noutfits = [\"*\"]\n")
+
+	patch, err := o.Load("seat")
+	require.NoError(t, err)
+	assert.Equal(t, `"managed-helper"`, string(mustEntry(patch, "system.model")), "a locked outfit's layer must come from the managed roots")
+	_, granted := patch.Entry("system.grants.outfits")
+	assert.False(t, granted, "an overlay of a locked outfit's layer must not grant outfits")
+
+	patch, err = o.Load("free")
+	require.NoError(t, err)
+	assert.Equal(t, `"user-helper"`, string(mustEntry(patch, "system.model")), "an unlocked outfit still takes the overlay")
+
+	seat := o.Resolve("seat")
+	require.Len(t, seat.Layers, 1)
+	assert.Equal(t, filepath.Join(managed, "helper.toml"), seat.Layers[0].Path)
+	assert.Equal(t, []config.OutfitSource{{Path: overlay, Root: user}}, seat.Layers[0].Overlaid)
+	assert.Equal(t, []outfit.LockedOverlay{{Locked: "seat", Layer: "helper", OutfitSource: config.OutfitSource{Path: overlay, Root: user}}},
+		o.LockedLayerOverlays([]string{"seat"}))
+}
+
+func TestALockedOutfitsTransitiveLayersStayManaged(t *testing.T) {
+	o, managed, user := layeredOutfitter(t)
+	writeRootFile(t, managed, "seat.toml", "layers = [\"mid\"]\n")
+	writeRootFile(t, managed, "mid.toml", "layers = [\"leaf\"]\n")
+	writeRootFile(t, managed, "leaf.toml", "[system]\nmodel = \"managed-leaf\"\n")
+	writeRootFile(t, managed, ".locked", "seat\n")
+	writeRootFile(t, user, "leaf.toml", "[system]\nmodel = \"user-leaf\"\n")
+	writeRootFile(t, user, "mine.toml", "layers = [\"leaf\"]\n")
+
+	patch, err := o.Load("mine")
+	require.NoError(t, err)
+	assert.Equal(t, `"user-leaf"`, string(mustEntry(patch, "system.model")))
+	patch, err = o.Load("seat")
+	require.NoError(t, err)
+	assert.Equal(t, `"managed-leaf"`, string(mustEntry(patch, "system.model")), "the closure is managed at every depth, and a fold cached for the overlay must not leak in")
+}

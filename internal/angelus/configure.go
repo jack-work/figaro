@@ -33,6 +33,9 @@ func (h *handlers) outfits(_ context.Context, params json.RawMessage) (interface
 		resp.Names = idx.Names()
 		resp.Refused = outfitRefusalsWire(idx)
 		resp.Outfits = outfitListingsWire(idx, loaded.OutfitRoots().Layered())
+		for _, lo := range ofit.LockedLayerOverlays(idx.Locked()) {
+			resp.LockedLayerOverlays = append(resp.LockedLayerOverlays, rpc.OutfitLockedOverlay{Locked: lo.Locked, Layer: lo.Layer, Path: lo.Path})
+		}
 	}
 	spec := req.Spec
 	if strings.TrimSpace(spec) == "" {

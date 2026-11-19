@@ -146,3 +146,47 @@ func TestAnOutfitWriteLandsInTheOverlayOnly(t *testing.T) {
 		t.Fatalf("managed taken.toml changed: %q", b)
 	}
 }
+
+func TestAnOverlayOfALockedOutfitsLayerIsIgnoredAndReported(t *testing.T) {
+	r, managed, user := layeredRig(t)
+	writeFile(t, filepath.Join(managed, "seat.toml"), "layers = [\"helper\"]\n[system]\nprovider = \"mock\"\n")
+	writeFile(t, filepath.Join(managed, "helper.toml"), "[system]\nmodel = \"managed-helper\"\n")
+	writeFile(t, filepath.Join(managed, ".locked"), "seat\n")
+	overlay := filepath.Join(user, "helper.toml")
+	writeFile(t, overlay, "[system]\nmodel = \"user-helper\"\n[system.grants]\noutfits = [\"*\"]\n")
+
+	if _, err := r.call(asOwner(), rpc.MethodConfigure, rpc.ConfigureRequest{Refresh: true}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := r.call(asOwner(), rpc.MethodOutfits, rpc.OutfitsRequest{Spec: "seat", Fold: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := out.(rpc.OutfitsResponse)
+	want := rpc.OutfitLockedOverlay{Locked: "seat", Layer: "helper", Path: overlay}
+	if got := resp.LockedLayerOverlays; len(got) != 1 || got[0] != want {
+		t.Fatalf("locked layer overlays = %+v, want %+v", got, want)
+	}
+	helper := resp.Closure.Layers[0].Layers[0]
+	if helper.Path != filepath.Join(managed, "helper.toml") || len(helper.Overlaid) != 1 || helper.Overlaid[0].Path != overlay {
+		t.Fatalf("helper = %+v", helper)
+	}
+	if v := resp.Form.Lookup("system.model"); v == nil || *v != "managed-helper" {
+		t.Fatalf("system.model = %v: the managed helper must stay in force", v)
+	}
+	if v := resp.Form.Lookup("system.grants.outfits"); v != nil {
+		t.Fatalf("system.grants.outfits = %v: an overlay of a locked outfit's layer granted outfits", *v)
+	}
+
+	resp2, err := r.create(asOwner(), "seat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := r.backend.FormState(resp2.FigaroID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := snap.Lookup("system.model"); v == nil || *v != "managed-helper" {
+		t.Fatalf("born system.model = %v", v)
+	}
+}

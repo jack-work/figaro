@@ -18,6 +18,7 @@ type OutfitLayer struct {
 	Origin   string         `json:"origin,omitempty"`
 	Shadowed []OutfitSource `json:"shadowed,omitempty"`
 	Refused  []OutfitSource `json:"refused,omitempty"`
+	Overlaid []OutfitSource `json:"overlaid,omitempty"`
 }
 
 type OutfitSource struct {
@@ -52,6 +53,14 @@ type OutfitsResponse struct {
 	Form    *form.Snapshot  `json:"form,omitempty"`
 	Refused []OutfitRefusal `json:"refused,omitempty"`
 	Outfits []OutfitListing `json:"outfits,omitempty"`
+
+	LockedLayerOverlays []OutfitLockedOverlay `json:"locked_layer_overlays,omitempty"`
+}
+
+type OutfitLockedOverlay struct {
+	Locked string `json:"locked"`
+	Layer  string `json:"layer"`
+	Path   string `json:"path"`
 }
 
 type OutfitRefusal struct {

@@ -134,3 +134,22 @@ func TestRenderOutfitClosureTagsEachLayerWithItsRoot(t *testing.T) {
 		t.Fatalf("closure tree:\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
 }
+
+func TestRenderOutfitClosureNamesAnOverlayALockedOutfitIgnores(t *testing.T) {
+	restore := term.SetColorMode(term.ColorNever)
+	defer restore()
+
+	closure := &rpc.OutfitLayer{Name: "seat", Path: "/etc/o/seat.toml", Found: true, Origin: "managed", Layers: []*rpc.OutfitLayer{
+		{Name: "helper", Path: "/etc/o/helper.toml", Found: true, Origin: "managed", Overlaid: []rpc.OutfitSource{{Path: "/u/helper.toml", Origin: "user"}}},
+	}}
+	got := renderOutfitClosure(closure)
+	want := strings.Join([]string{
+		"OUTFIT      LAYERS FROM",
+		"✓ seat      managed /etc/o/seat.toml",
+		"└─✓ helper  managed /etc/o/helper.toml; ignores user /u/helper.toml (layer of a locked outfit)",
+		"",
+	}, "\n")
+	if got != want {
+		t.Fatalf("closure tree:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}

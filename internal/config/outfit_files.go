@@ -47,6 +47,35 @@ type OutfitEntry struct {
 	Shadowed []OutfitSource
 	LockedBy string
 	Refused  []OutfitSource
+
+	ManagedOnly OutfitView
+}
+
+type OutfitView struct {
+	Paths    []string
+	Root     OutfitRoot
+	Shadowed []OutfitSource
+}
+
+func (e *OutfitEntry) View(managedOnly bool) OutfitView {
+	if e == nil {
+		return OutfitView{}
+	}
+	if managedOnly {
+		return e.ManagedOnly
+	}
+	return OutfitView{Paths: e.Paths, Root: e.Root, Shadowed: e.Shadowed}
+}
+
+func (e *OutfitEntry) OverlaidBy() []OutfitSource {
+	if e == nil || e.Root.Managed {
+		return nil
+	}
+	var out []OutfitSource
+	for _, p := range e.Paths {
+		out = append(out, OutfitSource{Path: p, Root: e.Root.Path})
+	}
+	return out
 }
 
 type OutfitRefusal struct {
@@ -79,6 +108,17 @@ func (idx OutfitIndex) Refusals() []OutfitRefusal {
 		}
 	}
 	return out
+}
+
+func (idx OutfitIndex) Locked() []string {
+	var names []string
+	for name, e := range idx {
+		if e.LockedBy != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (idx OutfitIndex) lockedNames() []string {
@@ -133,6 +173,9 @@ func OutfitFiles(roots OutfitRoots, visit func(path string)) (OutfitIndex, error
 			if e.LockedBy == "" {
 				e.LockedBy = lock
 			}
+		}
+		for _, e := range idx {
+			e.ManagedOnly = OutfitView{Paths: e.Paths, Root: e.Root, Shadowed: e.Shadowed}
 		}
 	}
 	if roots.Legacy == "" {

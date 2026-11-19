@@ -65,6 +65,8 @@ type Closure struct {
 	Origin   string
 	Shadowed []config.OutfitSource
 	Refused  []config.OutfitSource
+	Overlaid []config.OutfitSource
+	LockedBy string
 	// Err is a fault in the file itself; it rides on the node so the walk continues.
 	Err    error
 	Layers []*Closure
@@ -79,6 +81,29 @@ func (c *Closure) Walk(fn func(*Closure)) {
 	for _, l := range c.Layers {
 		l.Walk(fn)
 	}
+}
+
+type LockedOverlay struct {
+	Locked string
+	Layer  string
+	config.OutfitSource
+}
+
+func (o *Outfitter) LockedLayerOverlays(locked []string) []LockedOverlay {
+	var out []LockedOverlay
+	seen := map[LockedOverlay]bool{}
+	for _, name := range locked {
+		o.Resolve(name).Walk(func(c *Closure) {
+			for _, src := range c.Overlaid {
+				lo := LockedOverlay{Locked: name, Layer: c.Name, OutfitSource: src}
+				if !seen[lo] {
+					seen[lo] = true
+					out = append(out, lo)
+				}
+			}
+		})
+	}
+	return out
 }
 
 type MissingError struct {
@@ -134,7 +159,7 @@ func (o *Outfitter) load(name string, strict bool) (form.Patch, error) {
 		}
 		return form.Patch{}, err
 	}
-	keys, err := o.foldIn(ep, name, nil)
+	keys, err := o.foldIn(ep, name, false, nil)
 	if err != nil {
 		return form.Patch{}, err
 	}
@@ -147,39 +172,50 @@ func (o *Outfitter) Resolve(name string) *Closure {
 }
 
 func (o *Outfitter) resolveIn(ep *epoch, name string) *Closure {
-	return o.resolveNode(ep, name, nil, map[string]*Closure{})
+	return o.resolveNode(ep, name, false, nil, map[string]*Closure{})
 }
 
-func (o *Outfitter) resolveNode(ep *epoch, name string, stack []string, memo map[string]*Closure) *Closure {
+func scopedKey(name string, managedOnly bool) string {
+	if managedOnly {
+		return "\x00" + name
+	}
+	return name
+}
+
+func (o *Outfitter) resolveNode(ep *epoch, name string, managedOnly bool, stack []string, memo map[string]*Closure) *Closure {
 	for _, s := range stack {
 		if s == name {
 			return &Closure{Name: name, Found: true, Cycle: true}
 		}
 	}
-	if c, ok := memo[name]; ok {
+	key := scopedKey(name, managedOnly)
+	if c, ok := memo[key]; ok {
 		return c
 	}
-	n, err := o.nodeFor(ep, name)
+	n, err := o.nodeFor(ep, name, managedOnly)
 	if err != nil {
 		c := &Closure{Name: name, Found: true, Err: err}
-		memo[name] = c
+		memo[key] = c
 		return c
 	}
 	if !n.found {
 		c := &Closure{Name: name}
 		// The only place a vanished file's cached fold is learned to be collectible.
-		o.Forget(name)
-		memo[name] = c
+		o.Forget(key)
+		memo[key] = c
 		return c
 	}
-	c := &Closure{Name: name, Path: n.path, Found: true, Shadowed: n.entry.Shadowed, Refused: n.entry.Refused}
+	c := &Closure{Name: name, Path: n.path, Found: true, Shadowed: n.view.Shadowed, Refused: n.entry.Refused, LockedBy: n.entry.LockedBy}
+	if managedOnly {
+		c.Overlaid = n.entry.OverlaidBy()
+	}
 	if o.rootsNow().Layered() {
-		c.Origin = OutfitOrigin(n.entry.Root.Managed)
+		c.Origin = OutfitOrigin(n.view.Root.Managed)
 	}
 	for _, l := range n.layers {
-		c.Layers = append(c.Layers, o.resolveNode(ep, l, append(stack, name), memo))
+		c.Layers = append(c.Layers, o.resolveNode(ep, l, n.closesOverManaged(managedOnly), append(stack, name), memo))
 	}
-	memo[name] = c
+	memo[key] = c
 	return c
 }
 
@@ -239,21 +275,22 @@ func closureError(root *Closure) error {
 }
 
 // foldIn flattens layers in order, then the outfit's own keys: the nearest declaration wins.
-func (o *Outfitter) foldIn(ep *epoch, name string, stack []string) (map[string]json.RawMessage, error) {
-	if err := o.taintOf(ep, name); err != nil {
+func (o *Outfitter) foldIn(ep *epoch, name string, managedOnly bool, stack []string) (map[string]json.RawMessage, error) {
+	key := scopedKey(name, managedOnly)
+	if err := o.taintOf(ep, key); err != nil {
 		return nil, err
 	}
 	for i, s := range stack {
 		if s == name {
 			err := &CycleError{At: name}
-			o.taint(ep, append(stack[i:], name), err)
+			o.taint(ep, scopedKeys(append(stack[i:], name), managedOnly), err)
 			return nil, err
 		}
 	}
-	if keys, ok := o.getFold(ep.gen, name); ok {
+	if keys, ok := o.getFold(ep.gen, key); ok {
 		return keys, nil
 	}
-	n, err := o.nodeFor(ep, name)
+	n, err := o.nodeFor(ep, name, managedOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +299,7 @@ func (o *Outfitter) foldIn(ep *epoch, name string, stack []string) (map[string]j
 	}
 	flat := map[string]json.RawMessage{}
 	for _, layer := range n.layers {
-		sub, serr := o.foldIn(ep, layer, append(stack, name))
+		sub, serr := o.foldIn(ep, layer, n.closesOverManaged(managedOnly), append(stack, name))
 		if serr != nil {
 			return nil, serr
 		}
@@ -285,8 +322,16 @@ func (o *Outfitter) foldIn(ep *epoch, name string, stack []string) (map[string]j
 		return nil, err
 	}
 	overlay(flat, own, roots)
-	o.putFold(ep.gen, name, flat)
+	o.putFold(ep.gen, key, flat)
 	return flat, nil
+}
+
+func scopedKeys(names []string, managedOnly bool) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = scopedKey(n, managedOnly)
+	}
+	return out
 }
 
 func (o *Outfitter) taintOf(ep *epoch, name string) error {
@@ -319,7 +364,7 @@ func OutfitOrigin(managed bool) string {
 	return "user"
 }
 
-func (o *Outfitter) resolveEntry(name string, r *reader) (string, config.OutfitEntry, error) {
+func (o *Outfitter) resolveEntry(name string, managedOnly bool, r *reader) (string, config.OutfitEntry, config.OutfitView, error) {
 	var idx config.OutfitIndex
 	var err error
 	if r != nil {
@@ -328,30 +373,31 @@ func (o *Outfitter) resolveEntry(name string, r *reader) (string, config.OutfitE
 		idx, err = walkOutfits(o.rootsNow(), nil)
 	}
 	if err != nil {
-		return "", config.OutfitEntry{}, fmt.Errorf("outfit: %w", err)
+		return "", config.OutfitEntry{}, config.OutfitView{}, fmt.Errorf("outfit: %w", err)
 	}
 	var e config.OutfitEntry
 	if found := idx[name]; found != nil {
 		e = *found
 	}
-	switch len(e.Paths) {
+	v := e.View(managedOnly)
+	switch len(v.Paths) {
 	case 1:
-		return e.Paths[0], e, nil
+		return v.Paths[0], e, v, nil
 	case 0:
 		canonical := filepath.Join(o.rootsNow().Overlay(), name+".toml")
 		if r != nil {
 			r.stat(canonical)
 		}
-		return "", e, &os.PathError{Op: "open", Path: canonical, Err: os.ErrNotExist}
+		return "", e, v, &os.PathError{Op: "open", Path: canonical, Err: os.ErrNotExist}
 	default:
-		rel := make([]string, len(e.Paths))
-		for i, p := range e.Paths {
+		rel := make([]string, len(v.Paths))
+		for i, p := range v.Paths {
 			rel[i] = p
-			if r, err := filepath.Rel(filepath.Dir(e.Root.Path), p); err == nil {
+			if r, err := filepath.Rel(filepath.Dir(v.Root.Path), p); err == nil {
 				rel[i] = r
 			}
 		}
-		return "", e, fmt.Errorf("outfit %q is ambiguous: %s; an outfit is named by its file, so rename one", name, strings.Join(rel, " and "))
+		return "", e, v, fmt.Errorf("outfit %q is ambiguous: %s; an outfit is named by its file, so rename one", name, strings.Join(rel, " and "))
 	}
 }
 

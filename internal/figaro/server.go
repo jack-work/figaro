@@ -265,6 +265,7 @@ func OutfitClosureWire(c *outfit.Closure) *rpc.OutfitLayer {
 	if c.Origin != "" {
 		out.Shadowed = OutfitSourcesWire(c.Shadowed)
 		out.Refused = OutfitSourcesWire(c.Refused)
+		out.Overlaid = OutfitSourcesWire(c.Overlaid)
 	}
 	for _, l := range c.Layers {
 		out.Layers = append(out.Layers, OutfitClosureWire(l))
