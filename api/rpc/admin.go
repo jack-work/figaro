@@ -307,10 +307,16 @@ type FanoutOver struct {
 	Over string `json:"over"`
 }
 
+type FanoutUnmirrored struct {
+	ID    string `json:"id"`
+	Quota string `json:"quota"`
+}
+
 type AdmissionResponse struct {
-	Drift    []FanoutDrift       `json:"drift,omitempty"`
-	Over     []FanoutOver        `json:"over,omitempty"`
-	Switches []EnforcementSwitch `json:"switches,omitempty"`
+	Drift      []FanoutDrift       `json:"drift,omitempty"`
+	Over       []FanoutOver        `json:"over,omitempty"`
+	Unmirrored []FanoutUnmirrored  `json:"unmirrored,omitempty"`
+	Switches   []EnforcementSwitch `json:"switches,omitempty"`
 }
 
 type EnforcementSwitch struct {

@@ -17,10 +17,14 @@ func runDoctorAdmission(loaded *config.Loaded, jsonOut bool) error {
 	if err != nil {
 		return err
 	}
-	return printAdmission(stdout, resp.Drift, resp.Over, resp.Switches, jsonOut)
+	return printAdmission(stdout, *resp, jsonOut)
 }
 
-func printAdmission(w io.Writer, drift []rpc.FanoutDrift, over []rpc.FanoutOver, switches []rpc.EnforcementSwitch, jsonOut bool) error {
+func printAdmission(w io.Writer, resp rpc.AdmissionResponse, jsonOut bool) error {
+	drift, over, unmirrored, switches := resp.Drift, resp.Over, resp.Unmirrored, resp.Switches
+	if unmirrored == nil {
+		unmirrored = []rpc.FanoutUnmirrored{}
+	}
 	if drift == nil {
 		drift = []rpc.FanoutDrift{}
 	}
@@ -30,7 +34,7 @@ func printAdmission(w io.Writer, drift []rpc.FanoutDrift, over []rpc.FanoutOver,
 	if jsonOut {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		return enc.Encode(map[string]any{"count": len(drift), "drift": drift, "over": over, "switches": switches})
+		return enc.Encode(map[string]any{"count": len(drift), "drift": drift, "over": over, "unmirrored": unmirrored, "switches": switches})
 	}
 	for _, s := range switches {
 		state := "off: logged, not enforced"
@@ -51,6 +55,12 @@ func printAdmission(w io.Writer, drift []rpc.FanoutDrift, over []rpc.FanoutOver,
 		fmt.Fprintf(w, "admission: %d figaro(s) over budget, refused every fork until under\n", len(over))
 		for _, o := range over {
 			fmt.Fprintf(w, "  %s %s\n", o.ID, o.Over)
+		}
+	}
+	if len(unmirrored) > 0 {
+		fmt.Fprintf(w, "admission: %d figaro(s) carry a quota the cache does not see, so nothing enforces it; set system.fanout.quota to another value and back to mirror it\n", len(unmirrored))
+		for _, u := range unmirrored {
+			fmt.Fprintf(w, "  %s system.fanout.quota %s\n", u.ID, u.Quota)
 		}
 	}
 	return nil

@@ -1,12 +1,14 @@
 package angelus
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -106,4 +108,23 @@ func TestAQuotaWrittenBeforeTheMirrorComesUpCappedAndAForksCopyDoesNot(t *testin
 func hasKey(snap form.Snapshot, key string) bool {
 	_, ok := snap.Get(key)
 	return ok
+}
+
+func TestDoctorAdmissionNamesAFormQuotaTheCacheDoesNotSee(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	mirrored, _ := b.CreateConversation(outfit)
+	hidden, _ := b.CreateConversation(outfit)
+	setQuota(t, b, mirrored, 2)
+	setQuota(t, b, hidden, 3)
+	if err := b.UpdateMeta(hidden, func(m *store.AriaMeta) { m.FanoutQuota = nil }); err != nil {
+		t.Fatal(err)
+	}
+	out, err := hs.Map[rpc.MethodAdmission](inProcess(context.Background()), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.(rpc.AdmissionResponse).Unmirrored
+	if len(got) != 1 || got[0].ID != hidden || got[0].Quota != "3" {
+		t.Fatalf("admission names %+v as unmirrored, want only %s with quota 3", got, hidden)
+	}
 }

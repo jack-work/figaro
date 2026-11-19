@@ -820,3 +820,23 @@ func (a *Angelus) fanoutOver() []rpc.FanoutOver {
 }
 
 func shortID(id string) string { return id[:min(8, len(id))] }
+
+func (a *Angelus) fanoutUnmirrored() []rpc.FanoutUnmirrored {
+	if a.Backend == nil {
+		return nil
+	}
+	var out []rpc.FanoutUnmirrored
+	for _, id := range a.Backend.ConversationIDs() {
+		if meta, _ := a.Backend.Meta(id); meta != nil && meta.FanoutQuota != nil {
+			continue
+		}
+		snap, err := a.Backend.FormState(id)
+		if err != nil {
+			continue
+		}
+		if raw, ok := snap.Get(form.FanoutQuotaKey); ok {
+			out = append(out, rpc.FanoutUnmirrored{ID: id, Quota: form.ScalarString(raw)})
+		}
+	}
+	return out
+}
