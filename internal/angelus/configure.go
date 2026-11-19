@@ -74,7 +74,10 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 		if err := outfit.ValidName(req.Outfit); err != nil {
 			return nil, err
 		}
-		path := loaded.OutfitPath(req.Outfit)
+		path, err := loaded.OutfitWritePath(req.Outfit)
+		if err != nil {
+			return nil, fmt.Errorf("configure: write outfit: %w", err)
+		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return nil, fmt.Errorf("configure: %w", err)
 		}

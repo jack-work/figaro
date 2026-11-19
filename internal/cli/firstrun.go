@@ -154,7 +154,7 @@ func runWizard(ctx context.Context, loaded *config.Loaded, data rpc.ErrorData) e
 				"    - set default_outfit in %s\n"+
 				"    - create %s with `[system]\\nprovider = \"<name>\"`\n"+
 				"    - run `figaro provider login <provider>` to add credentials",
-			loaded.ConfigPath, loaded.OutfitPath("default"))
+			loaded.ConfigPath, filepath.Join(loaded.OutfitsDir(), "default.toml"))
 	}
 
 	options := catalogFor(data.AvailableProviders)

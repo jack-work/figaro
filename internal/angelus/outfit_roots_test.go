@@ -112,3 +112,37 @@ func TestOneRootTagsNothing(t *testing.T) {
 		}
 	}
 }
+
+func TestAnOutfitWriteLandsInTheOverlayOnly(t *testing.T) {
+	r, managed, user := layeredRig(t)
+	writeFile(t, filepath.Join(managed, "taken.toml"), "[system]\nmodel = \"managed\"\n")
+	writeFile(t, filepath.Join(managed, ".locked"), "reserved\n")
+	body := "[system]\nprovider = \"mock\"\n"
+
+	out, err := r.call(asOwner(), rpc.MethodConfigure, rpc.ConfigureRequest{Outfit: "fresh", Body: body})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := out.(rpc.ConfigureResponse).OutfitPath, filepath.Join(user, "fresh.toml"); got != want {
+		t.Fatalf("wrote %s, want %s", got, want)
+	}
+
+	for _, name := range []string{"taken", "reserved"} {
+		if _, err := r.call(asOwner(), rpc.MethodConfigure, rpc.ConfigureRequest{Outfit: name, Body: body}); err == nil {
+			t.Errorf("%s: a write over a managed or locked name was accepted", name)
+		}
+		if _, err := os.Stat(filepath.Join(user, name+".toml")); err == nil {
+			t.Errorf("%s: an overlay file was written for a managed or locked name", name)
+		}
+	}
+	entries, err := os.ReadDir(managed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("managed root holds %d entries: a write reached it", len(entries))
+	}
+	if b, _ := os.ReadFile(filepath.Join(managed, "taken.toml")); string(b) != "[system]\nmodel = \"managed\"\n" {
+		t.Fatalf("managed taken.toml changed: %q", b)
+	}
+}

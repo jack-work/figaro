@@ -941,6 +941,22 @@ func (l *Loaded) OutfitPath(name string) string {
 	return filepath.Join(l.OutfitsDir(), name+".toml")
 }
 
+func (l *Loaded) OutfitWritePath(name string) (string, error) {
+	idx, err := l.OutfitIndex()
+	if err != nil {
+		return "", err
+	}
+	if e := idx[name]; e != nil {
+		if e.LockedBy != "" {
+			return "", fmt.Errorf("outfit %q is locked by %s", name, e.LockedBy)
+		}
+		if len(e.Paths) > 0 {
+			return "", fmt.Errorf("outfit %q exists at %s", name, e.Paths[0])
+		}
+	}
+	return filepath.Join(l.OutfitsDir(), name+".toml"), nil
+}
+
 func (l *Loaded) ListProviders() []string {
 	dir := filepath.Join(l.dir(), "providers")
 	entries, err := os.ReadDir(dir)
