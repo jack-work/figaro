@@ -449,6 +449,9 @@ func (r succeedReport) recovery(plan succeedPlan) []string {
 		}
 		return nil
 	}
+	if r.FailedAt == "laws" {
+		return []string{fmt.Sprintf("figaro succeed %s --successor %s -- <the succession prompt>", r.Role, r.Successor)}
+	}
 	if !r.Prompted {
 		out = append(out, fmt.Sprintf("figaro send -f --id %s -- <the succession prompt>", r.Successor))
 	}

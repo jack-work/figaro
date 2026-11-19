@@ -378,6 +378,13 @@ func TestRecoveryKillsAForkThatWasNeverSeated(t *testing.T) {
 	}
 }
 
+// Defends the order after a seat that could not copy the laws: casting or
+// prompting the successor first would seat a figaro without them.
+func TestRecoverySeatsAgainBeforeItCastsWhenTheLawsDidNotCopy(t *testing.T) {
+	r := succeedReport{Role: "@r", Predecessor: "old", Successor: "new", Forked: true, FailedAt: "laws"}
+	require.Equal(t, []string{"figaro succeed @r --successor new -- <the succession prompt>"}, r.recovery(succeedPlan{ttl: time.Minute, abdication: abdicateRetire}))
+}
+
 func TestSucceedRefusesADaemonWithoutSeatBeforeItForks(t *testing.T) {
 	s := seatedPredecessor(t, nil)
 	daemonSeen.Lock()
