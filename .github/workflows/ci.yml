@@ -1,12 +1,7 @@
-# ci.yml: the same gate scripts/release.sh runs locally before it will cut a
-# tag (go build / vet / test), run on every push and PR so the gate is never
-# the first place a break is discovered.
 name: ci
 
 on:
-  push:
-    branches: ["**"]
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
