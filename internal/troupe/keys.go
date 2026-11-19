@@ -4,10 +4,8 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"math/big"
@@ -16,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jack-work/hush/ca"
 )
 
 const (
@@ -28,9 +28,7 @@ const (
 )
 
 var (
-	rootNotBefore = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	rootNotAfter  = time.Date(2126, 1, 1, 0, 0, 0, 0, time.UTC)
-	validName     = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+	validName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 )
 
 var ErrIntermediateExpired = errors.New("the node intermediate has expired")
@@ -55,63 +53,25 @@ func NodeOf(troupe string, u *url.URL) (string, bool) {
 }
 
 func ParseRoot(raw []byte) (ed25519.PrivateKey, error) {
-	block, _ := pem.Decode(raw)
-	if block == nil {
-		return nil, errors.New("troupe root: no PEM block on stdin")
-	}
-	k, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	k, err := ca.ParseRoot(raw)
 	if err != nil {
-		return nil, fmt.Errorf("troupe root: %w", err)
+		return nil, fmt.Errorf("troupe %w", err)
 	}
-	ed, ok := k.(ed25519.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("troupe root: want an Ed25519 key, got %T", k)
-	}
-	return ed, nil
+	return k, nil
 }
 
 func RootCert(troupe string, key ed25519.PrivateKey) (*x509.Certificate, error) {
 	if err := ValidName(troupe); err != nil {
 		return nil, err
 	}
-	pub := key.Public().(ed25519.PublicKey)
-	sum := sha256.Sum256(append([]byte(troupe+"\x00"), pub...))
-	serial := new(big.Int).SetBytes(sum[:16])
-	tmpl := &x509.Certificate{
-		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "figaro troupe " + troupe},
-		NotBefore:             rootNotBefore,
-		NotAfter:              rootNotAfter,
-		IsCA:                  true,
-		BasicConstraintsValid: true,
-		MaxPathLen:            1,
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
-		SubjectKeyId:          sum[16:],
-	}
-	return create(tmpl, tmpl, pub, key)
+	return ca.RootCert(troupe, key)
 }
 
 func IssueIntermediate(root ed25519.PrivateKey, rootCert *x509.Certificate, troupe, node string, pub crypto.PublicKey, now time.Time, ttl time.Duration) (*x509.Certificate, error) {
 	if err := ValidName(troupe); err != nil {
 		return nil, err
 	}
-	serial, err := randomSerial()
-	if err != nil {
-		return nil, err
-	}
-	tmpl := &x509.Certificate{
-		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "figaro troupe " + troupe + " node " + node, SerialNumber: node},
-		NotBefore:             now.Add(-clockSkew),
-		NotAfter:              earlier(now.Add(ttl), rootCert.NotAfter),
-		IsCA:                  true,
-		BasicConstraintsValid: true,
-		MaxPathLen:            0,
-		MaxPathLenZero:        true,
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
-		PermittedURIDomains:   []string{troupe},
-	}
-	return create(tmpl, rootCert, pub, root)
+	return ca.IssueIntermediate(root, rootCert, troupe, node, pub, now, ttl)
 }
 
 func IntermediateNode(c *x509.Certificate) string {
