@@ -211,7 +211,11 @@ func applyRole(ctx context.Context, client *sdk.Angelus, req rpc.FormApplyReques
 }
 
 func printApplyResult(prefix string, result rpc.FormApplyResponse) {
-	fmt.Fprintf(stdout, "%s%s: %s (version %d)\n", prefix, result.FigaroID, result.Outcome, result.Version)
+	unseated := ""
+	if result.Unseated {
+		unseated = ", unseated"
+	}
+	fmt.Fprintf(stdout, "%s%s: %s (version %d%s)\n", prefix, result.FigaroID, result.Outcome, result.Version, unseated)
 	if len(result.Set) > 0 {
 		fmt.Fprintf(stdout, "  set: %s\n", strings.Join(result.Set, ", "))
 	}

@@ -43,9 +43,6 @@ func (h *handlers) formApply(ctx context.Context, params json.RawMessage) (any, 
 		return nil, err
 	}
 	current := raw.(rpc.FormResponse)
-	if holder := current.Snapshot.Lookup("target-aria"); holder == nil || *holder == "" {
-		return nil, fmt.Errorf("form apply: %s has no role holder", req.FigaroID)
-	}
 	outfit, err := h.dress(req.Outfits, nil)
 	if err != nil {
 		return nil, err
@@ -74,6 +71,9 @@ func (h *handlers) formApply(ctx context.Context, params json.RawMessage) (any, 
 		return nil, err
 	}
 	result := rpc.FormApplyResponse{FigaroID: req.FigaroID, Version: current.Version, Outfit: identity, Outcome: rpc.OutcomeUnchanged}
+	if holder := current.Snapshot.Lookup("target-aria"); holder == nil || *holder == "" {
+		result.Unseated = true
+	}
 	for _, path := range req.Managed {
 		a, have := current.Snapshot.Get(path)
 		b, want := desired.Get(path)

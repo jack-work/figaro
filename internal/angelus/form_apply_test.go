@@ -181,3 +181,38 @@ func TestManagedRoleRefusesDaemonHeldKeysAndTheRoleHandoffKey(t *testing.T) {
 		t.Fatal("the role's handoff key moved")
 	}
 }
+
+func TestManagedApplyWritesAFormNobodyHoldsAndSaysSo(t *testing.T) {
+	r := newRigWith(t, doorPolicy)
+	if err := os.WriteFile(filepath.Join(r.a.Settings.ConfigDir, "outfits", "role.toml"), []byte("[charter]\npurpose = \"new\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"name":            json.RawMessage(`"uncast-role"`),
+		"charter.purpose": json.RawMessage(`"old"`),
+	}, nil)
+	out, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: &patch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := out.(rpc.FormCreateResponse).FormID
+	checked := checkManagedRole(t, r, id)
+	if checked.Outcome != "would-apply" || !checked.Unseated {
+		t.Fatalf("check on an uncast form: %+v", checked)
+	}
+	out, err = r.call(asOwner(), rpc.MethodFormApply, rpc.FormApplyRequest{
+		FigaroID: id, Outfits: []string{"role"}, Managed: []string{"charter.purpose"}, IfVersion: checked.Version, ExpectedOutfit: checked.Outfit,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied := out.(rpc.FormApplyResponse); applied.Outcome != rpc.OutcomeApplied || !applied.Unseated {
+		t.Fatalf("apply on an uncast form: %+v", applied)
+	}
+	if got := keyOnForm(t, r, id, "charter.purpose"); got != "new" {
+		t.Fatalf("charter.purpose = %q, want new", got)
+	}
+	if keyOnForm(t, r, id, "target-aria") != "" {
+		t.Fatal("apply seated the form")
+	}
+}

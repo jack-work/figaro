@@ -20,4 +20,5 @@ type FormApplyResponse struct {
 	Outcome  string   `json:"outcome"`
 	Set      []string `json:"set,omitempty"`
 	Remove   []string `json:"remove,omitempty"`
+	Unseated bool     `json:"unseated,omitempty"`
 }
