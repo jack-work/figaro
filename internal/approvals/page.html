@@ -19,7 +19,6 @@
 <ol class="patch">
 {{range .Lines}}<li><code>{{.Op}} {{.Key}}{{if eq .Op "set"}} = {{.New}}{{end}}</code>{{if eq .Op "set"}} <span class="was">now {{.Current}}</span>{{end}}</li>
 {{end}}</ol>
-{{range $k, $v := .Inputs}}<p class="meta">{{$k}} digest {{$v}}</p>{{end}}
 {{if .AtSuccession}}<p class="note">Takes effect at the next succession.</p>{{end}}
 {{if .Applied}}<p class="note">Already applied: approving only removes the request.</p>{{end}}
 <p class="hash">sha256 <strong>{{slice .Hash 0 12}}</strong><br><code>{{.Hash}}</code></p>

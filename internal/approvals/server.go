@@ -5,10 +5,13 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"embed"
 	"encoding/hex"
 	"html/template"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -19,18 +22,43 @@ var assets embed.FS
 
 var page = template.Must(template.ParseFS(assets, "page.html"))
 
+const EdgeHeader = "X-Figaro-Approvals-Edge"
+
 type Server struct {
-	Decider *Decider
-	Filings []string
-	Admin   string
-	Origin  string
-	key     []byte
+	Decider    *Decider
+	Filings    []string
+	Admin      string
+	Origin     string
+	EdgeSecret []byte
+	Peers      []netip.Addr
+	key        []byte
 }
 
-func NewServer(d *Decider, filings []string, admin, origin string) *Server {
+func NewServer(d *Decider, filings []string, admin, origin string, edgeSecret []byte, peers []netip.Addr) *Server {
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
-	return &Server{Decider: d, Filings: filings, Admin: admin, Origin: origin, key: key}
+	return &Server{Decider: d, Filings: filings, Admin: admin, Origin: origin, EdgeSecret: edgeSecret, Peers: peers, key: key}
+}
+
+func (s *Server) fromEdge(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	known := false
+	for _, p := range s.Peers {
+		if p == addr.Unmap() {
+			known = true
+		}
+	}
+	if !known || len(s.EdgeSecret) < 32 {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(r.Header.Get(EdgeHeader)), s.EdgeSecret) == 1
 }
 
 type view struct {
@@ -43,7 +71,6 @@ type row struct {
 	Pending
 	Version      uint64
 	Lines        []shownLine
-	Inputs       map[string]string
 	Hash         string
 	Applied      bool
 	AtSuccession bool
@@ -75,6 +102,10 @@ func (s *Server) gate(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cache-Control", "no-store")
+		if !s.fromEdge(r) {
+			http.Error(w, "not from the edge", http.StatusForbidden)
+			return
+		}
 		if s.Admin == "" || r.Header.Get("Remote-User") != s.Admin {
 			http.Error(w, "admin only", http.StatusForbidden)
 			return
@@ -98,7 +129,7 @@ func (s *Server) rows(ctx context.Context) ([]row, error) {
 		r := row{Pending: p, Version: version,
 			Link: "/r/" + url.PathEscape(p.Filing) + "/" + url.PathEscape(p.ID)}
 		if p.Plan != nil {
-			r.Hash, r.Applied, r.Inputs = p.Plan.Hash, p.Plan.Applied, p.Plan.Inputs
+			r.Hash, r.Applied = p.Plan.Hash, p.Plan.Applied
 			r.AtSuccession = TakesEffectAtSuccession(p.Plan.Verb)
 			for _, l := range p.Plan.Lines {
 				r.Lines = append(r.Lines, shownLine{Op: "set", Key: l.Key, Current: string(l.Current), New: string(l.New)})

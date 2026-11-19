@@ -3,7 +3,8 @@ Description=figaro owner approvals page (acts as the owner)
 After=network-online.target tailscaled.service
 
 [Service]
-ExecStart=%h/.nix-profile/bin/figaro approvals serve --listen 100.92.208.109:7482 --forms @96447061 --admin gluck --origin https://order.kelliher.info
+ExecStart=%h/.nix-profile/bin/figaro approvals serve --listen gluck.tail34d120.ts.net:7482 --peer 100.103.40.20 --forms @96447061 --admin gluck --origin https://order.kelliher.info
+LoadCredential=edge:%h/.config/figaro-approvals/edge-token
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=yes

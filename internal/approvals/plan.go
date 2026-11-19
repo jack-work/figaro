@@ -23,7 +23,6 @@ const (
 	VerbFigaroModel = "figaro.model"
 	VerbFigaroTTL   = "figaro.ttl"
 	VerbRoleModel   = "role.model"
-	VerbRoleOutfits = "role.outfits"
 	MaxExpiry       = 24 * time.Hour
 )
 
@@ -42,13 +41,11 @@ var (
 	providerRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 	modelRe    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
 	ttlRe      = regexp.MustCompile(`^(0|[1-9][0-9]{0,4}[smhdw])$`)
-	outfitRe   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 )
 
 type Forms interface {
 	Read(ctx context.Context, id string) (form.Snapshot, uint64, error)
 	Set(ctx context.Context, id string, set map[string]json.RawMessage, remove []string, ifVersion uint64) error
-	Outfit(ctx context.Context, name string) (digest string, ok bool, err error)
 }
 
 type Request struct {
@@ -67,16 +64,15 @@ type Line struct {
 }
 
 type Plan struct {
-	Filing        string            `json:"filing"`
-	FilingVersion uint64            `json:"filing_version"`
-	ID            string            `json:"id"`
-	Verb          string            `json:"verb"`
-	Target        string            `json:"target"`
-	TargetVersion uint64            `json:"target_version"`
-	Lines         []Line            `json:"lines"`
-	Inputs        map[string]string `json:"inputs,omitempty"`
-	Applied       bool              `json:"applied"`
-	Hash          string            `json:"-"`
+	Filing        string `json:"filing"`
+	FilingVersion uint64 `json:"filing_version"`
+	ID            string `json:"id"`
+	Verb          string `json:"verb"`
+	Target        string `json:"target"`
+	TargetVersion uint64 `json:"target_version"`
+	Lines         []Line `json:"lines"`
+	Applied       bool   `json:"applied"`
+	Hash          string `json:"-"`
 }
 
 type Pending struct {
@@ -167,7 +163,7 @@ func Build(ctx context.Context, f Forms, filing, id string, now time.Time) (Plan
 	if err := exactKeys(req.Set, t.keys); err != nil {
 		return Plan{}, err
 	}
-	values, inputs, err := t.validate(ctx, f, req.Set)
+	values, err := t.validate(req.Set)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -178,7 +174,7 @@ func Build(ctx context.Context, f Forms, filing, id string, now time.Time) (Plan
 		}
 	}
 	p := Plan{Filing: filing, FilingVersion: version, ID: id, Verb: req.Verb, Target: req.Target,
-		TargetVersion: tversion, Inputs: inputs, Applied: true}
+		TargetVersion: tversion, Applied: true}
 	for _, k := range t.keys {
 		cur, _ := tsnap.Get(k)
 		cur = canonical(cur)

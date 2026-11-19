@@ -30,11 +30,10 @@ type fakeForm struct {
 }
 
 type fakeForms struct {
-	forms   map[string]*fakeForm
-	outfits map[string]string
-	sets    int
-	failOn  string
-	onSet   func(id string)
+	forms  map[string]*fakeForm
+	sets   int
+	failOn string
+	onSet  func(id string)
 }
 
 func newFake() *fakeForms {
@@ -42,7 +41,7 @@ func newFake() *fakeForms {
 		king:  {snap: form.FromMap(map[string]json.RawMessage{"mantra": json.RawMessage(`"rule"`)}), version: 10},
 		seat:  {snap: form.FromMap(map[string]json.RawMessage{"system": json.RawMessage(`{"provider":"anthropic","model":"claude-sonnet-4-5"}`)}), version: 20},
 		other: {snap: form.FromMap(map[string]json.RawMessage{"charter": json.RawMessage(`"x"`)}), version: 30},
-	}, outfits: map[string]string{"opus5": "d1", "succession-standard": "d2"}}
+	}}
 }
 
 func (f *fakeForms) Read(_ context.Context, id string) (form.Snapshot, uint64, error) {
@@ -71,11 +70,6 @@ func (f *fakeForms) Set(_ context.Context, id string, set map[string]json.RawMes
 		f.onSet(id)
 	}
 	return nil
-}
-
-func (f *fakeForms) Outfit(_ context.Context, name string) (string, bool, error) {
-	d, ok := f.outfits[name]
-	return d, ok, nil
 }
 
 func (f *fakeForms) file(t *testing.T, on, id string, req map[string]any) {
@@ -245,7 +239,9 @@ func TestCrashBetweenWritesThenReapproveOnlyRemoves(t *testing.T) {
 
 func TestSameFormIsOnePatch(t *testing.T) {
 	f := newFake()
-	f.file(t, king, "r1", map[string]any{"verb": VerbRoleOutfits, "target": king, "set": map[string]any{"system.grants.outfits": []string{"opus5"}}})
+	req := modelReq(king)
+	req["verb"] = VerbRoleModel
+	f.file(t, king, "r1", req)
 	p, err := Build(context.Background(), f, king, "r1", now)
 	if err != nil {
 		t.Fatal(err)
@@ -256,8 +252,8 @@ func TestSameFormIsOnePatch(t *testing.T) {
 	if f.sets != 1 {
 		t.Fatalf("sets = %d, want one atomic patch", f.sets)
 	}
-	if get(t, f, king, "system.grants.outfits") != `["opus5"]` {
-		t.Fatal("grant not written")
+	if get(t, f, king, "system.model") != `"claude-opus-4-5"` {
+		t.Fatal("model not written")
 	}
 }
 
@@ -267,8 +263,7 @@ func TestTemplatesRefuseBadValues(t *testing.T) {
 		"extra key":       {"verb": VerbFigaroModel, "target": seat, "set": map[string]any{"system.provider": "anthropic", "system.model": "m", "system.tools": []string{"bash"}}},
 		"role target":     modelReq(other),
 		"bidi":            {"verb": VerbFigaroModel, "target": seat, "set": map[string]any{"system.provider": "anthropic", "system.model": "opus\u202e"}},
-		"glob outfit":     {"verb": VerbRoleOutfits, "target": other, "set": map[string]any{"system.grants.outfits": []string{"*"}}},
-		"missing outfit":  {"verb": VerbRoleOutfits, "target": other, "set": map[string]any{"system.grants.outfits": []string{"nope"}}},
+		"outfit grant":    {"verb": "role.outfits", "target": other, "set": map[string]any{"system.grants.outfits": []string{"opus5"}}},
 		"ttl with spaces": {"verb": VerbFigaroTTL, "target": seat, "set": map[string]any{"system.ttl": "8h; rm -rf ~"}},
 		"unknown field":   {"verb": VerbFigaroTTL, "target": seat, "set": map[string]any{"system.ttl": "8h"}, "patch": "x"},
 		"expiry too far":  {"verb": VerbFigaroTTL, "target": seat, "set": map[string]any{"system.ttl": "8h"}, "expires": now.Add(48 * time.Hour).Format(time.RFC3339)},

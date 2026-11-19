@@ -52,14 +52,13 @@ All of it is untrusted. Any unknown field, unknown verb, wrong target shape, ext
 and the page says why (`internal/approvals/plan.go`, `Build`). `reason` and `state` never reach
 the plan. The id is `[a-z0-9]{1,16}` and not `denied`.
 
-## Verbs (v1: two per level)
+## Verbs (v1: three)
 
 | verb | target | keys | values |
 |---|---|---|---|
 | `figaro.model` | a figaro, full 32-hex id | `system.provider`, `system.model` | provider `[a-z][a-z0-9-]{0,31}`, model `[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}` |
 | `figaro.ttl` | a figaro, full 32-hex id | `system.ttl` | `0` or `<n>[smhdw]` |
 | `role.model` | a role form `@hex` | `system.provider`, `system.model` | as above; the page says "takes effect at the next succession" |
-| `role.outfits` | a role form `@hex` | `system.grants.outfits` | 1 to 16 existing outfit names, no globs; the whole new list |
 
 Per-figaro verbs write the target's own form. Per-role verbs write the role form, which dresses
 the next holder at succeed and seat. No `@role` is ever resolved to its holder: the adapter
@@ -67,16 +66,21 @@ refuses when the daemon attaches an id to a different form (`internal/cli/approv
 `daemonForms.aria`). That answers B3: a recast between render and click cannot move the write.
 
 Every value is ASCII and passes its pattern, so no control, bidi or confusable character reaches
-a patch. Outfit names are checked against the daemon, and each outfit's folded form is hashed
-into the plan (`inputs`), so an outfit edited after render changes the hash (B2, partly B1).
+a patch.
 
-Not in v1: `role.apply`, key grants, fan-out, anything with a path, env or shell (L7, B4).
+`role.outfits` (`system.grants.outfits` on a role) was built and taken out on El Llavero's V3:
+outfit files are gluck-writable, so a grant approved today covers whatever a figaro writes into
+that outfit tomorrow. It returns when grantable outfits are root-owned (Open 4) or a grant can
+pin a digest the daemon enforces.
+
+Not in v1: `role.outfits`, `role.apply`, key grants, fan-out, anything with a path, env or shell
+(L7, B4, V3).
 
 ## The patch and the hash
 
 The plan is `{filing, filing_version, id, verb, target, target_version, lines[{key, current,
 new}], inputs, applied}`. Its sha256 over that JSON is the hash shown and posted. It covers the
-current values Gluck saw, the new values, both form versions and the outfit digests. The
+current values Gluck saw, the new values and both form versions. The
 request's text is not in it; only the template's validated output is.
 
 The approve writes:
@@ -112,7 +116,15 @@ target, hash, result. No values from the keys, no request text, no tokens.
 - `GET /` lists, `GET /r/<form>/<id>` shows one, `POST /approve` and `POST /deny` decide.
   Plain HTML from `html/template` (auto-escaped), one CSS file, no script. CSP
   `default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'`.
-- Every request needs `Remote-User` equal to `--admin`; every POST needs `Origin` equal to
+- **The edge is authenticated before anything else** (Engineer's must-fix, El Llavero V1,
+  the Inspector). Every request must come from a `--peer` address (spain, `100.103.40.20`) and
+  carry `X-Figaro-Approvals-Edge` equal to the edge secret, compared in constant time. The
+  secret is at least 32 bytes, read from the systemd credential `edge`
+  (`LoadCredential=edge:%h/.config/figaro-approvals/edge-token`). Without both, every path is
+  403, before `Remote-User` is read; so a spain process that is not Caddy cannot list, read a
+  token, or post. Tested: `TestRemoteUserWithoutEdgeSecretRefused` (no secret, wrong secret,
+  right secret from the wrong peer) and `TestShortEdgeSecretRefusesEverything`.
+- Then every request needs `Remote-User` equal to `--admin`; every POST needs `Origin` equal to
   `--origin`, and a token, an HMAC with a per-process key over form, id, hash and version. A
   post whose hash was not the one rendered fails the token.
 - Styling is plain, after Il Zanni's notes (`~/notes/zanni/owner-approvals-styling.md`):
@@ -122,63 +134,80 @@ target, hash, result. No values from the keys, no request text, no tokens.
 Route (El Mayor): the existing order site on spain gets a second handle,
 `handle_path /approve/*`, upstream `gluck.tail34d120.ts.net:7482` by tailnet name, no
 fallthrough, and an Authelia rule for `/approve/*` (admin user, two_factor) placed before any
-broader `order.kelliher.info` rule. Not the 7481 bridge bearer (L9). ufw on gluck: 7482 from
-spain only, Gluck's step; after the Merlin cutover it moves into the charter's tailnet firewall
-aspect. The unit binds `100.92.208.109:7482`.
+broader `order.kelliher.info` rule. Not the 7481 bridge bearer (L9). On that handle Caddy:
+
+1. strips every client `Remote-*` header and any client `X-Figaro-Approvals-Edge`
+   (`request_header -Remote-*`, explicitly, before forward_auth: El Llavero V2);
+2. runs forward_auth and passes Authelia's `Remote-User` through;
+3. adds `X-Figaro-Approvals-Edge` from the sops secret `approvals-edge-token`.
+
+El Mayor's acceptance rows send a spoofed `Remote-User: gluck` with no session and as a
+non-admin, and expect refusal both times. El Llavero mints the token (sops on spain, a 0600 file
+at `~/.config/figaro-approvals/edge-token` on gluck), with the Inspector reading the script.
+
+ufw on gluck: 7482 from spain to gluck's tailnet address only, Gluck's step; after the Merlin
+cutover it moves into the charter's tailnet firewall aspect. The unit listens on
+`gluck.tail34d120.ts.net:7482`, the name Merlin takes at cutover, so no hand edit then (El
+Mayor).
 
 ## Threat model
 
 Home mode is not a boundary, and this slice does not pretend otherwise. Figaros run as gluck.
 Any figaro whose tools reach a shell can already call the daemon as the owner (figaro issue #57),
-and can also reach `100.92.208.109:7482` locally and send `Remote-User: gluck`. The page adds
+and can also read the edge token file (gluck's, 0600) and call the port. The page adds
 ergonomics, not a wall. The guarantees below hold against the network and against request
 content; against a local figaro they wait for the peer caller check and house mode.
 
 | # | threat | answer in v1 |
 |---|---|---|
 | L1 | Same uid | Admitted, as above. A figaro could also edit the unit through a drop-in (N1). The service holds no state of its own beyond the audit file; the queue is the forms the daemon guards. House mode (Merlin): run it as the person outside the valet, the valet hiding its state dir. |
-| L2 | The edge vouches for Gluck | Yes in v1: the server trusts Authelia's `Remote-User`. The OIDC step-up Llavero specified (PKCE, `max_age`, `nonce` = plan hash, `amr`, `sub`) is the next step, and then WebAuthn. Spain root owns Authelia either way. |
+| L2 | The edge vouches for Gluck | Yes in v1, but only the edge: the server believes `Remote-User` only on a request from spain's address carrying the edge secret, which only Caddy (and root on spain) holds. The OIDC step-up Llavero specified (PKCE, `max_age`, `nonce` = plan hash, `amr`, `sub`) is the next step, and then WebAuthn. Spain root owns Authelia either way. |
 | L3 | Shown is not run | One plan; the page renders it; its hash is posted; the server rebuilds it and refuses on a difference; templates write only their own keys. |
 | L4 | Replay, staleness | `IfVersion` on every write, versions in the hash, `Assert` on removal; a second click is a refusal. |
 | L5 | CSRF | POST only, Origin check, HMAC token over id, hash and version, CSP `form-action 'self'`. |
-| L6 | Filer approves | Over the network: no figaro credential yields an Authelia admin session. Locally: see the home-mode paragraph. |
-| L7 | General sudo | Four templates, patterned values, no process started: a test fails if `internal/approvals` imports `os/exec` or `syscall`. |
+| L6 | Filer approves | Over the network: no figaro credential yields an Authelia admin session, and no spain process but Caddy holds the edge secret. Locally: see the home-mode paragraph. |
+| L7 | General sudo | Three templates, patterned values, no process started: a test fails if `internal/approvals` imports `os/exec` or `syscall`. |
 | L8 | Telegram | Not wired. When it is, the button is a URL to `/r/<form>/<id>`. |
-| L9 | Gateway sprawl | Own route, port and upstream; not the 7481 bearer. |
+| L9 | Gateway sprawl | Own route, port, upstream and edge secret; not the 7481 bearer; spoofed `Remote-*` stripped at the edge (V2). |
+| V1 | Any spain process approves | Closed: peer address plus edge secret before anything else. |
 | L10 | Audit | Append-only by flag, not by the kernel; a gluck process can rewrite it. The journal copy is root-owned (no Forward Secure Sealing, N2). |
-| B1 | Validation lookups are figaro-writable | Outfit names are checked and their folded content hashed into the plan, so what Gluck approves is pinned; but the outfit files are still gluck's to write. Providers and models are checked by pattern only. Root-owned grantable lists are open. |
+| B1 | Validation lookups are figaro-writable | Outfit grants dropped from v1 (V3). Providers and models are checked by pattern only, so a figaro that adds a provider to `config.toml` can ask for it; showing the provider's endpoint on the row, and root-owned lists, are open (4). |
 | Estate | Spain has no person-owner (El Mayor) | Out of v1; one app per node later, and Spain's needs a service principal and its own row here. |
 
 ## Tests
 
 `go test ./internal/approvals`: hash mismatch refused; an edit after render changes the hash;
 stale CAS refused (the target moves between read and write); stale deny refused; unknown verb
-refused; bad values (shell text, extra key, `@role` on a figaro verb, bidi, glob, missing
-outfit, bad ttl, unknown field, expiry) refused; request prose never reaches the plan and the
+refused (including `role.outfits`); bad values (shell text, extra key, `@role` on a figaro verb,
+bidi, bad ttl, unknown field, expiry) refused; a request without the edge secret, with a wrong
+one, or from the wrong peer is refused even with `Remote-User: gluck`; request prose never reaches the plan and the
 package starts no process; the crash between the two writes, then re-approve only removes;
 same-form approve is one write; non-admin refused; request text escaped; cross-origin and
 forged-hash posts refused; approve round trip; second click refused. Canaries: dropping the
-hash compare fails the hash tests; dropping the fake's version check fails the stale test.
+hash compare fails the hash tests; dropping the fake's version check fails the stale test;
+dropping the secret compare fails the edge test.
 
 Read-only smoke against the live daemon: the server listed `@96447061` ("Nothing waiting.") and
-refused a request without `Remote-User`.
+refused a request with `Remote-User: gluck` but no edge secret.
 
 ## Running it (Gluck, after the Inspector)
 
 The unit calls `~/.nix-profile/bin/figaro`, so it needs a figaro release carrying this branch.
 
 ```
-mkdir -p ~/.local/state/figaro-approvals
+mkdir -p ~/.local/state/figaro-approvals ~/.config/figaro-approvals
+# El Llavero delivers ~/.config/figaro-approvals/edge-token (0600)
 cp contrib/systemd/figaro-approvals.service ~/.config/systemd/user/
 systemctl --user daemon-reload && systemctl --user start figaro-approvals
-sudo ufw allow in on tailscale0 from <spain tailnet ip> to any port 7482 proto tcp
+sudo ufw allow in on tailscale0 from 100.103.40.20 to 100.92.208.109 port 7482 proto tcp
 ```
 
 Then El Mayor's CAND on spain (route and Authelia rule).
 
 ## Open
 
-1. OIDC step-up (Llavero owns the client) before anything wider than these four verbs.
+1. OIDC step-up (Llavero owns the client) before anything wider than these three verbs; the edge
+   secret stays as defence in depth.
 2. WebAuthn pinned on gluck.
 3. A two-form transaction in the daemon, to make cross-form approve atomic.
 4. Root-owned lists of grantable outfits and selectable providers (B1).
