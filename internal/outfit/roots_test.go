@@ -84,3 +84,59 @@ func TestARootThatDoesNotExistIsNoOutfits(t *testing.T) {
 	var missing *outfit.MissingError
 	require.ErrorAs(t, err, &missing)
 }
+
+func TestALockedNameRefusesTheOverlayAndKeepsTheManagedOne(t *testing.T) {
+	o, managed, user := layeredOutfitter(t)
+	writeRootFile(t, managed, "seat.toml", "[system]\nmodel = \"managed-model\"\n")
+	writeRootFile(t, managed, "free.toml", "[system]\nmodel = \"managed-free\"\n")
+	writeRootFile(t, managed, ".locked", "# the charter's seats\nseat\n")
+	writeRootFile(t, user, "seat.toml", "[system]\nmodel = \"user-model\"\n")
+	writeRootFile(t, user, "free.toml", "[system]\nmodel = \"user-free\"\n")
+
+	patch, err := o.Load("seat")
+	require.NoError(t, err)
+	assert.Equal(t, `"managed-model"`, string(mustEntry(patch, "system.model")), "an overlay of a locked name must not apply")
+	patch, err = o.Load("free")
+	require.NoError(t, err)
+	assert.Equal(t, `"user-free"`, string(mustEntry(patch, "system.model")), "the lock covers only the names it lists")
+}
+
+func TestALockedNameTheManagedRootLacksIsStillRefused(t *testing.T) {
+	o, managed, user := layeredOutfitter(t)
+	writeRootFile(t, managed, ".locked", "reserved\n")
+	writeRootFile(t, user, "reserved.toml", "[system]\nmodel = \"user\"\n")
+
+	_, err := o.Load("reserved")
+	var missing *outfit.MissingError
+	require.ErrorAs(t, err, &missing, "a reserved name must not be filled from the overlay")
+}
+
+func TestOutfitFilesNamesEveryRefusal(t *testing.T) {
+	managed, user := t.TempDir(), t.TempDir()
+	kept := writeRootFile(t, managed, "seat.toml", "")
+	lock := writeRootFile(t, managed, ".locked", "seat other\n")
+	refused := writeRootFile(t, user, "nested/seat.toml", "")
+	writeRootFile(t, user, ".locked", "mine\n")
+	writeRootFile(t, user, "mine.toml", "")
+
+	idx, err := config.OutfitFiles(layeredRoots(managed, user), nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{kept}, idx["seat"].Paths)
+	assert.Equal(t, []config.OutfitRefusal{{Name: "seat", OutfitSource: config.OutfitSource{Path: refused, Root: user}, LockedBy: lock}}, idx.Refusals())
+	assert.Equal(t, []string{"mine", "seat"}, idx.Names(), "a .locked in the overlay locks nothing, and a lock alone is not an outfit")
+}
+
+func TestALockIsReadOnRefresh(t *testing.T) {
+	o, managed, user := layeredOutfitter(t)
+	writeRootFile(t, managed, "seat.toml", "[system]\nmodel = \"managed\"\n")
+	writeRootFile(t, user, "seat.toml", "[system]\nmodel = \"user\"\n")
+	writeRootFile(t, managed, ".locked", "other\n")
+	patch, err := o.Load("seat")
+	require.NoError(t, err)
+	require.Equal(t, `"user"`, string(mustEntry(patch, "system.model")))
+
+	writeRootFile(t, managed, ".locked", "seat\n")
+	patch, err = o.Load("seat")
+	require.NoError(t, err)
+	assert.Equal(t, `"managed"`, string(mustEntry(patch, "system.model")), "an edit of .locked in place must turn the epoch over")
+}

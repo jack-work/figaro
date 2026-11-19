@@ -45,7 +45,17 @@ type OutfitEntry struct {
 	Paths    []string
 	Root     OutfitRoot
 	Shadowed []OutfitSource
+	LockedBy string
+	Refused  []OutfitSource
 }
+
+type OutfitRefusal struct {
+	Name string
+	OutfitSource
+	LockedBy string
+}
+
+const OutfitLockFile = ".locked"
 
 type OutfitIndex map[string]*OutfitEntry
 
@@ -53,6 +63,28 @@ func (idx OutfitIndex) Names() []string {
 	names := make([]string, 0, len(idx))
 	for name, e := range idx {
 		if len(e.Paths) > 0 {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (idx OutfitIndex) Refusals() []OutfitRefusal {
+	var out []OutfitRefusal
+	for _, name := range idx.lockedNames() {
+		e := idx[name]
+		for _, src := range e.Refused {
+			out = append(out, OutfitRefusal{Name: name, OutfitSource: src, LockedBy: e.LockedBy})
+		}
+	}
+	return out
+}
+
+func (idx OutfitIndex) lockedNames() []string {
+	var names []string
+	for name, e := range idx {
+		if len(e.Refused) > 0 {
 			names = append(names, name)
 		}
 	}
@@ -73,10 +105,34 @@ func OutfitFiles(roots OutfitRoots, visit func(path string)) (OutfitIndex, error
 				idx[name] = &OutfitEntry{Paths: paths, Root: root}
 				continue
 			}
+			if e.LockedBy != "" {
+				for _, p := range paths {
+					e.Refused = append(e.Refused, OutfitSource{Path: p, Root: root.Path, Managed: root.Managed})
+				}
+				continue
+			}
 			for _, p := range e.Paths {
 				e.Shadowed = append(e.Shadowed, OutfitSource{Path: p, Root: e.Root.Path, Managed: e.Root.Managed})
 			}
 			e.Paths, e.Root = paths, root
+		}
+		if !root.Managed {
+			continue
+		}
+		lock := filepath.Join(root.Path, OutfitLockFile)
+		names, err := readOutfitLock(lock, visit)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range names {
+			e := idx[name]
+			if e == nil {
+				e = &OutfitEntry{Root: root}
+				idx[name] = e
+			}
+			if e.LockedBy == "" {
+				e.LockedBy = lock
+			}
 		}
 	}
 	if roots.Legacy == "" {
@@ -123,4 +179,23 @@ func walkOutfitRoot(root string, visit func(path string)) (map[string][]string, 
 		return nil
 	})
 	return files, err
+}
+
+func readOutfitLock(path string, visit func(path string)) ([]string, error) {
+	if visit != nil {
+		visit(path)
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, line := range strings.Split(string(b), "\n") {
+		line, _, _ = strings.Cut(line, "#")
+		names = append(names, strings.Fields(line)...)
+	}
+	return names, nil
 }

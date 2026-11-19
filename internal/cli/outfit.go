@@ -271,10 +271,40 @@ func outfitClosureBroken(l *rpc.OutfitLayer) []string {
 func runOutfitRefresh(loaded *config.Loaded) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
-	if _, err := acli.Configure(context.Background(), rpc.ConfigureRequest{Refresh: true}); err != nil {
+	resp, err := acli.Configure(context.Background(), rpc.ConfigureRequest{Refresh: true})
+	if err != nil {
 		die("state outfit --refresh: %s", err)
 	}
 	fmt.Fprintln(stderrw, "outfits refreshed")
+	for _, line := range outfitRefusalLines(resp.Refused) {
+		fmt.Fprintln(stderrw, line)
+	}
+}
+
+func outfitRefusalLines(refused []rpc.OutfitRefusal) []string {
+	var out []string
+	for _, r := range refused {
+		out = append(out, fmt.Sprintf("refused: %s overlays %s, locked by %s; the managed one stays in force", r.Path, r.Name, r.LockedBy))
+	}
+	return out
+}
+
+func runDoctorOutfits(loaded *config.Loaded) error {
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+	resp, err := acli.Outfits(context.Background(), "")
+	if err != nil {
+		return fmt.Errorf("doctor outfits: %w", err)
+	}
+	lines := outfitRefusalLines(resp.Refused)
+	for _, line := range lines {
+		fmt.Fprintln(stdout, line)
+	}
+	if len(lines) > 0 {
+		return fmt.Errorf("%s refused by a lock; rename or delete it", plural(len(lines), "outfit file"))
+	}
+	fmt.Fprintf(stdout, "%s, none refused\n", plural(len(resp.Names), "outfit"))
+	return nil
 }
 
 func runOutfitList(loaded *config.Loaded) {

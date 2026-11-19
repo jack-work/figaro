@@ -28,7 +28,11 @@ func (h *handlers) outfits(_ context.Context, params json.RawMessage) (interface
 	}
 	loaded, ofit := h.settings()
 
-	resp := rpc.OutfitsResponse{Default: loaded.Config.DefaultOutfit, Names: loaded.ListOutfits()}
+	resp := rpc.OutfitsResponse{Default: loaded.Config.DefaultOutfit}
+	if idx, err := loaded.OutfitIndex(); err == nil {
+		resp.Names = idx.Names()
+		resp.Refused = outfitRefusalsWire(idx)
+	}
 	spec := req.Spec
 	if strings.TrimSpace(spec) == "" {
 		spec = resp.Default
@@ -122,6 +126,9 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 	h.mintPoolNodes(fresh)
 	h.configMu.Unlock()
 	ofit.Warm(fresh.Config.DefaultOutfit)
+	if idx, err := fresh.OutfitIndex(); err == nil {
+		resp.Refused = outfitRefusalsWire(idx)
+	}
 	if err := h.reloadPolicy(); err != nil {
 		return nil, fmt.Errorf("configure: the new config and its box doors are in force, but the policy did not reload: %w", err)
 	}
@@ -144,4 +151,12 @@ func loadedOutfitPath(h *handlers, name string) string {
 		return name
 	}
 	return loaded.OutfitPath(name)
+}
+
+func outfitRefusalsWire(idx config.OutfitIndex) []rpc.OutfitRefusal {
+	var out []rpc.OutfitRefusal
+	for _, r := range idx.Refusals() {
+		out = append(out, rpc.OutfitRefusal{Name: r.Name, Path: r.Path, LockedBy: r.LockedBy})
+	}
+	return out
 }

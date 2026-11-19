@@ -30,10 +30,17 @@ type OutfitReloadResponse struct {
 
 // Closure lists found and missing nodes alike.
 type OutfitsResponse struct {
-	Default string         `json:"default,omitempty"`
-	Names   []string       `json:"names,omitempty"`
-	Closure *OutfitLayer   `json:"closure,omitempty"`
-	Form    *form.Snapshot `json:"form,omitempty"`
+	Default string          `json:"default,omitempty"`
+	Names   []string        `json:"names,omitempty"`
+	Closure *OutfitLayer    `json:"closure,omitempty"`
+	Form    *form.Snapshot  `json:"form,omitempty"`
+	Refused []OutfitRefusal `json:"refused,omitempty"`
+}
+
+type OutfitRefusal struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	LockedBy string `json:"locked_by"`
 }
 
 // ConfigureRequest patches the server's config.toml.
@@ -52,6 +59,8 @@ type ConfigureResponse struct {
 	DefaultOutfit string `json:"default_outfit,omitempty"`
 	OutfitPath    string `json:"outfit_path,omitempty"`
 	Refreshed     bool   `json:"refreshed,omitempty"`
+
+	Refused []OutfitRefusal `json:"refused,omitempty"`
 }
 
 type StatusRequest struct {
