@@ -580,12 +580,7 @@ func beyondBirth(birth, stamp message.Patch) message.Patch {
 
 // isStumpLocked reports whether an id names a stump. Caller holds s.mu.
 func (s *XwalStore) isStumpLocked(id string) bool {
-	for _, st := range s.trunks.Stumps() {
-		if st.Name == id {
-			return true
-		}
-	}
-	return false
+	return s.trunks.IsStump(id)
 }
 
 // stumpBorn reports whether a stump has its birth record. Caller holds s.mu.
