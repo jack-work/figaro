@@ -123,6 +123,7 @@ func TestAHolderRunSucceedKeepsTheHoldersGrantAndChildPolicy(t *testing.T) {
 	r.run("set", "--id", holder, "system.child_policy", policy)
 	seat := r.roleFor(holder, "seat")
 	r.run("set", "--id", seat, "succession-policy.outfit", "default,seatgrants")
+	r.run("set", "--id", seat, "system.grants.outfits", `["route"]`)
 
 	out, _ := r.as(holder, "succeed", seat, "-O", "route", "--abdication", "linger", "--stay", "-j", "--", "you hold the seat")
 	t.Logf("holder-run succeed report: %s", strings.TrimSpace(out))

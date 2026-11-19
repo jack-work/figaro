@@ -27,6 +27,9 @@ func newLicenseRig(t *testing.T, policy string) licenseRig {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, root.FigaroID, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{form.OutfitGrantsKey: []string{"mock"}})})); err != nil {
+		t.Fatal(err)
+	}
 	l := licenseRig{grantRig: r, root: root.FigaroID, x: ariasFork(t, r, root.FigaroID)}
 	keyGrants(l, false)
 	return l
