@@ -119,7 +119,11 @@ A figaro holds its own list and the list on every role form it holds, so
 the charter grants a seat's outfits on the role and a successor holds them
 once it is cast. A fork is born with a copy of its parent's own list, never
 a role's. The outfit a role's `succession-policy` names is dressed by the
-daemon at a seat, not named by the caller, and needs no grant.
+daemon at a seat, not named by the caller, and needs no grant. So an
+outfit that carries `succession-policy` grants more than itself: a figaro
+that may name it can mint a role in it (`cast -O`), and that role's
+successors are dressed in whatever outfit the policy names. Grant such an
+outfit as you would the outfit it names.
 
 A refusal names the outfit and the command that grants it:
 
