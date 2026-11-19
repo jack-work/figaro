@@ -51,7 +51,7 @@ func StartIn(ctx context.Context, argv []string, dir string, env []string, req s
 		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 		cmd.Dir, cmd.Env, cmd.WaitDelay = dir, env, waitDelay
 		cmd.Cancel = func() error { killTree(cmd); return nil }
-		cmd.SysProcAttr = intoCgroup(&syscall.SysProcAttr{}, cgroupFD)
+		cmd.SysProcAttr = toolAttr(&syscall.SysProcAttr{}, cgroupFD)
 		return cmd
 	}
 	p := &process{done: make(chan struct{})}
