@@ -410,7 +410,7 @@ func (h *handlers) studiesOnlyReadableKeys(ctx context.Context, req rpc.StudyReq
 	if p == nil || f == "" || err != nil {
 		return authz.NotFound(rpc.MethodStudy, req.FormID)
 	}
-	all, globs := p.Figaro(f).KeyGlobs(sub, rpc.VerbRead, authz.Aria(req.FormID))
+	all, globs := h.readGlobs(p.Figaro(f), sub, f, req.FormID)
 	if all || len(globs) == 0 {
 		return authz.NotFound(rpc.MethodStudy, req.FormID)
 	}

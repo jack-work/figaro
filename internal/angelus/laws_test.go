@@ -337,3 +337,32 @@ func TestTheOwnersForkWritesALawByOutfitOrPatch(t *testing.T) {
 		require.JSONEq(t, `{"report":"the owner's word"}`, lawsOn(t, r.grantRig, patched.(rpc.ForkResponse).Alternative), "the owner's fork at turn %d with a law in its patch", at)
 	}
 }
+
+// Defends a held role's laws against its holder's read grants: an ancestor
+// holding *:* narrows the holder's scopes, and at the next prompt the study
+// of the role would end, laws and all. The holder reads its role's law.**
+// whatever its scopes say, and the study narrows to them instead.
+func TestAnAncestorNarrowingItsHoldersReadLeavesTheRolesLawsInView(t *testing.T) {
+	r := newLineageRig(t, "")
+	made, err := r.create(asOwner(), "mock")
+	require.NoError(t, err)
+	ancestor := made.FigaroID
+	r.ownerSets(t, ancestor, map[string]any{form.ScopesKey: []string{"*:*"}, "system.grants.outfits": []string{"mock"}})
+	minted, err := r.create(toolOf(ancestor), "mock")
+	require.NoError(t, err)
+	holder := minted.FigaroID
+	role := r.roleHeldBy(t, holder, map[string]any{"law.report": lawText, "phase": "two"})
+	r.ownerSets(t, holder, map[string]any{form.ScopesKey: []string{"*:aria:self", "read:aria:" + role}})
+	if _, err := r.h[rpc.MethodSet](toolOf(ancestor), withAria(t, holder, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{form.ScopesKey: []string{"*:aria:self"}})})); err != nil {
+		t.Fatalf("the ancestor could not narrow its child: %v", err)
+	}
+	if _, err := r.h[rpc.MethodQua](asOwner(), withAria(t, holder, rpc.QuaRequest{Text: "next turn"})); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := r.backend.FormState(holder)
+	require.NoError(t, err)
+	require.Equal(t, []string{form.LawRoot}, form.StudyKeys(snap, role), "the holder's study of its role: %s", studiesOn(t, r, holder))
+	if err := r.ariaCall(t, true, holder, rpc.MethodStudy, holder, rpc.StudyRequest{FormID: role, Keys: []string{"phase"}}); err == nil {
+		t.Error("the implicit read of the laws let the holder read phase")
+	}
+}

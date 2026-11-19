@@ -54,7 +54,12 @@ func (h *handlers) alignForkStudies(child, parent string, mode rpc.ForkStudies) 
 	return nil
 }
 
-func (h *handlers) unreadableStudies(id string) ([]string, error) {
+type unreadableStudy struct {
+	form string
+	keep []string
+}
+
+func (h *handlers) unreadableStudies(id string) ([]unreadableStudy, error) {
 	p := h.angelus.Policies
 	if p == nil || h.angelus.Backend == nil {
 		return nil, nil
@@ -64,9 +69,9 @@ func (h *handlers) unreadableStudies(id string) ([]string, error) {
 		return nil, err
 	}
 	view := p.Figaro(id)
-	var out []string
+	var out []unreadableStudy
 	for _, f := range figaro.StudiesFromSnapshot(snap) {
-		all, globs := view.KeyGlobs(jkauthz.Subject{}, rpc.VerbRead, authz.Aria(f))
+		all, globs := h.readGlobs(view, jkauthz.Subject{}, id, f)
 		if all {
 			continue
 		}
@@ -74,9 +79,40 @@ func (h *handlers) unreadableStudies(id string) ([]string, error) {
 		if len(keys) > 0 && !slices.ContainsFunc(keys, func(k string) bool { return !readCovers(globs, k) }) {
 			continue
 		}
-		out = append(out, f)
+		u := unreadableStudy{form: f}
+		if h.holdsRole(id, f) {
+			u.keep = lawsAndReadable(keys, globs)
+		}
+		out = append(out, u)
 	}
 	return out, nil
+}
+
+func (h *handlers) readGlobs(view authz.FigaroView, sub jkauthz.Subject, observer, f string) (bool, []string) {
+	all, globs := view.KeyGlobs(sub, rpc.VerbRead, authz.Aria(f))
+	if !all && h.holdsRole(observer, f) {
+		globs = append(slices.Clone(globs), form.LawRoot+".**")
+	}
+	return all, globs
+}
+
+func (h *handlers) holdsRole(observer, f string) bool {
+	snap, err := h.angelus.Backend.FormState(f)
+	if err != nil {
+		return false
+	}
+	target := snap.Lookup("target-aria")
+	return target != nil && *target == observer
+}
+
+func lawsAndReadable(keys, globs []string) []string {
+	out := []string{form.LawRoot}
+	for _, k := range keys {
+		if k != form.LawRoot && readCovers(globs, k) {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 func (h *handlers) dropUnreadableStudies(id string) error {
@@ -85,12 +121,22 @@ func (h *handlers) dropUnreadableStudies(id string) error {
 		return err
 	}
 	if p := h.angelus.Policies; len(gone) > 0 && !p.Enforces(authz.KeyGrants) {
-		p.WouldRefuse(authz.KeyGrants, fmt.Sprintf("%s keeps studies it may no longer read: %s", id, strings.Join(gone, ", ")))
+		names := make([]string, len(gone))
+		for i, u := range gone {
+			names[i] = u.form
+		}
+		p.WouldRefuse(authz.KeyGrants, fmt.Sprintf("%s keeps studies it may no longer read: %s", id, strings.Join(names, ", ")))
 		return nil
 	}
-	for _, f := range gone {
-		if _, err := h.studyForHub(id, f, nil, true); err != nil {
-			return fmt.Errorf("drop %s, which %s may no longer read: %w", f, id, err)
+	for _, u := range gone {
+		if _, err := h.studyForHub(id, u.form, nil, true); err != nil {
+			return fmt.Errorf("drop %s, which %s may no longer read: %w", u.form, id, err)
+		}
+		if u.keep == nil {
+			continue
+		}
+		if _, err := h.studyForHub(id, u.form, u.keep, false); err != nil {
+			return fmt.Errorf("keep the laws of %s, which %s holds: %w", u.form, id, err)
 		}
 	}
 	return nil
