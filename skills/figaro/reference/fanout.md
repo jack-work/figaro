@@ -160,6 +160,12 @@ figaro (`-` when uncapped); `ls -j` carries `fan_used` and `fan_quota`.
   predecessor's quota and the predecessor keeps none, so once it retires the
   seat uses exactly what it used before. It is refused only if the
   predecessor's budget is already overdrawn.
+- **A seat whose successor is not the predecessor's fork** puts the
+  predecessor under the successor along with its children. If that leaves
+  the successor over the quota it took, its quota is raised to its use: a
+  predecessor at its quota costs +1 on the seat and +1 at its outer
+  absorber, and the raise stays after the predecessor retires. Every other
+  seat is net zero.
 - **`--abdication linger`** (familial) keeps the predecessor alive under its
   successor, so it costs 1 and is refused at the fork without it.
 - **`--successor <it>`** (overlap) paid for the successor at the fork that made
