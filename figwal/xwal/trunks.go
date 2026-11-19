@@ -352,7 +352,27 @@ func (t *Trunks) Head(trunk string) (*XWAL, error) {
 	return view, nil
 }
 
-func (t *Trunks) mintNode() string { return t.idx.MintNode() }
+func (t *Trunks) mintNode() string {
+	channels, err := channelNames(t.root)
+	if err != nil {
+		channels = []string{t.main}
+	}
+	for {
+		name := t.idx.MintNode()
+		if !t.nameHasDir(name, channels) {
+			return name
+		}
+	}
+}
+
+func (t *Trunks) nameHasDir(name string, channels []string) bool {
+	for _, ch := range channels {
+		if pathExists(t.channelDir(ch, name)) {
+			return true
+		}
+	}
+	return false
+}
 
 func (t *Trunks) mintTrunk(kind string) string { return t.idx.MintTrunk(kind) }
 
