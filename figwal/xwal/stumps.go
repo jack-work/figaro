@@ -106,6 +106,16 @@ func (t *Trunks) SpawnUnderStumpKind(name, kind string) (TrunkID, error) {
 	return t.forkFlat(name, kind, true)
 }
 
+func (t *Trunks) IsStump(name string) bool {
+	endRead, err := t.beginTrackedRead()
+	if err != nil {
+		return false
+	}
+	defer endRead()
+	n := t.node(name)
+	return n != nil && n.Kind == "loadout"
+}
+
 type StumpInfo struct {
 	Name     string
 	Children []TrunkID // trunk ids of its immediate trunk children
