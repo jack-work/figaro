@@ -20,6 +20,7 @@ Set or removed only by the owner: the local door, an in-process call, or the own
 - `system.tools` and everything under it
 - `system.retirement` and everything under it
 - `system.succession_failed` and everything under it
+- `system.grants` and everything under it
 - `system.keep` and everything under it
 - `system.ttl` and everything under it
 - `system.reap_if_empty` and everything under it
@@ -36,7 +37,6 @@ Set by the owner, or by an ancestor figaro through its box door, and a figaro gi
 - `target-aria` and everything under it
 - `system.sandbox` and everything under it
 - `system.scopes` and everything under it
-- `system.grants` and everything under it
 - `system.fanout.max_children` and everything under it
 - `system.child_policy` and everything under it
 - `system.fanout.quota` and everything under it

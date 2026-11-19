@@ -441,7 +441,7 @@ func TestSuccessionRefusesScopesItCannotRead(t *testing.T) {
 	snap, err := r.a.Backend.FormState(old)
 	require.NoError(t, err)
 	_, err = r.a.Backend.ApplyForm(old, form.Build(snap, map[string]json.RawMessage{
-		form.ScopesKey: json.RawMessage(`["send:*"]`), form.RetiredGrantsKey: json.RawMessage(`["*:*"]`),
+		form.ScopesKey: json.RawMessage(`["send:*"]`), form.GrantsKey: json.RawMessage(`["*:*"]`),
 	}, nil))
 	require.NoError(t, err)
 	r.cross(old)

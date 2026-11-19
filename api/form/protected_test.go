@@ -30,50 +30,33 @@ func TestCheckScopesNamesTheEntryAProviderWouldReadDifferently(t *testing.T) {
 	}
 }
 
-func TestTheOldNameIsReadWhenAloneAndBothNamesAreRefused(t *testing.T) {
+func TestAListAtSystemGrantsFailsTheScopesClosed(t *testing.T) {
 	with := func(kv map[string]json.RawMessage) form.Snapshot {
 		return form.Snapshot{}.Apply(form.Build(form.Snapshot{}, kv, nil))
 	}
-	old := with(map[string]json.RawMessage{form.RetiredGrantsKey: json.RawMessage(`["read:*"]`)})
-	raw, key, ok, err := form.OwnScopes(old)
-	if err != nil || !ok || key != form.RetiredGrantsKey || string(raw) != `["read:*"]` {
-		t.Fatalf("old name alone: %s %s %v %v", raw, key, ok, err)
+	old := with(map[string]json.RawMessage{form.GrantsKey: json.RawMessage(`["read:*"]`)})
+	if raw, ok, err := form.OwnScopes(old); err == nil || ok || raw != nil || !strings.Contains(err.Error(), form.ScopesKey) {
+		t.Fatalf("a list at the old name was read as no scopes: %s %v %v", raw, ok, err)
 	}
-	if err := form.CheckScopes(with(map[string]json.RawMessage{form.RetiredGrantsKey: json.RawMessage(`[" a"]`)})); err == nil || !strings.Contains(err.Error(), form.RetiredGrantsKey) {
-		t.Errorf("a malformed old key is named by its own name: %v", err)
+	if err := form.CheckScopes(old); err == nil {
+		t.Fatal("CheckScopes passed a list at system.grants")
 	}
-	both := with(map[string]json.RawMessage{form.RetiredGrantsKey: json.RawMessage(`["*:*"]`), form.ScopesKey: json.RawMessage(`["read:*"]`)})
-	if _, _, ok, err := form.OwnScopes(both); err == nil || ok || !strings.Contains(err.Error(), "both set") {
-		t.Fatalf("both: %v %v", ok, err)
-	}
-	if err := form.CheckScopes(both); err == nil {
-		t.Fatal("CheckScopes passed a board with both names")
+	beside := with(map[string]json.RawMessage{form.GrantsKey + ".outfits": json.RawMessage(`["hk"]`), form.ScopesKey: json.RawMessage(`["read:*"]`)})
+	if raw, ok, err := form.OwnScopes(beside); err != nil || !ok || string(raw) != `["read:*"]` {
+		t.Fatalf("control: grants beside scopes: %s %v %v", raw, ok, err)
 	}
 }
 
-func TestBothNamesAreProtected(t *testing.T) {
-	for _, k := range []string{form.ScopesKey, form.RetiredGrantsKey, form.RetiredGrantsKey + "[0]"} {
-		if _, ok := form.Protected(k); !ok {
-			t.Errorf("%s is not protected", k)
+func TestSystemGrantsIsOwnerHeldAndNotProtected(t *testing.T) {
+	for _, k := range []string{form.GrantsKey, form.GrantsKey + ".anything", form.GrantsKey + "[0]"} {
+		if _, ok := form.OwnerHeld(k); !ok {
+			t.Errorf("%s is not owner-held", k)
+		}
+		if _, ok := form.Protected(k); ok {
+			t.Errorf("%s is protected: an ancestor would write the owner's grants", k)
 		}
 	}
-}
-
-func TestAWriteOfTheOldNameIsRefusedAndItsRemovalIsNot(t *testing.T) {
-	old := form.Snapshot{}.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{form.RetiredGrantsKey: json.RawMessage(`["read:*"]`)}, nil))
-	set := old.Apply(form.Build(old, map[string]json.RawMessage{form.RetiredGrantsKey: json.RawMessage(`["*:*"]`)}, nil))
-	if err := form.RefuseRetiredGrantsWrite(old, set); err == nil || !strings.Contains(err.Error(), form.ScopesKey) {
-		t.Fatalf("set of the old name: %v", err)
-	}
-	fresh := form.Snapshot{}.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{form.RetiredGrantsKey: json.RawMessage(`[]`)}, nil))
-	if err := form.RefuseRetiredGrantsWrite(form.Snapshot{}, fresh); err == nil {
-		t.Fatal("a first write of the old name passed")
-	}
-	moved := old.Apply(form.Build(old, map[string]json.RawMessage{form.ScopesKey: json.RawMessage(`["read:*"]`)}, []string{form.RetiredGrantsKey}))
-	if err := form.RefuseRetiredGrantsWrite(old, moved); err != nil {
-		t.Fatalf("moving to the new name: %v", err)
-	}
-	if err := form.RefuseRetiredGrantsWrite(old, old); err != nil {
-		t.Fatalf("an untouched old key: %v", err)
+	if _, ok := form.Protected(form.ScopesKey); !ok {
+		t.Error("control: system.scopes is not protected")
 	}
 }

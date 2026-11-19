@@ -452,10 +452,10 @@ system.forked_from	owner= lineage= set=true remove=true apply.owner=refused appl
 system.forked_from.x	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.forked_from[0]	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.forked_from_x	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
-system.grants	owner= lineage=system.grants set=false remove=false apply.owner=refused apply.figaro=refused
-system.grants.quota	owner= lineage=system.grants set=false remove=false apply.owner=refused apply.figaro=refused
-system.grants.x	owner= lineage=system.grants set=false remove=false apply.owner=refused apply.figaro=refused
-system.grants[0]	owner= lineage=system.grants set=false remove=false apply.owner=refused apply.figaro=refused
+system.grants	owner=system.grants lineage= set=false remove=false apply.owner=refused apply.figaro=refused
+system.grants.quota	owner=system.grants lineage= set=false remove=false apply.owner=refused apply.figaro=refused
+system.grants.x	owner=system.grants lineage= set=false remove=false apply.owner=refused apply.figaro=refused
+system.grants[0]	owner=system.grants lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.grants_x	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.keep	owner=system.keep lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.keep.x	owner=system.keep lineage= set=false remove=false apply.owner=refused apply.figaro=refused

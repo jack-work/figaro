@@ -95,9 +95,12 @@ capabilities.
 - **`figaro.scopes`** (0.64) is the new name of `figaro.grants`, which
   still answers the same; each chain level carries its set under both
   `scopes` and `grants`. `figaro scopes` calls `figaro.grants` so it works
-  against an older daemon, and reads either field. A 0.64 daemon refuses
-  writes of `system.grants`; an older CLI's `figaro set system.grants` is
-  refused naming `system.scopes`.
+  against an older daemon, and reads either field.
+- **`system.grants` is an object of owner grants**, no longer the old name
+  of `system.scopes`. A CLI from before the change drops `system.grants`
+  whenever it sets `system.scopes`: run by the owner it removes the
+  figaro's `system.grants.outfits` too, and run by a figaro it is refused
+  as an owner-held removal. Set scopes with a current CLI.
 - **Folding rules.** The CLI folds form deltas with `api/form`. A change to
   how a patch folds (as in 0.52.1 and 0.52.2) bumps `FormDeltaSchema`, so
   an older mirror stops and refetches instead of folding wrongly.
