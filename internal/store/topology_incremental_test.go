@@ -162,7 +162,11 @@ func runIncrementalTopology(t *testing.T, seed int64, steps int) {
 			continue
 		}
 		opScans := trunkScanCount.Load() - before
+		ids := b.store.matchableIDs()
 		full := fullSnapshot(b.store)
+		if !slices.Equal(ids, full.sortedIDs()) {
+			t.Fatalf("seed %d step %d after %s: MatchID's ids %v, a full rebuild's %v", seed, i, op, ids, full.sortedIDs())
+		}
 		for _, n := range full.nodes {
 			if l, ok := b.store.NodeLink(n.ID); !ok || l != (NodeLink{ID: n.ID, Parent: n.Parent, Kind: n.Kind}) {
 				t.Fatalf("seed %d step %d after %s: NodeLink(%s) = %+v %v, the snapshot says %+v", seed, i, op, n.ID, l, ok, n)

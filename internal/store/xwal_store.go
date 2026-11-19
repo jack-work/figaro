@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -186,6 +187,7 @@ type XwalStore struct {
 	mu       sync.RWMutex
 	trunks   *xwal.Store
 	topology atomic.Pointer[topologySnapshot]
+	idIndex  atomic.Pointer[idIndex]
 
 	// observed is in-memory; the aria's bound form is the durable truth.
 	observedMu sync.Mutex // writers only
@@ -284,8 +286,58 @@ func (t *topologySnapshot) sortedIDs() []string {
 	return t.sorted
 }
 
+type idIndex struct {
+	version uint64
+	ids     []string
+}
+
+func (s *XwalStore) matchableIDs() []string {
+	if x := s.idIndex.Load(); x != nil {
+		if x.version == s.trunks.Version() {
+			return x.ids
+		}
+		if next, ok := s.idsSince(x); ok {
+			s.idIndex.Store(next)
+			return next.ids
+		}
+	}
+	t := s.topologySnapshot()
+	s.idIndex.Store(&idIndex{version: t.version, ids: t.sortedIDs()})
+	return t.sortedIDs()
+}
+
+func (s *XwalStore) idsSince(prev *idIndex) (*idIndex, bool) {
+	born, at, onlySpawns := s.trunks.SpawnedSince(prev.version)
+	if !onlySpawns {
+		return nil, false
+	}
+	ids := prev.ids
+	copied := false
+	for _, id := range born {
+		ti, live := s.trunks.LightInfo(id)
+		if !live {
+			continue
+		}
+		switch ti.Kind {
+		case "", string(kindConversation), string(kindForm):
+		default:
+			continue
+		}
+		i, found := sort.Find(len(ids), func(i int) int { return strings.Compare(id, ids[i]) })
+		if found {
+			continue
+		}
+		if !copied {
+			ids = append(make([]string, 0, len(prev.ids)+len(born)), prev.ids...)
+			copied = true
+		}
+		ids = slices.Insert(ids, i, id)
+	}
+	return &idIndex{version: at, ids: ids}, true
+}
+
 func (s *XwalStore) MatchID(prefix string, limit int) []string {
-	ids := s.topologySnapshot().sortedIDs()
+	ids := s.matchableIDs()
 	var out []string
 	for i := sort.SearchStrings(ids, prefix); i < len(ids) && strings.HasPrefix(ids[i], prefix); i++ {
 		if len(out) == limit {
@@ -1241,10 +1293,12 @@ func TrunkWalksForTest() int64 { return trunkWalkCount.Load() }
 func TopologyBuildsForTest() int64 { return topologyBuildCount.Load() }
 
 func (s *XwalStore) WithFullTopologyForTest(read func()) {
-	kept := s.topology.Load()
+	kept, keptIDs := s.topology.Load(), s.idIndex.Load()
 	s.topology.Store(nil)
+	s.idIndex.Store(nil)
 	read()
 	s.topology.Store(kept)
+	s.idIndex.Store(keptIDs)
 }
 
 type SweepReport = xwal.SweepReport

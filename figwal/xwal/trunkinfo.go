@@ -224,6 +224,10 @@ func (t *Trunks) Nodes() map[string]NodeInfo {
 	return out
 }
 
+func (t *Trunks) SpawnedSince(since uint64) (born []string, exactAt uint64, onlySpawnsSince bool) {
+	return t.idx.SpawnedSince(since)
+}
+
 func (t *Trunks) LightInfo(trunk TrunkID) (TrunkInfo, bool) {
 	endRead, err := t.beginTrackedRead()
 	if err != nil {
