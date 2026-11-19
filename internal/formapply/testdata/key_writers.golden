@@ -453,6 +453,10 @@ system.forked_from.x	owner= lineage= set=false remove=false apply.owner=refused 
 system.forked_from[0]	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.forked_from_x	owner= lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.grants	owner=system.grants lineage= set=false remove=false apply.owner=refused apply.figaro=refused
+system.grants.outfits	owner=system.grants lineage= set=false remove=false apply.owner=ok apply.figaro=refused
+system.grants.outfits.x	owner=system.grants lineage= set=false remove=false apply.owner=ok apply.figaro=refused
+system.grants.outfits[0]	owner=system.grants lineage= set=false remove=false apply.owner=refused apply.figaro=refused
+system.grants.outfits_x	owner=system.grants lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.grants.quota	owner=system.grants lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.grants.x	owner=system.grants lineage= set=false remove=false apply.owner=refused apply.figaro=refused
 system.grants[0]	owner=system.grants lineage= set=false remove=false apply.owner=refused apply.figaro=refused
