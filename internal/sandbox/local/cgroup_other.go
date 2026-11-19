@@ -4,4 +4,4 @@ package local
 
 import "syscall"
 
-func intoCgroup(a *syscall.SysProcAttr, _ int) *syscall.SysProcAttr { return a }
+func toolAttr(a *syscall.SysProcAttr, _ int) *syscall.SysProcAttr { return a }
