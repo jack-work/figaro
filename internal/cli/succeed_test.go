@@ -573,8 +573,11 @@ func TestANamedSuccessorIsDrawnWhereAForkedOneGoes(t *testing.T) {
 }
 
 func TestANamedSuccessorTheGuardRefusesStopsTheSuccession(t *testing.T) {
-	s := seatedPredecessor(t, nil)
-	require.NoError(t, wire.Install(s.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}))
+	s := seatedPredecessor(t, func(b *store.XwalBackend, _ string, turn uint64) {
+		if turn == 0 {
+			require.NoError(t, wire.Install(b.Store(), t.TempDir(), wire.Capabilities{Trunks: true}))
+		}
+	})
 	_, _, err := s.backend.Fork(s.pred)
 	require.NoError(t, err)
 	was, _ := s.backend.Node(s.pred)
