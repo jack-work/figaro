@@ -218,8 +218,8 @@ func outfitClosureNode(l *rpc.OutfitLayer) *figtree.Node {
 		found, where = "no", "cycle: already a layer above this one"
 	case l.Found:
 		found, where = "yes", outfitProvenance(l.Origin, l.Path, l.Shadowed, l.Refused, l.Overlaid)
-	case len(l.Refused) > 0:
-		where = strings.Join(append([]string{where}, outfitRefusedParts(l.Refused)...), "; ")
+	case len(l.Refused) > 0 || len(l.Overlaid) > 0:
+		where = strings.Join(append(append([]string{where}, outfitRefusedParts(l.Refused)...), outfitOverlaidParts(l.Overlaid)...), "; ")
 	}
 	n := &figtree.Node{
 		Marker: outfitClosureMarker(l),
@@ -241,9 +241,7 @@ func outfitProvenance(origin, path string, shadowed, refused, overlaid []rpc.Out
 		parts = append(parts, "shadows "+s.Origin+" "+s.Path)
 	}
 	parts = append(parts, outfitRefusedParts(refused)...)
-	for _, o := range overlaid {
-		parts = append(parts, "ignores "+o.Origin+" "+o.Path+" (layer of a locked outfit)")
-	}
+	parts = append(parts, outfitOverlaidParts(overlaid)...)
 	return strings.Join(parts, "; ")
 }
 
@@ -251,6 +249,14 @@ func outfitRefusedParts(refused []rpc.OutfitSource) []string {
 	var parts []string
 	for _, r := range refused {
 		parts = append(parts, "refused "+r.Origin+" "+r.Path+" (locked)")
+	}
+	return parts
+}
+
+func outfitOverlaidParts(overlaid []rpc.OutfitSource) []string {
+	var parts []string
+	for _, o := range overlaid {
+		parts = append(parts, "ignores "+o.Origin+" "+o.Path+" (layer of a locked outfit)")
 	}
 	return parts
 }

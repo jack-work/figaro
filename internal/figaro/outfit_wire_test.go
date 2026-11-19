@@ -15,3 +15,11 @@ func TestTheWireCarriesARefusalOnANotFoundLayer(t *testing.T) {
 		t.Fatalf("refused = %+v", got.Refused)
 	}
 }
+
+func TestTheWireCarriesAnIgnoredOverlayOnANotFoundLayer(t *testing.T) {
+	c := &outfit.Closure{Name: "helper", Overlaid: []config.OutfitSource{{Path: "/u/helper.toml", Root: "/u"}}}
+	got := figaro.OutfitClosureWire(c)
+	if len(got.Overlaid) != 1 || got.Overlaid[0].Path != "/u/helper.toml" {
+		t.Fatalf("overlaid = %+v", got.Overlaid)
+	}
+}

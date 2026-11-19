@@ -362,3 +362,18 @@ func TestAUserOutfitNamedLikeALockedOutfitsManagedLayerIsNoCycle(t *testing.T) {
 	assert.Equal(t, `"user-base"`, string(mustEntry(patch, "system.voice")))
 	assert.Equal(t, `"seat"`, string(mustEntry(patch, "system.role")))
 }
+
+func TestTheTreeNamesAnIgnoredOverlayOfALockedOutfitsMissingLayer(t *testing.T) {
+	o, managed, user := layeredOutfitter(t)
+	writeRootFile(t, managed, "seat.toml", "layers = [\"helper\"]\n")
+	writeRootFile(t, managed, ".locked", "seat\n")
+	overlay := writeRootFile(t, user, "helper.toml", "[system]\nmodel = \"user\"\n")
+
+	seat := o.Resolve("seat")
+	require.Len(t, seat.Layers, 1)
+	helper := seat.Layers[0]
+	assert.False(t, helper.Found)
+	assert.Equal(t, []config.OutfitSource{{Path: overlay, Root: user}}, helper.Overlaid)
+	assert.Equal(t, []outfit.LockedOverlay{{Locked: "seat", Layer: "helper", OutfitSource: config.OutfitSource{Path: overlay, Root: user}}},
+		o.LockedLayerOverlays([]string{"seat"}))
+}

@@ -164,3 +164,14 @@ func TestRenderOutfitClosureNamesARefusalOnAMissingLayer(t *testing.T) {
 		t.Fatalf("closure tree:\n%s", got)
 	}
 }
+
+func TestRenderOutfitClosureNamesAnIgnoredOverlayOnAMissingLayer(t *testing.T) {
+	restore := term.SetColorMode(term.ColorNever)
+	defer restore()
+
+	closure := &rpc.OutfitLayer{Name: "helper", Overlaid: []rpc.OutfitSource{{Path: "/u/helper.toml", Origin: "user"}}}
+	got := renderOutfitClosure(closure)
+	if !strings.Contains(got, "not found; ignores user /u/helper.toml (layer of a locked outfit)") {
+		t.Fatalf("closure tree:\n%s", got)
+	}
+}
