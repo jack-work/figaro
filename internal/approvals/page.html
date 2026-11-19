@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Owner approvals</title>
+<link rel="stylesheet" href="/page.css">
+</head>
+<body>
+<header><a href="/">Owner approvals</a></header>
+<main>
+{{if .Message}}<p class="message" role="status">{{.Message}}</p><p><a href="/">Back to the list</a></p>{{end}}
+{{with .Detail}}
+<h1>{{.Filing}} asks: {{if .Plan}}{{.Plan.Verb}} on {{.Plan.Target}}{{else}}request {{.ID}}{{end}}</h1>
+<p class="meta">request {{.ID}} on {{.Filing}} at version {{.Version}}{{if .Plan}}, target version {{.Plan.TargetVersion}}{{end}}</p>
+{{if .Refusal}}<p class="refusal">Deny only: {{.Refusal}}</p>{{end}}
+{{if .Plan}}
+<h2>The exact patch</h2>
+<ol class="patch">
+{{range .Lines}}<li><code>{{.Op}} {{.Key}}{{if eq .Op "set"}} = {{.New}}{{end}}</code>{{if eq .Op "set"}} <span class="was">now {{.Current}}</span>{{end}}</li>
+{{end}}</ol>
+{{range $k, $v := .Inputs}}<p class="meta">{{$k}} digest {{$v}}</p>{{end}}
+{{if .AtSuccession}}<p class="note">Takes effect at the next succession.</p>{{end}}
+{{if .Applied}}<p class="note">Already applied: approving only removes the request.</p>{{end}}
+<p class="hash">sha256 <strong>{{slice .Hash 0 12}}</strong><br><code>{{.Hash}}</code></p>
+{{end}}
+<h2>Filer's words, unverified</h2>
+<pre class="raw">{{.Raw}}</pre>
+<div class="bar">
+{{if .Plan}}<form method="post" action="/approve">
+<input type="hidden" name="filing" value="{{.Filing}}"><input type="hidden" name="id" value="{{.ID}}">
+<input type="hidden" name="hash" value="{{.Hash}}"><input type="hidden" name="version" value="{{.Version}}">
+<input type="hidden" name="token" value="{{.Token}}">
+<button class="approve">Approve</button></form>{{end}}
+<form method="post" action="/deny">
+<input type="hidden" name="filing" value="{{.Filing}}"><input type="hidden" name="id" value="{{.ID}}">
+<input type="hidden" name="hash" value="{{.Hash}}"><input type="hidden" name="version" value="{{.Version}}">
+<input type="hidden" name="token" value="{{.Token}}">
+<button class="deny">Deny</button></form>
+</div>
+{{end}}
+{{if not (or .Detail .Message)}}
+{{if .Rows}}<ul class="rows">
+{{range .Rows}}<li><a href="{{.Link}}">{{.Filing}} asks: {{if .Plan}}{{.Plan.Verb}} on {{.Plan.Target}}{{else}}{{.ID}}{{end}}</a>
+<span class="state">{{if .Refusal}}deny only{{else if .Applied}}already applied{{else}}ready{{end}}</span></li>
+{{end}}</ul>{{else}}<p>Nothing waiting.</p>{{end}}
+{{end}}
+</main>
+</body>
+</html>

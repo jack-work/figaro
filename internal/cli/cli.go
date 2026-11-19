@@ -1981,6 +1981,7 @@ there until you revoke it with the provider.`,
 	registerTroupe(r)
 	r.Register(boxVerb)
 	r.Register(valetVerb)
+	r.Register(approvalsVerb)
 
 	r.Register(&cmdkit.Command{
 		Name:  "models",

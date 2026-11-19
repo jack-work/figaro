@@ -1,278 +1,188 @@
-# Owner approvals and the troupe gateway
+# Owner approvals
 
-Status: proposal, draft 2 (2026-11-19). Plan only; nothing is built until Gluck approves.
-Base: keel/main v0.77.1 `ca2680c3b`. Brief: `~/notes/spain/briefs/owner-approvals-gateway.md`,
-including Gluck's revision of 11-19 ~15:10 ("not figaro-native"). Threat rows from El Llavero:
-`~/notes/spain/program/owner-approvals/llavero-threat-input.md`, cited as L1 to L10.
+Status: v1 slice built on `proposal/owner-approvals`, not started. The Inspector reads it
+before it runs. Base: keel/main v0.77.1 `ca2680c3b`. Brief:
+`~/notes/spain/briefs/owner-approvals-gateway.md` with Gluck's revision and decisions at the end.
+Threat rows: El Llavero, `~/notes/spain/program/owner-approvals/llavero-threat-input.md` (L1 to
+L10) and his review of draft 2, `llavero-review-draft2.md` (B1 to B4, N1 to N5).
 
-## Intro
+## What it is
 
-Some keys only the owner writes: `system.provider`, `system.model`, `system.grants.outfits` and
-the rest of `WriterOwner` (`api/form/registry.go:44-81`). The daemon refuses them to every
-figaro's tools (`internal/angelus/box_keys.go:300-309`, messages `:338-345`), and hands managed
-apply's operator prefixes only to an owner call that is not a figaro and not a box
-(`internal/angelus/form_apply.go:152-156`). That stays. The cost is that the King, steered over
-Telegram, waits for Gluck to reach a terminal.
+Some keys only the owner writes: `system.provider`, `system.model`, `system.ttl`,
+`system.grants.outfits` and the rest of `WriterOwner` (`api/form/registry.go:44-105`). The
+daemon refuses them to every figaro's tools (`internal/angelus/box_keys.go:300-309`, messages
+`:338-345`). That stays. The cost was that the King, steered over Telegram, waited for Gluck to
+reach a terminal.
 
-The design, per Gluck's revision:
+Now:
 
-1. **File.** A figaro writes a request into its own form, under `requests.<id>`: verb, target,
-   proposed values, reason, expiry. Nothing new in the daemon; a figaro already writes its own
-   non-system keys.
-2. **Show.** A thin web app, `figaro-approvals`, behind Authelia (admin group, two factors),
-   reads those forms with figaro-forms 0.1.x and lists the requests.
-3. **Approve.** Each button maps to one patch built by the app's backend from a fixed per-verb
-   template and validated values. Approve removes the request and sets the owner-held key;
-   Deny removes the request. The request text is never applied.
-4. **Act as the owner.** The backend is a user service on gluck, outside any figaro's cgroup,
-   so the daemon judges it the owner. No new principal, no new bypass, no new daemon code in v1.
+1. **File.** The King writes a request on its role form `@96447061` under `elicit.<id>`. Seats
+   may file on their own role forms. Requests survive succession because the role form does.
+2. **Show.** `figaro approvals serve`, a small HTTP service run as Gluck in his
+   `systemd --user` manager, lists every `elicit.*` on the forms it is given. For each request
+   it builds the patch from a fixed per-verb template and the live current values, and shows
+   the exact patch, current beside new, with its sha256. The request itself is shown only as
+   escaped text under "Filer's words, unverified".
+3. **Approve** posts the hash. The server rebuilds the patch from fresh reads, refuses unless
+   the hash matches, then writes with compare-and-set on the versions it read. **Deny** removes
+   the request with compare-and-set.
+4. **As the owner.** The service runs outside any figaro, so the daemon judges its calls the
+   owner's. No new principal, no daemon change.
 
-There is no broker with a queue of its own. The queue is the forms; the "broker" shrinks to the
-backend's two POST handlers.
+Code: `internal/approvals` (plan, templates, decide, server, page), `internal/cli/approvals.go`
+(the verb and the daemon adapter), `contrib/systemd/figaro-approvals.service`.
 
-## Request shape (what a figaro writes)
+## Request shape
 
 ```json
-"requests": {
+"elicit": {
   "r7f3a": {
-    "verb": "set.model",
-    "target": "d361163c0094c2ae4ad60aaad48ad258",
-    "values": {"provider": "anthropic", "model": "claude-opus-4-5"},
-    "reason": "King wants opus for the release audit",
-    "expires": "2026-11-19T18:02:11Z"
+    "verb": "figaro.model",
+    "target": "0123456789abcdef0123456789abcdef",
+    "set": {"system.provider": "anthropic", "system.model": "claude-opus-4-5"},
+    "reason": "release audit wants opus",
+    "expires": "2026-11-19T18:02:11Z",
+    "state": "pending"
   }
 }
 ```
 
-Everything here is untrusted (brief revision point 1). The app treats it as a suggestion of
-which template to offer and which values to try, nothing more:
+All of it is untrusted. Any unknown field, unknown verb, wrong target shape, extra or missing
+`set` key, bad value, or an `expires` that is past or more than 24h out makes the row Deny-only,
+and the page says why (`internal/approvals/plan.go`, `Build`). `reason` and `state` never reach
+the plan. The id is `[a-z0-9]{1,16}` and not `denied`.
 
-- `verb` must name a template in the allowlist below, or the row shows as "unknown verb" with
-  Deny only.
-- `target` must be an existing aria id or `@role` and is re-read from the daemon, with its
-  name and current values, before the page shows the row.
-- `values` are validated per template (enums, existence, bounds). A value that fails makes the
-  row Deny-only and says which field failed.
-- `reason` is shown escaped and never touches a patch.
-- `expires` past means Deny-only. Capped at 24h after the form version that wrote it.
-- The filer is not a field: it is the form the request sits in. A figaro can write only into
-  its own form (WriterSelf), so a request cannot claim to come from someone else.
+## Verbs (v1: two per level)
 
-The id is the filer's choice, `[a-z0-9]{1,16}`; the app refuses any other id shape.
-
-## The patch
-
-The daemon already has what makes one click one write. `figaro.set` takes `IfVersion`, which
-refuses unless the form is still at that version, and `Assert`, which makes removing an absent
-key a refusal rather than a no-op (`api/rpc/turn.go:93-103`, applied at
-`internal/angelus/hubs.go:160-165`).
-
-**Approve, target is the filer** (a figaro asking for its own model, say): one `figaro.set` on
-the filer's form, `Assert: true`, `IfVersion` = the version the page rendered:
-
-```
-remove requests.r7f3a
-set    system.model = "claude-opus-4-5"
-```
-
-Atomic. A stale click, a second click, or a request edited after Gluck looked at it all fail
-on the version or the assert, and nothing is written.
-
-**Approve, target is another form** (the King asking for a seat's model, the common case): a
-daemon patch is atomic on one form only. Two writes, consume first:
-
-1. On the filer's form: `remove requests.r7f3a`, `Assert`, `IfVersion` = rendered version. This
-   is the claim; whoever wins it is the only one who may apply.
-2. On the target's form: set the key, `IfVersion` = the target version the page rendered (the
-   page showed its current value at that version).
-
-If step 2 fails, the request is gone and the key unchanged: it fails closed, the audit line says
-`claimed, not applied`, and the King files again. That is the one place this shape is weaker
-than a single patch. A multi-form transaction in the daemon would close it; I do not think it is
-worth building for this (open question 5).
-
-**Deny:** `remove requests.r7f3a` with `Assert`, optionally `set requests_denied.r7f3a = "<reason
-Gluck typed>"` in the same patch, so the filer learns why. The filer removes that key when read.
-
-**Templates.** Each verb is a function in the backend from (validated target, validated values)
-to a patch. The request's JSON is never spread, merged, or passed through. Only the keys in the
-template's own list can appear in the patch, and the backend checks the built patch's touched
-keys against that list before sending, using figaro-forms' `touchedKeys`
-(`packages/figaro-forms/src/patch.ts:368`).
-
-## Verb allowlist (v1)
-
-| verb | values | validation | patch on target |
+| verb | target | keys | values |
 |---|---|---|---|
-| `set.provider` | `provider` | a configured provider name | `system.provider` (`registry.go:46`) |
-| `set.model` | `provider`, `model` | model in that provider's list | `system.provider`, `system.model` (`registry.go:46,51`) |
-| `grants.outfits.add` | `outfit` | outfit exists by name; no globs | append to `system.grants.outfits` (`api/form/outfit_grants.go:11`, `registry.go:81`) |
-| `grants.outfits.remove` | `outfit` | present in the list | remove from it |
-| `fanout.quota` | `quota` | integer 0..32 | `system.fanout.quota` (`api/form/protected.go:19`, `registry.go:84`) |
-| `succession.release` | none | key is set | unset `system.succession_failed` (`registry.go:77`) |
-| `role.apply` | `role`, `manifest` | manifest by name from the root-owned Nix manifest dir, with its hash | `form.apply` with `IfVersion` (`api/rpc/form_apply.go:7-14`, operator prefixes `internal/formapply/managed.go:12`) |
+| `figaro.model` | a figaro, full 32-hex id | `system.provider`, `system.model` | provider `[a-z][a-z0-9-]{0,31}`, model `[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}` |
+| `figaro.ttl` | a figaro, full 32-hex id | `system.ttl` | `0` or `<n>[smhdw]` |
+| `role.model` | a role form `@hex` | `system.provider`, `system.model` | as above; the page says "takes effect at the next succession" |
+| `role.outfits` | a role form `@hex` | `system.grants.outfits` | 1 to 16 existing outfit names, no globs; the whole new list |
 
-`role.apply` is not a `figaro.set`: it is `form.apply`, which already requires `IfVersion` and
-an expected outfit (`internal/angelus/form_apply.go:29`). The claim on the filer's form comes
-first, as above.
+Per-figaro verbs write the target's own form. Per-role verbs write the role form, which dresses
+the next holder at succeed and seat. No `@role` is ever resolved to its holder: the adapter
+refuses when the daemon attaches an id to a different form (`internal/cli/approvals.go`,
+`daemonForms.aria`). That answers B3: a recast between render and click cannot move the write.
 
-Out of v1:
+Every value is ASCII and passes its pattern, so no control, bidi or confusable character reaches
+a patch. Outfit names are checked against the daemon, and each outfit's folded form is hashed
+into the plan (`inputs`), so an outfit edited after render changes the hash (B2, partly B1).
 
-- **Key grants** (`write:<target>#<key>` scopes). They widen what one figaro may write on
-  another, which is the fence's whole job, and Llavero asks them out (L7). The key-grant fence
-  (`box_keys.go:115`, `:424-440`) is untouched.
-- **Anything with a path, env, or shell.** Valet grants (`internal/sandbox/valet/grants.go:24-30`)
-  stay with Gluck's own shell.
-- **Fermata hold.** No key for a hold exists in v0.77.1; I read it as releasing a stalled
-  succession (`succession.release`). Open question 4.
+Not in v1: `role.apply`, key grants, fan-out, anything with a path, env or shell (L7, B4).
 
-## The app
+## The patch and the hash
 
-```
-phone ─ Caddy on spain (order.kelliher.info/approve/*) ─ Authelia: admin, two_factor
-          └─ tailnet ─ gluck tailscale0:7482 ─ figaro-approvals (user service, as gluck)
-                                                  └─ unix ─ angelus (judged owner)
-```
+The plan is `{filing, filing_version, id, verb, target, target_version, lines[{key, current,
+new}], inputs, applied}`. Its sha256 over that JSON is the hash shown and posted. It covers the
+current values Gluck saw, the new values, both form versions and the outfit digests. The
+request's text is not in it; only the template's validated output is.
 
-- **Reads** use figaro-forms 0.1.4 (`eb07dd7`): a server-side `FormsClient` follows every live
-  figaro's `requests` key and each target's affected keys; the page renders rows with
-  `figaro-forms/view` (`flatten`, `resolveAction`, `packages/figaro-forms/src/view/index.ts:169,246`)
-  and Zanni's styling. The browser gets read-only data and never holds a door connection that
-  can write.
-- **Writes** are two POST endpoints on the backend, `/approve/<filer>/<id>` and
-  `/deny/<filer>/<id>`, carrying the two versions the page rendered. The backend rebuilds the
-  patch from the template, never from the browser's body beyond ids, versions and an optional
-  deny reason.
-- **Not the forms bridge with `--write-system`.** That flag lets a page write any `system.*`
-  key (figaro-forms `README.md:56-90`), so the page's JavaScript would be the only gate. The
-  backend holds the write path and exposes just the two verbs.
-- **The gluck bridge.** Reuse its tailnet path and Caddy site on `order.kelliher.info`, but a
-  separate route, port and upstream, not the `--hierarchy-only` bearer on 7481 (L9). ufw on
-  gluck admits 7482 from spain's tailnet address only; Gluck runs that, with the 7481 rule.
-- **Unit.** `systemd --user` service, `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`,
-  read access only to its own dir and the manifest dir, no read of `~/.config/figaro` secrets or
-  hush state. Its cgroup is its own, so once the peer caller check lands
-  (`proposal/laws` `cd64246e8`, `docs/proposals/laws/README.md:66-96`) the daemon tells it from
-  a figaro's tool by cgroup, not by environment.
-- **Identity front.** Authelia now, because it is what runs on `*.kelliher.info`; Kanidm when it
-  replaces Authelia as the one login Gluck named on 11-19. The backend verifies the edge's claim
-  itself (below), so the swap is config. Open question 1.
+The approve writes:
+
+- **Target is the filing form** (`role.*` on the King's own role form): one `figaro.set` with
+  the keys and the removal of `elicit.<id>`, `IfVersion` = the version read. Atomic.
+- **Target is another form** (the usual case): two writes, in Gluck's accepted order:
+  1. the target's keys, `IfVersion` = the target version read;
+  2. the removal of `elicit.<id>` on the filing form, `IfVersion` = the filing version read.
+
+  **This is not one atomic patch.** A daemon write touches one form
+  (`internal/store/xwal_backend.go:629`). If the service dies between the two, the key is set
+  and the request still pending. The page then shows "already applied", and approving it again
+  only removes the request (tested: `TestCrashBetweenWritesThenReapproveOnlyRemoves`). Gluck and
+  the King accepted this; a two-form transaction in the daemon would remove it.
+- **Target already holds the values:** only the removal.
+
+Stale reads: the hash covers both versions, so any write to either form after the page read it
+changes the hash and the approve is refused before it writes. A write landing between the
+server's re-read and its set fails the daemon's `IfVersion`. A second click finds no request.
+
+`figaro.set` carries `Assert`, so removing an absent key is a refusal (`api/rpc/turn.go:93-103`,
+`internal/angelus/hubs.go:160-165`).
 
 ## Audit
 
-One JSON line per click to the user journal with a fixed `SYSLOG_IDENTIFIER=figaro-approvals`,
-and a copy to `~/.local/state/figaro-approvals/audit.log`:
+One JSON line per decision, appended to `~/.local/state/figaro-approvals/audit.log` (0600) and
+written to stdout for the journal: time, action, approver, filing form, request id, verb,
+target, hash, result. No values from the keys, no request text, no tokens.
 
-`time, action (approve|deny), filer, request id, verb, target, the patch's keys and values,
-filer form version, target form version, result (applied | refused: <reason> | claimed, not
-applied), approver sub, auth method, front (page|telegram)`.
+## The web side
 
-v1 verbs carry no secret values (providers, model names, outfit names, integers, manifest
-names), so values are logged; a template that ever carries a secret marks the field and the line
-records only its hash. `reason` is not logged, since a figaro wrote it. Spain's Authelia log is
-the second, independent record of who logged in.
+- `GET /` lists, `GET /r/<form>/<id>` shows one, `POST /approve` and `POST /deny` decide.
+  Plain HTML from `html/template` (auto-escaped), one CSS file, no script. CSP
+  `default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'`.
+- Every request needs `Remote-User` equal to `--admin`; every POST needs `Origin` equal to
+  `--origin`, and a token, an HMAC with a per-process key over form, id, hash and version. A
+  post whose hash was not the one rendered fails the token.
+- Styling is plain, after Il Zanni's notes (`~/notes/zanni/owner-approvals-styling.md`):
+  sentence rows, the exact patch as the centre, current struck beside new, a sticky
+  Approve/Deny bar, results in words. The zanni components come later.
 
-The daemon's own form history also records each write with its version, so the form shows the
-change even if the app's log is lost.
-
-## Who files, who sees
-
-- **Files:** any figaro, only into its own form. Nothing else to enforce: the daemon already
-  refuses a figaro writing another's non-system keys without a grant.
-- **Sees:** only Gluck, through Authelia admin. Figaros read their own request and learn the
-  result by the request vanishing and the key changing (or `requests_denied.<id>` appearing).
-- **Noise:** the app shows at most 20 pending per filer and flags a filer with more.
-
-## Telegram
-
-The herald already sends inline keyboards and routes callbacks by prefix (`gluck-herald`
-`3ebafab`, `internal/telegram/api.go:169-175`, `internal/route/callbacks.go:10-35`).
-
-- When the app sees a new request it asks herald to message Gluck: verb, target name, new
-  value, and a URL button to `/approve/<filer>/<id>`. The button opens the page; the page's
-  button sends the same template patch. One mechanism, two doors.
-- Not v1: a callback button that approves in the chat. If Gluck wants it, the callback carries
-  filer, id and both versions, herald checks Gluck's sender id and posts to a backend endpoint
-  that admits only herald's uid and only `succession.release` and `fanout.quota` lowered.
-  Telegram has no second factor (L8). Open question 3.
-
-## Spain and Merlin later
-
-Recommendation: **one app per node**, each on its own node as that node's owner, behind the
-same Authelia, at `order.kelliher.info/approve/<node>/`. An owner patch must come from that
-node's owner; a federated writer would be a cross-node owner, which is the bypass we are not
-building. The landing page can list nodes and their pending counts by reading each app's
-read-only list. Open question 6.
+Route (El Mayor): the existing order site on spain gets a second handle,
+`handle_path /approve/*`, upstream `gluck.tail34d120.ts.net:7482` by tailnet name, no
+fallthrough, and an Authelia rule for `/approve/*` (admin user, two_factor) placed before any
+broader `order.kelliher.info` rule. Not the 7481 bridge bearer (L9). ufw on gluck: 7482 from
+spain only, Gluck's step; after the Merlin cutover it moves into the charter's tailnet firewall
+aspect. The unit binds `100.92.208.109:7482`.
 
 ## Threat model
 
-Llavero's rows, answered against this shape:
+Home mode is not a boundary, and this slice does not pretend otherwise. Figaros run as gluck.
+Any figaro whose tools reach a shell can already call the daemon as the owner (figaro issue #57),
+and can also reach `100.92.208.109:7482` locally and send `Remote-User: gluck`. The page adds
+ergonomics, not a wall. The guarantees below hold against the network and against request
+content; against a local figaro they wait for the peer caller check and house mode.
 
-| # | threat | answer |
+| # | threat | answer in v1 |
 |---|---|---|
-| L1 | Same uid: a figaro drives or rewrites the approver | There is no queue or DB to rewrite: the state is forms, which the daemon guards. The backend runs as gluck, as figaros do in home mode, so a tool could talk to the daemon as owner, but it can already (issue #57); the app adds no hole and closes none. The peer caller check makes the backend's cgroup, not its uid, the owner signal; house mode (`proposal/deployment-modes` `480ce9e4a`, `README.md:98-133`, `:336-381`) makes it real. Not a new bypass: the backend is exactly the owner the daemon already recognizes (`internal/angelus/sandbox_grant.go:163-171`, `internal/authz/door.go:78-80`, `internal/authz/authz.go:109-112`). |
-| L2 | The edge vouches for Gluck | v1 trusts Authelia's forward-auth only at the edge, and the backend verifies an Authelia OIDC ID token on each POST: `aud` = figaro-approvals, `amr` with a second factor, `sub` = the admin user, `auth_time` under 5 minutes, `nonce` = SHA-256 of (filer, id, both versions). Spain root still owns Authelia and can mint that token. The fix is a WebAuthn assertion over the same nonce, verified against a key pinned in Nix on gluck: rollout step 6. |
-| L3 | Shown is not run | The page shows the patch the template builds, keys and values escaped and whole, next to the current values. The POST sends versions, and the backend rebuilds the same patch at those versions; any change in between fails `IfVersion`. Values with control, bidi or confusable characters fail validation. |
-| L4 | Replay and staleness | The approve patch removes the request with `Assert`: a second click finds nothing and writes nothing. `IfVersion` on both forms voids an approval when either form changed since render. Expiry is checked at click. |
-| L5 | CSRF | POST only, `Origin` check, `SameSite=Strict` cookie, and the OIDC step-up nonce bound to the request. |
-| L6 | Filer approves | No figaro credential reaches the POST: it needs an Authelia admin session with two factors and a fresh ID token. The order bridge bearer, herald's identity and hush entries yield none of these. Filer is the form, shown on the page. |
-| L7 | General sudo | Seven templates; no paths, env, or free text in a patch; touched keys checked against the template's list; no exec; hardened unit; key grants out of v1. |
-| L8 | Telegram as a factor | v1: Telegram only opens the page. Later, low-risk verbs only, sender id checked. |
-| L9 | Gateway sprawl | Own route, port and upstream; not the 7481 bearer; per-path admin and two-factor rules; no fallthrough, as in umbral. |
-| L10 | Audit | Journal plus file per click, fields above, no tokens, no figaro-written text; Authelia's log on spain is independent; the daemon's form history records every write. A tool running as gluck can rewrite the file but not the system journal's sealed entries or spain's log. |
+| L1 | Same uid | Admitted, as above. A figaro could also edit the unit through a drop-in (N1). The service holds no state of its own beyond the audit file; the queue is the forms the daemon guards. House mode (Merlin): run it as the person outside the valet, the valet hiding its state dir. |
+| L2 | The edge vouches for Gluck | Yes in v1: the server trusts Authelia's `Remote-User`. The OIDC step-up Llavero specified (PKCE, `max_age`, `nonce` = plan hash, `amr`, `sub`) is the next step, and then WebAuthn. Spain root owns Authelia either way. |
+| L3 | Shown is not run | One plan; the page renders it; its hash is posted; the server rebuilds it and refuses on a difference; templates write only their own keys. |
+| L4 | Replay, staleness | `IfVersion` on every write, versions in the hash, `Assert` on removal; a second click is a refusal. |
+| L5 | CSRF | POST only, Origin check, HMAC token over id, hash and version, CSP `form-action 'self'`. |
+| L6 | Filer approves | Over the network: no figaro credential yields an Authelia admin session. Locally: see the home-mode paragraph. |
+| L7 | General sudo | Four templates, patterned values, no process started: a test fails if `internal/approvals` imports `os/exec` or `syscall`. |
+| L8 | Telegram | Not wired. When it is, the button is a URL to `/r/<form>/<id>`. |
+| L9 | Gateway sprawl | Own route, port and upstream; not the 7481 bearer. |
+| L10 | Audit | Append-only by flag, not by the kernel; a gluck process can rewrite it. The journal copy is root-owned (no Forward Secure Sealing, N2). |
+| B1 | Validation lookups are figaro-writable | Outfit names are checked and their folded content hashed into the plan, so what Gluck approves is pinned; but the outfit files are still gluck's to write. Providers and models are checked by pattern only. Root-owned grantable lists are open. |
+| Estate | Spain has no person-owner (El Mayor) | Out of v1; one app per node later, and Spain's needs a service principal and its own row here. |
 
-Rows the brief adds:
+## Tests
 
-- **Forged request.** Filing is not power: a request is a row on a page. The filer is the form
-  it sits in.
-- **Compromised figaro or the King.** It can file noise and write a misleading `reason`. The
-  page leads with the patch, not the reason, and caps rows per filer. It cannot approve.
-- **Stolen phone session.** Telegram alone approves nothing. An open Authelia session still
-  needs a step-up within 5 minutes. A phone that is unlocked, logged in and holds the second
-  factor is Gluck; revoking in Authelia stops it.
-- **The page itself.** Static files from the Nix store, strict CSP, no inline script, no
-  third-party code, no write-capable door in the browser. A defaced page can show a wrong row,
-  but the backend builds the patch, and the nonce binds the token to the ids and versions.
+`go test ./internal/approvals`: hash mismatch refused; an edit after render changes the hash;
+stale CAS refused (the target moves between read and write); stale deny refused; unknown verb
+refused; bad values (shell text, extra key, `@role` on a figaro verb, bidi, glob, missing
+outfit, bad ttl, unknown field, expiry) refused; request prose never reaches the plan and the
+package starts no process; the crash between the two writes, then re-approve only removes;
+same-form approve is one write; non-admin refused; request text escaped; cross-origin and
+forged-hash posts refused; approve round trip; second click refused. Canaries: dropping the
+hash compare fails the hash tests; dropping the fake's version check fails the stale test.
 
-## How it fits deployment modes and laws
+Read-only smoke against the live daemon: the server listed `@96447061` ("Nothing waiting.") and
+refused a request without `Remote-User`.
 
-- **Home mode, today:** the backend is the owner because it is gluck outside a figaro; honour
-  until the peer caller check lands, the same as every owner call.
-- **House mode:** the daemon runs as `figaro` and the owner is named in config
-  (`deployment-modes README.md:98-133`). The backend runs as the person, outside the valet's
-  cgroup, so it is the owner by that binding. Its unit and config come from Nix, root-owned,
-  so "nothing a figaro writes configures its own fence" (`:336-345`) holds.
-- **Laws:** `fanout.quota` is the owner raising a budget the lineage cannot give (laws part 2,
-  `README.md:307-370`). Laws and quotas still bind the figaro the approval touched.
-- **Authz middleware** (`proposal/authz-middleware` `d4576a91d`): a refusal's `Decision.Fix`
-  (`README.md:59,99`) can name the exact `figaro set requests.<id> ...` line for an
-  allowlisted verb, so the King files from the refusal it was given.
+## Running it (Gluck, after the Inspector)
 
-## Rollout
+The unit calls `~/.nix-profile/bin/figaro`, so it needs a figaro release carrying this branch.
 
-Each step ships alone.
+```
+mkdir -p ~/.local/state/figaro-approvals
+cp contrib/systemd/figaro-approvals.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user start figaro-approvals
+sudo ufw allow in on tailscale0 from <spain tailnet ip> to any port 7482 proto tcp
+```
 
-1. **Templates and validation** as a library with golden tests: request in, patch or refusal
-   out. No service.
-2. **Read-only page.** The app on gluck, Caddy route, ufw 7482, Authelia rule, list of
-   requests with the patch each would apply. Zanni styling. Nothing writes.
-3. **Deny.** One POST, one patch. Exercises `Assert`, `IfVersion`, audit, OIDC step-up.
-4. **Approve `set.model`.** Same-form and cross-form paths, end to end.
-5. **The other verbs**, one per commit; herald notices with the URL button.
-6. **WebAuthn** pinned on gluck, required for `role.apply` and `grants.outfits.*`; Kanidm when
-   it is live.
-7. **Optional:** Telegram callback approve for low-risk verbs; a node list for Spain and Merlin.
+Then El Mayor's CAND on spain (route and Authelia rule).
 
-No daemon change is needed for steps 1 to 5.
+## Open
 
-## Open questions for Gluck
-
-1. **Identity front:** Authelia now and Kanidm later, verified as OIDC by the backend? Or wait
-   for Kanidm?
-2. **WebAuthn:** worth step 6, given it is the only answer to spain root owning the login?
-3. **Telegram:** open the page only, or approve low-risk verbs in the chat?
-4. **Fermata hold:** releasing a stalled succession, or a hold you want to place (no key today)?
-5. **Cross-form approve:** accept claim-then-apply (fails closed), or have the daemon take a
-   two-form transaction?
-6. **Spain and Merlin:** one app per node (recommended) or a federated list?
-7. **Key grants:** out of v1, or in behind WebAuthn?
+1. OIDC step-up (Llavero owns the client) before anything wider than these four verbs.
+2. WebAuthn pinned on gluck.
+3. A two-form transaction in the daemon, to make cross-form approve atomic.
+4. Root-owned lists of grantable outfits and selectable providers (B1).
+5. Telegram URL button through herald.
+6. Spain and Merlin: one app per node; Spain's owner is a service principal.
+7. Forks copy `elicit.*` from an aria's form (Inspector). Role forms are not forked, so v1
+   lists only the role forms it is given; per-figaro filing would need the key dropped at birth.

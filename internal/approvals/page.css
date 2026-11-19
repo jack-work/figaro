@@ -1,0 +1,24 @@
+body { font: 16px/1.5 Inter, system-ui, sans-serif; margin: 0 auto; max-width: 42rem; padding: 1rem 1rem 6rem; color: #1f1f28; background: #f4f1ea; }
+header a { color: inherit; font-weight: 600; text-decoration: none; }
+code, pre { font-family: ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+.meta, .was { color: #6b6b75; font-size: .9rem; }
+.was { text-decoration: line-through; }
+.refusal { color: #8a2c2c; }
+.note { color: #7a5a00; }
+.hash strong { font-size: 1.4rem; font-family: ui-monospace, monospace; }
+.raw { background: #e9e4d8; padding: .75rem; }
+.rows { list-style: none; padding: 0; }
+.rows li { padding: .75rem 0; border-bottom: 1px solid #d8d2c4; }
+.state { float: right; color: #6b6b75; }
+.bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: .5rem; padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom)); background: #f4f1ea; border-top: 1px solid #d8d2c4; }
+.bar form { flex: 1; }
+.bar button { width: 100%; min-height: 48px; font-size: 1rem; border-radius: 6px; }
+.approve { background: #7a1f1f; color: #fff; border: 0; }
+.deny { background: transparent; border: 2px solid #7a1f1f; color: #7a1f1f; }
+.message { font-weight: 600; }
+@media (prefers-color-scheme: dark) {
+  body, .bar { background: #1f1f28; color: #dcd7ba; }
+  .raw { background: #2a2a37; }
+  .approve { background: #c0a36e; color: #1f1f28; }
+  .deny { border-color: #c0a36e; color: #c0a36e; }
+}

@@ -1,0 +1,20 @@
+[Unit]
+Description=figaro owner approvals page (acts as the owner)
+After=network-online.target tailscaled.service
+
+[Service]
+ExecStart=%h/.nix-profile/bin/figaro approvals serve --listen 100.92.208.109:7482 --forms @96447061 --admin gluck --origin https://order.kelliher.info
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=%h/.local/state/figaro-approvals %t
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=default.target
