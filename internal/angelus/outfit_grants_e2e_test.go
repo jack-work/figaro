@@ -279,3 +279,34 @@ func TestABoxsOutfitsListIsItsGrantWhenItClaimsNoFigaro(t *testing.T) {
 		t.Fatal("an unclaimed fork in an outfit the box does not list")
 	}
 }
+
+// Defends review L2 on #171: a CLI from before it drops system.grants with
+// every system.scopes write. The owner's would wipe outfit grants, and an
+// ancestor's would be refused as an owner-held removal.
+func TestAnOldCLIsScopesWriteKeepsTheOutfitGrants(t *testing.T) {
+	r := grantedOutfitsRig(t)
+	c := r.dial(t)
+	oldCLI := func(scopes string) form.Patch {
+		return form.Build(form.Snapshot{}, map[string]json.RawMessage{form.ScopesKey: json.RawMessage(scopes)}, []string{form.GrantsKey})
+	}
+	r.ownerSets(t, r.child, map[string]any{form.OutfitGrantsKey: []string{"hk"}})
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: oldCLI(`["read:*","send:*"]`)})); err != nil {
+		t.Fatalf("the owner's old-CLI scopes write: %v", err)
+	}
+	if err := r.setAs(t, c, r.parent, r.child, oldCLI(`["read:*"]`)); err != nil {
+		t.Fatalf("an ancestor's old-CLI scopes write: %v", err)
+	}
+	if got := grantsOn(t, r, r.child); got != `["read:*"]` {
+		t.Fatalf("scopes = %s", got)
+	}
+	if v, _ := keyOn(t, r.grantRig, r.child, form.OutfitGrantsKey); string(v) != `["hk"]` {
+		t.Fatalf("the outfit grants went with the scopes write: %s", v)
+	}
+	drop := form.Build(form.Snapshot{}, nil, []string{form.GrantsKey})
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.child, rpc.SetRequest{Patch: drop})); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := keyOn(t, r.grantRig, r.child, form.OutfitGrantsKey); ok {
+		t.Fatalf("control: the owner's own removal of %s left %s", form.GrantsKey, v)
+	}
+}

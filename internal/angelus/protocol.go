@@ -256,6 +256,9 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if err != nil {
 			return nil, err
 		}
+		if dressed, err = h.keepGrantsBesideScopes(method, id, dressed); err != nil {
+			return nil, err
+		}
 		if err := h.refuseCallerPatch(ctx, method, id, dressed); err != nil {
 			return nil, err
 		}
