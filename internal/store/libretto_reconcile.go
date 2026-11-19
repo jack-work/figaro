@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -35,8 +37,25 @@ func (b *XwalBackend) AuditLibrettos() (LibrettoAudit, error) {
 	return b.reconcileLibrettos(false)
 }
 
-// RefsNeedMigration reads only the librettos, never the bound forms.
+const librettoRefsMarker = "libretto-refs.migrated"
+
+// RefsNeedMigration reads only the librettos, never the bound forms, and
+// only until a walk finds them all migrated.
 func (b *XwalBackend) RefsNeedMigration() bool {
+	marker := filepath.Join(b.root, librettoRefsMarker)
+	if _, err := os.Stat(marker); err == nil {
+		return false
+	}
+	if b.librettosNeedRefs() {
+		return true
+	}
+	if err := os.WriteFile(marker, nil, 0o600); err != nil {
+		slog.Warn("libretto refs marker", "err", err)
+	}
+	return false
+}
+
+func (b *XwalBackend) librettosNeedRefs() bool {
 	for _, st := range b.store.trunks.Stumps() {
 		source, ok := SourceOfLibretto(st.Name)
 		if !ok {

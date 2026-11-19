@@ -195,18 +195,12 @@ func TestReconcileReportsAStudiedFormWithNoLibretto(t *testing.T) {
 
 func TestRefsNeedMigrationIsFalseOnceTheSetsExist(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
-	if be.RefsNeedMigration() {
-		t.Fatal("a store with no librettos wants a migration")
-	}
 	lib, err := be.Libretto(sourceID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := lib.Retain("n7"); err != nil {
 		t.Fatal(err)
-	}
-	if be.RefsNeedMigration() {
-		t.Fatal("a libretto written with a backref set still wants a migration")
 	}
 	// A libretto written by an older build carries a COUNT.
 	if _, _, err := lib.form.ApplyEffectPrivileged(
@@ -221,5 +215,28 @@ func TestRefsNeedMigrationIsFalseOnceTheSetsExist(t *testing.T) {
 	}
 	if be.RefsNeedMigration() {
 		t.Fatal("the migration ran and the store still wants one")
+	}
+}
+
+// A daemon start must not reopen every libretto once the store is known
+// migrated: the walk is O(librettos) and ran on every start.
+func TestRefsNeedMigrationAnswersFromTheMarkerOnceClean(t *testing.T) {
+	be, sourceID, _ := librettoFixture(t)
+	lib, err := be.Libretto(sourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lib.Retain("n7"); err != nil {
+		t.Fatal(err)
+	}
+	if be.RefsNeedMigration() {
+		t.Fatal("a libretto written with a backref set still wants a migration")
+	}
+	if _, _, err := lib.form.ApplyEffectPrivileged(
+		librettoPatch(map[string]any{KeyLibrettoRefs: 1}), 0); err != nil {
+		t.Fatal(err)
+	}
+	if be.RefsNeedMigration() {
+		t.Fatal("a clean walk left no marker: every start walks the librettos again")
 	}
 }
