@@ -1,6 +1,7 @@
 package angelus_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -68,7 +69,12 @@ func TestTheOperatorAppliesARolesOutfitGrantsAndAFigaroMayNot(t *testing.T) {
 
 func grantedOutfitsRig(t *testing.T) lineageRig {
 	t.Helper()
-	r := newLineageRig(t, "")
+	return grantedOutfitsRigIn(t, "")
+}
+
+func grantedOutfitsRigIn(t *testing.T, boxExtra string) lineageRig {
+	t.Helper()
+	r := newLineageRig(t, boxExtra)
 	for _, name := range []string{"hk", "model-a", "secret"} {
 		if err := os.WriteFile(filepath.Join(r.a.Settings.ConfigDir, "outfits", name+".toml"), []byte("[notes]\nwore = \""+name+"\"\n"), 0o600); err != nil {
 			t.Fatal(err)
@@ -235,4 +241,41 @@ func TestARoleGrantsItsOutfitsToWhoeverHoldsIt(t *testing.T) {
 	}
 	_, err = r.forkDressed(t, r.child, "secret")
 	refusedFor(t, err, r.child, "secret", `["secret"]`)
+}
+
+// Defends H1 of the #171 review: a box with no outfits list dresses in
+// default only, so a tool shell that drops its claim names nothing more.
+func TestABoxWithNoOutfitsListDressesInDefaultOnly(t *testing.T) {
+	r := grantedOutfitsRig(t)
+	r.ownerSets(t, r.child, map[string]any{form.OutfitGrantsKey: []string{"secret"}})
+	c := r.dial(t)
+	fork := func(claim bool, outfits ...string) error {
+		raw := withAria(t, r.child, rpc.ForkRequest{FigaroID: r.child, Outfits: outfits})
+		if claim {
+			raw = claimed(t, r.child, raw)
+		}
+		return c.Call(context.Background(), rpc.MethodFork, raw, nil)
+	}
+	for _, claim := range []bool{false, true} {
+		if err := fork(claim, "secret"); err == nil || !strings.Contains(err.Error(), "lists no outfits") {
+			t.Errorf("claim %v: a box with no list forked in secret: %v", claim, err)
+		}
+		if err := fork(claim, "default"); err != nil {
+			t.Errorf("claim %v: control: default refused: %v", claim, err)
+		}
+		if err := fork(claim); err != nil {
+			t.Errorf("claim %v: control: no outfit refused: %v", claim, err)
+		}
+	}
+}
+
+func TestABoxsOutfitsListIsItsGrantWhenItClaimsNoFigaro(t *testing.T) {
+	r := grantedOutfitsRigIn(t, "outfits = [\"secret\"]\n")
+	c := r.dial(t)
+	if err := boxOnAria(t, c, rpc.MethodFork, r.child, rpc.ForkRequest{FigaroID: r.child, Outfits: []string{"secret"}}, nil); err != nil {
+		t.Fatalf("an unclaimed fork in the box's listed outfit: %v", err)
+	}
+	if err := boxOnAria(t, c, rpc.MethodFork, r.child, rpc.ForkRequest{FigaroID: r.child, Outfits: []string{"hk"}}, nil); err == nil {
+		t.Fatal("an unclaimed fork in an outfit the box does not list")
+	}
 }

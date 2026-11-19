@@ -17,7 +17,13 @@ func (h *handlers) refuseBoxOutfits(ctx context.Context, outfits []string, mints
 		return nil
 	}
 	b, ok := loaded.Box(box)
-	if !ok || b.Outfits == nil || b.AnyOutfit() {
+	if ok && b.AnyOutfit() {
+		return nil
+	}
+	if !ok || b.Outfits == nil {
+		if named := outfitLayers(outfits); len(named) > 0 {
+			return fmt.Errorf("box %s may not dress in outfit %q: it lists no outfits, so it dresses in %s only (sandbox.boxes.%s.outfits)", box, named[0], outfitNameDefault, box)
+		}
 		return nil
 	}
 	allowed := strings.Join(b.Outfits, ", ")

@@ -104,7 +104,8 @@ caller could not write them with `-S`. So a figaro names only `default` and
 the outfits granted to it, wherever it names one: `fork`, `new`, `bind`,
 `form create`, `set`, `send` and `cast`, each comma layer of `-O` on its
 own. Gluck, at his own terminal, names any. A figaro in a box needs both
-its box's `outfits` list and the grant. The rule holds whatever the
+its box's `outfits` list and the grant. A box with no `outfits` list
+dresses in `default` only, whether or not its call names a figaro. The rule holds whatever the
 switches below say.
 
 `system.grants.outfits` is an owner-held list of outfit names or globs (`*`

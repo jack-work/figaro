@@ -7,7 +7,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-const judgeAllowsMock = "providers = [\"mock\"]\n"
+const judgeAllowsMock = "providers = [\"mock\"]\n" + judgeListsAnyOutfit
 
 // A box names the providers its arias may run on; anything else is refused
 // where the provider is resolved, however the aria is dressed and whoever
