@@ -1,9 +1,10 @@
 [Unit]
 Description=figaro owner approvals page (acts as the owner)
 After=network-online.target tailscaled.service
+Wants=network-online.target
 
 [Service]
-ExecStart=%h/.nix-profile/bin/figaro approvals serve --listen gluck.tail34d120.ts.net:7482 --peer 100.103.40.20 --forms @96447061 --admin gluck --origin https://order.kelliher.info
+ExecStart=%h/.local/share/figaro-approvals/figaro/bin/figaro approvals serve --listen gluck.tail34d120.ts.net:7482 --peer 100.103.40.20 --forms @96447061 --admin admin --origin https://approvals.kelliher.info
 LoadCredential=edge:%h/.config/figaro-approvals/edge-token
 Restart=on-failure
 RestartSec=5
@@ -13,6 +14,9 @@ ProtectSystem=strict
 ReadWritePaths=%h/.local/state/figaro-approvals %t
 LockPersonality=yes
 RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+MemoryDenyWriteExecute=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 SystemCallArchitectures=native
 UMask=0077

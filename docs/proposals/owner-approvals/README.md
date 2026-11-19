@@ -131,19 +131,25 @@ target, hash, result. No values from the keys, no request text, no tokens.
   sentence rows, the exact patch as the centre, current struck beside new, a sticky
   Approve/Deny bar, results in words. The zanni components come later.
 
-Route (El Mayor): the existing order site on spain gets a second handle,
-`handle_path /approve/*`, upstream `gluck.tail34d120.ts.net:7482` by tailnet name, no
-fallthrough, and an Authelia rule for `/approve/*` (admin user, two_factor) placed before any
-broader `order.kelliher.info` rule. Not the 7481 bridge bearer (L9). On that handle Caddy:
+Route: its own site, `approvals.kelliher.info` (Engineer XVI), as
+`contrib/approvals-deploy/approvals-site.nix` for spain-flake. kelliher-web's front Caddy strips
+every client `Remote-*` header, runs Authelia forward_auth (two_factor, group
+`site-approvals-access`) and copies Authelia's `Remote-User` on (`kelliher-web`
+`modules/caddy.nix:385-451`; `trustsRemoteHeaders = true` makes the build check that). It hands
+the request to a DynamicUser relay Caddy, as the order site does (`order-site/order-site.nix`,
+6ba9948), which drops any client `X-Figaro-Approvals-Edge`, refuses methods other than GET and
+POST, and proxies to `gluck.tail34d120.ts.net:7482` adding `X-Figaro-Approvals-Edge` from the
+sops env file `approvals-relay.env` (secret `approvals-edge-token`; never the store). Not the
+7481 bridge bearer (L9). Gluck's Authelia user is `admin`, so the unit passes `--admin admin`.
 
-1. strips every client `Remote-*` header and any client `X-Figaro-Approvals-Edge`
-   (`request_header -Remote-*`, explicitly, before forward_auth: El Llavero V2);
-2. runs forward_auth and passes Authelia's `Remote-User` through;
-3. adds `X-Figaro-Approvals-Edge` from the sops secret `approvals-edge-token`.
+`site-approvals-access`, like every site group, is given to both `admin` and `underarock`
+(`identity.nix:57-62`), so Authelia admits underarock; the backend then refuses him
+(`Remote-User` is not `admin`). To refuse him at the edge too, the group would need an
+`assert_exact_members ... "admin"`, as keel-queue has (`identity.nix:265`).
 
-El Mayor's acceptance rows send a spoofed `Remote-User: gluck` with no session and as a
-non-admin, and expect refusal both times. El Llavero mints the token (sops on spain, a 0600 file
-at `~/.config/figaro-approvals/edge-token` on gluck), with the Inspector reading the script.
+Acceptance on spain: a spoofed `Remote-User: admin` with no session, and a session as a
+non-admin, are both refused. El Llavero mints the token (sops on spain, a 0600 file at
+`~/.config/figaro-approvals/edge-token` on gluck), with the Inspector reading the script.
 
 ufw on gluck: 7482 from spain to gluck's tailnet address only, Gluck's step; after the Merlin
 cutover it moves into the charter's tailnet firewall aspect. The unit listens on
@@ -190,19 +196,26 @@ dropping the secret compare fails the edge test.
 Read-only smoke against the live daemon: the server listed `@96447061` ("Nothing waiting.") and
 refused a request with `Remote-User: gluck` but no edge secret.
 
-## Running it (Gluck, after the Inspector)
+## Running it
 
-The unit calls `~/.nix-profile/bin/figaro`, so it needs a figaro release carrying this branch.
+The Inspector approved `04c1e03b8` and the unit. Deploy files are in `contrib/approvals-deploy`.
+
+On gluck:
 
 ```
+contrib/approvals-deploy/build.sh 04c1e03b8      # prints the store path; links ~/.local/share/figaro-approvals/figaro
 mkdir -p ~/.local/state/figaro-approvals ~/.config/figaro-approvals
 # El Llavero delivers ~/.config/figaro-approvals/edge-token (0600)
 cp contrib/systemd/figaro-approvals.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user start figaro-approvals
 sudo ufw allow in on tailscale0 from 100.103.40.20 to 100.92.208.109 port 7482 proto tcp
+systemctl --user daemon-reload && systemctl --user start figaro-approvals
 ```
 
-Then El Mayor's CAND on spain (route and Authelia rule).
+On spain: import `approvals-site.nix`, add the sops secret, switch.
+
+Checked locally: the built binary runs under the unit's hardening with `LoadCredential` and reads
+the live daemon; behind the relay config, a client-forged edge header is replaced, a non-admin
+`Remote-User` is refused, PUT is 405, and a direct call with a forged edge header is 403.
 
 ## Open
 
