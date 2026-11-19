@@ -364,15 +364,15 @@ func (t *Trunks) Head(trunk string) (*XWAL, error) {
 	return view, nil
 }
 
-func (t *Trunks) mintNode() string {
+func (t *Trunks) mintNode() (string, error) {
 	channels, err := channelNames(t.root)
 	if err != nil {
-		channels = []string{t.main}
+		return "", fmt.Errorf("xwal: mint a node name: %w", err)
 	}
 	for {
 		name := t.idx.MintNode()
 		if !t.nameHasDir(name, channels) {
-			return name
+			return name, nil
 		}
 	}
 }

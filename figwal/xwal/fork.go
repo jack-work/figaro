@@ -41,7 +41,10 @@ func (t *Trunks) forkTailLocked(trunk string, sc spawnConfig) (string, error) {
 // forkFlat mints a depth-1 sibling sharing the parent prefix. Nothing the
 // parent owns is written: no freeze, no continuation, no rehome.
 func (t *Trunks) forkFlat(parentKey, kind string, mintTrunk bool, sc spawnConfig) (string, error) {
-	child := t.mintNode()
+	child, err := t.mintNode()
+	if err != nil {
+		return "", err
+	}
 	var trunk string
 	if mintTrunk {
 		trunk = t.mintTrunk(kind)
@@ -201,7 +204,10 @@ func (t *Trunks) ForkAt(trunk string, atMainLT uint64, opts ...SpawnOption) (str
 // forkFlatAt is forkFlat sharing a prefix that ends at an interior main LT.
 // Related channels share up to their last entry keyed at or below it.
 func (t *Trunks) forkFlatAt(parentKey string, atMainLT uint64, sc spawnConfig) (string, error) {
-	child := t.mintNode()
+	child, err := t.mintNode()
+	if err != nil {
+		return "", err
+	}
 	// Interior forks re-split conversations; nothing else has a tail to
 	// split at an interior LT.
 	trunk := t.mintTrunk("conversation")

@@ -604,7 +604,10 @@ func (g *Graft) mintKeys() error {
 	keys := map[string]string{"": ""}
 	for _, n := range g.plan.Component.Nodes {
 		for {
-			k := g.t.mintNode()
+			k, err := g.t.mintNode()
+			if err != nil {
+				return err
+			}
 			if !g.t.keyTaken(k) {
 				keys[n.Key] = k
 				break
