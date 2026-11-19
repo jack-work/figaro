@@ -41,3 +41,16 @@ func (h *handlers) refuseSucceedWithoutGrant(ctx context.Context, roles ...strin
 	}
 	return nil
 }
+
+func (h *handlers) castByHoldersAncestor(ctx context.Context, role string) bool {
+	caller := authz.FigaroOf(ctx)
+	if caller == "" {
+		return false
+	}
+	snap, err := h.angelus.Backend.FormState(role)
+	if err != nil {
+		return false
+	}
+	holder := snap.Lookup("target-aria")
+	return holder != nil && *holder != "" && *holder != caller && h.ancestorInDrawnTree(*holder, caller)
+}

@@ -962,8 +962,8 @@ func (h *handlers) seatLifetime(ctx context.Context, pred string) (json.RawMessa
 	if caller == "" && !h.callerOwns(ctx) {
 		return nil, nil
 	}
-	if caller != "" && caller != pred {
-		return nil, fmt.Errorf("seat: only %s itself or the owner seats a successor in its place, not figaro %s", pred, caller)
+	if caller != "" && !h.ancestorInDrawnTree(pred, caller) {
+		return nil, fmt.Errorf("seat: only %s itself, an aria it is drawn under, or the owner seats a successor in its place, not figaro %s", pred, caller)
 	}
 	snap, err := h.angelus.Backend.FormState(pred)
 	if err != nil {

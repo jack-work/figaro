@@ -239,6 +239,9 @@ func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, param
 		if req.FormID == "" {
 			return keyed(h.allowed(ctx, rpc.VerbCreate, authz.Daemon))
 		}
+		if h.castByHoldersAncestor(ctx, req.FormID) {
+			return h.refuseCastWithoutGrant(ctx, req.FormID)
+		}
 		if err := h.allowed(ctx, rpc.VerbSet, authz.Aria(req.FormID)); err != nil {
 			return err
 		}

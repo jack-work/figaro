@@ -51,7 +51,7 @@ func TestSeatingAnExistingSuccessorCarriesTheHoldersLifetime(t *testing.T) {
 
 	stranger := ariasFork(t, r.grantRig, r.root)
 	succ := r.bornWithTTL(t, r.x, "2h")
-	if _, err := r.seatFrom(toolOf(stranger), r.x, succ); err == nil || !strings.Contains(err.Error(), "only "+r.x+" itself or the owner") {
+	if _, err := r.seatFrom(toolOf(stranger), r.x, succ); err == nil || !strings.Contains(err.Error(), "only "+r.x+" itself, an aria it is drawn under, or the owner") {
 		t.Fatalf("another figaro's tool seated a successor in %s's place: %v", r.x, err)
 	}
 	if got := ttl(succ); got != `"2h"` {
