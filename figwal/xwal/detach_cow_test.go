@@ -168,6 +168,124 @@ func TestDetachOfANodeRemovedMidCopyResurrectsNothing(t *testing.T) {
 }
 
 // The race this defends: the copy runs outside the topology lock, so a
+// removal can commit between the copy and the publish. A head left open
+// keeps the removed node's directories on disk until it closes, so nothing
+// fails underneath the publish; it must see the removal itself and write
+// nothing, or the node's .node comes back for a figaro that is gone.
+func TestDetachOfANodeRemovedUnderAnOpenHeadWritesNoMarker(t *testing.T) {
+	f, _, _, child := seedDetachable(t)
+	node := f.head(string(child))
+	x, err := f.Head(string(child))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer x.Close()
+	f.testDetachPlanned = func(string) {
+		if err := f.Remove(string(child), false); err != nil {
+			t.Errorf("remove during the copy: %v", err)
+		}
+	}
+	err = f.Detach(node)
+	f.testDetachPlanned = nil
+	if !errors.Is(err, ErrUnknownTrunk) {
+		t.Fatalf("detach of a node removed under it returned %v, want ErrUnknownTrunk", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.irDir(node), nodeMarkerName)); !os.IsNotExist(err) {
+		t.Fatalf("the removed node's .node after the detach: %v, want it gone", err)
+	}
+	if f.node(node) != nil {
+		t.Fatal("the removed node is back in the index")
+	}
+}
+
+// The same race through a peer on the root: its removal has marked the
+// node dead and unlinked its .node, and has not yet told this Trunks, whose
+// index still holds the node. The publish must read the shared dead set.
+func TestDetachOfANodeAPeerIsRemovingWritesNoMarker(t *testing.T) {
+	f, dir, _, child := seedDetachable(t)
+	node := f.head(string(child))
+	g, err := openTrunks(dir, mapTrunksCfg())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupTrunks(t, g)
+	if err := f.ensureCurrentTopology(); err != nil {
+		t.Fatal(err)
+	}
+	unlinked, release, removed := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	g.testRemovalStep = func(step string) {
+		if step == "markers" {
+			close(unlinked)
+			<-release
+		}
+	}
+	f.testDetachPlanned = func(string) {
+		go func() { removed <- g.Remove(string(child), false) }()
+		select {
+		case <-unlinked:
+		case <-time.After(5 * time.Second):
+			t.Error("the peer's removal never reached its markers")
+		}
+	}
+	err = f.Detach(node)
+	f.testDetachPlanned = nil
+	_, statErr := os.Stat(filepath.Join(f.irDir(node), nodeMarkerName))
+	close(release)
+	if rerr := <-removed; rerr != nil {
+		t.Fatalf("the peer's removal: %v", rerr)
+	}
+	if !errors.Is(err, ErrUnknownTrunk) {
+		t.Fatalf("detach of a node a peer is removing returned %v, want ErrUnknownTrunk", err)
+	}
+	if !os.IsNotExist(statErr) {
+		t.Fatalf("the removed node's .node after the detach: %v, want it gone", statErr)
+	}
+}
+
+// Defends the publish against a copy cut for another base: whatever moved
+// a channel's fork base after the copy was built, the copy no longer holds
+// what lies below it, so nothing may be linked or flipped.
+func TestDetachPublishesNoCopyCutForAnotherBase(t *testing.T) {
+	f, dir, _, child := seedDetachable(t)
+	node := f.head(string(child))
+	chDir := filepath.Join(dir, "chalkboard", fsName(node))
+	was, err := readForkBaseFile(chDir)
+	if err != nil || was <= 1 {
+		t.Fatalf("the child's chalkboard forks at %d, %v; the test needs a borrowed prefix", was, err)
+	}
+	before, err := os.ReadDir(chDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.testDetachPlanned = func(string) {
+		if err := writeForkMarker(chDir, was+1); err != nil {
+			t.Error(err)
+		}
+	}
+	err = f.Detach(node)
+	f.testDetachPlanned = nil
+	if !errors.Is(err, errDetachStale) {
+		t.Fatalf("a publish over a moved base returned %v, want errDetachStale", err)
+	}
+	after, err := os.ReadDir(chDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != len(before) {
+		t.Fatalf("the refused publish changed the channel: %d entries before, %d after", len(before), len(after))
+	}
+	if left := scratchLeft(t, dir); len(left) != 0 {
+		t.Fatalf("the refused publish left its scratch: %v", left)
+	}
+	if err := writeForkMarker(chDir, was); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Detach(node); err != nil {
+		t.Fatalf("the detach after the base came back: %v", err)
+	}
+}
+
+// The race this defends: the copy runs outside the topology lock, so a
 // retention cut can drop the parent's segments after the copy chose where
 // the prefix starts and before it reads them. The node still pins the
 // segment that holds its last borrowed record, so only the span below it

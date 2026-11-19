@@ -22,6 +22,8 @@ import (
 // is replaced.
 var ErrAbsorbConflict = errors.New("xwal: a segment below the fork base is not the parent's prefix")
 
+var errDetachStale = errors.New("xwal: the node changed between its copy and the publish")
+
 // Detach makes a node self-sufficient: it absorbs the history prefix it
 // currently reads through an ancestor, and stops pointing at one.
 func (t *Trunks) Detach(node string) error {
@@ -110,6 +112,10 @@ func (p *detachPlan) discard() {
 }
 
 func (t *Trunks) publishDetach(node string, plan *detachPlan) error {
+	n := t.node(node)
+	if n == nil || t.isDead([]string{node}) {
+		return fmt.Errorf("%w: no node %q", ErrUnknownTrunk, node)
+	}
 	keys := make([]string, 0, len(plan.copies))
 	for _, c := range plan.copies {
 		keys = append(keys, canonicalDir(c.dir))
@@ -117,6 +123,15 @@ func (t *Trunks) publishDetach(node string, plan *detachPlan) error {
 	slices.Sort(keys)
 	for _, k := range keys {
 		defer lockAbsorb(k)()
+	}
+	for _, c := range plan.copies {
+		base, err := readForkBaseFile(c.dir)
+		if err != nil {
+			return fmt.Errorf("xwal: detach %q channel %q: %w", node, c.channel, err)
+		}
+		if base != c.base {
+			return fmt.Errorf("%w: detach %q channel %q copied below base %d, the channel now forks at %d", errDetachStale, node, c.channel, c.base, base)
+		}
 	}
 	for _, c := range plan.copies {
 		if err := linkAbsorbed(c.dir, c.scratch, c.from, c.base, plan.codec); err != nil {
@@ -128,17 +143,14 @@ func (t *Trunks) publishDetach(node string, plan *detachPlan) error {
 			return err
 		}
 	}
-	kind, trunk := "conversation", ""
-	if n := t.node(node); n != nil {
-		if n.Kind != "" {
-			kind = n.Kind
-		}
-		trunk = n.Trunk
+	kind := n.Kind
+	if kind == "" {
+		kind = "conversation"
 	}
 	if err := t.syncForkCaches(node); err != nil {
 		return err
 	}
-	if err := writeNodeMarker(t.irDir(node), nodeMarker{kind: kind, trunk: trunk}); err != nil {
+	if err := writeNodeMarker(t.irDir(node), nodeMarker{kind: kind, trunk: n.Trunk}); err != nil {
 		return err
 	}
 	return t.reshape(func() error { t.idx.Reparent(node, ""); return nil })
