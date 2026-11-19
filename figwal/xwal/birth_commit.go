@@ -88,6 +88,13 @@ func (t *Trunks) CommitBirth(trunk TrunkID) error {
 	if !ok {
 		return fmt.Errorf("%w %q", ErrUnknownTrunk, trunk)
 	}
+	return t.commitNodeDir(key)
+}
+
+func (t *Trunks) commitNodeDir(key string) error {
+	if key == "" {
+		return nil
+	}
 	dir := t.irDir(key)
 	if !t.births.take(dir) {
 		return nil

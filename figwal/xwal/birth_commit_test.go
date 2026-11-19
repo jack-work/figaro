@@ -95,3 +95,37 @@ func TestABirthLeftToItsFirstSegmentIsSyncedBeforeItIsCommitted(t *testing.T) {
 		t.Fatalf("a spawn that did not ask to wait for its segment (%s) left its directory unsynced", id)
 	}
 }
+
+// A fork of a node whose .node is not yet durable must make the parent
+// durable first: otherwise a crash can keep the child's .node, which names
+// the parent, and lose the parent's.
+func TestAForkOfAnUncommittedNodeCommitsTheParentFirst(t *testing.T) {
+	dir := t.TempDir()
+	s, err := OpenStore(dir, StoreOptions{Main: "main", IdleUnload: -1, NoBackgroundFlush: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	markers := func() int {
+		m, _ := filepath.Glob(filepath.Join(dir, "main", "*", nodeMarkerName))
+		return len(m)
+	}
+	parent, err := s.SpawnUnderRootKind("conversation", CommitWithFirstSegment())
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentDir := filepath.Clean(s.irDir(s.head(parent)))
+	before := markers()
+	synced := map[string]int{}
+	s.testSyncNodeDir = func(d string) { synced[filepath.Clean(d)] = markers() }
+	if _, err := s.ForkTail(parent); err != nil {
+		t.Fatal(err)
+	}
+	at, ok := synced[parentDir]
+	if !ok {
+		t.Fatal("the fork wrote its child's .node while the parent's was still unsynced")
+	}
+	if at != before {
+		t.Fatalf("the parent's directory was synced after the child's .node appeared (%d markers, %d before)", at, before)
+	}
+}

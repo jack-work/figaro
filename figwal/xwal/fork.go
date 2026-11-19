@@ -46,6 +46,9 @@ func (t *Trunks) forkFlat(parentKey, kind string, mintTrunk bool, sc spawnConfig
 	if mintTrunk {
 		trunk = t.mintTrunk(kind)
 	}
+	if err := t.commitNodeDir(parentKey); err != nil {
+		return "", err
+	}
 	bases, err := t.channelBases(parentKey, 0)
 	if err != nil {
 		return "", err
@@ -202,6 +205,9 @@ func (t *Trunks) forkFlatAt(parentKey string, atMainLT uint64, sc spawnConfig) (
 	// Interior forks re-split conversations; nothing else has a tail to
 	// split at an interior LT.
 	trunk := t.mintTrunk("conversation")
+	if err := t.commitNodeDir(parentKey); err != nil {
+		return "", err
+	}
 	bases, err := t.channelBases(parentKey, atMainLT)
 	if err != nil {
 		return "", err
