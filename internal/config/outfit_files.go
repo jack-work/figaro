@@ -154,14 +154,26 @@ func OutfitFiles(roots OutfitRoots, visit func(path string)) (OutfitIndex, error
 
 func walkOutfitRoot(root string, visit func(path string)) (map[string][]string, error) {
 	files := map[string][]string{}
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	resolved, err := filepath.EvalSymlinks(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		if visit != nil {
+			visit(root)
+		}
+		return files, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	err = filepath.WalkDir(resolved, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			if path == root && errors.Is(err, fs.ErrNotExist) {
-				return filepath.SkipDir
-			}
 			return err
 		}
-		if path != root && strings.HasPrefix(d.Name(), ".") {
+		rel, rerr := filepath.Rel(resolved, path)
+		if rerr != nil {
+			return rerr
+		}
+		named := filepath.Join(root, rel)
+		if path != resolved && strings.HasPrefix(d.Name(), ".") {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -169,12 +181,12 @@ func walkOutfitRoot(root string, visit func(path string)) (map[string][]string, 
 		}
 		if d.IsDir() {
 			if visit != nil {
-				visit(path)
+				visit(named)
 			}
 			return nil
 		}
 		if stem, ok := strings.CutSuffix(d.Name(), ".toml"); ok {
-			files[stem] = append(files[stem], path)
+			files[stem] = append(files[stem], named)
 		}
 		return nil
 	})

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -139,4 +140,76 @@ func TestALockIsReadOnRefresh(t *testing.T) {
 	patch, err = o.Load("seat")
 	require.NoError(t, err)
 	assert.Equal(t, `"managed"`, string(mustEntry(patch, "system.model")), "an edit of .locked in place must turn the epoch over")
+}
+
+func storeGeneration(t *testing.T, model, locked string) string {
+	t.Helper()
+	gen := t.TempDir()
+	writeRootFile(t, gen, "seat.toml", "[system]\nmodel = \""+model+"\"\n")
+	writeRootFile(t, gen, ".locked", locked)
+	epoch := time.Unix(1, 0)
+	for _, f := range []string{"seat.toml", ".locked", "."} {
+		require.NoError(t, os.Chtimes(filepath.Join(gen, f), epoch, epoch))
+	}
+	return gen
+}
+
+func swapLink(t *testing.T, link, target string) {
+	t.Helper()
+	tmp := link + ".new"
+	require.NoError(t, os.Symlink(target, tmp))
+	require.NoError(t, os.Rename(tmp, link))
+}
+
+func TestARebuildSwappingTheManagedLinkIsSeen(t *testing.T) {
+	base := t.TempDir()
+	link := filepath.Join(base, "managed")
+	user := filepath.Join(base, "user")
+	require.NoError(t, os.MkdirAll(user, 0o755))
+	writeRootFile(t, user, "seat.toml", "[system]\nmodel = \"user\"\n")
+	swapLink(t, link, storeGeneration(t, "gen-a", "seat\n"))
+
+	o := outfit.New(t.TempDir())
+	o.SetStaleWindow(0)
+	o.SetRoots(layeredRoots(link, user))
+	patch, err := o.Load("seat")
+	require.NoError(t, err)
+	require.Equal(t, `"gen-a"`, string(mustEntry(patch, "system.model")), "a symlinked managed root must be walked")
+	assert.Equal(t, filepath.Join(link, "seat.toml"), o.Resolve("seat").Path, "paths read through the root as configured")
+
+	swapLink(t, link, storeGeneration(t, "gen-b", "seat\n"))
+	patch, err = o.Load("seat")
+	require.NoError(t, err)
+	assert.Equal(t, `"gen-b"`, string(mustEntry(patch, "system.model")), "a swapped link with identical stat must turn the epoch over")
+
+	swapLink(t, link, storeGeneration(t, "gen-c", "\n"))
+	patch, err = o.Load("seat")
+	require.NoError(t, err)
+	assert.Equal(t, `"user"`, string(mustEntry(patch, "system.model")), "a generation dropping the lock must free the name")
+}
+
+func TestANameARebuildAddsBehindTheLinkIsSeen(t *testing.T) {
+	base := t.TempDir()
+	link := filepath.Join(base, "managed")
+	genA := storeGeneration(t, "gen-a", "")
+	require.NoError(t, os.Remove(filepath.Join(genA, ".locked")))
+	swapLink(t, link, genA)
+	o := outfit.New(t.TempDir())
+	o.SetStaleWindow(0)
+	o.SetRoots(layeredRoots(link, filepath.Join(base, "user")))
+	_, err := o.Load("extra")
+	var missing *outfit.MissingError
+	require.ErrorAs(t, err, &missing)
+
+	gen := storeGeneration(t, "gen-b", "")
+	require.NoError(t, os.Remove(filepath.Join(gen, ".locked")))
+	writeRootFile(t, gen, "extra.toml", "[system]\nmodel = \"extra\"\n")
+	epoch := time.Unix(1, 0)
+	for _, f := range []string{"extra.toml", "."} {
+		require.NoError(t, os.Chtimes(filepath.Join(gen, f), epoch, epoch))
+	}
+	swapLink(t, link, gen)
+	patch, err := o.Load("extra")
+	require.NoError(t, err, "the link itself is a dependency, not only the directory it pointed at")
+	assert.Equal(t, `"extra"`, string(mustEntry(patch, "system.model")))
 }
