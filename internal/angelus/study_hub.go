@@ -72,6 +72,9 @@ func (h *handlers) markStudyForHub(ariaID, formID string, began bool) {
 // castForHub takes the agent's two steps in the agent's order: ensure the
 // study, then point the role here.
 func (h *handlers) castForHub(ctx context.Context, ariaID string, req rpc.CastRequest) (rpc.CastResponse, error) {
+	if req.FormID != "" && req.RolePatch != nil && !req.RolePatch.IsIdentity() {
+		return rpc.CastResponse{}, fmt.Errorf("cast: name the role %s or dress a new one, not both", req.FormID)
+	}
 	b := h.angelus.Backend
 	if b == nil {
 		return rpc.CastResponse{}, fmt.Errorf("cast: no backend")

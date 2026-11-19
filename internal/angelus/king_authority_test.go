@@ -352,3 +352,23 @@ func TestAKingsChildPolicyGivesMintOnlyIfTheKingMayMint(t *testing.T) {
 		t.Fatalf("a king holding mint could not give it in a child policy: %v", err)
 	}
 }
+
+func TestACastNamingARoleAndAPatchIsRefused(t *testing.T) {
+	r := newKingRig(t)
+	role := r.role(t, r.grandchild)
+	patch := *heldPatch(t, map[string]any{"name": "minted"})
+	for who, req := range map[string]func() []byte{
+		"the king": func() []byte {
+			return claimed(t, r.king, withAria(t, r.grandchild, rpc.CastRequest{FormID: role, RolePatch: &patch}))
+		},
+		"the owner": func() []byte { return withAria(t, r.grandchild, rpc.CastRequest{FormID: role, RolePatch: &patch}) },
+	} {
+		_, err := r.h[rpc.MethodCast](localOwner(), req())
+		if err == nil || !strings.Contains(err.Error(), "not both") {
+			t.Errorf("%s cast with both a role and a patch: %v", who, err)
+		}
+	}
+	if got := r.holder(t, role); got != r.grandchild {
+		t.Fatalf("role holder = %q, want %q", got, r.grandchild)
+	}
+}
