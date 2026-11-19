@@ -31,6 +31,17 @@ func OwnScopes(s Snapshot) (raw json.RawMessage, ok bool, err error) {
 	return raw, ok, nil
 }
 
+func MoveListedGrants(s Snapshot) (p Patch, conflict bool) {
+	grants, has := s.Get(GrantsKey)
+	if !has || ShapeObject().Check(grants) == nil {
+		return Patch{}, false
+	}
+	if s.Has(ScopesKey) {
+		return Patch{}, true
+	}
+	return Build(s, map[string]json.RawMessage{ScopesKey: grants}, []string{GrantsKey}), false
+}
+
 func CheckScopes(s Snapshot) error {
 	raw, ok, err := OwnScopes(s)
 	if err != nil || !ok {

@@ -84,6 +84,7 @@ type schemaFile struct {
 	Channels     map[string]int `json:"channels"`
 	Downgrade    string         `json:"downgrade,omitempty"`
 	QuotaMirror  bool           `json:"quota-mirror,omitempty"`
+	GrantsMoved  bool           `json:"grants-moved,omitempty"`
 }
 
 func readSchema(root string) (schemaFile, error) {

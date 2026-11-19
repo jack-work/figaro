@@ -186,6 +186,10 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 		b.Close()
 		return nil, err
 	}
+	if err := b.moveListedGrantsAtOpen(); err != nil {
+		b.Close()
+		return nil, err
+	}
 	return b, nil
 }
 
