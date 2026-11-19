@@ -5,7 +5,7 @@ go 1.25.8
 require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/google/uuid v1.6.0
-	github.com/jack-work/hush v0.14.6
+	github.com/jack-work/hush v0.18.1
 	github.com/jack-work/largo v0.2.3
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/stretchr/testify v1.11.1
@@ -76,7 +76,7 @@ require (
 )
 
 require (
-	filippo.io/age v1.3.1 // indirect
+	filippo.io/age v1.3.1
 	filippo.io/hpke v0.4.0 // indirect
 	github.com/alecthomas/chroma/v2 v2.20.0 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
