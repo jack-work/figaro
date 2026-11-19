@@ -435,7 +435,7 @@ func (h *handlers) carriedScopes(old string, snap form.Snapshot) (json.RawMessag
 			return raw, true, err
 		}
 	}
-	raw, _, ok, err := form.OwnScopes(snap)
+	raw, ok, err := form.OwnScopes(snap)
 	return raw, ok, err
 }
 

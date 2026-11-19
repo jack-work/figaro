@@ -175,8 +175,8 @@ func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line linea
 }
 
 func changedScopes(before, after form.Snapshot) (json.RawMessage, bool, error) {
-	was, _, _, _ := form.OwnScopes(before)
-	now, _, ok, err := form.OwnScopes(after)
+	was, _, _ := form.OwnScopes(before)
+	now, ok, err := form.OwnScopes(after)
 	if err != nil || !ok || bytes.Equal(was, now) {
 		return nil, false, err
 	}
@@ -455,9 +455,6 @@ func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before for
 		return err
 	}
 	after := before.Apply(*patch)
-	if err := form.RefuseRetiredGrantsWrite(before, after); err != nil {
-		return err
-	}
 	if err := form.CheckScopes(after); err != nil {
 		return err
 	}
@@ -857,7 +854,7 @@ func (h *handlers) carryNarrowing(id string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := h.angelus.Backend.ApplyForm(id, form.Build(snap, map[string]json.RawMessage{form.ScopesKey: raw}, []string{form.RetiredGrantsKey})); err != nil {
+	if _, err := h.angelus.Backend.ApplyForm(id, form.Build(snap, map[string]json.RawMessage{form.ScopesKey: raw}, nil)); err != nil {
 		return fmt.Errorf("writing the scopes its ancestors narrowed it to: %w", err)
 	}
 	slog.Info("scopes: a figaro leaving its ancestors carries their narrowing", "id", id, "scopes", eff.String())

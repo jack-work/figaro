@@ -2,8 +2,6 @@ package angelus
 
 import (
 	"encoding/json"
-	"log/slog"
-	"sync"
 
 	"github.com/jack-work/figaro/api/form"
 	"slices"
@@ -104,16 +102,5 @@ func (f storeFacts) OwnGrants(aria string) (json.RawMessage, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	raw, key, ok, err := form.OwnScopes(snap)
-	if err != nil {
-		return nil, false, err
-	}
-	if key == form.RetiredGrantsKey {
-		if _, warned := retiredGrantsWarned.LoadOrStore(aria, struct{}{}); !warned {
-			slog.Warn("figaro's board says "+form.RetiredGrantsKey+", the old name; set "+form.ScopesKey+" (figaro set drops the old key in the same write)", "id", aria)
-		}
-	}
-	return raw, ok, nil
+	return form.OwnScopes(snap)
 }
-
-var retiredGrantsWarned sync.Map
