@@ -110,6 +110,7 @@ type formWrite struct {
 	intent    Intent
 	priv      bool
 	rename    bool
+	unsynced  bool
 	origin    Origin
 	result    formResult
 	done      atomic.Bool
@@ -505,6 +506,14 @@ func (f *Form) ApplyEffectPrivileged(patch message.Patch, ifVersion uint64) (uin
 	return f.applyEffect(patch, ifVersion, Ensure, true)
 }
 
+func (f *Form) applyDerivedPrivileged(patch message.Patch, ifVersion uint64) (uint64, message.Patch, error) {
+	t, err := f.submit(&formWrite{patch: patch, ifVersion: ifVersion, intent: Ensure, priv: true, unsynced: true})
+	if err != nil {
+		return 0, message.Patch{}, err
+	}
+	return f.Await(context.Background(), t)
+}
+
 func (f *Form) applyRename(patch message.Patch) (uint64, message.Patch, error) {
 	t, err := f.submit(&formWrite{patch: patch, intent: Ensure, priv: true, rename: true})
 	if err != nil {
@@ -613,6 +622,7 @@ func (f *Form) runBatch(batch []*formWrite) {
 	published := stored
 	var lastRecord uint64
 	var events []Commit
+	mustSync := false
 
 	for _, w := range batch {
 		next, res, record := f.reduceOne(published, w)
@@ -622,11 +632,12 @@ func (f *Form) runBatch(batch []*formWrite) {
 		}
 		if record {
 			lastRecord = next.version
+			mustSync = mustSync || !w.unsynced
 			events = append(events, Commit{Version: next.version, Patch: res.applied, Origin: w.origin})
 		}
 	}
 
-	if lastRecord != 0 {
+	if mustSync {
 		started := time.Now()
 		err := f.log.SyncThrough(lastRecord)
 		// Records, not writes: a batch in which one patch changed anything

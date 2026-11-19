@@ -42,6 +42,8 @@ type Store struct {
 	opts     StoreOptions
 	lockFile *os.File
 
+	openedUnclean bool
+
 	mu           sync.Mutex
 	dirty        map[string]struct{}
 	touch        map[string]time.Time
@@ -116,16 +118,17 @@ func OpenStore(root string, opts StoreOptions) (*Store, error) {
 		opts.IdleUnload = defaultIdleUnload
 	}
 	s := &Store{
-		Trunks:       t,
-		opts:         opts,
-		lockFile:     lockFile,
-		dirty:        map[string]struct{}{},
-		touch:        map[string]time.Time{},
-		lineageFails: map[string]int{},
-		lineageErr:   map[string]error{},
-		kick:         make(chan struct{}, 1),
-		stop:         make(chan struct{}),
-		done:         make(chan struct{}),
+		Trunks:        t,
+		opts:          opts,
+		lockFile:      lockFile,
+		openedUnclean: wasUnclean,
+		dirty:         map[string]struct{}{},
+		touch:         map[string]time.Time{},
+		lineageFails:  map[string]int{},
+		lineageErr:    map[string]error{},
+		kick:          make(chan struct{}, 1),
+		stop:          make(chan struct{}),
+		done:          make(chan struct{}),
 	}
 	go s.run()
 	return s, nil
@@ -561,6 +564,8 @@ func (s *Store) DurableThrough(trunk, channel string) (uint64, error) {
 }
 
 func (s *Store) Close() error { return s.close(true) }
+
+func (s *Store) OpenedUnclean() bool { return s.openedUnclean }
 
 func (s *Store) Abandon() error { return s.close(false) }
 

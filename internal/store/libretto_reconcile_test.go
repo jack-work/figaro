@@ -2,8 +2,12 @@ package store
 
 import (
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
 )
 
 // Reconciliation recomputes: the study path's ordering only guarantees an
@@ -238,5 +242,59 @@ func TestRefsNeedMigrationAnswersFromTheMarkerOnceClean(t *testing.T) {
 	}
 	if be.RefsNeedMigration() {
 		t.Fatal("a clean walk left no marker: every start walks the librettos again")
+	}
+}
+
+// Backref writes are not synced: a crash can lose one the bound forms still
+// claim. The open after an unclean shutdown must reconcile, whatever the
+// marker says, and leave no marker until a walk finds the store clean.
+func TestAnUncleanOpenReconcilesTheLibrettos(t *testing.T) {
+	dir := t.TempDir()
+	be, err := NewXwalBackend(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outfit, err := be.CreateOutfit("lib", setPatch(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := be.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lib, err := be.Libretto(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lib.Retain("n7"); err != nil {
+		t.Fatal(err)
+	}
+	if be.RefsNeedMigration() {
+		t.Fatal("a clean store wants a migration")
+	}
+	if err := be.Abandon(); err != nil {
+		t.Fatal(err)
+	}
+
+	be, err = NewXwalBackend(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !be.RefsNeedMigration() {
+		t.Fatal("the open after a crash trusted the marker: a backref the crash lost would never be rebuilt")
+	}
+	if _, err := os.Stat(filepath.Join(dir, librettoRefsMarker)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the marker survived an unclean open (%v): a crash during the reconcile would skip it next time", err)
+	}
+	if err := be.Close(); err != nil {
+		t.Fatal(err)
+	}
+	be, err = NewXwalBackend(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer be.Close()
+	if be.RefsNeedMigration() {
+		t.Fatal("a clean open after the reconcile still wants one")
 	}
 }

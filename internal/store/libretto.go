@@ -129,7 +129,7 @@ func (l *Libretto) moveRef(observer string, add bool) (int, error) {
 		if !changed {
 			return len(from), nil
 		}
-		_, _, err := l.form.ApplyEffectPrivileged(
+		_, _, err := l.form.applyDerivedPrivileged(
 			librettoPatch(map[string]any{KeyLibrettoRefs: next}), at.Version)
 		if err == nil {
 			return len(next), nil

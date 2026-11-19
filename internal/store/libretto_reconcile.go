@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -39,10 +40,14 @@ func (b *XwalBackend) AuditLibrettos() (LibrettoAudit, error) {
 
 const librettoRefsMarker = "libretto-refs.migrated"
 
-// RefsNeedMigration reads only the librettos, never the bound forms, and
-// only until a walk finds them all migrated.
 func (b *XwalBackend) RefsNeedMigration() bool {
 	marker := filepath.Join(b.root, librettoRefsMarker)
+	if b.store.trunks.OpenedUnclean() {
+		if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("libretto refs marker", "err", err)
+		}
+		return true
+	}
 	if _, err := os.Stat(marker); err == nil {
 		return false
 	}
