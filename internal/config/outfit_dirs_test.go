@@ -302,3 +302,33 @@ func TestALockTokenThatIsNotAnOutfitNameFailsClosed(t *testing.T) {
 		})
 	}
 }
+
+func TestAManagedRootUnderABrokenLinkFailsClosed(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Symlink(filepath.Join(dir, "gone"), filepath.Join(dir, "store")); err != nil {
+		t.Fatal(err)
+	}
+	managed, user := filepath.Join(dir, "store", "etc", "outfits"), filepath.Join(dir, "user")
+	writeTree(t, dir, "user/seat.toml")
+	roots := OutfitRoots{Dirs: []OutfitRoot{{Path: managed, Managed: true}, {Path: user}}}
+	if _, err := OutfitFiles(roots, nil); err == nil {
+		t.Fatal("a managed root under a dangling ancestor link read as no managed outfits")
+	}
+	roots.Dirs[0].Path = filepath.Join(dir, "plain", "outfits")
+	if _, err := OutfitFiles(roots, nil); err != nil {
+		t.Fatalf("a managed root that is simply absent is no outfits: %v", err)
+	}
+}
+
+func TestAnOutfitNameRefusesHiddenAndGlobAndListPunctuation(t *testing.T) {
+	for _, name := range []string{".seat", ".", "..", "a,b", "a*", "a?"} {
+		if err := ValidOutfitName(name); err == nil {
+			t.Errorf("%q accepted", name)
+		}
+	}
+	for _, name := range []string{"seat", "seat.v2", "my-seat"} {
+		if err := ValidOutfitName(name); err != nil {
+			t.Errorf("%q refused: %v", name, err)
+		}
+	}
+}

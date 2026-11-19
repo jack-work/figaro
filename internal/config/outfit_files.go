@@ -219,6 +219,11 @@ func walkOutfitRoot(r OutfitRoot, visit func(path string)) (map[string]*rootFile
 	if r.Managed && lerr == nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("managed outfit root %s is a broken link: %w", root, err)
 	}
+	if r.Managed && lerr != nil {
+		if link := brokenLinkAbove(root); link != "" {
+			return nil, fmt.Errorf("managed outfit root %s lies under the broken link %s", root, link)
+		}
+	}
 	if errors.Is(err, fs.ErrNotExist) {
 		if visit != nil {
 			visit(root)
@@ -345,4 +350,22 @@ func (r OutfitRoots) InManagedRoot(path string) (string, error) {
 		}
 	}
 	return "", nil
+}
+
+func brokenLinkAbove(path string) string {
+	for dir := filepath.Dir(filepath.Clean(path)); ; dir = filepath.Dir(dir) {
+		info, err := os.Lstat(dir)
+		if err == nil {
+			if info.Mode()&fs.ModeSymlink == 0 {
+				return ""
+			}
+			if _, err := os.Stat(dir); err != nil {
+				return dir
+			}
+			return ""
+		}
+		if filepath.Dir(dir) == dir {
+			return ""
+		}
+	}
 }
