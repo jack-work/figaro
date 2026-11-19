@@ -493,10 +493,12 @@ parent's scopes as before.
 
 `system.grants` was the key's old name; it is now an owner-held
 object of other grants (see `system.grants.outfits` in
-[permissions.md](permissions.md)). A board still holding a list there has
-its scopes fail closed: every call naming the figaro, or a figaro below it,
-is refused until the owner unsets `system.grants` and sets `system.scopes`
-to the list. `figaro grants` and `figaro.grants` are the old names of the
+[permissions.md](permissions.md)). The first open of a store by a build
+that knows this moves a list at `system.grants` to `system.scopes` on every
+board that has no `system.scopes`, once, and marks `grants-moved` in
+`schema.json`. A board holding both keeps the list, logged at open, and its
+scopes fail closed: every call naming the figaro, or a figaro below it, is
+refused until the owner unsets `system.grants`. `figaro grants` and `figaro.grants` are the old names of the
 command and method; each level carries its set under both `scopes` and
 `grants`.
 
