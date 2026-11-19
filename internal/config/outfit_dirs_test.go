@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -175,5 +176,78 @@ func TestOutfitRootsLoadFromTheConfigFile(t *testing.T) {
 	}
 	if got := l.OutfitRoots().Overlay(); got != "/u" {
 		t.Fatalf("overlay = %s", got)
+	}
+}
+
+func TestAConfigWhoseOutfitRootsAliasOrNestDoesNotLoad(t *testing.T) {
+	for name, roots := range map[string]string{
+		"same":    `["managed", "managed"]`,
+		"nested":  `["managed", "managed/user"]`,
+		"parent":  `["managed/inner", "managed"]`,
+		"aliased": `["managed", "alias"]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dir, "managed", "inner"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink("managed", filepath.Join(dir, "alias")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[outfits]\nroots = "+roots+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "nest") {
+				t.Fatalf("Load = %v: roots that alias or nest must refuse the config", err)
+			}
+		})
+	}
+}
+
+func TestAnOutfitRootSwappedOntoAnotherIsAnIndexError(t *testing.T) {
+	dir := t.TempDir()
+	managed, user := filepath.Join(dir, "managed"), filepath.Join(dir, "user")
+	writeTree(t, dir, "managed/seat.toml", "user/mine.toml")
+	roots := OutfitRoots{Dirs: []OutfitRoot{{Path: managed, Managed: true}, {Path: user}}}
+	if _, err := OutfitFiles(roots, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(user); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(managed, user); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OutfitFiles(roots, nil); err == nil {
+		t.Fatal("a user root linked onto the managed root must not index the managed files twice")
+	}
+}
+
+func TestAWritePathThatResolvesIntoAManagedRootIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	managed, user := filepath.Join(dir, "managed"), filepath.Join(dir, "user")
+	writeTree(t, dir, "managed/seat.toml")
+	roots := OutfitRoots{Dirs: []OutfitRoot{{Path: managed, Managed: true}, {Path: user}}}
+	if got, err := roots.InManagedRoot(filepath.Join(user, "fresh.toml")); err != nil || got != "" {
+		t.Fatalf("InManagedRoot(user) = %q, %v", got, err)
+	}
+	if err := os.Symlink(managed, user); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := roots.InManagedRoot(filepath.Join(user, "fresh.toml")); err != nil || got != managed {
+		t.Fatalf("InManagedRoot through a link = %q, %v: want %s", got, err, managed)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[outfits]\nroots = [\"managed\", \"elsewhere\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(managed, filepath.Join(dir, "elsewhere")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.OutfitWritePath("fresh"); err == nil {
+		t.Fatal("OutfitWritePath resolved into the managed root")
 	}
 }

@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -133,6 +134,9 @@ func (idx OutfitIndex) lockedNames() []string {
 }
 
 func OutfitFiles(roots OutfitRoots, visit func(path string)) (OutfitIndex, error) {
+	if err := roots.Distinct(); err != nil {
+		return nil, err
+	}
 	idx := OutfitIndex{}
 	for _, root := range roots.Dirs {
 		files, err := walkOutfitRoot(root.Path, visit)
@@ -253,4 +257,59 @@ func readOutfitLock(path string, visit func(path string)) ([]string, error) {
 		names = append(names, strings.Fields(line)...)
 	}
 	return names, nil
+}
+
+func ResolveOutfitRoot(path string) (string, error) {
+	clean := filepath.Clean(path)
+	var rest []string
+	for dir := clean; ; dir = filepath.Dir(dir) {
+		resolved, err := filepath.EvalSymlinks(dir)
+		if err == nil {
+			return filepath.Join(append([]string{resolved}, rest...)...), nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		if filepath.Dir(dir) == dir {
+			return clean, nil
+		}
+		rest = append([]string{filepath.Base(dir)}, rest...)
+	}
+}
+
+func (r OutfitRoots) Distinct() error {
+	resolved := make([]string, len(r.Dirs))
+	for i, root := range r.Dirs {
+		p, err := ResolveOutfitRoot(root.Path)
+		if err != nil {
+			return fmt.Errorf("outfit root %s: %w", root.Path, err)
+		}
+		resolved[i] = p
+		for j := 0; j < i; j++ {
+			if within(resolved[j], p) || within(p, resolved[j]) {
+				return fmt.Errorf("outfit roots %s and %s are the same directory or nest inside one another", r.Dirs[j].Path, root.Path)
+			}
+		}
+	}
+	return nil
+}
+
+func (r OutfitRoots) InManagedRoot(path string) (string, error) {
+	p, err := ResolveOutfitRoot(path)
+	if err != nil {
+		return "", err
+	}
+	for _, root := range r.Dirs {
+		if !root.Managed {
+			continue
+		}
+		m, err := ResolveOutfitRoot(root.Path)
+		if err != nil {
+			return "", err
+		}
+		if within(m, p) {
+			return root.Path, nil
+		}
+	}
+	return "", nil
 }

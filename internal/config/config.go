@@ -954,7 +954,15 @@ func (l *Loaded) OutfitWritePath(name string) (string, error) {
 			return "", fmt.Errorf("outfit %q exists at %s", name, e.Paths[0])
 		}
 	}
-	return filepath.Join(l.OutfitsDir(), name+".toml"), nil
+	path := filepath.Join(l.OutfitsDir(), name+".toml")
+	managed, err := l.OutfitRoots().InManagedRoot(path)
+	if err != nil {
+		return "", err
+	}
+	if managed != "" {
+		return "", fmt.Errorf("outfit %q: %s resolves into the managed root %s", name, path, managed)
+	}
+	return path, nil
 }
 
 func (l *Loaded) ListProviders() []string {
@@ -1073,6 +1081,9 @@ func load(configDir string) (*Loaded, error) {
 	}
 	if err := cfg.Authz.checkProtectedKeys(); err != nil {
 		return nil, fmt.Errorf("%s: %w", configPath, err)
+	}
+	if err := (&Loaded{Config: cfg, ConfigDir: configDir}).OutfitRoots().Distinct(); err != nil {
+		return nil, fmt.Errorf("%s: [outfits] roots: %w", configPath, err)
 	}
 	// default_loadout is the pre-rename key.
 	if cfg.DefaultOutfit == "" {
