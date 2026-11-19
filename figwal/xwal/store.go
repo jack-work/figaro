@@ -88,6 +88,11 @@ func OpenStore(root string, opts StoreOptions) (*Store, error) {
 		return nil, err
 	}
 	if wasUnclean {
+		if err := t.repairForkMarkers(); err != nil {
+			t.Close()
+			unlockRoot(lockFile)
+			return nil, err
+		}
 		if err := repairCoherentCuts(t); err != nil {
 			t.Close()
 			unlockRoot(lockFile)
@@ -139,6 +144,9 @@ func (s *Store) run() {
 		}
 		if !s.opts.NoBackgroundFlush {
 			s.syncDirty()
+			if err := s.Trunks.syncForkCaches(); err != nil {
+				slog.Warn("xwal: fork marker flush failed; retried next tick", "err", err)
+			}
 		}
 		s.evictIdle()
 	}

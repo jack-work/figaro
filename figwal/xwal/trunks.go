@@ -42,6 +42,8 @@ type Trunks struct {
 	validatedTopologyVersion uint64
 	validatedForkBranches    map[string]uint64
 
+	forkCaches forkCaches
+
 	testAfterReadLock func()
 	testRemovalStep   func(string)
 	testStoreClose    func()
@@ -265,6 +267,9 @@ func (t *Trunks) headKey(trunk string) (string, error) {
 // Close releases cached segment handles; every Head or StumpHead must be
 // closed first. The topology cache remains usable.
 func (t *Trunks) Close() error {
+	if err := t.syncForkCaches(); err != nil {
+		return err
+	}
 	t.hotMu.Lock()
 	refs := 0
 	if t.hot != nil {

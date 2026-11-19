@@ -54,7 +54,47 @@ func readForkBaseFile(dir string) (uint64, error) {
 }
 
 func writeForkMarker(dir string, base uint64) error {
-	return writeSyncedFile(filepath.Join(dir, ".fork"), fmt.Appendf(nil, "base=%d\n", base))
+	return writeSyncedFile(filepath.Join(dir, ".fork"), forkMarkerBody(base))
+}
+
+func forkMarkerBody(base uint64) []byte { return fmt.Appendf(nil, "base=%d\n", base) }
+
+func writeForkCache(dir string, base uint64) error {
+	path := filepath.Join(dir, ".fork")
+	f, err := os.CreateTemp(dir, "..fork-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	if _, err := f.Write(forkMarkerBody(base)); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+func syncForkCache(dir string) error {
+	f, err := os.Open(filepath.Join(dir, ".fork"))
+	if err != nil {
+		return err
+	}
+	serr := f.Sync()
+	if cerr := f.Close(); serr == nil {
+		serr = cerr
+	}
+	if serr != nil {
+		return serr
+	}
+	return disk.SyncDir(dir)
 }
 
 func atomicReplaceFile(tmp, final string) error {

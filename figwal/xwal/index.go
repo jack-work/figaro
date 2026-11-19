@@ -2,8 +2,10 @@ package xwal
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -343,12 +345,18 @@ type nodeMarker struct {
 	from  string
 	kind  string
 	trunk string
+	bases map[string]uint64
 }
+
+const markerBasePrefix = "base."
 
 func writeNodeMarker(dir string, n nodeMarker) error {
 	// writeSyncedFile already fsyncs the directory after its rename; a
 	// second SyncDir here made every fork commit pay two.
 	body := fmt.Appendf(nil, "from=%s\nkind=%s\ntrunk=%s\n", n.from, n.kind, n.trunk)
+	for _, ch := range slices.Sorted(maps.Keys(n.bases)) {
+		body = fmt.Appendf(body, "%s%s=%d\n", markerBasePrefix, ch, n.bases[ch])
+	}
 	return writeSyncedFile(filepath.Join(dir, nodeMarkerName), body)
 }
 
@@ -372,6 +380,16 @@ func readNodeMarker(dir string) (n nodeMarker, ok bool) {
 			n.kind = v
 		case "trunk":
 			n.trunk = v
+		default:
+			ch, isBase := strings.CutPrefix(k, markerBasePrefix)
+			base, err := strconv.ParseUint(v, 10, 64)
+			if !isBase || ch == "" || err != nil {
+				continue
+			}
+			if n.bases == nil {
+				n.bases = map[string]uint64{}
+			}
+			n.bases[ch] = base
 		}
 	}
 	return n, true

@@ -101,6 +101,9 @@ func (t *Trunks) Detach(node string) error {
 		}
 		trunk = n.Trunk
 	}
+	if err := t.syncForkCaches(node); err != nil {
+		return err
+	}
 	if err := writeNodeMarker(t.irDir(node), nodeMarker{kind: kind, trunk: trunk}); err != nil {
 		return err
 	}
