@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"unicode"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/config"
 )
 
 // NameDefault, as an outfit name, means whatever config calls the default outfit.
@@ -245,29 +245,8 @@ func sugarHint(part string) string {
 	return fmt.Sprintf(" (for a one-key literal, write %s=%s)", strings.TrimSpace(k), strings.TrimSpace(v))
 }
 
-// ValidName: a name is a file basename, so path separators and the grammar's punctuation are refused.
 func ValidName(name string) error {
-	switch {
-	case name == "":
-		return fmt.Errorf("outfit: empty name")
-	case name == "." || name == "..":
-		return fmt.Errorf("outfit: %q is not a name", name)
-	case strings.HasPrefix(name, "-"):
-		return fmt.Errorf("outfit: %q looks like a flag, not an outfit (--outfit takes a value)", name)
-	case strings.ContainsAny(name, "=/\\"):
-		return fmt.Errorf("outfit: %q: a name cannot contain = / or \\", name)
-	case strings.ContainsAny(name, `{}[]"`):
-		return fmt.Errorf("outfit: %q: a name cannot contain {} [] or a quote (an inline term must be a whole JSON object)", name)
-	case strings.Contains(name, ":"):
-		// Usually a shell-brace-expanded literal that lost its braces.
-		return fmt.Errorf("outfit: %q: a name cannot contain `:`: for a literal, quote it ('{\"a\":1}') or use the sugar (a=1)", name)
-	}
-	for _, r := range name {
-		if unicode.IsSpace(r) || unicode.IsControl(r) {
-			return fmt.Errorf("outfit: %q: a name cannot contain whitespace", name)
-		}
-	}
-	return nil
+	return config.ValidOutfitName(name)
 }
 
 // splitTerms splits on commas outside quotes, braces and brackets.

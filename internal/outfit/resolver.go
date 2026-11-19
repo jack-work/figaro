@@ -423,6 +423,7 @@ func (o *Outfitter) nodeFor(ep *epoch, name string, managedOnly bool) (*node, er
 	r := &reader{o: o, ep: ep}
 	path, entry, view, err := o.resolveEntry(name, managedOnly, r)
 	if errors.Is(err, os.ErrNotExist) {
+		n.entry = entry
 		o.mu.Lock()
 		ep.nodes[key] = n
 		o.mu.Unlock()

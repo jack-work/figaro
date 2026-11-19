@@ -279,7 +279,15 @@ func readOutfitLock(path string, visit func(path string)) ([]string, error) {
 	var names []string
 	for _, line := range strings.Split(string(b), "\n") {
 		line, _, _ = strings.Cut(line, "#")
-		names = append(names, strings.Fields(line)...)
+		for _, name := range strings.Fields(line) {
+			if strings.HasSuffix(name, ".toml") {
+				return nil, fmt.Errorf("%s: %q: a lock lists outfit names, not files; drop .toml", path, name)
+			}
+			if err := ValidOutfitName(name); err != nil {
+				return nil, fmt.Errorf("%s: %w", path, err)
+			}
+			names = append(names, name)
+		}
 	}
 	return names, nil
 }

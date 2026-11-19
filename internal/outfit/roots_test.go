@@ -335,3 +335,13 @@ func TestAMissWhenNothingMovedDoesNotRollTheEpoch(t *testing.T) {
 	require.NoError(t, err, "a miss after the disk moved rolls the epoch and walks once more")
 	assert.Greater(t, o.Generation(), gen)
 }
+
+func TestTheTreeNamesARefusalOnALockedNameWithNoManagedFile(t *testing.T) {
+	o, managed, user := layeredOutfitter(t)
+	writeRootFile(t, managed, ".locked", "reserved\n")
+	refused := writeRootFile(t, user, "reserved.toml", "[system]\nmodel = \"user\"\n")
+
+	c := o.Resolve("reserved")
+	assert.False(t, c.Found)
+	assert.Equal(t, []config.OutfitSource{{Path: refused, Root: user}}, c.Refused, "a not-found closure must still say what the lock refused")
+}

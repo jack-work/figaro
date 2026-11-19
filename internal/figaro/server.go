@@ -261,10 +261,9 @@ func OutfitClosureWire(c *outfit.Closure) *rpc.OutfitLayer {
 	if c == nil {
 		return nil
 	}
-	out := &rpc.OutfitLayer{Name: c.Name, Path: c.Path, Found: c.Found, Cycle: c.Cycle, Origin: c.Origin}
+	out := &rpc.OutfitLayer{Name: c.Name, Path: c.Path, Found: c.Found, Cycle: c.Cycle, Origin: c.Origin, Refused: OutfitSourcesWire(c.Refused)}
 	if c.Origin != "" {
 		out.Shadowed = OutfitSourcesWire(c.Shadowed)
-		out.Refused = OutfitSourcesWire(c.Refused)
 		out.Overlaid = OutfitSourcesWire(c.Overlaid)
 	}
 	for _, l := range c.Layers {

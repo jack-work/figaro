@@ -153,3 +153,14 @@ func TestRenderOutfitClosureNamesAnOverlayALockedOutfitIgnores(t *testing.T) {
 		t.Fatalf("closure tree:\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
 }
+
+func TestRenderOutfitClosureNamesARefusalOnAMissingLayer(t *testing.T) {
+	restore := term.SetColorMode(term.ColorNever)
+	defer restore()
+
+	closure := &rpc.OutfitLayer{Name: "reserved", Refused: []rpc.OutfitSource{{Path: "/u/reserved.toml", Origin: "user"}}}
+	got := renderOutfitClosure(closure)
+	if !strings.Contains(got, "not found; refused user /u/reserved.toml (locked)") {
+		t.Fatalf("closure tree:\n%s", got)
+	}
+}

@@ -200,7 +200,7 @@ func (o *Outfitter) resolveNode(ep *epoch, name string, managedOnly bool, stack 
 		return c
 	}
 	if !n.found {
-		c := &Closure{Name: name}
+		c := &Closure{Name: name, Refused: n.entry.Refused, LockedBy: n.entry.LockedBy}
 		// The only place a vanished file's cached fold is learned to be collectible.
 		o.Forget(key)
 		memo[key] = c

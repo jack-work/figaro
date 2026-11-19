@@ -285,3 +285,20 @@ func TestABrokenLinkAtAManagedRootOrItsLockFailsClosed(t *testing.T) {
 		}
 	})
 }
+
+func TestALockTokenThatIsNotAnOutfitNameFailsClosed(t *testing.T) {
+	for _, token := range []string{"seat.toml", "sub/seat", "-seat", "a=b"} {
+		t.Run(token, func(t *testing.T) {
+			dir := t.TempDir()
+			managed, user := filepath.Join(dir, "managed"), filepath.Join(dir, "user")
+			writeTree(t, dir, "managed/seat.toml", "user/seat.toml")
+			if err := os.WriteFile(filepath.Join(managed, OutfitLockFile), []byte("ok "+token+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			roots := OutfitRoots{Dirs: []OutfitRoot{{Path: managed, Managed: true}, {Path: user}}}
+			if _, err := OutfitFiles(roots, nil); err == nil {
+				t.Fatalf("lock token %q was accepted: it locks nothing and reads as a lock", token)
+			}
+		})
+	}
+}
