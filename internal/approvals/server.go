@@ -100,7 +100,7 @@ func (s *Server) gate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("Cache-Control", "no-store")
 		if !s.fromEdge(r) {
 			http.Error(w, "not from the edge", http.StatusForbidden)
@@ -110,7 +110,7 @@ func (s *Server) gate(next http.Handler) http.Handler {
 			http.Error(w, "admin only", http.StatusForbidden)
 			return
 		}
-		if r.Method == http.MethodPost && (s.Origin == "" || r.Header.Get("Origin") != s.Origin) {
+		if r.Method == http.MethodPost && !s.sameOrigin(r) {
 			http.Error(w, "cross-origin post refused", http.StatusForbidden)
 			return
 		}
@@ -211,4 +211,16 @@ func (s *Server) token(filing, id, hash string, version uint64) string {
 	m := hmac.New(sha256.New, s.key)
 	m.Write([]byte(filing + "\x00" + id + "\x00" + hash + "\x00" + strconv.FormatUint(version, 10)))
 	return hex.EncodeToString(m.Sum(nil))
+}
+
+func (s *Server) sameOrigin(r *http.Request) bool {
+	if s.Origin == "" {
+		return false
+	}
+	switch origin := r.Header.Get("Origin"); origin {
+	case "", "null":
+		return r.Header.Get("Sec-Fetch-Site") == "same-origin"
+	default:
+		return origin == s.Origin
+	}
 }

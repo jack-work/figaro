@@ -141,3 +141,39 @@ func TestShortEdgeSecretRefusesEverything(t *testing.T) {
 		t.Fatalf("short secret accepted: %d", w.Code)
 	}
 }
+
+func postWith(h http.Handler, headers map[string]string) bool {
+	r := httptest.NewRequest("POST", "/deny", strings.NewReader(""))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.RemoteAddr = "192.0.2.1:4000"
+	r.Header.Set(EdgeHeader, edgeSecret)
+	r.Header.Set("Remote-User", "gluck")
+	for k, v := range headers {
+		r.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return strings.Contains(w.Body.String(), "cross-origin post refused")
+}
+
+func TestPostOriginRules(t *testing.T) {
+	_, h := serve(t)
+	cases := []struct {
+		name    string
+		headers map[string]string
+		refused bool
+	}{
+		{"null origin, same-origin fetch", map[string]string{"Origin": "null", "Sec-Fetch-Site": "same-origin"}, false},
+		{"no origin, same-origin fetch", map[string]string{"Sec-Fetch-Site": "same-origin"}, false},
+		{"null origin, cross-site", map[string]string{"Origin": "null", "Sec-Fetch-Site": "cross-site"}, true},
+		{"null origin, no fetch metadata", map[string]string{"Origin": "null"}, true},
+		{"no origin, same-site", map[string]string{"Sec-Fetch-Site": "same-site"}, true},
+		{"foreign origin claiming same-origin", map[string]string{"Origin": "https://evil.example", "Sec-Fetch-Site": "same-origin"}, true},
+		{"nothing at all", map[string]string{}, true},
+	}
+	for _, c := range cases {
+		if got := postWith(h, c.headers); got != c.refused {
+			t.Errorf("%s: origin refused = %v, want %v", c.name, got, c.refused)
+		}
+	}
+}
