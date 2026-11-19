@@ -102,6 +102,10 @@ func TestShapesAgreeWithTheReadersThatJudgeAValue(t *testing.T) {
 			_, _, err := OwnScopes(s)
 			return err == nil
 		},
+		OutfitGrantsKey: func(s Snapshot) bool {
+			_, err := OutfitGrants(s)
+			return err == nil
+		},
 		FanoutMaxChildrenKey: func(s Snapshot) bool {
 			_, _, err := FanoutMaxChildren(s)
 			return err == nil
