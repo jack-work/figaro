@@ -9,6 +9,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"html/template"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/netip"
@@ -29,6 +30,7 @@ type Server struct {
 	Filings    []string
 	Admin      string
 	Origin     string
+	SPA        fs.FS
 	EdgeSecret []byte
 	Peers      []netip.Addr
 	key        []byte
@@ -88,6 +90,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /r/{filing}/{id}", s.detail)
 	mux.HandleFunc("POST /approve", s.decide(true))
 	mux.HandleFunc("POST /deny", s.decide(false))
+	mux.HandleFunc("GET /api/v1/requests", s.apiList)
+	mux.HandleFunc("GET /api/v1/requests/{filing}/{id}", s.apiOne)
+	mux.HandleFunc("POST /api/v1/requests/{filing}/{id}/approve", s.apiDecide(true))
+	mux.HandleFunc("POST /api/v1/requests/{filing}/{id}/deny", s.apiDecide(false))
+	if s.SPA != nil {
+		mux.Handle("GET /app/", http.StripPrefix("/app/", http.FileServerFS(s.SPA)))
+		mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/app/", http.StatusMovedPermanently)
+		})
+	}
 	mux.HandleFunc("GET /page.css", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css")
 		b, _ := assets.ReadFile("page.css")
@@ -98,7 +110,11 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) gate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		if strings.HasPrefix(r.URL.Path, "/app") {
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'")
+		} else {
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("Cache-Control", "no-store")

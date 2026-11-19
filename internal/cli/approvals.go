@@ -24,7 +24,7 @@ var approvalsVerb = &cmdkit.Command{
 	Name:  "approvals",
 	Group: "System",
 	Short: "Serve the owner approvals page: elicit.* requests on role forms, approved by template patch",
-	Usage: "approvals serve --listen <addr> --forms <@role,...> --admin <user> --origin <url> --peer <ip,...> [--edge-secret-file <file>] [--audit <file>]",
+	Usage: "approvals serve --listen <addr> --forms <@role,...> --admin <user> --origin <url> --peer <ip,...> [--edge-secret-file <file>] [--spa-dir <dir>] [--audit <file>]",
 	Long: `A figaro asks for an owner-held change by writing elicit.<id> on its role
 form. This page lists those requests and offers Approve and Deny. Approve
 builds the patch from a fixed per-verb template and the live values, shows it
@@ -50,6 +50,7 @@ Remote-User read.
 		{Long: "origin", Description: "the Origin a POST must carry, e.g. https://order.kelliher.info"},
 		{Long: "peer", Description: "comma-separated addresses the proxy connects from"},
 		{Long: "edge-secret-file", Description: "file holding the secret the proxy sends (default $CREDENTIALS_DIRECTORY/edge)"},
+		{Long: "spa-dir", Description: "serve this directory at /app/ (the single-page front end; the HTML page at / stays as the fallback)"},
 		{Long: "audit", Description: "append-only audit file (default ~/.local/state/figaro-approvals/audit.log)"},
 	},
 	ArgsMin: 1,
@@ -85,7 +86,11 @@ Remote-User read.
 			Audit: approvals.NewAudit(io.MultiWriter(audit, os.Stdout)),
 			Now:   time.Now,
 		}
-		srv := &http.Server{Addr: listen, Handler: approvals.NewServer(d, forms, admin, origin, secret, peers).Handler(),
+		server := approvals.NewServer(d, forms, admin, origin, secret, peers)
+		if dir := ctx.Flag("spa-dir"); dir != "" {
+			server.SPA = os.DirFS(dir)
+		}
+		srv := &http.Server{Addr: listen, Handler: server.Handler(),
 			ReadHeaderTimeout: 10 * time.Second}
 		return srv.ListenAndServe()
 	},
