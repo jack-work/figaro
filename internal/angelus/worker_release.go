@@ -39,7 +39,7 @@ func (h *handlers) everythingOfLease(box string, minted []string) []string {
 		}
 	}
 	for _, id := range minted {
-		if n, ok := backend.Node(id); ok {
+		if n, ok := backend.NodeLink(id); ok {
 			add(id, n.Kind)
 		}
 	}
@@ -147,7 +147,7 @@ func (h *handlers) closeCaller(ctx context.Context, loaded *config.Loaded, pool,
 func leaseIsOver(l workerpool.Lease) bool { return l.State == workerpool.Released }
 
 func (h *handlers) purgeNow(ctx context.Context, id string) error {
-	if _, ok := h.angelus.Backend.Node(id); !ok {
+	if _, ok := h.angelus.Backend.NodeLink(id); !ok {
 		return nil
 	}
 	kill := h.angelus.Handlers[rpc.MethodKill]
@@ -268,7 +268,7 @@ func (h *handlers) recoverWorkerPools(ctx context.Context) {
 	orphans := h.orphansOfLeases()
 	purged := 0
 	for _, id := range orphans {
-		if _, ok := h.angelus.Backend.Node(id); !ok {
+		if _, ok := h.angelus.Backend.NodeLink(id); !ok {
 			continue
 		}
 		if err := h.purgeTakingOnly(owner, id, orphans); err != nil {

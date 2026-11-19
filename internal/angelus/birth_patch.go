@@ -68,7 +68,7 @@ func (h *handlers) ensureDefaultForm(backend store.Backend, stumpPatch form.Patc
 		return "", fmt.Errorf("default form record: %w", err)
 	}
 	if rec != nil {
-		if _, ok := backend.Node(rec.FormID); !ok {
+		if _, ok := backend.NodeLink(rec.FormID); !ok {
 			rec = nil
 		}
 	}

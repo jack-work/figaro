@@ -21,7 +21,7 @@ func (h *handlers) deliveriesInStore(l workerpool.Lease, woken takesDeliveries) 
 	seen := map[string]bool{}
 	backend := h.angelus.Backend
 	for _, id := range l.Minted {
-		n, ok := backend.Node(id)
+		n, ok := backend.NodeLink(id)
 		if !ok || n.Kind != store.KindConversation {
 			continue
 		}

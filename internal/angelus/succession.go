@@ -819,7 +819,7 @@ func (h *handlers) pageTarget(ctx context.Context, old string, r store.Retiremen
 			ref = *v
 		}
 	}
-	if _, ok := h.angelus.Backend.Node(ref); !ok || ref == old {
+	if _, ok := h.angelus.Backend.NodeLink(ref); !ok || ref == old {
 		return "", fmt.Errorf("%s names nobody to tell", ref)
 	}
 	if meta, _ := h.angelus.Backend.Meta(ref); meta == nil {

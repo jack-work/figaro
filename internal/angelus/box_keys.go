@@ -820,7 +820,7 @@ func (h *handlers) carryBeforeDetach(ids []string) error {
 		return nil
 	}
 	for _, id := range ids {
-		if n, ok := h.angelus.Backend.Node(id); !ok || n.Kind != store.KindConversation {
+		if n, ok := h.angelus.Backend.NodeLink(id); !ok || n.Kind != store.KindConversation {
 			continue
 		}
 		if err := h.carryNarrowing(id); err != nil {

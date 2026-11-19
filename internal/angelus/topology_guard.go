@@ -56,7 +56,7 @@ func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
 
 func (a *Angelus) fanoutLimit(id string) (int, bool, error) {
 	if a.Backend != nil {
-		if n, ok := a.Backend.Node(id); !ok || n.Kind == nullKind || n.Kind == outfitKind {
+		if n, ok := a.Backend.NodeLink(id); !ok || n.Kind == nullKind || n.Kind == outfitKind {
 			return 0, false, nil
 		}
 	}

@@ -619,7 +619,7 @@ func (a *Angelus) fanoutNodeOf(id, parent string) fanoutNode {
 }
 
 func (a *Angelus) chargesQuota(id string) bool {
-	n, ok := a.Backend.Node(id)
+	n, ok := a.Backend.NodeLink(id)
 	return ok && n.Kind == store.KindConversation
 }
 
@@ -725,7 +725,7 @@ func (a *Angelus) nodeKept(id string) bool {
 	if a.Backend == nil {
 		return false
 	}
-	_, ok := a.Backend.Node(id)
+	_, ok := a.Backend.NodeLink(id)
 	return ok
 }
 
@@ -733,7 +733,7 @@ func (a *Angelus) drawnParentOf(id string) string {
 	if p, ok := a.topology().Drawn(id); ok {
 		return p
 	}
-	v, _ := a.Backend.Node(id)
+	v, _ := a.Backend.NodeLink(id)
 	return v.Parent
 }
 

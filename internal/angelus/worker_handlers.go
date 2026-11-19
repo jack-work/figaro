@@ -70,7 +70,7 @@ func workerRefused(data rpc.WorkerRefusal, format string, args ...any) error {
 func (h *handlers) leaseSeat(l workerpool.Lease) (aria, role string) {
 	backend := h.angelus.Backend
 	for _, id := range l.Minted {
-		if n, ok := backend.Node(id); ok && n.Kind == store.KindForm {
+		if n, ok := backend.NodeLink(id); ok && n.Kind == store.KindForm {
 			role = id
 			break
 		}

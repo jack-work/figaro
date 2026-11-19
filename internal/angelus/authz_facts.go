@@ -40,7 +40,7 @@ func (f storeFacts) tombstone(aria string) (store.Tombstone, bool) {
 }
 
 func (f storeFacts) DescendsFrom(aria, root string) bool {
-	if _, ok := f.backend.Node(aria); !ok {
+	if _, ok := f.backend.NodeLink(aria); !ok {
 		if t, ok := f.tombstone(aria); ok {
 			return slices.Contains(t.Facts.Ancestors, root)
 		}
@@ -49,7 +49,7 @@ func (f storeFacts) DescendsFrom(aria, root string) bool {
 	seen := map[string]bool{}
 	for id := aria; id != "" && !seen[id]; {
 		seen[id] = true
-		n, ok := f.backend.Node(id)
+		n, ok := f.backend.NodeLink(id)
 		if !ok {
 			return false
 		}
@@ -84,13 +84,13 @@ func (f storeFacts) SandboxOf(aria string) (string, bool) {
 }
 
 func (f storeFacts) Ancestry(aria string) ([]string, bool) {
-	n, ok := f.backend.Node(aria)
+	n, ok := f.backend.NodeLink(aria)
 	if !ok {
 		return nil, false
 	}
 	out := []string{aria}
 	for n.Parent != "" && !slices.Contains(out, n.Parent) {
-		if n, ok = f.backend.Node(n.Parent); !ok || n.Kind != "conversation" {
+		if n, ok = f.backend.NodeLink(n.Parent); !ok || n.Kind != "conversation" {
 			break
 		}
 		out = append(out, n.ID)

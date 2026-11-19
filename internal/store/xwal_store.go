@@ -32,6 +32,8 @@ var trunkScanCount atomic.Int64
 
 var trunkWalkCount atomic.Int64
 
+var topologyBuildCount atomic.Int64
+
 // Always go through these inside the store so every tree scan is counted.
 func (s *XwalStore) listTrunks() []xwal.TrunkInfo {
 	trunkScanCount.Add(1)
@@ -759,6 +761,12 @@ type NodeView struct {
 	Present string
 }
 
+type NodeLink struct {
+	ID     string
+	Parent string
+	Kind   string
+}
+
 // view: a top-level conversation's parent is its outfit stump, or the root
 // when outfitless.
 func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
@@ -918,6 +926,7 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 		return snapshot
 	}
 
+	topologyBuildCount.Add(1)
 	infos, version := s.listTrunksSince(s.topology.Load())
 	at := s.vectorsLocked(infos)
 	nodes := make([]NodeView, 0, len(infos)+1)
@@ -975,6 +984,21 @@ func (s *XwalStore) ConversationIDs() []string {
 // Nodes is every trunk plus the root and every outfit stump.
 func (s *XwalStore) Nodes() []NodeView {
 	return append([]NodeView(nil), s.topologySnapshot().nodes...)
+}
+
+func (s *XwalStore) NodeLink(id string) (NodeLink, bool) {
+	switch {
+	case id == rootID:
+		return NodeLink{ID: rootID, Kind: string(kindNull)}, true
+	case s.trunks.IsStump(id):
+		return NodeLink{ID: id, Parent: rootID, Kind: string(kindOutfit)}, !isReservedStump(id)
+	}
+	t, ok := s.trunks.LightInfo(id)
+	if !ok {
+		return NodeLink{}, false
+	}
+	v := s.view(t, nil)
+	return NodeLink{ID: v.ID, Parent: v.Parent, Kind: v.Kind}, true
 }
 
 func (s *XwalStore) Node(id string) (NodeView, bool) {
@@ -1213,6 +1237,8 @@ func (s *XwalStore) formTail(id string) (uint64, bool) {
 func HandleIdleForTest() time.Duration { return time.Duration(handleIdle.Load()) }
 
 func TrunkWalksForTest() int64 { return trunkWalkCount.Load() }
+
+func TopologyBuildsForTest() int64 { return topologyBuildCount.Load() }
 
 func (s *XwalStore) WithFullTopologyForTest(read func()) {
 	kept := s.topology.Load()

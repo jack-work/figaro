@@ -29,7 +29,7 @@ func (a *Angelus) Residents() []rpc.Resident {
 		if r, ok := byID[id]; ok {
 			return r
 		}
-		if _, held := a.Backend.Node(id); held {
+		if _, held := a.Backend.NodeLink(id); held {
 			return nil
 		}
 		if _, err := a.Backend.FormState(id); err == nil {

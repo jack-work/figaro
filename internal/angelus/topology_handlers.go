@@ -542,7 +542,7 @@ func (h *handlers) headForkOfAConversation(req rpc.ForkRequest) bool {
 	if req.AtTurn > 0 || req.AtLT > 0 {
 		return false
 	}
-	n, ok := h.angelus.Backend.Node(req.FigaroID)
+	n, ok := h.angelus.Backend.NodeLink(req.FigaroID)
 	return ok && n.Kind == store.KindConversation
 }
 
@@ -627,7 +627,7 @@ func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMa
 
 func (h *handlers) outfitAncestor(id string) string {
 	for id != "" {
-		node, ok := h.angelus.Backend.Node(id)
+		node, ok := h.angelus.Backend.NodeLink(id)
 		if !ok {
 			return ""
 		}

@@ -35,6 +35,10 @@ func (b readBenchBackend) OpenFigIR(string) (arialog.Log[message.Message], error
 	return b.log, nil
 }
 
+func (b readBenchBackend) NodeLink(id string) (store.NodeLink, bool) {
+	return store.NodeLink{ID: id, Kind: conversationKind}, id == "perf"
+}
+
 func (b readBenchBackend) Node(id string) (store.NodeView, bool) {
 	return store.NodeView{ID: id, Kind: conversationKind}, id == "perf"
 }

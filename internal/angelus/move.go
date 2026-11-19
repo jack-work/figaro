@@ -283,7 +283,7 @@ func (h *handlers) movedFacts(ids []string) map[string]store.MovedFacts {
 		}
 		seen := map[string]bool{id: true}
 		for cur := id; ; {
-			n, ok := h.angelus.Backend.Node(cur)
+			n, ok := h.angelus.Backend.NodeLink(cur)
 			if !ok || n.Parent == "" || seen[n.Parent] {
 				break
 			}
@@ -446,7 +446,7 @@ func (h *handlers) holdsAny(ids []string) bool { return len(h.heldOf(ids)) > 0 }
 func (h *handlers) heldOf(ids []string) []string {
 	var out []string
 	for _, id := range ids {
-		if _, ok := h.angelus.Backend.Node(id); ok {
+		if _, ok := h.angelus.Backend.NodeLink(id); ok {
 			out = append(out, id)
 		}
 	}

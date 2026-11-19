@@ -249,7 +249,7 @@ func (h *handlers) importStatus(ctx context.Context, params json.RawMessage) (an
 
 func (h *handlers) holdsAll(ids []string) bool {
 	for _, id := range ids {
-		if _, ok := h.angelus.Backend.Node(id); !ok {
+		if _, ok := h.angelus.Backend.NodeLink(id); !ok {
 			return false
 		}
 	}
