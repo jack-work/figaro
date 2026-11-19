@@ -233,23 +233,18 @@ func (t ptree) entry(path string) (*node, bool) {
 }
 
 func lookupLongest(n *node, rest string) *node {
-	var best *node
-	for n != nil {
-		switch {
-		case rest < n.key:
-			n = n.left
-		case rest > n.key:
-			if len(n.key) < len(rest) && rest[len(n.key)] == '.' && rest[:len(n.key)] == n.key {
-				if best == nil || len(n.key) > len(best.key) {
-					best = n
-				}
-			}
-			n = n.right
-		default:
-			return n
+	if exact := lookupExact(n, rest); exact != nil {
+		return exact
+	}
+	for i := len(rest) - 1; i > 0; i-- {
+		if rest[i] != '.' {
+			continue
+		}
+		if m := lookupExact(n, rest[:i]); m != nil {
+			return m
 		}
 	}
-	return best
+	return nil
 }
 
 func (t ptree) setPath(segs []string, v Value) ptree {
