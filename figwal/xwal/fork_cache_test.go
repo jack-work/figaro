@@ -113,3 +113,43 @@ func TestAForkMarkerLostInACrashIsRebuiltFromTheNode(t *testing.T) {
 		})
 	}
 }
+
+// A process killed while it built a detach's copy leaves the scratch
+// segment beside the live history, and the quiet pass detaches without
+// anyone watching; the open after the crash removes what it left.
+func TestAnUncleanOpenRemovesTheScratchOfACopyCutShort(t *testing.T) {
+	dir := t.TempDir()
+	s := forkCacheStore(t, dir)
+	a, _ := s.SpawnUnderRoot()
+	if _, err := s.Append(a, "main", 0, []byte(`"a"`), nil); err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.ForkTail(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := s.head(c)
+	var scratch []string
+	for _, ch := range []string{"main", "aux"} {
+		d := filepath.Join(dir, ch, fsName(key))
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.CreateTemp(d, ".absorb-*")
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
+		scratch = append(scratch, f.Name())
+	}
+	if err := s.Abandon(); err != nil {
+		t.Fatal(err)
+	}
+	s = forkCacheStore(t, dir)
+	defer s.Close()
+	for _, p := range scratch {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("%s after the unclean open: %v, want it gone", p, err)
+		}
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -354,6 +355,21 @@ func finishInterruptedAbsorb(dir string, l *log.Log, initial []byte, codec segme
 	}
 	l.AdoptAbsorbedPrefix()
 	return nil
+}
+
+func (t *Trunks) sweepAbsorbScratch() {
+	left, _ := filepath.Glob(filepath.Join(t.root, "*", "*", ".absorb-*"))
+	removed := 0
+	for _, p := range left {
+		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			slog.Warn("xwal: a copy's scratch from before an unclean shutdown stays", "path", p, "err", err)
+			continue
+		}
+		removed++
+	}
+	if removed > 0 {
+		slog.Warn("xwal: removed the scratch of copies an unclean shutdown cut short", "count", removed)
+	}
 }
 
 func sameFileBytes(a, b string) (bool, error) {
