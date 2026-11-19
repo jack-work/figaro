@@ -306,11 +306,10 @@ func TestAForkNeverCopiesItsParentsQuota(t *testing.T) {
 	requireCacheMatchesTree(t, hs, "carves")
 }
 
-// Gluck's call: admission is optimistic. Forks and quota writes read the
-// counts without the hierarchy lock, so a race may overshoot, but only by
-// what was in flight, and the counts converge on the tree: an overdrawn
-// figaro is reported and refused every fork until it is back under.
-func TestRacingForksAndQuotaWritesOvershootBoundedlyAndConverge(t *testing.T) {
+// Forks and quota writes take no hierarchy lock, but each holds its charge
+// in the cache from its check until it lands, so racing them never
+// overdraws, and the counts converge on the tree.
+func TestRacingForksAndQuotaWritesNeverOverdrawAndConverge(t *testing.T) {
 	const quota, raisers, step = 6, 6, 3
 	for round := range 10 {
 		hs, b, outfit := fanoutHandlers(t)
@@ -331,8 +330,8 @@ func TestRacingForksAndQuotaWritesOvershootBoundedlyAndConverge(t *testing.T) {
 		}
 		wg.Wait()
 		used := budgetOf(hs, top).used
-		if used > quota+raisers*step {
-			t.Fatalf("round %d: top uses %d, past its quota %d plus everything in flight", round, used, quota)
+		if used > quota {
+			t.Fatalf("round %d: top uses %d, past its quota %d", round, used, quota)
 		}
 		hs.h.angelus.reconcileFanout()
 		requireCacheMatchesTree(t, hs, fmt.Sprintf("round %d", round))
@@ -380,5 +379,42 @@ func TestConcurrentForksAgainstAQuotaAdmitExactlyIt(t *testing.T) {
 			t.Fatalf("round %d: top uses %d, want %d", round, got.used, quota)
 		}
 		requireCacheMatchesTree(t, hs, "concurrent forks against a quota")
+	}
+}
+
+// Defends M1 of the P6 review: a quota raise holds its charge from the
+// check until the write lands, so two raises that each fit alone and not
+// together leave exactly one applied.
+func TestConcurrentQuotaRaisesSpendABudgetOnce(t *testing.T) {
+	for round := range 20 {
+		hs, b, outfit := fanoutHandlers(t)
+		top, _ := b.CreateConversation(outfit)
+		setQuota(t, b, top, 10)
+		kids := []string{forkOK(t, hs, top, top, nil), forkOK(t, hs, top, top, nil)}
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for _, kid := range kids {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				_ = setAsFigaro(t, hs, top, kid, *quotaPatch(6))
+			}()
+		}
+		close(start)
+		wg.Wait()
+		raised := 0
+		for _, kid := range kids {
+			if v, _ := keyIn(t, b, kid, form.FanoutQuotaKey); v == "6" {
+				raised++
+			}
+		}
+		if raised != 1 {
+			t.Fatalf("round %d: %d of two raises to 6 landed against top's 8 free", round, raised)
+		}
+		if got := budgetOf(hs, top); got.used > 10 {
+			t.Fatalf("round %d: top uses %d of quota 10", round, got.used)
+		}
+		requireCacheMatchesTree(t, hs, "concurrent quota raises")
 	}
 }

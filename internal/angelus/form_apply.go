@@ -17,6 +17,8 @@ import (
 type formApplyIDKey struct{}
 
 func (h *handlers) formApply(ctx context.Context, params json.RawMessage) (any, error) {
+	ctx, settle := withQuotaHolds(ctx)
+	defer settle()
 	var req rpc.FormApplyRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err

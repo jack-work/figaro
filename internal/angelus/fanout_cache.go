@@ -446,6 +446,30 @@ func (c *fanoutCache) absorberOf(from string) (string, bool) {
 func (c *fanoutCache) chargeChange(id string, quota int, capped bool) (from string, d int, used int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.chargeChangeLocked(id, quota, capped)
+}
+
+func (c *fanoutCache) takeCharge(id string, quota int, capped bool, judge func(error) error) (func(), error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	from, d, _ := c.chargeChangeLocked(id, quota, capped)
+	if err := c.fitsLocked(from, d); err != nil {
+		if err = judge(err); err != nil {
+			return nil, err
+		}
+	}
+	at, charge := c.reserveLocked(from, d)
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			c.settleLocked(at, charge)
+		})
+	}, nil
+}
+
+func (c *fanoutCache) chargeChangeLocked(id string, quota int, capped bool) (from string, d int, used int) {
 	if _, known := c.parent[id]; !known {
 		return "", 0, 0
 	}

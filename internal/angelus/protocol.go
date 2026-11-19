@@ -251,6 +251,8 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 			return rpc.FollowResponse{OK: true, FigaroID: id}, nil
 		}
 		ctx = withRequestOutfits(ctx, method, params)
+		ctx, settle := withQuotaHolds(ctx)
+		defer settle()
 		if err := h.refuseOutfitGrants(ctx, requestOutfits(ctx)); err != nil {
 			return nil, err
 		}

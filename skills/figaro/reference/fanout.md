@@ -111,14 +111,16 @@ until its use drops under, and meanwhile it charges its parent
 `1 + max(quota, used)`. A figaro never writes its own. `figaro ls` marks a
 figaro using more than its quota with `!`. Usage is never written to a form.
 
-**Admission is optimistic.** A fork, a mint and a quota write read the
-counts without taking the hierarchy lock, admit if under, and update the
-counts after the birth or the write. Two that race may overshoot, by at most
-what was in flight at that figaro. The overshoot is never undone: the figaro
-is over budget, refused every fork until it is back under, charges its
-parent `1 + max(quota, used)`, and nothing is reaped. The reconciler rebuilds
-any count that drifted from the tree, and `figaro doctor admission` lists
-every figaro over `max_children` or its quota.
+**Admission holds what it admits.** A fork, a mint and a quota raise take
+no hierarchy lock. Each checks the budget and holds its charge in the
+daemon's counts in one step, and lets the hold go once the birth or the
+write has landed, so forks and raises racing each other never overdraw.
+A reparent (demote, adopt) is checked under the hierarchy lock instead, and
+one racing a fork into the same figaro can land it one over. An overshoot is
+never undone: the figaro is over budget, refused every fork until it is back
+under, charges its parent `1 + max(quota, used)`, and nothing is reaped. The
+reconciler rebuilds any count that drifted from the tree, and `figaro doctor
+admission` lists every figaro over `max_children` or its quota.
 
 **A refusal names the budget** at every live capped ancestor on the way up,
 the owner's forks under the one that refused, and the grant its parent can
