@@ -822,3 +822,27 @@ func TestAnUnreadableRuntimeFormFailsStreamsWithItsCauseAndSparesTheRest(t *test
 		t.Fatal("calls hung on a runtime form that cannot be read")
 	}
 }
+
+func TestTheTimedCheckRedialsAThreadLeftWithoutAConnection(t *testing.T) {
+	var rt runtimeFeed
+	running := liveProse(2, 0, "a")
+	running.Nodes = []livedoc.Node{{Type: livedoc.NodeProse, Role: livedoc.RoleOutput, Markdown: "a"}}
+	first := newFakeConn(rt.response("thinking", 2, "", 0), running)
+	second := newFakeConn(rt.response("idle", 2, "", 0), sealedTurn(2, "ab"))
+	c := fakeClient(first, second)
+	c.CheckEvery = 20 * time.Millisecond
+	th, _, err := c.thread(context.Background(), "x", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := th.subscribe(context.Background(), &sub{after: 1, r: newReader(Cursor{Turn: 2}), resumed: true}, []uint64{2})
+	if e := <-ch; e.Text != "a" {
+		t.Fatalf("first event %+v", e)
+	}
+	th.mu.Lock()
+	th.conn = nil
+	th.mu.Unlock()
+	if got := summary(drain(t, ch)); got != `+"b" end:ab` {
+		t.Fatalf("events: %s", got)
+	}
+}

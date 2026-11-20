@@ -960,6 +960,10 @@ func (t *thread) watchdog() {
 		for s := range t.subs {
 			waiting = waiting || s.r == nil
 		}
+		if !alive(conn) {
+			t.conn = nil
+			t.redialLocked()
+		}
 		t.mu.Unlock()
 		if alive(conn) {
 			t.check(conn, gen, seq, waiting)
