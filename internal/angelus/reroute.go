@@ -74,10 +74,28 @@ func (h *handlers) dressRoute(outfits []string, pins *rpc.FormPatch) (form.Patch
 	if pins == nil {
 		return route, nil
 	}
+	pinned := map[string]json.RawMessage{}
 	for _, e := range pins.Entries() {
 		if !form.IsRouteKey(e.Key) {
 			return form.Patch{}, fmt.Errorf("reroute: %s is not a route key", e.Key)
 		}
+		if !e.IsRemoval() {
+			pinned[e.Key] = e.New
+		}
 	}
-	return form.Merge(route, *pins), nil
+	route = form.Merge(route, *pins)
+	seat, alone := seatProviderAlone(pinned)
+	if !alone {
+		return route, nil
+	}
+	under := ""
+	_ = json.Unmarshal(set["system.provider"], &under)
+	drop, err := orphanedModel(seat, under)
+	if err != nil {
+		return form.Patch{}, fmt.Errorf("reroute: %w", err)
+	}
+	if drop {
+		route = form.Merge(route, form.Build(form.Snapshot{}, nil, []string{"system.model"}))
+	}
+	return route, nil
 }
