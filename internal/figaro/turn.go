@@ -188,9 +188,11 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		methodsSpan.End()
 	}
 	if _, err := a.appendUserPrompt(prompt, false); err != nil {
+		prompt.ack(err)
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
+	prompt.ack(nil)
 	span.SetAttributes(attribute.Int64("figaro.turn", int64(a.turnID)))
 	if !logged {
 		a.markCut(a.turnID, prompt.resume)
@@ -842,6 +844,14 @@ func (a *Agent) appendPromptEvents(prompts []event) error {
 	}
 	a.inbox.MarkCommitted(prompts)
 	return nil
+}
+
+var errDroppedBeforeAppend = errors.New("the send was cleared from the queue before it was appended")
+
+func (e event) ack(err error) {
+	if e.appended != nil {
+		e.appended <- err
+	}
 }
 
 // mergePromptEvents folds a batch into one prompt; a later prompt's form value wins.

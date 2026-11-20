@@ -175,3 +175,11 @@ func TestAriaLogRedeliveryDropsSendsAlreadyAppended(t *testing.T) {
 	}
 	require.Equal(t, []string{"a", "b", "c", "d"}, texts, "a send the spool still held after it was appended is not appended twice")
 }
+
+func TestAriaLogSendReturnsOnceTheEntryIsDurable(t *testing.T) {
+	a := newLogAgent(t)
+	for i := 0; i < 20; i++ {
+		require.NoError(t, a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: fmt.Sprintf("e%d", i)}, "s"))
+		require.Len(t, entriesOf(a), i+1, "the ack follows the append")
+	}
+}
