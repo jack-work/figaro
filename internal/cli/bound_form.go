@@ -127,8 +127,14 @@ func (in *interactiveInput) recomputeLimit() {
 		return
 	}
 	snap, _, _ := bound.state()
-	limit := models.ContextLimit(in.models.snapshot(), snap)
-	if in.lt.status.setLimit(limit) {
+	catalog := in.models.snapshot()
+	limit := models.ContextLimit(catalog, snap)
+	provider, model := models.Subject(snap)
+	moved := in.lt.status.setLimit(limit)
+	if in.lt.status.setPlanUsage(models.PlanUsageOf(catalog, provider, model)) {
+		moved = true
+	}
+	if moved {
 		in.lt.render()
 	}
 	in.mu.Unlock()
@@ -139,7 +145,7 @@ func (in *interactiveInput) recomputeLimit() {
 	if _, pinned := models.Override(snap); pinned {
 		return
 	}
-	if provider, model := models.Subject(snap); provider != "" && model != "" {
+	if provider != "" && model != "" {
 		in.models.want(provider, model)
 	}
 }

@@ -167,8 +167,10 @@ func (t *transcript) openHelpPit() {
 
 func (t *transcript) openStatusPit() {
 	rows := make([]pitRow, 0, 12)
-	for _, l := range t.status.panelLines() {
-		rows = append(rows, staticRow(l))
+	for _, r := range t.status.panelRows() {
+		row := staticRow(r.text)
+		row.tone = r.tone
+		rows = append(rows, row)
 	}
 	t.pit.showList(pitStatus, "", rows)
 	t.focused = focusPit

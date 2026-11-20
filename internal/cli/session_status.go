@@ -2,11 +2,13 @@ package cli
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/sdk/aria"
@@ -84,6 +86,7 @@ type sessionStatus struct {
 	startedAt time.Time
 	metrics   aria.Metrics
 	limit     int
+	plan      *models.PlanUsage
 	turn      turnStatus
 	tick      uint64
 	more      bool
@@ -247,6 +250,19 @@ func (s *sessionStatus) setLimit(limit int) bool {
 		return false
 	}
 	s.limit = limit
+	return true
+}
+
+func (s *sessionStatus) setPlanUsage(u *models.PlanUsage) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if reflect.DeepEqual(s.plan, u) {
+		return false
+	}
+	s.plan = u
 	return true
 }
 
@@ -476,7 +492,27 @@ func (s *sessionStatus) ruleLineOf(width int, label, pos string, double func(int
 	return clipToWidth(b.String(), width)
 }
 
+type panelRow struct {
+	text string
+	tone pitTone
+}
+
 func (s *sessionStatus) panelLines() []string {
+	rows := s.panelRows()
+	if rows == nil {
+		return nil
+	}
+	lines := make([]string, len(rows))
+	for i, r := range rows {
+		lines[i] = r.text
+		if r.tone == toneWarn {
+			lines[i] = term.CautionInDim(r.text)
+		}
+	}
+	return lines
+}
+
+func (s *sessionStatus) panelRows() []panelRow {
 	if s == nil {
 		return nil
 	}
@@ -486,20 +522,27 @@ func (s *sessionStatus) panelLines() []string {
 	if state == "" {
 		state = "idle 𝄐"
 	}
-	rows := []string{
-		"  aria      " + ariaName(s.figaroID) + "  " + term.Dim(s.figaroID),
-		"  status    " + state,
+	rows := []panelRow{
+		{text: "  aria      " + ariaName(s.figaroID) + "  " + term.Dim(s.figaroID)},
+		{text: "  status    " + state},
 	}
 	if mantra := strings.Join(strings.Fields(s.metrics.Mantra), " "); mantra != "" {
-		rows = append(rows, "  mantra    "+mantra)
+		rows = append(rows, panelRow{text: "  mantra    " + mantra})
 	}
 	if context := formatContextUsage(s.metrics.ContextTokens, s.limit, s.metrics.ContextExact); context != "-" {
-		rows = append(rows, "  context   "+context)
+		rows = append(rows, panelRow{text: "  context   " + context})
+	}
+	for i, line := range planUsageLines(s.plan, sessionNow()) {
+		label := "            "
+		if i == 0 {
+			label = "  usage     "
+		}
+		rows = append(rows, panelRow{text: label + line.text, tone: line.tone})
 	}
 	rows = append(rows,
-		fmt.Sprintf("  tokens    in %s · out %s", formatTokenCount(s.metrics.TokensIn), formatTokenCount(s.metrics.TokensOut)),
-		fmt.Sprintf("  cache     read %s · write %s", formatTokenCount(s.metrics.CacheReadTokens), formatTokenCount(s.metrics.CacheWriteTokens)),
-		"  started   "+s.startedAt.Format("15:04:05"),
+		panelRow{text: fmt.Sprintf("  tokens    in %s · out %s", formatTokenCount(s.metrics.TokensIn), formatTokenCount(s.metrics.TokensOut))},
+		panelRow{text: fmt.Sprintf("  cache     read %s · write %s", formatTokenCount(s.metrics.CacheReadTokens), formatTokenCount(s.metrics.CacheWriteTokens))},
+		panelRow{text: "  started   " + s.startedAt.Format("15:04:05")},
 	)
 	return rows
 }
@@ -521,6 +564,60 @@ func formatContextUsage(tokens, limit int, exact bool) string {
 		return used + " (capacity unknown)"
 	}
 	return fmt.Sprintf("%s/%s %.1f%%", used, formatTokenCount(limit), float64(tokens)*100/float64(limit))
+}
+
+func planUsageLines(u *models.PlanUsage, now time.Time) []panelRow {
+	if u == nil {
+		return nil
+	}
+	var lines []panelRow
+	for _, w := range u.Windows {
+		if line, ok := planWindowLine(w, now); ok {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func planWindowLine(w models.PlanWindow, now time.Time) (panelRow, bool) {
+	var b strings.Builder
+	b.WriteString(planWindowName(w.Window))
+	switch {
+	case w.Status == models.PlanRejected:
+		b.WriteString(" rejected")
+	case w.UsedPercent != nil:
+		fmt.Fprintf(&b, " %.0f%%", *w.UsedPercent)
+	default:
+		return panelRow{}, false
+	}
+	if w.ResetAt.After(now) {
+		b.WriteString(" (resets " + planResetClock(w.ResetAt.In(now.Location()), now) + ")")
+	}
+	if w.Stale {
+		b.WriteString(" (stale)")
+	}
+	row := panelRow{text: b.String()}
+	if w.Status == models.PlanAllowedWarning {
+		row.tone = toneWarn
+	}
+	return row, true
+}
+
+func planWindowName(w string) string {
+	switch w {
+	case "five_hour":
+		return "5h"
+	case "seven_day":
+		return "7d"
+	}
+	return w
+}
+
+func planResetClock(at, now time.Time) string {
+	if at.Sub(now) < 24*time.Hour {
+		return at.Format("15:04")
+	}
+	return at.Format("Mon 15:04")
 }
 
 func formatSessionTokenCost(tokensIn, tokensOut int) string {
