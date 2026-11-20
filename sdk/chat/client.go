@@ -66,6 +66,7 @@ func (c *Client) Close() error {
 type angelusConn interface {
 	Fork(ctx context.Context, figaroID string, atTurn, atLT uint64, outfits []string, patch *rpc.FormPatch) (*rpc.ForkResponse, error)
 	Attach(ctx context.Context, figaroID string) (*rpc.AttachResponse, error)
+	ListWith(ctx context.Context, req rpc.ListRequest) (*rpc.ListResponse, error)
 	Close() error
 }
 

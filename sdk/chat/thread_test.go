@@ -566,6 +566,10 @@ func (a *fakeAngelus) Attach(_ context.Context, id string) (*rpc.AttachResponse,
 	return &rpc.AttachResponse{FigaroID: id}, nil
 }
 
+func (a *fakeAngelus) ListWith(context.Context, rpc.ListRequest) (*rpc.ListResponse, error) {
+	return &rpc.ListResponse{}, nil
+}
+
 func (a *fakeAngelus) Close() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
