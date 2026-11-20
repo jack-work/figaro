@@ -24,7 +24,7 @@ and one per thread in use; a thread with no open channel and no call for
 | `Open(ctx, root) (thread, error)` | forks `root` into a new aria and returns its id. The root needs `system.fanout.max_children` above 0. Store the id; it is the thread. Never retried: an `Open` that fails because the connection dropped may still have forked. |
 | `Prompt(ctx, thread, text) (<-chan Event, error)` | sends `text`; the channel carries its reply. If a turn is already running the text steers it: when that turn takes the text in, the channel closes with no events once the turn ends, and the reply arrives on the running turn's channel; when the text waits for a turn of its own, the channel carries that turn. |
 | `Resume(ctx, thread, cursor) (<-chan Event, error)` | replays the turn named by `cursor` from the point the cursor counts, then follows it live. A turn past the newest fails at once. |
-| `Cancel(ctx, thread) error` | interrupts the running turn. |
+| `Cancel(ctx, thread) error` | interrupts the running turn and keeps the queue. The cancelled turn ends with `end` (an interrupt is not a failure); a prompt queued behind it then runs as its own turn, on the channel of the steer that sent it. |
 | `Forget(thread)` | drops the client's hold on a thread: its connection closes and its open channels get `error`. The aria is untouched; any later call picks the thread up again. |
 | `History(ctx, thread, before, limit) (History, error)` | up to `limit` (0 means 20) turns older than turn `before` (0 means newest), oldest first. `More` says older turns exist: pass `Turns[0].ID` as the next `before`. |
 
@@ -133,10 +133,11 @@ has so far; `Resume(ctx, thread, t.Cursor)` follows it from there.
 ## Latency
 
 A delta is sent as the frame carrying it is read off the socket: no batching
-and no timers. In the package's own test against a stub provider
-(`TestTheFirstDeltaTrailsTheRawFrameByLittle`), the first delta reaches the
-consumer within microseconds of the same frame reaching a raw
-`sdk.DialAria` listener on a second connection.
+and no timers (deltas merge only while a consumer is not reading). The test
+`TestTheFirstDeltaTrailsTheRawFrameByLittle` measures the first delta against
+the same frame reaching a raw `sdk.DialAria` listener on a second connection,
+with a stub provider, and fails above 50 ms, half of Herald's 100 ms budget.
+On gluck, five runs measured between 13 us early and 59 us late.
 
 ## Under the hood
 

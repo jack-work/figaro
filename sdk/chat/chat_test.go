@@ -325,13 +325,16 @@ func TestCancelEndsTheRunningTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	<-ch
+	events := []chat.Event{<-ch}
 	if err := c.Cancel(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	events := collect(t, ch, 15*time.Second)
+	events = append(events, collect(t, ch, 15*time.Second)...)
 	if n := strings.Count(replyText(events), " "); n > 150 {
 		t.Fatalf("the turn ran on after cancel: %d words", n)
+	}
+	if last := events[len(events)-1]; last.Kind != chat.End || last.Text != replyText(events) {
+		t.Fatalf("a cancelled turn ended with %+v", last)
 	}
 }
 
