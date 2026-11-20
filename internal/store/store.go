@@ -33,7 +33,8 @@ type VersionedPatch struct {
 
 type AriaMeta struct {
 	MessageCount     int    `json:"message_count,omitempty"`
-	TurnCount        int    `json:"turn_count,omitempty"` // assistant messages
+	TurnCount        int    `json:"turn_count,omitempty"`
+	Kind             string `json:"kind,omitempty"`
 	TokensIn         int    `json:"tokens_in,omitempty"`
 	TokensOut        int    `json:"tokens_out,omitempty"`
 	CacheReadTokens  int    `json:"cache_read_tokens,omitempty"`
@@ -85,20 +86,21 @@ type Lifetime struct {
 	ReapIfEmpty   bool
 	FanoutQuota   *int
 	OwnerMade     bool
+	Kind          string
 }
 
 func (m *AriaMeta) Lifetime() Lifetime {
 	return Lifetime{TTLMS: m.TTLMS, KeepaliveMS: m.KeepaliveMS, RetiredAtMS: m.RetiredAtMS, RetiredReason: m.RetiredReason,
 		LastAccessMS: m.LastAccessMS, ReapedAtMS: m.ReapedAtMS, ReapedRoot: m.ReapedRoot,
 		ReapedUntilMS: m.ReapedUntilMS, ReapedBy: m.ReapedBy, ReapIfEmpty: m.ReapIfEmpty,
-		FanoutQuota: m.FanoutQuota, OwnerMade: m.OwnerMade}
+		FanoutQuota: m.FanoutQuota, OwnerMade: m.OwnerMade, Kind: m.Kind}
 }
 
 func (m *AriaMeta) SetLifetime(l Lifetime) {
 	m.TTLMS, m.KeepaliveMS, m.RetiredAtMS, m.LastAccessMS = l.TTLMS, l.KeepaliveMS, l.RetiredAtMS, l.LastAccessMS
 	m.ReapedAtMS, m.ReapedRoot, m.ReapedUntilMS, m.ReapedBy = l.ReapedAtMS, l.ReapedRoot, l.ReapedUntilMS, l.ReapedBy
 	m.ReapIfEmpty, m.RetiredReason = l.ReapIfEmpty, l.RetiredReason
-	m.FanoutQuota, m.OwnerMade = l.FanoutQuota, l.OwnerMade
+	m.FanoutQuota, m.OwnerMade, m.Kind = l.FanoutQuota, l.OwnerMade, l.Kind
 }
 
 // CurrentMetaVersion is the sidecar shape this build writes.

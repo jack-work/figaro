@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/jack-work/figaro/sdk"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
@@ -34,6 +36,7 @@ type sendOpts struct {
 	forget   bool
 	json     bool
 	listen   bool
+	log      bool
 	outfit   dressing
 	// -O is outfit names only; -S carries k=v and JSON literals; -D key paths.
 	outfitText string
@@ -197,6 +200,11 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			opts.listen = true
 			i++
 			continue
+		case a == "--log":
+			opts.log = true
+			opts.setText = joinTerms(opts.setText, form.KindKey+"="+form.KindLog)
+			i++
+			continue
 		case a == "--exec", a == "-x":
 			opts.exec = true
 			i++
@@ -284,6 +292,7 @@ func (o *sendOpts) armOutfit() error {
 	if err != nil {
 		return err
 	}
+	d.exact = o.stdin
 	o.outfit = d
 	return nil
 }
@@ -306,6 +315,7 @@ var sendFlagDefs = []cmdkit.FlagDef{
 	{Long: "set", Short: "S", Repeats: true, Description: "Form keys: k=v or a JSON literal, comma-separated; repeats"},
 	{Long: "delete", Short: "D", Repeats: true, Description: "Form key paths to remove, comma-separated; repeats"},
 	{Long: "cast", Short: "C", IsBool: true, Description: "new: cast the fresh aria into a role (named @form, or minted from -O/-S)"},
+	{Long: "log", IsBool: true, Description: "new: mint an aria log, no model; each send appends one entry"},
 }
 
 // Everything after the first bare `--` is the prompt and is never touched.
@@ -427,13 +437,14 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	if err != nil {
 		dieUsage("%s: %s", verb, err)
 	}
+	opts.outfit.blank = blankStdin(opts.outfit, prompt)
 	if len(opts.images) > 0 && prompt == "" {
 		dieUsage("%s: %s", verb, errImageNeedsPrompt)
 	}
 	if opts.outfit.images, err = readPromptImages(opts.images); err != nil {
 		die("%s: %s", verb, err)
 	}
-	if prompt == "" {
+	if prompt == "" && !opts.stdin {
 		// A boundary with nothing after it opens the editor.
 		if hasDashBoundary(rest) {
 			text, cerr := composePrompt("Write a prompt. Markdown is fine.")
@@ -534,6 +545,8 @@ func validateNewOpts(opts sendOpts) error {
 		return fmt.Errorf("new always creates an aria; drop the target (or use `send --id`)")
 	case opts.exec || opts.dryRun || opts.skipYes:
 		return fmt.Errorf("--exec is `send -x`")
+	case opts.log && opts.cast:
+		return fmt.Errorf("--log mints a log; cast it after with `figaro cast <log> @role`")
 	}
 	return validateSendOpts(opts, false)
 }
@@ -683,19 +696,34 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	}
 	defer fcli.Close()
 
-	if _, _, qerr := quaWith(ctx, fcli, opts.outfit.request(prompt)); qerr != nil {
+	if opts.json && daemonLacks(rpc.CapLogExact) && ariaIsLog(ctx, fcli) {
+		die("%s", lacksForUse(rpc.CapLogExact, "send -j to an aria log"))
+	}
+	resp, qerr := quaAnswered(ctx, fcli, opts.outfit.request(prompt))
+	if qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)
 	}
 	if opts.json {
-		enc := json.NewEncoder(stdout)
-		_ = enc.Encode(struct {
-			AriaID string `json:"aria_id"`
-			Handle string `json:"handle"`
-			Mode   string `json:"mode"`
-		}{AriaID: ariaID, Handle: ariaHandle(ariaID), Mode: "forget"})
+		_ = writeForgotJSON(stdout, ariaID, resp)
 		return
 	}
 	fmt.Fprintln(stderrw, forgotHint(ariaID, grant))
+}
+
+func writeForgotJSON(w io.Writer, ariaID string, resp rpc.QuaResponse) error {
+	enc := json.NewEncoder(w)
+	if resp.Turn > 0 {
+		return enc.Encode(struct {
+			Log  string `json:"log"`
+			Turn uint64 `json:"turn"`
+			LT   uint64 `json:"lt"`
+		}{Log: ariaID, Turn: resp.Turn, LT: resp.LT})
+	}
+	return enc.Encode(struct {
+		AriaID string `json:"aria_id"`
+		Handle string `json:"handle"`
+		Mode   string `json:"mode"`
+	}{AriaID: ariaID, Handle: ariaHandle(ariaID), Mode: "forget"})
 }
 
 func forgotHint(ariaID string, grant rpc.AttachResponse) string {
@@ -724,6 +752,6 @@ var promptFlagDefs = []cmdkit.FlagDef{
 	{Long: "stay", IsBool: true, Description: "Do not move this shell"},
 	{Long: "no-studies", IsBool: true, Description: "fork only: the branch studies nothing"},
 	{Long: "record", Description: "Record the wire to a tape file"},
-	{Long: "stdin", IsBool: true, Description: "Read the prompt from stdin, never from argv"},
+	{Long: "stdin", IsBool: true, Description: "Read the prompt from stdin, never from argv; to an aria log the entry lands byte for byte, empty included"},
 	{Long: "image", Description: "Attach an image file to the prompt (repeatable)"},
 }

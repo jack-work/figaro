@@ -20,12 +20,7 @@ func SenderReminder(sender string) string {
 	return Reminder("sender", name)
 }
 
-func SenderProse(sender, text string) string {
-	if _, _, ok := figaroSender(sender); !ok {
-		return text
-	}
-	return NeutraliseReservedTags(text)
-}
+func Prose(text string) string { return NeutraliseReservedTags(text) }
 
 func figaroSender(sender string) (bare, body string, ok bool) {
 	id, _ := strings.CutPrefix(sender, rpc.AriaLabelPrefix)

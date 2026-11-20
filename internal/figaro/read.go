@@ -36,6 +36,13 @@ func (a *Agent) Read(at aria.Anchor, budget int) aria.Page {
 	return out
 }
 
+func (a *Agent) ReadUntil(at, until aria.Anchor, budget int) aria.Page {
+	a.hydrate()
+	out := a.ariaSrv.ReadUntil(at, until, a.settings.ClampPageBudget(budget))
+	out.Metrics = a.sessionMetrics()
+	return out
+}
+
 // ReadBefore pages backward from at; a zero anchor is the tail. floor stops
 // the walk from below, inclusive; zero is no floor.
 func (a *Agent) ReadBefore(at, floor aria.Anchor, budget int) aria.Page {

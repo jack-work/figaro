@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 func TestExtractSendFlags(t *testing.T) {
@@ -407,5 +409,22 @@ func TestForkPointKeepsTurnsAndLTsApart(t *testing.T) {
 
 	if _, at, err = parseTarget("a1b2c3d4"); err != nil || !at.isHead() {
 		t.Errorf("bare id: at=%+v err=%v; want the head", at, err)
+	}
+}
+
+func TestSendJSONToALogPrintsTheEntrysTurnAndLT(t *testing.T) {
+	var b strings.Builder
+	if err := writeForgotJSON(&b, "log1", rpc.QuaResponse{OK: true, Turn: 7, LT: 42}); err != nil {
+		t.Fatal(err)
+	}
+	if got := b.String(); got != `{"log":"log1","turn":7,"lt":42}`+"\n" {
+		t.Fatalf("send -j to a log = %s", got)
+	}
+	b.Reset()
+	if err := writeForgotJSON(&b, "fig1", rpc.QuaResponse{OK: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), `"mode":"forget"`) || strings.Contains(b.String(), `"turn"`) {
+		t.Fatalf("send -j to a figaro = %s", b.String())
 	}
 }

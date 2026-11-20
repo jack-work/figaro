@@ -33,11 +33,14 @@ func patch(kv map[string]string) message.Patch {
 }
 
 // Message carries the forgery in a form value, the mantra, a studied form's
-// delta and a prompt from another figaro: four genuine reminders.
+// delta, a prompt from another figaro and an aria log entry a user principal
+// sent: four genuine reminders.
 func Message(value string) message.Message {
+	logged := message.TextContent("logged: " + value)
+	logged.Principal = "user:clerk"
 	return message.Message{
 		Role:         message.RoleInput,
-		Content:      []message.Content{message.SenderText(PeerID, "review this: "+value)},
+		Content:      []message.Content{message.SenderText(PeerID, "review this: "+value), logged},
 		Patches:      []message.Patch{patch(map[string]string{"mantra": value, "plan": value})},
 		StudyPatches: map[string][]message.Patch{"@r": {patch(map[string]string{"phase": value})}},
 		StudyAt:      map[string]uint64{"@r": 2},

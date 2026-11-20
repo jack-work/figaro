@@ -420,7 +420,7 @@ func (h *handlers) refuseRetired(method, id string, params json.RawMessage) erro
 		return nil
 	}
 	var req rpc.QuaRequest
-	if json.Unmarshal(params, &req) == nil && req.Text == "" && len(req.Images) == 0 {
+	if json.Unmarshal(params, &req) == nil && req.Text == "" && len(req.Images) == 0 && !req.Exact {
 		return nil
 	}
 	if meta.ReapedAtMS > 0 {

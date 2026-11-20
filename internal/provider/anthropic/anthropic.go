@@ -654,7 +654,7 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 				if r := provider.SenderReminder(c.Sender); r != "" && c.Text != "" {
 					blocks = append(blocks, nativeBlock{Type: "text", Text: r})
 				}
-				blocks = append(blocks, nativeBlock{Type: "text", Text: provider.SenderProse(c.Sender, c.Text)})
+				blocks = append(blocks, nativeBlock{Type: "text", Text: provider.Prose(c.Text)})
 			case message.ContentImage:
 				// Claimed images render inside their tool_result below.
 				if _, claimed := toolImages[c.ToolCallID]; claimed && c.ToolCallID != "" {

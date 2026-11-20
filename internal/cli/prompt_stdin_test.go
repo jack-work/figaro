@@ -13,9 +13,12 @@ func TestStdinPromptNeverComesFromArgv(t *testing.T) {
 	if err != nil || !opts.stdin {
 		t.Fatalf("parse: %+v %v", opts, err)
 	}
-	got, err := promptFromStdin(opts, rest, strings.NewReader("hello from stdin\n"))
-	if err != nil || got != "hello from stdin" {
-		t.Fatalf("prompt = %q, %v", got, err)
+	got, err := promptFromStdin(opts, rest, strings.NewReader("hello from stdin\n\n"))
+	if err != nil || got != "hello from stdin\n\n" {
+		t.Fatalf("prompt = %q, %v: stdin is sent byte for byte, and the daemon trims for a figaro", got, err)
+	}
+	if !opts.outfit.request(got).Exact {
+		t.Fatal("a --stdin prompt does not ask for exact bytes")
 	}
 
 	opts, rest, err = extractSendFlags([]string{"--stdin", "--", "secret in argv"})
@@ -28,8 +31,8 @@ func TestStdinPromptNeverComesFromArgv(t *testing.T) {
 	if _, err := promptFromStdin(opts, []string{"--"}, strings.NewReader("x")); !errors.Is(err, errStdinAndArgv) {
 		t.Fatalf("--stdin with a bare boundary: %v", err)
 	}
-	if _, err := promptFromStdin(sendOpts{stdin: true}, nil, strings.NewReader(" \n")); err == nil {
-		t.Fatal("an empty stdin was taken as a prompt")
+	if got, err := promptFromStdin(sendOpts{stdin: true}, nil, strings.NewReader(" \n")); err != nil || got != " \n" {
+		t.Fatalf("an empty stdin = %q, %v: the daemon decides, a log takes it and a figaro refuses it", got, err)
 	}
 }
 

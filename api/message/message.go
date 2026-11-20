@@ -44,6 +44,18 @@ func (r *Role) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+func IsEntry(m Message) bool {
+	if m.Role != RoleInput || m.Steering {
+		return false
+	}
+	for _, c := range m.Content {
+		if c.Type == ContentProse || c.Type == ContentImage {
+			return true
+		}
+	}
+	return false
+}
+
 // IsCeremonial reports whether m is a structural marker (genesis, or an
 // input message with no renderable content: the outfit birth) rather than a
 // turn. Ceremonial messages are excluded from the message count.
@@ -53,7 +65,7 @@ func IsCeremonial(m Message) bool {
 	}
 	if m.Role == RoleInput {
 		for _, c := range m.Content {
-			if c.Type == ContentProse && c.Text != "" {
+			if c.Type == ContentProse && (c.Text != "" || c.Sender != "" || c.Principal != "") {
 				return false
 			}
 			if c.Type == ContentImage || c.Type == ContentToolResult {
@@ -187,6 +199,8 @@ type Message struct {
 	Timestamp int64 `json:"timestamp"`
 
 	Principal string `json:"principal,omitempty"`
+
+	Accepted []string `json:"accepted,omitempty"`
 }
 
 func TextContent(text string) Content {

@@ -145,3 +145,16 @@ func TestImportRefusesWithoutAOutfit(t *testing.T) {
 	_, err = h.importAria(context.Background(), params)
 	require.ErrorContains(t, err, "no outfit named")
 }
+
+func TestAnImportedLogKeepsItsKindAndCountsEntries(t *testing.T) {
+	h, backend := importFixture(t)
+	resp := importReq(t, h, rpc.ImportRequest{
+		Outfit:   "logs",
+		Messages: []message.Message{say(message.RoleInput, "one"), say(message.RoleInput, "two"), say(message.RoleInput, "three")},
+		Form:     form.Build(form.Snapshot{}, map[string]json.RawMessage{form.KindKey: json.RawMessage(`"log"`)}, nil),
+	})
+	meta, err := backend.Meta(resp.FigaroID)
+	require.NoError(t, err)
+	require.Equal(t, form.KindLog, meta.Kind)
+	require.Equal(t, 3, meta.TurnCount)
+}

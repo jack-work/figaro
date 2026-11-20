@@ -133,17 +133,26 @@ func Paginate(turns []Turn, at Anchor, dir Direction, budget int) Page {
 	return paginate(turns, at, dir, budget, Anchor{})
 }
 
-// paginate is the one walk. floor applies backward, inclusive; zero is no floor.
-func paginate(turns []Turn, at Anchor, dir Direction, budget int, floor Anchor) Page {
+func PaginateUntil(turns []Turn, at, until Anchor, budget int) Page {
+	return paginate(turns, at, Forward, budget, until)
+}
+
+func paginate(turns []Turn, at Anchor, dir Direction, budget int, bound Anchor) Page {
 	if len(turns) == 0 || budget <= 0 {
 		return Page{}
 	}
-	stop, floored := cursor{}, dir == Backward && !floor.Zero()
+	stop, floored, ceiled := cursor{}, dir == Backward && !bound.Zero(), false
 	if floored {
 		var ok bool
-		if stop, ok = floorAt(turns, floor); !ok {
+		if stop, ok = floorAt(turns, bound); !ok {
 			return Page{}
 		}
+	}
+	if dir == Forward && !bound.Zero() {
+		stop, ceiled = floorAt(turns, bound)
+	}
+	outside := func(c cursor) bool {
+		return (floored && below(c, stop)) || (ceiled && !below(c, stop))
 	}
 	start, ok := locate(turns, at, dir)
 	if !ok {
@@ -156,14 +165,14 @@ func paginate(turns []Turn, at Anchor, dir Direction, budget int, floor Anchor) 
 			return Page{}
 		}
 	}
-	if floored && below(start, stop) {
+	if outside(start) {
 		return Page{}
 	}
 
 	// Always take the first node so a page can never be empty.
 	spent, end := 0, start
 	for c, ok := start, true; ok; c, ok = step(turns, c, dir) {
-		if floored && below(c, stop) {
+		if outside(c) {
 			break
 		}
 		sz := unitSize(turns[c.turn], c.node)
