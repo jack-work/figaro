@@ -69,7 +69,7 @@ func (v *runtimeView) state() runState {
 }
 
 func (s runState) over(turn uint64) bool {
-	return turn < s.turn || turn == s.turn && !s.state.Busy()
+	return turn < s.turn || turn == s.turn && s.state == rpc.RuntimeIdle
 }
 
 func (s runState) settled() bool {

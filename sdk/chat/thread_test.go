@@ -668,3 +668,19 @@ func TestAThreadLeftIdleLetsItsConnectionGo(t *testing.T) {
 		t.Fatalf("%d threads held after idling", n)
 	}
 }
+
+func TestAPromptAcceptedDuringATurnDoesNotEndIt(t *testing.T) {
+	th := newThread(New(transport.Endpoint{}), "x")
+	var rt runtimeFeed
+	th.readBack(rt.response("idle", 2, "", 0))
+	ch := th.subscribe(context.Background(), &sub{after: 2}, nil)
+	th.notify(rpc.MethodFormDelta, rt.delta("thinking", 3, "", 0))
+	th.notify(rpc.MethodAriaFrame, frameJSON(liveProse(3, 0, "A")))
+	th.notify(rpc.MethodFormDelta, rt.delta("accepted", 3, "", 1))
+	th.notify(rpc.MethodAriaFrame, frameJSON(aria.TurnPart{Turn: aria.Turn{ID: 3, Live: &aria.Live{From: 0, V: 1, Nodes: []aria.NodeDelta{{ID: 0, Patch: map[string]livedoc.Delta{"markdown": {At: 1, Ins: " B"}}}}}}}))
+	th.notify(rpc.MethodFormDelta, rt.delta("idle", 3, "", 0))
+	events := drain(t, ch)
+	if last := events[len(events)-1]; text(events) != "A B" || last.Kind != End || last.Text != "A B" {
+		t.Fatalf("events: %s", summary(events))
+	}
+}
