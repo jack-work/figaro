@@ -1,6 +1,7 @@
 package boot
 
 import (
+	"context"
 	"errors"
 	"net"
 	"sync"
@@ -18,7 +19,7 @@ func ReviveHushAgent(h *managed.Hush) error {
 	return h.EnsureReady()
 }
 
-func RenewHushAgent(h *managed.Hush, margin time.Duration) (renewed bool, err error) {
+func RenewHushAgent(ctx context.Context, h *managed.Hush, margin time.Duration) (renewed bool, err error) {
 	hushAgentMu.Lock()
 	defer hushAgentMu.Unlock()
 	left, err := h.Client().Status()
@@ -35,7 +36,7 @@ func RenewHushAgent(h *managed.Hush, margin time.Duration) (renewed bool, err er
 	if err := h.Client().Shutdown(); err != nil && !dialRefused(err) {
 		return false, err
 	}
-	if err := awaitAgentGone(h.Config().RuntimeDir, hushAgentDrainCeiling); err != nil {
+	if err := awaitAgentGone(ctx, h.Config().RuntimeDir, hushAgentDrainCeiling); err != nil {
 		return false, err
 	}
 	return true, h.EnsureReady()
