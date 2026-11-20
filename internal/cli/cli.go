@@ -1653,6 +1653,17 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:    "setup",
+		Group:   "State",
+		Short:   "Deprecated: the first-run wizard; sign in with :login in the pager",
+		Usage:   "setup",
+		ArgsMax: 0,
+		Run: func(ctx *cmdkit.RunContext) error {
+			return runSetup(ctx.Extra.(*config.Loaded))
+		},
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "reroute",
 		Group: "State",
 		Short: "Put a figaro back on the provider and model its outfits name",

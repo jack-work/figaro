@@ -88,8 +88,8 @@ otherwise have to rediscover.
    `FIGARO_HUSH_DIR` names a vault that does not exist yet. Generate one
    per unit and export `FIGARO_HUSH_PASSPHRASE`: figaro honours it ONLY when
    `FIGARO_HUSH_DIR` is set, so it can never reach the real keystore.
-5. **First run wants a human.** `interactive = false` plus a `default_outfit`
-   in the unit's `config.toml` is what keeps the outfit picker off the pane.
+5. **A unit needs a `default_outfit`** in its `config.toml` that names a
+   `system.provider`; without one `figaro new` fails with one line.
 6. **A daemon's argv does not say which store it opened.** Attribute by
    `/proc/<pid>/environ`, not by `pgrep -f figaro`, or teardown either misses
    the daemon it started or kills one it did not.
