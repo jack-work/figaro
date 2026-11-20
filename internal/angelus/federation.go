@@ -135,6 +135,9 @@ func (h *handlers) linkFor(ctx context.Context, node string) (*peer.Link, func()
 		return nil, nil, err
 	}
 	p := rpc.Passage{Forwarded: true, Bearer: token}
+	if user, ok := authz.OnBehalfOf(ctx); ok {
+		p = rpc.Passage{Forwarded: true, OnBehalf: &rpc.OnBehalf{Bearer: token, User: user}}
+	}
 	if f := followerOf(ctx); f != nil {
 		l, err := f.link(ctx, h.fed.dialer, node, p)
 		return l, func() {}, err

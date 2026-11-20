@@ -3,10 +3,19 @@ package rpc
 import "encoding/json"
 
 type Passage struct {
-	Forwarded bool   `json:"forwarded,omitempty"`
-	Bearer    string `json:"bearer,omitempty"`
-	Version   uint64 `json:"version,omitempty"`
-	Policy    uint64 `json:"policy,omitempty"`
+	Forwarded bool      `json:"forwarded,omitempty"`
+	Bearer    string    `json:"bearer,omitempty"`
+	OnBehalf  *OnBehalf `json:"on_behalf,omitempty"`
+	Version   uint64    `json:"version,omitempty"`
+	Policy    uint64    `json:"policy,omitempty"`
+}
+
+// OnBehalf carries a delegating service's bearer in place of Passage.Bearer,
+// so a node that does not know the field finds a forwarded caller with no
+// bearer and refuses, rather than admitting the service as itself.
+type OnBehalf struct {
+	Bearer string `json:"bearer"`
+	User   string `json:"user"`
 }
 
 type PassageAnswer struct {

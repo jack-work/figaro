@@ -18,10 +18,13 @@ import (
 
 type Verify func(ctx context.Context, bearer string) (context.Context, error)
 
+type Delegate func(ctx context.Context, user string) (context.Context, error)
+
 type Door struct {
 	Members   Membership
 	Versions  *Versions
 	Verify    Verify
+	Delegate  Delegate
 	Handshake time.Duration
 
 	mu   sync.Mutex
@@ -138,17 +141,29 @@ func (d *Door) enter(ctx context.Context, tc *tls.Conn) (context.Context, error)
 	d.Versions.Presented(node, cert)
 	ctx = authz.WithPrincipal(ctx, rpc.Principal{Kind: rpc.PrincipalNode, ID: node})
 	ctx = context.WithValue(ctx, viaKey{}, node)
+	bearer := p.Bearer
+	if p.OnBehalf != nil {
+		if p.Bearer != "" {
+			return nil, fmt.Errorf("node %s sent a bearer and an on-behalf-of caller at once", node)
+		}
+		bearer = p.OnBehalf.Bearer
+	}
 	switch {
-	case p.Forwarded && p.Bearer == "":
+	case p.Forwarded && bearer == "":
 		return nil, fmt.Errorf("node %s forwarded a caller without its bearer", node)
-	case !p.Forwarded && p.Bearer != "":
+	case !p.Forwarded && (p.Bearer != "" || p.OnBehalf != nil):
 		return nil, fmt.Errorf("node %s sent a bearer for no forwarded caller", node)
 	case !p.Forwarded:
 		return ctx, nil
 	case d.Verify == nil:
 		return nil, errors.New("this node cannot verify a forwarded caller")
+	case p.OnBehalf != nil && d.Delegate == nil:
+		return nil, errors.New("this node takes no forwarded caller acting on behalf of a user")
 	}
-	ctx, err := d.Verify(ctx, p.Bearer)
+	ctx, err := d.Verify(ctx, bearer)
+	if err == nil && p.OnBehalf != nil {
+		ctx, err = d.Delegate(ctx, p.OnBehalf.User)
+	}
 	if err != nil {
 		slog.Warn("node door: forwarded caller refused", "node", node, "err", err)
 		return nil, fmt.Errorf("forwarded caller: %w", err)
