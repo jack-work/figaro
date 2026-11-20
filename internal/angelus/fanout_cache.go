@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -494,11 +495,20 @@ func (c *fanoutCache) takeCharge(id string, quota int, capped bool, judge func(e
 	return c.writeLocked(id, at, charge), nil
 }
 
-func (c *fanoutCache) holdWrites(id string) func() {
+func (c *fanoutCache) holdWrites(ids ...string) func() {
+	ids = slices.Compact(slices.Sorted(slices.Values(ids)))
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.awaitWriteLocked(id)
-	return c.writeLocked(id, "", 0)
+	releases := make([]func(), 0, len(ids))
+	for _, id := range ids {
+		c.awaitWriteLocked(id)
+		releases = append(releases, c.writeLocked(id, "", 0))
+	}
+	return func() {
+		for i := len(releases) - 1; i >= 0; i-- {
+			releases[i]()
+		}
+	}
 }
 
 func (c *fanoutCache) awaitWriteLocked(id string) {
