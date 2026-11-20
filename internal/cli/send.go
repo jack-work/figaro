@@ -752,6 +752,6 @@ var promptFlagDefs = []cmdkit.FlagDef{
 	{Long: "stay", IsBool: true, Description: "Do not move this shell"},
 	{Long: "no-studies", IsBool: true, Description: "fork only: the branch studies nothing"},
 	{Long: "record", Description: "Record the wire to a tape file"},
-	{Long: "stdin", IsBool: true, Description: "Read the prompt from stdin, never from argv"},
+	{Long: "stdin", IsBool: true, Description: "Read the prompt from stdin, never from argv; to an aria log the entry lands byte for byte, empty included"},
 	{Long: "image", Description: "Attach an image file to the prompt (repeatable)"},
 }

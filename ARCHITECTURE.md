@@ -213,7 +213,10 @@ An aria whose form carries `system.kind = "log"`, fixed at birth, has no
 provider, sandbox or tools. `figaro.qua` appends the prompt as the turn's
 inquiry and seals the turn (`logged`); queued sends are never folded, so each
 is one entry. Minted by `form.bind` (`figaro new --log`); `figaro.create`
-refuses one. See [docs/proposals/aria-log/primitive.md](docs/proposals/aria-log/primitive.md).
+refuses one. A send to a log skips input rewrites; an `exact` qua
+(`send --stdin`) keeps its bytes and may be empty, and the qua answers the
+entry's `turn` and `lt`. `figaro read` takes exact entries from `figaro.ir`.
+Daemons that do this report `log.exact`. See [docs/proposals/aria-log/primitive.md](docs/proposals/aria-log/primitive.md).
 
 ## JSON-RPC surface
 

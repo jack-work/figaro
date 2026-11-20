@@ -52,12 +52,26 @@ These hold across the whole CLI:
 | `-l`, `--listen` | Open the transcript pager at startup. |
 | `-v`, `--verbatim` | Dump raw wire frames as JSON, one object per line. |
 | `-x`, `--exec` | Treat the reply as a bash script and run it. `-n` prints without running, `-y` skips the confirmation. |
-| `-j`, `--json` | Submit, print one line `{aria_id, mode}`, exit. Contradicts `-r`/`-v`/`-o`/`-l`/`-x`. |
-| `--stdin` | Read the prompt from stdin, never argv, so the text stays out of the process table. A prompt after `--` beside it is refused, as is `-x`. |
+| `-j`, `--json` | Submit, print one line `{aria_id, mode}`, exit. To an aria log the line is `{log, turn, lt}`, the coordinate of the entry just appended. Contradicts `-r`/`-v`/`-o`/`-l`/`-x`. |
+| `--stdin` | Read the prompt from stdin, never argv, so the text stays out of the process table. A prompt after `--` beside it is refused, as is `-x`. To an aria log the entry lands byte for byte (trailing newlines kept, no rewrites), and an empty stdin is an empty entry; it must be valid UTF-8 and at most 15 MiB. To a figaro, trailing newlines are trimmed and an empty stdin is refused. |
 | `--image <file>` | Attach a png, jpeg, gif or webp ahead of the prompt's text; repeat for up to 4, 10 MB each. The daemon sniffs the bytes and shrinks a picture to fit the message, so a figaro with `system.tools = []` still sees it. A picture that already fits is sent byte for byte: EXIF, including GPS location, is NOT removed; strip it first if it matters. Needs a prompt; refused with `-x`, `-v`, fork and the pager. |
 
 `-O`, `-S`, `-D` and `--image` repeat; `--id` or `--record` given twice is
 refused.
+
+### Aria logs
+
+An aria log (`figaro new --log`) has no model; each send is one entry, never
+rewritten. Read entries back exactly with `figaro read`:
+
+| Command | Effect |
+|---|---|
+| `figaro read <log> [--from N] [--until M]` | Entries of turns N up to, not including, M, for reading: reserved tags are disarmed. |
+| `figaro read <log> ... -j` | One JSON object per entry, `{turn, lt, at, sender, principal, text}`, `text` the exact bytes sent. What an import or a script reads. |
+
+Exact entries need a daemon reporting the `log.exact` capability. Against an
+older daemon, `read`, `--stdin` to a log and `send -j` to a log are refused by
+name; `--stdin` to a figaro still works.
 
 Every figaro persists. A one-off is an ordinary send that mints and states its
 own lifetime: `figaro send -A -f -S system.ttl=1h -- <prompt>`, or `-r` in
