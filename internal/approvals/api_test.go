@@ -118,11 +118,48 @@ func TestSPAServedBehindTheSameGateWithItsOwnPolicy(t *testing.T) {
 	if w := apiDo(h, "GET", "/app/app.js", map[string]string{EdgeHeader: ""}, ""); w.Code != 403 {
 		t.Fatalf("spa without the edge secret: %d", w.Code)
 	}
-	if csp := apiDo(h, "GET", "/", nil, "").Header().Get("Content-Security-Policy"); strings.Contains(csp, "script-src") {
+	if csp := apiDo(h, "GET", "/classic", nil, "").Header().Get("Content-Security-Policy"); strings.Contains(csp, "script-src") {
 		t.Fatalf("the HTML fallback gained script rights: %s", csp)
 	}
 	plain := NewServer(decider(f, &bytes.Buffer{}), []string{king}, "gluck", "o", []byte(edgeSecret), []netip.Addr{netip.MustParseAddr("192.0.2.1")})
 	if w := apiDo(plain.Handler(), "GET", "/app/", nil, ""); w.Code != 404 {
 		t.Fatalf("app without --spa-dir: %d", w.Code)
+	}
+}
+
+func TestSPAIsTheRootAndTheHTMLPageMovesToClassic(t *testing.T) {
+	f := newFake()
+	peers := []netip.Addr{netip.MustParseAddr("192.0.2.1")}
+	s := NewServer(decider(f, &bytes.Buffer{}), []string{king}, "gluck", "https://order.kelliher.info", []byte(edgeSecret), peers)
+	s.SPA = fstest.MapFS{
+		"index.html":        {Data: []byte("<h1>spa</h1>")},
+		"placet.js":         {Data: []byte("1")},
+		"fonts/inter.woff2": {Data: []byte("f")},
+	}
+	h := s.Handler()
+	for _, path := range []string{"/", "/placet.js", "/fonts/inter.woff2", "/app/"} {
+		w := apiDo(h, "GET", path, nil, "")
+		if w.Code != 200 {
+			t.Fatalf("%s: %d", path, w.Code)
+		}
+		if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") {
+			t.Fatalf("%s lacks the spa policy: %s", path, csp)
+		}
+	}
+	if body := apiDo(h, "GET", "/", nil, "").Body.String(); !strings.Contains(body, "spa") {
+		t.Fatalf("root is not the spa: %s", body)
+	}
+	w := apiDo(h, "GET", "/classic", nil, "")
+	if w.Code != 200 || strings.Contains(w.Header().Get("Content-Security-Policy"), "script-src") {
+		t.Fatalf("classic: %d %s", w.Code, w.Header().Get("Content-Security-Policy"))
+	}
+	for _, path := range []string{"/", "/classic", "/placet.js", "/api/v1/requests"} {
+		if w := apiDo(h, "GET", path, map[string]string{EdgeHeader: ""}, ""); w.Code != 403 {
+			t.Fatalf("%s without the edge secret: %d", path, w.Code)
+		}
+	}
+	plain := NewServer(decider(f, &bytes.Buffer{}), []string{king}, "gluck", "o", []byte(edgeSecret), peers)
+	if body := apiDo(plain.Handler(), "GET", "/", nil, "").Body.String(); strings.Contains(body, "spa") || apiDo(plain.Handler(), "GET", "/classic", nil, "").Code != 404 {
+		t.Fatal("without --spa-dir the root must stay the HTML page and /classic must not exist")
 	}
 }

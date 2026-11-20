@@ -31,6 +31,7 @@ type Server struct {
 	Admin      string
 	Origin     string
 	SPA        fs.FS
+	spaPaths   map[string]bool
 	EdgeSecret []byte
 	Peers      []netip.Addr
 	key        []byte
@@ -86,7 +87,9 @@ type shownLine struct {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.list)
+	if s.SPA == nil {
+		mux.HandleFunc("GET /{$}", s.list)
+	}
 	mux.HandleFunc("GET /r/{filing}/{id}", s.detail)
 	mux.HandleFunc("POST /approve", s.decide(true))
 	mux.HandleFunc("POST /deny", s.decide(false))
@@ -95,7 +98,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/requests/{filing}/{id}/approve", s.apiDecide(true))
 	mux.HandleFunc("POST /api/v1/requests/{filing}/{id}/deny", s.apiDecide(false))
 	if s.SPA != nil {
-		mux.Handle("GET /app/", http.StripPrefix("/app/", http.FileServerFS(s.SPA)))
+		files := http.FileServerFS(s.SPA)
+		mux.Handle("GET /{$}", files)
+		mux.Handle("GET /fonts/", files)
+		entries, _ := fs.ReadDir(s.SPA, ".")
+		s.spaPaths = map[string]bool{"/": true}
+		for _, e := range entries {
+			if !e.IsDir() && e.Name() != "index.html" {
+				mux.Handle("GET /"+e.Name(), files)
+				s.spaPaths["/"+e.Name()] = true
+			}
+		}
+		mux.HandleFunc("GET /classic", s.list)
+		mux.Handle("GET /app/", http.StripPrefix("/app/", files))
 		mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/app/", http.StatusMovedPermanently)
 		})
@@ -110,7 +125,7 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) gate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/app") {
+		if s.servesSPA(r.URL.Path) {
 			w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'")
 		} else {
 			w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
@@ -239,4 +254,8 @@ func (s *Server) sameOrigin(r *http.Request) bool {
 	default:
 		return origin == s.Origin
 	}
+}
+
+func (s *Server) servesSPA(path string) bool {
+	return strings.HasPrefix(path, "/app") || strings.HasPrefix(path, "/fonts/") || s.spaPaths[path]
 }
