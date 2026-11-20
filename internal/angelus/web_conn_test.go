@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,7 +16,7 @@ import (
 func TestWebDoorEndsTheAdmittedContextWithTheConnection(t *testing.T) {
 	admitted := make(chan context.Context, 1)
 	admit := func(ctx context.Context, r *http.Request) (context.Context, error) {
-		ctx = authz.WithPrincipal(ctx, webPrincipal)
+		ctx = authn.WithPrincipal(ctx, webPrincipal)
 		admitted <- ctx
 		return ctx, nil
 	}

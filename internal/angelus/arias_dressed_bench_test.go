@@ -14,6 +14,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/modelcat"
 	"github.com/jack-work/figaro/internal/outfit"
@@ -86,7 +87,7 @@ func BenchmarkAriasRebuildDressed(b *testing.B) {
 		b.Fatal(err)
 	}
 	h := &handlers{angelus: a, outfitter: outfit.New(cfg)}
-	ctx := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"})
+	ctx := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"})
 	w := newAriasWatch(ctx)
 	h.rebuildArias(w)
 	if v, _ := h.currentOutfitHash("perf"); v == "" {

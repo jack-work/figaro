@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/sandbox"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/sandbox/local"
@@ -27,7 +28,7 @@ func delegated(t *testing.T) {
 	}
 }
 
-func admitFrom(t *testing.T, host *local.Host, peer *authz.Peercred, figaro, shell string) (context.Context, error) {
+func admitFrom(t *testing.T, host *local.Host, peer *authn.Peercred, figaro, shell string) (context.Context, error) {
 	t.Helper()
 	sock := filepath.Join(t.TempDir(), "s")
 	ln, err := net.Listen("unix", sock)
@@ -68,7 +69,7 @@ func spawnedByAFigaro(t *testing.T) {
 func TestACallerInAFigarosToolCgroupIsThatFigaro(t *testing.T) {
 	delegated(t)
 	spawnedByAFigaro(t)
-	peer, err := authz.NewPeercred(uint32(os.Getuid()), config.PeercredConfig{})
+	peer, err := authn.NewPeercred(uint32(os.Getuid()), config.PeercredConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,10 +87,10 @@ func TestACallerInAFigarosToolCgroupIsThatFigaro(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got, ok := authz.ToolOf(ctx); !ok || got != figaro {
+			if got, ok := authn.ToolOf(ctx); !ok || got != figaro {
 				t.Fatalf("attributed to %q, want figaro %s", got, figaro)
 			}
-			sub, _ := authz.SubjectOf(ctx)
+			sub, _ := authn.SubjectOf(ctx)
 			if authz.OwnerCall(ctx, peer.Self(), sub) {
 				t.Fatal("a tool caller passed as the owner")
 			}
@@ -100,7 +101,7 @@ func TestACallerInAFigarosToolCgroupIsThatFigaro(t *testing.T) {
 func TestACallerOutsideEveryToolCgroupIsTheOwner(t *testing.T) {
 	delegated(t)
 	spawnedByAFigaro(t)
-	peer, err := authz.NewPeercred(uint32(os.Getuid()), config.PeercredConfig{})
+	peer, err := authn.NewPeercred(uint32(os.Getuid()), config.PeercredConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,8 +128,8 @@ func TestACallerOutsideEveryToolCgroupIsTheOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sub, _ := authz.SubjectOf(ctx)
-	if _, tool := authz.ToolOf(ctx); tool || authz.FigaroOf(ctx) != "" || !authz.OwnerCall(ctx, peer.Self(), sub) {
+	sub, _ := authn.SubjectOf(ctx)
+	if _, tool := authn.ToolOf(ctx); tool || authn.FigaroOf(ctx) != "" || !authz.OwnerCall(ctx, peer.Self(), sub) {
 		t.Fatal("the owner outside every tool cgroup was not the owner")
 	}
 }
@@ -155,7 +156,7 @@ func BenchmarkToolStartInItsCgroup(b *testing.B) {
 	if os.Getenv("FIGARO_PEER_CHECK_E2E") == "" {
 		b.Skip("needs FIGARO_PEER_CHECK_E2E=1 inside a delegated scope")
 	}
-	peer, _ := authz.NewPeercred(uint32(os.Getuid()), config.PeercredConfig{})
+	peer, _ := authn.NewPeercred(uint32(os.Getuid()), config.PeercredConfig{})
 	host := local.NewHost(time.Minute)
 	attributeTools(host, peer)
 	benchStart(b, host)

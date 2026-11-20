@@ -8,6 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkauthz"
@@ -41,15 +42,15 @@ func TestAnAncestorInABoxManagesOnlyDescendantsStillInIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	box := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalSandbox, ID: authz.BoxPrincipal("judge").ID})
+	box := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalSandbox, ID: authn.BoxPrincipal("judge").ID})
 	claim, _ := rpc.WithCaller(map[string]any{}, parent, nil)
 	var ctx context.Context
-	_, _ = authz.Authenticated(authz.AriaHeader{}, func(c context.Context, _ json.RawMessage) (any, error) {
+	_, _ = authn.Authenticated(authn.AriaHeader{}, func(c context.Context, _ json.RawMessage) (any, error) {
 		ctx = c
 		return nil, nil
 	})(box, claim)
-	if authz.FigaroOf(ctx) != parent {
-		t.Fatalf("the claim did not stamp: %q", authz.FigaroOf(ctx))
+	if authn.FigaroOf(ctx) != parent {
+		t.Fatalf("the claim did not stamp: %q", authn.FigaroOf(ctx))
 	}
 	c := callerKeys{boxed: true, box: "judge", lineage: true}
 	check := func() error {

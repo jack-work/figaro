@@ -8,7 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -91,7 +91,7 @@ func (a *Agent) SetFrom(ctx context.Context, req rpc.SetRequest) (store.FormVerd
 	}
 	return a.writeForm(store.FormWrite{
 		Patch: req.Patch, IfVersion: req.IfVersion, Intent: intent,
-		Origin: store.Origin{Principal: authz.PrincipalText(authz.PrincipalOf(ctx)), Client: req.Client, Seq: req.Seq},
+		Origin: store.Origin{Principal: authn.PrincipalText(authn.PrincipalOf(ctx)), Client: req.Client, Seq: req.Seq},
 	}, "set")
 }
 

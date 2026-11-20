@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/troupe"
@@ -54,7 +55,7 @@ func (h *handlers) troupeIdentity(ctx context.Context, params json.RawMessage) (
 	}
 	sum := sha256.Sum256(root.Raw)
 	return rpc.TroupeIdentityResponse{
-		Troupe: m.Troupe(), Node: m.Self(), Principal: authz.PrincipalOf(ctx),
+		Troupe: m.Troupe(), Node: m.Self(), Principal: authn.PrincipalOf(ctx),
 		Root: root.Raw, RootSHA256: hex.EncodeToString(sum[:]), Signers: m.View().Signers(time.Now()),
 	}, nil
 }
@@ -98,7 +99,7 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 		}
 	}
 	join := !renewal || !member || mem.Door != req.Door
-	owner := authz.PrincipalText(authz.PrincipalOf(ctx))
+	owner := authn.PrincipalText(authn.PrincipalOf(ctx))
 	if renewal {
 		owner = mem.Owner
 	}
@@ -143,7 +144,7 @@ func (h *handlers) troupeSign(ctx context.Context, params json.RawMessage) (any,
 	if renewal {
 		slog.Info("troupe: renewed a node certificate", "node", req.Node, "asked_ms", req.TTLMillis, "until", leaf.NotAfter.Format(time.RFC3339))
 	} else {
-		slog.Info("troupe: signed a node in", "node", req.Node, "door", req.Door, "by", authz.PrincipalText(authz.PrincipalOf(ctx)), "asked_ms", req.TTLMillis, "until", leaf.NotAfter.Format(time.RFC3339))
+		slog.Info("troupe: signed a node in", "node", req.Node, "door", req.Door, "by", authn.PrincipalText(authn.PrincipalOf(ctx)), "asked_ms", req.TTLMillis, "until", leaf.NotAfter.Format(time.RFC3339))
 	}
 	return rpc.TroupeSignResponse{Chain: [][]byte{leaf.Raw, inter.Raw}, Root: root.Raw, Entries: troupe.Encode(m.Entries()), TTLMillis: leaf.NotAfter.Sub(now).Milliseconds()}, nil
 }

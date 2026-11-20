@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/jkauthz"
@@ -140,12 +141,12 @@ func (a *Angelus) cliAdmit() Admit {
 	if a.Peercred != nil {
 		return a.Peercred.Admit
 	}
-	return authz.Admit
+	return authn.Admit
 }
 
-func (a *Angelus) Serve(ctx context.Context, ln net.Listener, door authz.Door, admit Admit) error {
+func (a *Angelus) Serve(ctx context.Context, ln net.Listener, door authn.Door, admit Admit) error {
 	if admit == nil {
-		admit = authz.Admit
+		admit = authn.Admit
 	}
 	leave, ok := a.enterDoor("door "+door.String(), ln)
 	if !ok {
@@ -169,7 +170,7 @@ func (a *Angelus) Serve(ctx context.Context, ln net.Listener, door authz.Door, a
 	}
 }
 
-func (a *Angelus) admitConn(ctx context.Context, conn net.Conn, door authz.Door, admit Admit) {
+func (a *Angelus) admitConn(ctx context.Context, conn net.Conn, door authn.Door, admit Admit) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cctx, err := admit(ctx, conn)
@@ -189,7 +190,7 @@ func (a *Angelus) admitConn(ctx context.Context, conn net.Conn, door authz.Door,
 }
 
 type unseated struct {
-	door    authz.Door
+	door    authn.Door
 	subject jkauthz.Principal
 }
 
@@ -197,11 +198,11 @@ func (e *unseated) Error() string {
 	return fmt.Sprintf("the %s door seats only a subject the policy binds to a role, and %s holds none", e.door, e.subject)
 }
 
-func (a *Angelus) seat(ctx context.Context, door authz.Door) error {
+func (a *Angelus) seat(ctx context.Context, door authn.Door) error {
 	if !door.SeatsOnlyPolicySubjects() {
 		return nil
 	}
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if err != nil {
 		return err
 	}
@@ -218,8 +219,8 @@ func (a *Angelus) holdsRole(sub jkauthz.Subject) bool {
 	return a.Policies.HoldsRole(sub)
 }
 
-func (a *Angelus) handleConn(ctx context.Context, door authz.Door, conn io.ReadWriteCloser) {
-	ctx = authz.WithDoor(ctx, door)
+func (a *Angelus) handleConn(ctx context.Context, door authn.Door, conn io.ReadWriteCloser) {
+	ctx = authn.WithDoor(ctx, door)
 	if a.Handlers == nil {
 		conn.Close()
 		return

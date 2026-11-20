@@ -13,6 +13,7 @@ import (
 
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
@@ -78,7 +79,7 @@ func newRemotePair(t *testing.T) *remotePair {
 	runtime := boot.AngelusRuntimeDir()
 	a := angelus.New(angelus.Config{Backend: backend, RuntimeDir: runtime})
 	a.Peers = members
-	pc, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
+	pc, err := authn.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
 	require.NoError(t, err)
 	a.Peercred = pc
 	a.Policies = authz.NewPolicies(pc.Self(), angelus.StoreFacts(backend))

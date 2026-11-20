@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 
 	"github.com/jack-work/jkauthz"
@@ -19,7 +19,7 @@ const ownersTrace = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 
 func traceparentHandlers(t *testing.T) *handlers {
 	t.Helper()
-	peer, err := authz.NewPeercred(1000, config.PeercredConfig{})
+	peer, err := authn.NewPeercred(1000, config.PeercredConfig{})
 	require.NoError(t, err)
 	return &handlers{angelus: &Angelus{Peercred: peer}}
 }
@@ -44,7 +44,7 @@ func traceparentAfter(t *testing.T, h *handlers, ctx context.Context, params jso
 }
 
 func callerAs(p jkauthz.Principal) context.Context {
-	return authz.WithSubject(context.Background(), jkauthz.Subject{Principal: p})
+	return authn.WithSubject(context.Background(), jkauthz.Subject{Principal: p})
 }
 
 // A traceparent decides which trace a turn's spans land in. Only the owner's

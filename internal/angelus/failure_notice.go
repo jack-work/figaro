@@ -8,6 +8,7 @@ import (
 	"github.com/jack-work/jkauthz"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
 )
@@ -46,5 +47,5 @@ func (h *handlers) senderMaySend(ctx context.Context, n figaro.FailureNotice) er
 	if err != nil {
 		return err
 	}
-	return h.allowed(authz.WithSubject(ctx, jkauthz.Subject{Principal: p}), rpc.VerbSend, authz.Aria(n.To))
+	return h.allowed(authn.WithSubject(ctx, jkauthz.Subject{Principal: p}), rpc.VerbSend, authz.Aria(n.To))
 }

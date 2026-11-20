@@ -18,6 +18,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
@@ -396,8 +397,8 @@ func call(t *testing.T, n *ledgerNode, method string, req any) (any, error) {
 	t.Helper()
 	params, err := json.Marshal(req)
 	require.NoError(t, err)
-	owner := authz.WithSubject(context.Background(), jkauthz.Subject{Principal: n.a.Peercred.Self()})
-	return n.a.Handlers[method](authz.WithDoor(owner, authz.DoorLocal), params)
+	owner := authn.WithSubject(context.Background(), jkauthz.Subject{Principal: n.a.Peercred.Self()})
+	return n.a.Handlers[method](authn.WithDoor(owner, authn.DoorLocal), params)
 }
 
 func pair(t *testing.T) (*ledgerNode, *ledgerNode, *peer.Ledger, *peer.Ledger, estateRoot) {

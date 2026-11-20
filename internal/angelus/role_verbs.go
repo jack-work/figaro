@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 )
 
@@ -12,12 +13,12 @@ func (h *handlers) refuseCastWithoutGrant(ctx context.Context, role string) erro
 	if err := h.allowed(ctx, rpc.VerbCast, authz.Aria(role)); err != nil {
 		return h.angelus.Policies.Shadow(authz.KeyGrants, fmt.Errorf("cast: %w", err))
 	}
-	f := authz.FigaroOf(ctx)
+	f := authn.FigaroOf(ctx)
 	if f == "" || h.roleHeld(role) {
 		return nil
 	}
 	if p := h.angelus.Policies; p != nil {
-		if sub, err := authz.SubjectOf(ctx); err == nil && p.WrittenGrant(sub, f, rpc.VerbCast, authz.Aria(role)) {
+		if sub, err := authn.SubjectOf(ctx); err == nil && p.WrittenGrant(sub, f, rpc.VerbCast, authz.Aria(role)) {
 			return nil
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/troupe"
 	"github.com/jack-work/jkauthz"
@@ -73,10 +74,10 @@ func checkTroupeRules(doc TroupeDocument, troupe string) error {
 		if !strings.HasPrefix(is.Issuer, "https://") {
 			return fmt.Errorf("troupe policy: issuer %q: a troupe names only https issuers", is.Issuer)
 		}
-		if _, err := IssuerScope(is.Issuer); err != nil {
+		if _, err := authn.IssuerScope(is.Issuer); err != nil {
 			return fmt.Errorf("troupe policy: %w", err)
 		}
-		if err := checkTroupeClients(is); err != nil {
+		if err := authn.CheckTroupeClients(is); err != nil {
 			return fmt.Errorf("troupe policy: %w", err)
 		}
 	}
@@ -98,7 +99,7 @@ func checkTroupeRules(doc TroupeDocument, troupe string) error {
 			if err != nil {
 				continue
 			}
-			if pr.Kind == KindTroupe {
+			if pr.Kind == authn.KindTroupe {
 				return fmt.Errorf("troupe policy: %s is the troupe itself, which a node's own policy names to delegate; the troupe cannot bind it", name)
 			}
 			if acrossIssuers(pr) {

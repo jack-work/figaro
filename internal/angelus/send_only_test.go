@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
@@ -47,7 +48,7 @@ principals = ["user:stranger"]
 	}
 	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())})
 	as := func(id string) context.Context {
-		return authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: id})
+		return authn.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: id})
 	}
 	attach := func(who, ref string) (rpc.AttachResponse, error) {
 		raw, _ := json.Marshal(rpc.AttachRequest{FigaroID: ref})

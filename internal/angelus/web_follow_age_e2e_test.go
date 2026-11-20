@@ -18,7 +18,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/sdk"
 )
@@ -72,7 +72,7 @@ issuer = "https://auth.kelliher.info"
 	loaded, err := config.Load(dir)
 	require.NoError(t, err)
 	path = filepath.Join(filepath.Dir(a.SocketPath), "web.sock")
-	u, err := authz.NewUpstream(loaded.Config.Authz.Upstream, path, a.SocketPath, nil)
+	u, err := authn.NewUpstream(loaded.Config.Authz.Upstream, path, a.SocketPath, nil)
 	require.NoError(t, err)
 	ln, err := angelus.ListenUnix(path, 0o660)
 	require.NoError(t, err)

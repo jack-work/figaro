@@ -12,6 +12,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
@@ -78,7 +79,7 @@ principals = ["user:guest"]
 `), 0o600); err != nil {
 		b.Fatal(err)
 	}
-	self, err := authz.NewPeercred(0, config.PeercredConfig{})
+	self, err := authn.NewPeercred(0, config.PeercredConfig{})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -103,10 +104,10 @@ principals = ["user:guest"]
 		{"owner-claiming-grants", enforced, "0", granted, n + 1 - n/10},
 	} {
 		h := &handlers{angelus: c.a}
-		ctx := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: c.who})
+		ctx := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: c.who})
 		if c.figaro != "" {
 			claim, _ := rpc.WithCaller(map[string]any{}, c.figaro, nil)
-			_, _ = authz.Authenticated(authz.AriaHeader{}, func(stamped context.Context, _ json.RawMessage) (any, error) {
+			_, _ = authn.Authenticated(authn.AriaHeader{}, func(stamped context.Context, _ json.RawMessage) (any, error) {
 				ctx = stamped
 				return nil, nil
 			})(ctx, claim)

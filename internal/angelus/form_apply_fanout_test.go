@@ -10,7 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 )
 
 func applyFanout(t *testing.T, r grantRig, id, outfit string, managed []string, claim string) error {
@@ -102,14 +102,14 @@ principals = ["user:setter", "sandbox:judge@local:box"]
 
 func TestOnlyTheOwnerItselfGetsTheOperatorPaths(t *testing.T) {
 	managed := []string{form.FanoutMaxChildrenKey}
-	local := func(ctx context.Context) context.Context { return authz.WithDoor(ctx, authz.DoorLocal) }
+	local := func(ctx context.Context) context.Context { return authn.WithDoor(ctx, authn.DoorLocal) }
 	for name, c := range map[string]struct {
 		ctx   context.Context
 		claim string
 	}{
 		"a claim the daemon does not hold, dropped at a door":      {local(asOwner()), "0123456789abcdef0123456789abcdef"},
 		"a principal granted everything on the trusted local door": {local(as("user", "setter")), ""},
-		"a box": {authz.WithPrincipal(context.Background(), rpc.Principal{Kind: "sandbox", ID: "judge@" + authz.BoxScope}), ""},
+		"a box": {authn.WithPrincipal(context.Background(), rpc.Principal{Kind: "sandbox", ID: "judge@" + authn.BoxScope}), ""},
 	} {
 		r := newRigConfigured(t, doorPolicy+setterPolicy, "[sandbox.boxes.judge]\nexec = \"/judge.sock\"\n"+judgeListsAnyOutfit)
 		id := managedRoleBy(t, r, asOwner())

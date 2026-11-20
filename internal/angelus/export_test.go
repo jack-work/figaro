@@ -10,7 +10,7 @@ import (
 	"github.com/jack-work/jkrpc"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/tool"
 )
@@ -185,11 +185,11 @@ func (hs *Handlers) SayAs(ctx context.Context, box, figaroID, text string) error
 }
 
 func AsLeasedBox(box string) context.Context {
-	return authz.WithSubject(inProcess(context.Background()), jkauthz.Subject{Principal: authz.BoxPrincipal(box)})
+	return authn.WithSubject(inProcess(context.Background()), jkauthz.Subject{Principal: authn.BoxPrincipal(box)})
 }
 
-func AsLeasedBoxThrough(box string, door authz.Door) context.Context {
-	return authz.WithSubject(authz.WithDoor(context.Background(), door), jkauthz.Subject{Principal: authz.BoxPrincipal(box)})
+func AsLeasedBoxThrough(box string, door authn.Door) context.Context {
+	return authn.WithSubject(authn.WithDoor(context.Background(), door), jkauthz.Subject{Principal: authn.BoxPrincipal(box)})
 }
 
 func (hs *Handlers) MovingForTest(id string) bool {

@@ -10,7 +10,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/stretchr/testify/require"
 )
@@ -106,7 +106,7 @@ func TestHubCastMintsTheRoleAsTheCaller(t *testing.T) {
 	caster := rpc.Principal{Kind: "sandbox", ID: "dev-3"}
 	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{"name": json.RawMessage(`"minted-role"`)}, nil)
 
-	res, err := h.castForHub(authz.WithPrincipal(context.Background(), caster), aria, rpc.CastRequest{RolePatch: &patch})
+	res, err := h.castForHub(authn.WithPrincipal(context.Background(), caster), aria, rpc.CastRequest{RolePatch: &patch})
 	require.NoError(t, err)
 	require.True(t, res.Patched)
 

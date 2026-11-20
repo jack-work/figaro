@@ -9,7 +9,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/formapply"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -150,7 +150,7 @@ func managedHeldKeys(role form.Snapshot) []string {
 }
 
 func (h *handlers) operatorPrefixes(ctx context.Context, params json.RawMessage) []string {
-	if _, boxed := callerBox(ctx); boxed || authz.FigaroOf(ctx) != "" || rpc.CallerOf(params) != "" || !h.callerIsOwner(ctx) {
+	if _, boxed := callerBox(ctx); boxed || authn.FigaroOf(ctx) != "" || rpc.CallerOf(params) != "" || !h.callerIsOwner(ctx) {
 		return nil
 	}
 	return slices.Clone(formapply.OperatorPrefixes)

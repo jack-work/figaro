@@ -17,7 +17,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	api "github.com/jack-work/figaro/api/sandbox"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/sandbox/box"
 	"github.com/jack-work/jkrpc"
@@ -209,7 +209,7 @@ func boxDoorRigConfigured(t *testing.T, policy, command, boxExtra string, opts .
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { r.a.Serve(ctx, ln, authz.DoorBox, authz.BoxAdmit("judge")); close(done) }()
+	go func() { r.a.Serve(ctx, ln, authn.DoorBox, authn.BoxAdmit("judge")); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
 	return doorRig{grantRig: r, sb: sb, door: door, p: p}
 }
@@ -264,7 +264,7 @@ func TestTheBoxDoorReachesOnlyAriasInItsBox(t *testing.T) {
 	if err := c.Call(context.Background(), rpc.MethodHello, rpc.HelloRequest{Version: rpc.ProtocolVersion}, &hello); err != nil {
 		t.Fatal(err)
 	}
-	if got := authz.PrincipalText(hello.Principal); got != "sandbox:judge@local:box" {
+	if got := authn.PrincipalText(hello.Principal); got != "sandbox:judge@local:box" {
 		t.Fatalf("the door stamped %q", got)
 	}
 

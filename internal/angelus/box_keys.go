@@ -14,6 +14,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/decide"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -64,11 +65,11 @@ var boxHeldKeys = []struct{ key, why string }{
 }
 
 func callerBox(ctx context.Context) (string, bool) {
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if err != nil {
 		return "", false
 	}
-	return authz.BoxOf(sub.Principal)
+	return authn.BoxOf(sub.Principal)
 }
 
 func changedPaths(before, after form.Snapshot) []string {
@@ -111,9 +112,9 @@ type callerKeys struct {
 func (h *handlers) callerKeysOf(ctx context.Context) callerKeys {
 	box, boxed := callerBox(ctx)
 	owns := h.callerOwns(ctx)
-	tool, _ := authz.ToolOf(ctx)
+	tool, _ := authn.ToolOf(ctx)
 	if tool == "" && owns && !boxed && !keyGrantsWaived(ctx) {
-		tool = authz.FigaroOf(ctx)
+		tool = authn.FigaroOf(ctx)
 	}
 	return callerKeys{owns: owns && tool == "", boxed: boxed, box: box, lineage: h.protectsByLineage(), tool: tool}
 }
@@ -158,7 +159,7 @@ func (h *handlers) refuseProtected(ctx context.Context, c callerKeys, line linea
 	if !c.boxed {
 		return fmt.Errorf("%s is protected: only the owner or an ancestor figaro sets it, and a figaro is known only through its box door, its tool cgroup or its label on the local door", key)
 	}
-	f := authz.FigaroOf(ctx)
+	f := authn.FigaroOf(ctx)
 	if f == "" {
 		return fmt.Errorf("box %s may not set %s: it is protected and the call names no figaro", c.box, key)
 	}
@@ -203,7 +204,7 @@ func (h *handlers) refuseScopesBeyondWriter(ctx context.Context, c callerKeys, l
 	if err != nil {
 		return err
 	}
-	f := authz.FigaroOf(ctx)
+	f := authn.FigaroOf(ctx)
 	if p := h.angelus.Policies; p != nil && f != "" && (c.tool == f || c.boxed && h.sandboxOf(f) == c.box) {
 		target, parent := line.of, ""
 		if line.self {
@@ -221,18 +222,18 @@ func (h *handlers) refuseScopesBeyondWriter(ctx context.Context, c callerKeys, l
 }
 
 func claimsUnheld(ctx context.Context) bool {
-	return authz.FigaroOf(ctx) == "" && authz.Claimed(ctx) && authz.DoorOf(ctx).Trusted()
+	return authn.FigaroOf(ctx) == "" && authn.Claimed(ctx) && authn.DoorOf(ctx).Trusted()
 }
 
 func (h *handlers) refuseKeysBeyondGrants(ctx context.Context, line lineage, before form.Snapshot, patch form.Patch, after form.Snapshot) error {
 	if claimsUnheld(ctx) && (keyChanged(before, after, store.SystemRetiredKey) || keyChanged(before, after, form.RetiredKey)) {
 		return errors.New("retire: the caller names a figaro this daemon does not hold")
 	}
-	f, p := authz.FigaroOf(ctx), h.angelus.Policies
+	f, p := authn.FigaroOf(ctx), h.angelus.Policies
 	if f == "" || p == nil || line.of == "" || line.self {
 		return nil
 	}
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if err != nil {
 		return err
 	}
@@ -531,7 +532,7 @@ func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before for
 }
 
 func (h *handlers) refuseQuotaByLabelAlone(ctx context.Context, line lineage, before, after form.Snapshot) error {
-	f := authz.FigaroOf(ctx)
+	f := authn.FigaroOf(ctx)
 	if !keyChanged(before, after, form.FanoutQuotaKey) {
 		return nil
 	}
@@ -548,7 +549,7 @@ func (h *handlers) refuseQuotaByLabelAlone(ctx context.Context, line lineage, be
 }
 
 func (h *handlers) refuseQuotaBeyondBudget(ctx context.Context, line lineage, before, after form.Snapshot) error {
-	if authz.FigaroOf(ctx) == "" || line.self || line.of == "" || !keyChanged(before, after, form.FanoutQuotaKey) {
+	if authn.FigaroOf(ctx) == "" || line.self || line.of == "" || !keyChanged(before, after, form.FanoutQuotaKey) {
 		return nil
 	}
 	n, capped, err := form.FanoutQuota(after)
@@ -573,7 +574,7 @@ func keyChanged(before, after form.Snapshot, key string) bool {
 }
 
 func (h *handlers) refuseMintByLabelAlone(ctx context.Context, line lineage, before, after form.Snapshot) error {
-	f := authz.FigaroOf(ctx)
+	f := authn.FigaroOf(ctx)
 	if !keyChanged(before, after, form.FanoutMintKey) {
 		return nil
 	}
@@ -596,7 +597,7 @@ func (h *handlers) refuseMintBeyondGranter(ctx context.Context, before, after fo
 	if granted, _ := form.FanoutMint(after); !granted {
 		return nil
 	}
-	f := authz.FigaroOf(ctx)
+	f := authn.FigaroOf(ctx)
 	if f == "" {
 		return fmt.Errorf("%s: only the owner or an ancestor figaro grants it", form.FanoutMintKey)
 	}
@@ -611,7 +612,7 @@ func (h *handlers) refuseMintBeyondGranter(ctx context.Context, before, after fo
 }
 
 func (h *handlers) refuseFanoutByLabelAlone(ctx context.Context, line lineage, before, after form.Snapshot) error {
-	f := authz.FigaroOf(ctx)
+	f := authn.FigaroOf(ctx)
 	if f == "" && !claimsUnheld(ctx) {
 		return nil
 	}
@@ -641,7 +642,7 @@ func (h *handlers) refuseFanoutBeyondGranter(ctx context.Context, before, after 
 	if !nowOK && !wasOK {
 		return nil
 	}
-	f := authz.FigaroOf(ctx)
+	f := authn.FigaroOf(ctx)
 	if f == "" {
 		return fmt.Errorf("%s: only the owner or an ancestor figaro grants it", form.FanoutMaxChildrenKey)
 	}
@@ -673,10 +674,10 @@ func retentionGranted(ctx context.Context, before form.Snapshot, path string) bo
 	if len(writers) == 0 {
 		return false
 	}
-	if fig := authz.FigaroOf(ctx); fig != "" && slices.Contains(writers, fig) {
+	if fig := authn.FigaroOf(ctx); fig != "" && slices.Contains(writers, fig) {
 		return true
 	}
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	return err == nil && slices.Contains(writers, sub.Principal.String())
 }
 
@@ -698,17 +699,17 @@ func (h *handlers) formAccess(ctx context.Context, id string, params json.RawMes
 }
 
 func (h *handlers) callerOwns(ctx context.Context) bool {
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if err != nil {
 		return false
 	}
-	if _, tool := authz.ToolOf(ctx); tool {
+	if _, tool := authn.ToolOf(ctx); tool {
 		return h.callerIsOwner(ctx)
 	}
 	if h.angelus.Policies == nil {
 		return h.passesUnpoliced(ctx, sub)
 	}
-	return authz.DoorOf(ctx) == authz.DoorInProcess || authz.IsOwner(h.angelus.owner(), sub)
+	return authn.DoorOf(ctx) == authn.DoorInProcess || authz.IsOwner(h.angelus.owner(), sub)
 }
 
 func ownerKeyRulesSkip(params json.RawMessage) bool {
@@ -886,7 +887,7 @@ func (h *handlers) toolShortensLifetime(ctx context.Context, c callerKeys, line 
 
 func (h *handlers) lifetimeGranted(ctx context.Context, figaro, target, key string) bool {
 	p := h.angelus.Policies
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	return p != nil && err == nil && p.ReachGranted(sub, figaro, rpc.VerbSet, target) && p.Figaro(figaro).AllowsKey(sub, rpc.VerbSet, authz.Aria(target), key)
 }
 

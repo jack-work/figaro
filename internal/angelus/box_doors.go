@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 )
 
@@ -18,7 +18,7 @@ type boxDoorSpec struct {
 	box   string
 	field string
 	path  string
-	door  authz.Door
+	door  authn.Door
 }
 
 func (s boxDoorSpec) key() string { return s.box + "." + s.field }
@@ -57,10 +57,10 @@ func wantedBoxDoors(loaded *config.Loaded) (map[string]boxDoorSpec, map[string]e
 			refused[name] = err
 			continue
 		}
-		d := boxDoorSpec{box: name, field: "door", path: doors[name], door: authz.DoorBox}
+		d := boxDoorSpec{box: name, field: "door", path: doors[name], door: authn.DoorBox}
 		want[d.key()] = d
 		if host, ok := hosts[name]; ok {
-			h := boxDoorSpec{box: name, field: "host_door", path: host, door: authz.DoorHost}
+			h := boxDoorSpec{box: name, field: "host_door", path: host, door: authn.DoorHost}
 			want[h.key()] = h
 		}
 	}
@@ -203,16 +203,16 @@ func closeListeners(ls []boxListener) {
 
 func (d *boxDoors) serve(a *Angelus, loaded *config.Loaded, l boxListener, verb string) {
 	s := l.spec
-	if b, _ := loaded.Box(s.box); s.door == authz.DoorBox && (b.AnyOutfit() || b.AnyProvider()) {
+	if b, _ := loaded.Box(s.box); s.door == authn.DoorBox && (b.AnyOutfit() || b.AnyProvider()) {
 		slog.Info("box door opens with an open list", "box", s.box, "any_outfit", b.AnyOutfit(), "any_provider", b.AnyProvider())
 	}
 	ctx, shut := context.WithCancelCause(d.ctx)
 	o := &openBoxDoor{spec: s, shut: shut, done: make(chan struct{})}
 	d.open[s.key()] = o
-	slog.Info("box door "+verb, "box", s.box, "door", s.door.String(), "path", s.path, "principal", authz.BoxPrincipal(s.box).String())
+	slog.Info("box door "+verb, "box", s.box, "door", s.door.String(), "path", s.path, "principal", authn.BoxPrincipal(s.box).String())
 	go func() {
 		defer close(o.done)
-		if err := a.Serve(ctx, l.ln, s.door, authz.BoxAdmit(s.box)); err != nil {
+		if err := a.Serve(ctx, l.ln, s.door, authn.BoxAdmit(s.box)); err != nil {
 			slog.Error("box door", "box", s.box, "door", s.door.String(), "err", err)
 		}
 	}()

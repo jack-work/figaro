@@ -5,40 +5,41 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkauthz"
 )
 
 func TestABoxPrincipalNamesItsBoxAndNothingElse(t *testing.T) {
-	if got := BoxPrincipal("judge").String(); got != "sandbox:judge@local:box" {
+	if got := authn.BoxPrincipal("judge").String(); got != "sandbox:judge@local:box" {
 		t.Fatalf("principal %s", got)
 	}
 	for _, c := range []struct {
 		p    jkauthz.Principal
 		want string
 	}{
-		{BoxPrincipal("judge"), "judge"},
+		{authn.BoxPrincipal("judge"), "judge"},
 		{jkauthz.Principal{Kind: jkauthz.KindSandbox, ID: "judge@auth.kelliher.info"}, ""},
 		{jkauthz.Principal{Kind: jkauthz.KindSandbox, ID: "judge"}, ""},
 		{jkauthz.Principal{Kind: jkauthz.KindUser, ID: "judge@local:box"}, ""},
 		{jkauthz.Principal{Kind: jkauthz.KindSandbox, ID: "judge@local:box", Node: "spain"}, ""},
 		{jkauthz.Principal{Kind: jkauthz.KindSandbox, ID: "@local:box"}, ""},
 	} {
-		if got, _ := BoxOf(c.p); got != c.want {
+		if got, _ := authn.BoxOf(c.p); got != c.want {
 			t.Errorf("BoxOf(%s) = %q, want %q", c.p, got, c.want)
 		}
 	}
-	if _, err := IssuerScope("https://" + BoxScope); err == nil {
+	if _, err := authn.IssuerScope("https://" + authn.BoxScope); err == nil {
 		t.Fatal("an issuer can take the box scope")
 	}
 }
 
 func TestTheBoxDoorStampsItsBoxWhoeverConnects(t *testing.T) {
-	ctx, err := BoxAdmit("judge")(context.Background(), nil)
+	ctx, err := authn.BoxAdmit("judge")(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := SubjectOf(ctx)
-	if err != nil || s.Principal != BoxPrincipal("judge") {
+	s, err := authn.SubjectOf(ctx)
+	if err != nil || s.Principal != authn.BoxPrincipal("judge") {
 		t.Fatalf("subject %+v %v", s, err)
 	}
 }
@@ -51,7 +52,7 @@ func TestTheDefaultPolicyHoldsABoxToItsOwnBox(t *testing.T) {
 	if err := p.Reload(""); err != nil {
 		t.Fatal(err)
 	}
-	judge := subject(BoxPrincipal("judge"))
+	judge := subject(authn.BoxPrincipal("judge"))
 	for _, v := range []rpc.Verb{rpc.VerbRead, rpc.VerbListen, rpc.VerbSend, rpc.VerbFork, rpc.VerbSet, rpc.VerbKill} {
 		if d := p.Allow(judge, v, Aria("dddd0001")); !d.Allowed {
 			t.Errorf("%s on an aria in its box: %s", v, d.Reason())
@@ -80,7 +81,7 @@ func TestTheDefaultPolicyHoldsABoxToItsOwnBox(t *testing.T) {
 	if p.Allow(spoof, rpc.VerbRead, Aria("dddd0001")).Allowed || p.Allow(spoof, rpc.VerbUse, Sandbox("judge")).Allowed {
 		t.Error("an issuer's sandbox:judge passes as the box")
 	}
-	unconfigured := subject(BoxPrincipal("ghost"))
+	unconfigured := subject(authn.BoxPrincipal("ghost"))
 	f.boxed["dddd0003"] = "ghost"
 	if p.Allow(unconfigured, rpc.VerbRead, Aria("dddd0003")).Allowed {
 		t.Error("a box with no door is bound")
@@ -94,7 +95,7 @@ func TestNoBoxesLeaveTheDefaultAsItWas(t *testing.T) {
 }
 
 func TestTheBoxDoorIsSeatedByPolicyAndNeverTrusted(t *testing.T) {
-	if DoorBox.String() != "box" || !DoorBox.SeatsOnlyPolicySubjects() || DoorBox.Trusted() {
-		t.Fatalf("door %s: seats-only %v, trusted %v", DoorBox, DoorBox.SeatsOnlyPolicySubjects(), DoorBox.Trusted())
+	if authn.DoorBox.String() != "box" || !authn.DoorBox.SeatsOnlyPolicySubjects() || authn.DoorBox.Trusted() {
+		t.Fatalf("door %s: seats-only %v, trusted %v", authn.DoorBox, authn.DoorBox.SeatsOnlyPolicySubjects(), authn.DoorBox.Trusted())
 	}
 }

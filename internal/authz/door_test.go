@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
 )
@@ -109,28 +110,28 @@ func TestHoldsRoleFollowsThePolicyInForce(t *testing.T) {
 // always have; any other door passes only the owner, never everyone.
 func TestWithNoPolicyOnlyTheOwnerPassesOffTheLocalDoor(t *testing.T) {
 	ok := func(context.Context, json.RawMessage) (any, error) { return "ok", nil }
-	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodGC: ok}, AriaHeader{}, LocalOrOwner(me))
-	at := func(d Door, p jkauthz.Principal) context.Context {
-		return WithDoor(WithSubject(context.Background(), subject(p)), d)
+	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodGC: ok}, authn.AriaHeader{}, LocalOrOwner(me))
+	at := func(d authn.Door, p jkauthz.Principal) context.Context {
+		return authn.WithDoor(authn.WithSubject(context.Background(), subject(p)), d)
 	}
 	for name, c := range map[string]struct {
 		ctx  context.Context
 		pass bool
 	}{
-		"a stranger in process":      {at(DoorInProcess, other), true},
-		"a stranger, door unstamped": {WithSubject(context.Background(), subject(other)), false},
-		"a stranger at the local":    {at(DoorLocal, other), true},
-		"the owner at the web door":  {at(DoorWeb, me), true},
-		"a stranger at the web":      {at(DoorWeb, other), false},
-		"a stranger at a node door":  {at(DoorNode, other), false},
-		"a stranger at a new door":   {at(DoorWeb+1, other), false},
-		"nobody at the web door":     {at(DoorWeb, jkauthz.Principal{}), false},
+		"a stranger in process":      {at(authn.DoorInProcess, other), true},
+		"a stranger, door unstamped": {authn.WithSubject(context.Background(), subject(other)), false},
+		"a stranger at the local":    {at(authn.DoorLocal, other), true},
+		"the owner at the web door":  {at(authn.DoorWeb, me), true},
+		"a stranger at the web":      {at(authn.DoorWeb, other), false},
+		"a stranger at a node door":  {at(authn.DoorNode, other), false},
+		"a stranger at a new door":   {at(authn.DoorWeb+1, other), false},
+		"nobody at the web door":     {at(authn.DoorWeb, jkauthz.Principal{}), false},
 	} {
 		if err := call(t, h, c.ctx, rpc.MethodGC, ""); (err == nil) != c.pass {
 			t.Errorf("%s: err = %v, want pass %v", name, err, c.pass)
 		}
 	}
-	if err := call(t, Guard(map[string]jkrpc.HandlerFunc{rpc.MethodGC: ok}, AriaHeader{}, LocalOrOwner(jkauthz.Principal{})), at(DoorWeb, jkauthz.Principal{}), rpc.MethodGC, ""); err == nil {
+	if err := call(t, Guard(map[string]jkrpc.HandlerFunc{rpc.MethodGC: ok}, authn.AriaHeader{}, LocalOrOwner(jkauthz.Principal{})), at(authn.DoorWeb, jkauthz.Principal{}), rpc.MethodGC, ""); err == nil {
 		t.Fatal("with no owner known, the zero subject passed the web door")
 	}
 }
@@ -139,7 +140,7 @@ func TestWithNoPolicyOnlyTheOwnerPassesOffTheLocalDoor(t *testing.T) {
 // local door seats by uid, a node door by troupe membership, and any door
 // added later seats by role until it says otherwise.
 func TestEveryDoorButLocalAndNodeSeatsOnlyPolicySubjects(t *testing.T) {
-	for d, want := range map[Door]bool{DoorUnknown: true, DoorInProcess: false, DoorLocal: false, DoorNode: false, DoorWeb: true, DoorWeb + 1: true} {
+	for d, want := range map[authn.Door]bool{authn.DoorUnknown: true, authn.DoorInProcess: false, authn.DoorLocal: false, authn.DoorNode: false, authn.DoorWeb: true, authn.DoorWeb + 1: true} {
 		if got := d.SeatsOnlyPolicySubjects(); got != want {
 			t.Errorf("%s: SeatsOnlyPolicySubjects = %v, want %v", d, got, want)
 		}

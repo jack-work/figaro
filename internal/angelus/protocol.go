@@ -4,14 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jack-work/figaro/internal/decide"
-	"github.com/jack-work/figaro/internal/navstack"
-	"github.com/jack-work/figaro/internal/primitive"
 	"log/slog"
 	"sync"
 	"sync/atomic"
 	"text/template"
 	"time"
+
+	"github.com/jack-work/figaro/internal/authn"
+	"github.com/jack-work/figaro/internal/decide"
+	"github.com/jack-work/figaro/internal/navstack"
+	"github.com/jack-work/figaro/internal/primitive"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -194,7 +196,7 @@ func (h *handlers) door(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy
 	}
 	methods[rpc.MethodFollow] = h.ariaMethod(rpc.MethodFollow)
 	methods[rpc.MethodUnfollow] = h.unfollow
-	guarded := authz.Guard(methods, authz.AriaHeader{}, policy)
+	guarded := authz.Guard(methods, authn.AriaHeader{}, policy)
 	if list, ok := guarded[rpc.MethodList]; ok {
 		guarded[rpc.MethodList] = h.listingPeers(list)
 	}
@@ -203,7 +205,7 @@ func (h *handlers) door(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy
 		if p := h.angelus.Policies; p != nil {
 			inner = p.DroppingClaimsNotHeld(m, inner)
 		}
-		guarded[m] = h.angelus.refusingWhenStopping(authz.Authenticated(authz.AriaHeader{}, inner))
+		guarded[m] = h.angelus.refusingWhenStopping(authn.Authenticated(authn.AriaHeader{}, inner))
 	}
 	return guarded
 }
@@ -318,7 +320,7 @@ func (h *handlers) hello(ctx context.Context, params json.RawMessage) (any, erro
 	if req.Version != rpc.ProtocolVersion {
 		return nil, fmt.Errorf("protocol version %d; this node speaks %d", req.Version, rpc.ProtocolVersion)
 	}
-	return rpc.HelloResponse{Version: rpc.ProtocolVersion, Capabilities: daemonCapabilities, Node: h.nodeID(), Principal: authz.PrincipalOf(ctx)}, nil
+	return rpc.HelloResponse{Version: rpc.ProtocolVersion, Capabilities: daemonCapabilities, Node: h.nodeID(), Principal: authn.PrincipalOf(ctx)}, nil
 }
 
 func (h *handlers) nodeID() string {
@@ -593,7 +595,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		}
 	}
 	inherited, req.Patch = withoutInherited(form.FanoutQuotaKey, inherited, req.Patch)
-	if authz.FigaroOf(ctx) != "" {
+	if authn.FigaroOf(ctx) != "" {
 		inherited, req.Patch = withoutInherited(form.FanoutMintKey, inherited, req.Patch)
 	}
 	if err := h.refuseBoxOutfits(ctx, req.Outfits, true); err != nil {
@@ -641,5 +643,5 @@ func inProcess(ctx context.Context) context.Context {
 	if ctx == nil {
 		return nil
 	}
-	return authz.WithDoor(ctx, authz.DoorInProcess)
+	return authn.WithDoor(ctx, authn.DoorInProcess)
 }

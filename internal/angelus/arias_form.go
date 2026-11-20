@@ -13,7 +13,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/recent"
 	"github.com/jack-work/figaro/internal/store"
@@ -79,10 +79,10 @@ var callerFormIDs = []string{rpc.AriasFormID, rpc.GlobalAriasFormID, rpc.Topolog
 func isCallerFormID(id string) bool { return slices.Contains(callerFormIDs, id) }
 
 func ariasKey(ctx context.Context) string {
-	sub, _ := authz.SubjectOf(ctx)
+	sub, _ := authn.SubjectOf(ctx)
 	groups := slices.Clone(sub.Groups)
 	slices.Sort(groups)
-	return strings.Join(append([]string{string(authz.DoorOf(ctx)), authz.IssuerOf(ctx), authz.PrincipalText(authz.PrincipalOf(ctx)), sub.Principal.String(), authz.FigaroOf(ctx)}, groups...), "\x00")
+	return strings.Join(append([]string{string(authn.DoorOf(ctx)), authn.IssuerOf(ctx), authn.PrincipalText(authn.PrincipalOf(ctx)), sub.Principal.String(), authn.FigaroOf(ctx)}, groups...), "\x00")
 }
 
 func (h *handlers) ariasWatchFor(ctx context.Context, id string) (*ariasWatch, bool) {
@@ -188,7 +188,7 @@ func (h *handlers) ariasTick() bool {
 }
 
 func (h *handlers) ariasMayWatch(w *ariasWatch) bool {
-	sub, err := authz.SubjectOf(w.ctx)
+	sub, err := authn.SubjectOf(w.ctx)
 	if err != nil {
 		return false
 	}

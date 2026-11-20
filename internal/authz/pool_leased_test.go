@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkauthz"
 )
 
@@ -24,14 +25,14 @@ principals = ["sandbox:*"]
 func TestALeasesPrincipalHoldsSayOnItsOwnLeaseAndNothingElse(t *testing.T) {
 	p := poolPolicies(t, everyBoxIsOwner, leaseA)
 	p.SetPoolDaemon(true)
-	a := jkauthz.Subject{Principal: BoxPrincipal(leaseA)}
+	a := jkauthz.Subject{Principal: authn.BoxPrincipal(leaseA)}
 	if got, want := heldBy(p, a), []string{"say on " + Lease(leaseA).String()}; !slices.Equal(got, want) {
 		t.Errorf("a live lease's principal holds\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 	if p.HoldsRole(a) {
 		t.Error("a lease's principal holds a role the policy file binds")
 	}
-	if held := heldBy(p, jkauthz.Subject{Principal: BoxPrincipal(leaseB)}); len(held) != 0 {
+	if held := heldBy(p, jkauthz.Subject{Principal: authn.BoxPrincipal(leaseB)}); len(held) != 0 {
 		t.Errorf("a lease name that is not in force holds %v", held)
 	}
 	p.SetPoolDaemon(false)

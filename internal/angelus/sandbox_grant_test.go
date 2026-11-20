@@ -11,6 +11,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
@@ -114,12 +115,12 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 	}
 	t.Cleanup(func() { _ = backend.Close() })
 	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend})
-	peer, err := authz.NewPeercred(uint32(os.Getuid()), config.PeercredConfig{})
+	peer, err := authn.NewPeercred(uint32(os.Getuid()), config.PeercredConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	a.Peercred = peer
-	if a.Owner, err = authz.OwnerOf(loaded.Config.Authz, peer.Self()); err != nil {
+	if a.Owner, err = authn.OwnerOf(loaded.Config.Authz, peer.Self()); err != nil {
 		t.Fatal(err)
 	}
 	a.Settings = loaded
@@ -158,7 +159,7 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 }
 
 func as(kind, id string) context.Context {
-	return authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalKind(kind), ID: id})
+	return authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalKind(kind), ID: id})
 }
 
 func (r grantRig) create(ctx context.Context, outfit string) (rpc.CreateResponse, error) {

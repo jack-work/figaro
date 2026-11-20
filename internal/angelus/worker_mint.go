@@ -10,6 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/hierarchy"
@@ -29,7 +30,7 @@ func poolNodeOf(backend store.Backend, pool string) (string, bool) {
 	if backend == nil || pool == "" {
 		return "", false
 	}
-	by := authz.ProvisionerPrincipal().String()
+	by := authn.ProvisionerPrincipal().String()
 	var found []string
 	for _, n := range backend.Nodes() {
 		if n.Kind != store.KindForm {
@@ -63,7 +64,7 @@ func (h *handlers) mintPoolNodes(loaded *config.Loaded) {
 			continue
 		}
 		name, _ := json.Marshal(pool)
-		id, _, err := backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{poolNodeKey: name}, nil), store.MintedBy(authz.ProvisionerPrincipal().String()))
+		id, _, err := backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{poolNodeKey: name}, nil), store.MintedBy(authn.ProvisionerPrincipal().String()))
 		if err != nil {
 			slog.Error("worker pool: the pool has no node to place its leases under, so its leases are refused", "pool", pool, "err", err)
 			continue
@@ -164,8 +165,8 @@ func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation 
 	}
 	defer call.done()
 
-	serving := authz.ProvisionerServing(box)
-	ctx = authz.WithSubject(inProcess(context.WithoutCancel(ctx)), serving)
+	serving := authn.ProvisionerServing(box)
+	ctx = authn.WithSubject(inProcess(context.WithoutCancel(ctx)), serving)
 	birth := leaseBirthPatch(box)
 	if err := h.provisionerBears(serving, form.Snapshot{}.Apply(pinned.patch).Apply(birth)); err != nil {
 		return refused(err)
@@ -186,7 +187,7 @@ func (h *handlers) mintLeased(ctx context.Context, pool, key string, generation 
 		call.minted(id)
 		return workers.Ledger.Minted(pool, key, generation, id)
 	}
-	by := store.MintedBy(authz.BoxPrincipal(box).String())
+	by := store.MintedBy(authn.BoxPrincipal(box).String())
 	parent, err := h.birthParent(backend, pinned.patch, pinned.name, true)
 	if err != nil {
 		return refused(err)

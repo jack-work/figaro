@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
@@ -50,7 +51,7 @@ func TestTroupeEntriesFromACallerNeedAdminOnTheTroupe(t *testing.T) {
 	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: context.Background()})
 	call := hs.Map[rpc.MethodTroupeEntries]
 	params, _ := json.Marshal(rpc.TroupeEntriesRequest{Troupe: "estate"})
-	_, err := call(authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"}), params)
+	_, err := call(authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"}), params)
 	require.ErrorContains(t, err, "static")
 
 	_, rk, err := ed25519.GenerateKey(rand.Reader)
@@ -64,19 +65,19 @@ func TestTroupeEntriesFromACallerNeedAdminOnTheTroupe(t *testing.T) {
 	require.NoError(t, err)
 	params, _ = json.Marshal(rpc.TroupeEntriesRequest{Troupe: "estate", Entries: troupe.Encode([]troupe.Entry{revoke})})
 
-	_, err = call(authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "member"}), params)
+	_, err = call(authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "member"}), params)
 	require.Error(t, err)
 	require.True(t, strings.Contains(err.Error(), "admin"), err.Error())
 	require.Empty(t, a.Peers.(*peer.Ledger).Entries())
 
-	_, err = call(authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalNode, ID: "node-y"}), params)
+	_, err = call(authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalNode, ID: "node-y"}), params)
 	require.Error(t, err, "a node principal that did not arrive by the node door")
 
-	out, err := call(authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"}), params)
+	out, err := call(authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"}), params)
 	require.NoError(t, err)
 	require.Len(t, out.(rpc.TroupeEntriesResponse).Entries, 1)
 
 	params, _ = json.Marshal(rpc.TroupeEntriesRequest{Troupe: "other"})
-	_, err = call(authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"}), params)
+	_, err = call(authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"}), params)
 	require.ErrorContains(t, err, "not \"other\"")
 }

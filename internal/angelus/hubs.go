@@ -11,7 +11,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkrpc"
@@ -160,7 +160,7 @@ func (h *handlers) writeForHub(ctx context.Context, id, method string, params js
 	if req.Assert {
 		intent = store.Assert
 	}
-	origin := store.Origin{Principal: authz.PrincipalText(authz.PrincipalOf(ctx)), Client: req.Client, Seq: req.Seq}
+	origin := store.Origin{Principal: authn.PrincipalText(authn.PrincipalOf(ctx)), Client: req.Client, Seq: req.Seq}
 	v, err := h.angelus.Backend.ApplyFormWrite(id, store.FormWrite{
 		Patch: req.Patch, IfVersion: req.IfVersion, Intent: intent,
 		Origin: origin,

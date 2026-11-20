@@ -6,7 +6,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 )
 
 const unboxedCeilingPolicy = `
@@ -51,7 +51,7 @@ func TestTheTroupeCannotSetTheSandboxOfABoxAria(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	troupe := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalKind(authz.KindTroupe), ID: "kelliher"})
+	troupe := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalKind(authn.KindTroupe), ID: "kelliher"})
 	for _, to := range []string{"", "local"} {
 		_, err := d.h[rpc.MethodSet](troupe, withAria(t, inBox.FigaroID, rpc.SetRequest{Patch: *sandboxPatch(to)}))
 		if err == nil {

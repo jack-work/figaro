@@ -8,7 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/decide"
 )
 
@@ -103,7 +103,7 @@ principals = ["user:guest"]
 // not a missing grant.
 func TestAnUnboxedGuestCannotRedirectDumpsOrADecisionCredential(t *testing.T) {
 	t.Run("unknown door", func(t *testing.T) { guestCannotRedirect(t, as("user", "guest")) })
-	t.Run("local door", func(t *testing.T) { guestCannotRedirect(t, authz.WithDoor(as("user", "guest"), authz.DoorLocal)) })
+	t.Run("local door", func(t *testing.T) { guestCannotRedirect(t, authn.WithDoor(as("user", "guest"), authn.DoorLocal)) })
 }
 
 // The local door is trusted, and a peercred-mapped uid on it is still not

@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/hierarchy/hierarchytest"
@@ -70,8 +71,8 @@ principals = ["user:`+guestName+`"]
 	}
 	r.hs = NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())})
 	r.h = r.hs.h
-	r.owner = authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "owner"})
-	r.guest = authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: guestName})
+	r.owner = authn.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "owner"})
+	r.guest = authn.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: guestName})
 	return r
 }
 
@@ -236,7 +237,7 @@ func TestTheNodeOfARemoteAriaIsHiddenFromACallerWhoCannotReadIt(t *testing.T) {
 func TestALookupFailureIsHiddenFromABearerWhoCannotReadIt(t *testing.T) {
 	r := newFateRig(t)
 	r.h.fed = &federation{members: fateMembers{}, dir: fateDir{locate: fmt.Errorf("%s is on nodes %s and another: name it as <node>/%s", remoteID, fateNode, remoteID)}}
-	r.guest = authz.WithVerifiedBearer(r.guest, jkauthz.Subject{Principal: jkauthz.Principal{Kind: jkauthz.KindUser, ID: guestName}}, "bearer-of-the-guest")
+	r.guest = authn.WithVerifiedBearer(r.guest, jkauthz.Subject{Principal: jkauthz.Principal{Kind: jkauthz.KindUser, ID: guestName}}, "bearer-of-the-guest")
 	r.bothVerbs(remoteID, neverID)
 }
 

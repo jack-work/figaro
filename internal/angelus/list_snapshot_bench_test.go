@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -35,12 +35,12 @@ func BenchmarkListSnapshot(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = backend.Close() })
 	backend.SeedRoles(context.Background(), 0)
-	self, err := authz.NewPeercred(uint32(os.Getuid()), config.PeercredConfig{})
+	self, err := authn.NewPeercred(uint32(os.Getuid()), config.PeercredConfig{})
 	if err != nil {
 		b.Fatal(err)
 	}
 	h := &handlers{angelus: &Angelus{Registry: NewRegistry(), Backend: backend, Peercred: self}}
-	ctx := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: strconv.Itoa(os.Getuid())})
+	ctx := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: strconv.Itoa(os.Getuid())})
 	if _, err := h.list(ctx, json.RawMessage(`{"global":true}`)); err != nil {
 		b.Fatal(err)
 	}

@@ -12,7 +12,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -58,13 +58,13 @@ func TestGlobalListOpensNoForm(t *testing.T) {
 	be.Nodes()
 	be.EvictIdle(nil, -time.Hour)
 
-	self, err := authz.NewPeercred(0, config.PeercredConfig{})
+	self, err := authn.NewPeercred(0, config.PeercredConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	counted := &countedForms{XwalBackend: be}
 	h := &handlers{angelus: &Angelus{Registry: NewRegistry(), Backend: counted, Peercred: self}}
-	ctx := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: strconv.Itoa(0)})
+	ctx := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: strconv.Itoa(0)})
 	got, err := h.list(ctx, json.RawMessage(`{"global":true}`))
 	if err != nil {
 		t.Fatal(err)

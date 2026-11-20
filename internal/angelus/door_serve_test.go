@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -37,7 +37,7 @@ func TestASlowRequestDoesNotHoldBackTheNextOnItsConnection(t *testing.T) {
 	go func() {
 		server, err := ln.Accept()
 		if err == nil {
-			a.handleConn(ctx, authz.DoorLocal, server)
+			a.handleConn(ctx, authn.DoorLocal, server)
 		}
 	}()
 	client, err := net.Dial("unix", ln.Addr().String())

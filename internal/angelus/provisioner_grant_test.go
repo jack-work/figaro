@@ -6,7 +6,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/workerpool"
 	"github.com/jack-work/jkauthz"
 )
@@ -27,7 +27,7 @@ func provisionedRig(t *testing.T) (grantRig, string) {
 }
 
 func asProvisionerServing(box string) context.Context {
-	return authz.WithSubject(context.Background(), authz.ProvisionerServing(box))
+	return authn.WithSubject(context.Background(), authn.ProvisionerServing(box))
 }
 
 func (r grantRig) note(t *testing.T, ctx context.Context, id string) error {
@@ -102,8 +102,8 @@ func TestThroughTheHandlersTheProvisionerReachesOnlyItsLeasesFigaros(t *testing.
 	}
 	for name, ctx := range map[string]context.Context{
 		"the worker's next generation": asProvisionerServing("worker0-g2"),
-		"no lease":                     authz.WithSubject(context.Background(), jkauthz.Subject{Principal: authz.ProvisionerPrincipal()}),
-		"this lease and another":       authz.WithSubject(context.Background(), jkauthz.Subject{Principal: authz.ProvisionerPrincipal(), Groups: []string{box + "@" + authz.PoolScope, "worker0-g2@" + authz.PoolScope}}),
+		"no lease":                     authn.WithSubject(context.Background(), jkauthz.Subject{Principal: authn.ProvisionerPrincipal()}),
+		"this lease and another":       authn.WithSubject(context.Background(), jkauthz.Subject{Principal: authn.ProvisionerPrincipal(), Groups: []string{box + "@" + authn.PoolScope, "worker0-g2@" + authn.PoolScope}}),
 	} {
 		if err := r.note(t, ctx, leased); err == nil {
 			t.Errorf("serving %s the provisioner wrote the leased figaro", name)

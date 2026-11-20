@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/hierarchy"
 )
@@ -22,7 +23,7 @@ func (h *handlers) parkedProposal(ctx context.Context, err error) (*rpc.Proposal
 }
 
 func (h *handlers) readsIDs(ctx context.Context) func(id string) bool {
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if err != nil {
 		return func(id string) bool { return id == "" }
 	}
@@ -30,7 +31,7 @@ func (h *handlers) readsIDs(ctx context.Context) func(id string) bool {
 		open := h.passesUnpoliced(ctx, sub)
 		return func(id string) bool { return id == "" || open }
 	}
-	view := h.angelus.Policies.Figaro(authz.FigaroOf(ctx))
+	view := h.angelus.Policies.Figaro(authn.FigaroOf(ctx))
 	return func(id string) bool {
 		return id == "" || view.Allow(sub, rpc.VerbRead, authz.Aria(id)).Allowed
 	}
@@ -40,7 +41,7 @@ func (h *handlers) consentsOn(ctx context.Context, parent string) bool {
 	if h.allowed(ctx, rpc.VerbAdopt, authz.Aria(parent)) == nil {
 		return true
 	}
-	if authz.FigaroOf(ctx) != "" || authz.Claimed(ctx) || authz.DoorOf(ctx) == authz.DoorBox {
+	if authn.FigaroOf(ctx) != "" || authn.Claimed(ctx) || authn.DoorOf(ctx) == authn.DoorBox {
 		return false
 	}
 	by, err := h.angelus.topologyPrincipal(ctx)

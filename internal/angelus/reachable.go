@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 )
 
 const reachableEvery = 2 * time.Second
@@ -52,7 +52,7 @@ func (a *Angelus) restoreReachability(ctx context.Context, pidPath string) {
 			return
 		}
 		slog.Warn("socket was removed under the running daemon; listening again", "socket", a.SocketPath)
-		go func() { _ = a.Serve(ctx, ln, authz.DoorLocal, a.cliAdmit()) }()
+		go func() { _ = a.Serve(ctx, ln, authn.DoorLocal, a.cliAdmit()) }()
 	}
 	if _, err := os.Stat(pidPath); errors.Is(err, fs.ErrNotExist) {
 		writePidFile(pidPath)

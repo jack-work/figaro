@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
@@ -106,7 +107,7 @@ func newSignRig(t *testing.T, intermediate bool) *signRig {
 }
 
 func as(id string) context.Context {
-	return authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: id})
+	return authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: id})
 }
 
 func (r *signRig) sign(ctx context.Context, node, door string) (rpc.TroupeSignResponse, ed25519.PublicKey, error) {

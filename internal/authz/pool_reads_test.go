@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
 )
@@ -35,11 +36,11 @@ func guardedDaemon(t *testing.T, pool bool) map[string]jkrpc.HandlerFunc {
 	for _, m := range rpc.GuardedMethods() {
 		handlers[m] = ok
 	}
-	return Guard(handlers, AriaHeader{}, Enforce(p))
+	return Guard(handlers, authn.AriaHeader{}, Enforce(p))
 }
 
 func throughTheWebDoor(p jkauthz.Principal) context.Context {
-	return WithDoor(WithSubject(context.Background(), subject(p)), DoorWeb)
+	return authn.WithDoor(authn.WithSubject(context.Background(), subject(p)), authn.DoorWeb)
 }
 
 type filteredRead struct{ method, form string }

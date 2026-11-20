@@ -12,7 +12,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -49,7 +49,7 @@ func failAs(t *testing.T, r grantRig, failing, namedSender string, caller rpc.Pr
 	}
 	done := make(doneSink, 1)
 	defer agent.Subscribe(done)()
-	ctx := authz.WithPrincipal(context.Background(), caller)
+	ctx := authn.WithPrincipal(context.Background(), caller)
 	if err := agent.SubmitPromptFrom(ctx, rpc.QuaRequest{Text: "fail for me"}, namedSender); err != nil {
 		t.Fatal(err)
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
@@ -61,7 +62,7 @@ principals = ["user:`+strconv.Itoa(os.Getuid())+`", "user:admin@auth.test"]
 	require.NoError(t, err)
 
 	a := angelus.New(angelus.Config{Backend: backend, RuntimeDir: dir})
-	pc, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
+	pc, err := authn.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
 	require.NoError(t, err)
 	a.Peercred = pc
 	a.Policies = authz.NewPolicies(pc.Self(), angelus.StoreFacts(backend))
@@ -87,7 +88,7 @@ principals = ["user:`+strconv.Itoa(os.Getuid())+`", "user:admin@auth.test"]
 	t.Cleanup(func() { acli.Close() })
 
 	web := filepath.Join(dir, "web.sock")
-	u, err := authz.NewUpstream(loaded.Config.Authz.Upstream, web, a.SocketPath, nil)
+	u, err := authn.NewUpstream(loaded.Config.Authz.Upstream, web, a.SocketPath, nil)
 	require.NoError(t, err)
 	ln, err := angelus.ListenUnix(web, 0o660)
 	require.NoError(t, err)

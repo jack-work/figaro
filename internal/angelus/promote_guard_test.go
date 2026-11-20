@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -179,7 +179,7 @@ func TestTheWebAdminOnlyDrawsWhereTheOwnerReparents(t *testing.T) {
 	}
 	a, b, c := mint(), mint(), mint()
 	grantTo(t, r, "user:admin", "*:*")
-	admin := authz.WithDoor(as("user", "admin"), authz.DoorWeb)
+	admin := authn.WithDoor(as("user", "admin"), authn.DoorWeb)
 	before, _ := r.backend.Node(a)
 	if err := setTopology(t, r, admin, map[string]string{a: b}); err != nil {
 		t.Fatalf("the web admin drawing A under B: %v", err)
@@ -190,7 +190,7 @@ func TestTheWebAdminOnlyDrawsWhereTheOwnerReparents(t *testing.T) {
 	if up := presentedUnder(t, r, a); up != b {
 		t.Fatalf("A is drawn under %q, want B %s", up, b)
 	}
-	owner := authz.WithDoor(asOwner(), authz.DoorLocal)
+	owner := authn.WithDoor(asOwner(), authn.DoorLocal)
 	if err := setTopology(t, r, owner, map[string]string{a: c}); err != nil {
 		t.Fatal(err)
 	}

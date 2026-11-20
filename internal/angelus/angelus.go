@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	fwtree "github.com/jack-work/figaro/figwal/tree"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
@@ -83,9 +84,9 @@ type Angelus struct {
 
 	Policies     *authz.Policies
 	Workers      *WorkerPools
-	Issuers      *authz.Issuers
-	APIKeys      *authz.APIKeys
-	Peercred     *authz.Peercred
+	Issuers      *authn.Issuers
+	APIKeys      *authn.APIKeys
+	Peercred     *authn.Peercred
 	ToolCgroups  *toolcgroup.Registry
 	Owner        jkauthz.Principal
 	Peers        peer.Membership
@@ -218,7 +219,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 	a.seedRoles(ctx)
 	a.migrateLibrettoRefs()
 
-	err = a.Serve(ctx, ln, authz.DoorLocal, a.cliAdmit())
+	err = a.Serve(ctx, ln, authn.DoorLocal, a.cliAdmit())
 	slog.Info("angelus shutting down")
 	return err
 }

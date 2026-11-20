@@ -1,6 +1,6 @@
 //go:build !linux
 
-package authz
+package authn
 
 import (
 	"fmt"

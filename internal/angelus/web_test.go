@@ -19,6 +19,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer/peertest"
@@ -34,7 +35,7 @@ func admitAs(p rpc.Principal) WebAdmit {
 		if r.Header.Get("Remote-User") == "" {
 			return nil, errors.New("no Remote-User")
 		}
-		return authz.WithPrincipal(ctx, p), nil
+		return authn.WithPrincipal(ctx, p), nil
 	}
 }
 
@@ -47,7 +48,7 @@ func serveWeb(t testing.TB, hb *ariaHub, w Web) string {
 
 func serveWebOn(t testing.TB, path string, hb *ariaHub, w Web) string {
 	t.Helper()
-	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, authz.PrincipalText(webPrincipal), "service:ci@troupe:estate")}}
+	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, authn.PrincipalText(webPrincipal), "service:ci@troupe:estate")}}
 	h.angelus.Hubs.putIfAbsent(hb.id, hb)
 	h.angelus.Handlers = h.door(map[string]jkrpc.HandlerFunc{rpc.MethodHello: h.hello}, authz.AllowAll())
 	ln, err := ListenUnix(path, 0o660)
@@ -186,7 +187,7 @@ func TestWebDoorServesTheDoorOneFramePerMessage(t *testing.T) {
 // refused before any frame.
 func TestWebDoorAdmitsByTheEdgesHeaders(t *testing.T) {
 	path := shortSocketPath(t)
-	u, err := authz.NewUpstream(config.UpstreamConfig{Issuer: "https://auth.kelliher.info"}, path, "/run/figaro/angelus.sock", nil)
+	u, err := authn.NewUpstream(config.UpstreamConfig{Issuer: "https://auth.kelliher.info"}, path, "/run/figaro/angelus.sock", nil)
 	require.NoError(t, err)
 	path = serveWebOn(t, path, newAriaHub("abcd1234"), Web{Admit: u.AdmitRequest})
 
@@ -268,14 +269,14 @@ func TestWebDoorServesTheWSSClient(t *testing.T) {
 	hb := newAriaHub("abcd1234")
 	agent := newFakeAgent()
 	defer hb.bind(agent)()
-	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, authz.PrincipalText(webPrincipal))}}
+	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, authn.PrincipalText(webPrincipal))}}
 	h.angelus.Hubs.putIfAbsent(hb.id, hb)
 	h.angelus.Handlers = h.door(nil, authz.AllowAll())
 	admit := func(ctx context.Context, r *http.Request) (context.Context, error) {
 		if r.Header.Get("Authorization") != "Bearer fresh" {
 			return nil, errors.New("stale bearer")
 		}
-		return authz.WithPrincipal(ctx, webPrincipal), nil
+		return authn.WithPrincipal(ctx, webPrincipal), nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -344,15 +345,15 @@ func TestALapseEndsAConnectionWhoseClientStoppedReading(t *testing.T) {
 // says so: a follow must not outlive an expired or revoked login.
 func TestABearerConnectionEndsWhenItsTokenExpires(t *testing.T) {
 	is := peertest.NewIssuer(t)
-	issuers, err := authz.NewIssuers(is.Config("probe"), nil, nil)
+	issuers, err := authn.NewIssuers(is.Config("probe"), nil, nil)
 	require.NoError(t, err)
 	session, err := issuers.Open(context.Background(), is.Mint("probe", 2*time.Second))
 	require.NoError(t, err)
 
-	after, reason := (Web{MaxConnAge: 8 * time.Hour, FollowMaxAge: time.Hour}).lapseFor(authz.WithSession(context.Background(), session))
+	after, reason := (Web{MaxConnAge: 8 * time.Hour, FollowMaxAge: time.Hour}).lapseFor(authn.WithSession(context.Background(), session))
 	require.LessOrEqual(t, after, 2*time.Second)
 	require.Equal(t, webTokenReason, reason)
-	after, reason = (Web{MaxConnAge: 300 * time.Millisecond}).lapseFor(authz.WithSession(context.Background(), session))
+	after, reason = (Web{MaxConnAge: 300 * time.Millisecond}).lapseFor(authn.WithSession(context.Background(), session))
 	require.Equal(t, 300*time.Millisecond, after)
 	require.Equal(t, webAgeReason, reason)
 
@@ -360,7 +361,7 @@ func TestABearerConnectionEndsWhenItsTokenExpires(t *testing.T) {
 		if r.Header.Get("Remote-User") == "" {
 			return nil, errors.New("no Remote-User")
 		}
-		return authz.WithSession(ctx, session), nil
+		return authn.WithSession(ctx, session), nil
 	}
 	path := shortSocketPath(t)
 	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, session.Principal().String())}}

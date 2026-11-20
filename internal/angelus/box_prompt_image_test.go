@@ -16,7 +16,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/provider"
 )
 
@@ -71,7 +71,7 @@ func TestABoxSendsAPictureToAnAriaWithNoTools(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { r.a.Serve(ctx, ln, authz.DoorBox, authz.BoxAdmit("judge")); close(done) }()
+	go func() { r.a.Serve(ctx, ln, authn.DoorBox, authn.BoxAdmit("judge")); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
 
 	raw, _ := json.Marshal(rpc.CreateRequest{Outfits: []string{"judged"}, Patch: heldPatch(t, map[string]any{"system.tools": []string{}})})

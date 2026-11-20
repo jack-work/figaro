@@ -21,6 +21,7 @@ import (
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/apikey"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
@@ -39,8 +40,8 @@ type fedNode struct {
 	id      string
 	dir     string
 	owner   *sdk.Angelus
-	bearer  *authz.Issuers
-	keys    *authz.APIKeys
+	bearer  *authn.Issuers
+	keys    *authn.APIKeys
 	keysAt  atomic.Int32
 	admits  sync.Map
 	issuer  *peertest.Issuer
@@ -143,15 +144,15 @@ func (n *fedNode) start() {
 
 	loaded, err := config.Load(n.dir)
 	require.NoError(t, err)
-	pc, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
+	pc, err := authn.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
 	require.NoError(t, err)
 	n.a.Peercred = pc
 	require.NoError(t, os.WriteFile(n.dir+"/policy.toml", []byte(fmt.Sprintf(fedPolicy, pc.Self().String(), extraPrincipals(n.alsoOwners))), 0o600))
 	n.a.Policies = authz.NewPolicies(pc.Self(), angelus.StoreFacts(n.a.Backend))
 	require.NoError(t, n.a.Policies.Reload(loaded.PolicyPath()))
-	n.bearer, err = authz.NewIssuers(n.issuer.Config("probe", "intruder", "reader", "stranger", "decider"), nil, nil)
+	n.bearer, err = authn.NewIssuers(n.issuer.Config("probe", "intruder", "reader", "stranger", "decider"), nil, nil)
 	require.NoError(t, err)
-	n.keys, err = authz.NewAPIKeys("fed", n.id, nil, nil)
+	n.keys, err = authn.NewAPIKeys("fed", n.id, nil, nil)
 	require.NoError(t, err)
 
 	n.ctx, n.stop = context.WithCancel(context.Background())
@@ -173,7 +174,7 @@ func (n *fedNode) start() {
 	t.Cleanup(func() { n.a.Shutdown(0) })
 	waitForAngelus(t, n.a.SocketPath)
 
-	bearers := authz.Bearers{Issuers: n.bearer, Keys: n.keys}
+	bearers := authn.Bearers{Issuers: n.bearer, Keys: n.keys}
 	door := &peer.Door{Members: members, Verify: func(ctx context.Context, token string) (context.Context, error) {
 		if apikey.Is(token) {
 			n.keysAt.Add(1)
@@ -182,7 +183,7 @@ func (n *fedNode) start() {
 		seen.(*atomic.Int32).Add(1)
 		return bearers.Verify(ctx, token)
 	}}
-	go n.a.Serve(n.ctx, tls.NewListener(n.doorLn, n.tlsCfg), authz.DoorNode, door.Admit)
+	go n.a.Serve(n.ctx, tls.NewListener(n.doorLn, n.tlsCfg), authn.DoorNode, door.Admit)
 
 	n.owner, err = sdk.DialAngelus(transport.UnixEndpoint(n.a.SocketPath))
 	require.NoError(t, err)
@@ -195,12 +196,12 @@ func (n *fedNode) callerDoor(token string) transport.Endpoint {
 	path := filepath.Join(n.dir, fmt.Sprintf("caller-%d.sock", time.Now().UnixNano()))
 	ln, err := net.Listen("unix", path)
 	require.NoError(t, err)
-	go n.a.Serve(n.ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+	go n.a.Serve(n.ctx, ln, authn.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		s, err := n.bearer.Open(ctx, token)
 		if err != nil {
 			return nil, err
 		}
-		return authz.WithSession(ctx, s), nil
+		return authn.WithSession(ctx, s), nil
 	})
 	return transport.UnixEndpoint(path)
 }
@@ -212,7 +213,7 @@ func (n *fedNode) keyDoor(wire string) transport.Endpoint {
 	path := filepath.Join(n.dir, fmt.Sprintf("key-%d.sock", time.Now().UnixNano()))
 	ln, err := net.Listen("unix", path)
 	require.NoError(t, err)
-	go n.a.Serve(n.ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+	go n.a.Serve(n.ctx, ln, authn.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		return n.keys.Admit(ctx, wire)
 	})
 	return transport.UnixEndpoint(path)

@@ -7,11 +7,11 @@ import (
 	"slices"
 
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 )
 
 func (h *handlers) refuseUngrantedOutfits(ctx context.Context, outfits []string) error {
-	f := authz.FigaroOf(ctx)
+	f := authn.FigaroOf(ctx)
 	if f == "" {
 		return nil
 	}

@@ -15,7 +15,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/apikey"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/troupe"
@@ -71,7 +71,7 @@ func asKey(principal string) context.Context {
 	if err != nil {
 		panic(err)
 	}
-	return authz.WithSubject(context.Background(), jkauthz.Subject{Principal: p})
+	return authn.WithSubject(context.Background(), jkauthz.Subject{Principal: p})
 }
 
 // Minting takes admin on the troupe; the entry records who asked and which

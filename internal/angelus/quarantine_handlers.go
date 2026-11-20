@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -76,7 +76,7 @@ func (h *handlers) quarantineRelease(ctx context.Context, params json.RawMessage
 		Aside: rel.Aside, Trimmed: rel.Trimmed, Applied: rel.Applied,
 	}
 	if rel.Applied {
-		who := authz.PrincipalText(authz.PrincipalOf(ctx))
+		who := authn.PrincipalText(authn.PrincipalOf(ctx))
 		slog.Warn("quarantine released: segment cut at its corrupt frame",
 			"figaro", req.Figaro, "channel", rel.Channel, "segment", rel.Segment, "offset", rel.Offset,
 			"bytes_cut", rel.BytesCut, "later_segments", len(rel.LaterSegments), "aside", rel.Aside, "by", who)

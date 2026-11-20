@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/arialog"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/mark"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -19,7 +20,6 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/methods"
@@ -557,7 +557,7 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 		evt.traces = []string{req.TraceParent}
 	}
 	if req.Text != "" {
-		evt.segments = []promptSegment{{sender: sender, principal: authz.PrincipalText(authz.PrincipalOf(ctx)), text: req.Text}}
+		evt.segments = []promptSegment{{sender: sender, principal: authn.PrincipalText(authn.PrincipalOf(ctx)), text: req.Text}}
 	}
 	if !a.inbox.Send(evt) {
 		return ErrStopping

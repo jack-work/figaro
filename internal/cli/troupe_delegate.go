@@ -12,6 +12,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/jkauthz"
@@ -75,7 +76,7 @@ func selfPrincipal(uid int, p rpc.Principal) string {
 const lentRole = "lent-to-troupe"
 
 func writeDelegation(out io.Writer, loaded *config.Loaded, name, lend, self string) error {
-	troupeP := authz.TroupePrincipal(name).String()
+	troupeP := authn.TroupePrincipal(name).String()
 	if lend == delegateNone {
 		fmt.Fprintf(out, "this node lends troupe %s nothing: its policy grants nothing here until policy.toml binds %s to a role\n", name, troupeP)
 		return nil

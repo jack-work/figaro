@@ -20,6 +20,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
@@ -394,10 +395,10 @@ func TestTheSealClosesEveryDoorServedOnAContextNobodyCancels(t *testing.T) {
 		served[name] = ch
 		go func() { ch <- fn() }()
 	}
-	serve("cli", func() error { return r.a.Serve(never, cliLn, authz.DoorLocal, nil) })
+	serve("cli", func() error { return r.a.Serve(never, cliLn, authn.DoorLocal, nil) })
 	serve("web", func() error { return r.a.ServeWeb(never, webLn, Web{}) })
 	serve("node", func() error {
-		return r.a.Serve(never, tls.NewListener(nodeLn, &tls.Config{}), authz.DoorNode, nil)
+		return r.a.Serve(never, tls.NewListener(nodeLn, &tls.Config{}), authn.DoorNode, nil)
 	})
 	doors := map[string]dialed{
 		"cli":  {"unix", cli},

@@ -13,7 +13,7 @@ import (
 	"github.com/jack-work/jkrpc"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/workerpool"
@@ -126,7 +126,7 @@ func (h *handlers) workerLease(ctx context.Context, params json.RawMessage) (any
 	if !pool.Enabled {
 		return nil, workerRefused(rpc.WorkerRefusal{Reason: rpc.WorkerPoolDisabled, Pool: req.Pool}, "%s: pool %s is disabled", rpc.MethodWorkerLease, req.Pool)
 	}
-	holder := authz.PrincipalText(authz.PrincipalOf(ctx))
+	holder := authn.PrincipalText(authn.PrincipalOf(ctx))
 	workers.leasing.Lock()
 	defer workers.leasing.Unlock()
 	if held, ok := workers.Ledger.Held(req.Pool, req.Key); ok {
@@ -221,7 +221,7 @@ func (h *handlers) workerRelease(ctx context.Context, params json.RawMessage) (a
 	workers.leasing.Lock()
 	defer workers.leasing.Unlock()
 	row, ok := workers.Ledger.Find(req.Pool, req.Key, req.Generation)
-	if !ok || row.Holder != authz.PrincipalText(authz.PrincipalOf(ctx)) {
+	if !ok || row.Holder != authn.PrincipalText(authn.PrincipalOf(ctx)) {
 		return nil, workerRefused(rpc.WorkerRefusal{Reason: rpc.WorkerNoSuchLease, Pool: req.Pool}, "%s: no such lease", rpc.MethodWorkerRelease)
 	}
 	if leaseIsOver(row) {

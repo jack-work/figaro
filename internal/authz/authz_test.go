@@ -7,10 +7,16 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkrpc"
 )
 
 var user = rpc.Principal{Kind: rpc.PrincipalUser, ID: "1000"}
+
+const (
+	webDoor  = "/run/figaro/web.sock"
+	kelliher = "https://auth.kelliher.info"
+)
 
 func forkParams(t *testing.T, target, caller string) json.RawMessage {
 	t.Helper()
@@ -23,11 +29,11 @@ func forkParams(t *testing.T, target, caller string) json.RawMessage {
 
 // The params field is attribution; only the connection sets the principal.
 func TestAriaHeaderNeverPromotesParamsToAPrincipal(t *testing.T) {
-	id := AriaHeader{}.Authenticate(user, forkParams(t, "aria0001", "aria0001"))
+	id := authn.AriaHeader{}.Authenticate(user, forkParams(t, "aria0001", "aria0001"))
 	if id.FigaroID != "aria0001" || id.Principal != user {
 		t.Fatalf("got %+v, want asserted aria0001 under %+v", id, user)
 	}
-	anon := AriaHeader{}.Authenticate(rpc.Principal{}, forkParams(t, "aria0001", "aria0001"))
+	anon := authn.AriaHeader{}.Authenticate(rpc.Principal{}, forkParams(t, "aria0001", "aria0001"))
 	if anon.Principal != (rpc.Principal{}) {
 		t.Fatalf("a params field minted a principal: %+v", anon)
 	}
@@ -39,7 +45,7 @@ func TestAriaHeaderRejectsAbsentAndMalformed(t *testing.T) {
 		"no key":    json.RawMessage(`{"figaro_id":"x"}`),
 		"traversal": json.RawMessage(`{"x-internal-figaro-id":"../../etc"}`),
 	} {
-		if id := (AriaHeader{}).Authenticate(user, params); id.FigaroID != "" {
+		if id := (authn.AriaHeader{}).Authenticate(user, params); id.FigaroID != "" {
 			t.Fatalf("%s: got %+v, want no aria", name, id)
 		}
 	}
@@ -61,7 +67,7 @@ func TestGuardAppliesToEveryMethod(t *testing.T) {
 		}
 		return Allow()
 	})
-	guarded := Guard(handlers, AriaHeader{}, denyFork)
+	guarded := Guard(handlers, authn.AriaHeader{}, denyFork)
 	if len(guarded) != len(handlers) {
 		t.Fatalf("guarded %d methods, served %d", len(guarded), len(handlers))
 	}
@@ -86,12 +92,12 @@ func TestGuardAppliesToEveryMethod(t *testing.T) {
 }
 
 func TestGuardHandsTheConnectionPrincipalToThePolicy(t *testing.T) {
-	var seen Identity
+	var seen authn.Identity
 	policy := PolicyFunc(func(r Request) Decision { seen = r.Identity; return Allow() })
 	guarded := Guard(map[string]jkrpc.HandlerFunc{
 		rpc.MethodFork: func(context.Context, json.RawMessage) (any, error) { return "ok", nil },
-	}, AriaHeader{}, policy)
-	ctx := WithPrincipal(context.Background(), user)
+	}, authn.AriaHeader{}, policy)
+	ctx := authn.WithPrincipal(context.Background(), user)
 	if _, err := guarded[rpc.MethodFork](ctx, forkParams(t, "aria0001", "aria0002")); err != nil {
 		t.Fatal(err)
 	}

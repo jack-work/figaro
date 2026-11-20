@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/arialog"
+	"github.com/jack-work/figaro/internal/authn"
 
 	"go.opentelemetry.io/otel/attribute"
 
@@ -33,7 +34,7 @@ func (h *handlers) createTopLevel(ctx context.Context, params json.RawMessage) (
 	if err := h.refuseUnlicensedMint(ctx); err != nil {
 		return nil, err
 	}
-	minter := authz.FigaroOf(ctx)
+	minter := authn.FigaroOf(ctx)
 	if _, boxed := callerBox(ctx); minter == "" || boxed {
 		return h.create(ctx, params)
 	}
@@ -55,7 +56,7 @@ func (h *handlers) createTopLevel(ctx context.Context, params json.RawMessage) (
 }
 
 func (h *handlers) refuseUnlicensedMint(ctx context.Context) error {
-	f := authz.FigaroOf(ctx)
+	f := authn.FigaroOf(ctx)
 	if f == "" {
 		if claimsUnheld(ctx) {
 			return errors.New("mint: the caller names a figaro this daemon does not hold")
@@ -67,7 +68,7 @@ func (h *handlers) refuseUnlicensedMint(ctx context.Context) error {
 	}
 	granted := false
 	if p := h.angelus.Policies; p != nil {
-		if sub, err := authz.SubjectOf(ctx); err == nil {
+		if sub, err := authn.SubjectOf(ctx); err == nil {
 			granted = p.WrittenGrant(sub, f, rpc.VerbMint, authz.Daemon)
 		}
 	}
@@ -325,8 +326,8 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		return nil, fmt.Errorf("fork: the board of %s cannot be read to check the patch against it: %w", req.FigaroID, err)
 	}
 	holder := inherited
-	claimed := authz.FigaroOf(ctx) != ""
-	heir := req.Seat != "" && (!claimed || authz.FigaroOf(ctx) == req.FigaroID)
+	claimed := authn.FigaroOf(ctx) != ""
+	heir := req.Seat != "" && (!claimed || authn.FigaroOf(ctx) == req.FigaroID)
 	lane := claimed && !heir
 	if lane && req.Patch != nil && removesFanoutBirthKey(*req.Patch) {
 		p := withFanoutBirthDefault(*req.Patch)
@@ -688,7 +689,7 @@ func (h *handlers) gc(ctx context.Context, params json.RawMessage) (interface{},
 			return nil, err
 		}
 	}
-	caller := gc.Caller{Principal: authz.PrincipalText(authz.PrincipalOf(ctx))}
+	caller := gc.Caller{Principal: authn.PrincipalText(authn.PrincipalOf(ctx))}
 	c := h.collector()
 	p, err := c.Plan(gc.Selector{}, caller)
 	if err != nil {
@@ -958,7 +959,7 @@ func (h *handlers) seat(ctx context.Context, params json.RawMessage) (interface{
 }
 
 func (h *handlers) seatLifetime(ctx context.Context, pred string) (json.RawMessage, error) {
-	caller := authz.FigaroOf(ctx)
+	caller := authn.FigaroOf(ctx)
 	if caller == "" && !h.callerOwns(ctx) {
 		return nil, nil
 	}
@@ -1213,7 +1214,7 @@ func (h *handlers) removeAria(ctx context.Context, by hierarchy.Principal, asked
 }
 
 func mintedBy(ctx context.Context) store.BirthOption {
-	return store.MintedBy(authz.PrincipalText(authz.PrincipalOf(ctx)))
+	return store.MintedBy(authn.PrincipalText(authn.PrincipalOf(ctx)))
 }
 
 func orSelf(ids []string, id string) []string {

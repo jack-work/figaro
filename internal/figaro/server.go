@@ -10,7 +10,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
@@ -165,7 +165,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			resp.Incarnation = c.incarnation
 			return resp, nil
 		}
-		origin := store.Origin{Principal: authz.PrincipalText(authz.PrincipalOf(ctx)), Client: req.Client}
+		origin := store.Origin{Principal: authn.PrincipalText(authn.PrincipalOf(ctx)), Client: req.Client}
 		var lastSeq uint64
 		if req.Client != "" {
 			var err error

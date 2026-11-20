@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/jkauthz"
 )
@@ -179,13 +180,13 @@ func TestTheIssuersOfATroupeDocumentAreReadApart(t *testing.T) {
 // The troupe is a kind only a node's own policy names; a caller mapped to
 // it would hold everything the node lends the troupe, directly.
 func TestNoCallerMayBeTheTroupe(t *testing.T) {
-	if _, err := NewPeercred(1000, config.PeercredConfig{UIDs: map[string]string{"1001": "troupe:estate"}}); err == nil {
+	if _, err := authn.NewPeercred(1000, config.PeercredConfig{UIDs: map[string]string{"1001": "troupe:estate"}}); err == nil {
 		t.Error("a uid mapped to the troupe")
 	}
-	if _, err := NewIssuers([]config.IssuerConfig{{Issuer: "https://a", JWKS: "http://j", Clients: map[string]string{"x": "troupe"}}}, nil, nil); err == nil {
+	if _, err := authn.NewIssuers([]config.IssuerConfig{{Issuer: "https://a", JWKS: "http://j", Clients: map[string]string{"x": "troupe"}}}, nil, nil); err == nil {
 		t.Error("a client resolved to the troupe")
 	}
-	if _, err := NewUpstream(config.UpstreamConfig{Issuer: kelliher, Services: map[string]string{"x": "troupe"}}, webDoor, "", nil); err == nil {
+	if _, err := authn.NewUpstream(config.UpstreamConfig{Issuer: kelliher, Services: map[string]string{"x": "troupe"}}, webDoor, "", nil); err == nil {
 		t.Error("an edge service resolved to the troupe")
 	}
 }

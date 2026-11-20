@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/peer/peertest"
@@ -63,7 +63,7 @@ func serve(t *testing.T, cfg config.TLSDoor, d *peer.Door, owned ...string) *ser
 					"whoami": func(ctx context.Context, _ json.RawMessage) (any, error) {
 						via, _ := peer.Via(ctx)
 						caller, _ := ctx.Value(callerKey{}).(string)
-						return seen{Principal: authz.PrincipalOf(ctx), Via: via, Caller: caller}, nil
+						return seen{Principal: authn.PrincipalOf(ctx), Via: via, Caller: caller}, nil
 					},
 					"echo": func(_ context.Context, p json.RawMessage) (any, error) { return p, nil },
 					"fail": func(context.Context, json.RawMessage) (any, error) {

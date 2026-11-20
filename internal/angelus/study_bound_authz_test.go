@@ -10,6 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
@@ -47,7 +48,7 @@ type studyOwnerRig struct {
 func newStudyOwnerRig(t *testing.T) *studyOwnerRig {
 	t.Helper()
 	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t), Hubs: newHubs()}
-	pc, err := authz.NewPeercred(studyOwnerUID, config.PeercredConfig{})
+	pc, err := authn.NewPeercred(studyOwnerUID, config.PeercredConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,8 +74,8 @@ principals = ["user:4242", "user:peer"]
 		t.Fatal(err)
 	}
 	r.hs = NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())})
-	r.owner = authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "4242"})
-	r.peer = authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "peer"})
+	r.owner = authn.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "4242"})
+	r.peer = authn.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "peer"})
 	return r
 }
 

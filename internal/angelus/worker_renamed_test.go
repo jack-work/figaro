@@ -12,7 +12,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 )
 
 // The pool's methods were figaro.slot.* before 0.69. The protocol version did
@@ -32,7 +32,7 @@ func TestAnOldSlotMethodIsNeverDispatched(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { r.a.Serve(ctx, ln, authz.DoorLocal, nil); close(done) }()
+	go func() { r.a.Serve(ctx, ln, authn.DoorLocal, nil); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
 	nc, err := net.Dial("unix", sock)
 	if err != nil {

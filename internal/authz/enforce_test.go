@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
 )
@@ -24,7 +25,7 @@ func enforced(t *testing.T) map[string]jkrpc.HandlerFunc {
 		rpc.MethodKill:        ok,
 		rpc.MethodGC:          ok,
 		"figaro.undeclared":   ok,
-	}, AriaHeader{}, Enforce(p))
+	}, authn.AriaHeader{}, Enforce(p))
 }
 
 func call(t *testing.T, h map[string]jkrpc.HandlerFunc, ctx context.Context, method, aria string) error {
@@ -39,8 +40,8 @@ func call(t *testing.T, h map[string]jkrpc.HandlerFunc, ctx context.Context, met
 
 func TestEveryCallIsDecidedOnItsVerbAndTheAriaItNames(t *testing.T) {
 	h := enforced(t)
-	boxCtx := WithSubject(context.Background(), subject(box))
-	meCtx := WithSubject(context.Background(), subject(me))
+	boxCtx := authn.WithSubject(context.Background(), subject(box))
+	meCtx := authn.WithSubject(context.Background(), subject(me))
 
 	if err := call(t, h, boxCtx, rpc.MethodQua, "aaaa0001"); err != nil {
 		t.Fatalf("a sandbox sending to its own aria: %v", err)
@@ -73,7 +74,7 @@ func TestEveryCallIsDecidedOnItsVerbAndTheAriaItNames(t *testing.T) {
 // read it is told which verb the policy withholds.
 func TestAnAriaTheCallerCannotReadIsNotFound(t *testing.T) {
 	h := enforced(t)
-	boxCtx := WithSubject(context.Background(), subject(box))
+	boxCtx := authn.WithSubject(context.Background(), subject(box))
 
 	hidden := call(t, h, boxCtx, rpc.MethodQua, "aaaa0002")
 	absent := call(t, h, boxCtx, rpc.MethodQua, "ffff0009")
@@ -103,11 +104,11 @@ func TestAnAriaTheCallerCannotReadIsNotFound(t *testing.T) {
 func TestTheRowFilteredMethodsNeedARole(t *testing.T) {
 	h := enforced(t)
 	for _, m := range []string{rpc.MethodList, rpc.MethodNodeResolve} {
-		for _, d := range []Door{DoorInProcess, DoorLocal, DoorWeb} {
-			if err := call(t, h, WithDoor(WithSubject(context.Background(), subject(box)), d), m, ""); err != nil {
+		for _, d := range []authn.Door{authn.DoorInProcess, authn.DoorLocal, authn.DoorWeb} {
+			if err := call(t, h, authn.WithDoor(authn.WithSubject(context.Background(), subject(box)), d), m, ""); err != nil {
 				t.Errorf("%s at the %s door, for a role with no read on the daemon: %v", m, d, err)
 			}
-			err := call(t, h, WithDoor(WithSubject(context.Background(), subject(other)), d), m, "")
+			err := call(t, h, authn.WithDoor(authn.WithSubject(context.Background(), subject(other)), d), m, "")
 			if err == nil || !strings.Contains(err.Error(), "holds no role") {
 				t.Errorf("%s at the %s door, for a subject with no role: %v", m, d, err)
 			}
@@ -119,20 +120,20 @@ func TestTheRowFilteredMethodsNeedARole(t *testing.T) {
 // is answered only to a subject the policy binds to a role.
 func TestHelloOffTheLocalDoorNeedsARole(t *testing.T) {
 	h := enforced(t)
-	at := func(d Door, p jkauthz.Principal) context.Context {
-		return WithDoor(WithSubject(context.Background(), subject(p)), d)
+	at := func(d authn.Door, p jkauthz.Principal) context.Context {
+		return authn.WithDoor(authn.WithSubject(context.Background(), subject(p)), d)
 	}
 	for name, c := range map[string]struct {
 		ctx  context.Context
 		pass bool
 	}{
-		"a stranger in process":         {at(DoorInProcess, other), true},
-		"a stranger, door unstamped":    {WithSubject(context.Background(), subject(other)), false},
-		"a stranger at the local door":  {at(DoorLocal, other), true},
-		"a role holder at the web door": {at(DoorWeb, box), true},
-		"a stranger at the web door":    {at(DoorWeb, other), false},
-		"a stranger at a node door":     {at(DoorNode, other), false},
-		"a stranger at a new door":      {at(DoorWeb+1, other), false},
+		"a stranger in process":         {at(authn.DoorInProcess, other), true},
+		"a stranger, door unstamped":    {authn.WithSubject(context.Background(), subject(other)), false},
+		"a stranger at the local door":  {at(authn.DoorLocal, other), true},
+		"a role holder at the web door": {at(authn.DoorWeb, box), true},
+		"a stranger at the web door":    {at(authn.DoorWeb, other), false},
+		"a stranger at a node door":     {at(authn.DoorNode, other), false},
+		"a stranger at a new door":      {at(authn.DoorWeb+1, other), false},
 	} {
 		if err := call(t, h, c.ctx, rpc.MethodHello, ""); (err == nil) != c.pass {
 			t.Errorf("%s: err = %v, want pass %v", name, err, c.pass)

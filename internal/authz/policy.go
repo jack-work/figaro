@@ -14,6 +14,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/jkauthz"
 )
@@ -121,7 +122,7 @@ func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
 	case ResourceSandbox:
 		name, ok := strings.CutPrefix(sel, selSandbox)
 		if ok && name == selSelf {
-			box, isBox := BoxOf(s.Principal)
+			box, isBox := authn.BoxOf(s.Principal)
 			return isBox && box == r.ID
 		}
 		return ok && name == r.ID
@@ -135,7 +136,7 @@ func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
 		name, ok := strings.CutPrefix(sel, selPool)
 		return ok && name == r.ID
 	case ResourceLease:
-		box, isBox := BoxOf(s.Principal)
+		box, isBox := authn.BoxOf(s.Principal)
 		return sel == selLease && isBox && box == r.ID
 	}
 	if r.Kind == resourceAnyFigaro {
@@ -146,7 +147,7 @@ func (m selectors) Match(sel string, s jkauthz.Subject, r Resource) bool {
 	}
 	switch {
 	case sel == selBoxed:
-		box, ok := BoxOf(s.Principal)
+		box, ok := authn.BoxOf(s.Principal)
 		if !ok || m.facts == nil {
 			return false
 		}
@@ -207,7 +208,7 @@ principals = [%q]
 	}
 	var names []string
 	for _, b := range boxes {
-		names = append(names, fmt.Sprintf("%q", BoxPrincipal(b).String()))
+		names = append(names, fmt.Sprintf("%q", authn.BoxPrincipal(b).String()))
 	}
 	return text + fmt.Sprintf(`
 [roles.box]
@@ -358,7 +359,7 @@ func (p *Policies) HoldsRole(s jkauthz.Subject) bool {
 func IssuerScopes(cfg config.AuthzConfig) []string {
 	var out []string
 	add := func(url string) {
-		if scope, err := IssuerScope(url); err == nil && !slices.Contains(out, scope) {
+		if scope, err := authn.IssuerScope(url); err == nil && !slices.Contains(out, scope) {
 			out = append(out, scope)
 		}
 	}
@@ -400,7 +401,7 @@ func acrossIssuers(p jkauthz.Principal) bool {
 	if p.Node != "" || p.ID != jkauthz.Any {
 		return false
 	}
-	return p.Kind == jkauthz.KindUser || p.Kind == KindService || p.Kind == jkauthz.KindSandbox
+	return p.Kind == jkauthz.KindUser || p.Kind == authn.KindService || p.Kind == jkauthz.KindSandbox
 }
 
 func UnscopedNames(policy []byte) []string {
@@ -473,7 +474,7 @@ func (v Verdict) Reason() string {
 }
 
 func (p *Policies) Allow(s jkauthz.Subject, verb rpc.Verb, r Resource) Verdict {
-	if IsProvisioner(s.Principal) {
+	if authn.IsProvisioner(s.Principal) {
 		return p.allowProvisioner(s, verb, r)
 	}
 	if box, ok := p.leasedBox(s.Principal); ok {
@@ -512,21 +513,12 @@ func LocalOnly(verb rpc.Verb, r Resource) bool {
 	return false
 }
 
-const (
-	KindTroupe  jkauthz.Kind = "troupe"
-	KindService jkauthz.Kind = "service"
-)
-
-func TroupePrincipal(name string) jkauthz.Principal {
-	return jkauthz.Principal{Kind: KindTroupe, ID: name}
-}
-
 func (p *Policies) SetTroupe(name string, body []byte) error {
 	if name == "" {
 		p.troupe.Store(nil)
 		return nil
 	}
-	layer := &troupeLayer{name: name, as: jkauthz.Subject{Principal: TroupePrincipal(name)}}
+	layer := &troupeLayer{name: name, as: jkauthz.Subject{Principal: authn.TroupePrincipal(name)}}
 	if body == nil {
 		p.troupe.Store(layer)
 		return nil

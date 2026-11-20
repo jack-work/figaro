@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/gc"
 	"github.com/jack-work/figaro/internal/store"
@@ -225,7 +226,7 @@ func (h *handlers) holdOf(set []string, root string, now time.Time) (string, str
 }
 
 func (h *handlers) gcCaller(ctx context.Context) (gc.Caller, error) {
-	principal := authz.PrincipalText(authz.PrincipalOf(ctx))
+	principal := authn.PrincipalText(authn.PrincipalOf(ctx))
 	if box, ok := callerBox(ctx); ok {
 		return gc.Caller{Principal: principal, Box: box, MayKill: func(id string) error {
 			return h.allowed(ctx, rpc.VerbKill, authz.Aria(id))

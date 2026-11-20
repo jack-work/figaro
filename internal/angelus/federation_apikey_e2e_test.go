@@ -9,7 +9,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/apikey"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/peer/peertest"
 	"github.com/jack-work/figaro/sdk"
@@ -31,9 +31,9 @@ func keyPair(t *testing.T) (*fedNode, *fedNode) {
 
 func grantBoth(t *testing.T, k apikey.Key, nodes []string, ns ...*fedNode) {
 	t.Helper()
-	g := authz.APIKeyGrant{ID: k.ID, Principal: ciKey, Hash: k.Hash[:], NotAfter: time.Now().Add(time.Hour), Nodes: nodes}
+	g := authn.APIKeyGrant{ID: k.ID, Principal: ciKey, Hash: k.Hash[:], NotAfter: time.Now().Add(time.Hour), Nodes: nodes}
 	for _, n := range ns {
-		require.NoError(t, n.keys.SetTroupe([]authz.APIKeyGrant{g}))
+		require.NoError(t, n.keys.SetTroupe([]authn.APIKeyGrant{g}))
 	}
 }
 

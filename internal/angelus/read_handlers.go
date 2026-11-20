@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/arialog"
+	"github.com/jack-work/figaro/internal/authn"
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/formdelta"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/modelcat"
@@ -71,7 +71,7 @@ func (h *handlers) readFromStore(ctx context.Context, id, method string, params 
 					"never written to disk. Wake it (send it something) or read its bound form instead",
 				id, name)
 		}
-		origin := store.Origin{Principal: authz.PrincipalText(authz.PrincipalOf(ctx)), Client: req.Client}
+		origin := store.Origin{Principal: authn.PrincipalText(authn.PrincipalOf(ctx)), Client: req.Client}
 		var lastSeq uint64
 		if req.Client != "" {
 			var err error

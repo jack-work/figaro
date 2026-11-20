@@ -17,7 +17,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/activation"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
@@ -300,7 +300,7 @@ func serveNodeDoorOn(ctx context.Context, a *angelus.Angelus, door config.TLSDoo
 	if err != nil {
 		return err
 	}
-	verify := forwardedCallers(authz.Bearers{Issuers: a.Issuers, Keys: a.APIKeys})
+	verify := forwardedCallers(authn.Bearers{Issuers: a.Issuers, Keys: a.APIKeys})
 	slog.Info("node door listening", "addr", ln.Addr().String(), "peers", a.Peers.Nodes(), "troupe_version", a.Peers.Version(), "forwarded_callers", verify != nil)
 	nd := &peer.Door{Members: a.Peers, Versions: a.PeerVersions, Verify: verify}
 	if m, ok := a.Peers.(*peer.Ledger); ok {
@@ -308,7 +308,7 @@ func serveNodeDoorOn(ctx context.Context, a *angelus.Angelus, door config.TLSDoo
 		gossip(ctx, a, m, door.Advertise)
 	}
 	go func() {
-		if err := a.Serve(ctx, tls.NewListener(ln, cfg), authz.DoorNode, nd.Admit); err != nil {
+		if err := a.Serve(ctx, tls.NewListener(ln, cfg), authn.DoorNode, nd.Admit); err != nil {
 			slog.Error("node door", "err", err)
 		}
 	}()
@@ -339,7 +339,7 @@ func prunable(es []troupe.Entry, now time.Time) []string {
 	return out
 }
 
-func forwardedCallers(b authz.Bearers) peer.Verify {
+func forwardedCallers(b authn.Bearers) peer.Verify {
 	if b.Issuers == nil && b.Keys == nil {
 		slog.Warn("door.tls: no issuers and no api keys, so every forwarded caller is refused")
 		return nil
@@ -350,7 +350,7 @@ func forwardedCallers(b authz.Bearers) peer.Verify {
 	return b.Verify
 }
 
-func newAPIKeys(loaded *config.Loaded, self string) (*authz.APIKeys, error) {
+func newAPIKeys(loaded *config.Loaded, self string) (*authn.APIKeys, error) {
 	name, err := loaded.TroupeName()
 	if err != nil {
 		return nil, err
@@ -359,7 +359,7 @@ func newAPIKeys(loaded *config.Loaded, self string) (*authz.APIKeys, error) {
 	if name == "" && len(static) == 0 {
 		return nil, nil
 	}
-	return authz.NewAPIKeys(name, self, static, nil)
+	return authn.NewAPIKeys(name, self, static, nil)
 }
 
 func bindLedgerAPIKeys(a *angelus.Angelus, m *peer.Ledger) {
@@ -373,10 +373,10 @@ func bindLedgerAPIKeys(a *angelus.Angelus, m *peer.Ledger) {
 	})
 }
 
-func apiKeyGrants(recs map[string]troupe.APIKeyRecord) []authz.APIKeyGrant {
-	out := make([]authz.APIKeyGrant, 0, len(recs))
+func apiKeyGrants(recs map[string]troupe.APIKeyRecord) []authn.APIKeyGrant {
+	out := make([]authn.APIKeyGrant, 0, len(recs))
 	for _, r := range recs {
-		g := authz.APIKeyGrant{ID: r.ID, Principal: r.Principal, Hash: r.Hash, NotAfter: r.NotAfter, Nodes: r.Nodes, Void: r.Void}
+		g := authn.APIKeyGrant{ID: r.ID, Principal: r.Principal, Hash: r.Hash, NotAfter: r.NotAfter, Nodes: r.Nodes, Void: r.Void}
 		if r.Revoked != nil {
 			g.Void = fmt.Sprintf("revoked by %s through node %s, %s", r.Revoked.By, r.Revoked.Node, r.Revoked.At.UTC().Format(time.RFC3339))
 		}
@@ -385,6 +385,6 @@ func apiKeyGrants(recs map[string]troupe.APIKeyRecord) []authz.APIKeyGrant {
 	return out
 }
 
-func newIssuers(cfgs []config.IssuerConfig) (*authz.Issuers, error) {
-	return authz.NewIssuers(cfgs, &http.Client{Timeout: 5 * time.Second}, nil)
+func newIssuers(cfgs []config.IssuerConfig) (*authn.Issuers, error) {
+	return authn.NewIssuers(cfgs, &http.Client{Timeout: 5 * time.Second}, nil)
 }

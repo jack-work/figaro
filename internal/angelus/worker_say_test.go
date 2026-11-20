@@ -17,7 +17,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 )
 
@@ -181,7 +181,7 @@ func TestASayIsRefusedForAnyoneButTheLeasesOwnFigaro(t *testing.T) {
 			t.Errorf("%s said through a door", why)
 		}
 	}
-	for _, door := range []authz.Door{authz.DoorBox, authz.DoorWeb, authz.DoorLocal} {
+	for _, door := range []authn.Door{authn.DoorBox, authn.DoorWeb, authn.DoorLocal} {
 		params, _ := rpc.WithCaller(rpc.WorkerSayRequest{Text: "t"}, lease.Aria, nil)
 		if _, err := r.h[rpc.MethodWorkerSay](angelus.AsLeasedBoxThrough(lease.Box, door), params); err == nil {
 			t.Errorf("the lease's own principal said through the %v door", door)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
@@ -38,7 +39,7 @@ func (h *handlers) troupePolicySet(ctx context.Context, params json.RawMessage) 
 	if err := authz.CheckTroupeDocument([]byte(req.Body), m.Troupe(), nil); err != nil {
 		return nil, err
 	}
-	by := authz.PrincipalText(authz.PrincipalOf(ctx))
+	by := authn.PrincipalText(authn.PrincipalOf(ctx))
 	if err := troupe.ValidOwner(by); err != nil {
 		return nil, fmt.Errorf("no principal to record as the policy's author: %w", err)
 	}

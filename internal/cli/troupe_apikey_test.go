@@ -14,7 +14,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/apikey"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 )
 
@@ -101,14 +101,14 @@ func TestAStaticKeyStanzaAdmitsItsKey(t *testing.T) {
 	}
 	_, err := toml.Decode(stanza, &cfg)
 	require.NoError(t, err)
-	keys, err := authz.NewAPIKeys("estate", "node-a", cfg.Authz.APIKeys, nil)
+	keys, err := authn.NewAPIKeys("estate", "node-a", cfg.Authz.APIKeys, nil)
 	require.NoError(t, err)
 	ctx, err := keys.Admit(context.Background(), wire)
 	require.NoError(t, err)
-	s, err := authz.SubjectOf(ctx)
+	s, err := authn.SubjectOf(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "service:ci@troupe:estate", s.Principal.String())
-	require.Error(t, authz.ForwardableTo(ctx, "node-b"), "a static key is good where it is loaded")
+	require.Error(t, authn.ForwardableTo(ctx, "node-b"), "a static key is good where it is loaded")
 
 	out.Reset()
 	info.Reset()

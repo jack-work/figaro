@@ -16,6 +16,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/arialog"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -85,7 +86,7 @@ func newForkWakeFixture(b *testing.B, trimmed bool) *forkWakeFixture {
 		}
 	})
 
-	peer, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
+	peer, err := authn.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -97,7 +98,7 @@ func newForkWakeFixture(b *testing.B, trimmed bool) *forkWakeFixture {
 
 	baseCtx, cancel := context.WithCancel(context.Background())
 	b.Cleanup(cancel)
-	ctx := inProcess(authz.WithPrincipal(baseCtx, rpc.Principal{
+	ctx := inProcess(authn.WithPrincipal(baseCtx, rpc.Principal{
 		Kind: rpc.PrincipalUser,
 		ID:   fmt.Sprint(os.Getuid()),
 	}))

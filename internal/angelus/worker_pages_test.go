@@ -10,7 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/workerpool"
 )
 
@@ -143,7 +143,7 @@ func TestPagesRefusesEveryCallItWasNotBuiltFor(t *testing.T) {
 	if _, err := r.a.Workers.Ledger.Page("others", "chat:77", 1, workerpool.PurgeFailed, "cd34"); err != nil {
 		t.Fatal(err)
 	}
-	throughNodeDoor := func(ctx context.Context) context.Context { return authz.WithDoor(ctx, authz.DoorNode) }
+	throughNodeDoor := func(ctx context.Context) context.Context { return authn.WithDoor(ctx, authn.DoorNode) }
 	for name, c := range map[string]struct {
 		ctx    context.Context
 		params string

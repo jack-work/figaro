@@ -8,7 +8,7 @@ import (
 	"github.com/jack-work/jkauthz"
 
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -16,7 +16,7 @@ import (
 // the grant never reaches the list of grantees itself.
 func TestTheOwnerCanWidenWhoSetsRetention(t *testing.T) {
 	gary := jkauthz.Principal{Kind: "user", ID: "gary"}
-	ctx := authz.WithSubject(context.Background(), jkauthz.Subject{Principal: gary})
+	ctx := authn.WithSubject(context.Background(), jkauthz.Subject{Principal: gary})
 	raw, _ := json.Marshal([]string{gary.String()})
 	granted := form.Snapshot{}.SetPath(store.KeyRetentionWriters, raw)
 
@@ -32,7 +32,7 @@ func TestTheOwnerCanWidenWhoSetsRetention(t *testing.T) {
 	if retentionGranted(ctx, granted, "system.model") {
 		t.Fatal("the grant leaked past system.retention")
 	}
-	other := authz.WithSubject(context.Background(), jkauthz.Subject{Principal: jkauthz.Principal{Kind: "user", ID: "eve"}})
+	other := authn.WithSubject(context.Background(), jkauthz.Subject{Principal: jkauthz.Principal{Kind: "user", ID: "eve"}})
 	if retentionGranted(other, granted, store.KeyRetentionMode) {
 		t.Fatal("an unnamed caller was granted")
 	}
@@ -47,7 +47,7 @@ func TestTheOwnerCanWidenWhoSetsRetention(t *testing.T) {
 func TestANamedWriterPassesTheCallerKeyCheck(t *testing.T) {
 	hs, _, _ := demoteHandlers(t)
 	gary := jkauthz.Principal{Kind: "user", ID: "gary"}
-	ctx := authz.WithSubject(authz.WithDoor(context.Background(), authz.DoorWeb), jkauthz.Subject{Principal: gary})
+	ctx := authn.WithSubject(authn.WithDoor(context.Background(), authn.DoorWeb), jkauthz.Subject{Principal: gary})
 	mode := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.KeyRetentionMode: json.RawMessage(`"none"`)}, nil)
 	if err := hs.h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, &mode); err == nil {
 		t.Fatal("a caller nobody named set system.retention.mode")

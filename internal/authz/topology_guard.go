@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/jkauthz"
 )
@@ -16,48 +17,19 @@ type TopologyCaller struct {
 	Subject jkauthz.Subject
 	Figaro  string
 	Claimed bool
-	Door    Door
+	Door    authn.Door
 	Until   time.Time
 	Readmit func(context.Context) (jkauthz.Subject, error)
 }
 
 func TopologyPrincipal(ctx context.Context) (hierarchy.Principal, error) {
-	sub, err := SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if err != nil {
 		return hierarchy.Principal{}, err
 	}
-	c := TopologyCaller{Subject: sub, Figaro: FigaroOf(ctx), Claimed: Claimed(ctx), Door: DoorOf(ctx)}
-	c.Until, c.Readmit = admission(ctx)
-	return hierarchy.Principal{Name: PrincipalText(PrincipalOf(ctx)), Subject: c}, nil
-}
-
-type admittedUntilKey struct{}
-
-func WithAdmittedUntil(ctx context.Context, t time.Time) context.Context {
-	if held, ok := ctx.Value(admittedUntilKey{}).(time.Time); ok && held.Before(t) {
-		return ctx
-	}
-	return context.WithValue(ctx, admittedUntilKey{}, t)
-}
-
-func admission(ctx context.Context) (time.Time, func(context.Context) (jkauthz.Subject, error)) {
-	until, _ := ctx.Value(admittedUntilKey{}).(time.Time)
-	c, _ := ctx.Value(callerKey{}).(caller)
-	switch {
-	case c.session != nil:
-		return earliest(until, c.session.Expiry()), c.session.Subject
-	case c.key != nil:
-		k := c.key
-		return earliest(until, k.expiry()), func(context.Context) (jkauthz.Subject, error) { return k.Subject() }
-	}
-	return until, nil
-}
-
-func earliest(a, b time.Time) time.Time {
-	if a.IsZero() || !b.IsZero() && b.Before(a) {
-		return b
-	}
-	return a
+	c := TopologyCaller{Subject: sub, Figaro: authn.FigaroOf(ctx), Claimed: authn.Claimed(ctx), Door: authn.DoorOf(ctx)}
+	c.Until, c.Readmit = authn.Admission(ctx)
+	return hierarchy.Principal{Name: authn.PrincipalText(authn.PrincipalOf(ctx)), Subject: c}, nil
 }
 
 type HeldError struct {
@@ -116,7 +88,7 @@ func (g TopologyGuard) Check(ctx context.Context, by hierarchy.Principal, p hier
 	if !ok {
 		return hierarchy.Verdict{}, fmt.Errorf("%s: no caller to authorize", p.Op)
 	}
-	if IsProvisioner(caller.Subject.Principal) && !p.Op.Deletes() {
+	if authn.IsProvisioner(caller.Subject.Principal) && !p.Op.Deletes() {
 		return hierarchy.Verdict{}, g.provisionerPlaces(caller, p)
 	}
 	switch p.Op {
@@ -171,7 +143,7 @@ func (g TopologyGuard) Readmit(ctx context.Context, by hierarchy.Principal) (hie
 		return by, err
 	}
 	if sub.Principal != c.Subject.Principal {
-		return by, fmt.Errorf("%w: proposed as %s, now %s", ErrUnadmitted, c.Subject.Principal, sub.Principal)
+		return by, fmt.Errorf("%w: proposed as %s, now %s", authn.ErrUnadmitted, c.Subject.Principal, sub.Principal)
 	}
 	c.Subject = sub
 	by.Subject = c
@@ -228,7 +200,7 @@ func (g TopologyGuard) ownsParent(by hierarchy.Principal, c TopologyCaller, mint
 	if g.ownerish(minter) {
 		return g.isOwner(c)
 	}
-	return c.Door != DoorBox && c.Figaro == "" && !c.Claimed && by.Name == minter
+	return c.Door != authn.DoorBox && c.Figaro == "" && !c.Claimed && by.Name == minter
 }
 
 func (g TopologyGuard) system(ctx context.Context, p hierarchy.Plan) error {
@@ -478,7 +450,7 @@ func (g TopologyGuard) owner() jkauthz.Principal {
 }
 
 func (g TopologyGuard) isOwner(c TopologyCaller) bool {
-	return c.Door != DoorBox && c.Figaro == "" && !c.Claimed && IsOwner(g.owner(), c.Subject)
+	return c.Door != authn.DoorBox && c.Figaro == "" && !c.Claimed && IsOwner(g.owner(), c.Subject)
 }
 
 func (g TopologyGuard) ownerish(minter string) bool {

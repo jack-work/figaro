@@ -7,7 +7,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -25,7 +25,7 @@ func TestASeatsSuccessorTakesTheHoldersLifetime(t *testing.T) {
 			role := mintRoleFor(t, hs, pred)
 			patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemTTLKey: json.RawMessage(`"1h"`)}, nil)
 			raw, _ := json.Marshal(rpc.ForkRequest{FigaroID: pred, Seat: role, Patch: &patch})
-			ctx := authz.WithToolOf(authz.WithDoor(inProcess(context.Background()), authz.DoorLocal), pred)
+			ctx := authn.WithToolOf(authn.WithDoor(inProcess(context.Background()), authn.DoorLocal), pred)
 			out, err := hs.Map[rpc.MethodFork](ctx, raw)
 			if err != nil {
 				t.Fatalf("the holder's tool shell forking its successor: %v", err)
@@ -70,7 +70,7 @@ func TestASeatForkByAnotherFigaroKeepsItsOwnLifetime(t *testing.T) {
 	role := mintRoleFor(t, hs, pred)
 	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemTTLKey: json.RawMessage(`"1h"`)}, nil)
 	raw, _ := json.Marshal(rpc.ForkRequest{FigaroID: pred, Seat: role, Patch: &patch})
-	ctx := authz.WithToolOf(authz.WithDoor(inProcess(context.Background()), authz.DoorLocal), stranger)
+	ctx := authn.WithToolOf(authn.WithDoor(inProcess(context.Background()), authn.DoorLocal), stranger)
 	out, err := hs.Map[rpc.MethodFork](ctx, raw)
 	if err != nil {
 		t.Fatalf("a stranger's seat fork: %v", err)

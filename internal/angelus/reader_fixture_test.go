@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/arialog"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
@@ -56,7 +57,7 @@ func newAdoptFixture(t *testing.T, turns int) *adoptFixture {
 			_ = a.Registry.Kill(fg.ID())
 		}
 	})
-	peer, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
+	peer, err := authn.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +68,7 @@ func newAdoptFixture(t *testing.T, turns int) *adoptFixture {
 	}
 	base, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	ctx := inProcess(authz.WithPrincipal(base, rpc.Principal{Kind: rpc.PrincipalUser, ID: fmt.Sprint(os.Getuid())}))
+	ctx := inProcess(authn.WithPrincipal(base, rpc.Principal{Kind: rpc.PrincipalUser, ID: fmt.Sprint(os.Getuid())}))
 	hs := NewHandlers(ServerConfig{
 		Angelus: a, Config: loaded, Ctx: ctx, FormTemplates: template.New("adopt"),
 		ProviderFactory: func(string, provider.Knobs) (provider.Provider, error) { return benchForkNoopProvider{}, nil },

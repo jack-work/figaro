@@ -12,6 +12,7 @@ import (
 	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
@@ -181,8 +182,8 @@ principals = ["user:guest"]
 	if err := h.angelus.Policies.Reload(policy); err != nil {
 		t.Fatal(err)
 	}
-	owner := authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "owner"})
-	guest := authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "guest"})
+	owner := authn.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "owner"})
+	guest := authn.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "guest"})
 
 	if _, err := h.canonicalID(owner, "abcd"); err == nil || !strings.Contains(err.Error(), theirs) {
 		t.Fatalf("the owner reads both, so abcd is ambiguous: %v", err)

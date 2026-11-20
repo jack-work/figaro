@@ -11,6 +11,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
@@ -87,8 +88,8 @@ principals = ["user:guest"]
 	}
 	r.hs = NewHandlers(ServerConfig{Angelus: r.a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())})
 	r.h = r.hs.h
-	r.owner = authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "owner"})
-	r.guest = authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "guest"})
+	r.owner = authn.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "owner"})
+	r.guest = authn.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "guest"})
 }
 
 func (r *nameRig) resolves(ctx context.Context, ref, want string) {

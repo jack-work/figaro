@@ -10,10 +10,11 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 )
 
-func localOwner() context.Context { return authz.WithDoor(asOwner(), authz.DoorLocal) }
+func localOwner() context.Context { return authn.WithDoor(asOwner(), authn.DoorLocal) }
 
 type licenseRig struct {
 	grantRig

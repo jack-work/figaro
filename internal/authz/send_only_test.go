@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
 )
@@ -54,11 +55,11 @@ func sendOnlyGuard(t *testing.T) map[string]jkrpc.HandlerFunc {
 		rpc.MethodAttach: ok,
 		rpc.MethodQua:    ok,
 		rpc.MethodRead:   ok,
-	}, AriaHeader{}, Enforce(loaded(t, sendOnlyPolicy)))
+	}, authn.AriaHeader{}, Enforce(loaded(t, sendOnlyPolicy)))
 }
 
 func as(p jkauthz.Principal) context.Context {
-	return WithSubject(context.Background(), subject(p))
+	return authn.WithSubject(context.Background(), subject(p))
 }
 
 // #68: send attaches before it sends, so a send grant must reach attach or

@@ -12,7 +12,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -59,7 +59,7 @@ func TestAListedOutfitVersionFollowsAnEditToTheOutfit(t *testing.T) {
 // the meantime shows.
 func TestATopologyReadTakesTheRebuildAnAriasReadJustMade(t *testing.T) {
 	r := newAriasRig(t)
-	ctx := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"})
+	ctx := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"})
 	if _, err := r.h.callerFormMethod(ctx, rpc.AriasFormID, rpc.MethodForm, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestAColdCallerFormReadListsOnce(t *testing.T) {
 			r := newAriasRig(t)
 			counter := &listCounter{Backend: r.backend}
 			r.h.angelus.Backend = counter
-			ctx := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"})
+			ctx := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"})
 			if _, err := r.h.callerFormMethod(ctx, id, rpc.MethodForm, nil); err != nil {
 				t.Fatal(err)
 			}

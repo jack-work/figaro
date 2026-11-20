@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/internal/apikey"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/troupe"
 )
 
@@ -53,11 +53,11 @@ func TestAnUnnamedIntermediateCannotMintForAGrantedPrincipal(t *testing.T) {
 	grants := apiKeyGrants(l.View().APIKeys)
 
 	for _, node := range []string{"node-setter", "node-rogue", "node-other"} {
-		keys, err := authz.NewAPIKeys("estate", node, nil, nil)
+		keys, err := authn.NewAPIKeys("estate", node, nil, nil)
 		require.NoError(t, err)
 		require.NoError(t, keys.SetTroupe(grants))
 		_, err = keys.Admit(context.Background(), rogue)
-		require.ErrorIs(t, err, authz.ErrKeyRevoked, node)
+		require.ErrorIs(t, err, authn.ErrKeyRevoked, node)
 		require.ErrorContains(t, err, "not a setter", node)
 		_, err = keys.Admit(context.Background(), honest)
 		require.NoError(t, err, node)

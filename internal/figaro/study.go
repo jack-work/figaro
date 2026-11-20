@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/arialog"
+	"github.com/jack-work/figaro/internal/authn"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -224,7 +224,7 @@ func (a *Agent) Cast(ctx context.Context, roleID string, rolePatch *form.Patch) 
 	if err := ctx.Err(); err != nil {
 		return castResult{}, fmt.Errorf("cast: %w", err)
 	}
-	res := a.serviceCast(&castOp{roleID: roleID, rolePatch: rolePatch, mintedBy: authz.PrincipalText(authz.PrincipalOf(ctx))})
+	res := a.serviceCast(&castOp{roleID: roleID, rolePatch: rolePatch, mintedBy: authn.PrincipalText(authn.PrincipalOf(ctx))})
 	return res, res.err
 }
 

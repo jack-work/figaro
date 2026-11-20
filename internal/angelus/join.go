@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -23,7 +23,7 @@ var errStopping = errors.New("daemon stopping")
 type flight struct {
 	name     string
 	call     bool
-	door     authz.Door
+	door     authn.Door
 	params   json.RawMessage
 	listener io.Closer
 }
@@ -154,7 +154,7 @@ func (a *Angelus) refusingWhenStopping(next jkrpc.HandlerFunc) jkrpc.HandlerFunc
 
 func (a *Angelus) joined(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
-		id, ok := a.inflight.enter(flight{name: method, call: true, door: authz.DoorOf(ctx), params: params})
+		id, ok := a.inflight.enter(flight{name: method, call: true, door: authn.DoorOf(ctx), params: params})
 		if !ok {
 			return nil, errStopping
 		}

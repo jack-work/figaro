@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/troupe"
@@ -45,7 +46,7 @@ func callAs(t *testing.T, n *ledgerNode, who jkauthz.Principal, method string, r
 	t.Helper()
 	params, err := json.Marshal(req)
 	require.NoError(t, err)
-	ctx := authz.WithSubject(context.Background(), jkauthz.Subject{Principal: who})
+	ctx := authn.WithSubject(context.Background(), jkauthz.Subject{Principal: who})
 	return n.a.Handlers[method](ctx, params)
 }
 
@@ -106,7 +107,7 @@ func TestATroupePolicySetOnOneNodeIsInForceOnEveryMember(t *testing.T) {
 	show := shown.(rpc.TroupePolicyResponse)
 	require.Equal(t, uint64(3), show.InForce.Version)
 	require.Equal(t, na.id(), show.InForce.Signer)
-	require.Equal(t, authz.PrincipalText(rpc.Principal{Kind: rpc.PrincipalKind(owner(na).Kind), ID: owner(na).ID}), show.InForce.By)
+	require.Equal(t, authn.PrincipalText(rpc.Principal{Kind: rpc.PrincipalKind(owner(na).Kind), ID: owner(na).ID}), show.InForce.By)
 	seen := map[string]uint64{}
 	for _, row := range show.Nodes {
 		seen[row.Node] = row.Policy

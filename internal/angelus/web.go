@@ -13,8 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 )
 
 type WebAdmit func(ctx context.Context, r *http.Request) (context.Context, error)
@@ -34,7 +33,7 @@ func (w Web) lapse() (time.Duration, string) {
 
 func (w Web) lapseFor(ctx context.Context) (time.Duration, string) {
 	after, reason := w.lapse()
-	if exp, ok := authz.ExpiryOf(ctx); ok {
+	if exp, ok := authn.ExpiryOf(ctx); ok {
 		if left := time.Until(exp); after <= 0 || left < after {
 			return max(left, time.Millisecond), webTokenReason
 		}
@@ -67,7 +66,7 @@ func ListenUnix(path string, mode os.FileMode) (net.Listener, error) {
 }
 
 func (a *Angelus) ServeWeb(ctx context.Context, ln net.Listener, w Web) error {
-	leave, ok := a.enterDoor("door "+authz.DoorWeb.String(), ln)
+	leave, ok := a.enterDoor("door "+authn.DoorWeb.String(), ln)
 	if !ok {
 		return errStopping
 	}
@@ -97,15 +96,15 @@ func (a *Angelus) webDoor(ctx context.Context, w Web) http.Handler {
 		defer done()
 		cctx, err := w.Admit(conn, r)
 		if err == nil {
-			err = a.seat(cctx, authz.DoorWeb)
+			err = a.seat(cctx, authn.DoorWeb)
 		}
 		if unseated := (*unseated)(nil); errors.As(err, &unseated) {
-			slog.Warn("door refused upgrade", "door", authz.DoorWeb.String(), "err", err)
+			slog.Warn("door refused upgrade", "door", authn.DoorWeb.String(), "err", err)
 			http.Error(rw, "forbidden", http.StatusForbidden)
 			return
 		}
 		if err != nil {
-			slog.Warn("door refused upgrade", "door", authz.DoorWeb.String(), "err", err)
+			slog.Warn("door refused upgrade", "door", authn.DoorWeb.String(), "err", err)
 			rw.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(rw, "unauthorized", http.StatusUnauthorized)
 			return
@@ -117,14 +116,14 @@ func (a *Angelus) webDoor(ctx context.Context, w Web) http.Handler {
 		c.SetReadLimit(webReadLimit)
 		if after, reason := w.lapseFor(cctx); after > 0 {
 			var end context.CancelCauseFunc
-			cctx = authz.WithAdmittedUntil(cctx, time.Now().Add(after))
+			cctx = authn.WithAdmittedUntil(cctx, time.Now().Add(after))
 			cctx, end = context.WithCancelCause(cctx)
 			defer end(nil)
 			cctx = withLapse(cctx, lapse{after: after, reason: reason, end: end})
 		}
 		wc, release := newWebConn(ctx, cctx, c)
 		defer release()
-		a.handleConn(cctx, authz.DoorWeb, wc)
+		a.handleConn(cctx, authn.DoorWeb, wc)
 	})
 }
 

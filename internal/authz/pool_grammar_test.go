@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkauthz"
 )
 
@@ -17,7 +18,7 @@ role = "broker-groups"
 principals = ["service:broker@auth.kelliher.info"]
 `
 
-var brokerClient = jkauthz.Principal{Kind: KindService, ID: "broker@auth.kelliher.info"}
+var brokerClient = jkauthz.Principal{Kind: authn.KindService, ID: "broker@auth.kelliher.info"}
 
 // broker's whole grant on the pool daemon is one permission. It has to
 // reach its own pool and nothing beside it: no other pool, no aria, no
@@ -50,7 +51,7 @@ func TestALeaseGrantReachesOnePoolAndNoOtherVerb(t *testing.T) {
 // next generation of the same worker.
 func TestSayOnLeaseSelfReachesOnlyTheSpeakersOwnLease(t *testing.T) {
 	m := selectors{}
-	g2 := subject(BoxPrincipal("worker3-g2"))
+	g2 := subject(authn.BoxPrincipal("worker3-g2"))
 	for _, c := range []struct {
 		who  jkauthz.Subject
 		r    Resource
@@ -91,7 +92,7 @@ func TestOnlyAComputedGrantNamesABoxedSet(t *testing.T) {
 
 	f := fakeFacts{boxed: map[string]string{"in-g2": "worker3-g2", "in-g1": "worker3-g1", "unboxed": ""}, unreadable: map[string]bool{"lost": true}}
 	m := selectors{facts: f}
-	who := subject(ProvisionerPrincipal())
+	who := subject(authn.ProvisionerPrincipal())
 	for id, want := range map[string]bool{"in-g2": true, "in-g1": false, "unboxed": false, "lost": false, "never-minted": false} {
 		if got := m.Match("sandboxed:worker3-g2", who, Aria(id)); got != want {
 			t.Errorf("sandboxed:worker3-g2 on %s: %v, want %v", id, got, want)

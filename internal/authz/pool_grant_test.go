@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
 )
@@ -80,10 +81,10 @@ func grantOf(box, figaro string) []string {
 // daemon's; and the same code serving B holds the mirror image.
 func TestTheProvisionerHoldsTheLeaseItsCallNamesAndNoOther(t *testing.T) {
 	p := poolPolicies(t, brokerGroupsPolicy, leaseA, leaseB)
-	if got, want := heldBy(p, ProvisionerServing(leaseA)), grantOf(leaseA, "in-a"); !slices.Equal(got, want) {
+	if got, want := heldBy(p, authn.ProvisionerServing(leaseA)), grantOf(leaseA, "in-a"); !slices.Equal(got, want) {
 		t.Errorf("serving %s the provisioner holds\n%s\nwant\n%s", leaseA, strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if got, want := heldBy(p, ProvisionerServing(leaseB)), grantOf(leaseB, "in-b"); !slices.Equal(got, want) {
+	if got, want := heldBy(p, authn.ProvisionerServing(leaseB)), grantOf(leaseB, "in-b"); !slices.Equal(got, want) {
 		t.Errorf("serving %s the provisioner holds\n%s\nwant\n%s", leaseB, strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
@@ -94,25 +95,25 @@ func TestTheProvisionerHoldsTheLeaseItsCallNamesAndNoOther(t *testing.T) {
 // holds nothing rather than the first or the union.
 func TestAProvisionerThatNamesNoLeaseOrTwoHoldsNothing(t *testing.T) {
 	p := poolPolicies(t, brokerGroupsPolicy, leaseA, leaseB)
-	one := ProvisionerServing(leaseA).Groups[0]
-	other := ProvisionerServing(leaseB).Groups[0]
+	one := authn.ProvisionerServing(leaseA).Groups[0]
+	other := authn.ProvisionerServing(leaseB).Groups[0]
 	for name, groups := range map[string][]string{
 		"no group":                       nil,
 		"two leases":                     {one, other},
 		"one lease twice":                {one, one},
 		"a lease and an issuer's group":  {one, "admins@auth.kelliher.info"},
 		"an issuer's group alone":        {leaseA + "@auth.kelliher.info"},
-		"the box's own scope":            {leaseA + "@" + BoxScope},
+		"the box's own scope":            {leaseA + "@" + authn.BoxScope},
 		"the bare box name":              {leaseA},
-		"a lease with no name":           {"@" + PoolScope},
-		"two leases in one group's text": {leaseA + "@" + PoolScope + "," + other},
+		"a lease with no name":           {"@" + authn.PoolScope},
+		"two leases in one group's text": {leaseA + "@" + authn.PoolScope + "," + other},
 	} {
-		s := jkauthz.Subject{Principal: ProvisionerPrincipal(), Groups: groups}
+		s := jkauthz.Subject{Principal: authn.ProvisionerPrincipal(), Groups: groups}
 		if held := heldBy(p, s); len(held) != 0 {
 			t.Errorf("%s: the provisioner holds %v", name, held)
 		}
 	}
-	if held := heldBy(p, ProvisionerServing(leaseA)); len(held) == 0 {
+	if held := heldBy(p, authn.ProvisionerServing(leaseA)); len(held) == 0 {
 		t.Fatal("the provisioner holds nothing with one lease either, so the rows above prove nothing")
 	}
 }
@@ -122,14 +123,14 @@ func TestAProvisionerThatNamesNoLeaseOrTwoHoldsNothing(t *testing.T) {
 // that was given no ledger to ask all leave the provisioner with nothing.
 func TestTheProvisionersGrantEndsWithItsLease(t *testing.T) {
 	p := poolPolicies(t, brokerGroupsPolicy, leaseB)
-	if held := heldBy(p, ProvisionerServing(leaseA)); len(held) != 0 {
+	if held := heldBy(p, authn.ProvisionerServing(leaseA)); len(held) != 0 {
 		t.Errorf("serving a lease that is not in force the provisioner holds %v", held)
 	}
-	if held := heldBy(p, ProvisionerServing(leaseB)); len(held) == 0 {
+	if held := heldBy(p, authn.ProvisionerServing(leaseB)); len(held) == 0 {
 		t.Error("the lease in force gave the provisioner nothing")
 	}
 	unasked := loadedWith(t, poolFacts(), brokerGroupsPolicy)
-	if held := heldBy(unasked, ProvisionerServing(leaseA)); len(held) != 0 {
+	if held := heldBy(unasked, authn.ProvisionerServing(leaseA)); len(held) != 0 {
 		t.Errorf("with no ledger to ask the provisioner holds %v", held)
 	}
 }
@@ -157,14 +158,14 @@ principals = ["service:provisioner@local:pool"]
 `)); err != nil {
 		t.Fatal(err)
 	}
-	stranger := jkauthz.Subject{Principal: jkauthz.Principal{Kind: KindService, ID: "broker@auth.kelliher.info"}}
+	stranger := jkauthz.Subject{Principal: jkauthz.Principal{Kind: authn.KindService, ID: "broker@auth.kelliher.info"}}
 	if !p.Allow(stranger, rpc.VerbSend, Aria("owners")).Allowed {
 		t.Fatal("the policy gives a service nothing, so this test would pass for the wrong reason")
 	}
-	if got, want := heldBy(p, ProvisionerServing(leaseA)), grantOf(leaseA, "in-a"); !slices.Equal(got, want) {
+	if got, want := heldBy(p, authn.ProvisionerServing(leaseA)), grantOf(leaseA, "in-a"); !slices.Equal(got, want) {
 		t.Errorf("under a policy that gives services everything the provisioner holds\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if held := heldBy(p, jkauthz.Subject{Principal: ProvisionerPrincipal()}); len(held) != 0 {
+	if held := heldBy(p, jkauthz.Subject{Principal: authn.ProvisionerPrincipal()}); len(held) != 0 {
 		t.Errorf("with no lease, under that policy, the provisioner holds %v", held)
 	}
 }
@@ -177,8 +178,8 @@ func guardedAsProvisioner(t *testing.T, p *Policies) (map[string]jkrpc.HandlerFu
 		handlers[m] = ok
 	}
 	p.SetPoolDaemon(true)
-	return Guard(handlers, AriaHeader{}, Enforce(p)), func(box string) context.Context {
-		return WithDoor(WithSubject(context.Background(), ProvisionerServing(box)), DoorInProcess)
+	return Guard(handlers, authn.AriaHeader{}, Enforce(p)), func(box string) context.Context {
+		return authn.WithDoor(authn.WithSubject(context.Background(), authn.ProvisionerServing(box)), authn.DoorInProcess)
 	}
 }
 
@@ -195,11 +196,11 @@ func TestTheGuardRefusesTheProvisionerACreate(t *testing.T) {
 			t.Errorf("%s %s as the provisioner serving %s was served by the guard", rpc.MethodCreate, params, leaseA)
 		}
 	}
-	if !p.Allow(ProvisionerServing(leaseA), rpc.VerbCreate, Sandbox(leaseA)).Allowed {
+	if !p.Allow(authn.ProvisionerServing(leaseA), rpc.VerbCreate, Sandbox(leaseA)).Allowed {
 		t.Error("the mint function's own question, create on the lease's box, was refused")
 	}
 	for _, born := range []string{"", "local", leaseB} {
-		if p.Allow(ProvisionerServing(leaseA), rpc.VerbCreate, Sandbox(born)).Allowed {
+		if p.Allow(authn.ProvisionerServing(leaseA), rpc.VerbCreate, Sandbox(born)).Allowed {
 			t.Errorf("D3: a birth whose form says sandbox %q passed create:sandbox:%s", born, leaseA)
 		}
 	}

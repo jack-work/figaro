@@ -14,6 +14,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/figwal/xwal"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/store"
@@ -61,11 +62,11 @@ func forwardedCaller(ctx context.Context, method string) (string, string, error)
 	if !ok {
 		return "", "", fmt.Errorf("%s comes only from a peer node", method)
 	}
-	p := authz.PrincipalOf(ctx)
+	p := authn.PrincipalOf(ctx)
 	if p.Kind == rpc.PrincipalNode {
 		return "", "", fmt.Errorf("%s carries the caller who asked for the move, not a node", method)
 	}
-	return via, authz.PrincipalText(p), nil
+	return via, authn.PrincipalText(p), nil
 }
 
 func (h *handlers) arrival(ctx context.Context, method, token string) (mover, store.Arrival, error) {
@@ -258,7 +259,7 @@ func (h *handlers) holdsAll(ids []string) bool {
 
 func asPeerNode(ctx context.Context, method string) (string, error) {
 	via, ok := peer.Via(ctx)
-	p := authz.PrincipalOf(ctx)
+	p := authn.PrincipalOf(ctx)
 	if !ok || p.Kind != rpc.PrincipalNode || p.ID != via {
 		return "", fmt.Errorf("%s is answered only to a peer node speaking for itself", method)
 	}

@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/store"
@@ -106,7 +107,7 @@ func (h *handlers) elsewhere(ctx context.Context, method, ref, node, id string, 
 }
 
 func (h *handlers) locate(ctx context.Context, method, id string) (string, string, error) {
-	if _, ok := authz.BearerOf(ctx); !ok {
+	if _, ok := authn.BearerOf(ctx); !ok {
 		if node, known := h.fed.dir.Owner(id); known && h.mayLearnFate(ctx, method, id) {
 			return "", "", h.needsBearer(id, node)
 		}
@@ -127,11 +128,11 @@ func (h *handlers) needsBearer(id, node string) error {
 }
 
 func (h *handlers) linkFor(ctx context.Context, node string) (*peer.Link, func(), error) {
-	token, ok := authz.BearerOf(ctx)
+	token, ok := authn.BearerOf(ctx)
 	if !ok {
 		return nil, nil, errNoBearer
 	}
-	if err := authz.ForwardableTo(ctx, node); err != nil {
+	if err := authn.ForwardableTo(ctx, node); err != nil {
 		return nil, nil, err
 	}
 	p := rpc.Passage{Forwarded: true, Bearer: token}
@@ -283,7 +284,7 @@ func (h *handlers) listingPeers(next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 		var req rpc.ListRequest
 		_ = json.Unmarshal(params, &req)
 		nodes := slices.DeleteFunc(h.fed.members.Nodes(), func(n string) bool { return slices.Contains(req.ExceptNodes, n) })
-		if _, ok := authz.BearerOf(ctx); !ok {
+		if _, ok := authn.BearerOf(ctx); !ok {
 			local.PeersUnasked = len(nodes)
 			return local, nil
 		}

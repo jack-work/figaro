@@ -14,7 +14,7 @@ import (
 	"github.com/jack-work/jkauthz"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
@@ -73,13 +73,13 @@ func (h *handlers) sayAs(ctx context.Context, box, figaroID, text string) error 
 	if err != nil {
 		return err
 	}
-	ctx = authz.WithSubject(inProcess(ctx), jkauthz.Subject{Principal: authz.BoxPrincipal(box)})
+	ctx = authn.WithSubject(inProcess(ctx), jkauthz.Subject{Principal: authn.BoxPrincipal(box)})
 	_, err = say(ctx, params)
 	return err
 }
 
 func (h *handlers) workerSay(ctx context.Context, params json.RawMessage) (any, error) {
-	if authz.DoorOf(ctx) != authz.DoorInProcess {
+	if authn.DoorOf(ctx) != authn.DoorInProcess {
 		return nil, fmt.Errorf("%s is served to a leased figaro's own tool, through no door", rpc.MethodWorkerSay)
 	}
 	var fields map[string]json.RawMessage
@@ -101,7 +101,7 @@ func (h *handlers) workerSay(ctx context.Context, params json.RawMessage) (any, 
 	if !ok || row.State != workerpool.Live || row.SayBearer == "" {
 		return nil, fmt.Errorf("%s: lease %s is not live", rpc.MethodWorkerSay, box)
 	}
-	if err := h.speaksFor(box, authz.FigaroOf(ctx)); err != nil {
+	if err := h.speaksFor(box, authn.FigaroOf(ctx)); err != nil {
 		return nil, fmt.Errorf("%s: %w", rpc.MethodWorkerSay, err)
 	}
 	loaded, _ := h.settings()

@@ -17,6 +17,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/apikey"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/figaro/internal/troupe"
@@ -34,7 +35,7 @@ func (h *handlers) apiKeyLedger(name string) (*peer.Ledger, error) {
 }
 
 func recordedPrincipal(ctx context.Context) (string, error) {
-	by := authz.PrincipalText(authz.PrincipalOf(ctx))
+	by := authn.PrincipalText(authn.PrincipalOf(ctx))
 	if err := troupe.ValidOwner(by); err != nil {
 		return "", fmt.Errorf("no principal to record: %w", err)
 	}
@@ -161,7 +162,7 @@ func (h *handlers) troupeAPIKeyList(ctx context.Context, params json.RawMessage)
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	who := authz.PrincipalText(authz.PrincipalOf(ctx))
+	who := authn.PrincipalText(authn.PrincipalOf(ctx))
 	m, err := h.ledger()
 	if errors.Is(err, errStaticTroupe) {
 		return rpc.TroupeAPIKeyListResponse{Caller: who, Keys: []rpc.TroupeAPIKey{}}, nil

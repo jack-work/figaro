@@ -11,13 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 )
 
 // El Inspector XIV, P2: a caller on the web door is admitted no longer than
 // the door keeps its connection, and a proposal it parks carries that bound.
 func TestAWebCallerIsAdmittedUntilTheDoorWouldCloseIt(t *testing.T) {
-	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, authz.PrincipalText(webPrincipal))}}
+	h := &handlers{angelus: &Angelus{Hubs: newHubs(), Policies: seats(t, authn.PrincipalText(webPrincipal))}}
 	h.angelus.Handlers = h.door(map[string]jkrpc.HandlerFunc{rpc.MethodHello: func(ctx context.Context, _ json.RawMessage) (any, error) {
 		by, err := h.angelus.topologyPrincipal(ctx)
 		if err != nil {

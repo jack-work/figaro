@@ -13,6 +13,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
@@ -82,7 +83,7 @@ func newReloadRig(t *testing.T, boxes ...rigBox) *reloadRig {
 }
 
 func (r *reloadRig) refresh() error {
-	ctx := authz.WithPrincipal(authz.WithDoor(context.Background(), authz.DoorLocal), rpc.Principal{Kind: rpc.PrincipalUser, ID: "1000"})
+	ctx := authn.WithPrincipal(authn.WithDoor(context.Background(), authn.DoorLocal), rpc.Principal{Kind: rpc.PrincipalUser, ID: "1000"})
 	raw, _ := json.Marshal(rpc.ConfigureRequest{Refresh: true})
 	_, err := r.a.Handlers[rpc.MethodConfigure](ctx, raw)
 	return err

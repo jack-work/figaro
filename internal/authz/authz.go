@@ -1,4 +1,3 @@
-// Package authz is the authentication and authorization seam for the RPC surface.
 package authz
 
 import (
@@ -8,10 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/jkauthz"
@@ -19,183 +18,10 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-// Principal is stamped from the connection; FigaroID and Label are what
-// the params asserted, and are not verified.
-type Identity struct {
-	Principal rpc.Principal
-	FigaroID  string
-	Label     string
-	Claimed   bool
-}
-
-type Authenticator interface {
-	Authenticate(peer rpc.Principal, params json.RawMessage) Identity
-}
-
-type AriaHeader struct{}
-
-func (AriaHeader) Authenticate(peer rpc.Principal, params json.RawMessage) Identity {
-	figaro := rpc.CallerOf(params)
-	return Identity{Principal: peer, FigaroID: figaro, Label: rpc.LabelOf(params), Claimed: figaro != ""}
-}
-
-type callerKey struct{}
-
-type caller struct {
-	subject jkauthz.Subject
-	tool    string
-	session *Session
-	key     *KeySession
-	bearer  string
-}
-
-func Authenticated(authn Authenticator, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
-	return func(ctx context.Context, params json.RawMessage) (any, error) {
-		params = pinnedToTool(ctx, params)
-		return next(withIdentity(ctx, authn.Authenticate(PrincipalOf(ctx), params)), params)
-	}
-}
-
-type identityKey struct{}
-
-func withIdentity(ctx context.Context, id Identity) context.Context {
-	return context.WithValue(ctx, identityKey{}, &id)
-}
-
-func identityOf(ctx context.Context) (Identity, bool) {
-	id, _ := ctx.Value(identityKey{}).(*Identity)
-	if id == nil || id.Principal != PrincipalOf(ctx) {
-		return Identity{}, false
-	}
-	return *id, true
-}
-
-func FigaroOf(ctx context.Context) string {
-	if f, ok := ToolOf(ctx); ok {
-		return f
-	}
-	id, _ := identityOf(ctx)
-	return id.FigaroID
-}
-
-func Claimed(ctx context.Context) bool {
-	id, _ := identityOf(ctx)
-	return id.Claimed
-}
-
-func Admit(ctx context.Context, conn net.Conn) (context.Context, error) {
-	p, err := peer(conn)
-	if err != nil {
-		return nil, err
-	}
-	return WithPrincipal(ctx, p), nil
-}
-
-func WithSubject(ctx context.Context, s jkauthz.Subject) context.Context {
-	return context.WithValue(ctx, callerKey{}, caller{subject: s})
-}
-
-func WithToolOf(ctx context.Context, figaro string) context.Context {
-	c, _ := ctx.Value(callerKey{}).(caller)
-	c.tool = figaro
-	return context.WithValue(ctx, callerKey{}, c)
-}
-
-func ToolOf(ctx context.Context) (string, bool) {
-	c, _ := ctx.Value(callerKey{}).(caller)
-	return c.tool, c.tool != ""
-}
-
-func OwnerCall(ctx context.Context, owner jkauthz.Principal, s jkauthz.Subject) bool {
-	_, tool := ToolOf(ctx)
-	return !tool && IsOwner(owner, s)
-}
-
-func pinnedToTool(ctx context.Context, params json.RawMessage) json.RawMessage {
-	f, ok := ToolOf(ctx)
-	if !ok {
-		return params
-	}
-	fields := map[string]json.RawMessage{}
-	if len(params) > 0 && string(params) != "null" {
-		if json.Unmarshal(params, &fields) != nil {
-			return params
-		}
-	}
-	if claimed := rpc.CallerOf(params); claimed != "" && claimed != f {
-		slog.Info("authz: a tool caller's claim replaced by the figaro whose cgroup it runs in", "claimed", claimed, "figaro", f)
-	}
-	id, _ := json.Marshal(f)
-	fields[rpc.CallerKey] = id
-	delete(fields, rpc.CallerLabelKey)
-	out, err := json.Marshal(fields)
-	if err != nil {
-		return params
-	}
-	return out
-}
-
-func WithSession(ctx context.Context, s *Session) context.Context {
-	return context.WithValue(ctx, callerKey{}, caller{subject: jkauthz.Subject{Principal: s.Principal()}, session: s})
-}
-
-func WithPrincipal(ctx context.Context, p rpc.Principal) context.Context {
-	return WithSubject(ctx, jkauthz.Subject{Principal: jkauthz.Principal{Kind: jkauthz.Kind(p.Kind), ID: p.ID, Node: p.Node}})
-}
-
-func WithVerifiedBearer(ctx context.Context, s jkauthz.Subject, token string) context.Context {
-	return context.WithValue(ctx, callerKey{}, caller{subject: s, bearer: token})
-}
-
-func IssuerOf(ctx context.Context) string {
-	c, _ := ctx.Value(callerKey{}).(caller)
-	if c.session == nil {
-		return ""
-	}
-	return c.session.Issuer()
-}
-
-func ExpiryOf(ctx context.Context) (time.Time, bool) {
-	c, _ := ctx.Value(callerKey{}).(caller)
-	if c.session == nil {
-		return time.Time{}, false
-	}
-	exp := c.session.Expiry()
-	return exp, !exp.IsZero()
-}
-
-func BearerOf(ctx context.Context) (string, bool) {
-	c, _ := ctx.Value(callerKey{}).(caller)
-	switch {
-	case c.session != nil:
-		return c.session.Token(), true
-	case c.key != nil:
-		return c.key.token, true
-	}
-	return c.bearer, c.bearer != ""
-}
-
-func SubjectOf(ctx context.Context) (jkauthz.Subject, error) {
-	c, _ := ctx.Value(callerKey{}).(caller)
-	switch {
-	case c.session != nil:
-		return c.session.Subject(ctx)
-	case c.key != nil:
-		return c.key.Subject()
-	}
-	return c.subject, nil
-}
-
-func PrincipalOf(ctx context.Context) rpc.Principal {
-	c, _ := ctx.Value(callerKey{}).(caller)
-	p := c.subject.Principal
-	return rpc.Principal{Kind: rpc.PrincipalKind(p.Kind), ID: p.ID, Node: p.Node}
-}
-
 type Request struct {
-	Identity Identity
+	Identity authn.Identity
 	Subject  jkauthz.Subject
-	Door     Door
+	Door     authn.Door
 	Method   string
 	Aria     string
 	Params   json.RawMessage
@@ -233,25 +59,25 @@ func AllowAll() Policy {
 // ErrCode is in the JSON-RPC 2.0 application range.
 const ErrCode = -32020
 
-func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Policy) map[string]jkrpc.HandlerFunc {
+func Guard(handlers map[string]jkrpc.HandlerFunc, authenticator authn.Authenticator, policy Policy) map[string]jkrpc.HandlerFunc {
 	out := make(map[string]jkrpc.HandlerFunc, len(handlers))
 	for name, h := range handlers {
 		method, next := name, h
 		out[method] = func(ctx context.Context, params json.RawMessage) (any, error) {
-			params = pinnedToTool(ctx, params)
-			subject, err := SubjectOf(ctx)
+			params = authn.PinnedToTool(ctx, params)
+			subject, err := authn.SubjectOf(ctx)
 			if err != nil {
 				return nil, &jkrpc.Error{Code: ErrCode, Message: err.Error()}
 			}
-			id, ok := identityOf(ctx)
+			id, ok := authn.IdentityOf(ctx)
 			if !ok {
-				id = authn.Authenticate(PrincipalOf(ctx), params)
-				ctx = withIdentity(ctx, id)
+				id = authenticator.Authenticate(authn.PrincipalOf(ctx), params)
+				ctx = authn.WithIdentity(ctx, id)
 			}
 			req := Request{
 				Identity: id,
 				Subject:  subject,
-				Door:     DoorOf(ctx),
+				Door:     authn.DoorOf(ctx),
 				Method:   method,
 				Aria:     rpc.AriaOf(params),
 				Params:   params,
@@ -265,7 +91,7 @@ func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Po
 			}
 			if d.DropClaim {
 				id.FigaroID = ""
-				ctx = withIdentity(ctx, id)
+				ctx = authn.WithIdentity(ctx, id)
 			}
 			start := time.Now()
 			res, err := next(ctx, params)
@@ -278,13 +104,6 @@ func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Po
 		}
 	}
 	return out
-}
-
-func PrincipalText(p rpc.Principal) string {
-	if p.Kind == "" || p.ID == "" {
-		return ""
-	}
-	return jkauthz.Principal{Kind: jkauthz.Kind(p.Kind), ID: p.ID, Node: p.Node}.String()
 }
 
 func checkedByHandler(method string) bool {
@@ -316,8 +135,8 @@ func Enforce(p *Policies) Policy {
 			return Deny("%s has no verb, so no policy can allow it", r.Method)
 		}
 		figaro, dropped := r.Identity.FigaroID, false
-		if (r.Door == DoorBox || r.Door == DoorHost) && !p.pinnedToBox(r.Subject, figaro) {
-			if box, _ := BoxOf(r.Subject.Principal); r.Door == DoorBox && verb != rpc.VerbNone && p.claimRequiredIn(box) {
+		if (r.Door == authn.DoorBox || r.Door == authn.DoorHost) && !p.pinnedToBox(r.Subject, figaro) {
+			if box, _ := authn.BoxOf(r.Subject.Principal); r.Door == authn.DoorBox && verb != rpc.VerbNone && p.claimRequiredIn(box) {
 				if figaro == "" {
 					return Deny("%s: box %s's door takes only calls that name their figaro (sandbox.boxes.%s.figaro_claim = \"required\")", r.Method, box, box)
 				}
@@ -352,7 +171,7 @@ func Enforce(p *Policies) Policy {
 			res = Aria(r.Aria)
 		}
 		if verb == rpc.VerbLease || verb == rpc.VerbSay {
-			if r.Door == DoorNode {
+			if r.Door == authn.DoorNode {
 				return Deny("%s: %s is asked of the daemon that holds the pool, never through a node door", r.Method, verb)
 			}
 		}
@@ -364,7 +183,7 @@ func Enforce(p *Policies) Policy {
 			res = Pool(pool)
 		}
 		if verb == rpc.VerbSay {
-			box, _ := BoxOf(r.Subject.Principal)
+			box, _ := authn.BoxOf(r.Subject.Principal)
 			res = Lease(box)
 		}
 		on := []Resource{res}
@@ -425,8 +244,8 @@ func decideResources(aria string, params json.RawMessage) ([]Resource, error) {
 	return on, nil
 }
 
-func (p *Policies) dropsClaim(d Door, figaro, method string) bool {
-	if !d.dropsClaimsNotHeld() || p.holdsFigaro(figaro) {
+func (p *Policies) dropsClaim(d authn.Door, figaro, method string) bool {
+	if !d.DropsClaimsNotHeld() || p.holdsFigaro(figaro) {
 		return false
 	}
 	slog.Info("authz: claim for a figaro not held here dropped", "door", d.String(), "figaro", figaro, "method", method)
@@ -435,9 +254,9 @@ func (p *Policies) dropsClaim(d Door, figaro, method string) bool {
 
 func (p *Policies) DroppingClaimsNotHeld(method string, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
-		if id, ok := identityOf(ctx); ok && id.FigaroID != "" && p.dropsClaim(DoorOf(ctx), id.FigaroID, method) {
+		if id, ok := authn.IdentityOf(ctx); ok && id.FigaroID != "" && p.dropsClaim(authn.DoorOf(ctx), id.FigaroID, method) {
 			id.FigaroID = ""
-			ctx = withIdentity(ctx, id)
+			ctx = authn.WithIdentity(ctx, id)
 		}
 		return next(ctx, params)
 	}
@@ -468,7 +287,7 @@ func poolNamed(params json.RawMessage) (string, error) {
 }
 
 func (p *Policies) pinnedToBox(s jkauthz.Subject, figaro string) bool {
-	box, ok := BoxOf(s.Principal)
+	box, ok := authn.BoxOf(s.Principal)
 	if !ok || figaro == "" {
 		return false
 	}

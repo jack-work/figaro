@@ -12,7 +12,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/apikey"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/hierarchy"
 )
@@ -276,7 +276,7 @@ func TestARevokedKeysProposalIsRefusedAtAccept(t *testing.T) {
 	}
 	const ci = "service:ci@troupe:estate"
 	grantTo(t, r, ci, "read:*", "set:aria:"+a.FigaroID, "kill:aria:"+a.FigaroID)
-	keys, err := authz.NewAPIKeys("estate", "node-a", nil, nil)
+	keys, err := authn.NewAPIKeys("estate", "node-a", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,8 +284,8 @@ func TestARevokedKeysProposalIsRefusedAtAccept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grant := authz.APIKeyGrant{ID: k.ID, Principal: ci, Hash: k.Hash[:], NotAfter: time.Now().Add(24 * time.Hour), Nodes: []string{"node-a"}}
-	if err := keys.SetTroupe([]authz.APIKeyGrant{grant}); err != nil {
+	grant := authn.APIKeyGrant{ID: k.ID, Principal: ci, Hash: k.Hash[:], NotAfter: time.Now().Add(24 * time.Hour), Nodes: []string{"node-a"}}
+	if err := keys.SetTroupe([]authn.APIKeyGrant{grant}); err != nil {
 		t.Fatal(err)
 	}
 	ctx, err := keys.Admit(context.Background(), wire)
@@ -293,7 +293,7 @@ func TestARevokedKeysProposalIsRefusedAtAccept(t *testing.T) {
 		t.Fatal(err)
 	}
 	door := time.Now().Add(time.Hour)
-	ctx = authz.WithAdmittedUntil(ctx, door)
+	ctx = authn.WithAdmittedUntil(ctx, door)
 
 	if err := setTopology(t, r, ctx, map[string]string{a.FigaroID: q}); err == nil || !strings.Contains(err.Error(), "waits on "+q) {
 		t.Fatalf("the key drawing A under Q = %v, want it parked on Q", err)
@@ -304,7 +304,7 @@ func TestARevokedKeysProposalIsRefusedAtAccept(t *testing.T) {
 	}
 
 	grant.Void = "revoked"
-	if err := keys.SetTroupe([]authz.APIKeyGrant{grant}); err != nil {
+	if err := keys.SetTroupe([]authn.APIKeyGrant{grant}); err != nil {
 		t.Fatal(err)
 	}
 	err = consent(r, asOwner(), rpc.MethodAccept, q, props[0].ID)

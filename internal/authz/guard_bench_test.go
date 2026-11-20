@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -51,8 +52,8 @@ func BenchmarkGuardedOwnerCall(b *testing.B) {
 				b.Skip(err)
 			}
 			ok := func(context.Context, json.RawMessage) (any, error) { return nil, nil }
-			call := Authenticated(AriaHeader{}, Guard(map[string]jkrpc.HandlerFunc{rpc.MethodQua: ok}, AriaHeader{}, Enforce(p))[rpc.MethodQua])
-			ctx := WithSubject(context.Background(), subject(me))
+			call := authn.Authenticated(authn.AriaHeader{}, Guard(map[string]jkrpc.HandlerFunc{rpc.MethodQua: ok}, authn.AriaHeader{}, Enforce(p))[rpc.MethodQua])
+			ctx := authn.WithSubject(context.Background(), subject(me))
 			b.ReportAllocs()
 			for b.Loop() {
 				if _, err := call(ctx, c.params); err != nil {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/jkauthz"
 )
@@ -28,7 +29,7 @@ clients = { box = "service" }
 // fetches keys from no issuer the troupe names.
 func TestATroupeDocumentsIssuersAreTakenUnlessTheNodeOptsOut(t *testing.T) {
 	for _, take := range []bool{true, false} {
-		is, err := authz.NewIssuers(nil, nil, nil)
+		is, err := authn.NewIssuers(nil, nil, nil)
 		require.NoError(t, err)
 		a := &Angelus{Policies: authz.NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "1000"}, nil), Issuers: is}
 		require.NoError(t, a.Policies.Reload(""))
@@ -43,7 +44,7 @@ func TestATroupeDocumentsIssuersAreTakenUnlessTheNodeOptsOut(t *testing.T) {
 
 // A document that does not load on this node takes up none of its issuers.
 func TestARefusedTroupeDocumentTakesNoIssuers(t *testing.T) {
-	is, err := authz.NewIssuers(nil, nil, nil)
+	is, err := authn.NewIssuers(nil, nil, nil)
 	require.NoError(t, err)
 	a := &Angelus{Policies: authz.NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "1000"}, nil), Issuers: is}
 	require.NoError(t, a.Policies.Reload(""))

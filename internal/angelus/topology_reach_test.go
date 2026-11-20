@@ -6,7 +6,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -61,13 +61,13 @@ func TestAFigarosToolsRetireBeyondItsLineageOnlyByAWrittenGrant(t *testing.T) {
 	}
 	x, y := mk(), mk()
 	retire := withAria(t, y, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{store.SystemRetiredKey: "manual", store.SystemTTLKey: "10m"})})
-	if _, err := r.h[rpc.MethodSet](authz.WithToolOf(localOwner(), x), retire); err == nil {
+	if _, err := r.h[rpc.MethodSet](authn.WithToolOf(localOwner(), x), retire); err == nil {
 		t.Fatalf("an unscoped figaro's tools retired %s in another lineage", y)
 	}
 	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, x, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{form.ScopesKey: []string{"*:*"}})})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.h[rpc.MethodSet](authz.WithToolOf(localOwner(), x), retire); err != nil {
+	if _, err := r.h[rpc.MethodSet](authn.WithToolOf(localOwner(), x), retire); err != nil {
 		t.Fatalf("a written fleet grant did not reach %s from the tools: %v", y, err)
 	}
 }
@@ -105,10 +105,10 @@ func TestAToolsLifetimeGrantBeyondItsLineageCoversTheKeyItWrites(t *testing.T) {
 			}
 			owner(y, map[string]any{store.SystemTTLKey: "1h"})
 			owner(x, map[string]any{form.ScopesKey: row.scopes(y)})
-			if _, err := r.h[rpc.MethodSet](authz.WithToolOf(localOwner(), x), withAria(t, y, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"mantra": "x"})})); err != nil && strings.Contains(row.name, "mantra") {
+			if _, err := r.h[rpc.MethodSet](authn.WithToolOf(localOwner(), x), withAria(t, y, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"mantra": "x"})})); err != nil && strings.Contains(row.name, "mantra") {
 				t.Fatalf("sanity: the keyed mantra grant did not reach %s: %v", y, err)
 			}
-			_, err := r.h[rpc.MethodSet](authz.WithToolOf(localOwner(), x), withAria(t, y, rpc.SetRequest{Patch: *heldPatch(t, row.keys)}))
+			_, err := r.h[rpc.MethodSet](authn.WithToolOf(localOwner(), x), withAria(t, y, rpc.SetRequest{Patch: *heldPatch(t, row.keys)}))
 			if (err == nil) != row.ok {
 				t.Fatalf("%v from %s's tools on %s: %v, want ok=%v", row.keys, x, y, err, row.ok)
 			}

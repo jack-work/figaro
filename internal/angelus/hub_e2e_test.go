@@ -20,6 +20,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
@@ -82,7 +83,7 @@ func daemonWithProvider(t testing.TB, dir string, setup func(*angelus.Angelus, *
 	if setup != nil {
 		setup(a, backend)
 	}
-	peer, err := authz.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
+	peer, err := authn.NewPeercred(uint32(os.Getuid()), loaded.Config.Authz.Peercred)
 	require.NoError(t, err)
 	a.Peercred = peer
 	a.Policies = authz.NewPolicies(peer.Self(), angelus.StoreFacts(backend))
@@ -331,9 +332,9 @@ func TestDoorServesTCP(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	admitted := make(chan struct{}, 1)
-	go a.Serve(ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+	go a.Serve(ctx, ln, authn.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		admitted <- struct{}{}
-		return authz.WithSubject(ctx, jkauthz.Subject{Principal: a.Peercred.Self()}), nil
+		return authn.WithSubject(ctx, jkauthz.Subject{Principal: a.Peercred.Self()}), nil
 	})
 
 	tcp := sdk.Addr{Door: transport.Endpoint{Scheme: "tcp", Address: ln.Addr().String()}, ID: created.FigaroID}
@@ -368,11 +369,11 @@ func TestDoorAdmitsOffTheAcceptLoop(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	var first atomic.Bool
-	go a.Serve(ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+	go a.Serve(ctx, ln, authn.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		if first.CompareAndSwap(false, true) {
 			<-release
 		}
-		return authz.WithSubject(ctx, jkauthz.Subject{Principal: a.Peercred.Self()}), nil
+		return authn.WithSubject(ctx, jkauthz.Subject{Principal: a.Peercred.Self()}), nil
 	})
 
 	stalled, err := net.Dial("tcp", ln.Addr().String())
@@ -449,7 +450,7 @@ func TestADoorWhoseAdmitNamesNobodyServesNothing(t *testing.T) {
 	require.NoError(t, err)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	go a.Serve(ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) { return ctx, nil })
+	go a.Serve(ctx, ln, authn.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) { return ctx, nil })
 
 	fc, err := sdk.DialAria(sdk.Addr{Door: transport.Endpoint{Scheme: "tcp", Address: ln.Addr().String()}, ID: created.FigaroID}, nil)
 	if err == nil {

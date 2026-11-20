@@ -12,6 +12,7 @@ import (
 
 	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/jkrpc"
@@ -54,7 +55,7 @@ func (h *handlers) refuseIDsFromWhoNamesNoFigaro(ctx context.Context, method str
 	if verb, _ := rpc.VerbOf(method); p == nil || verb == rpc.VerbNone || forwarded(ctx) || !namesAnID(params) {
 		return nil
 	}
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if err != nil || p.NamesFigaros(sub) {
 		return nil
 	}
@@ -378,7 +379,7 @@ func (h *handlers) placeWordPrefix(ctx context.Context, ref string) (string, str
 }
 
 func (h *handlers) matchReadable(ctx context.Context, prefix string) []string {
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if err != nil {
 		return nil
 	}
@@ -388,7 +389,7 @@ func (h *handlers) matchReadable(ctx context.Context, prefix string) []string {
 		}
 		return nil
 	}
-	view := h.angelus.Policies.Figaro(authz.FigaroOf(ctx))
+	view := h.angelus.Policies.Figaro(authn.FigaroOf(ctx))
 	var out []string
 	for _, id := range h.angelus.Backend.MatchID(prefix, -1) {
 		if view.Allow(sub, rpc.VerbRead, authz.Aria(id)).Allowed {
@@ -419,9 +420,9 @@ func (h *handlers) knownID(id string) bool {
 }
 
 func (h *handlers) readableID(ctx context.Context, id string) bool {
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if err != nil {
 		return false
 	}
-	return h.angelus.Policies.AllowFigaro(sub, authz.FigaroOf(ctx), rpc.VerbRead, authz.Aria(id)).Allowed
+	return h.angelus.Policies.AllowFigaro(sub, authn.FigaroOf(ctx), rpc.VerbRead, authz.Aria(id)).Allowed
 }

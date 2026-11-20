@@ -11,6 +11,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer"
@@ -22,11 +23,11 @@ func (h *handlers) grantSandbox(ctx context.Context, snap form.Snapshot) (form.P
 	if policies == nil {
 		return form.Patch{}, nil
 	}
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if err != nil {
 		return form.Patch{}, err
 	}
-	figaro := authz.FigaroOf(ctx)
+	figaro := authn.FigaroOf(ctx)
 	kind := ""
 	if s := snap.Lookup("system.sandbox"); s != nil {
 		kind = *s
@@ -43,7 +44,7 @@ func (h *handlers) grantSandbox(ctx context.Context, snap form.Snapshot) (form.P
 }
 
 func homeSandbox(p jkauthz.Principal) (string, bool) {
-	if name, ok := authz.BoxOf(p); ok {
+	if name, ok := authn.BoxOf(p); ok {
 		return name, true
 	}
 	if p.Kind != jkauthz.KindSandbox || p.Node != "" || strings.Contains(p.ID, "@") {
@@ -171,11 +172,11 @@ func (a *Angelus) owner() jkauthz.Principal {
 }
 
 func (h *handlers) passesUnpoliced(ctx context.Context, sub jkauthz.Subject) bool {
-	return authz.PassesUnpoliced(authz.DoorOf(ctx), h.angelus.owner(), sub)
+	return authz.PassesUnpoliced(authn.DoorOf(ctx), h.angelus.owner(), sub)
 }
 
 func (h *handlers) allowed(ctx context.Context, verb rpc.Verb, res authz.Resource) error {
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if err != nil {
 		return err
 	}
@@ -184,20 +185,20 @@ func (h *handlers) allowed(ctx context.Context, verb rpc.Verb, res authz.Resourc
 		if h.passesUnpoliced(ctx, sub) {
 			return nil
 		}
-		return fmt.Errorf("%s on %s: no policy is loaded, so the %s door passes only the owner", verb, res, authz.DoorOf(ctx))
+		return fmt.Errorf("%s on %s: no policy is loaded, so the %s door passes only the owner", verb, res, authn.DoorOf(ctx))
 	}
-	if d := p.AllowFigaro(sub, authz.FigaroOf(ctx), verb, res); !d.Allowed {
+	if d := p.AllowFigaro(sub, authn.FigaroOf(ctx), verb, res); !d.Allowed {
 		return fmt.Errorf("%s on %s: %s", verb, res, d.Reason())
 	}
 	return nil
 }
 
 func (h *handlers) figaroGrant(ctx context.Context, verb rpc.Verb, res authz.Resource, ok func(authz.FigaroView, jkauthz.Subject) bool, why string) error {
-	f, p := authz.FigaroOf(ctx), h.angelus.Policies
+	f, p := authn.FigaroOf(ctx), h.angelus.Policies
 	if f == "" || p == nil {
 		return nil
 	}
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if err != nil {
 		return err
 	}
@@ -315,7 +316,7 @@ type unreadableRows struct {
 }
 
 func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) ([]rpc.FigaroInfoResponse, unreadableRows) {
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if err != nil {
 		return nil, unreadableRows{}
 	}
@@ -325,7 +326,7 @@ func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) 
 		}
 		return nil, unreadableRows{}
 	}
-	view := h.angelus.Policies.Figaro(authz.FigaroOf(ctx))
+	view := h.angelus.Policies.Figaro(authn.FigaroOf(ctx))
 	out := rows[:0]
 	var refused unreadableRows
 	for _, r := range rows {
@@ -396,8 +397,8 @@ func (h *handlers) studiesAFigaro(id string) bool {
 }
 
 func (h *handlers) studiesOnlyReadableKeys(ctx context.Context, req rpc.StudyRequest) error {
-	p, f := h.angelus.Policies, authz.FigaroOf(ctx)
-	sub, err := authz.SubjectOf(ctx)
+	p, f := h.angelus.Policies, authn.FigaroOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	if p == nil || f == "" || err != nil {
 		return authz.NotFound(rpc.MethodStudy, req.FormID)
 	}

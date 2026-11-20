@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkauthz"
 	"github.com/jack-work/jkrpc"
 )
@@ -102,7 +103,7 @@ func TestTheCeilingTableIsChecked(t *testing.T) {
 	}
 }
 
-func boxClaimRig(t *testing.T, door Door) (func(figaro string, method string, on string) (string, error), *Policies) {
+func boxClaimRig(t *testing.T, door authn.Door) (func(figaro string, method string, on string) (string, error), *Policies) {
 	t.Helper()
 	f := lineageFakes(map[string]string{"in-judge": `["read:*"]`})
 	f.boxed = map[string]string{"in-judge": "judge", "in-other": "other", "local-one": "local"}
@@ -114,22 +115,22 @@ func boxClaimRig(t *testing.T, door Door) (func(figaro string, method string, on
 		t.Fatal(err)
 	}
 	var seen string
-	ok := func(ctx context.Context, _ json.RawMessage) (any, error) { seen = FigaroOf(ctx); return nil, nil }
-	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodIR: ok, rpc.MethodKill: ok}, AriaHeader{}, Enforce(p))
-	ctx := WithDoor(WithSubject(context.Background(), jkauthz.Subject{Principal: BoxPrincipal("judge")}), door)
+	ok := func(ctx context.Context, _ json.RawMessage) (any, error) { seen = authn.FigaroOf(ctx); return nil, nil }
+	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodIR: ok, rpc.MethodKill: ok}, authn.AriaHeader{}, Enforce(p))
+	ctx := authn.WithDoor(authn.WithSubject(context.Background(), jkauthz.Subject{Principal: authn.BoxPrincipal("judge")}), door)
 	return func(figaro, method, on string) (string, error) {
 		seen = "unreached"
 		params, _ := json.Marshal(map[string]any{"figaro_id": on})
 		if figaro != "" {
 			params = stamped(t, on, figaro)
 		}
-		_, err := Authenticated(AriaHeader{}, h[method])(ctx, params)
+		_, err := authn.Authenticated(authn.AriaHeader{}, h[method])(ctx, params)
 		return seen, err
 	}, p
 }
 
 func TestABoxClaimCountsOnlyForAFigaroInThatBox(t *testing.T) {
-	call, p := boxClaimRig(t, DoorBox)
+	call, p := boxClaimRig(t, authn.DoorBox)
 	if seen, err := call("made-up", rpc.MethodKill, "in-judge"); err != nil || seen != "" {
 		t.Fatalf("a made-up claim must fall back to the box: seen %q, %v", seen, err)
 	}
@@ -162,7 +163,7 @@ func TestABoxClaimCountsOnlyForAFigaroInThatBox(t *testing.T) {
 }
 
 func TestAHostDoorIsAnsweredAsTheBoxWhateverTheBoxRequires(t *testing.T) {
-	call, p := boxClaimRig(t, DoorHost)
+	call, p := boxClaimRig(t, authn.DoorHost)
 	p.SetBoxesRequiringClaim([]string{"judge"})
 	if seen, err := call("", rpc.MethodKill, "in-judge"); err != nil || seen != "" {
 		t.Fatalf("an unclaimed host-door call to a required box: seen %q, %v", seen, err)
@@ -173,7 +174,7 @@ func TestAHostDoorIsAnsweredAsTheBoxWhateverTheBoxRequires(t *testing.T) {
 	if _, err := call("in-judge", rpc.MethodKill, "in-judge"); err == nil || !strings.Contains(err.Error(), "figaro:in-judge") {
 		t.Fatalf("a claim of the box's own figaro on the host door is narrowed: %v", err)
 	}
-	inBox, q := boxClaimRig(t, DoorBox)
+	inBox, q := boxClaimRig(t, authn.DoorBox)
 	q.SetBoxesRequiringClaim([]string{"judge"})
 	if _, err := inBox("", rpc.MethodKill, "in-judge"); err == nil || !strings.Contains(err.Error(), "figaro_claim") {
 		t.Fatalf("the same unclaimed call in the box: %v", err)
@@ -187,9 +188,9 @@ func TestTheClaimRequirementStaysOnTheBoxDoor(t *testing.T) {
 	}
 	p.SetBoxesRequiringClaim([]string{"dev-3"})
 	ok := func(context.Context, json.RawMessage) (any, error) { return nil, nil }
-	call := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodQua: ok}, AriaHeader{}, Enforce(p))[rpc.MethodQua]
+	call := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodQua: ok}, authn.AriaHeader{}, Enforce(p))[rpc.MethodQua]
 	plain, _ := json.Marshal(map[string]any{"figaro_id": "aaaa0001"})
-	if _, err := call(WithSubject(context.Background(), subject(me)), plain); err != nil {
+	if _, err := call(authn.WithSubject(context.Background(), subject(me)), plain); err != nil {
 		t.Fatalf("the requirement reached another door: %v", err)
 	}
 }
@@ -212,8 +213,8 @@ func TestTheGuardRefusesANarrowedFigaroAndLogsOneLine(t *testing.T) {
 	p := narrowed(t, sandboxPolicy, map[string]string{"kid": `["set:*", "read:aria:aaaa0001"]`})
 	reached := 0
 	ok := func(context.Context, json.RawMessage) (any, error) { reached++; return "ok", nil }
-	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodQua: ok, rpc.MethodIR: ok, rpc.MethodSet: ok}, AriaHeader{}, Enforce(p))
-	ctx := WithSubject(context.Background(), subject(me))
+	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodQua: ok, rpc.MethodIR: ok, rpc.MethodSet: ok}, authn.AriaHeader{}, Enforce(p))
+	ctx := authn.WithSubject(context.Background(), subject(me))
 
 	if _, err := h[rpc.MethodQua](ctx, stamped(t, "aaaa0002", "top")); err != nil {
 		t.Fatalf("a figaro with no grants: %v", err)
@@ -245,8 +246,8 @@ func TestTheGuardRefusesANarrowedFigaroAndLogsOneLine(t *testing.T) {
 func TestTheGuardNamesTheFigaroWhenItMayStillRead(t *testing.T) {
 	p := narrowed(t, sandboxPolicy, map[string]string{"kid": `["read:*"]`})
 	ok := func(context.Context, json.RawMessage) (any, error) { return "ok", nil }
-	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodKill: ok}, AriaHeader{}, Enforce(p))
-	ctx := WithSubject(context.Background(), subject(me))
+	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodKill: ok}, authn.AriaHeader{}, Enforce(p))
+	ctx := authn.WithSubject(context.Background(), subject(me))
 	_, err := h[rpc.MethodKill](ctx, stamped(t, "aaaa0001", "kid"))
 	var jerr *jkrpc.Error
 	if !errors.As(err, &jerr) || jerr.Code != ErrCode || !strings.Contains(jerr.Message, "figaro:kid") || !strings.Contains(jerr.Message, "read:*") {
@@ -259,15 +260,15 @@ func TestTheStampReachesTheHandlerContext(t *testing.T) {
 	var inner context.Context
 	h := Guard(map[string]jkrpc.HandlerFunc{
 		rpc.MethodQua: func(ctx context.Context, _ json.RawMessage) (any, error) { inner = ctx; return "ok", nil },
-	}, AriaHeader{}, Enforce(p))
-	ctx := WithSubject(context.Background(), subject(me))
-	if _, err := Authenticated(AriaHeader{}, h[rpc.MethodQua])(ctx, stamped(t, "aaaa0002", "kid")); err != nil {
+	}, authn.AriaHeader{}, Enforce(p))
+	ctx := authn.WithSubject(context.Background(), subject(me))
+	if _, err := authn.Authenticated(authn.AriaHeader{}, h[rpc.MethodQua])(ctx, stamped(t, "aaaa0002", "kid")); err != nil {
 		t.Fatal(err)
 	}
-	if got := FigaroOf(inner); got != "kid" {
+	if got := authn.FigaroOf(inner); got != "kid" {
 		t.Fatalf("handler saw %q, want kid", got)
 	}
-	if got := FigaroOf(WithSubject(inner, subject(other))); got != "" {
+	if got := authn.FigaroOf(authn.WithSubject(inner, subject(other))); got != "" {
 		t.Fatalf("another principal inherited the stamp %q", got)
 	}
 }
@@ -290,14 +291,14 @@ func TestADoorDroppingAClaimNotHeldLogsTheDoorAndTheID(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
 	p := narrowed(t, sandboxPolicy, nil)
-	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodQua: func(context.Context, json.RawMessage) (any, error) { return "ok", nil }}, AriaHeader{}, Enforce(p))
+	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodQua: func(context.Context, json.RawMessage) (any, error) { return "ok", nil }}, authn.AriaHeader{}, Enforce(p))
 	params, err := rpc.WithCaller(map[string]string{"figaro_id": "aaaa0002", "text": "PARAMS-STAY-OUT"}, "elsewhere", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, d := range []Door{DoorLocal, DoorNode, DoorWeb} {
+	for _, d := range []authn.Door{authn.DoorLocal, authn.DoorNode, authn.DoorWeb} {
 		logs.Reset()
-		if _, err := h[rpc.MethodQua](WithDoor(WithSubject(context.Background(), subject(me)), d), params); err != nil {
+		if _, err := h[rpc.MethodQua](authn.WithDoor(authn.WithSubject(context.Background(), subject(me)), d), params); err != nil {
 			t.Fatalf("%s: %v", d, err)
 		}
 		line := logs.String()
@@ -309,7 +310,7 @@ func TestADoorDroppingAClaimNotHeldLogsTheDoorAndTheID(t *testing.T) {
 		}
 	}
 	logs.Reset()
-	if _, err := h[rpc.MethodQua](WithDoor(WithSubject(context.Background(), subject(me)), DoorInProcess), params); err == nil {
+	if _, err := h[rpc.MethodQua](authn.WithDoor(authn.WithSubject(context.Background(), subject(me)), authn.DoorInProcess), params); err == nil {
 		t.Fatal("in-process: a claim not held here ran")
 	}
 	if strings.Contains(logs.String(), "dropped") {

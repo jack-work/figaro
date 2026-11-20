@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkauthz"
 )
 
@@ -95,7 +96,7 @@ func TestAPoolDaemonTakesNoDefaultPolicy(t *testing.T) {
 
 func TestARefusedPoolPolicyLeavesThePreviousOneInForce(t *testing.T) {
 	admin := jkauthz.Subject{Principal: jkauthz.Principal{Kind: jkauthz.KindUser, ID: "jack@auth.kelliher.info"}}
-	everyone := jkauthz.Subject{Principal: jkauthz.Principal{Kind: KindService, ID: "anyone@auth.kelliher.info"}}
+	everyone := jkauthz.Subject{Principal: jkauthz.Principal{Kind: authn.KindService, ID: "anyone@auth.kelliher.info"}}
 	p := policiesFor(true)
 	if err := p.Reload(poolPolicy(t, `"service:broker-server@auth.kelliher.info"`, ``)); err != nil {
 		t.Fatal(err)

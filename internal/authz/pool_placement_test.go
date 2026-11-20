@@ -9,6 +9,7 @@ import (
 
 	"github.com/jack-work/jkauthz"
 
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/hierarchy"
 )
 
@@ -28,7 +29,7 @@ func provisionerGuard(t *testing.T, asked *[]placementAsked, answer error) Topol
 }
 
 func placing(s jkauthz.Subject) hierarchy.Principal {
-	return hierarchy.Principal{Name: s.Principal.String(), Subject: TopologyCaller{Subject: s, Door: DoorInProcess}}
+	return hierarchy.Principal{Name: s.Principal.String(), Subject: TopologyCaller{Subject: s, Door: authn.DoorInProcess}}
 }
 
 func placeOf(node, under string) hierarchy.Plan {
@@ -43,7 +44,7 @@ func placeOf(node, under string) hierarchy.Plan {
 // restore is refused with them: kill on the revived node is all it asks,
 // and a lease handler has no business reviving what a release reaped.
 func TestTheProvisionerMovesANodeOnlyByThePlacementItsMintMakes(t *testing.T) {
-	serving := ProvisionerServing(leaseA)
+	serving := authn.ProvisionerServing(leaseA)
 	var asked []placementAsked
 	g := provisionerGuard(t, &asked, nil)
 
@@ -69,8 +70,8 @@ func TestTheProvisionerMovesANodeOnlyByThePlacementItsMintMakes(t *testing.T) {
 		}
 	}
 	for name, s := range map[string]jkauthz.Subject{
-		"no lease":   {Principal: ProvisionerPrincipal()},
-		"two leases": {Principal: ProvisionerPrincipal(), Groups: []string{leaseA + "@" + PoolScope, leaseB + "@" + PoolScope}},
+		"no lease":   {Principal: authn.ProvisionerPrincipal()},
+		"two leases": {Principal: authn.ProvisionerPrincipal(), Groups: []string{leaseA + "@" + authn.PoolScope, leaseB + "@" + authn.PoolScope}},
 	} {
 		if _, err := g.Check(context.Background(), placing(s), placeOf("in-a", "pool-node")); err == nil {
 			t.Errorf("a provisioner serving %s placed a node", name)

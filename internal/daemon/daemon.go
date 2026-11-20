@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/arialog"
+	"github.com/jack-work/figaro/internal/authn"
 
 	"github.com/jack-work/hush/managed"
 
@@ -621,7 +622,7 @@ func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded
 	if err != nil {
 		return fmt.Errorf("door.web: %w", err)
 	}
-	admit, err := webAuthenticator(web.Authn, web.Path, a.SocketPath, loaded.Config.Authz, authz.Bearers{Issuers: a.Issuers, Keys: a.APIKeys})
+	admit, err := webAuthenticator(web.Authn, web.Path, a.SocketPath, loaded.Config.Authz, authn.Bearers{Issuers: a.Issuers, Keys: a.APIKeys})
 	if err != nil {
 		ln.Close()
 		return fmt.Errorf("door.web: %w", err)
@@ -654,11 +655,11 @@ func webDoorLimits(loaded *config.Loaded, web config.WebDoor, admit angelus.WebA
 }
 
 func admitLocal(a *angelus.Angelus, cfg config.AuthzConfig) error {
-	peer, err := authz.NewPeercred(uint32(os.Getuid()), cfg.Peercred)
+	peer, err := authn.NewPeercred(uint32(os.Getuid()), cfg.Peercred)
 	if err != nil {
 		return err
 	}
-	owner, err := authz.OwnerOf(cfg, peer.Self())
+	owner, err := authn.OwnerOf(cfg, peer.Self())
 	if err != nil {
 		return err
 	}
@@ -666,13 +667,13 @@ func admitLocal(a *angelus.Angelus, cfg config.AuthzConfig) error {
 	return nil
 }
 
-func webAuthenticator(name, listen, cliDoor string, cfg config.AuthzConfig, b authz.Bearers) (angelus.WebAdmit, error) {
+func webAuthenticator(name, listen, cliDoor string, cfg config.AuthzConfig, b authn.Bearers) (angelus.WebAdmit, error) {
 	if len(cfg.Issuers) == 0 {
 		b.Issuers = nil
 	}
 	switch name {
 	case "upstream":
-		u, err := authz.NewUpstream(cfg.Upstream, listen, cliDoor, b.Issuers)
+		u, err := authn.NewUpstream(cfg.Upstream, listen, cliDoor, b.Issuers)
 		if err != nil {
 			return nil, err
 		}

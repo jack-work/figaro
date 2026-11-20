@@ -1,4 +1,4 @@
-package authz
+package authn
 
 import (
 	"context"
@@ -282,7 +282,7 @@ func (is *Issuers) SetTroupe(cfgs []config.IssuerConfig) error {
 			errs = append(errs, fmt.Errorf("troupe issuer %q: a troupe names only https issuers", cfg.Issuer))
 			continue
 		}
-		if err := checkTroupeClients(cfg); err != nil {
+		if err := CheckTroupeClients(cfg); err != nil {
 			errs = append(errs, err)
 			continue
 		}
@@ -306,7 +306,7 @@ func (is *Issuers) SetTroupe(cfgs []config.IssuerConfig) error {
 	return errors.Join(errs...)
 }
 
-func checkTroupeClients(cfg config.IssuerConfig) error {
+func CheckTroupeClients(cfg config.IssuerConfig) error {
 	for _, id := range slices.Sorted(maps.Keys(cfg.Clients)) {
 		if k := jkauthz.Kind(cfg.Clients[id]); k != jkauthz.KindUser && k != KindService {
 			return fmt.Errorf("troupe issuer %s: clients.%s resolves to %q; a troupe issuer names only users and services", cfg.Issuer, id, k)

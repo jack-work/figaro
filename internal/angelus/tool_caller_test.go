@@ -8,12 +8,12 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/store"
 )
 
 func toolOf(figaro string) context.Context {
-	return authz.WithToolOf(localOwner(), figaro)
+	return authn.WithToolOf(localOwner(), figaro)
 }
 
 func (r licenseRig) setFrom(ctx context.Context, t *testing.T, target string, kv map[string]any) error {
@@ -62,7 +62,7 @@ func TestAToolCallerSetsProtectedKeysOnlyOnItsDescendants(t *testing.T) {
 func TestAToolCallerSendsUnderItsOwnName(t *testing.T) {
 	raw, _ := json.Marshal(map[string]any{rpc.CallerLabelKey: rpc.CallerRef{Duke: true}})
 	var seen json.RawMessage
-	h := authz.Authenticated(authz.AriaHeader{}, func(_ context.Context, p json.RawMessage) (any, error) {
+	h := authn.Authenticated(authn.AriaHeader{}, func(_ context.Context, p json.RawMessage) (any, error) {
 		seen = p
 		return nil, nil
 	})

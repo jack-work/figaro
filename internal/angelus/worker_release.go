@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/store"
@@ -26,7 +26,7 @@ const (
 
 func (h *handlers) everythingOfLease(box string, minted []string) []string {
 	backend := h.angelus.Backend
-	by := authz.BoxPrincipal(box).String()
+	by := authn.BoxPrincipal(box).String()
 	var forms, figaros []string
 	add := func(id, kind string) {
 		if slices.Contains(forms, id) || slices.Contains(figaros, id) {
@@ -113,7 +113,7 @@ func (h *handlers) releaseLease(ctx context.Context, pool, key string, generatio
 	loaded.ReleaseBox(box)
 	workers.forgetLease(box)
 
-	ctx = authz.WithSubject(inProcess(ctx), authz.ProvisionerServing(box))
+	ctx = authn.WithSubject(inProcess(ctx), authn.ProvisionerServing(box))
 	purged := h.everythingOfLease(box, row.Minted)
 	for _, id := range purged {
 		if err := h.purgeNow(ctx, id); err != nil {
@@ -197,7 +197,7 @@ func (h *handlers) orphansOfLeases() []string {
 		}
 		if m, _ := backend.Meta(n.ID); box == "" && m != nil {
 			if by, err := jkauthz.ParsePrincipal(m.MintedBy); err == nil {
-				box, _ = authz.BoxOf(by)
+				box, _ = authn.BoxOf(by)
 			}
 		}
 		if !leasedBoxOfWorker(box, names) {
@@ -264,7 +264,7 @@ func (h *handlers) recoverWorkerPools(ctx context.Context) {
 	workers.leasing.Lock()
 	defer workers.leasing.Unlock()
 	h.releaseUnfinishedLeases(ctx)
-	owner := authz.WithSubject(inProcess(context.WithoutCancel(ctx)), jkauthz.Subject{Principal: h.angelus.owner()})
+	owner := authn.WithSubject(inProcess(context.WithoutCancel(ctx)), jkauthz.Subject{Principal: h.angelus.owner()})
 	orphans := h.orphansOfLeases()
 	purged := 0
 	for _, id := range orphans {

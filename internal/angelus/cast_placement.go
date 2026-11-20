@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 )
 
 func (h *handlers) refuseCastPlacement(ctx context.Context, method, id string, params json.RawMessage) error {
@@ -21,7 +21,7 @@ func (h *handlers) refuseCastPlacement(ctx context.Context, method, id string, p
 	if roleID == "" {
 		return nil
 	}
-	if authz.FigaroOf(ctx) == "" && !authz.Claimed(ctx) && h.callerOwns(ctx) {
+	if authn.FigaroOf(ctx) == "" && !authn.Claimed(ctx) && h.callerOwns(ctx) {
 		return nil
 	}
 	snap, err := h.angelus.Backend.FormState(roleID)

@@ -1,10 +1,8 @@
-package authz
+package authn
 
 import (
 	"context"
 	"fmt"
-
-	"github.com/jack-work/jkauthz"
 )
 
 type Door uint8
@@ -43,7 +41,7 @@ func (d Door) SeatsOnlyPolicySubjects() bool {
 	return d != DoorInProcess && d != DoorLocal && d != DoorNode
 }
 
-func (d Door) dropsClaimsNotHeld() bool {
+func (d Door) DropsClaimsNotHeld() bool {
 	return d != DoorInProcess && d != DoorUnknown
 }
 
@@ -60,21 +58,4 @@ func WithDoor(ctx context.Context, d Door) context.Context {
 func DoorOf(ctx context.Context) Door {
 	d, _ := ctx.Value(doorKey{}).(Door)
 	return d
-}
-
-func LocalOrOwner(owner jkauthz.Principal) Policy {
-	return PolicyFunc(func(r Request) Decision {
-		if PassesUnpoliced(r.Door, owner, r.Subject) {
-			return Allow()
-		}
-		return Deny("%s: no policy is loaded, so the %s door passes only the owner", r.Method, r.Door)
-	})
-}
-
-func PassesUnpoliced(d Door, owner jkauthz.Principal, s jkauthz.Subject) bool {
-	return d.Trusted() || IsOwner(owner, s)
-}
-
-func IsOwner(owner jkauthz.Principal, s jkauthz.Subject) bool {
-	return !owner.IsZero() && s.Principal == owner
 }

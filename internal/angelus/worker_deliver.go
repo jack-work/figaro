@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/workerpool"
@@ -69,7 +69,7 @@ func (h *handlers) workerDeliver(ctx context.Context, params json.RawMessage) (a
 	if len(req.Text) > pool.DeliverCap() {
 		return nil, workerRefused(rpc.WorkerRefusal{Reason: rpc.WorkerTooLarge, Pool: req.Pool}, "%s: the text is %d bytes and the pool takes %d", rpc.MethodWorkerDeliver, len(req.Text), pool.DeliverCap())
 	}
-	holder := authz.PrincipalText(authz.PrincipalOf(ctx))
+	holder := authn.PrincipalText(authn.PrincipalOf(ctx))
 	workers.leasing.Lock()
 	defer workers.leasing.Unlock()
 	held, ok := workers.Ledger.Held(req.Pool, req.Key)

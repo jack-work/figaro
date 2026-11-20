@@ -13,6 +13,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkauthz"
@@ -79,8 +80,8 @@ func newAriasRig(t *testing.T) ariasRig {
 
 func guestIn(groups ...string) context.Context {
 	p := jkauthz.Principal{Kind: jkauthz.KindUser, ID: "guest"}
-	ctx := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "guest"})
-	return authz.WithSubject(ctx, jkauthz.Subject{Principal: p, Groups: groups})
+	ctx := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "guest"})
+	return authn.WithSubject(ctx, jkauthz.Subject{Principal: p, Groups: groups})
 }
 
 func ariasShows(t *testing.T, h *handlers, ctx context.Context, id string) bool {

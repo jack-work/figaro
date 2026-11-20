@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
 )
@@ -35,7 +36,7 @@ func policyHub(t *testing.T, policy authz.Policy) (*ariaHub, string) {
 // A forged x-internal-figaro-id reaches the policy as the bare asserted id,
 // beside the connection's principal the params cannot touch.
 func TestHubAttributesAForgedCallerAsAsserted(t *testing.T) {
-	seen := make(chan authz.Identity, 1)
+	seen := make(chan authn.Identity, 1)
 	hb, path := policyHub(t, authz.PolicyFunc(func(r authz.Request) authz.Decision {
 		seen <- r.Identity
 		return authz.Allow()

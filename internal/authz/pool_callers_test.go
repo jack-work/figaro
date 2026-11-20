@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/jack-work/figaro/internal/authn"
 )
 
 const atPackageLevel = "(package level)"
@@ -29,14 +31,15 @@ func TestOnlyTheLeaseHandlersBuildAProvisionerSubject(t *testing.T) {
 			"internal/angelus/worker_release.go": {"releaseLease"},
 		},
 		"ProvisionerPrincipal": {
-			"internal/authz/pool.go":          {"ProvisionerServing"},
+			"internal/authn/principals.go":    {"ProvisionerServing"},
 			"internal/angelus/worker_mint.go": {"poolNodeOf", "mintPoolNodes"},
 		},
 		"provisionerID": {
-			"internal/authz/pool.go": {atPackageLevel, "ProvisionerPrincipal", "IsProvisioner"},
+			"internal/authn/principals.go": {atPackageLevel, "ProvisionerPrincipal", "IsProvisioner"},
 		},
 		"PoolScope": {
-			"internal/authz/pool.go": {atPackageLevel, "ProvisionerServing", "leaseServed"},
+			"internal/authn/principals.go": {atPackageLevel, "ProvisionerServing"},
+			"internal/authz/pool.go":       {"leaseServed"},
 		},
 	}
 	root := filepath.Join("..", "..")
@@ -75,7 +78,7 @@ func TestOnlyTheLeaseHandlersBuildAProvisionerSubject(t *testing.T) {
 							note(x.Name, rel, where)
 						}
 					case *ast.BasicLit:
-						if text, err := strconv.Unquote(x.Value); err == nil && x.Kind == token.STRING && strings.Contains(text, PoolScope) {
+						if text, err := strconv.Unquote(x.Value); err == nil && x.Kind == token.STRING && strings.Contains(text, authn.PoolScope) {
 							note("PoolScope", rel, where)
 						}
 					}

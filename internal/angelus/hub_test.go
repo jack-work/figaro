@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/store"
@@ -61,7 +62,7 @@ func serveDoor(t testing.TB, h *handlers, policy authz.Policy) string {
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go h.angelus.Serve(ctx, ln, authz.DoorLocal, nil)
+	go h.angelus.Serve(ctx, ln, authn.DoorLocal, nil)
 	return path
 }
 

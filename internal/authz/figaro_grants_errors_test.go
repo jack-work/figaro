@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -51,8 +52,8 @@ func TestAFigaroWhoseScopesCannotBeReadIsRefusedAndToldSo(t *testing.T) {
 func TestTheGuardAnswersAnUnreadableFigaroWithAnErrorNotNotFound(t *testing.T) {
 	p := narrowedButUnreadable(t, map[string]string{"kid": `["read:*"]`}, "top")
 	ok := func(context.Context, json.RawMessage) (any, error) { return "ok", nil }
-	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodIR: ok}, AriaHeader{}, Enforce(p))
-	_, err := h[rpc.MethodIR](WithSubject(context.Background(), subject(me)), stamped(t, "aaaa0002", "kid"))
+	h := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodIR: ok}, authn.AriaHeader{}, Enforce(p))
+	_, err := h[rpc.MethodIR](authn.WithSubject(context.Background(), subject(me)), stamped(t, "aaaa0002", "kid"))
 	var jerr *jkrpc.Error
 	if !errors.As(err, &jerr) || jerr.Code != ErrCode || !strings.Contains(jerr.Message, "cannot be read") {
 		t.Fatalf("a read by a figaro whose scopes cannot be read: %v, want a refusal that says so", err)

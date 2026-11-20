@@ -8,19 +8,8 @@ import (
 	"github.com/jack-work/jkauthz"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 )
-
-const PoolScope = "local:pool"
-
-const provisionerID = "provisioner@" + PoolScope
-
-func ProvisionerPrincipal() jkauthz.Principal {
-	return jkauthz.Principal{Kind: KindService, ID: provisionerID}
-}
-
-func IsProvisioner(p jkauthz.Principal) bool {
-	return p.Kind == KindService && p.ID == provisionerID && p.Node == ""
-}
 
 type Leases interface {
 	InForce(box string) bool
@@ -30,15 +19,11 @@ func (p *Policies) SetLeases(l Leases) {
 	p.leases.Store(&l)
 }
 
-func ProvisionerServing(box string) jkauthz.Subject {
-	return jkauthz.Subject{Principal: ProvisionerPrincipal(), Groups: []string{box + "@" + PoolScope}}
-}
-
 func leaseServed(s jkauthz.Subject) (string, bool) {
 	if len(s.Groups) != 1 {
 		return "", false
 	}
-	box, ok := strings.CutSuffix(s.Groups[0], "@"+PoolScope)
+	box, ok := strings.CutSuffix(s.Groups[0], "@"+authn.PoolScope)
 	return box, ok && box != ""
 }
 
@@ -57,7 +42,7 @@ func (p *Policies) leasedBox(principal jkauthz.Principal) (string, bool) {
 	if !p.pool.Load() {
 		return "", false
 	}
-	box, ok := BoxOf(principal)
+	box, ok := authn.BoxOf(principal)
 	if !ok || !leaseName.MatchString(box) {
 		return "", false
 	}

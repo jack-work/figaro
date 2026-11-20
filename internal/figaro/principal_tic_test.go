@@ -6,7 +6,7 @@ import (
 
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 )
 
 // The sender label is what a caller asserted; the principal is what the
@@ -17,7 +17,7 @@ func TestAUserTicCarriesTheStampedPrincipalBesideTheLabel(t *testing.T) {
 	ch, unsub := subscribeChan(a)
 	defer unsub()
 
-	ctx := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: "sandbox", ID: "dev-3"})
+	ctx := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: "sandbox", ID: "dev-3"})
 	if err := a.SubmitPromptFrom(ctx, rpc.QuaRequest{Text: "hello"}, "aria 1234abcd"); err != nil {
 		t.Fatal(err)
 	}

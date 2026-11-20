@@ -8,7 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/decide"
 	"github.com/jack-work/figaro/internal/methods"
 )
@@ -25,7 +25,7 @@ func (h *handlers) decide(ctx context.Context, params json.RawMessage) (any, err
 		return nil, fmt.Errorf("decide: name an aria or an outfit, not both")
 	}
 	src := decide.Source{
-		FigaroID: authz.FigaroOf(ctx),
+		FigaroID: authn.FigaroOf(ctx),
 		Node:     h.nodeLabel(),
 		Context:  req.Context,
 		Defaults: h.defaultForm(),

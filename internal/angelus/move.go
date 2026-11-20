@@ -18,6 +18,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/figwal/xwal"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/peer"
@@ -654,7 +655,7 @@ func (h *handlers) towardsMoved(ctx context.Context, method string, t store.Tomb
 	if !ok {
 		return "", "", fmt.Errorf("%s moved to node %s, which this node does not peer with", t.ID, t.To)
 	}
-	if _, ok := authz.BearerOf(ctx); !ok {
+	if _, ok := authn.BearerOf(ctx); !ok {
 		return "", "", h.needsBearer(t.ID, to)
 	}
 	return t.ID, to, nil

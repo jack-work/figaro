@@ -7,7 +7,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -23,7 +23,7 @@ func (h *handlers) holdInCallerBox(ctx context.Context, patch form.Patch) (form.
 	if !ok {
 		return patch, nil
 	}
-	if n := h.formsMintedBy(authz.PrincipalText(authz.PrincipalOf(ctx))); n >= boxFormsMax {
+	if n := h.formsMintedBy(authn.PrincipalText(authn.PrincipalOf(ctx))); n >= boxFormsMax {
 		return form.Patch{}, fmt.Errorf("box %s holds %d unbound forms, the most a box may mint", box, n)
 	}
 	return form.Merge(patch, boxHold(box)), nil

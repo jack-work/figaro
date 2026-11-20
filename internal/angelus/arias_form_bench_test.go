@@ -13,6 +13,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkauthz"
@@ -57,7 +58,7 @@ func BenchmarkAriasTick(b *testing.B) {
 			b.Fatal(err)
 		}
 		h := &handlers{angelus: a}
-		ctx := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"})
+		ctx := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: "0"})
 		w := newAriasWatch(ctx)
 		h.rebuildArias(w)
 		snap, _ := w.forms[rpc.AriasFormID].form.Snapshot()

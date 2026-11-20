@@ -17,7 +17,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -207,7 +207,7 @@ func TestStragglerLogNamesMethodAriaAndDoorNeverParams(t *testing.T) {
 			entered <- struct{}{}
 			return block(ctx, p)
 		})
-		go h(authz.WithDoor(context.Background(), authz.DoorBox), params)
+		go h(authn.WithDoor(context.Background(), authn.DoorBox), params)
 	}
 	call("troupe.sign", r.aria)
 	call("apikey.mint", "../../etc/passwd\nforged=line")
@@ -216,7 +216,7 @@ func TestStragglerLogNamesMethodAriaAndDoorNeverParams(t *testing.T) {
 	r.a.Shutdown(time.Second)
 
 	out := logs.String()
-	for _, want := range []string{"troupe.sign aria=" + r.aria + " door=" + authz.DoorBox.String(), "apikey.mint aria=- door=" + authz.DoorBox.String()} {
+	for _, want := range []string{"troupe.sign aria=" + r.aria + " door=" + authn.DoorBox.String(), "apikey.mint aria=- door=" + authn.DoorBox.String()} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the timeout log lacks %q:\n%s", want, out)
 		}
@@ -258,7 +258,7 @@ func TestAStopClosesADoorServedOnAContextNobodyCancels(t *testing.T) {
 		t.Fatal(err)
 	}
 	served := make(chan error, 1)
-	go func() { served <- r.a.Serve(context.Background(), ln, authz.DoorNode, nil) }()
+	go func() { served <- r.a.Serve(context.Background(), ln, authn.DoorNode, nil) }()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		c, err := net.Dial("tcp", ln.Addr().String())

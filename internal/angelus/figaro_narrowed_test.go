@@ -10,6 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
@@ -48,7 +49,7 @@ principals = ["user:owner"]
 		t.Fatal(err)
 	}
 	r.hs = NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())})
-	r.ownerCtx = authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "owner"})
+	r.ownerCtx = authn.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "owner"})
 	return r
 }
 
@@ -116,7 +117,7 @@ func TestEachStampGetsItsOwnAriasWatch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, _ = authz.Authenticated(authz.AriaHeader{}, func(ctx context.Context, _ json.RawMessage) (any, error) {
+		_, _ = authn.Authenticated(authn.AriaHeader{}, func(ctx context.Context, _ json.RawMessage) (any, error) {
 			key = ariasKey(ctx)
 			return nil, nil
 		})(r.ownerCtx, raw)

@@ -12,7 +12,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -50,7 +50,7 @@ func TestANonOwnerHoldingKillIsRefusedGC(t *testing.T) {
 		t.Fatal(err)
 	}
 	idleFor(t, r.a, made.FigaroID, 40*24*time.Hour)
-	troupe := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalKind(authz.KindTroupe), ID: "kelliher"})
+	troupe := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalKind(authn.KindTroupe), ID: "kelliher"})
 	victim, err := r.create(asOwner(), "mock")
 	if err != nil {
 		t.Fatal(err)
@@ -212,7 +212,7 @@ func TestNoCallerSetsTheReapKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	troupe := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalKind(authz.KindTroupe), ID: "kelliher"})
+	troupe := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalKind(authn.KindTroupe), ID: "kelliher"})
 	if _, err := r.call(troupe, rpc.MethodSet, withAria(t, made.FigaroID, rpc.SetRequest{Patch: *mantraPatch("lent set works")})); err != nil {
 		t.Fatalf("the lent set grant does not reach set, so this test proves nothing: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestRestoreKeepIsTheOwners(t *testing.T) {
 	if _, err := r.call(asOwner(), rpc.MethodKill, rpc.KillRequest{FigaroID: made.FigaroID}); err != nil {
 		t.Fatal(err)
 	}
-	troupe := authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalKind(authz.KindTroupe), ID: "kelliher"})
+	troupe := authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalKind(authn.KindTroupe), ID: "kelliher"})
 	if _, err := r.call(troupe, rpc.MethodReapedRestore, rpc.ReapedRestoreRequest{FigaroID: made.FigaroID, Keep: true}); err == nil || !strings.Contains(err.Error(), "owner-held") {
 		t.Fatalf("a lent set restored with --keep, removing the owner's ttl: %v", err)
 	}

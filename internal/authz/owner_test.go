@@ -3,22 +3,23 @@ package authz
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/jkauthz"
 )
 
 func TestOwnerOfIsTheDaemonUIDUntilConfigNamesAPerson(t *testing.T) {
 	self := jkauthz.Principal{Kind: jkauthz.KindUser, ID: "2001"}
-	got, err := OwnerOf(config.AuthzConfig{}, self)
+	got, err := authn.OwnerOf(config.AuthzConfig{}, self)
 	if err != nil || got != self {
 		t.Fatalf("unset owner: %v, %v; want the daemon's own principal", got, err)
 	}
-	got, err = OwnerOf(config.AuthzConfig{Owner: "user:1000"}, self)
+	got, err = authn.OwnerOf(config.AuthzConfig{Owner: "user:1000"}, self)
 	if err != nil || got != (jkauthz.Principal{Kind: jkauthz.KindUser, ID: "1000"}) {
 		t.Fatalf("named owner: %v, %v", got, err)
 	}
 	for _, bad := range []string{"1000", "spain/user:1000", "troupe:kelliher", "user:"} {
-		if p, err := OwnerOf(config.AuthzConfig{Owner: bad}, self); err == nil {
+		if p, err := authn.OwnerOf(config.AuthzConfig{Owner: bad}, self); err == nil {
 			t.Errorf("owner %q accepted as %v", bad, p)
 		}
 	}

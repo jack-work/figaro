@@ -1,4 +1,4 @@
-package authz
+package authn
 
 import (
 	"testing"
@@ -13,7 +13,7 @@ func TestLabelCannotAuthorize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WithCaller: %v", err)
 	}
-	id := AriaHeader{}.Authenticate(user, params)
+	id := AriaHeader{}.Authenticate(rpc.Principal{Kind: rpc.PrincipalUser, ID: "1000"}, params)
 	if id.FigaroID != "" {
 		t.Fatalf("a label leaked into FigaroID: %+v", id)
 	}

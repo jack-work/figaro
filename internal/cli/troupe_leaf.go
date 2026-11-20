@@ -21,7 +21,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/troupe"
@@ -94,7 +94,7 @@ func troupeLeafFor(ctx context.Context, d leafDoor, in io.Reader, out io.Writer,
 	if id.Node == o.For {
 		return errors.New("--for names this node; its daemon issues its own certificate")
 	}
-	owner := authz.PrincipalText(id.Principal)
+	owner := authn.PrincipalText(id.Principal)
 	if err := troupe.ValidOwner(owner); err != nil {
 		return fmt.Errorf("no principal to record as the node's owner: %w", err)
 	}

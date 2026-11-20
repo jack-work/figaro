@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 )
 
 const (
@@ -82,7 +83,7 @@ func TestSandboxedSelfFailsClosedOnAnUnreadableForm(t *testing.T) {
 	f := unboxedFacts()
 	f.boxed[unreadable] = "judge"
 	p := loadedWith(t, f, DefaultPolicy(me, []string{"judge"}))
-	judge := BoxPrincipal("judge")
+	judge := authn.BoxPrincipal("judge")
 	if !p.Allow(subject(judge), rpc.VerbRead, Aria(boxAria)).Allowed {
 		t.Fatal("the box cannot read its own aria")
 	}
@@ -127,7 +128,7 @@ role = "lent"
 principals = ["troupe:estate"]
 `)
 	withTroupe(t, p, everything)
-	ceiling := subject(TroupePrincipal("estate"))
+	ceiling := subject(authn.TroupePrincipal("estate"))
 	for id, want := range map[string]bool{plainAria: true, localAria: true, boxAria: false, goneBoxAria: false, unreadable: false} {
 		if got := p.Allow(subject(guest), rpc.VerbSet, Aria(id)).Allowed; got != want {
 			t.Errorf("troupe guest set on %s: allowed %v, want %v", id, got, want)

@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 )
 
 // El Inspector XV: a claim for a figaro the store does not hold ran with no
@@ -45,7 +45,7 @@ func TestACallClaimingAFigaroNotHeldIsRefused(t *testing.T) {
 		name string
 		ctx  context.Context
 	}{
-		{"in-process", authz.WithDoor(asOwner(), authz.DoorInProcess)},
+		{"in-process", authn.WithDoor(asOwner(), authn.DoorInProcess)},
 		{"no door", asOwner()},
 	}
 	for _, claim := range []string{x, "0123456789abcdef0123456789abcdef"} {
@@ -68,8 +68,8 @@ func TestACallClaimingAFigaroNotHeldIsRefused(t *testing.T) {
 		t.Fatalf("a refused set narrowed the owner's aria to %s", got)
 	}
 
-	for _, d := range []authz.Door{authz.DoorLocal, authz.DoorNode} {
-		if _, err := r.h[rpc.MethodRead](authz.WithDoor(asOwner(), d), claimed(t, x, withAria(t, t1, rpc.ReadRequest{FigaroID: t1}))); err != nil {
+	for _, d := range []authn.Door{authn.DoorLocal, authn.DoorNode} {
+		if _, err := r.h[rpc.MethodRead](authn.WithDoor(asOwner(), d), claimed(t, x, withAria(t, t1, rpc.ReadRequest{FigaroID: t1}))); err != nil {
 			t.Errorf("%s door: a claim not held here is dropped and the caller's own authority reads: %v", d, err)
 		}
 	}
@@ -90,7 +90,7 @@ func TestTheLabelChecksRefuseADroppedClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	ghost := "0123456789abcdef0123456789abcdef"
-	local := authz.WithDoor(asOwner(), authz.DoorLocal)
+	local := authn.WithDoor(asOwner(), authn.DoorLocal)
 	for name, keys := range map[string]map[string]any{
 		"max_children": {"system.fanout.max_children": 2},
 		"quota":        {"system.fanout.quota": 2},

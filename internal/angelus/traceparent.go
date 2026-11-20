@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
@@ -35,6 +36,6 @@ func (h *handlers) trustTraceparent(ctx context.Context, method string, params j
 }
 
 func (h *handlers) callerIsOwner(ctx context.Context) bool {
-	sub, err := authz.SubjectOf(ctx)
+	sub, err := authn.SubjectOf(ctx)
 	return err == nil && authz.OwnerCall(ctx, h.angelus.owner(), sub)
 }

@@ -24,7 +24,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
@@ -240,14 +240,14 @@ func troupeJoin(ctx context.Context, d joinDoor, site joinSite, name string, o j
 }
 
 func principalOrNobody(p rpc.Principal) string {
-	if t := authz.PrincipalText(p); t != "" {
+	if t := authn.PrincipalText(p); t != "" {
 		return t
 	}
 	return "(no principal)"
 }
 
 func peercredFor(uid int, p rpc.Principal) string {
-	text := authz.PrincipalText(p)
+	text := authn.PrincipalText(p)
 	if p.Kind != rpc.PrincipalUser || text == "" || p.ID == strconv.Itoa(uid) {
 		return ""
 	}

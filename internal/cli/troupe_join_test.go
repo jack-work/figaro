@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/troupe"
@@ -314,7 +315,7 @@ func TestTroupeJoinWritesTheDelegation(t *testing.T) {
 
 	p := authz.NewPolicies(jkauthz.Principal{Kind: jkauthz.KindUser, ID: "1000"}, nil)
 	require.NoError(t, p.Reload(path))
-	lent := jkauthz.Subject{Principal: authz.TroupePrincipal("estate")}
+	lent := jkauthz.Subject{Principal: authn.TroupePrincipal("estate")}
 	require.True(t, p.Allow(lent, rpc.VerbSend, authz.Aria("aaaa0001")).Allowed)
 	self := jkauthz.Subject{Principal: jkauthz.Principal{Kind: jkauthz.KindUser, ID: "jack@auth.test"}}
 	require.True(t, p.Allow(self, rpc.VerbKill, authz.Aria("aaaa0001")).Allowed, "the node's own principal lost its owner role")

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
@@ -35,7 +36,7 @@ func TestAListByAFigaroWhoseScopesCannotBeReadSaysSo(t *testing.T) {
 		t.Fatal(err)
 	}
 	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: inProcess(context.Background())})
-	owner := authz.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "owner"})
+	owner := authn.WithPrincipal(inProcess(context.Background()), rpc.Principal{Kind: rpc.PrincipalUser, ID: "owner"})
 	list := func(figaro string) rpc.ListResponse {
 		t.Helper()
 		raw, err := rpc.WithCaller(rpc.ListRequest{}, figaro, nil)

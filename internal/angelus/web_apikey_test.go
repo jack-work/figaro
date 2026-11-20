@@ -17,19 +17,19 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/apikey"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 )
 
 // A key admitted on the web door is the principal hello reports; when the
 // key is revoked the door closes the connection and says why.
 func TestWebDoorClosesAKeysConnectionOnRevoke(t *testing.T) {
-	keys, err := authz.NewAPIKeys("estate", "node-a", nil, nil)
+	keys, err := authn.NewAPIKeys("estate", "node-a", nil, nil)
 	require.NoError(t, err)
 	wire, k, err := apikey.New(rand.Reader)
 	require.NoError(t, err)
-	g := authz.APIKeyGrant{ID: k.ID, Principal: "service:ci@troupe:estate", Hash: k.Hash[:], NotAfter: time.Now().Add(time.Hour), Nodes: []string{"node-a"}}
-	require.NoError(t, keys.SetTroupe([]authz.APIKeyGrant{g}))
-	path := serveWeb(t, newAriaHub("abcd1234"), Web{Admit: authz.Bearers{Keys: keys}.AdmitRequest})
+	g := authn.APIKeyGrant{ID: k.ID, Principal: "service:ci@troupe:estate", Hash: k.Hash[:], NotAfter: time.Now().Add(time.Hour), Nodes: []string{"node-a"}}
+	require.NoError(t, keys.SetTroupe([]authn.APIKeyGrant{g}))
+	path := serveWeb(t, newAriaHub("abcd1234"), Web{Admit: authn.Bearers{Keys: keys}.AdmitRequest})
 
 	_, resp, err := dialWeb(t, path, http.Header{"Authorization": {"Bearer fgk_not_a_key"}})
 	require.Error(t, err)
@@ -42,7 +42,7 @@ func TestWebDoorClosesAKeysConnectionOnRevoke(t *testing.T) {
 	require.Equal(t, "ci@troupe:estate", hello.Principal.ID)
 
 	g.Void = "revoked"
-	require.NoError(t, keys.SetTroupe([]authz.APIKeyGrant{g}))
+	require.NoError(t, keys.SetTroupe([]authn.APIKeyGrant{g}))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, _, err = c.Read(ctx)

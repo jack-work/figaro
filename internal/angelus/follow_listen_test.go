@@ -8,6 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/store"
@@ -45,7 +46,7 @@ principals = ["user:listener"]
 
 	for who, want := range map[string]int{"sender": 0, "listener": 1} {
 		f := &follower{hubs: map[*ariaHub]struct{}{}}
-		ctx := context.WithValue(authz.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: who}), followerKey{}, f)
+		ctx := context.WithValue(authn.WithPrincipal(context.Background(), rpc.Principal{Kind: rpc.PrincipalUser, ID: who}), followerKey{}, f)
 		_, _ = hs.Map[rpc.MethodQua](ctx, params)
 		if got := len(f.hubs); got != want {
 			t.Errorf("%s follows %d aria(s), want %d", who, got, want)

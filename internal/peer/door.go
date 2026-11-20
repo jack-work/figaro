@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 )
 
 type Verify func(ctx context.Context, bearer string) (context.Context, error)
@@ -136,7 +136,7 @@ func (d *Door) enter(ctx context.Context, tc *tls.Conn) (context.Context, error)
 	}
 	d.Versions.Saw(node, p.Version, d.Members.Version(), p.Policy)
 	d.Versions.Presented(node, cert)
-	ctx = authz.WithPrincipal(ctx, rpc.Principal{Kind: rpc.PrincipalNode, ID: node})
+	ctx = authn.WithPrincipal(ctx, rpc.Principal{Kind: rpc.PrincipalNode, ID: node})
 	ctx = context.WithValue(ctx, viaKey{}, node)
 	switch {
 	case p.Forwarded && p.Bearer == "":

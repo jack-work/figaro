@@ -18,7 +18,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/turns"
@@ -196,8 +196,8 @@ type successionParty interface {
 }
 
 func (h *handlers) ownerContext() context.Context {
-	ctx := authz.WithSubject(context.Background(), jkauthz.Subject{Principal: h.angelus.owner()})
-	return authz.WithDoor(ctx, authz.DoorLocal)
+	ctx := authn.WithSubject(context.Background(), jkauthz.Subject{Principal: h.angelus.owner()})
+	return authn.WithDoor(ctx, authn.DoorLocal)
 }
 
 func (h *handlers) successionParty(ctx context.Context, id string) (successionParty, error) {

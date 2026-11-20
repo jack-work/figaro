@@ -8,6 +8,7 @@ import (
 
 	"github.com/jack-work/jkauthz"
 
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/hierarchy"
 )
 
@@ -22,7 +23,7 @@ grants = ["*:*"]
 role = "box"
 principals = ["sandbox:judge"]
 `)
-	box := guardCaller(jkauthz.KindSandbox, "judge", DoorBox)
+	box := guardCaller(jkauthz.KindSandbox, "judge", authn.DoorBox)
 	move := hierarchy.Move{Node: "alt", From: "trunk", To: "elsewhere", Tree: hierarchy.Storage, NodeOwner: box.Name}
 	_, err := g.Check(context.Background(), box, hierarchy.Plan{Op: hierarchy.Place, Node: "alt", Moves: []hierarchy.Move{move}})
 	if !errors.Is(err, hierarchy.ErrDrawnOnly) {
@@ -37,7 +38,7 @@ principals = ["sandbox:judge"]
 // K7: the box door is never the owner, even if its principal were to equal him.
 func TestTheBoxDoorIsNeverTheOwner(t *testing.T) {
 	g := topologyGuard(t, setOnlyPolicy)
-	onBox := guardCaller(guardOwner.Kind, guardOwner.ID, DoorBox)
+	onBox := guardCaller(guardOwner.Kind, guardOwner.ID, authn.DoorBox)
 	move := hierarchy.Move{Node: "a", From: "s", To: "b", Tree: hierarchy.Storage, NodeOwner: guardOwner.String()}
 	_, err := g.Check(context.Background(), onBox, hierarchy.Plan{Op: hierarchy.Arrange, Moves: []hierarchy.Move{move}})
 	if !errors.Is(err, hierarchy.ErrDrawnOnly) {
@@ -51,7 +52,7 @@ func TestAToolShellsTopologyOpIsJudgedAsItsFigaro(t *testing.T) {
 	g := topologyGuard(t, setOnlyPolicy)
 	move := hierarchy.Move{Node: "a", From: "s", To: "b", Tree: hierarchy.Storage, NodeOwner: guardOwner.String()}
 	plan := hierarchy.Plan{Op: hierarchy.Arrange, Moves: []hierarchy.Move{move}}
-	owner := WithDoor(WithSubject(context.Background(), jkauthz.Subject{Principal: guardOwner}), DoorLocal)
+	owner := authn.WithDoor(authn.WithSubject(context.Background(), jkauthz.Subject{Principal: guardOwner}), authn.DoorLocal)
 	asOwner, err := TopologyPrincipal(owner)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +60,7 @@ func TestAToolShellsTopologyOpIsJudgedAsItsFigaro(t *testing.T) {
 	if _, err := g.Check(context.Background(), asOwner, plan); err != nil {
 		t.Fatalf("the owner at a terminal moving storage: %v", err)
 	}
-	asTool, err := TopologyPrincipal(WithToolOf(owner, "f00d"))
+	asTool, err := TopologyPrincipal(authn.WithToolOf(owner, "f00d"))
 	if err != nil {
 		t.Fatal(err)
 	}

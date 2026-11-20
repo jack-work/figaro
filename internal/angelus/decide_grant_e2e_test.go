@@ -13,7 +13,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/authn"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -82,7 +82,7 @@ client = "service"
 	loaded, err := config.Load(dir)
 	require.NoError(t, err)
 	r.path = filepath.Join(filepath.Dir(a.SocketPath), "web.sock")
-	u, err := authz.NewUpstream(loaded.Config.Authz.Upstream, r.path, a.SocketPath, nil)
+	u, err := authn.NewUpstream(loaded.Config.Authz.Upstream, r.path, a.SocketPath, nil)
 	require.NoError(t, err)
 	ln, err := angelus.ListenUnix(r.path, 0o660)
 	require.NoError(t, err)
