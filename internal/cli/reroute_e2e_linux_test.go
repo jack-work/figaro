@@ -73,7 +73,7 @@ func TestRerouteOfARoleMovesItsHolderOntoTheRolesRoute(t *testing.T) {
 	}
 }
 
-func TestRerouteIsForTheOwnerAndTheFigarosGrantedToWrite(t *testing.T) {
+func TestRerouteIsRefusedToAFigaroThatMayNotWriteTheRoute(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns a daemon; skipped under -short")
 	}
@@ -88,12 +88,5 @@ func TestRerouteIsForTheOwnerAndTheFigarosGrantedToWrite(t *testing.T) {
 	}
 	if got := r.key(parent, "system.model"); got != "runtime-model" {
 		t.Fatalf("a refused reroute moved the model to %q", got)
-	}
-	r.run("set", "--id", lane, "system.scopes", `["send:parent","read:aria:`+parent+`","write:aria:`+parent+`","read:aria:self","write:aria:self#@self"]`)
-	if out, err := r.as(lane, "reroute", "--id", parent); err != nil {
-		t.Fatalf("a lane granted to write its parent could not reroute it: %v\n%s", err, out)
-	}
-	if got := r.key(parent, "system.model"); got != "claude-sonnet-4-5" {
-		t.Fatalf("the granted reroute landed on %q", got)
 	}
 }

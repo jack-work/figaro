@@ -568,3 +568,9 @@ func (c *Angelus) Grants(ctx context.Context, id string) (*rpc.GrantsResponse, e
 	}
 	return &out, nil
 }
+
+func (c *Angelus) Reroute(ctx context.Context, req rpc.RerouteRequest) (*rpc.SetResponse, error) {
+	var resp rpc.SetResponse
+	err := c.call(ctx, rpc.MethodReroute, req, &resp)
+	return &resp, err
+}
