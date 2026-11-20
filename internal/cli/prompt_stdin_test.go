@@ -13,9 +13,12 @@ func TestStdinPromptNeverComesFromArgv(t *testing.T) {
 	if err != nil || !opts.stdin {
 		t.Fatalf("parse: %+v %v", opts, err)
 	}
-	got, err := promptFromStdin(opts, rest, strings.NewReader("hello from stdin\n"))
-	if err != nil || got != "hello from stdin" {
-		t.Fatalf("prompt = %q, %v", got, err)
+	got, err := promptFromStdin(opts, rest, strings.NewReader("hello from stdin\n\n"))
+	if err != nil || got != "hello from stdin\n\n" {
+		t.Fatalf("prompt = %q, %v: stdin is sent byte for byte, and the daemon trims for a figaro", got, err)
+	}
+	if !opts.outfit.request(got).Exact {
+		t.Fatal("a --stdin prompt does not ask for exact bytes")
 	}
 
 	opts, rest, err = extractSendFlags([]string{"--stdin", "--", "secret in argv"})

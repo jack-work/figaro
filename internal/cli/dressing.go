@@ -22,10 +22,11 @@ type dressing struct {
 	names  []string
 	patch  *rpc.FormPatch
 	images []rpc.QuaImage
+	exact  bool
 }
 
 func (d dressing) request(prompt string) rpc.QuaRequest {
-	return rpc.QuaRequest{Text: prompt, Form: buildPromptForm(d), Images: d.images}
+	return rpc.QuaRequest{Text: prompt, Form: buildPromptForm(d), Images: d.images, Exact: d.exact}
 }
 
 func (d dressing) mintsLog() bool {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -182,6 +183,32 @@ func TestAriaLogSendReturnsOnceTheEntryIsDurable(t *testing.T) {
 		require.NoError(t, a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: fmt.Sprintf("e%d", i)}, "s"))
 		require.Len(t, entriesOf(a), i+1, "the ack follows the append")
 	}
+}
+
+func TestAriaLogKeepsAnEntryByteForByte(t *testing.T) {
+	a := newLogAgent(t)
+	texts := []string{"trailing newlines\n\n", "  spaced  \n", "a ref @nosuchkey! stays", "crlf\r\nand\ttab\n", strings.Repeat("big ", 300000)}
+	for _, text := range texts {
+		require.NoError(t, a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: text, Exact: true}, "s"))
+	}
+	entries := waitEntries(t, a, len(texts))
+	for i, text := range texts {
+		require.Equal(t, text, entries[i].Content[0].Text, "entry %d is the bytes that were sent", i)
+	}
+}
+
+func TestAnExactPromptToAFigaroLosesItsTrailingNewlines(t *testing.T) {
+	a := newTestAgent(t, "ok")
+	defer a.Kill()
+	require.NoError(t, a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: "question\n\n", Exact: true}, ""))
+	require.Eventually(t, func() bool {
+		for _, m := range a.Context() {
+			if m.Role == message.RoleInput && len(m.Content) > 0 {
+				return m.Content[0].Text == "question"
+			}
+		}
+		return false
+	}, 5*time.Second, 5*time.Millisecond)
 }
 
 func TestALogEntryIsNeverRewrittenAsAPrompt(t *testing.T) {

@@ -537,6 +537,9 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 // SubmitPromptFrom applies form input synchronously, so the caller learns of a refusal.
 func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender string) error {
 	logged := a.isLog()
+	if req.Exact && !logged {
+		req.Text = strings.TrimRight(req.Text, "\n")
+	}
 	if !logged {
 		text, err := a.rewriteInput(ctx, req.Text)
 		if err != nil {

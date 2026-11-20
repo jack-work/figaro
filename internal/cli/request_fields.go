@@ -29,6 +29,7 @@ var requestFieldCapabilities = map[string]rpc.Capability{
 	"ForkRequest.Studies":             rpc.CapForkStudies,
 	"ForkRequest.Seat":                rpc.CapForkSeat,
 	"ReadRequest.Until":               rpc.CapReadUntil,
+	"QuaRequest.Exact":                rpc.CapLogExact,
 }
 
 type quaer interface {
