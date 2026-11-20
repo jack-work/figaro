@@ -91,11 +91,26 @@ func (b *turnBus) PushFigaro(m message.Message, caches ...provider.AssistantCach
 	select {
 	case err := <-ack:
 		if err != nil {
-			panic(err)
+			panic(sendAbort{err})
 		}
 	case <-b.ctx.Done():
-		panic(b.ctx.Err())
+		panic(sendAbort{b.ctx.Err()})
 	}
+}
+
+type sendAbort struct{ err error }
+
+func guardedSend(ctx context.Context, prov provider.Provider, in provider.SendInput, bus provider.Bus) (err error) {
+	defer func() {
+		switch r := recover().(type) {
+		case nil:
+		case sendAbort:
+			err = r.err
+		default:
+			err = fmt.Errorf("provider send panic: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return prov.Send(ctx, in, bus)
 }
 
 func (b *turnBus) PushToolInvokeStart(toolCallID, toolName string) {
@@ -374,13 +389,10 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	var roundOut *message.Message
 	go func() {
 		defer func() {
-			if r := recover(); r != nil {
-				sendDone <- fmt.Errorf("provider send panic: %v\n%s", r, debug.Stack())
-			}
 			close(bus.events)
 			close(bus.toolsReady)
 		}()
-		err := prov.Send(roundCtx, in, bus)
+		err := guardedSend(roundCtx, prov, in, bus)
 		figOtel.RecordRequestDuration(turnCtx, time.Since(started),
 			attribute.String("provider", prov.Name()),
 			attribute.String("model", a.currentModel()),
@@ -567,6 +579,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		}
 	}
 	sendErr := <-sendDone
+	if roundErr == nil && errors.Is(sendErr, context.Canceled) && turnCtx.Err() != nil {
+		a.markInterrupted()
+	}
 	endRound(roundSpan, bus.clock, roundOut, sendErr, roundErr)
 
 	if roundErr != nil {
@@ -1476,6 +1491,12 @@ func (a *Agent) isInterrupted() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.interrupted
+}
+
+func (a *Agent) markInterrupted() {
+	a.mu.Lock()
+	a.interrupted = true
+	a.mu.Unlock()
 }
 
 func (a *Agent) cancelCurrentTurn() {
