@@ -65,7 +65,7 @@ func IsCeremonial(m Message) bool {
 	}
 	if m.Role == RoleInput {
 		for _, c := range m.Content {
-			if c.Type == ContentProse && c.Text != "" {
+			if c.Type == ContentProse && (c.Text != "" || c.Sender != "" || c.Principal != "") {
 				return false
 			}
 			if c.Type == ContentImage || c.Type == ContentToolResult {
