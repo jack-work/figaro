@@ -252,13 +252,16 @@ func (f *fakeConn) Qua(context.Context, string, *rpc.FormInput) (int, bool, erro
 }
 
 func (f *fakeConn) Read(ctx context.Context, at aria.Anchor, _ int) (aria.Page, error) {
-	if f.readGate != nil {
-		if f.reading != nil {
-			close(f.reading)
-			f.reading = nil
-		}
+	f.mu.Lock()
+	gate := f.readGate
+	if gate != nil && f.reading != nil {
+		close(f.reading)
+		f.reading = nil
+	}
+	f.mu.Unlock()
+	if gate != nil {
 		select {
-		case <-f.readGate:
+		case <-gate:
 		case <-f.done:
 			return aria.Page{}, errors.New("fake: closed")
 		case <-ctx.Done():
@@ -266,7 +269,10 @@ func (f *fakeConn) Read(ctx context.Context, at aria.Anchor, _ int) (aria.Page, 
 		}
 	}
 	var page aria.Page
-	for _, p := range f.turns {
+	f.mu.Lock()
+	turns := f.turns
+	f.mu.Unlock()
+	for _, p := range turns {
 		if p.ID >= at.Turn {
 			page.Parts = append(page.Parts, p)
 		}
@@ -757,5 +763,35 @@ func TestALiveChannelCarriesOnIntoATurnThatFinishedDuringAnOutage(t *testing.T) 
 	events := drain(t, ch)
 	if last := events[len(events)-1]; text(events) != "w0 w1\n\nok" || last.Kind != End || last.Text != text(events) {
 		t.Fatalf("events: %s", summary(events))
+	}
+}
+
+func TestTheTimedCheckLeavesATurnAloneWhileItIsBeingReadBack(t *testing.T) {
+	var rt runtimeFeed
+	running := liveProse(2, 0, "a")
+	running.Nodes = []livedoc.Node{{Type: livedoc.NodeProse, Role: livedoc.RoleOutput, Markdown: "a"}}
+	conn := newFakeConn(rt.response("thinking", 2, "", 0), running)
+	c := fakeClient(conn)
+	c.CheckEvery = 20 * time.Millisecond
+	ch, err := c.Resume(context.Background(), "x", Cursor{Turn: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e := <-ch; e.Text != "a" {
+		t.Fatalf("first event %+v", e)
+	}
+	reading := make(chan struct{})
+	conn.mu.Lock()
+	conn.readGate, conn.reading = make(chan struct{}), reading
+	conn.mu.Unlock()
+	conn.notify(rpc.MethodAriaFrame, frameJSON(aria.TurnPart{Turn: aria.Turn{ID: 2, Live: &aria.Live{From: 0, V: 5, Nodes: []aria.NodeDelta{{ID: 0, Patch: map[string]livedoc.Delta{"markdown": {At: 1, Ins: "b"}}}}}}}))
+	<-reading
+	conn.mu.Lock()
+	conn.runtime, conn.turns = rt.response("idle", 2, "", 0), []aria.TurnPart{sealedTurn(2, "ab")}
+	conn.mu.Unlock()
+	time.Sleep(100 * time.Millisecond)
+	close(conn.readGate)
+	if got := summary(drain(t, ch)); got != `+"b" end:ab` {
+		t.Fatalf("events: %s", got)
 	}
 }

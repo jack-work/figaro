@@ -954,7 +954,7 @@ func (t *thread) check(conn ariaConn, gen, seq uint64, waiting bool) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if gen != t.gen {
+	if gen != t.gen || t.syncing {
 		return
 	}
 	if !dormant {
