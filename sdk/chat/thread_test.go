@@ -380,7 +380,7 @@ func TestAListenerAddedAfterADropBringsTheConnectionBack(t *testing.T) {
 	first := newFakeConn(rt.response("idle", 1, "", 0))
 	second := newFakeConn(rt.response("idle", 2, "", 0), sealedTurn(2, "ab"))
 	c := fakeClient(first, second)
-	th, _, err := c.thread(context.Background(), "x")
+	th, _, err := c.thread(context.Background(), "x", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +451,7 @@ func TestANewTurnAnnouncedBeforeItsFramesStreamsWithoutARead(t *testing.T) {
 	conn := newFakeConn(rt.response("idle", 2, "", 0))
 	conn.readGate = make(chan struct{})
 	c := fakeClient(conn)
-	th, _, err := c.thread(context.Background(), "x")
+	th, _, err := c.thread(context.Background(), "x", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -793,5 +793,32 @@ func TestTheTimedCheckLeavesATurnAloneWhileItIsBeingReadBack(t *testing.T) {
 	close(conn.readGate)
 	if got := summary(drain(t, ch)); got != `+"b" end:ab` {
 		t.Fatalf("events: %s", got)
+	}
+}
+
+func TestAnUnreadableRuntimeFormFailsStreamsWithItsCauseAndSparesTheRest(t *testing.T) {
+	var rt runtimeFeed
+	conn := newFakeConn(rt.response("idle", 2, "", 0), sealedTurn(2, "ab"))
+	conn.formFails = 1 << 30
+	c := fakeClient(conn)
+	c.ReconnectFor = 50 * time.Millisecond
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := c.Cancel(context.Background(), "x"); err != nil {
+			t.Errorf("cancel: %v", err)
+		}
+		if _, err := c.History(context.Background(), "x", 0, 5); err != nil {
+			t.Errorf("history: %v", err)
+		}
+		_, err := c.Resume(context.Background(), "x", Cursor{Turn: 2})
+		if err == nil || !strings.Contains(err.Error(), "fake: busy") {
+			t.Errorf("resume: %v", err)
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("calls hung on a runtime form that cannot be read")
 	}
 }

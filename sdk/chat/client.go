@@ -124,7 +124,7 @@ func (c *Client) Open(ctx context.Context, root string) (string, error) {
 }
 
 func (c *Client) Prompt(ctx context.Context, threadID, text string) (<-chan Event, error) {
-	t, conn, err := c.thread(ctx, threadID)
+	t, conn, err := c.thread(ctx, threadID, true)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (c *Client) Resume(ctx context.Context, threadID string, from Cursor) (<-ch
 	if from.Turn == 0 {
 		return nil, errors.New("chat: resume needs a cursor with a turn")
 	}
-	t, _, err := c.thread(ctx, threadID)
+	t, _, err := c.thread(ctx, threadID, true)
 	if err != nil {
 		return nil, err
 	}
@@ -147,14 +147,14 @@ func (c *Client) Resume(ctx context.Context, threadID string, from Cursor) (<-ch
 }
 
 func (c *Client) Cancel(ctx context.Context, threadID string) error {
-	_, conn, err := c.thread(ctx, threadID)
+	_, conn, err := c.thread(ctx, threadID, false)
 	if err != nil {
 		return err
 	}
 	return conn.Interrupt(ctx)
 }
 
-func (c *Client) thread(ctx context.Context, id string) (*thread, ariaConn, error) {
+func (c *Client) thread(ctx context.Context, id string, needState bool) (*thread, ariaConn, error) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -167,7 +167,7 @@ func (c *Client) thread(ctx context.Context, id string) (*thread, ariaConn, erro
 	}
 	c.mu.Unlock()
 	t.touch()
-	conn, err := t.connect(ctx)
+	conn, err := t.connect(ctx, needState)
 	return t, conn, err
 }
 
@@ -231,6 +231,8 @@ type thread struct {
 	rt           runtimeView
 	wantRT       bool
 	rtReady      chan struct{}
+	rtErr        error
+	seedErr      error
 	buf          []note
 	subs         map[*sub]struct{}
 }
@@ -247,32 +249,49 @@ func alive(conn ariaConn) bool {
 	}
 }
 
-func (t *thread) connect(ctx context.Context) (ariaConn, error) {
+func (t *thread) connect(ctx context.Context, needState bool) (ariaConn, error) {
 	t.dial.Lock()
-	defer t.dial.Unlock()
 	t.mu.Lock()
-	conn := t.conn
+	conn, ready := t.conn, t.rtReady
 	t.mu.Unlock()
-	if alive(conn) {
+	if !alive(conn) {
+		var err error
+		if conn, err = t.c.dial(ctx, t.id, t.notify); err != nil {
+			t.dial.Unlock()
+			return nil, err
+		}
+		if ready, err = t.attach(conn); err != nil {
+			t.dial.Unlock()
+			return nil, err
+		}
+		go t.watch(conn)
+	}
+	t.dial.Unlock()
+	if !needState || ready == nil {
 		return conn, nil
 	}
-	conn, err := t.c.dial(ctx, t.id, t.notify)
-	if err != nil {
-		return nil, err
-	}
-	ready, err := t.attach(conn)
-	if err != nil {
-		return nil, err
-	}
-	go t.watch(conn)
 	select {
 	case <-ready:
-		return conn, nil
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, t.stateErr(ctx.Err())
 	case <-conn.Done():
-		return nil, errors.New("the connection to figaro closed while reading its state")
+		return nil, t.stateErr(errors.New("the connection to figaro closed while reading its state"))
 	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.rtErr != nil {
+		return nil, t.rtErr
+	}
+	return conn, nil
+}
+
+func (t *thread) stateErr(cause error) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.seedErr != nil {
+		return fmt.Errorf("%w; reading the aria's state failed: %v", cause, t.seedErr)
+	}
+	return cause
 }
 
 func (t *thread) attach(conn ariaConn) (chan struct{}, error) {
@@ -292,7 +311,7 @@ func (t *thread) attach(conn ariaConn) (chan struct{}, error) {
 	}
 	t.wantRT = true
 	ready := make(chan struct{})
-	t.rtReady = ready
+	t.rtReady, t.rtErr = ready, nil
 	t.startSync()
 	return ready, nil
 }
@@ -320,7 +339,7 @@ func (t *thread) reconnect() {
 	wait := 100 * time.Millisecond
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_, err := t.connect(ctx)
+		_, err := t.connect(ctx, true)
 		cancel()
 		if err == nil {
 			t.mu.Lock()
@@ -488,6 +507,9 @@ func (t *thread) sync() {
 			if failing.IsZero() {
 				failing = time.Now()
 			}
+			t.mu.Lock()
+			t.seedErr = err
+			t.mu.Unlock()
 			if time.Since(failing) > t.c.ReconnectFor {
 				t.failFrom(turns, "read the thread: "+err.Error())
 				failing = time.Time{}
@@ -547,6 +569,11 @@ func (t *thread) seed(conn ariaConn, gen uint64, turns []uint64) error {
 func (t *thread) failFrom(turns []uint64, why string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.rtReady != nil {
+		t.rtErr = errors.New(why)
+		close(t.rtReady)
+		t.rtReady = nil
+	}
 	floor := ^uint64(0)
 	for _, id := range turns {
 		floor = min(floor, id)
@@ -572,6 +599,7 @@ func (t *thread) adopt(rt *rpc.FormResponse, parts []aria.TurnPart) {
 			close(t.rtReady)
 			t.rtReady = nil
 		}
+		t.rtErr, t.seedErr = nil, nil
 	}
 	rebuilt := map[uint64]*turnFold{}
 	for _, p := range parts {

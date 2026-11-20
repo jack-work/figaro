@@ -90,7 +90,10 @@ is opened while it is down, the client redials for `Client.ReconnectFor`
 (30 s by default), reads the turn back and carries on from where the channel
 was, with nothing lost or repeated. A catch-up read that fails on a live
 connection is retried for as long. If neither recovers, the channel gets
-`error`.
+`error`. `Prompt` and `Resume` first need the aria's runtime form; when it
+cannot be read for `ReconnectFor` they return that read's error, and a call
+whose `ctx` expires first says what the last read failed on. `Cancel` and
+`History` do not wait for it.
 
 While a channel is open the client checks its aria every `Client.CheckEvery`
 (15 s by default). A check that gets no answer within that time closes the
