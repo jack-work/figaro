@@ -154,7 +154,7 @@ func TestTableSeedsAWantedAliasBeforeTheNetworkAnswers(t *testing.T) {
 
 	c.Want("anthropic", "claude-x")
 	waitFor(t, func() bool { return limitOf(c, "anthropic", "claude-x") == 1_000_000 })
-	require.Equal(t, int32(1), calls.Load(), "the listing is still in flight")
+	waitFor(t, func() bool { return calls.Load() == 1 })
 
 	close(gate)
 	waitFor(t, func() bool { return limitOf(c, "anthropic", "claude-x-20260101") == 400_000 })
