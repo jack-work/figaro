@@ -46,11 +46,47 @@ type turnFold struct {
 	ended   bool
 	idle    bool
 	reason  string
+	rev     uint64
+	view    *replyView
+}
+
+type replyView struct {
+	rev    uint64
+	text   string
+	tools  []int
+	before []int
+}
+
+func (f *turnFold) shape() *replyView {
+	if f.view != nil && f.view.rev == f.rev {
+		return f.view
+	}
+	v := &replyView{rev: f.rev}
+	var b strings.Builder
+	parts := 0
+	for i, n := range f.nodes {
+		if shownProse(n) {
+			if parts > 0 {
+				b.WriteString("\n\n")
+			}
+			b.WriteString(n.Markdown)
+			parts++
+			continue
+		}
+		if n.Type == livedoc.NodeTool && n.Name != "" {
+			v.tools = append(v.tools, i)
+			v.before = append(v.before, len(strings.TrimRight(b.String(), "\n")))
+		}
+	}
+	v.text = strings.TrimRight(b.String(), "\n")
+	f.view = v
+	return v
 }
 
 func newTurnFold(id uint64) *turnFold { return &turnFold{id: id} }
 
 func (f *turnFold) apply(p aria.TurnPart) applied {
+	f.rev++
 	if p.Inquiry != "" {
 		f.inquiry = p.Inquiry
 	}
@@ -151,18 +187,16 @@ func shownProse(n livedoc.Node) bool {
 	return n.Type == livedoc.NodeProse && n.Role != livedoc.RoleInput && strings.TrimSpace(n.Markdown) != ""
 }
 
+func callWhole(n livedoc.Node) bool {
+	return len(n.Args) > 0 || toolDone(n)
+}
+
 func toolDone(n livedoc.Node) bool {
 	return n.Status == livedoc.StatusOK || n.Status == livedoc.StatusError
 }
 
 func (f *turnFold) reply() string {
-	var parts []string
-	for _, n := range f.nodes {
-		if shownProse(n) {
-			parts = append(parts, n.Markdown)
-		}
-	}
-	return strings.TrimRight(strings.Join(parts, "\n\n"), "\n")
+	return f.shape().text
 }
 
 func (f *turnFold) tool(i int, n livedoc.Node, ended bool) *Tool {
@@ -201,16 +235,15 @@ func (r *reader) advance(f *turnFold, emit func(Event)) {
 	if r.finished || f.id != r.cur.Turn {
 		return
 	}
-	var parts []string
-	flush := func() {
-		t := strings.TrimRight(strings.Join(parts, "\n\n"), "\n")
+	v := f.shape()
+	flush := func(t string) {
 		if !r.known {
 			if len(t) < r.cur.Text {
 				return
 			}
 			r.sent, r.known = t[:r.cur.Text], true
 		}
-		if len(t) <= len(r.sent) || !strings.HasPrefix(t, r.sent) {
+		if len(t) <= len(r.sent) || t[:len(r.sent)] != r.sent {
 			return
 		}
 		d := t[len(r.sent):]
@@ -220,27 +253,28 @@ func (r *reader) advance(f *turnFold, emit func(Event)) {
 		}
 		emit(Event{Kind: Delta, Text: d, Cursor: r.cur})
 	}
-	k := 0
-	for i, n := range f.nodes {
-		if shownProse(n) {
-			parts = append(parts, n.Markdown)
+	for k := r.cur.Ended; k < len(v.tools); k++ {
+		i := v.tools[k]
+		n := f.nodes[i]
+		startDue := k == r.cur.Started && (callWhole(n) || i+1 < len(f.nodes) || f.ended)
+		if k >= r.cur.Started && !startDue {
+			break
+		}
+		endDue := k == r.cur.Ended && toolDone(n)
+		if !startDue && !endDue {
 			continue
 		}
-		if n.Type != livedoc.NodeTool || n.Name == "" {
-			continue
-		}
-		flush()
-		if k == r.cur.Started && (len(n.Args) > 0 || toolDone(n) || i+1 < len(f.nodes) || f.ended) {
+		flush(v.text[:v.before[k]])
+		if startDue {
 			r.cur.Started++
 			emit(Event{Kind: ToolStart, Tool: f.tool(i, n, false), Cursor: r.cur})
 		}
-		if k == r.cur.Ended && k < r.cur.Started && toolDone(n) {
+		if endDue {
 			r.cur.Ended++
 			emit(Event{Kind: ToolEnd, Tool: f.tool(i, n, true), Cursor: r.cur})
 		}
-		k++
 	}
-	flush()
+	flush(v.text)
 	if !f.ended {
 		return
 	}

@@ -328,3 +328,27 @@ func TestACloseMarkerForAnUnseenRoundIsAGap(t *testing.T) {
 		t.Fatalf("close on a fold that saw nothing: %v", got)
 	}
 }
+
+func TestAnAdvanceWithNothingNewBuildsNothing(t *testing.T) {
+	f := newTurnFold(1)
+	var nodes []livedoc.Node
+	for i := range 200 {
+		nodes = append(nodes,
+			livedoc.Node{Type: livedoc.NodeProse, Role: livedoc.RoleOutput, Markdown: fmt.Sprintf("step %d", i)},
+			livedoc.Node{Type: livedoc.NodeTool, Role: livedoc.RoleOutput, Name: "bash", Status: livedoc.StatusOK, Args: map[string]any{"n": i}})
+	}
+	f.apply(aria.TurnPart{Turn: aria.Turn{ID: 1, Nodes: nodes}})
+	r := newReader(Cursor{Turn: 1})
+	r.advance(f, func(Event) {})
+	if allocs := testing.AllocsPerRun(20, func() { r.advance(f, func(Event) {}) }); allocs > 0 {
+		t.Fatalf("an advance over 400 unchanged nodes allocated %.0f times", allocs)
+	}
+}
+
+func TestToolsWholeInTheSameFrameStartTogether(t *testing.T) {
+	r := newRun(t)
+	r.frame(0, set(0, map[string]any{"type": "tool", "name": "a", "status": "running", "args": map[string]any{"x": 1}}), set(1, map[string]any{"type": "tool", "name": "b", "status": "running", "args": map[string]any{"y": 2}}))
+	if got := summary(r.events); got != `tool.start:a:{"x":1} tool.start:b:{"y":2}` {
+		t.Fatalf("events: %s", got)
+	}
+}
