@@ -688,7 +688,7 @@ func (t *thread) finishWaiting(s *sub, now runState) {
 func readTurns(ctx context.Context, conn ariaConn, turn uint64) ([]aria.TurnPart, error) {
 	var out []aria.TurnPart
 	at := aria.Anchor{Turn: turn}
-	for range 64 {
+	for {
 		page, err := conn.Read(ctx, at, 0)
 		if err != nil {
 			return nil, err
@@ -697,9 +697,11 @@ func readTurns(ctx context.Context, conn ariaConn, turn uint64) ([]aria.TurnPart
 		if !page.More.After || page.Next == nil {
 			return out, nil
 		}
+		if !at.Less(*page.Next) {
+			return out, fmt.Errorf("the daemon paged from %v back to %v", at, *page.Next)
+		}
 		at = *page.Next
 	}
-	return out, errors.New("the thread is longer than 64 pages from that turn")
 }
 
 func (t *thread) subscribe(ctx context.Context, s *sub, seed []uint64) <-chan Event {

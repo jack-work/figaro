@@ -236,6 +236,7 @@ type fakeConn struct {
 	formFails int
 	queue     *rpc.FormResponse
 	hangAfter int
+	pageSize  int
 	readGate  chan struct{}
 	reading   chan struct{}
 	dialGate  chan struct{}
@@ -270,12 +271,18 @@ func (f *fakeConn) Read(ctx context.Context, at aria.Anchor, _ int) (aria.Page, 
 	}
 	var page aria.Page
 	f.mu.Lock()
-	turns := f.turns
+	turns, size := f.turns, f.pageSize
 	f.mu.Unlock()
 	for _, p := range turns {
-		if p.ID >= at.Turn {
-			page.Parts = append(page.Parts, p)
+		if p.ID < at.Turn {
+			continue
 		}
+		if size > 0 && len(page.Parts) == size {
+			page.More.After = true
+			page.Next = &aria.Anchor{Turn: p.ID}
+			break
+		}
+		page.Parts = append(page.Parts, p)
 	}
 	return page, nil
 }
@@ -872,5 +879,23 @@ func TestMergingABacklogOfDeltasDoesNotCopyItOverAndOver(t *testing.T) {
 	})
 	if allocs > 200 {
 		t.Fatalf("merging 2000 deltas allocated %.0f times", allocs)
+	}
+}
+
+func TestResumingFarBackReadsEveryPageToTheTail(t *testing.T) {
+	var rt runtimeFeed
+	var turns []aria.TurnPart
+	for id := uint64(2); id <= 101; id++ {
+		turns = append(turns, sealedTurn(id, "ab"))
+	}
+	conn := newFakeConn(rt.response("idle", 101, "", 0), turns...)
+	conn.pageSize = 1
+	c := fakeClient(conn)
+	ch, err := c.Resume(context.Background(), "x", Cursor{Turn: 2, Text: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := summary(drain(t, ch)); got != `+"b" end:ab` {
+		t.Fatalf("events: %s", got)
 	}
 }
