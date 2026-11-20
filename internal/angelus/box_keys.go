@@ -772,7 +772,11 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 	if err != nil {
 		return err
 	}
-	if snap, err = h.listedOutfitKeys(ctx, snap, requestOutfits(ctx)); err != nil {
+	line := lineage{of: id}
+	if method == rpc.MethodCast {
+		line = lineage{}
+	}
+	if snap, err = h.listedOutfitKeys(ctx, line, snap, requestOutfits(ctx)); err != nil {
 		return err
 	}
 	if shapesOnly {
@@ -780,10 +784,6 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 			return err
 		}
 		return refuseMisshapenKeys(snap.Apply(*patch), *patch)
-	}
-	line := lineage{of: id}
-	if method == rpc.MethodCast {
-		line = lineage{}
 	}
 	return h.refuseCallerKeys(ctx, line, snap, patch)
 }
