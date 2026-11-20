@@ -76,7 +76,14 @@ func TestRecordRouteHandlesAWholeSystemObject(t *testing.T) {
 func TestRouteOfReadsTheRecordedRouteElseDerivesIt(t *testing.T) {
 	derived := routeBound(t, "rou2", "explabs/glm-5.3")
 	require.Equal(t, []string{"rou2", "explabs", "glm-5.3"}, RouteOf(derived))
-	recordedRoute := recorded(t, derived, map[string]string{form.RouteKey: `["rou2","pinned"]`})
-	require.Equal(t, []string{"rou2", "pinned"}, RouteOf(recordedRoute))
+	require.Equal(t, []string{"rou2", "explabs", "glm-5.3"}, RouteOf(recorded(t, derived, map[string]string{form.RouteKey: `["rou2","pinned"]`})))
 	require.Nil(t, RouteOf(form.Snapshot{}))
+}
+
+func TestRecordRouteOverwritesARouteWrittenWithoutItsSubject(t *testing.T) {
+	s := recorded(t, form.Snapshot{}, map[string]string{ProviderKey: `"rou2"`, ModelKey: `"explabs/glm-5.3"`})
+	s = recorded(t, s, map[string]string{form.RouteKey: `["forged"]`})
+	require.Equal(t, []string{"rou2", "explabs", "glm-5.3"}, routeAt(t, s))
+	s = recorded(t, s, nil, form.RouteKey)
+	require.Equal(t, []string{"rou2", "explabs", "glm-5.3"}, routeAt(t, s))
 }

@@ -10,7 +10,7 @@ func TestPathIsTheIDSplitOnSlashes(t *testing.T) {
 	require.Equal(t, []string{"claude-opus-5"}, Path("claude-opus-5"))
 	require.Equal(t, []string{"explabs", "glm-5.3"}, Path("explabs/glm-5.3"))
 	require.Equal(t, []string{"copilot", "anthropic", "claude-opus-5"}, Path("copilot/anthropic/claude-opus-5"))
-	for _, odd := range []string{"/x", "x/", "a//b", "/"} {
+	for _, odd := range []string{"/x", "x/", "a//b", "/", "a/b/c/d/e/f/g"} {
 		require.Equal(t, []string{odd}, Path(odd), "an empty segment is no upstream: %q", odd)
 	}
 }

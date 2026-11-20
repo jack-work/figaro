@@ -43,7 +43,7 @@ func RecordRoute(s form.Snapshot, p form.Patch) form.Patch {
 }
 
 func touchesSubject(p form.Patch) bool {
-	for _, k := range []string{ProviderKey, ModelKey} {
+	for _, k := range []string{ProviderKey, ModelKey, form.RouteKey} {
 		if _, ok := p.Entry(k); ok {
 			return true
 		}

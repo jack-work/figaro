@@ -6,6 +6,7 @@ const (
 	LeavesKey   = "models"
 	BranchesKey = "upstreams"
 	RouteSep    = "/"
+	MaxDepth    = 6
 )
 
 type Node struct {
@@ -15,6 +16,9 @@ type Node struct {
 
 func Path(model string) []string {
 	segs := strings.Split(model, RouteSep)
+	if len(segs) > MaxDepth {
+		return []string{model}
+	}
 	for _, s := range segs {
 		if s == "" {
 			return []string{model}
