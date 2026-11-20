@@ -27,7 +27,7 @@ type runState struct {
 }
 
 func (v *runtimeView) reset(r *rpc.FormResponse) bool {
-	if r == nil || v.known && r.Incarnation == v.inc && r.Version <= v.ver {
+	if r == nil || v.known && r.Incarnation != 0 && r.Incarnation == v.inc && r.Version <= v.ver {
 		return false
 	}
 	v.known, v.inc, v.ver, v.snap = true, r.Incarnation, r.Version, r.Snapshot

@@ -478,3 +478,27 @@ func TestResumingAFailedTurnFailsWithItsReason(t *testing.T) {
 		t.Fatalf("events %s, last %+v", kinds(after), last)
 	}
 }
+
+func TestResumingATurnOfADormantAriaReplaysIt(t *testing.T) {
+	c, id, d := thread(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	ch, err := c.Prompt(ctx, id, "words 3 0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := collect(t, ch, 30*time.Second)
+	c.Close()
+	d.must(t, "stop")
+	d.must(t, "ls")
+	other := chat.New(d.endpoint())
+	defer other.Close()
+	rest, err := other.Resume(ctx, id, events[0].Cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := collect(t, rest, 20*time.Second)
+	if events[0].Text+replyText(after) != "w0 w1 w2" || after[len(after)-1].Kind != chat.End {
+		t.Fatalf("first %q then %s %q", events[0].Text, kinds(after), replyText(after))
+	}
+}
