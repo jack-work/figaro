@@ -446,6 +446,10 @@ func Run() {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
+	if a.Delegations, err = authz.NewDelegations(loaded.Config.Authz.Delegation); err != nil {
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
+	}
 	if err := a.Policies.Reload(loaded.PolicyPath()); err != nil {
 		if loaded.PoolDaemon() {
 			fmt.Fprintf(os.Stderr, "angelus: %v; a daemon that leases workers does not start without its policy\n", err)
@@ -621,7 +625,7 @@ func serveWebDoor(ctx context.Context, a *angelus.Angelus, loaded *config.Loaded
 	if err != nil {
 		return fmt.Errorf("door.web: %w", err)
 	}
-	admit, err := webAuthenticator(web.Authn, web.Path, a.SocketPath, loaded.Config.Authz, authz.Bearers{Issuers: a.Issuers, Keys: a.APIKeys})
+	admit, err := webAuthenticator(web.Authn, web.Path, a.SocketPath, loaded.Config.Authz, authz.Bearers{Issuers: a.Issuers, Keys: a.APIKeys, Delegations: a.Delegations})
 	if err != nil {
 		ln.Close()
 		return fmt.Errorf("door.web: %w", err)

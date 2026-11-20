@@ -1,0 +1,190 @@
+package angelus_test
+
+import (
+	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/jack-work/figaro/api/aria"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/peer/peertest"
+)
+
+const onBehalfPolicy = `
+[roles.owner]
+permissions = ["*:*"]
+
+[roles.guest]
+permissions = ["read:owner:self", "listen:owner:self", "send:owner:self"]
+
+[[bind]]
+role = "owner"
+principals = ["user:UID", "user:gluck@issuer.test.figaro"]
+
+[[bind]]
+role = "guest"
+principals = ["user:ana@issuer.test.figaro"]
+`
+
+type onBehalfRig struct {
+	path   string
+	aria   string
+	mint   func(client string) string
+	daemon *angelus.Angelus
+}
+
+func onBehalfDoor(t *testing.T) onBehalfRig {
+	t.Helper()
+	is := peertest.NewIssuer(t)
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
+	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\n"), 0o600))
+	policy := filepath.Join(dir, "policy.toml")
+	require.NoError(t, os.WriteFile(policy, []byte(strings.ReplaceAll(onBehalfPolicy, "UID", strconv.Itoa(os.Getuid()))), 0o600))
+	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte(`default_outfit = "mock"
+[authz]
+policy = "`+policy+`"
+
+[[authz.issuers]]
+issuer = "`+peertest.IssuerURL+`"
+jwks = "`+is.JWKS.URL+`"
+clients = { figchat-gateway = "service", other-service = "service" }
+
+[[authz.delegation]]
+principal = "service:figchat-gateway@issuer.test.figaro"
+users = ["user:gluck@issuer.test.figaro"]
+`), 0o600))
+	a, acli, ctx := daemonOnStore(t, dir, nil)
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+
+	loaded, err := config.Load(dir)
+	require.NoError(t, err)
+	issuers, err := authz.NewIssuers(loaded.Config.Authz.Issuers, nil, nil)
+	require.NoError(t, err)
+	delegations, err := authz.NewDelegations(loaded.Config.Authz.Delegation)
+	require.NoError(t, err)
+	a.Issuers, a.Delegations = issuers, delegations
+
+	path := filepath.Join(filepath.Dir(a.SocketPath), "web.sock")
+	ln, err := angelus.ListenUnix(path, 0o660)
+	require.NoError(t, err)
+	go a.ServeWeb(ctx, ln, angelus.Web{Admit: authz.Bearers{Issuers: issuers, Delegations: delegations}.AdmitRequest})
+	return onBehalfRig{path: path, aria: created.FigaroID, daemon: a, mint: func(client string) string { return is.Mint(client, time.Hour) }}
+}
+
+func (r onBehalfRig) as(t *testing.T, client, user string) (*edgeClient, *http.Response, error) {
+	t.Helper()
+	h := http.Header{"Authorization": {"Bearer " + r.mint(client)}}
+	if user != "" {
+		h.Set(authz.DelegateHeader, user)
+	}
+	return forge(t, r.path, h)
+}
+
+func TestAServiceActsAsTheUserItNamesWithinTheDelegableVerbs(t *testing.T) {
+	r := onBehalfDoor(t)
+	c, _, err := r.as(t, "figchat-gateway", "gluck")
+	require.NoError(t, err)
+
+	var hello rpc.HelloResponse
+	reply := c.call(rpc.MethodHello, rpc.HelloRequest{Version: rpc.ProtocolVersion})
+	require.Nil(t, reply.Error)
+	require.NoError(t, json.Unmarshal(reply.Result, &hello))
+	require.Equal(t, rpc.Principal{Kind: rpc.PrincipalUser, ID: "gluck@issuer.test.figaro"}, hello.Principal)
+
+	for _, m := range []string{rpc.MethodContext, rpc.MethodForm, rpc.MethodList} {
+		reply = c.call(m, onAria(r.aria, nil))
+		require.Nil(t, reply.Error, m)
+	}
+
+	reply = c.call(rpc.MethodQua, onAria(r.aria, map[string]any{"text": "spoken through the gateway", rpc.CallerKey: "deadbeef", "x-caller": map[string]any{"label": "root"}}))
+	require.Nil(t, reply.Error)
+	waitIdle(t, r.daemon, r.aria)
+
+	reply = c.call(rpc.MethodRead, onAria(r.aria, nil))
+	require.Nil(t, reply.Error)
+	var page aria.Page
+	require.NoError(t, json.Unmarshal(reply.Result, &page))
+	var senders []string
+	for _, part := range page.Parts {
+		for _, s := range part.InquirySegments {
+			senders = append(senders, s.Sender)
+		}
+	}
+	require.Equal(t, []string{"gluck"}, senders, "the message lands with the user as its sender, whatever the call asserted")
+
+	reply = c.call(rpc.MethodFork, onAria(r.aria, nil))
+	require.Nil(t, reply.Error)
+	reply = c.call(rpc.MethodInterrupt, onAria(r.aria, nil))
+	require.Nil(t, reply.Error)
+}
+
+func TestADelegateIsRefusedWhatTheUserMayDo(t *testing.T) {
+	r := onBehalfDoor(t)
+	c, _, err := r.as(t, "figchat-gateway", "gluck")
+	require.NoError(t, err)
+
+	owner, _, err := forge(t, r.path, http.Header{"Authorization": {"Bearer " + r.mint("figchat-gateway")}})
+	require.Error(t, err, "without the header the service is only itself, and it is bound to no role")
+	require.Nil(t, owner)
+
+	for name, call := range map[string]struct {
+		method string
+		params map[string]any
+	}{
+		"kill":                 {rpc.MethodKill, onAria(r.aria, nil)},
+		"set":                  {rpc.MethodSet, onAria(r.aria, map[string]any{"patch": map[string]any{}})},
+		"reroute":              {rpc.MethodReroute, onAria(r.aria, nil)},
+		"a system status call": {rpc.MethodStatus, nil},
+		"gc":                   {rpc.MethodGC, nil},
+		"create":               {rpc.MethodCreate, nil},
+		"a send that sets the model": {rpc.MethodQua, onAria(r.aria, map[string]any{
+			"text": "x", "form": map[string]any{"context": map[string]any{"mantra": "x"}, "outfits": []string{"mock"}}})},
+	} {
+		reply := c.call(call.method, call.params)
+		require.NotNil(t, reply.Error, name)
+		require.Contains(t, reply.Error.Message, "acts for user:gluck@issuer.test.figaro", name)
+	}
+	reply := c.call(rpc.MethodContext, onAria(r.aria, nil))
+	require.Nil(t, reply.Error, "a refusal leaves the connection and its reads alone")
+}
+
+func TestARefusedDelegationIsAClearErrorNotTheServicePrincipal(t *testing.T) {
+	r := onBehalfDoor(t)
+	for name, c := range map[string]struct {
+		client, user, want string
+	}{
+		"a user the owner did not list":    {"figchat-gateway", "ana", "not listed to act for user:ana@issuer.test.figaro"},
+		"a user nobody has heard of":       {"figchat-gateway", "mallory", "not listed to act for"},
+		"a service the owner did not list": {"other-service", "gluck", "service:other-service@issuer.test.figaro is not listed"},
+		"a name that is a principal":       {"figchat-gateway", "user:gluck@issuer.test.figaro", "not a user name"},
+		"an empty name":                    {"figchat-gateway", " ", "names no user"},
+	} {
+		h := http.Header{"Authorization": {"Bearer " + r.mint(c.client)}}
+		h.Set(authz.DelegateHeader, c.user)
+		_, resp, err := forge(t, r.path, h)
+		require.Error(t, err, name)
+		require.Equal(t, http.StatusForbidden, resp.StatusCode, name)
+		body := make([]byte, 512)
+		n, _ := resp.Body.Read(body)
+		require.Contains(t, string(body[:n]), c.want, name)
+	}
+
+	h := http.Header{"Authorization": {"Bearer " + r.mint("figchat-gateway")}}
+	h.Add(authz.DelegateHeader, "gluck")
+	h.Add(authz.DelegateHeader, "ana")
+	_, resp, err := forge(t, r.path, h)
+	require.Error(t, err)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+}

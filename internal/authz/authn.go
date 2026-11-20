@@ -559,6 +559,9 @@ func (p *Peercred) toolOf(pid int32) (string, error) {
 }
 
 func (u *Upstream) AdmitRequest(ctx context.Context, r *http.Request) (context.Context, error) {
+	if len(r.Header.Values(DelegateHeader)) > 0 {
+		return nil, refuseDelegation("an upstream door takes its caller from the edge's headers and no %s; that is for authn = \"bearer\"", DelegateHeader)
+	}
 	s, token, err := u.subject(ctx, r.Header)
 	if err != nil {
 		return nil, err
@@ -574,5 +577,16 @@ func (b Bearers) AdmitRequest(ctx context.Context, r *http.Request) (context.Con
 	if !ok {
 		return nil, fmt.Errorf("%w: no bearer token", ErrUnadmitted)
 	}
-	return b.Verify(ctx, token)
+	ctx, err := b.Verify(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	names := r.Header.Values(DelegateHeader)
+	switch len(names) {
+	case 0:
+		return ctx, nil
+	case 1:
+		return b.Delegations.Apply(ctx, names[0])
+	}
+	return nil, refuseDelegation("%s names more than one user", DelegateHeader)
 }

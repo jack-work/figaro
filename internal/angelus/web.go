@@ -104,6 +104,11 @@ func (a *Angelus) webDoor(ctx context.Context, w Web) http.Handler {
 			http.Error(rw, "forbidden", http.StatusForbidden)
 			return
 		}
+		if refused := (*authz.DelegationError)(nil); errors.As(err, &refused) {
+			slog.Warn("door refused upgrade", "door", authz.DoorWeb.String(), "err", err)
+			http.Error(rw, refused.Error(), http.StatusForbidden)
+			return
+		}
 		if err != nil {
 			slog.Warn("door refused upgrade", "door", authz.DoorWeb.String(), "err", err)
 			rw.Header().Set("WWW-Authenticate", "Bearer")
