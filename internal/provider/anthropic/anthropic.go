@@ -1168,6 +1168,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 		return err
 	}
 	defer resp.Body.Close()
+	recordUnifiedRateLimit(ctx, resp.Header)
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, provider.FallbackBodyLimit+1))
 		if fallback := provider.ParseRouteFallback(resp.StatusCode, resp.Header, errBody); fallback != nil {
