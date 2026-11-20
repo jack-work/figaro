@@ -1002,6 +1002,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		return fmt.Errorf("resolve token: %w", err)
 	}
 	model := a.resolveModel(in.Snapshot)
+	ctx = withRequestedModel(ctx, model)
 	if e, ok := a.SeedModel(model); ok {
 		in.Images = provider.ImageLimitsOf(e, providerName, model, false)
 	}

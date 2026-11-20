@@ -174,3 +174,49 @@ func TestUnknownUnifiedHeadersNeverBecomeAttributes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, unifiedAttrs, got)
 }
+
+func TestRou2UpstreamAttributesTheRateLimitToTheServingSeat(t *testing.T) {
+	got, err := roundSpanAttrs(t, func(w http.ResponseWriter) {
+		setUnified(w.Header())
+		w.Header().Set("X-Rou2-Upstream", "anthropic-kic-2")
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, sseBody(evStart, evText, evDelta("end_turn"), evStop))
+	})
+	require.NoError(t, err)
+	require.Equal(t, attribute.StringValue("anthropic-kic-2"), got["rou2.upstream"])
+	require.Equal(t, attribute.StringValue("claude-test"), got["figaro.ratelimit.requested_model"])
+}
+
+func TestRou2UpstreamOnARejected429StillAttributes(t *testing.T) {
+	got, _ := roundSpanAttrs(t, func(w http.ResponseWriter) {
+		setUnified(w.Header())
+		w.Header().Set("anthropic-ratelimit-unified-status", "rejected")
+		w.Header().Set("X-Rou2-Upstream", "anthropic-kic-2")
+		w.Header().Set("Retry-After", "132670")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	require.Equal(t, attribute.StringValue("anthropic-kic-2"), got["rou2.upstream"])
+}
+
+func TestWithoutRou2UpstreamTheSpanIsUnchanged(t *testing.T) {
+	got, err := roundSpanAttrs(t, func(w http.ResponseWriter) {
+		setUnified(w.Header())
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, sseBody(evStart, evText, evDelta("end_turn"), evStop))
+	})
+	require.NoError(t, err)
+	require.Equal(t, unifiedAttrs, got)
+}
+
+func TestAMalformedRou2UpstreamIsIgnored(t *testing.T) {
+	for _, bad := range []string{"", "  ", "Anthropic KIC", "a/b", strings.Repeat("a", 65)} {
+		got, err := roundSpanAttrs(t, func(w http.ResponseWriter) {
+			setUnified(w.Header())
+			w.Header().Set("X-Rou2-Upstream", bad)
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, sseBody(evStart, evText, evDelta("end_turn"), evStop))
+		})
+		require.NoError(t, err)
+		require.Equal(t, unifiedAttrs, got, "value %q", bad)
+	}
+}
