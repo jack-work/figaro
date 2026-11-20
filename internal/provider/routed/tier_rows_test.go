@@ -148,7 +148,7 @@ func TestTheCatalogFormKeepsNoVisibleTierRowForAWantedOrStaleTierId(t *testing.T
 	require.NoError(t, c.Refresh(context.Background(), "gca-form"))
 	c.Want("gca-form", "gemini-4-neon-high")
 	provs, _ := apimodels.Providers(c.Snapshot())
-	rows := provs["gca-form"].Models
+	rows := provs["gca-form"].Flat()
 	require.Contains(t, rows, "gemini-4-neon")
 	assert.False(t, rows["gemini-4-neon"].Hidden)
 	assert.Equal(t, []string{"low", "medium", "high", "xhigh"}, rows["gemini-4-neon"].Efforts)
