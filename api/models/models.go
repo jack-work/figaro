@@ -92,6 +92,7 @@ type Entry struct {
 	ImageCount int               `json:"max_prompt_images,omitempty"`
 	Tools      *bool             `json:"tools,omitempty"`
 	Reasoning  *bool             `json:"reasoning,omitempty"`
+	Efforts    []string          `json:"efforts,omitempty"`
 	Hidden     bool              `json:"hidden,omitempty"`
 	Endpoints  []string          `json:"endpoints,omitempty"`
 	Src        map[string]string `json:"src,omitempty"`

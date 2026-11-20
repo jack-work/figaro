@@ -32,7 +32,11 @@ func NormalizeCatalogJSON(raw []byte, endpoint string) ([]byte, error) {
 	}
 	m := strings.TrimSpace(string(probe.Models))
 	if strings.HasPrefix(m, "{") {
-		return normalizeCodeAssistModels(probe.Models, endpoint)
+		var grouped struct {
+			GroupedModels map[string]effortGroup `json:"groupedModels"`
+		}
+		_ = json.Unmarshal(raw, &grouped)
+		return normalizeCodeAssistModels(probe.Models, grouped.GroupedModels, endpoint)
 	}
 	if strings.HasPrefix(m, "[") {
 		return normalizeGenerativeModels(probe.Models, probe.NextPageToken, endpoint)
@@ -40,7 +44,7 @@ func NormalizeCatalogJSON(raw []byte, endpoint string) ([]byte, error) {
 	return raw, nil
 }
 
-func normalizeCodeAssistModels(raw json.RawMessage, endpoint string) ([]byte, error) {
+func normalizeCodeAssistModels(raw json.RawMessage, groups map[string]effortGroup, endpoint string) ([]byte, error) {
 	var byID map[string]struct {
 		DisplayName     string `json:"displayName"`
 		SupportsImages  *bool  `json:"supportsImages"`
@@ -98,7 +102,64 @@ func normalizeCodeAssistModels(raw json.RawMessage, endpoint string) ([]byte, er
 		}
 		data = append(data, nm)
 	}
+	members := effortMembers(groups, data)
+	for i := range data {
+		if rung, ok := members[data[i].ID]; ok {
+			if data[i].Capabilities == nil {
+				data[i].Capabilities = map[string]any{}
+			}
+			data[i].Capabilities["reasoning_effort"] = []string{rung}
+		}
+	}
 	return json.Marshal(map[string]any{"data": data})
+}
+
+type effortGroup struct {
+	DisplayName string `json:"displayName"`
+	Levels      []struct {
+		Suffix string `json:"thinkingSuffix"`
+	} `json:"supportedThinkingLevels"`
+}
+
+var effortWords = []string{"minimal", "low", "medium", "high", "xhigh", "max"}
+
+func effortMembers(groups map[string]effortGroup, data []normalizedModel) map[string]string {
+	out := map[string]string{}
+	for base, g := range groups {
+		for _, l := range g.Levels {
+			if s := strings.ToLower(strings.TrimSpace(l.Suffix)); s != "" {
+				out[base+"-"+s] = s
+			}
+		}
+	}
+	for _, m := range data {
+		if _, ok := out[m.ID]; ok {
+			continue
+		}
+		cut := strings.LastIndex(m.ID, "-")
+		if cut <= 0 {
+			continue
+		}
+		rung := m.ID[cut+1:]
+		if slices.Contains(effortWords, rung) && titleNamesRung(m.DisplayName, rung) {
+			out[m.ID] = rung
+		}
+	}
+	for id := range out {
+		if !slices.ContainsFunc(data, func(m normalizedModel) bool { return m.ID == id }) {
+			delete(out, id)
+		}
+	}
+	return out
+}
+
+func titleNamesRung(name, rung string) bool {
+	open := strings.LastIndex(name, "(")
+	if open < 0 || !strings.HasSuffix(name, ")") {
+		return false
+	}
+	label := strings.ToLower(strings.Join(strings.Fields(name[open+1:len(name)-1]), ""))
+	return label == rung || (rung == "xhigh" && label == "extrahigh")
 }
 
 func normalizeGenerativeModels(raw json.RawMessage, nextToken, endpoint string) ([]byte, error) {

@@ -388,8 +388,9 @@ func TestACredSocketMakesTheGatewayRequireAuthAndRefetchesOn401(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gp.(*Provider).spec.AuthOptional || gp.(*Provider).spec.AuthStyle != provider.AuthBearer {
-		t.Fatalf("gemcred spec AuthOptional=%v AuthStyle=%v", gp.(*Provider).spec.AuthOptional, gp.(*Provider).spec.AuthStyle)
+	gspec := gp.(*DeclaredProvider).spec
+	if gspec.AuthOptional || gspec.AuthStyle != provider.AuthBearer {
+		t.Fatalf("gemcred spec AuthOptional=%v AuthStyle=%v", gspec.AuthOptional, gspec.AuthStyle)
 	}
 
 	be, aria := store.NewTestAria(t, "d", message.Patch{})

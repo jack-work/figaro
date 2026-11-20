@@ -1,0 +1,703 @@
+{
+  "defaultAgentModelId": "gemini-4-neon-high",
+  "groupedModels": {
+    "claude-opus-5-5": {
+      "displayName": "Claude Opus 5.5",
+      "supportedThinkingLevels": [
+        {
+          "thinkingDisplayName": "Low",
+          "thinkingSuffix": "low"
+        },
+        {
+          "thinkingDisplayName": "Medium",
+          "thinkingSuffix": "medium"
+        },
+        {
+          "thinkingDisplayName": "High",
+          "thinkingSuffix": "high"
+        }
+      ]
+    },
+    "claude-sonnet-5-5": {
+      "displayName": "Claude Sonnet 5.5",
+      "supportedThinkingLevels": [
+        {
+          "thinkingDisplayName": "Low",
+          "thinkingSuffix": "low"
+        },
+        {
+          "thinkingDisplayName": "Medium",
+          "thinkingSuffix": "medium"
+        },
+        {
+          "thinkingDisplayName": "High",
+          "thinkingSuffix": "high"
+        }
+      ]
+    },
+    "gemini-3.8-flash": {
+      "displayName": "Gemini 3.8 Flash",
+      "supportedThinkingLevels": [
+        {
+          "thinkingDisplayName": "Low",
+          "thinkingSuffix": "low"
+        },
+        {
+          "thinkingDisplayName": "Medium",
+          "thinkingSuffix": "medium"
+        },
+        {
+          "thinkingDisplayName": "High",
+          "thinkingSuffix": "high"
+        }
+      ]
+    },
+    "gemini-4-argon": {
+      "displayName": "Gemini 4 Argon",
+      "supportedThinkingLevels": [
+        {
+          "thinkingDisplayName": "Low",
+          "thinkingSuffix": "low"
+        },
+        {
+          "thinkingDisplayName": "Medium",
+          "thinkingSuffix": "medium"
+        },
+        {
+          "thinkingDisplayName": "High",
+          "thinkingSuffix": "high"
+        }
+      ]
+    },
+    "gemini-4-carbon": {
+      "displayName": "Gemini 4 Carbon",
+      "supportedThinkingLevels": [
+        {
+          "thinkingDisplayName": "Low",
+          "thinkingSuffix": "low"
+        },
+        {
+          "thinkingDisplayName": "Medium",
+          "thinkingSuffix": "medium"
+        },
+        {
+          "thinkingDisplayName": "High",
+          "thinkingSuffix": "high"
+        }
+      ]
+    },
+    "gemini-4-hydrogen": {
+      "displayName": "Gemini 4 Hydrogen",
+      "supportedThinkingLevels": [
+        {
+          "thinkingDisplayName": "Low",
+          "thinkingSuffix": "low"
+        },
+        {
+          "thinkingDisplayName": "Medium",
+          "thinkingSuffix": "medium"
+        },
+        {
+          "thinkingDisplayName": "High",
+          "thinkingSuffix": "high"
+        },
+        {
+          "thinkingDisplayName": "Extra High",
+          "thinkingSuffix": "xhigh"
+        }
+      ]
+    },
+    "gemini-4-neon": {
+      "displayName": "Gemini 4 Neon",
+      "supportedThinkingLevels": [
+        {
+          "thinkingDisplayName": "Low",
+          "thinkingSuffix": "low"
+        },
+        {
+          "thinkingDisplayName": "Medium",
+          "thinkingSuffix": "medium"
+        },
+        {
+          "thinkingDisplayName": "High",
+          "thinkingSuffix": "high"
+        },
+        {
+          "thinkingDisplayName": "Extra High",
+          "thinkingSuffix": "xhigh"
+        }
+      ]
+    }
+  },
+  "models": {
+    "claude-opus-5-5-high": {
+      "apiProvider": "API_PROVIDER_ANTHROPIC_VERTEX",
+      "displayName": "Claude Opus 5.5 (High)",
+      "maxOutputTokens": 128000,
+      "maxTokens": 1000000,
+      "model": "MODEL_PLACEHOLDER_M402",
+      "modelProvider": "MODEL_PROVIDER_ANTHROPIC",
+      "recommended": true,
+      "supportsAdaptiveThinking": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "tagTitle": "New",
+      "thinkingLevel": 3,
+      "vertexModelId": "claude-opus-5-5@default"
+    },
+    "claude-opus-5-5-low": {
+      "apiProvider": "API_PROVIDER_ANTHROPIC_VERTEX",
+      "displayName": "Claude Opus 5.5 (Low)",
+      "maxOutputTokens": 128000,
+      "maxTokens": 1000000,
+      "model": "MODEL_PLACEHOLDER_M400",
+      "modelProvider": "MODEL_PROVIDER_ANTHROPIC",
+      "recommended": true,
+      "supportsAdaptiveThinking": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "tagTitle": "New",
+      "thinkingLevel": 1,
+      "vertexModelId": "claude-opus-5-5@default"
+    },
+    "claude-opus-5-5-medium": {
+      "apiProvider": "API_PROVIDER_ANTHROPIC_VERTEX",
+      "displayName": "Claude Opus 5.5 (Medium)",
+      "maxOutputTokens": 128000,
+      "maxTokens": 1000000,
+      "model": "MODEL_PLACEHOLDER_M401",
+      "modelProvider": "MODEL_PROVIDER_ANTHROPIC",
+      "recommended": true,
+      "supportsAdaptiveThinking": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "tagTitle": "New",
+      "thinkingLevel": 2,
+      "vertexModelId": "claude-opus-5-5@default"
+    },
+    "claude-sonnet-5-5-high": {
+      "apiProvider": "API_PROVIDER_ANTHROPIC_VERTEX",
+      "displayName": "Claude Sonnet 5.5 (High)",
+      "maxOutputTokens": 128000,
+      "maxTokens": 1000000,
+      "model": "MODEL_PLACEHOLDER_M405",
+      "modelProvider": "MODEL_PROVIDER_ANTHROPIC",
+      "recommended": true,
+      "supportsAdaptiveThinking": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "tagTitle": "New",
+      "thinkingLevel": 3,
+      "vertexModelId": "claude-sonnet-5-5@default"
+    },
+    "claude-sonnet-5-5-low": {
+      "apiProvider": "API_PROVIDER_ANTHROPIC_VERTEX",
+      "displayName": "Claude Sonnet 5.5 (Low)",
+      "maxOutputTokens": 128000,
+      "maxTokens": 1000000,
+      "model": "MODEL_PLACEHOLDER_M403",
+      "modelProvider": "MODEL_PROVIDER_ANTHROPIC",
+      "recommended": true,
+      "supportsAdaptiveThinking": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "tagTitle": "New",
+      "thinkingLevel": 1,
+      "vertexModelId": "claude-sonnet-5-5@default"
+    },
+    "claude-sonnet-5-5-medium": {
+      "apiProvider": "API_PROVIDER_ANTHROPIC_VERTEX",
+      "displayName": "Claude Sonnet 5.5 (Medium)",
+      "maxOutputTokens": 128000,
+      "maxTokens": 1000000,
+      "model": "MODEL_PLACEHOLDER_M404",
+      "modelProvider": "MODEL_PROVIDER_ANTHROPIC",
+      "recommended": true,
+      "supportsAdaptiveThinking": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "tagTitle": "New",
+      "thinkingLevel": 2,
+      "vertexModelId": "claude-sonnet-5-5@default"
+    },
+    "gemini-2.5-flash": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 3.5 Flash Lite",
+      "maxOutputTokens": 65535,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 128,
+      "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "thinkingLevel": 1
+    },
+    "gemini-2.5-flash-lite": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 3.5 Flash Lite",
+      "maxOutputTokens": 65535,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 128,
+      "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "thinkingLevel": 1
+    },
+    "gemini-2.5-flash-thinking": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 3.5 Flash Lite",
+      "maxOutputTokens": 65535,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 128,
+      "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH_THINKING",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "thinkingLevel": 1
+    },
+    "gemini-2.5-pro": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 2.5 Pro",
+      "maxOutputTokens": 65535,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 128,
+      "model": "MODEL_GOOGLE_GEMINI_2_5_PRO",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "requiresImageOutputOutsideFunctionResponses": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "thinkingBudget": 1024
+    },
+    "gemini-3-flash": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 3 Flash",
+      "maxOutputTokens": 65536,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 128,
+      "model": "MODEL_PLACEHOLDER_M18",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "thinkingLevel": 3
+    },
+    "gemini-3.1-flash-image": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 3.1 Flash Image",
+      "maxOutputTokens": 65536,
+      "maxTokens": 65536,
+      "model": "MODEL_PLACEHOLDER_M21",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "supportsImages": true
+    },
+    "gemini-3.1-flash-lite": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 3.1 Flash Lite",
+      "maxOutputTokens": 65535,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 128,
+      "model": "MODEL_PLACEHOLDER_M50",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "thinkingLevel": 1
+    },
+    "gemini-3.5-flash-lite": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 3.5 Flash Lite",
+      "maxOutputTokens": 65535,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 128,
+      "model": "MODEL_PLACEHOLDER_M198",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "thinkingLevel": 1
+    },
+    "gemini-3.8-flash-high": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 3.8 Flash (High)",
+      "maxOutputTokens": 65536,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M318",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "thinkingLevel": 3
+    },
+    "gemini-3.8-flash-low": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 3.8 Flash (Low)",
+      "maxOutputTokens": 65536,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M320",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "thinkingLevel": 1
+    },
+    "gemini-3.8-flash-medium": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 3.8 Flash (Medium)",
+      "maxOutputTokens": 65536,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M319",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "thinkingLevel": 2
+    },
+    "gemini-3.8-flash-tiered": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "maxOutputTokens": 65536,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M322",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "thinkingLevel": 3
+    },
+    "gemini-4-argon-high": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Argon (High)",
+      "maxOutputTokens": 65536,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M417",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "The original Gemini 4 model for advanced workflows",
+      "tagTitle": "New",
+      "thinkingLevel": 3
+    },
+    "gemini-4-argon-low": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Argon (Low)",
+      "maxOutputTokens": 65536,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M419",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "The original Gemini 4 model for advanced workflows",
+      "tagTitle": "New",
+      "thinkingLevel": 1
+    },
+    "gemini-4-argon-medium": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Argon (Medium)",
+      "maxOutputTokens": 65536,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M418",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "The original Gemini 4 model for advanced workflows",
+      "tagTitle": "New",
+      "thinkingLevel": 2
+    },
+    "gemini-4-carbon-high": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Carbon (High)",
+      "maxOutputTokens": 262144,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 128,
+      "model": "MODEL_PLACEHOLDER_M427",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "For your hardest, long-horizon tasks",
+      "tagTitle": "New",
+      "thinkingLevel": 3
+    },
+    "gemini-4-carbon-low": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Carbon (Low)",
+      "maxOutputTokens": 262144,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 128,
+      "model": "MODEL_PLACEHOLDER_M438",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "For your hardest, long-horizon tasks",
+      "tagTitle": "New",
+      "thinkingLevel": 1
+    },
+    "gemini-4-carbon-medium": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Carbon (Medium)",
+      "maxOutputTokens": 262144,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 128,
+      "model": "MODEL_PLACEHOLDER_M437",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "For your hardest, long-horizon tasks",
+      "tagTitle": "New",
+      "thinkingLevel": 2
+    },
+    "gemini-4-hydrogen-high": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Hydrogen (High)",
+      "maxOutputTokens": 262144,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M525",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "For speed and efficiency in execution tasks",
+      "tagTitle": "New",
+      "thinkingLevel": 3
+    },
+    "gemini-4-hydrogen-low": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Hydrogen (Low)",
+      "maxOutputTokens": 262144,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M527",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "For speed and efficiency in execution tasks",
+      "tagTitle": "New",
+      "thinkingLevel": 1
+    },
+    "gemini-4-hydrogen-medium": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Hydrogen (Medium)",
+      "maxOutputTokens": 262144,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M526",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "For speed and efficiency in execution tasks",
+      "tagTitle": "New",
+      "thinkingLevel": 2
+    },
+    "gemini-4-hydrogen-sonar": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "maxOutputTokens": 65536,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M578",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "thinkingLevel": 1
+    },
+    "gemini-4-hydrogen-tiered-high": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Hydrogen (High)",
+      "maxOutputTokens": 262144,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M530",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "thinkingLevel": 3
+    },
+    "gemini-4-hydrogen-tiered-xhigh": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Hydrogen (XHigh)",
+      "maxOutputTokens": 262144,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M531",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "thinkingLevel": 100
+    },
+    "gemini-4-hydrogen-xhigh": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Hydrogen (XHigh)",
+      "maxOutputTokens": 262144,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M528",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "For speed and efficiency in execution tasks",
+      "tagTitle": "New",
+      "thinkingLevel": 100
+    },
+    "gemini-4-neon-high": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Neon (High)",
+      "maxOutputTokens": 262144,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M532",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "For most deep reasoning and complex problems",
+      "tagTitle": "New",
+      "thinkingLevel": 3
+    },
+    "gemini-4-neon-low": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Neon (Low)",
+      "maxOutputTokens": 262144,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M534",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "For most deep reasoning and complex problems",
+      "tagTitle": "New",
+      "thinkingLevel": 1
+    },
+    "gemini-4-neon-medium": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Neon (Medium)",
+      "maxOutputTokens": 262144,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M533",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "For most deep reasoning and complex problems",
+      "tagTitle": "New",
+      "thinkingLevel": 2
+    },
+    "gemini-4-neon-xhigh": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "displayName": "Gemini 4 Neon (XHigh)",
+      "maxOutputTokens": 262144,
+      "maxTokens": 1048576,
+      "minThinkingBudget": 32,
+      "model": "MODEL_PLACEHOLDER_M535",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "recommended": true,
+      "supportsImages": true,
+      "supportsThinking": true,
+      "supportsVideo": true,
+      "tagDescription": "For most deep reasoning and complex problems",
+      "tagTitle": "New",
+      "thinkingLevel": 100
+    },
+    "gpt-oss-120b-medium": {
+      "apiProvider": "API_PROVIDER_OPENAI_VERTEX",
+      "displayName": "GPT-OSS 120B (Medium)",
+      "maxOutputTokens": 32768,
+      "maxTokens": 131072,
+      "model": "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
+      "modelProvider": "MODEL_PROVIDER_OPENAI",
+      "recommended": true,
+      "supportsThinking": true,
+      "tagDescription": "GPT-OSS will be removed from Antigravity on November 30, 2026.",
+      "tagTitle": "Notice",
+      "thinkingBudget": 8192,
+      "vertexModelId": "openai/gpt-oss-120b-maas"
+    },
+    "tab_flash_lite_preview": {
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "maxOutputTokens": 4096,
+      "maxTokens": 16384,
+      "model": "MODEL_PLACEHOLDER_M19",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "requiresLeadInGeneration": true,
+      "supportsCumulativeContext": true,
+      "supportsEstimateTokenCounter": true,
+      "toolFormatterType": "TOOL_FORMATTER_TYPE_XML"
+    },
+    "tab_jump_flash_lite_preview": {
+      "addCursorToFindReplaceTarget": true,
+      "apiProvider": "API_PROVIDER_GOOGLE_GEMINI",
+      "maxOutputTokens": 4096,
+      "maxTokens": 16384,
+      "model": "MODEL_PLACEHOLDER_M28",
+      "modelProvider": "MODEL_PROVIDER_GOOGLE",
+      "requiresLeadInGeneration": true,
+      "requiresNoXmlToolExamples": true,
+      "supportsCumulativeContext": true,
+      "supportsEstimateTokenCounter": true,
+      "tabJumpPrintLineRange": true,
+      "toolFormatterType": "TOOL_FORMATTER_TYPE_XML"
+    }
+  },
+  "tieredModelIds": {
+    "flash": [
+      "gemini-4-hydrogen-tiered-high",
+      "gemini-3.8-flash-tiered"
+    ],
+    "flashLite": [
+      "gemini-3.5-flash-lite"
+    ],
+    "pro": [
+      "gemini-4-hydrogen-tiered-xhigh",
+      "gemini-3.8-flash-tiered"
+    ]
+  }
+}

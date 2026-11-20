@@ -7,6 +7,7 @@ max_output = ["max_output_tokens", "max_tokens", "outputTokenLimit"]
 images     = ["capabilities.image_input.supported"]
 tools      = ["supports_tools"]
 reasoning  = ["supports_reasoning", "capabilities.reasoning_effort nonempty"]
+efforts    = ["capabilities.reasoning_effort"]
 visible    = ["model_picker_enabled"]
 endpoints  = ["supported_endpoints"]
 

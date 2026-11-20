@@ -26,6 +26,7 @@ type Mapping struct {
 	ImageCount  []string         `toml:"max_prompt_images,omitempty"`
 	Tools       []string         `toml:"tools,omitempty"`
 	Reasoning   []string         `toml:"reasoning,omitempty"`
+	Efforts     []string         `toml:"efforts,omitempty"`
 	Visible     []string         `toml:"visible,omitempty"`
 	Endpoints   []string         `toml:"endpoints,omitempty"`
 	More        string           `toml:"more,omitempty"`
@@ -83,6 +84,7 @@ func (m Mapping) With(over *Mapping) Mapping {
 		ImageCount:  pick(m.ImageCount, over.ImageCount),
 		Tools:       pick(m.Tools, over.Tools),
 		Reasoning:   pick(m.Reasoning, over.Reasoning),
+		Efforts:     pick(m.Efforts, over.Efforts),
 		Visible:     pick(m.Visible, over.Visible),
 		Endpoints:   pick(m.Endpoints, over.Endpoints),
 		More:        word(m.More, over.More),
@@ -132,6 +134,7 @@ type Reader struct {
 	imgCount  []path
 	tools     []path
 	reasoning []path
+	efforts   []path
 	visible   []path
 	endpoints []path
 	more      []string
@@ -174,7 +177,7 @@ func New(m Mapping, overrides map[string]Override) (*Reader, error) {
 		{"id", m.ID, &r.id}, {"name", m.Name, &r.name}, {"context", m.Context, &r.context},
 		{"long", m.Long, &r.long}, {"max_output", m.MaxOutput, &r.maxOutput}, {"max_prompt", m.MaxPrompt, &r.maxPrompt}, {"images", m.Images, &r.images},
 		{"max_prompt_image_size", m.ImageBytes, &r.imgBytes}, {"max_prompt_images", m.ImageCount, &r.imgCount},
-		{"tools", m.Tools, &r.tools}, {"reasoning", m.Reasoning, &r.reasoning}, {"visible", m.Visible, &r.visible},
+		{"tools", m.Tools, &r.tools}, {"reasoning", m.Reasoning, &r.reasoning}, {"efforts", m.Efforts, &r.efforts}, {"visible", m.Visible, &r.visible},
 		{"endpoints", m.Endpoints, &r.endpoints},
 	} {
 		for _, s := range f.in {
@@ -300,6 +303,10 @@ func (r *Reader) entry(id string, item any) models.Entry {
 	if v, ok := firstBool(item, r.visible); ok {
 		e.Hidden = !v
 		e.Mark("hidden", models.SourceAPI)
+	}
+	if v, ok := firstStrings(item, r.efforts); ok && len(v) > 0 {
+		e.Efforts = v
+		e.Mark("efforts", models.SourceAPI)
 	}
 	if v, ok := firstStrings(item, r.endpoints); ok {
 		e.Endpoints = v

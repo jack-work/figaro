@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -540,4 +541,30 @@ func TestAPIErrorMessageRedactsTokensAndCapsBody(t *testing.T) {
 
 	huge := []byte(strings.Repeat("z", 2048))
 	assert.LessOrEqual(t, len(apiErrorMessage(502, huge)), 530)
+}
+
+func TestRecordedCodeAssistCatalogMarksEffortTiers(t *testing.T) {
+	raw, err := os.ReadFile("testdata/code-assist-models-2026-11-20.json")
+	require.NoError(t, err)
+	norm, err := NormalizeCatalogJSON(raw, "/v1internal:streamGenerateContent")
+	require.NoError(t, err)
+	reader, err := (&Provider{}).catalogReader()
+	require.NoError(t, err)
+	listed, _, err := reader.Page(bytes.NewReader(norm))
+	require.NoError(t, err)
+	byID := map[string]models.Entry{}
+	for _, m := range listed {
+		byID[m.ID] = m.Entry
+	}
+	for id, rung := range map[string]string{
+		"gemini-4-neon-xhigh":           "xhigh",
+		"claude-opus-5-5-low":           "low",
+		"gemini-3.8-flash-medium":       "medium",
+		"gemini-4-hydrogen-tiered-high": "high",
+	} {
+		assert.Equal(t, []string{rung}, byID[id].Efforts, id)
+	}
+	for _, id := range []string{"gemini-2.5-pro", "gemini-3.8-flash-tiered", "gemini-4-hydrogen-sonar", "gemini-2.5-flash-thinking"} {
+		assert.Empty(t, byID[id].Efforts, id)
+	}
 }

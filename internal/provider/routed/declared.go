@@ -78,7 +78,7 @@ func declared(loaded *config.Loaded, name string) (*provider.Registration, error
 				return nil, err
 			}
 			rp, ok := p.(*Provider)
-			if !ok || rp.spec.Effort.Empty() {
+			if !ok || (rp.spec.Effort.Empty() && !rp.listsEffortTiers()) {
 				return p, nil
 			}
 			return NewDeclared(rp)
@@ -137,32 +137,36 @@ func (d *DeclaredProvider) KeepsCacheOnChange(key string, snap form.Snapshot) bo
 
 func (d *DeclaredProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	listed, err := d.Provider.Models(ctx)
-	if err != nil || d.mapRe == nil {
+	if err != nil {
 		return listed, err
 	}
 	out := make([]provider.ModelInfo, 0, len(listed))
 	idxByID := make(map[string]int, len(listed))
 	matched := make(map[string]bool)
+	suffixed := make(map[string]bool)
 	rungs := make(map[string][]string)
 	for _, m := range listed {
-		id := m.ID
-		if sub := d.mapRe.FindStringSubmatch(m.ID); sub != nil && d.modelIdx >= 0 && sub[d.modelIdx] != "" {
-			id = sub[d.modelIdx]
+		id, effort := m.ID, ""
+		if base, rung, ok := d.mapEffort(m.ID); ok {
+			id, effort = base, rung
 			matched[id] = true
-			if d.effortIdx >= 0 {
-				if effort := strings.ToLower(strings.TrimSpace(sub[d.effortIdx])); effort != "" {
-					if !slices.Contains(rungs[id], effort) {
-						rungs[id] = append(rungs[id], effort)
-					}
-					m.Entry.Name = stripEffortTitle(m.Entry.Name, effort)
-					yes := true
-					if m.Entry.Reasoning == nil {
-						m.Entry.Reasoning = &yes
-					}
-				}
-			}
-			m.ID = id
+		} else if len(m.Efforts) == 1 && strings.HasSuffix(m.ID, "-"+m.Efforts[0]) && len(m.ID) > len(m.Efforts[0])+1 {
+			effort = m.Efforts[0]
+			id = strings.TrimSuffix(m.ID, "-"+effort)
+			matched[id], suffixed[id] = true, true
 		}
+		if effort != "" {
+			if !slices.Contains(rungs[id], effort) {
+				rungs[id] = append(rungs[id], effort)
+			}
+			m.Entry.Name = stripEffortTitle(m.Entry.Name, effort)
+			m.Entry.Efforts = []string{effort}
+			yes := true
+			if m.Entry.Reasoning == nil {
+				m.Entry.Reasoning = &yes
+			}
+		}
+		m.ID = id
 		if idx, exists := idxByID[id]; exists {
 			out[idx].Entry = mergeModelEntry(out[idx].Entry, m.Entry)
 		} else {
@@ -171,10 +175,11 @@ func (d *DeclaredProvider) Models(ctx context.Context) ([]provider.ModelInfo, er
 		}
 	}
 	for id, rs := range rungs {
-		sort.Slice(rs, func(i, j int) bool { return d.rungScore(rs[i]) < d.rungScore(rs[j]) })
+		sort.SliceStable(rs, func(i, j int) bool { return d.rungScore(rs[i]) < d.rungScore(rs[j]) })
 		rungs[id] = rs
+		out[idxByID[id]].Efforts = rs
 	}
-	d.shared.store(matched, rungs)
+	d.shared.store(matched, suffixed, rungs)
 	d.cat.mu.Lock()
 	for _, m := range out {
 		if _, exists := d.cat.entries[m.ID]; !exists {
@@ -192,39 +197,39 @@ func (d *DeclaredProvider) Send(ctx context.Context, in provider.SendInput, bus 
 		model = d.model
 		d.mu.RUnlock()
 	}
-	if !d.spec.CatalogOff && ((d.mapRe != nil && !d.shared.populated()) || (d.outTmpl != nil && d.cat.empty())) &&
-		(d.spec.Catalog != "" || d.spec.Default == Gemini || d.spec.Default == CodeAssist) {
+	if !d.spec.CatalogOff && (!d.shared.populated() || (d.outTmpl != nil && d.cat.empty())) &&
+		(d.spec.Catalog != "" || d.listsEffortTiers()) {
 		cctx, cancel := context.WithTimeout(ctx, catalogTimeout)
 		_, _ = d.Models(cctx)
 		cancel()
 	}
 	inlineEffort := ""
-	rungs, matched := d.shared.lookup(model)
-	if d.mapRe != nil && d.modelIdx >= 0 {
-		if sub := d.mapRe.FindStringSubmatch(model); sub != nil && sub[d.modelIdx] != "" {
-			model = sub[d.modelIdx]
-			if d.effortIdx >= 0 {
-				inlineEffort = strings.ToLower(strings.TrimSpace(sub[d.effortIdx]))
-			}
-			rungs, _ = d.shared.lookup(model)
-			matched = true
-		}
+	rungs, matched, suffixed := d.shared.lookup(model)
+	if base, rung, ok := d.mapEffort(model); ok {
+		model, inlineEffort, matched = base, rung, true
+		rungs, _, suffixed = d.shared.lookup(model)
+	} else if base, rung, ok := d.shared.member(model); ok {
+		model, inlineEffort, matched, suffixed = base, rung, true, true
+		rungs, _, _ = d.shared.lookup(model)
 	}
 	rawEffort := snapshotEffort(in.Snapshot)
 	if rawEffort == "" {
-		rawEffort = d.spec.Effort.DefaultRung
+		rawEffort = inlineEffort
 	}
 	if rawEffort == "" {
-		rawEffort = inlineEffort
+		rawEffort = d.spec.Effort.DefaultRung
 	}
 	if effort, ok := d.resolveEffort(rawEffort, rungs, matched); ok {
 		in.Snapshot = in.Snapshot.SetPath("system.thinking_effort", mustJSONString(effort))
-		if d.outTmpl != nil && model != "" {
-			var buf bytes.Buffer
-			if err := d.outTmpl.Execute(&buf, struct{ Model, Effort string }{Model: model, Effort: effort}); err != nil {
-				return fmt.Errorf("%s: outbound_model_template: %w", d.Name(), err)
+		if (d.outTmpl != nil || suffixed) && model != "" {
+			outbound := model + "-" + effort
+			if !suffixed {
+				var buf bytes.Buffer
+				if err := d.outTmpl.Execute(&buf, struct{ Model, Effort string }{Model: model, Effort: effort}); err != nil {
+					return fmt.Errorf("%s: outbound_model_template: %w", d.Name(), err)
+				}
+				outbound = strings.TrimSpace(buf.String())
 			}
-			outbound := strings.TrimSpace(buf.String())
 			applyOutbound := d.mapRe == nil || matched || (!d.shared.populated() && d.mapRe.MatchString(outbound))
 			if outbound != "" && applyOutbound {
 				if outbound != model {
@@ -444,10 +449,11 @@ func mergeModelEntry(a, b apimodels.Entry) apimodels.Entry {
 }
 
 type effortCache struct {
-	mu      sync.RWMutex
-	loaded  bool
-	matched map[string]bool
-	rungs   map[string][]string
+	mu       sync.RWMutex
+	loaded   bool
+	matched  map[string]bool
+	suffixed map[string]bool
+	rungs    map[string][]string
 }
 
 var effortCaches sync.Map
@@ -457,9 +463,9 @@ func sharedEffortCache(name, base, mapModel string) *effortCache {
 	return c.(*effortCache)
 }
 
-func (c *effortCache) store(matched map[string]bool, rungs map[string][]string) {
+func (c *effortCache) store(matched, suffixed map[string]bool, rungs map[string][]string) {
 	c.mu.Lock()
-	c.loaded, c.matched, c.rungs = true, matched, rungs
+	c.loaded, c.matched, c.suffixed, c.rungs = true, matched, suffixed, rungs
 	c.mu.Unlock()
 }
 
@@ -469,8 +475,40 @@ func (c *effortCache) populated() bool {
 	return c.loaded
 }
 
-func (c *effortCache) lookup(model string) ([]string, bool) {
+func (c *effortCache) lookup(model string) ([]string, bool, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return append([]string(nil), c.rungs[model]...), c.matched[model]
+	return append([]string(nil), c.rungs[model]...), c.matched[model], c.suffixed[model]
+}
+
+func (c *effortCache) member(model string) (base, rung string, ok bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	cut := strings.LastIndex(model, "-")
+	if cut <= 0 {
+		return "", "", false
+	}
+	base, rung = model[:cut], model[cut+1:]
+	if !c.suffixed[base] || !slices.Contains(c.rungs[base], rung) {
+		return "", "", false
+	}
+	return base, rung, true
+}
+
+func (d *DeclaredProvider) mapEffort(model string) (base, rung string, ok bool) {
+	if d.mapRe == nil || d.modelIdx < 0 {
+		return "", "", false
+	}
+	sub := d.mapRe.FindStringSubmatch(model)
+	if sub == nil || sub[d.modelIdx] == "" {
+		return "", "", false
+	}
+	if d.effortIdx >= 0 {
+		rung = strings.ToLower(strings.TrimSpace(sub[d.effortIdx]))
+	}
+	return sub[d.modelIdx], rung, true
+}
+
+func (p *Provider) listsEffortTiers() bool {
+	return p.spec.Default == Gemini || p.spec.Default == CodeAssist
 }
