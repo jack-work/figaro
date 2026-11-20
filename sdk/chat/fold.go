@@ -249,7 +249,10 @@ func (r *reader) advance(f *turnFold, emit func(Event)) {
 		emit(Event{Kind: Failed, Text: why, Cursor: r.cur})
 		return
 	}
-	emit(Event{Kind: End, Text: f.reply(), Cursor: r.cur})
+	if !r.known {
+		r.sent = f.reply()
+	}
+	emit(Event{Kind: End, Text: r.sent, Cursor: r.cur})
 }
 
 func clip(s string) string {

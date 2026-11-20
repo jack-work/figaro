@@ -431,3 +431,29 @@ func TestResumingATurnFarBehindTheTailReplaysIt(t *testing.T) {
 		}
 	}
 }
+
+func TestADaemonKilledMidReplyNeverTakesShownTextBack(t *testing.T) {
+	c, id, d := thread(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	ch, err := c.Prompt(ctx, id, "words 100 50")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []chat.Event
+	for e := range ch {
+		events = append(events, e)
+		if len(events) == 6 {
+			break
+		}
+	}
+	seen := replyText(events)
+	d.kill(t)
+	d.must(t, "ls")
+	events = append(events, collect(t, ch, time.Minute)...)
+	last := events[len(events)-1]
+	got := replyText(events)
+	if last.Kind != chat.End || !strings.HasPrefix(got, seen) || last.Text != got {
+		t.Fatalf("shown before the kill %q\nin all %q\nend %+v", seen, got, last)
+	}
+}

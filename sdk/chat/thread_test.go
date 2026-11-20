@@ -74,3 +74,58 @@ func TestReadingBackManyTurnsKeepsTheOneAListenerResumes(t *testing.T) {
 		}
 	}
 }
+
+func liveProse(turn uint64, v int, md string) aria.TurnPart {
+	return aria.TurnPart{Turn: aria.Turn{ID: turn, Live: &aria.Live{From: 0, V: v, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{"type": "prose", "role": "output", "markdown": md}}}}}}
+}
+
+func (th *thread) feed(parts ...aria.TurnPart) {
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	for i := range parts {
+		th.process(note{part: &parts[i]})
+	}
+}
+
+func (th *thread) end(turn uint64, reason string, idle bool) {
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	f := th.fold(turn)
+	f.finish(reason)
+	f.idle = idle
+	th.deliver(f)
+}
+
+func TestTheEndTextIsWhatTheDeltasSpelledAcrossAnEmptyTurn(t *testing.T) {
+	th := newThread(New(transport.Endpoint{}), "x")
+	ch := th.subscribe(context.Background(), &sub{after: 1}, nil)
+	th.feed(liveProse(2, 0, "A"))
+	th.end(2, "", false)
+	th.feed(aria.TurnPart{Turn: aria.Turn{ID: 3, Inquiry: "q"}})
+	th.end(3, "", false)
+	th.feed(liveProse(4, 0, "C"))
+	th.end(4, "", true)
+	events := drain(t, ch)
+	last := events[len(events)-1]
+	if text(events) != "A\n\nC" || last.Text != text(events) {
+		t.Fatalf("events: %s", summary(events))
+	}
+}
+
+func TestTheEndTextKeepsWhatWasShownWhenTheDaemonLostIt(t *testing.T) {
+	th := newThread(New(transport.Endpoint{}), "x")
+	ch := th.subscribe(context.Background(), &sub{after: 1}, nil)
+	th.feed(liveProse(2, 0, "w0 w1 w2"))
+	th.mu.Lock()
+	th.folds = map[uint64]*turnFold{}
+	running := sealedTurn(3, "ok")
+	running.Sealed, running.Live = false, &aria.Live{From: 0, V: 0}
+	th.adopt([]aria.TurnPart{sealedTurn(2, "w0"), running})
+	th.mu.Unlock()
+	th.end(3, "", true)
+	events := drain(t, ch)
+	last := events[len(events)-1]
+	if text(events) != "w0 w1 w2\n\nok" || last.Text != text(events) {
+		t.Fatalf("events: %s", summary(events))
+	}
+}

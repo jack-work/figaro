@@ -10,8 +10,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -282,4 +284,32 @@ func (d *daemon) root(t *testing.T) string {
 	}
 	d.must(t, "set", "--id", created.AriaID, "system.fanout.max_children", "16")
 	return created.AriaID
+}
+
+func (d *daemon) kill(t *testing.T) {
+	t.Helper()
+	var run string
+	for _, kv := range d.env {
+		if v, ok := strings.CutPrefix(kv, "FIGARO_RUNTIME_DIR="); ok {
+			run = v
+		}
+	}
+	procs, _ := os.ReadDir("/proc")
+	killed := 0
+	for _, p := range procs {
+		pid, err := strconv.Atoi(p.Name())
+		if err != nil {
+			continue
+		}
+		env, err := os.ReadFile("/proc/" + p.Name() + "/environ")
+		if err != nil || !strings.Contains(string(env), "FIGARO_RUNTIME_DIR="+run+"\x00") {
+			continue
+		}
+		if syscall.Kill(pid, syscall.SIGKILL) == nil {
+			killed++
+		}
+	}
+	if killed == 0 {
+		t.Fatal("no daemon process to kill")
+	}
 }

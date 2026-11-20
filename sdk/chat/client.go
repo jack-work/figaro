@@ -500,7 +500,7 @@ func (t *thread) offer(s *sub, f *turnFold) {
 			return
 		}
 		s.r = newReader(Cursor{Turn: f.id})
-		if len(s.replies) > 0 && s.replies[len(s.replies)-1] != "" {
+		if joinReplies(s.replies) != "" {
 			s.r.lead = "\n\n"
 		}
 	}

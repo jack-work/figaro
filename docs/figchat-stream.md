@@ -49,8 +49,11 @@ type Event struct {
   Args and Result are clipped to `MaxToolText` (4 KiB) with a trailing `…`.
 - Tool events are released in the order the tools appear in the turn: a tool
   that finishes before an earlier one waits for it.
-- `end` closes the channel; `Text` is the whole reply. `error` closes it too;
-  `Text` is the provider or connection failure.
+- `end` closes the channel; `Text` is the whole reply as this channel showed
+  it. `error` closes it too; `Text` is the provider or connection failure.
+- Text is never taken back. A daemon killed mid-reply can keep less of the
+  turn than it streamed; the channel carries on from what it showed, `end`
+  keeps it, and History holds what the daemon kept.
 
 A reply can span turns: when the daemon finishes a turn with a prompt still
 queued for the aria (a steer that arrived too late to join, or a resume after
