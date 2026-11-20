@@ -39,6 +39,7 @@ type suffix struct {
 type turnFold struct {
 	id      uint64
 	inquiry string
+	sender  *Sender
 	at      int64
 	nodes   []livedoc.Node
 	live    suffix
@@ -85,14 +86,28 @@ func (f *turnFold) shape() *replyView {
 
 func newTurnFold(id uint64) *turnFold { return &turnFold{id: id} }
 
-func (f *turnFold) apply(p aria.TurnPart) applied {
-	f.rev++
+func (f *turnFold) head(p aria.TurnPart) {
 	if p.Inquiry != "" {
 		f.inquiry = p.Inquiry
+	}
+	if len(p.InquirySegments) > 0 {
+		f.sender = nil
+		if s := p.InquirySegments[0]; s.Sender != "" {
+			f.sender = &Sender{ID: s.Sender, Name: s.Name}
+		}
 	}
 	if p.At != 0 {
 		f.at = p.At
 	}
+}
+
+func (f *turnFold) headed() bool {
+	return f.inquiry != "" || f.sender != nil || len(f.nodes) > 0 || f.ended
+}
+
+func (f *turnFold) apply(p aria.TurnPart) applied {
+	f.rev++
+	f.head(p)
 	snapshot := len(p.Nodes) > 0
 	if snapshot {
 		if p.From > uint64(len(f.nodes)) {

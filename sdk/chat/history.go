@@ -16,7 +16,9 @@ type Turn struct {
 	Reply  string    `json:"reply"`
 	Tools  []Tool    `json:"tools,omitempty"`
 	Done   bool      `json:"done"`
+	Sender *Sender   `json:"sender,omitempty"`
 	Cursor Cursor    `json:"cursor"`
+	Next   Cursor    `json:"next"`
 }
 
 type History struct {
@@ -53,12 +55,7 @@ func (c *Client) History(ctx context.Context, threadID string, before uint64, li
 				f = newTurnFold(p.ID)
 				folds[p.ID] = f
 			}
-			if p.Inquiry != "" {
-				f.inquiry = p.Inquiry
-			}
-			if p.At != 0 {
-				f.at = p.At
-			}
+			f.head(p)
 			f.absorb(p.From, p.Nodes)
 			f.sealed = f.sealed || p.Sealed
 			if p.From == 0 && !p.ClippedHead {
@@ -92,7 +89,11 @@ func (c *Client) History(ctx context.Context, threadID string, before uint64, li
 func (f *turnFold) turn() Turn {
 	r := newReader(Cursor{Turn: f.id})
 	r.advance(f, func(Event) {})
-	t := Turn{ID: f.id, Prompt: f.inquiry, Reply: f.reply(), Done: f.sealed, Cursor: r.cur}
+	t := Turn{ID: f.id, Prompt: f.inquiry, Reply: f.reply(), Done: f.sealed, Sender: f.sender, Cursor: r.cur, Next: r.cur}
+	t.Next.Begun = true
+	if f.sealed {
+		t.Next = Cursor{Turn: f.id + 1}
+	}
 	if f.at != 0 {
 		t.At = time.UnixMilli(f.at)
 	}

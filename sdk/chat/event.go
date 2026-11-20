@@ -14,7 +14,13 @@ const (
 	ToolEnd   Kind = "tool.end"
 	End       Kind = "end"
 	Failed    Kind = "error"
+	TurnStart Kind = "turn.start"
 )
+
+type Sender struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+}
 
 type Tool struct {
 	ID     string `json:"id"`
@@ -64,10 +70,11 @@ func ParseCursor(s string) (Cursor, error) {
 }
 
 type Event struct {
-	Kind   Kind   `json:"kind"`
-	Text   string `json:"text,omitempty"`
-	Tool   *Tool  `json:"tool,omitempty"`
-	Cursor Cursor `json:"cursor"`
+	Kind   Kind    `json:"kind"`
+	Text   string  `json:"text,omitempty"`
+	Tool   *Tool   `json:"tool,omitempty"`
+	Sender *Sender `json:"sender,omitempty"`
+	Cursor Cursor  `json:"cursor"`
 }
 
 const MaxToolText = 4 << 10
