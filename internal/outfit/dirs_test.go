@@ -25,12 +25,17 @@ func TestANestedOutfitIsFoundByItsName(t *testing.T) {
 	dir := t.TempDir()
 	writeNested(t, dir, "decide/jev.toml", "[system.decide]\nprovider = \"rou2\"\nmodel = \"explabs/jev-latest\"\n")
 	writeNested(t, dir, "models/deep/opus.toml", "[system]\nmodel = \"opus\"\n")
+	writeNested(t, dir, "default/kic.toml", "[system]\nprovider = \"rou2\"\nmodel = \"anthropic-kic/claude-opus-5-5\"\n")
 	writeOutfit(t, dir, "top", "layers = [\"opus\", \"jev\"]\n")
 	o := outfit.New(dir)
 
 	patch, err := o.Load("jev")
 	require.NoError(t, err)
 	assert.Equal(t, `"explabs/jev-latest"`, string(mustEntry(patch, "system.decide.model")))
+
+	patch, err = o.Load("kic")
+	require.NoError(t, err)
+	assert.Equal(t, `"anthropic-kic/claude-opus-5-5"`, string(mustEntry(patch, "system.model")), "a route-qualified model stays one value")
 
 	patch, err = o.Load("top")
 	require.NoError(t, err, "a top-level outfit layers nested ones by name")

@@ -80,3 +80,42 @@ func TestABoxCannotPickAModel(t *testing.T) {
 		t.Error("the box's pick landed")
 	}
 }
+
+func TestTheOwnerPicksARouteQualifiedModel(t *testing.T) {
+	d := boxDoorRig(t, "true")
+	nested := []string{"anthropic-kic/claude-opus-5-5", "explabs/glm-5.3"}
+	cat := modelcat.New(modelcat.Config{Build: func(string) (provider.Provider, error) {
+		var list []provider.ModelInfo
+		for _, id := range nested {
+			list = append(list, provider.ModelInfo{ID: id, Entry: models.Entry{Context: models.Context{Default: 1_000_000}}})
+		}
+		return listing{list: list}, nil
+	}})
+	d.a.Models = cat
+	cat.Want("rou2", nested[0])
+	deadline := time.Now().Add(2 * time.Second)
+	for cat.Limit("rou2", nested[0]) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the catalog never listed rou2")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	made, err := d.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, model := range nested {
+		if got := cat.Limit("rou2", model); got != 1_000_000 {
+			t.Errorf("limit of rou2/%s = %d", model, got)
+		}
+		if _, err := d.call(asOwner(), rpc.MethodModelsPick, rpc.ModelsPickRequest{FigaroID: made.FigaroID, Provider: "rou2", Model: model}); err != nil {
+			t.Fatalf("%s: %v", model, err)
+		}
+		if v, _ := keyOn(t, d.grantRig, made.FigaroID, models.ModelKey); string(v) != `"`+model+`"` {
+			t.Errorf("system.model = %s, want %s", v, model)
+		}
+	}
+	if _, err := d.call(asOwner(), rpc.MethodModelsPick, rpc.ModelsPickRequest{FigaroID: made.FigaroID, Provider: "rou2", Model: "explabs/glm-5"}); err == nil {
+		t.Error("a prefix of a dotted nested id was accepted as a listed model")
+	}
+}
