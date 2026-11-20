@@ -187,12 +187,13 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.runInquiryMethods(methodsCtx, prompt.text)
 		methodsSpan.End()
 	}
-	if _, err := a.appendUserPrompt(prompt, false); err != nil {
-		prompt.ack(err)
+	entry, err := a.appendUserPrompt(prompt, false)
+	if err != nil {
+		prompt.ack(LogAppend{Err: err})
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
-	prompt.ack(nil)
+	prompt.ack(LogAppend{Turn: a.turnID, LT: entry.LT})
 	span.SetAttributes(attribute.Int64("figaro.turn", int64(a.turnID)))
 	if !logged {
 		a.markCut(a.turnID, prompt.resume)
@@ -848,12 +849,12 @@ func (a *Agent) appendPromptEvents(prompts []event) error {
 
 var errDroppedBeforeAppend = errors.New("the send was cleared from the queue before it was appended")
 
-func (e event) ack(err error) {
+func (e event) ack(got LogAppend) {
 	if e.appended == nil {
 		return
 	}
 	select {
-	case e.appended <- err:
+	case e.appended <- got:
 	default:
 	}
 }

@@ -211,6 +211,28 @@ func TestAnExactPromptToAFigaroLosesItsTrailingNewlines(t *testing.T) {
 	}, 5*time.Second, 5*time.Millisecond)
 }
 
+func TestASendToALogReturnsItsEntrysTurnAndLT(t *testing.T) {
+	a := newLogAgent(t)
+	var prev figaro.LogAppend
+	for i := 0; i < 3; i++ {
+		raw, err := a.Handle(context.Background(), rpc.MethodQua, json.RawMessage(fmt.Sprintf(`{"text":"e%d"}`, i)))
+		require.NoError(t, err)
+		resp := raw.(rpc.QuaResponse)
+		require.Greater(t, resp.Turn, prev.Turn)
+		require.Greater(t, resp.LT, prev.LT)
+		prev = figaro.LogAppend{Turn: resp.Turn, LT: resp.LT}
+	}
+	last := entriesOf(a)[2]
+	require.Equal(t, prev.Turn, last.TurnID)
+	var lt uint64
+	for _, e := range a.Context() {
+		if e.TurnID == last.TurnID && len(e.Content) > 0 {
+			lt = e.LogicalTime
+		}
+	}
+	require.Equal(t, prev.LT, lt, "the LT a send answers is the entry's")
+}
+
 func TestALogEntryIsNeverRewrittenAsAPrompt(t *testing.T) {
 	a := newLogAgent(t)
 	require.NoError(t, a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: "seed", Form: &rpc.FormInput{Patch: ptrPatch(form.Build(form.Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"the ledger"`)}, nil))}}, "s"))

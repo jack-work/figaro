@@ -99,6 +99,23 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set, d)
 }
 
+type answeredQuaer struct {
+	*sdk.Aria
+	resp *rpc.QuaResponse
+}
+
+func (q answeredQuaer) QuaWith(ctx context.Context, req rpc.QuaRequest) (int, bool, error) {
+	r, err := q.QuaAnswer(ctx, req)
+	*q.resp = r
+	return r.Cursor, r.Active, err
+}
+
+func quaAnswered(ctx context.Context, a *sdk.Aria, req rpc.QuaRequest) (rpc.QuaResponse, error) {
+	var resp rpc.QuaResponse
+	_, _, err := quaWith(ctx, answeredQuaer{Aria: a, resp: &resp}, req)
+	return resp, err
+}
+
 // submitAndExit is the tail of every --json path.
 func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt string, d dressing) {
 	acli := mustConnectAngelus(loaded)

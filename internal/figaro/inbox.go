@@ -460,7 +460,7 @@ func (b *Inbox) DeletePrompts(epoch string, ids []uint64, all bool) (string, []r
 	b.remember(dropped, rpc.QueueStateDropped)
 	b.notify()
 	for _, e := range dropped {
-		e.ack(errDroppedBeforeAppend)
+		e.ack(LogAppend{Err: errDroppedBeforeAppend})
 	}
 	return epochOut, results
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -694,19 +695,31 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	}
 	defer fcli.Close()
 
-	if _, _, qerr := quaWith(ctx, fcli, opts.outfit.request(prompt)); qerr != nil {
+	resp, qerr := quaAnswered(ctx, fcli, opts.outfit.request(prompt))
+	if qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)
 	}
 	if opts.json {
-		enc := json.NewEncoder(stdout)
-		_ = enc.Encode(struct {
-			AriaID string `json:"aria_id"`
-			Handle string `json:"handle"`
-			Mode   string `json:"mode"`
-		}{AriaID: ariaID, Handle: ariaHandle(ariaID), Mode: "forget"})
+		_ = writeForgotJSON(stdout, ariaID, resp)
 		return
 	}
 	fmt.Fprintln(stderrw, forgotHint(ariaID, grant))
+}
+
+func writeForgotJSON(w io.Writer, ariaID string, resp rpc.QuaResponse) error {
+	enc := json.NewEncoder(w)
+	if resp.Turn > 0 {
+		return enc.Encode(struct {
+			Log  string `json:"log"`
+			Turn uint64 `json:"turn"`
+			LT   uint64 `json:"lt"`
+		}{Log: ariaID, Turn: resp.Turn, LT: resp.LT})
+	}
+	return enc.Encode(struct {
+		AriaID string `json:"aria_id"`
+		Handle string `json:"handle"`
+		Mode   string `json:"mode"`
+	}{AriaID: ariaID, Handle: ariaHandle(ariaID), Mode: "forget"})
 }
 
 func forgotHint(ariaID string, grant rpc.AttachResponse) string {
