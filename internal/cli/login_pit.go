@@ -88,6 +88,8 @@ type loginSession struct {
 	hushNote  string
 	flow      *loginFlow
 	rev       uint64
+	offered   bool
+	focus     string
 }
 
 var (
@@ -170,6 +172,11 @@ func (in *interactiveInput) relistLogin() {
 	s := in.loginState()
 	s.providers, s.hushNote, s.listed = rows, note, true
 	in.loginChanged()
+	if s.focus != "" && in.lt.tr.showing(pitLogin) {
+		in.lt.tr.pit.focus(loginRowID(s.focus))
+		s.focus = ""
+		in.lt.render()
+	}
 }
 
 func (in *interactiveInput) openLoginPit(args []string) {
@@ -184,13 +191,31 @@ func (in *interactiveInput) openLoginPit(args []string) {
 		}
 	}
 	in.mu.Lock()
-	in.loginState()
-	in.lt.tr.closePanels()
-	in.lt.tr.showLivePit(string(pitLogin), &loginView{in: in}, false)
+	in.showLoginPitLocked()
 	if len(args) == 1 {
 		in.startLogin(args[0])
 	}
 	in.mu.Unlock()
+	go in.relistLogin()
+}
+
+func (in *interactiveInput) showLoginPitLocked() {
+	in.loginState()
+	in.lt.tr.closePanels()
+	in.lt.tr.showLivePit(string(pitLogin), &loginView{in: in}, false)
+}
+
+func (in *interactiveInput) offerLoginLocked(reason string) {
+	name, ok := signInWanted(reason)
+	if !ok {
+		return
+	}
+	s := in.loginState()
+	if s.offered || in.lt.tr.showing(pitLogin) {
+		return
+	}
+	s.offered, s.focus = true, name
+	in.showLoginPitLocked()
 	go in.relistLogin()
 }
 
@@ -470,4 +495,17 @@ func (v *loginView) Drop(id string) {
 		return
 	}
 	v.in.startLogout(name)
+}
+
+func signInWanted(reason string) (string, bool) {
+	if !strings.Contains(reason, "not signed in") && !strings.Contains(reason, "no provider signed in") && !strings.Contains(reason, "sign-in expired") && !strings.Contains(reason, "no credential") {
+		return "", false
+	}
+	const verb = "figaro provider login "
+	if i := strings.LastIndex(reason, verb); i >= 0 {
+		if f := strings.Fields(reason[i+len(verb):]); len(f) > 0 {
+			return f[0], true
+		}
+	}
+	return "", true
 }
