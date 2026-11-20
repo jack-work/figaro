@@ -126,6 +126,10 @@ at once, unless the turn after it is still running; then the channel follows
 that turn as one reply, the way the original channel did. A failed turn read
 back fails with its reason when it is the aria's newest turn; an older failed
 turn read back ends with `end`, since the daemon keeps only the latest reason.
+So can a turn that starts and fails while the client is in the middle of a
+catch-up read. One catch-up read gets 30 s: a resume from so far back that
+paging the thread takes longer fails with that deadline, after
+`ReconnectFor` of retries.
 
 ## History
 
