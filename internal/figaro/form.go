@@ -19,6 +19,8 @@ func (a *Agent) Snapshot() form.Snapshot {
 	return a.form.Snapshot()
 }
 
+func (a *Agent) isLog() bool { return form.IsLog(a.Snapshot()) }
+
 // Version is the index of the last patch appended to the form channel; zero without a store.
 func (a *Agent) Version() uint64 {
 	v, err := a.backend.FormVersion(a.id)
