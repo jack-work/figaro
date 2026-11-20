@@ -31,6 +31,7 @@ times out.
 | `Open(ctx, root) (thread, error)` | forks `root` into a new aria and returns its id. The root needs `system.fanout.max_children` above 0. Store the id; it is the thread. Never retried: an `Open` that fails because the connection dropped may still have forked. |
 | `Prompt(ctx, thread, text) (<-chan Event, error)` | sends `text`; the channel carries its reply. If a turn is already running the text steers it: when that turn takes the text in, the channel closes with no events once the turn ends, and the reply arrives on the running turn's channel; when the text waits for a turn of its own, the channel carries that turn. |
 | `Resume(ctx, thread, cursor) (<-chan Event, error)` | replays the turn named by `cursor` from the point the cursor counts, then follows it live. A turn past the newest fails at once. |
+| `Follow(ctx, thread, cursor) (<-chan Event, error)` | follows the aria across turns, whoever starts them (the King, a lane, a terminal). See Following. |
 | `Cancel(ctx, thread) error` | interrupts the running turn and keeps the queue. The cancelled turn ends with `end` (an interrupt is not a failure); a prompt queued behind it then runs as its own turn, on the channel of the steer that sent it. |
 | `Forget(thread)` | drops the client's hold on a thread: its connection closes and its open channels get `error`. The aria is untouched; any later call picks the thread up again. |
 | `History(ctx, thread, before, limit) (History, error)` | up to `limit` (0 means 20) turns older than turn `before` (0 means newest), oldest first. `More` says older turns exist: pass `Turns[0].ID` as the next `before`. |
@@ -39,10 +40,11 @@ times out.
 
 ```go
 type Event struct {
-    Kind   Kind   // delta, tool.start, tool.end, end, error
-    Text   string // delta: new text; end: the whole reply; error: the reason
-    Tool   *Tool  // tool.start: ID, Name, Args; tool.end: ID, Name, Result, Error
-    Cursor Cursor // the position after this event
+    Kind   Kind    // turn.start, delta, tool.start, tool.end, end, error
+    Text   string  // turn.start: the prompt; delta: new text; end: the whole reply; error: the reason
+    Tool   *Tool   // tool.start: ID, Name, Args; tool.end: ID, Name, Result, Error
+    Sender *Sender // turn.start: who sent the prompt
+    Cursor Cursor  // the position after this event
 }
 ```
 
@@ -110,8 +112,13 @@ type Cursor struct {
     Text    int    // bytes of the turn's reply text already delivered
     Started int    // tool.start events delivered in the turn
     Ended   int    // tool.end events delivered in the turn
+    Begun   bool   // turn.start delivered (Follow only)
 }
 ```
+
+`Cursor.String()` writes a cursor as `turn.text.started.ended`, with a fifth
+element `1` when `Begun`; `ParseCursor` reads it back (four numbers parse too).
+Use them rather than a format of your own.
 
 Keep the cursor of the last event you forwarded. To pick up after a dropped
 browser, a process restart, or a cancelled subscription, call
@@ -131,6 +138,45 @@ catch-up read. One catch-up read gets 30 s: a resume from so far back that
 paging the thread takes longer fails with that deadline, after
 `ReconnectFor` of retries.
 
+## Following
+
+```go
+ch, err := c.Follow(ctx, thread, cursor)
+```
+
+`Prompt` and `Resume` follow one reply. `Follow` follows the aria, as the
+pager's listen does: every turn, whoever starts it. A turn begins with
+`turn.start`, whose `Text` is the whole prompt, `Cursor.Turn` the turn id and
+`Sender` the sender the daemon recorded for the prompt (`ID` an aria id or a
+caller's label, `Name` the daemon's handle for an aria; nil when none was
+recorded, as for a plain terminal prompt; the first sender when several
+prompts were merged into the turn). Then come the `delta`, `tool.start` and
+`tool.end` events of `Events`, then `end` or `error` for that turn. The
+channel does not close on `end` or on a turn's `error`: it waits for the next
+turn, a prompt to an idle aria included.
+
+It closes when `ctx` ends (no final event), and with a last `error` when the
+thread is forgotten, the client closes, or the connection is lost for longer
+than `ReconnectFor`. Short drops are bridged as for `Resume`, from where the
+channel was, with nothing lost or repeated. Delivery never waits on the
+consumer, as before.
+
+The cursor says where to start:
+
+- zero: turns that start after the call. A turn already running is skipped;
+  take it from `History` and pass its `Next`.
+- a cursor from an event of the channel: the first event is the one after it.
+  After `turn.start` that is the turn's first content (the cursor carries
+  `Begun`); after a `delta` or tool event, the rest of the turn.
+- the cursor of an `end` or `error` event is `{Turn: n+1}`: the position before
+  the next turn. Resuming from it repeats nothing and waits for turn n+1.
+- `{Turn: n}` without `Begun`: turn n from its `turn.start`; a finished turn
+  replays and ends.
+
+A cursor naming a turn beyond the newest waits for it; it is not an error.
+Like `Resume`, `Follow` reads the thread back from the cursor's turn, so
+a cursor from far back pays for paging the thread.
+
 ## History
 
 ```go
@@ -141,12 +187,19 @@ type Turn struct {
     Reply  string    // as the deltas would have built it
     Tools  []Tool    // in order, with Args, Result and Error
     Done   bool      // false for the turn still running
+    Sender *Sender   // who sent the prompt; nil when the daemon recorded none
     Cursor Cursor    // the position after everything listed here
+    Next   Cursor    // where Follow continues after this turn as listed
 }
 ```
 
 The turn still running appears in `History(ctx, thread, 0, n)` with what it
 has so far; `Resume(ctx, thread, t.Cursor)` follows it from there.
+
+`Follow(ctx, thread, t.Next)` continues after a listed turn. Do not hand
+`Follow` the `Cursor` of a finished turn: it would replay that turn's `end`.
+`Next` of a finished turn is the start of the one after; of a running turn,
+its position with `Begun` set, so its `turn.start` is not sent again.
 
 ## Latency
 
