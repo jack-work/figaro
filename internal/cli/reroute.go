@@ -10,6 +10,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/sdk"
 )
 
 type rerouteTarget struct {
@@ -118,4 +119,39 @@ func rerouteTargetOf(loaded *config.Loaded, id string) (rerouteTarget, error) {
 		}
 	}
 	return t, nil
+}
+
+func noteKeptRoute(ctx context.Context, id string, names []string) {
+	if len(names) == 0 || id == "" || foreignNode(id) != "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	acli, err := sdk.DialAngelus(doorEndpoint())
+	if err != nil {
+		return
+	}
+	defer acli.Close()
+	spec := strings.Join(names, ",")
+	wears, err := acli.OutfitForm(ctx, spec)
+	if err != nil {
+		return
+	}
+	f, err := sdk.DialAria(ariaAddr(id), nil)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	resp, err := f.Form(ctx)
+	if err != nil || resp.Snapshot.Lookup("system.provider") == nil {
+		return
+	}
+	for _, k := range form.RouteKeys {
+		a, have := resp.Snapshot.Get(k)
+		b, named := wears.Get(k)
+		if named && (!have || !form.NewValue(a).Equal(form.NewValue(b))) {
+			fmt.Fprintf(stderrw, "figaro: %s keeps its route %s; figaro reroute -O %s moves it\n", ariaName(id), routeLabel(resp.Snapshot), spec)
+			return
+		}
+	}
 }

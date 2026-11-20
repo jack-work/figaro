@@ -126,6 +126,7 @@ func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 	if err != nil {
 		dieOutfitFailure(label, err)
 	}
+	noteKeptRoute(ctx, fcli.ID(), names)
 	if len(resp.Set) == 0 {
 		fmt.Fprintf(stderrw, "outfit %s: no changes (form already matches)\n", label)
 		return

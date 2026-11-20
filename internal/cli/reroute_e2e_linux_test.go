@@ -142,3 +142,25 @@ func TestADelegateReroutesAFigaroBornOnANamedDefault(t *testing.T) {
 		t.Fatalf("landed on %q", got)
 	}
 }
+
+// review-lane-usability-1 #7: -O on a figaro that keeps its route says so,
+// and names the verb that would move it.
+func TestDressingARoutedFigaroSaysTheRouteStayed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns a daemon; skipped under -short")
+	}
+	r := newRestartRig(t)
+	id := r.newEmptyAria()
+	r.outfit("fast", "[system]\nprovider = \"anthropic\"\nmodel = \"claude-haiku-4-5\"\n")
+	want := "figaro reroute -O fast"
+	if out := r.run("state", "outfit", "--id", id, "fast"); !strings.Contains(out, want) {
+		t.Fatalf("state outfit said nothing of the kept route:\n%s", out)
+	}
+	if out, _ := r.cmd("-O", "fast", "--id", id, "--", "hi").CombinedOutput(); !strings.Contains(string(out), want) {
+		t.Fatalf("a prompt with -O said nothing of the kept route:\n%s", out)
+	}
+	r.outfit("same", "[system]\nprovider = \"anthropic\"\nmodel = \"claude-sonnet-4-5\"\n")
+	if out := r.run("state", "outfit", "--id", id, "same"); strings.Contains(out, "reroute") {
+		t.Fatalf("an outfit on the route the figaro already has drew the note:\n%s", out)
+	}
+}

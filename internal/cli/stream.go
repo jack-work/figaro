@@ -50,6 +50,7 @@ func mustPromptFigaro(ctx context.Context, ep sdk.Addr, figaroID, prompt string,
 	defer span.End()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	noteKeptRoute(ctx, figaroID, d.names)
 
 	var rec *tape.Writer
 	if set.record != "" {
