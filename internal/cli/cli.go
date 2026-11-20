@@ -468,7 +468,7 @@ already exists (--id, -x) are refused rather than ignored.
 				runNewCast(ld, role, opts.outfit, prompt, set, opts.stay)
 				return nil
 			}
-			if prompt == "" {
+			if prompt == "" && !opts.stdin {
 				runNewFromOutfit(ld, opts.outfit, set)
 				return nil
 			}

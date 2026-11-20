@@ -36,36 +36,39 @@ func (a angelusEntries) IRRange(ctx context.Context, id string, from, before uin
 	return a.IRBefore(ctx, id, from, before, 0)
 }
 
+func pageFirstLT(page aria.Page) uint64 {
+	for _, p := range page.Parts {
+		if len(p.LTs) > 0 {
+			return p.LTs[0]
+		}
+	}
+	return 0
+}
+
 func readEntries(ctx context.Context, r entryReader, id string, from, until uint64) ([]logEntry, error) {
-	var lo, hi uint64
-	at := aria.Anchor{Turn: from}
-	for {
-		page, err := r.Read(ctx, rpc.ReadRequest{FigaroID: id, At: at, Until: aria.Anchor{Turn: until}, Limit: 1 << 20})
+	lo := uint64(1)
+	if from > 1 {
+		before, err := r.Read(ctx, rpc.ReadRequest{FigaroID: id, Backward: true, At: aria.Anchor{Turn: from}, Limit: 1})
 		if err != nil {
 			return nil, err
 		}
-		for _, p := range page.Parts {
-			if len(p.LTs) == 0 {
-				continue
-			}
-			if lo == 0 || p.LTs[0] < lo {
-				lo = p.LTs[0]
-			}
-			if last := p.LTs[len(p.LTs)-1]; last > hi {
-				hi = last
+		if n := len(before.Parts); n > 0 {
+			if lts := before.Parts[n-1].LTs; len(lts) > 0 {
+				lo = lts[len(lts)-1] + 1
 			}
 		}
-		if !page.More.After || page.Next == nil || *page.Next == at || (until > 0 && page.Next.Turn >= until) {
-			break
-		}
-		at = *page.Next
 	}
-	if lo == 0 {
-		return nil, nil
+	var hi uint64
+	if until > 0 {
+		after, err := r.Read(ctx, rpc.ReadRequest{FigaroID: id, At: aria.Anchor{Turn: until}, Limit: 1})
+		if err != nil {
+			return nil, err
+		}
+		hi = pageFirstLT(after)
 	}
 	var out []logEntry
-	for next := lo; next <= hi; {
-		resp, err := r.IRRange(ctx, id, next, hi+1)
+	for next := lo; hi == 0 || next < hi; {
+		resp, err := r.IRRange(ctx, id, next, hi)
 		if err != nil {
 			return nil, err
 		}
@@ -74,10 +77,7 @@ func readEntries(ctx context.Context, r entryReader, id string, from, until uint
 			if err := json.Unmarshal(e.Payload, &m); err != nil {
 				return nil, fmt.Errorf("lt %d: %w", e.LT, err)
 			}
-			if m.Role != message.RoleInput || m.Steering || message.IsCeremonial(m) {
-				continue
-			}
-			if m.TurnID < from || (until > 0 && m.TurnID >= until) {
+			if !message.IsEntry(m) || m.TurnID < from || (until > 0 && m.TurnID >= until) {
 				continue
 			}
 			out = append(out, entryOf(e.LT, m))

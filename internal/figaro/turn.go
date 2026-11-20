@@ -254,6 +254,10 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (arialog.Entry[mes
 		msg.Content = append(msg.Content, blocks...)
 	} else if prompt.text != "" {
 		msg.Content = append(msg.Content, message.TextContent(prompt.text))
+	} else if prompt.entry && len(prompt.segments) > 0 {
+		blank := message.SenderText(prompt.segments[0].sender, "")
+		blank.Principal = prompt.segments[0].principal
+		msg.Content = append(msg.Content, blank)
 	}
 	if warn && !asksForHandoff(prompt.segments) {
 		msg.Content = append(msg.Content, message.SenderText(successionSender, warning))

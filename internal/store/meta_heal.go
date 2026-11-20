@@ -100,7 +100,7 @@ func (meta *AriaMeta) Fold(e arialog.Entry[message.Message]) {
 
 func CountsAsTurn(m message.Message, kind string) bool {
 	if kind == form.KindLog {
-		return m.Role == message.RoleInput && !message.IsCeremonial(m)
+		return message.IsEntry(m)
 	}
 	return m.Role == message.RoleOutput
 }

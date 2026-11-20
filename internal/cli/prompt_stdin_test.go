@@ -31,8 +31,8 @@ func TestStdinPromptNeverComesFromArgv(t *testing.T) {
 	if _, err := promptFromStdin(opts, []string{"--"}, strings.NewReader("x")); !errors.Is(err, errStdinAndArgv) {
 		t.Fatalf("--stdin with a bare boundary: %v", err)
 	}
-	if _, err := promptFromStdin(sendOpts{stdin: true}, nil, strings.NewReader(" \n")); err == nil {
-		t.Fatal("an empty stdin was taken as a prompt")
+	if got, err := promptFromStdin(sendOpts{stdin: true}, nil, strings.NewReader(" \n")); err != nil || got != " \n" {
+		t.Fatalf("an empty stdin = %q, %v: the daemon decides, a log takes it and a figaro refuses it", got, err)
 	}
 }
 

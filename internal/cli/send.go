@@ -443,7 +443,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	if opts.outfit.images, err = readPromptImages(opts.images); err != nil {
 		die("%s: %s", verb, err)
 	}
-	if prompt == "" {
+	if prompt == "" && !opts.stdin {
 		// A boundary with nothing after it opens the editor.
 		if hasDashBoundary(rest) {
 			text, cerr := composePrompt("Write a prompt. Markdown is fine.")
