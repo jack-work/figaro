@@ -33,7 +33,51 @@ times out.
 | `Resume(ctx, thread, cursor) (<-chan Event, error)` | replays the turn named by `cursor` from the point the cursor counts, then follows it live. A turn past the newest fails at once. |
 | `Cancel(ctx, thread) error` | interrupts the running turn and keeps the queue. The cancelled turn ends with `end` (an interrupt is not a failure); a prompt queued behind it then runs as its own turn, on the channel of the steer that sent it. |
 | `Forget(thread)` | drops the client's hold on a thread: its connection closes and its open channels get `error`. The aria is untouched; any later call picks the thread up again. |
+| `Threads(ctx, filter) (ThreadPage, error)` | lists the arias the caller may read; see Threads below. |
 | `History(ctx, thread, before, limit) (History, error)` | up to `limit` (0 means 20) turns older than turn `before` (0 means newest), oldest first. `More` says older turns exist: pass `Turns[0].ID` as the next `before`. |
+
+## Threads
+
+```go
+type Thread struct {
+    ID, Handle, Mantra string
+    Roles  []string  // role names the aria holds, "@name"
+    Parent string    // fork parent; empty for a root
+    Depth  int       // 0 for a root
+    State  State     // StateLive, StateDormant, StateRetired
+    Busy   bool      // live and working a turn or holding queued prompts
+    Turn   uint64    // newest turn id, 0 if the aria has no turn; the id History and Resume use
+    At     time.Time // last activity on the aria, zero when Turn is 0
+}
+
+type ThreadFilter struct {
+    Under   string // descendants of this aria, not the aria itself
+    Holders bool   // only arias that hold a role
+    Match   string // handle or mantra contains it, ignoring case
+    Limit   int    // 0 means 50
+    Before  string // ThreadPage.Next of the previous page
+}
+
+type ThreadPage struct {
+    Threads []Thread
+    Next    string // empty at the end; pass as Before for the next page
+}
+```
+
+One `figaro.list` call, no new RPC. Only arias the caller may read are
+returned, because the daemon drops the rest before it filters or pages. The
+filters apply before the page is cut, so every page is a page of the filtered
+list. Order is last activity, newest first, not tree order: use `Parent` and
+`Depth` to draw a tree. Listing never wakes a dormant aria; `Turn` is read
+from the tail of its log. A fork shows the turn it inherited until it takes
+one of its own. `At` is the time of the newest record in the aria, which is
+the newest turn's unless something else wrote to it since. A retired aria is
+listed with `StateRetired`; a reaped one is not listed. Rows of federated peer
+nodes are left out.
+
+A `Match` makes the daemon read the mantra of every readable aria before it
+pages, so it costs more than the other filters. A daemon older than this
+release ignores the filters and returns `Turn` 0.
 
 ## Events
 

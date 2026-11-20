@@ -63,6 +63,11 @@ func TestThreadsListTheArias(t *testing.T) {
 		t.Fatalf("root %+v", by[root])
 	}
 
+	again, err := c.Threads(ctx, chat.ThreadFilter{Match: "harbour"})
+	if err != nil || len(again.Threads) != 1 || again.Threads[0].State != chat.StateDormant || by[quiet].State != chat.StateDormant {
+		t.Fatalf("listing woke the quiet aria: before %q, after %+v, %v", by[quiet].State, again.Threads, err)
+	}
+
 	under, err := c.Threads(ctx, chat.ThreadFilter{Under: root})
 	if err != nil {
 		t.Fatal(err)
