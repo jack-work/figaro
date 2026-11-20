@@ -139,6 +139,10 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		enrichments = pageEnrichments(result, enrichments)
 	}
 
+	if listFiltered(req) {
+		result, enrichments = h.filterList(result, enrichments, req)
+	}
+
 	var nextBefore string
 	if listBounded(req) {
 		for i := range result {
@@ -165,6 +169,9 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 	}
 	h.fillNames(result)
 	h.fillRoles(result)
+	if req.Turns {
+		h.fillLastTurns(result)
+	}
 
 	return rpc.ListResponse{Figaros: result, NextBefore: nextBefore, Refused: refused.count, RefusedWhy: refused.why}, nil
 }
