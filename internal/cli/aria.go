@@ -61,7 +61,8 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	}
 
 	snap, _ := softFormSnapshot(loaded, figaroID)
-	if form.IsLog(snap) {
+	logged := form.IsLog(snap)
+	if logged {
 		defer fenceStdout()()
 	}
 
@@ -70,6 +71,9 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		w, err := gatherShowWindow(ctx, acli, figaroID, opts)
 		if err != nil {
 			die("aria.read: %s", err)
+		}
+		if logged {
+			disarmLogEntries(w.entries)
 		}
 		if len(w.entries) == 0 && w.total == 0 {
 			fmt.Fprintln(stderrw, "(empty aria)")
@@ -84,6 +88,9 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	w, err := gatherShowTurns(ctx, acli, figaroID, opts)
 	if err != nil {
 		die("read %s: %s", figaroID, err)
+	}
+	if logged {
+		disarmLogTurns(w.turns)
 	}
 	// A selector past the end selects nothing and still prints the empty page;
 	// only an aria with no turns is empty, and prose on stdout would break a
