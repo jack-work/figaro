@@ -608,10 +608,9 @@ func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMa
 	if own.CreatedAtMS != 0 {
 		copy.CreatedAtMS = own.CreatedAtMS
 	}
-	copy.TTLMS, copy.KeepaliveMS, copy.RetiredAtMS = own.TTLMS, own.KeepaliveMS, own.RetiredAtMS
-	copy.ReapedAtMS, copy.ReapedRoot, copy.ReapedUntilMS = own.ReapedAtMS, own.ReapedRoot, own.ReapedUntilMS
-	copy.ReapIfEmpty, copy.RetiredReason = own.ReapIfEmpty, own.RetiredReason
-	copy.FanoutQuota, copy.OwnerMade = own.FanoutQuota, own.OwnerMade
+	copy.SetLifetime(own.Lifetime())
+	copy.LastAccessMS = 0
+	copy.Refold = copy.Refold || copy.Kind != meta.Kind
 	if interior {
 		held := h.heldBy(parent, child, atMainLT)
 		copy.MessageCount = held.MessageCount
@@ -824,7 +823,13 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	if err != nil {
 		return nil, fmt.Errorf("import: outfit %q: %w", req.Outfit, err)
 	}
-	id, err := h.angelus.Backend.CreateConversation(outfitID, mintedBy(ctx), store.AtRoot())
+	var id string
+	if kind := form.KindOf(form.Snapshot{}.Apply(req.Form)); kind != "" {
+		raw, _ := json.Marshal(kind)
+		id, _, err = h.angelus.Backend.ForkWith(outfitID, 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.KindKey: raw}, nil), mintedBy(ctx), store.AtRoot())
+	} else {
+		id, err = h.angelus.Backend.CreateConversation(outfitID, mintedBy(ctx), store.AtRoot())
+	}
 	if err != nil {
 		return nil, fmt.Errorf("import: create conversation: %w", err)
 	}
@@ -888,6 +893,9 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 		Mantra:     req.Mantra,
 		Provider:   req.Provider,
 		Model:      req.Model,
+	}
+	if snap, err := h.angelus.Backend.FormState(id); err == nil {
+		meta.Kind = form.KindOf(snap)
 	}
 	for _, e := range log.Read() {
 		meta.Fold(e)
