@@ -122,7 +122,7 @@ func (c *Client) Resume(ctx context.Context, threadID string, from Cursor) (<-ch
 	if err != nil {
 		return nil, err
 	}
-	return t.subscribe(ctx, &sub{after: from.Turn - 1, r: newReader(from)}, []uint64{from.Turn}), nil
+	return t.subscribe(ctx, &sub{after: from.Turn - 1, r: newReader(from), resumed: true}, []uint64{from.Turn}), nil
 }
 
 func (c *Client) Cancel(ctx context.Context, threadID string) error {
@@ -592,6 +592,13 @@ func (t *thread) settle() {
 		t.deliver(f)
 	}
 	for s := range t.subs {
+		if s.resumed && s.r != nil && t.folds[s.r.cur.Turn] == nil && !t.want[s.r.cur.Turn] {
+			if n := s.r.cur.Turn; n > now.turn+1 || n == now.turn+1 && now.settled() {
+				s.push(Event{Kind: Failed, Text: fmt.Sprintf("turn %d does not exist; the newest is %d", n, now.turn), Cursor: s.r.cur}, true)
+				delete(t.subs, s)
+				continue
+			}
+		}
 		if s.r != nil || s.closed {
 			continue
 		}
@@ -749,6 +756,7 @@ func (t *thread) pump(ctx context.Context, s *sub) {
 }
 
 type sub struct {
+	resumed bool
 	after   uint64
 	rtVer   uint64
 	r       *reader

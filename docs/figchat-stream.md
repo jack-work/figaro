@@ -22,7 +22,7 @@ has touched, plus one to the angelus.
 |---|---|
 | `Open(ctx, root) (thread, error)` | forks `root` into a new aria and returns its id. The root needs `system.fanout.max_children` above 0. Store the id; it is the thread. |
 | `Prompt(ctx, thread, text) (<-chan Event, error)` | sends `text`. If a turn is already running the text steers it and the channel is nil. Otherwise the channel carries the reply. |
-| `Resume(ctx, thread, cursor) (<-chan Event, error)` | replays the turn named by `cursor` from the point the cursor counts, then follows it live. |
+| `Resume(ctx, thread, cursor) (<-chan Event, error)` | replays the turn named by `cursor` from the point the cursor counts, then follows it live. A turn past the newest fails at once. |
 | `Cancel(ctx, thread) error` | interrupts the running turn. |
 | `History(ctx, thread, before, limit) (History, error)` | up to `limit` (0 means 20) turns older than turn `before` (0 means newest), oldest first. `More` says older turns exist: pass `Turns[0].ID` as the next `before`. |
 

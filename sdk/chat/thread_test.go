@@ -379,3 +379,15 @@ func TestAListenerAddedAfterADropBringsTheConnectionBack(t *testing.T) {
 		t.Fatalf("events: %s", got)
 	}
 }
+
+func TestResumingATurnPastTheTailFailsAtOnce(t *testing.T) {
+	var rt runtimeFeed
+	c := fakeClient(newFakeConn(rt.response("idle", 2, "", 0), sealedTurn(2, "ab")))
+	ch, err := c.Resume(context.Background(), "x", Cursor{Turn: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := summary(drain(t, ch)); got != "error:turn 5 does not exist; the newest is 2" {
+		t.Fatalf("events: %s", got)
+	}
+}
