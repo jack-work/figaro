@@ -13,8 +13,9 @@ c := chat.New(endpoint) // transport.Endpoint: unix socket, or wss with a bearer
 defer c.Close()
 ```
 
-A `Client` is safe for concurrent use and keeps one connection per thread it
-has touched, plus one to the angelus.
+A `Client` is safe for concurrent use. It keeps one connection to the angelus
+and one per thread in use; a thread with no open channel and no call for
+`Client.IdleClose` (5 min by default) lets its connection go.
 
 ## Calls
 
@@ -24,6 +25,7 @@ has touched, plus one to the angelus.
 | `Prompt(ctx, thread, text) (<-chan Event, error)` | sends `text`; the channel carries its reply. If a turn is already running the text steers it: when that turn takes the text in, the channel closes with no events once the turn ends, and the reply arrives on the running turn's channel; when the text waits for a turn of its own, the channel carries that turn. |
 | `Resume(ctx, thread, cursor) (<-chan Event, error)` | replays the turn named by `cursor` from the point the cursor counts, then follows it live. A turn past the newest fails at once. |
 | `Cancel(ctx, thread) error` | interrupts the running turn. |
+| `Forget(thread)` | drops the client's hold on a thread: its connection closes and its open channels get `error`. The aria is untouched; any later call picks the thread up again. |
 | `History(ctx, thread, before, limit) (History, error)` | up to `limit` (0 means 20) turns older than turn `before` (0 means newest), oldest first. `More` says older turns exist: pass `Turns[0].ID` as the next `before`. |
 
 ## Events

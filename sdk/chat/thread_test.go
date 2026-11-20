@@ -620,3 +620,51 @@ func TestClosingTheClientWhileAThreadDialsLeavesNoConnection(t *testing.T) {
 		t.Fatal("a resume across Close reported success")
 	}
 }
+
+func TestForgettingAThreadReleasesItsConnectionAndListeners(t *testing.T) {
+	var rt runtimeFeed
+	conn := newFakeConn(rt.response("thinking", 2, "", 0))
+	c := fakeClient(conn)
+	ch, err := c.Resume(context.Background(), "x", Cursor{Turn: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Forget("x")
+	if got := summary(drain(t, ch)); got != "error:the thread was forgotten" {
+		t.Fatalf("events: %s", got)
+	}
+	select {
+	case <-conn.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("the connection outlived Forget")
+	}
+	c.mu.Lock()
+	n := len(c.threads)
+	c.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("%d threads held after Forget", n)
+	}
+}
+
+func TestAThreadLeftIdleLetsItsConnectionGo(t *testing.T) {
+	var rt runtimeFeed
+	conn := newFakeConn(rt.response("idle", 2, "", 0), sealedTurn(2, "ab"))
+	c := fakeClient(conn)
+	c.IdleClose = 30 * time.Millisecond
+	ch, err := c.Resume(context.Background(), "x", Cursor{Turn: 2, Text: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(t, ch)
+	select {
+	case <-conn.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("an idle thread kept its connection")
+	}
+	c.mu.Lock()
+	n := len(c.threads)
+	c.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("%d threads held after idling", n)
+	}
+}

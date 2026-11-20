@@ -24,6 +24,7 @@ type Client struct {
 
 	ReconnectFor time.Duration
 	CheckEvery   time.Duration
+	IdleClose    time.Duration
 
 	done    chan struct{}
 	mu      sync.Mutex
@@ -33,7 +34,7 @@ type Client struct {
 }
 
 func New(ep transport.Endpoint) *Client {
-	c := &Client{ep: ep, ReconnectFor: 30 * time.Second, CheckEvery: 15 * time.Second, done: make(chan struct{}), threads: map[string]*thread{}}
+	c := &Client{ep: ep, ReconnectFor: 30 * time.Second, CheckEvery: 15 * time.Second, IdleClose: 5 * time.Minute, done: make(chan struct{}), threads: map[string]*thread{}}
 	c.dial = c.dialAria
 	c.dialAngelus = func() (angelusConn, error) { return sdk.DialAngelus(ep) }
 	return c
@@ -165,6 +166,7 @@ func (c *Client) thread(ctx context.Context, id string) (*thread, ariaConn, erro
 		c.threads[id] = t
 	}
 	c.mu.Unlock()
+	t.touch()
 	conn, err := t.connect(ctx)
 	return t, conn, err
 }
@@ -218,6 +220,8 @@ type thread struct {
 	gen          uint64
 	reconnecting bool
 	closed       bool
+	lastUsed     time.Time
+	idleTimer    *time.Timer
 	watching     bool
 	subSeq       uint64
 	folds        map[uint64]*turnFold
@@ -357,7 +361,7 @@ func (t *thread) fail(why string) {
 			cur = s.r.cur
 		}
 		s.push(Event{Kind: Failed, Text: why, Cursor: cur}, true)
-		delete(t.subs, s)
+		t.leave(s)
 	}
 }
 
@@ -550,7 +554,7 @@ func (t *thread) failFrom(turns []uint64, why string) {
 	for s := range t.subs {
 		if len(turns) == 0 || s.next() >= floor {
 			s.push(Event{Kind: Failed, Text: why, Cursor: Cursor{Turn: s.next()}}, true)
-			delete(t.subs, s)
+			t.leave(s)
 		}
 	}
 	t.want, t.wantRT = map[uint64]bool{}, false
@@ -626,7 +630,7 @@ func (t *thread) settle() {
 		if s.resumed && s.r != nil && t.folds[s.r.cur.Turn] == nil && !t.want[s.r.cur.Turn] {
 			if n := s.r.cur.Turn; n > now.turn+1 || n == now.turn+1 && now.settled() {
 				s.push(Event{Kind: Failed, Text: fmt.Sprintf("turn %d does not exist; the newest is %d", n, now.turn), Cursor: s.r.cur}, true)
-				delete(t.subs, s)
+				t.leave(s)
 				continue
 			}
 		}
@@ -648,7 +652,7 @@ func (t *thread) finishWaiting(s *sub, now runState) {
 	} else {
 		s.push(Event{Kind: End, Text: joinReplies(s.replies), Cursor: cur}, true)
 	}
-	delete(t.subs, s)
+	t.leave(s)
 }
 
 func readTurns(ctx context.Context, conn ariaConn, turn uint64) ([]aria.TurnPart, error) {
@@ -737,7 +741,7 @@ func (t *thread) offer(s *sub, f *turnFold) {
 		s.after, s.r = f.id, nil
 	})
 	if s.closed {
-		delete(t.subs, s)
+		t.leave(s)
 		return
 	}
 	if s.r == nil {
@@ -768,8 +772,60 @@ func joinReplies(rs []string) string {
 
 func (t *thread) drop(s *sub) {
 	t.mu.Lock()
-	delete(t.subs, s)
+	t.leave(s)
 	t.mu.Unlock()
+}
+
+func (t *thread) leave(s *sub) {
+	delete(t.subs, s)
+	if len(t.subs) == 0 {
+		t.armIdle()
+	}
+}
+
+func (t *thread) touch() {
+	t.mu.Lock()
+	t.lastUsed = time.Now()
+	t.armIdle()
+	t.mu.Unlock()
+}
+
+func (t *thread) armIdle() {
+	if len(t.subs) > 0 || t.closed {
+		return
+	}
+	if t.idleTimer == nil {
+		t.idleTimer = time.AfterFunc(t.c.IdleClose, t.idleOut)
+		return
+	}
+	t.idleTimer.Reset(t.c.IdleClose)
+}
+
+func (t *thread) idleOut() {
+	c := t.c
+	c.mu.Lock()
+	t.mu.Lock()
+	idle := len(t.subs) == 0 && !t.closed && time.Since(t.lastUsed) >= c.IdleClose && c.threads[t.id] == t
+	if idle {
+		delete(c.threads, t.id)
+	} else {
+		t.armIdle()
+	}
+	t.mu.Unlock()
+	c.mu.Unlock()
+	if idle {
+		t.shut("")
+	}
+}
+
+func (c *Client) Forget(threadID string) {
+	c.mu.Lock()
+	t := c.threads[threadID]
+	delete(c.threads, threadID)
+	c.mu.Unlock()
+	if t != nil {
+		t.shut("the thread was forgotten")
+	}
 }
 
 func (t *thread) pump(ctx context.Context, s *sub) {
