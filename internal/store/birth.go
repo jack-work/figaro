@@ -4,6 +4,7 @@ import "github.com/jack-work/figaro/api/message"
 
 type birthSpec struct {
 	mintedBy string
+	atRoot   bool
 	template bool
 	stamp    func(child string) message.Patch
 }
@@ -12,6 +13,10 @@ type BirthOption func(*birthSpec)
 
 func MintedBy(principal string) BirthOption {
 	return func(b *birthSpec) { b.mintedBy = principal }
+}
+
+func AtRoot() BirthOption {
+	return func(b *birthSpec) { b.atRoot = true }
 }
 
 func Template() BirthOption {

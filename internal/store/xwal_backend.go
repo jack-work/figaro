@@ -1328,7 +1328,7 @@ func (b *XwalBackend) mirrorMintedBy(id string, bt birthSpec) {
 		value := *st.Value
 		meta = &value
 	}
-	meta.MintedBy = bt.mintedBy
+	meta.MintedBy, meta.MintedAtRoot = bt.mintedBy, bt.atRoot
 	if err := b.writeMetaRawLocked(id, c, meta); err != nil {
 		slog.Error("birth: minted_by not mirrored into meta", "id", id, "err", err)
 	}
@@ -1336,9 +1336,9 @@ func (b *XwalBackend) mirrorMintedBy(id string, bt birthSpec) {
 
 func (b *XwalBackend) writeMetaLocked(ariaID string, c *metaCache, meta *AriaMeta) error {
 	if meta != nil {
-		meta.MintedBy = ""
+		meta.MintedBy, meta.MintedAtRoot = "", false
 		if prev, err := c.loadOnce(b.metaPath(ariaID)); err == nil && prev.Value != nil {
-			meta.MintedBy = prev.Value.MintedBy
+			meta.MintedBy, meta.MintedAtRoot = prev.Value.MintedBy, prev.Value.MintedAtRoot
 		}
 	}
 	return b.writeMetaRawLocked(ariaID, c, meta)
