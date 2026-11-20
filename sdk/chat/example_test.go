@@ -18,7 +18,7 @@ func Example() {
 		return
 	}
 	events, err := c.Prompt(ctx, thread, "What is on my calendar today?")
-	if err != nil || events == nil {
+	if err != nil {
 		return
 	}
 	var last chat.Cursor

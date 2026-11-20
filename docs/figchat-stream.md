@@ -17,6 +17,12 @@ A `Client` is safe for concurrent use. It keeps one connection to the angelus
 and one per thread in use; a thread with no open channel and no call for
 `Client.IdleClose` (5 min by default) lets its connection go.
 
+The caller's principal needs `fork` on the root and `read`, `listen` and
+`send` on the threads. The daemon must come from the same figaro release or
+a newer one: an older daemon refuses a dormant aria's runtime form without
+the error code that marks it dormant, and every call on a dormant thread
+then waits until it times out.
+
 ## Calls
 
 | call | does |
@@ -109,9 +115,9 @@ counted in that turn's cursor.
 
 A `Resume` on a turn that has already finished replays the remainder and ends
 at once, unless the turn after it is still running; then the channel follows
-that turn as one reply, the way the original channel did. A failed turn read back fails with its reason when it is the aria's newest
-turn; an older failed turn read back ends with `end`, since the daemon keeps
-only the latest reason.
+that turn as one reply, the way the original channel did. A failed turn read
+back fails with its reason when it is the aria's newest turn; an older failed
+turn read back ends with `end`, since the daemon keeps only the latest reason.
 
 ## History
 
