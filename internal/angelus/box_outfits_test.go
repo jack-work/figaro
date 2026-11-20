@@ -101,3 +101,18 @@ func TestABoxForksBareOnlyAtTheHeadOfAConversation(t *testing.T) {
 		}
 	}
 }
+
+// review-lane-usability-1 #1: the route is owner-held, and a box never
+// reroutes, not even its own arias.
+func TestABoxMayNotReroute(t *testing.T) {
+	d := boxDoorRig(t, "true")
+	c := d.dial(t)
+	var born rpc.CreateResponse
+	if err := c.Call(t.Context(), rpc.MethodCreate, rpc.CreateRequest{Outfits: []string{"judged"}}, &born); err != nil {
+		t.Fatalf("canary: %v", err)
+	}
+	err := c.Call(t.Context(), rpc.MethodReroute, rpc.RerouteRequest{FigaroID: born.FigaroID, Outfits: []string{"judged-elsewhere"}}, nil)
+	if err == nil {
+		t.Fatal("a box rerouted its own aria")
+	}
+}

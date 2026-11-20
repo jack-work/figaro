@@ -73,7 +73,10 @@ func TestRerouteOfARoleMovesItsHolderOntoTheRolesRoute(t *testing.T) {
 	}
 }
 
-func TestRerouteIsRefusedToAFigaroThatMayNotWriteTheRoute(t *testing.T) {
+// review-lane-usability-1 #1: the owner reroutes, and so does a figaro
+// holding whole set on the target. Keyed set is not enough, not even a
+// default lane's on itself.
+func TestRerouteIsForTheOwnerAndAFigaroHoldingWholeSet(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns a daemon; skipped under -short")
 	}
@@ -81,12 +84,28 @@ func TestRerouteIsRefusedToAFigaroThatMayNotWriteTheRoute(t *testing.T) {
 	r.enforceAll()
 	parent := r.newEmptyAria()
 	r.run("set", "--id", parent, "system.model", "runtime-model")
+	r.run("set", "--id", parent, "system.thinking_effort", "high")
 	lane := r.laneOf(parent)
-	r.run("set", "--id", lane, "system.scopes", `["send:parent","read:aria:`+parent+`","read:aria:self","write:aria:self#@self"]`)
-	if out, err := r.as(lane, "reroute", "--id", parent); err == nil {
-		t.Fatalf("a lane rerouted its parent: %s", out)
+	scopes := func(extra string) {
+		r.run("set", "--id", lane, "system.scopes", `["send:parent","read:aria:`+parent+`","read:aria:self","write:aria:self#@self"`+extra+`]`)
 	}
+	refused := func(what, target string) {
+		t.Helper()
+		if out, err := r.as(lane, "reroute", "--id", target); err == nil {
+			t.Fatalf("%s: rerouted: %s", what, out)
+		}
+	}
+	scopes(`,"write:aria:` + parent + `#mantra"`)
+	refused("keyed set on the parent", parent)
+	refused("a default lane on itself", lane)
 	if got := r.key(parent, "system.model"); got != "runtime-model" {
 		t.Fatalf("a refused reroute moved the model to %q", got)
+	}
+	scopes(`,"write:aria:` + parent + `"`)
+	if out, err := r.as(lane, "reroute", "--id", parent); err != nil {
+		t.Fatalf("a lane holding whole set on its parent could not reroute it: %v\n%s", err, out)
+	}
+	if got := r.key(parent, "system.model") + "|" + r.key(parent, "system.thinking_effort"); got != "claude-sonnet-4-5|" {
+		t.Fatalf("the delegated reroute landed on %q", got)
 	}
 }
