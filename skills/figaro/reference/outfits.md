@@ -104,6 +104,15 @@ sonn5` wears sonn5's closure and nothing the configured default happened to
 add. The parent is the default form when nothing was named and an outfit node
 for that name when something was, so the sharing is per outfit either way.
 
+The ROUTE (`system.provider`, `system.model`, `system.thinking_effort`,
+`system.thinking_budget`) is a birth value. After the birth it is the
+figaro's own: `figaro set` moves it, and nothing an outfit does after the
+birth does. Editing or reloading an outfit, `state outfit`, a prompt carrying
+`-O`, a restart, a succession and a seat fork all leave it where it is; a
+successor is born on its predecessor's route, under the role's own route keys
+if the role sets any. `figaro reroute` is the one verb that reads it from
+outfits again (`--id @role` for a seat, `-O` to name others).
+
 An outfit closure with no `system.provider` is refused at birth, by name:
 
 ```

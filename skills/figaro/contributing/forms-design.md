@@ -286,7 +286,8 @@ Two consequences to know:
   of another build.
 - EXISTING figaros keep what they were born wearing. A form is per-figaro state,
   and no upgrade may silently rewrite it. `fig state outfit <name>` re-folds
-  the new skills onto a live figaro, additively.
+  the new skills onto a live figaro, additively, and leaves its route alone:
+  `fig reroute` is the verb that moves a route from outfits.
 
 ## 9. Deliberate absences
 

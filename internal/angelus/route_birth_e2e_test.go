@@ -194,3 +194,26 @@ func TestAnOutfitStillGivesARouteToAFigaroBornWithout(t *testing.T) {
 	require.NoError(t, err)
 	r.requireRoute(bound.FigaroID, "mock-model")
 }
+
+func TestRerouteTakesTheRouteFromTheOutfitsAndNothingElse(t *testing.T) {
+	r := newRouteRig(t)
+	id := r.born("mock")
+	ownerSets(t, r.a, id, map[string]any{"system.model": "runtime-model", "system.thinking_budget": 9000, "mantra": "mine"})
+	r.editOutfitAndReload()
+	f, err := sdk.DialAria(ariaAddr(r.a, id), nil)
+	require.NoError(t, err)
+	defer f.Close()
+	_, err = f.SetWith(r.ctx, rpc.SetRequest{Outfits: []string{"mock"}, Reroute: true})
+	require.NoError(t, err)
+	r.requireRoute(id, "edited-model")
+	require.Equal(t, "edited-model-effort", r.key(id, "system.thinking_effort"))
+	require.Empty(t, r.key(id, "system.thinking_budget"), "a route key the outfit leaves out stayed")
+	require.Equal(t, "mine", r.key(id, "mantra"))
+
+	_, err = f.SetWith(r.ctx, rpc.SetRequest{Outfits: []string{"mock"}, Reroute: true, Patch: *rawPatch(map[string]string{"mantra": `"no"`})})
+	require.ErrorContains(t, err, "not a route key")
+	require.NoError(t, os.WriteFile(r.dir+"/outfits/bare.toml", []byte("mantra = \"bare\"\n"), 0o600))
+	_, err = f.SetWith(r.ctx, rpc.SetRequest{Outfits: []string{"bare"}, Reroute: true})
+	require.ErrorContains(t, err, "names no system.provider")
+	r.requireRoute(id, "edited-model")
+}

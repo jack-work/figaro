@@ -97,9 +97,10 @@ type SetRequest struct {
 	// version; zero is unconditional.
 	IfVersion uint64 `json:"if_version,omitempty"`
 	// Assert makes a removal of an absent key a refusal rather than a no-op.
-	Assert bool   `json:"assert,omitempty"`
-	Client string `json:"client,omitempty"`
-	Seq    uint64 `json:"seq,omitempty"`
+	Assert  bool   `json:"assert,omitempty"`
+	Client  string `json:"client,omitempty"`
+	Seq     uint64 `json:"seq,omitempty"`
+	Reroute bool   `json:"reroute,omitempty"`
 }
 
 type SetResponse struct {

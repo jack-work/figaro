@@ -1653,6 +1653,35 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "reroute",
+		Group: "State",
+		Short: "Put a figaro back on the provider and model its outfits name",
+		Usage: "reroute [--id <id|@role>] [-O <outfits>]",
+		Long: `A figaro's provider and model are set at its birth and are its own from then on:
+editing, reloading or re-applying an outfit leaves them alone, and so does a
+restart or a succession. reroute is the one verb that reads them from outfits
+again. It writes system.provider, system.model, system.thinking_effort and
+system.thinking_budget, and removes the ones the outfits leave out.
+
+  figaro reroute                     back to the outfits this figaro was born in
+  figaro reroute -O fast             onto what the outfit fast names
+  figaro reroute --id @king          the role's holder, onto the role's
+                                     succession outfit and its own route keys
+
+The write is a plain set: only the owner, or a figaro granted to write those
+keys, may reroute.`,
+		ArgsMax: 0,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria or role (overrides pid binding)"},
+			{Long: "outfit", Short: "O", Description: "Outfit NAMES to read the route from instead"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			return runReroute(ctx.Extra.(*config.Loaded), ctx.Flag("id"), ctx.Flag("outfit"))
+		},
+		CompleteArgs: completeAriaIDsAfterFlag(nil),
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "get",
 		Group: "State",
 		Short: "Print form values by path",

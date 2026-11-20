@@ -26,6 +26,27 @@ func (h *handlers) dressOffRouteOf(id string, outfits []string, patch *rpc.FormP
 	return h.dressing(outfits, patch, h.routed(id))
 }
 
+func (h *handlers) dressRoute(_ string, outfits []string, patch *rpc.FormPatch) (form.Patch, error) {
+	folded, err := h.dress(outfits, nil)
+	if err != nil {
+		return form.Patch{}, err
+	}
+	set, drops := routeOf(form.Snapshot{}.Apply(folded))
+	if _, ok := set["system.provider"]; !ok {
+		return form.Patch{}, fmt.Errorf("reroute: outfit %s names no system.provider", strings.Join(outfits, ","))
+	}
+	route := form.Build(form.Snapshot{}, set, drops)
+	if patch == nil {
+		return route, nil
+	}
+	for _, e := range patch.Entries() {
+		if !form.IsRouteKey(e.Key) {
+			return form.Patch{}, fmt.Errorf("reroute: %s is not a route key", e.Key)
+		}
+	}
+	return form.Merge(route, *patch), nil
+}
+
 func (h *handlers) routed(id string) bool {
 	snap, err := h.angelus.Backend.FormState(id)
 	if err != nil {
@@ -90,11 +111,15 @@ func (h *handlers) dressParams(ctx context.Context, method, id string, params js
 		if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
 			return params, err
 		}
-		dressed, err := h.dressOffRouteOf(id, req.Outfits, &req.Patch)
+		dress := h.dressOffRouteOf
+		if req.Reroute {
+			dress = h.dressRoute
+		}
+		dressed, err := dress(id, req.Outfits, &req.Patch)
 		if err != nil {
 			return params, err
 		}
-		req.Patch, req.Outfits = dressed, nil
+		req.Patch, req.Outfits, req.Reroute = dressed, nil, false
 		return json.Marshal(req)
 
 	case rpc.MethodQua:
