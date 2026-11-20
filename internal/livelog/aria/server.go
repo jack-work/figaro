@@ -319,6 +319,9 @@ func (s *Server) page(at, bound Anchor, dir Direction, budget int) Page {
 			p = PaginateBefore(turns, at, bound, budget)
 		} else {
 			p = paginate(turns, at, dir, budget, bound)
+			if !bound.Zero() && len(p.Parts) == 0 {
+				return p
+			}
 		}
 		covered := lo == 0 && hi >= n-1
 		if covered {
