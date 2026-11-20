@@ -663,7 +663,9 @@ func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
 	cancel := a.turnCancel
 	a.mu.Unlock()
 	if !resp.Cleared {
-		a.inbox.CoalesceUserPromptRuns()
+		if !a.isLog() {
+			a.inbox.CoalesceUserPromptRuns()
+		}
 		_, resp.Queue = a.QueuedPrompts(true)
 	}
 	cancel()
@@ -934,7 +936,10 @@ func (a *Agent) act(ctx context.Context) {
 		}
 		switch evt.typ {
 		case eventUserPrompt:
-			batch := append([]event{evt}, a.inbox.TakeReadyUserPrompts()...)
+			batch := []event{evt}
+			if !a.isLog() {
+				batch = append(batch, a.inbox.TakeReadyUserPrompts()...)
+			}
 			merged, ok := mergePromptEvents(batch)
 			if !ok {
 				continue

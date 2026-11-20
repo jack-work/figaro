@@ -121,6 +121,8 @@ func (b *turnBus) PushToolReady(call message.Content) {
 	}
 }
 
+const ReasonLogged = "logged"
+
 // runTurn drives one prompt to completion: provider.Send, tool dispatch, repeat.
 func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	if a.halted.Load() {
@@ -179,7 +181,8 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		cancel()
 	}()
 
-	if prompt.text != "" {
+	logged := a.isLog()
+	if prompt.text != "" && !logged {
 		methodsCtx, methodsSpan := figOtel.Start(turnCtx, "figaro.methods")
 		a.runInquiryMethods(methodsCtx, prompt.text)
 		methodsSpan.End()
@@ -193,6 +196,10 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	// From here a delete aimed at this prompt is refused as committed.
 	a.inbox.MarkCommitted([]event{prompt})
 	a.inbox.MarkTurn(promptIDs(prompt), a.turnID)
+	if logged {
+		a.endTurn(ReasonLogged)
+		return
+	}
 	a.startAssistantUnit()
 
 	allowSteering := false
