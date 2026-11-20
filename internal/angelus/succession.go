@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -470,15 +471,16 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 	if narrowed {
 		keys[form.ScopesKey] = scopes
 	}
-	roleless := outfit == ""
 	if outfit == "" {
 		if v := snap.Lookup("system.outfit_name"); v != nil {
 			outfit = *v
 		}
-		copied(snap, keys, "system.provider", "system.model", "system.thinking_effort", "system.thinking_budget")
 	}
-	var drops []string
-	if seat, alone := seatProviderAlone(route); alone && roleless {
+	carried, drops := routeOf(snap)
+	for k, v := range carried {
+		keys[k] = v
+	}
+	if seat, alone := seatProviderAlone(route); alone {
 		under := ""
 		if v := snap.Lookup("system.provider"); v != nil {
 			under = *v
@@ -496,6 +498,7 @@ func (h *handlers) mintSuccessor(ctx context.Context, rec successionRecord) {
 	for k, v := range route {
 		keys[k] = v
 	}
+	drops = slices.DeleteFunc(drops, func(k string) bool { _, set := keys[k]; return set })
 	mantra := ""
 	if v := snap.Lookup("mantra"); v != nil {
 		mantra = *v

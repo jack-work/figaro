@@ -28,6 +28,18 @@ func seatRoute(snap form.Snapshot) map[string]json.RawMessage {
 	return out
 }
 
+func routeOf(snap form.Snapshot) (map[string]json.RawMessage, []string) {
+	set := map[string]json.RawMessage{}
+	copied(snap, set, form.RouteKeys...)
+	var drops []string
+	for _, k := range form.RouteKeys {
+		if _, ok := set[k]; !ok {
+			drops = append(drops, k)
+		}
+	}
+	return set, drops
+}
+
 func seatOutfits(snap form.Snapshot) []string {
 	o := nested(snap, successionPolicyKey, "outfit")
 	if o == "" {
@@ -137,9 +149,13 @@ func (h *handlers) dressForSeat(req rpc.ForkRequest) (rpc.ForkRequest, string, e
 	if err != nil {
 		return req, "", err
 	}
+	holder, err := h.angelus.Backend.FormState(req.FigaroID)
+	if err != nil {
+		return req, "", fmt.Errorf("fork: %s: %w", req.FigaroID, err)
+	}
 	route := seatRoute(snap)
 	deferred, alone := seatProviderAlone(route)
-	for _, p := range []form.Patch{callerOutfits, caller, roleOutfits} {
+	for _, p := range []form.Patch{callerOutfits, caller} {
 		if patchCovers(p, "system.model") || patchCovers(p, "system.provider") {
 			deferred, alone = "", false
 		}
@@ -153,7 +169,21 @@ func (h *handlers) dressForSeat(req rpc.ForkRequest) (rpc.ForkRequest, string, e
 			set[k] = v
 		}
 	}
+	kept, _ := routeOf(holder)
 	var drops []string
+	for _, k := range form.RouteKeys {
+		if !patchCovers(roleOutfits, k) || patchCovers(callerOutfits, k) || patchCovers(caller, k) {
+			continue
+		}
+		if _, routed := set[k]; routed {
+			continue
+		}
+		if v, ok := kept[k]; ok {
+			set[k] = v
+		} else {
+			drops = append(drops, k)
+		}
+	}
 	for _, e := range caller.Entries() {
 		if e.IsRemoval() {
 			drops = append(drops, e.Key)

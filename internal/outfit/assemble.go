@@ -95,6 +95,10 @@ func ParseDelete(text string) ([]string, error) {
 
 // Dress folds names in order, then the caller's patch on top; removals ride through.
 func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) (form.Patch, error) {
+	return o.DressOffRoute(names, patch, defaultName, false)
+}
+
+func (o *Outfitter) DressOffRoute(names []string, patch form.Patch, defaultName string, offRoute bool) (form.Patch, error) {
 	if len(names) == 0 {
 		return patch, nil
 	}
@@ -113,6 +117,13 @@ func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) 
 			return form.Patch{}, err
 		}
 		layerOver(layered, folded)
+	}
+	if offRoute {
+		for k := range layered {
+			if form.IsRouteKey(k) {
+				delete(layered, k)
+			}
+		}
 	}
 	var drops []string
 	for _, e := range patch.Entries() {
