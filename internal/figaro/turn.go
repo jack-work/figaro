@@ -192,7 +192,9 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		return
 	}
 	span.SetAttributes(attribute.Int64("figaro.turn", int64(a.turnID)))
-	a.markCut(a.turnID, prompt.resume)
+	if !logged {
+		a.markCut(a.turnID, prompt.resume)
+	}
 	// From here a delete aimed at this prompt is refused as committed.
 	a.inbox.MarkCommitted([]event{prompt})
 	a.inbox.MarkTurn(promptIDs(prompt), a.turnID)

@@ -225,6 +225,7 @@ func (a *Agent) Redeliver() {
 
 	var events []event
 	switch {
+	case a.isLog():
 	case f.Cut.owesResume():
 		events = append(events, resumeEvent())
 	case f.Cut != nil:
