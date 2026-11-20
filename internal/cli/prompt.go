@@ -261,5 +261,8 @@ func runNewFromOutfit(loaded *config.Loaded, d dressing, set renderSettings) {
 	if !d.IsEmpty() {
 		dressed = "outfit " + d.label()
 	}
+	if d.mintsLog() {
+		dressed = "no model, as an aria log"
+	}
 	fmt.Fprintf(stderrw, "created %s under %s (attended; no prompt sent)\n", ariaName(figaroID), dressed)
 }

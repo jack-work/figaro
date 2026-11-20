@@ -223,6 +223,13 @@ func mustConnectAngelus(loaded *config.Loaded) *sdk.Angelus {
 // with attendNew.
 func mustCreate(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, d dressing) (string, sdk.Addr) {
 	createResp, err := createWithFirstRun(ctx, loaded, d, func() (*rpc.CreateResponse, error) {
+		if d.mintsLog() {
+			bound, err := acli.FormBind(ctx, "", d.names, d.patch)
+			if err != nil {
+				return nil, err
+			}
+			return &rpc.CreateResponse{FigaroID: bound.FigaroID}, nil
+		}
 		return acli.Create(ctx, d.names, d.patch)
 	})
 	if err != nil {
