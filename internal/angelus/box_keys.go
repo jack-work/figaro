@@ -57,7 +57,7 @@ var boxHeldKeys = []struct{ key, why string }{
 	{store.StudiesKey, "it names forms the aria reads; study checks read on each"},
 	{"target-aria", "it makes a form a role the daemon resolves and keeps alive; cast checks its target"},
 	{successionPolicyKey, "it names the outfit the daemon dresses a successor in, as the owner"},
-	{"lifecycle.status", "routing-alias lifts a role's fan-out limit and quota off its holder"},
+	{form.LifecycleStatusKey, "routing-alias lifts a role's fan-out limit and quota off its holder"},
 	{poolNodeKey, "it names the node a pool's leases are placed under; the daemon mints it"},
 	{store.ReapedKey, "it names the root the purge groups this aria under; kill writes it"},
 	{store.ReapedUntilKey, "it schedules a purge; kill writes it"},

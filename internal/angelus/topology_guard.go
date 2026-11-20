@@ -370,6 +370,6 @@ func (a *Angelus) isReaped(id string) bool {
 }
 
 func routingAlias(role form.Snapshot) bool {
-	v := role.Lookup("lifecycle.status")
+	v := role.Lookup(form.LifecycleStatusKey)
 	return v != nil && *v == "routing-alias"
 }

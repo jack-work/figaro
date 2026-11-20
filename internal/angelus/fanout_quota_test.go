@@ -441,3 +441,26 @@ func TestAReparentCountsWhatForksHold(t *testing.T) {
 	}
 	requireCacheMatchesTree(t, hs, "a reparent beside a held fork")
 }
+
+func TestFlippingARoleToARoutingAliasLiftsItsQuotaCeilingAtOnce(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	top, _ := b.CreateConversation(outfit)
+	setQuota(t, b, top, 5)
+	held, _ := json.Marshal(top)
+	role, _, err := b.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": held, form.FanoutQuotaKey: json.RawMessage(`1`)}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := budgetOf(hs, top); got.quota != 1 {
+		t.Fatalf("holder of a role capped at 1 has quota %d", got.quota)
+	}
+	applyKeys(t, b, role, map[string]any{form.LifecycleStatusKey: "routing-alias"})
+	if got := budgetOf(hs, top); got.quota != 5 {
+		t.Fatalf("the alias role still caps the holder's quota with no restart: %+v", got)
+	}
+	applyKeys(t, b, role, map[string]any{form.LifecycleStatusKey: "seat"})
+	if got := budgetOf(hs, top); got.quota != 1 {
+		t.Fatalf("the role became a seat again but its ceiling did not return: %+v", got)
+	}
+	requireCacheMatchesTree(t, hs, "an alias flip")
+}
