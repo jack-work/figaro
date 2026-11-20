@@ -684,3 +684,13 @@ func TestAPromptAcceptedDuringATurnDoesNotEndIt(t *testing.T) {
 		t.Fatalf("events: %s", summary(events))
 	}
 }
+
+func TestAFinishedTurnEndsOnAnAriaWokenWithoutATurn(t *testing.T) {
+	th := newThread(New(transport.Endpoint{}), "x")
+	ch := th.subscribe(context.Background(), &sub{after: 1, r: newReader(Cursor{Turn: 2, Text: 1}), resumed: true}, nil)
+	var rt runtimeFeed
+	th.readBack(rt.response("idle", 0, "", 0), sealedTurn(2, "ab"))
+	if got := summary(drain(t, ch)); got != `+"b" end:ab` {
+		t.Fatalf("events: %s", got)
+	}
+}

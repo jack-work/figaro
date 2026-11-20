@@ -161,6 +161,7 @@ and hold later frames until the read lands, then replay them past the read.
 
 Turn ends come from the aria's `runtime` form, read with every catch-up and
 followed through its deltas: `turn.id` names the turn, a turn is over once a
-later one is named or the state is idle, `turn.reason`
+later one is named or the state is idle (an idle aria has also finished every
+sealed turn, since `turn.id` reads 0 on an aria woken without a turn), `turn.reason`
 is its failure, and `inflight` says whether another turn follows. A dormant
 aria has no runtime form; it reads as idle.

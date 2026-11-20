@@ -606,7 +606,7 @@ func (t *thread) settle() {
 	now := t.rt.state()
 	ids := make([]uint64, 0, len(t.folds))
 	for id, f := range t.folds {
-		if !f.ended && now.over(id) {
+		if !f.ended && now.over(id, f.sealed) {
 			ids = append(ids, id)
 		}
 	}
@@ -628,8 +628,9 @@ func (t *thread) settle() {
 	}
 	for s := range t.subs {
 		if s.resumed && s.r != nil && t.folds[s.r.cur.Turn] == nil && !t.want[s.r.cur.Turn] {
-			if n := s.r.cur.Turn; n > now.turn+1 || n == now.turn+1 && now.settled() {
-				s.push(Event{Kind: Failed, Text: fmt.Sprintf("turn %d does not exist; the newest is %d", n, now.turn), Cursor: s.r.cur}, true)
+			newest := max(now.turn, t.top)
+			if n := s.r.cur.Turn; n > newest+1 || n == newest+1 && now.settled() {
+				s.push(Event{Kind: Failed, Text: fmt.Sprintf("turn %d does not exist; the newest is %d", n, newest), Cursor: s.r.cur}, true)
 				t.leave(s)
 				continue
 			}

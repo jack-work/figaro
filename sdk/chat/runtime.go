@@ -68,8 +68,8 @@ func (v *runtimeView) state() runState {
 	return s
 }
 
-func (s runState) over(turn uint64) bool {
-	return turn < s.turn || turn == s.turn && s.state == rpc.RuntimeIdle
+func (s runState) over(turn uint64, sealed bool) bool {
+	return turn < s.turn || s.state == rpc.RuntimeIdle && (turn == s.turn || sealed)
 }
 
 func (s runState) settled() bool {
