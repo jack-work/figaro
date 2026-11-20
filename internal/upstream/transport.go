@@ -1,8 +1,11 @@
 package upstream
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -17,6 +20,7 @@ type Config struct {
 	MaxAge          time.Duration
 	Sweep           time.Duration
 	WatchNetwork    bool
+	GatewayBackoff  time.Duration
 	Dial            func(ctx context.Context, network, addr string) (net.Conn, error)
 	TLS             *tls.Config
 }
@@ -30,10 +34,11 @@ var Defaults = Config{
 }
 
 type Transport struct {
-	base  *http.Transport
-	stall time.Duration
-	clock clock
-	pool  *pool
+	backoff time.Duration
+	base    *http.Transport
+	stall   time.Duration
+	clock   clock
+	pool    *pool
 }
 
 func New(cfg Config) *Transport {
@@ -43,9 +48,10 @@ func New(cfg Config) *Transport {
 	}
 	p := newPool(cfg)
 	t := &Transport{
-		stall: cfg.Stall,
-		clock: wallClock{},
-		pool:  p,
+		backoff: cmp.Or(cfg.GatewayBackoff, DefaultGatewayRetryBackoff),
+		stall:   cfg.Stall,
+		clock:   wallClock{},
+		pool:    p,
 		base: &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
 			DialContext:           p.dialer(dial),
@@ -65,7 +71,65 @@ func New(cfg Config) *Transport {
 	return t
 }
 
+const DefaultGatewayRetryBackoff = 2 * time.Second
+
+const ServedHeader = "X-Rou2-Upstream"
+
+type gatewayRetryKey struct{}
+
+func WithGatewayRetry(ctx context.Context) context.Context {
+	return context.WithValue(ctx, gatewayRetryKey{}, true)
+}
+
+func retriesGateway(req *http.Request) bool {
+	on, _ := req.Context().Value(gatewayRetryKey{}).(bool)
+	return on
+}
+
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.roundTripOnce(req)
+	if err != nil || !gatewayDown(resp.StatusCode) || !retriesGateway(req) || resp.Header.Get(ServedHeader) != "" || upgrading(req) {
+		return resp, err
+	}
+	retry, ok := replay(req)
+	if !ok {
+		return resp, nil
+	}
+	slog.Warn("gateway answered before any output; retrying the request once",
+		"host", req.URL.Host, "status", resp.StatusCode, "backoff", t.backoff)
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	resp.Body.Close()
+	wait := time.NewTimer(t.backoff)
+	defer wait.Stop()
+	select {
+	case <-wait.C:
+	case <-req.Context().Done():
+		return nil, req.Context().Err()
+	}
+	return t.roundTripOnce(retry)
+}
+
+func gatewayDown(status int) bool {
+	return status == http.StatusBadGateway || status == http.StatusServiceUnavailable
+}
+
+func replay(req *http.Request) (*http.Request, bool) {
+	retry := req.Clone(req.Context())
+	if req.Body == nil || req.Body == http.NoBody {
+		return retry, true
+	}
+	if req.GetBody == nil {
+		return nil, false
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return nil, false
+	}
+	retry.Body = body
+	return retry, true
+}
+
+func (t *Transport) roundTripOnce(req *http.Request) (*http.Response, error) {
 	u := &use{}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{GotConn: u.got}))
 	if upgrading(req) {

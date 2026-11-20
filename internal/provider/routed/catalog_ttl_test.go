@@ -51,7 +51,7 @@ func (g *movingGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/v1/models":
 		if modelsErr {
-			http.Error(w, "catalog down", http.StatusBadGateway)
+			http.Error(w, "catalog down", http.StatusInternalServerError)
 			return
 		}
 		_, _ = fmt.Fprintf(w, `{"data":[{"id":"gpt-x","supported_endpoints":[%q]}]}`, endpoint)

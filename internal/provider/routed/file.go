@@ -58,6 +58,7 @@ type File struct {
 	Headers          map[string]string            `toml:"headers,omitempty"`
 	TransportHeaders map[string]map[string]string `toml:"transport_headers,omitempty"`
 	SendFigaroID     bool                         `toml:"send_figaro_id,omitempty"`
+	RetryGateway     *bool                        `toml:"retry_gateway,omitempty"`
 	Effort           EffortFile                   `toml:"effort"`
 	CodeAssist       struct {
 		Project     string `toml:"project,omitempty"`
@@ -142,6 +143,9 @@ func (f File) Apply(spec Spec) (Spec, error) {
 	spec.ResponsesNoReplay = f.Responses.NoReplay
 	if f.SendFigaroID {
 		spec.SendFigaroID = true
+	}
+	if f.RetryGateway != nil {
+		spec.RetryGateway = *f.RetryGateway
 	}
 	if f.CodeAssist.Project != "" || f.CodeAssist.UserAgent != "" || f.CodeAssist.RequestType != "" {
 		spec.CodeAssist = gemini.CodeAssistConfig{
