@@ -7,6 +7,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/arialog"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/tokens"
 )
@@ -91,10 +92,17 @@ func (meta *AriaMeta) Fold(e arialog.Entry[message.Message]) {
 	if !message.IsCeremonial(m) {
 		meta.MessageCount++
 	}
-	if m.Role == message.RoleOutput {
+	if CountsAsTurn(m, meta.Kind) {
 		meta.TurnCount++
 	}
 	meta.LastFigaroLT = e.LT
+}
+
+func CountsAsTurn(m message.Message, kind string) bool {
+	if kind == form.KindLog {
+		return m.Role == message.RoleInput && !message.IsCeremonial(m)
+	}
+	return m.Role == message.RoleOutput
 }
 
 var metaIdentityHealed atomic.Int64
