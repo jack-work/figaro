@@ -13,6 +13,8 @@ const (
 	ErrOutfitNotFound = -32012
 
 	ErrCodeFormUnavailable = -32041
+
+	ErrCodeIntrinsicDormant = -32042
 )
 
 const (

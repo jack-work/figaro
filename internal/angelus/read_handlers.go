@@ -20,6 +20,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/uiir"
+	"github.com/jack-work/jkrpc"
 )
 
 // reader's projector has an empty tool registry: sealed IR carries the tool names.
@@ -66,10 +67,10 @@ func (h *handlers) readFromStore(ctx context.Context, id, method string, params 
 			_ = json.Unmarshal(params, &req)
 		}
 		if name := req.Intrinsic; name != "" && name != figaro.IntrinsicState {
-			return nil, true, fmt.Errorf(
+			return nil, true, &jkrpc.Error{Code: rpc.ErrCodeIntrinsicDormant, Message: fmt.Sprintf(
 				"%s is dormant, so it has no %q: an intrinsic form is live-only state and is "+
 					"never written to disk. Wake it (send it something) or read its bound form instead",
-				id, name)
+				id, name)}
 		}
 		origin := store.Origin{Principal: authz.PrincipalText(authz.PrincipalOf(ctx)), Client: req.Client}
 		var lastSeq uint64
