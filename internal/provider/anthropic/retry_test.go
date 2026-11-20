@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -134,5 +135,32 @@ func TestDoWithAuthRetry_RetriesAStalledRequestOnAFreshConnection(t *testing.T) 
 	defer resp.Body.Close()
 	if got := atomic.LoadInt32(&hits); got < 2 {
 		t.Fatalf("server hits = %d, want the stalled attempt and a retry", got)
+	}
+}
+
+func TestDoWithAuthRetry_SpentRetriesNameTheServingSeat(t *testing.T) {
+	old := retryBaseDelay
+	retryBaseDelay = time.Millisecond
+	defer func() { retryBaseDelay = old }()
+
+	for header, want := range map[string]string{"anthropic-kic-2": "upstream anthropic-kic-2", "a/b": ""} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Rou2-Upstream", header)
+			w.WriteHeader(503)
+		}))
+		a := &Anthropic{auth: &staticAuth{token: "t"}, HTTPClient: srv.Client()}
+		_, _, err := a.doWithAuthRetry(context.Background(), func(string) (*http.Request, error) {
+			return http.NewRequest("GET", srv.URL, nil)
+		})
+		srv.Close()
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if want == "" && strings.Contains(err.Error(), "upstream") {
+			t.Fatalf("malformed value leaked: %v", err)
+		}
+		if want != "" && !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q lacks %q", err, want)
+		}
 	}
 }

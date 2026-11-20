@@ -233,3 +233,16 @@ func TestAMalformedRou2UpstreamIsIgnored(t *testing.T) {
 		require.Equal(t, unifiedAttrs, got, "value %q", bad)
 	}
 }
+
+func TestAMalformedRou2UpstreamNeverReachesTheRateLimitError(t *testing.T) {
+	_, err := roundSpanAttrs(t, func(w http.ResponseWriter) {
+		w.Header().Set("anthropic-ratelimit-unified-status", "rejected")
+		w.Header().Set("X-Rou2-Upstream", "a/b")
+		w.Header().Set("Retry-After", "132670")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	var limit *provider.RateLimited
+	require.True(t, errors.As(err, &limit))
+	require.Empty(t, limit.Upstream)
+	require.NotContains(t, err.Error(), "a/b")
+}
