@@ -74,6 +74,7 @@ const (
 	CapForkSeat    Capability = "fork.seat"
 	CapSeat        Capability = "seat"
 	CapPlace       Capability = "place"
+	CapReroute     Capability = "set.reroute"
 )
 
 // ForkResponse: the parent freezes and keeps its id as a read-only index
