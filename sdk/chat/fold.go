@@ -22,10 +22,18 @@ func (a applied) String() string {
 	return [...]string{"fresh", "stale", "gap"}[a]
 }
 
+type suffixState int
+
+const (
+	unseen suffixState = iota
+	streaming
+	closed
+)
+
 type suffix struct {
-	from uint64
-	v    int
-	ok   bool
+	state suffixState
+	from  uint64
+	v     int
 }
 
 type turnFold struct {
@@ -49,46 +57,69 @@ func (f *turnFold) apply(p aria.TurnPart) applied {
 	if p.At != 0 {
 		f.at = p.At
 	}
-	if len(p.Nodes) > 0 {
+	snapshot := len(p.Nodes) > 0
+	if snapshot {
 		if p.From > uint64(len(f.nodes)) {
 			return gap
 		}
 		f.absorb(p.From, p.Nodes)
+		if p.Live == nil {
+			f.live = suffix{state: closed}
+		}
 	}
 	if p.Live != nil {
-		if got := f.applyLive(p.Live, len(p.Nodes) > 0); got != fresh {
+		if got := f.applyLive(p.Live, snapshot); got != fresh {
 			return got
 		}
 	}
 	if p.Sealed {
 		f.sealed = true
-		f.live = suffix{}
+		f.live = suffix{state: closed}
 	}
 	return fresh
 }
 
 func (f *turnFold) applyLive(l *aria.Live, snapshot bool) applied {
-	if len(l.Nodes) == 0 {
-		if snapshot {
-			v := l.V
-			if uint64(len(f.nodes)) <= l.From {
-				v = -1
-			}
-			f.live = suffix{from: l.From, v: v, ok: true}
-		} else if f.live.ok && f.live.from == l.From && f.live.v != l.V {
-			return gap
+	if snapshot {
+		v := l.V
+		if uint64(len(f.nodes)) <= l.From {
+			v = -1
 		}
+		f.live = suffix{state: streaming, from: l.From, v: v}
 		return fresh
 	}
-	if f.live.ok && f.live.from == l.From {
+	if len(l.Nodes) == 0 {
+		switch {
+		case f.live.state == streaming && f.live.from == l.From && f.live.v == l.V:
+			f.live = suffix{state: closed}
+			return fresh
+		case f.live.state == closed:
+			return stale
+		}
+		return gap
+	}
+	switch f.live.state {
+	case streaming:
+		if f.live.from != l.From {
+			return gap
+		}
 		if l.V <= f.live.v {
 			return stale
 		}
 		if l.V > f.live.v+1 {
 			return gap
 		}
-	} else if l.V != 0 || l.From > uint64(len(f.nodes)) {
-		return gap
+	case closed:
+		if l.V > 0 {
+			return stale
+		}
+		if l.From > uint64(len(f.nodes)) {
+			return gap
+		}
+	case unseen:
+		if l.V != 0 || l.From > uint64(len(f.nodes)) {
+			return gap
+		}
 	}
 	for _, d := range l.Nodes {
 		for uint64(len(f.nodes)) <= d.ID {
@@ -96,7 +127,7 @@ func (f *turnFold) applyLive(l *aria.Live, snapshot bool) applied {
 		}
 		f.nodes[d.ID] = sdkaria.FoldDelta(f.nodes[d.ID], d)
 	}
-	f.live = suffix{from: l.From, v: l.V, ok: true}
+	f.live = suffix{state: streaming, from: l.From, v: l.V}
 	return fresh
 }
 

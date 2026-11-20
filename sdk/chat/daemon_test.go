@@ -62,7 +62,8 @@ func figaroBinary(t *testing.T) string {
 
 // stubProvider speaks the Anthropic messages stream. The last user text picks
 // the reply: "words N MS" streams N words MS apart, "tool" calls bash once and
-// then answers, "fail" is refused, anything else answers "ok".
+// then answers, "slowtool" runs a one second bash and then streams slowly,
+// "fail" is refused, anything else answers "ok".
 type stubProvider struct {
 	srv *httptest.Server
 }
@@ -87,8 +88,12 @@ func newStubProvider(t *testing.T) *stubProvider {
 		s := &sse{w: w, f: w.(http.Flusher), ctx: r.Context()}
 		last, toolResult := lastUser(body)
 		switch {
+		case toolResult && strings.Contains(string(body), "sleep 1"):
+			s.text([]string{"After", " the", " tool", " come", " eight", " more", " words", " here."}, 80*time.Millisecond)
 		case toolResult:
 			s.text([]string{"The ", "tool ", "said ", "hi."}, 0)
+		case strings.HasPrefix(last, "slowtool"):
+			s.tool("toolu_1", "bash", `{"command":"sleep 1; echo hi"}`)
 		case strings.HasPrefix(last, "tool"):
 			s.tool("toolu_1", "bash", `{"command":"echo hi"}`)
 		case strings.HasPrefix(last, "words "):

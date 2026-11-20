@@ -119,9 +119,11 @@ consumer within microseconds of the same frame reaching a raw
 ## Under the hood
 
 The daemon pushes `figaro.aria` frames: a page whose last part may carry a
-live suffix of node deltas, versioned per suffix. The client folds them by
-node position. A frame whose version it has already seen is skipped; a frame
-that skips a version, or that it meets mid-suffix, makes it read the turn
-back with `figaro.read` and hold later frames until the read lands, then
-replay them past the read's version. `turn.done` ends the turn; its `idle`
+live suffix of node deltas, versioned per suffix. A turn can stream in
+several rounds (after a tool, a steer, a cut stream); each round ends with a
+close marker and the next starts again at version 0. The client folds frames
+by node position. A frame whose version it has already seen, or that belongs
+to a round a read already covered, is skipped; a frame that skips a version,
+or that it meets mid-round, makes it read the turn back with `figaro.read`
+and hold later frames until the read lands, then replay them past the read. `turn.done` ends the turn; its `idle`
 flag says whether another turn follows.

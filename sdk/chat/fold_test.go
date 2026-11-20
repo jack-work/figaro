@@ -1,12 +1,14 @@
 package chat
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/livedoc"
+	srv "github.com/jack-work/figaro/internal/livelog/aria"
 )
 
 type run struct {
@@ -183,6 +185,9 @@ func TestSteeringTextFromTheUserIsNotEchoed(t *testing.T) {
 func TestProseInALaterSuffixOfTheSameTurnIsSeparatedFromTheEarlierOne(t *testing.T) {
 	r := newRun(t)
 	r.frame(0, set(0, map[string]any{"type": "prose", "markdown": "First."}))
+	if got := r.part(aria.TurnPart{Turn: aria.Turn{ID: 1, Live: &aria.Live{From: 0, V: 0}}}); got != fresh {
+		t.Fatalf("close marker: %v", got)
+	}
 	r.v = 0
 	r.frame(1, set(1, map[string]any{"type": "prose", "markdown": "Second."}))
 	r.done("")
@@ -252,5 +257,74 @@ func TestEveryEventCursorCountsWhatWasDelivered(t *testing.T) {
 		if e.Cursor != want[i] {
 			t.Fatalf("event %d %s at %+v, want %+v", i, e.Kind, e.Cursor, want[i])
 		}
+	}
+}
+
+func TestASecondRoundInTheSameTurnStreamsDeltaByDelta(t *testing.T) {
+	s := srv.NewServer()
+	var pages []aria.Page
+	s.Subscribe(func(p aria.Page) {
+		b, _ := json.Marshal(p)
+		var q aria.Page
+		_ = json.Unmarshal(b, &q)
+		pages = append(pages, q)
+	})
+	prose := func(md string) livedoc.Node {
+		return livedoc.Node{Type: livedoc.NodeProse, Role: livedoc.RoleOutput, Markdown: md}
+	}
+	tool := func(status string) livedoc.Node {
+		return livedoc.Node{Type: livedoc.NodeTool, Role: livedoc.RoleOutput, Name: "bash", Status: status, Args: map[string]any{"command": "ls"}}
+	}
+	s.OpenTurn(1)
+	s.Update(nil, []livedoc.Node{prose("Let me")}, 0)
+	s.Update(nil, []livedoc.Node{prose("Let me check"), tool("running")}, 0)
+	s.Update(nil, []livedoc.Node{prose("Let me check"), tool("ok")}, 0)
+	s.Close()
+	s.OpenTurn(1)
+	s.Update(nil, []livedoc.Node{prose("Let me check"), tool("ok"), prose("Now")}, 0)
+	s.Update(nil, []livedoc.Node{prose("Let me check"), tool("ok"), prose("Now the answer")}, 0)
+	s.Close()
+
+	f, r := newTurnFold(1), newReader(Cursor{Turn: 1})
+	var events []Event
+	for _, p := range pages {
+		for _, part := range p.Parts {
+			if got := f.apply(part); got != fresh {
+				t.Fatalf("frame %+v: %v", part.Live, got)
+			}
+			r.advance(f, func(e Event) { events = append(events, e) })
+		}
+	}
+	want := `+"Let me" +" check" tool.start:bash:{"command":"ls"} tool.end:: +"\n\nNow" +" the answer"`
+	if got := summary(events); got != want {
+		t.Fatalf("events:\n got %s\nwant %s", got, want)
+	}
+}
+
+func TestASnapshotBetweenRoundsCoversTheClosedRoundButNotTheNext(t *testing.T) {
+	f := newTurnFold(1)
+	snap := aria.TurnPart{Turn: aria.Turn{ID: 1, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Role: livedoc.RoleOutput, Markdown: "Hello"}}}}
+	if got := f.apply(snap); got != fresh {
+		t.Fatalf("snapshot: %v", got)
+	}
+	if got := f.apply(aria.TurnPart{Turn: aria.Turn{ID: 1, Live: &aria.Live{From: 0, V: 3, Nodes: []aria.NodeDelta{splice(0, "markdown", 0, "x")}}}}); got != stale {
+		t.Fatalf("a frame of the closed round: %v", got)
+	}
+	if got := f.apply(aria.TurnPart{Turn: aria.Turn{ID: 1, Live: &aria.Live{From: 1, V: 0, Nodes: []aria.NodeDelta{set(1, map[string]any{"type": "prose", "markdown": "more"})}}}, From: 1}); got != fresh {
+		t.Fatalf("the next round: %v", got)
+	}
+	if got := f.reply(); got != "Hello\n\nmore" {
+		t.Fatalf("reply %q", got)
+	}
+}
+
+func TestACloseMarkerForAnUnseenRoundIsAGap(t *testing.T) {
+	r := newRun(t)
+	r.frame(0, set(0, map[string]any{"type": "prose", "markdown": "a"}))
+	if got := r.f.apply(aria.TurnPart{Turn: aria.Turn{ID: 1, Live: &aria.Live{From: 0, V: 4}}}); got != gap {
+		t.Fatalf("close at v4 after v0: %v", got)
+	}
+	if got := newTurnFold(1).apply(aria.TurnPart{Turn: aria.Turn{ID: 1, Live: &aria.Live{From: 0, V: 0}}}); got != gap {
+		t.Fatalf("close on a fold that saw nothing: %v", got)
 	}
 }

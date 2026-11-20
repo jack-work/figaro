@@ -343,3 +343,35 @@ func TestADaemonRestartUnderAListenerCarriesOnWithoutRepeating(t *testing.T) {
 		t.Fatalf("before the restart %q, in all %q, end %q", seen, got, last.Text)
 	}
 }
+
+func TestASteerBetweenRoundsStillStreamsTheNextRound(t *testing.T) {
+	c, id, _ := thread(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	ch, err := c.Prompt(ctx, id, "slowtool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var after []time.Time
+	var events []chat.Event
+	ended := false
+	for e := range ch {
+		events = append(events, e)
+		switch {
+		case e.Kind == chat.ToolStart:
+			if _, err := c.Prompt(ctx, id, "also say hello"); err != nil {
+				t.Fatal(err)
+			}
+		case e.Kind == chat.ToolEnd:
+			ended = true
+		case e.Kind == chat.Delta && ended:
+			after = append(after, time.Now())
+		}
+	}
+	if got := replyText(events); !strings.HasSuffix(got, "After the tool come eight more words here.") {
+		t.Fatalf("text %q (%s)", got, kinds(events))
+	}
+	if len(after) < 4 || after[len(after)-1].Sub(after[0]) < 200*time.Millisecond {
+		t.Fatalf("the round after the steer came in %d deltas: %s", len(after), kinds(events))
+	}
+}
