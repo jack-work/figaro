@@ -41,6 +41,7 @@ type Spec struct {
 var registry = withLegacyRuntimeRows([]Spec{
 	{Path: "duke-title", Short: `What this aria calls its END USER (default "user"); set it in an outfit and a human's prompts are attributed to that name`, Writer: WriterSelf, Shape: ShapeString()},
 	{Path: "target-aria", Short: "The figaro a role form points at: its holder. Protected: only the owner or an ancestor figaro writes it, and cast checks its target", Writer: WriterLineage, Shape: ShapeString()},
+	{Path: "lifecycle.status", Short: "Owner-held; a role's lifecycle. routing-alias makes the role route to its holder without binding the holder's fan-out limits or quota", Writer: WriterOwner, Shape: ShapeString()},
 	{Path: "succession-policy", Short: "Owner-held; how a role's holder hands it over: the outfit the daemon dresses a successor in as the owner, thresholds, variants, the handoff key", Writer: WriterOwner, Shape: ShapeObject()},
 	{Path: "system.credo", Short: "Credo source (string or {content,filePath,frontmatter}); providers read this as the system prompt. Fixed at birth: set by the outfit or birth patch, refused once the figaro has spoken (fork -S or succeed for another)", Writer: WriterOwner, Shape: ShapeStringOrObject()},
 	{Path: "system.provider", Short: "Provider this figaro talks to (anthropic, copilot, ...); switching mid-conversation is the owner's call", Writer: WriterOwner, Shape: ShapeString()},

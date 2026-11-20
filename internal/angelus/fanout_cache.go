@@ -674,7 +674,7 @@ func (a *Angelus) fanoutLimitsChanged(c *fanoutCache, id string) {
 	roles, _ := a.roles()
 	if target, isRole := roles.forms[id]; isRole || c.knowsRole(id) {
 		q, ok := 0, false
-		if snap, err := a.Backend.FormState(id); err == nil {
+		if snap, err := a.Backend.FormState(id); err == nil && !routingAlias(snap) {
 			q, ok, _ = form.FanoutQuota(snap)
 		}
 		c.setRole(id, target, q, ok)
@@ -717,7 +717,7 @@ func (a *Angelus) fanoutRoles() map[string]fanoutRole {
 	out := map[string]fanoutRole{}
 	for id, target := range roles.forms {
 		snap, err := a.Backend.FormState(id)
-		if err != nil {
+		if err != nil || routingAlias(snap) {
 			continue
 		}
 		if q, ok, _ := form.FanoutQuota(snap); ok {
