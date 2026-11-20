@@ -214,3 +214,15 @@ func TestRerouteTakesTheRouteFromTheOutfitsAndNothingElse(t *testing.T) {
 	require.ErrorContains(t, err, "names no system.provider")
 	r.requireRoute(id, "edited-model")
 }
+
+// review-lane-usability-1 #5: a role that pins a provider and no model does
+// not land its holder on the outfit's model, which belongs to another
+// provider.
+func TestARerouteThatPinsAProviderAloneDropsTheOutfitsModel(t *testing.T) {
+	r := newRouteRig(t)
+	id := r.born("mock")
+	_, err := r.acli.Reroute(r.ctx, rpc.RerouteRequest{FigaroID: id, Outfits: []string{"mock"}, Pins: rawPatch(map[string]string{"system.provider": `"anthropic"`})})
+	require.NoError(t, err)
+	require.Equal(t, "anthropic", r.key(id, "system.provider"))
+	require.Empty(t, r.key(id, "system.model"), "the holder kept a model of another provider")
+}
