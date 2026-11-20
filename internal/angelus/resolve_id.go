@@ -52,7 +52,7 @@ func (h *handlers) resolvingIDs(method string, next jkrpc.HandlerFunc) jkrpc.Han
 
 func (h *handlers) refuseIDsFromWhoNamesNoFigaro(ctx context.Context, method string, params json.RawMessage) error {
 	p := h.angelus.Policies
-	if verb, _ := rpc.VerbOf(method); p == nil || verb == rpc.VerbNone || forwarded(ctx) || !namesAnID(params) {
+	if verb, _ := authz.VerbOf(method); p == nil || verb == rpc.VerbNone || forwarded(ctx) || !namesAnID(params) {
 		return nil
 	}
 	sub, err := authn.SubjectOf(ctx)
@@ -155,7 +155,7 @@ func (h *handlers) mayLearnFate(ctx context.Context, method, id string) bool {
 	if h.allowed(ctx, rpc.VerbRead, authz.Aria(id)) == nil {
 		return true
 	}
-	verbs, _ := rpc.VerbsOf(method)
+	verbs, _ := authz.VerbsOf(method)
 	for _, verb := range verbs {
 		if verb != rpc.VerbNone && verb != rpc.VerbRead && h.allowed(ctx, verb, authz.Aria(id)) == nil {
 			return true

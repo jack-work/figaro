@@ -106,104 +106,65 @@ func Guard(handlers map[string]jkrpc.HandlerFunc, authenticator authn.Authentica
 	return out
 }
 
-func checkedByHandler(method string) bool {
-	switch method {
-	case rpc.MethodImportStatus, rpc.MethodNodeLearn, rpc.MethodTroupeEntries, rpc.MethodTroupeSign, rpc.MethodTroupeIdentity, rpc.MethodTroupeLeave, rpc.MethodTroupePolicySet,
-		rpc.MethodTroupeAPIKeyMint, rpc.MethodTroupeAPIKeyRevoke, rpc.MethodTroupeAPIKeyList,
-		rpc.MethodGCPlan, rpc.MethodGCApply, rpc.MethodGCUndo:
-		return true
-	}
-	return false
-}
+func Enforce(p *Policies) Policy { return PolicyFunc(p.Call) }
 
-func filtersPerRow(r Request) bool {
-	switch r.Method {
-	case rpc.MethodList, rpc.MethodNodeResolve:
-		return true
-	case rpc.MethodForm, rpc.MethodFollow, rpc.MethodUnfollow, rpc.MethodAttach:
-		return r.Aria == rpc.AriasFormID || r.Aria == rpc.GlobalAriasFormID || r.Aria == rpc.TopologyFormID || r.Aria == rpc.TroupeFormID || r.Aria == rpc.RecentFormID
-	case rpc.MethodSet:
-		return r.Aria == rpc.TopologyFormID
+func (p *Policies) Call(r Request) Decision {
+	action, ok := actions[r.Method]
+	verb := action.Verb
+	if !ok {
+		return Deny("%s has no verb, so no policy can allow it", r.Method)
 	}
-	return false
-}
-
-func Enforce(p *Policies) Policy {
-	return PolicyFunc(func(r Request) Decision {
-		verb, ok := rpc.VerbOf(r.Method)
-		if !ok {
-			return Deny("%s has no verb, so no policy can allow it", r.Method)
-		}
-		figaro, dropped := r.Identity.FigaroID, false
-		if (r.Door == authn.DoorBox || r.Door == authn.DoorHost) && !p.pinnedToBox(r.Subject, figaro) {
-			if box, _ := authn.BoxOf(r.Subject.Principal); r.Door == authn.DoorBox && verb != rpc.VerbNone && p.claimRequiredIn(box) {
-				if figaro == "" {
-					return Deny("%s: box %s's door takes only calls that name their figaro (sandbox.boxes.%s.figaro_claim = \"required\")", r.Method, box, box)
-				}
-				return Deny("%s: figaro %s does not run in box %s, whose door takes only calls that name one that does (sandbox.boxes.%s.figaro_claim = \"required\")", r.Method, figaro, box, box)
+	figaro, dropped := r.Identity.FigaroID, false
+	if (r.Door == authn.DoorBox || r.Door == authn.DoorHost) && !p.pinnedToBox(r.Subject, figaro) {
+		if box, _ := authn.BoxOf(r.Subject.Principal); r.Door == authn.DoorBox && verb != rpc.VerbNone && p.claimRequiredIn(box) {
+			if figaro == "" {
+				return Deny("%s: box %s's door takes only calls that name their figaro (sandbox.boxes.%s.figaro_claim = \"required\")", r.Method, box, box)
 			}
-			figaro, dropped = "", figaro != ""
+			return Deny("%s: figaro %s does not run in box %s, whose door takes only calls that name one that does (sandbox.boxes.%s.figaro_claim = \"required\")", r.Method, figaro, box, box)
 		}
-		if figaro != "" && p.dropsClaim(r.Door, figaro, r.Method) {
-			figaro, dropped = "", true
+		figaro, dropped = "", figaro != ""
+	}
+	if figaro != "" && p.dropsClaim(r.Door, figaro, r.Method) {
+		figaro, dropped = "", true
+	}
+	decided := func(d Decision) Decision {
+		d.DropClaim = dropped
+		return d
+	}
+	if action.Handler && !p.pool.Load() {
+		return decided(Allow())
+	}
+	if verb == rpc.VerbNone && r.Door.Trusted() {
+		return Allow()
+	}
+	if verb == rpc.VerbNone || (action.filtersRows(r.Aria) && !p.pool.Load()) {
+		if !p.HoldsRole(r.Subject) {
+			return Deny("%s: %s holds no role here", r.Method, r.Subject.Principal)
 		}
-		decided := func(d Decision) Decision {
-			d.DropClaim = dropped
-			return d
-		}
-		if checkedByHandler(r.Method) && !p.pool.Load() {
-			return decided(Allow())
-		}
-		if verb == rpc.VerbNone && r.Door.Trusted() {
-			return Allow()
-		}
-		if verb == rpc.VerbNone || (filtersPerRow(r) && !p.pool.Load()) {
-			if !p.HoldsRole(r.Subject) {
-				return Deny("%s: %s holds no role here", r.Method, r.Subject.Principal)
-			}
-			if r.Method == rpc.MethodList && !p.NamesFigaros(r.Subject, rpc.VerbRead) {
-				return Deny("%s: %s holds no grant that reads a figaro", r.Method, r.Subject.Principal)
-			}
-			return decided(Allow())
-		}
-		res := Daemon
-		if r.Aria != "" {
-			res = Aria(r.Aria)
-		}
-		if verb == rpc.VerbLease || verb == rpc.VerbSay {
-			if r.Door == authn.DoorNode {
-				return Deny("%s: %s is asked of the daemon that holds the pool, never through a node door", r.Method, verb)
-			}
-		}
-		if verb == rpc.VerbLease {
-			pool, err := poolNamed(r.Params)
-			if err != nil {
-				return Deny("%s: %v", r.Method, err)
-			}
-			res = Pool(pool)
-		}
-		if verb == rpc.VerbSay {
-			box, _ := authn.BoxOf(r.Subject.Principal)
-			res = Lease(box)
-		}
-		on := []Resource{res}
-		if r.Method == rpc.MethodDecide {
-			var err error
-			if on, err = decideResources(r.Aria, r.Params); err != nil {
-				return Deny("%s: %v", r.Method, err)
-			}
-		}
-		view := p.Figaro(figaro)
-		for _, res := range on {
-			if d := allowedOn(view, r, figaro, verb, res); !d.Allow {
-				return d
-			}
-		}
-		if r.Method == rpc.MethodDecide && r.Aria != "" && !view.Allow(r.Subject, rpc.VerbRead, Aria(r.Aria)).Allowed {
-			return Decision{Hidden: true}
+		if r.Method == rpc.MethodList && !p.NamesFigaros(r.Subject, rpc.VerbRead) {
+			return Deny("%s: %s holds no grant that reads a figaro", r.Method, r.Subject.Principal)
 		}
 		return decided(Allow())
-	})
+	}
+	if verb == rpc.VerbLease || verb == rpc.VerbSay {
+		if r.Door == authn.DoorNode {
+			return Deny("%s: %s is asked of the daemon that holds the pool, never through a node door", r.Method, verb)
+		}
+	}
+	on, err := action.on(r)
+	if err != nil {
+		return Deny("%s: %v", r.Method, err)
+	}
+	view := p.Figaro(figaro)
+	for _, res := range on {
+		if d := allowedOn(view, r, figaro, verb, res); !d.Allow {
+			return d
+		}
+	}
+	if r.Method == rpc.MethodDecide && r.Aria != "" && !view.Allow(r.Subject, rpc.VerbRead, Aria(r.Aria)).Allowed {
+		return Decision{Hidden: true}
+	}
+	return decided(Allow())
 }
 
 func allowedOn(view FigaroView, r Request, figaro string, verb rpc.Verb, res Resource) Decision {
@@ -300,7 +261,7 @@ func (p *Policies) pinnedToBox(s jkauthz.Subject, figaro string) bool {
 }
 
 func allowedByAnother(view FigaroView, r Request, refused rpc.Verb, res Resource) bool {
-	verbs, _ := rpc.VerbsOf(r.Method)
+	verbs, _ := VerbsOf(r.Method)
 	for _, v := range verbs {
 		if v != refused && view.Allow(r.Subject, v, res).Allowed {
 			return true

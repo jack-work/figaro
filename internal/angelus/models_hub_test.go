@@ -133,7 +133,7 @@ func TestModelsRefreshAnswersAfterTheListingLands(t *testing.T) {
 }
 
 func TestModelsRefreshIsAnAdminVerb(t *testing.T) {
-	verb, ok := rpc.VerbOf(rpc.MethodModelsRefresh)
+	verb, ok := authz.VerbOf(rpc.MethodModelsRefresh)
 	require.True(t, ok)
 	require.Equal(t, rpc.VerbAdmin, verb, "a refresh spends the daemon's provider credentials")
 }

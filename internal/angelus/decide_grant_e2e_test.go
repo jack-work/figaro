@@ -14,6 +14,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/authn"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -172,7 +173,7 @@ func TestDecideOnOneOutfitIsRefusedOnEveryOtherRoute(t *testing.T) {
 	}
 	rows := map[string]bool{rpc.MethodList: true, rpc.MethodNodeResolve: true, rpc.MethodTroupeAPIKeyList: true}
 	for _, m := range r.served {
-		if _, ok := rpc.VerbOf(m); !ok {
+		if _, ok := authz.VerbOf(m); !ok {
 			t.Errorf("%s is served with no verb", m)
 		}
 		if m == rpc.MethodDecide {

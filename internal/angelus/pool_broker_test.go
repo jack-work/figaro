@@ -79,8 +79,8 @@ func TestHelloTellsBrokerNothingAboutThePool(t *testing.T) {
 func TestAPoolDaemonsHandlersRefuseBrokerEverythingButHelloAndItsPool(t *testing.T) {
 	r, secrets := brokerOnAPoolWithALiveLease(t)
 	leased := secrets["the leased figaro"]
-	for _, m := range rpc.GuardedMethods() {
-		verb, _ := rpc.VerbOf(m)
+	for _, m := range authz.DeclaredMethods() {
+		verb, _ := authz.VerbOf(m)
 		if verb == rpc.VerbNone || verb == rpc.VerbLease || r.h[m] == nil {
 			continue
 		}

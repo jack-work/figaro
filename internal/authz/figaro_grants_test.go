@@ -211,11 +211,11 @@ func TestAStarVerbCoversOnlyFigarosVerbs(t *testing.T) {
 func TestCreateGrantsRoleMintingNotFigaroCreate(t *testing.T) {
 	m := selectors{}
 	createOnly := jkauthz.Grants{{Verb: "create", Object: "*"}}
-	mintVerb, ok := rpc.VerbOf(rpc.MethodCreate)
+	mintVerb, ok := VerbOf(rpc.MethodCreate)
 	if !ok || mintVerb != rpc.VerbMint {
 		t.Fatalf("figaro.create's verb = %v, want %v", mintVerb, rpc.VerbMint)
 	}
-	formCreateVerb, ok := rpc.VerbOf(rpc.MethodFormCreate)
+	formCreateVerb, ok := VerbOf(rpc.MethodFormCreate)
 	if !ok || formCreateVerb != rpc.VerbCreate {
 		t.Fatalf("form.create's verb = %v, want %v", formCreateVerb, rpc.VerbCreate)
 	}

@@ -33,7 +33,7 @@ func guardedDaemon(t *testing.T, pool bool) map[string]jkrpc.HandlerFunc {
 	}
 	ok := func(context.Context, json.RawMessage) (any, error) { return "ok", nil }
 	handlers := map[string]jkrpc.HandlerFunc{}
-	for _, m := range rpc.GuardedMethods() {
+	for _, m := range DeclaredMethods() {
 		handlers[m] = ok
 	}
 	return Guard(handlers, authn.AriaHeader{}, Enforce(p))
@@ -92,8 +92,8 @@ func TestOnAPoolDaemonBrokerIsServedHelloAndItsOwnPoolsLeaseMethods(t *testing.T
 	h := guardedDaemon(t, true)
 	broker := throughTheWebDoor(brokerClient)
 	var served []string
-	for _, m := range rpc.GuardedMethods() {
-		verb, _ := rpc.VerbOf(m)
+	for _, m := range DeclaredMethods() {
+		verb, _ := VerbOf(m)
 		if verb == rpc.VerbLease {
 			if _, err := h[m](broker, json.RawMessage(`{"pool":"chat-groups"}`)); err != nil {
 				t.Errorf("%s on broker's own pool: %v", m, err)
@@ -144,8 +144,8 @@ var leftToTheirHandlersElsewhere = []string{
 // the test until someone shows what a pool daemon does with it.
 func TestAPoolDaemonsGuardDecidesEachMethodOtherDaemonsLeaveToItsHandler(t *testing.T) {
 	var left []string
-	for _, m := range rpc.GuardedMethods() {
-		if checkedByHandler(m) {
+	for _, m := range DeclaredMethods() {
+		if a, _ := ActionOf(m); a.Handler {
 			left = append(left, m)
 		}
 	}

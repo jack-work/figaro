@@ -174,7 +174,7 @@ func guardedAsProvisioner(t *testing.T, p *Policies) (map[string]jkrpc.HandlerFu
 	t.Helper()
 	ok := func(context.Context, json.RawMessage) (any, error) { return "ok", nil }
 	handlers := map[string]jkrpc.HandlerFunc{}
-	for _, m := range rpc.GuardedMethods() {
+	for _, m := range DeclaredMethods() {
 		handlers[m] = ok
 	}
 	p.SetPoolDaemon(true)
@@ -216,8 +216,8 @@ func TestTheGuardRefusesTheProvisionerEveryMethodOutsideItsLease(t *testing.T) {
 	h, serving := guardedAsProvisioner(t, p)
 	ctx := serving(leaseA)
 	var unverbed []string
-	for _, m := range rpc.GuardedMethods() {
-		verb, _ := rpc.VerbOf(m)
+	for _, m := range DeclaredMethods() {
+		verb, _ := VerbOf(m)
 		if verb == rpc.VerbNone {
 			unverbed = append(unverbed, m)
 			continue
