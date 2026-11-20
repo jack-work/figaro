@@ -1,7 +1,9 @@
 package angelus_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/aria"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/authz"
@@ -36,7 +39,7 @@ role = "guest"
 principals = ["user:ana@issuer.test.figaro"]
 
 [roles.gateway]
-permissions = ["read:*", "listen:*", "send:*", "fork:*", "use:sandbox:local"]
+permissions = ["read:*", "listen:*", "send:*", "fork:*", "set:*", "use:sandbox:local"]
 
 [[bind]]
 role = "gateway"
@@ -45,6 +48,7 @@ principals = ["service:figchat-gateway@issuer.test.figaro"]
 
 type onBehalfRig struct {
 	path   string
+	dir    string
 	aria   string
 	mint   func(client string) string
 	daemon *angelus.Angelus
@@ -87,7 +91,7 @@ users = ["user:gluck@issuer.test.figaro"]
 	ln, err := angelus.ListenUnix(path, 0o660)
 	require.NoError(t, err)
 	go a.ServeWeb(ctx, ln, angelus.Web{Admit: authz.Bearers{Issuers: issuers, Delegations: delegations}.AdmitRequest})
-	return onBehalfRig{path: path, aria: created.FigaroID, daemon: a, mint: func(client string) string { return is.Mint(client, time.Hour) }}
+	return onBehalfRig{path: path, dir: dir, aria: created.FigaroID, daemon: a, mint: func(client string) string { return is.Mint(client, time.Hour) }}
 }
 
 func (r onBehalfRig) as(t *testing.T, client, user string) (*edgeClient, *http.Response, error) {
@@ -146,12 +150,13 @@ func TestADelegateIsRefusedWhatTheUserMayDo(t *testing.T) {
 		method string
 		params map[string]any
 	}{
-		"kill":                 {rpc.MethodKill, onAria(r.aria, nil)},
-		"set":                  {rpc.MethodSet, onAria(r.aria, map[string]any{"patch": map[string]any{}})},
-		"reroute":              {rpc.MethodReroute, onAria(r.aria, nil)},
-		"a system status call": {rpc.MethodStatus, nil},
-		"gc":                   {rpc.MethodGC, nil},
-		"create":               {rpc.MethodCreate, nil},
+		"kill":                          {rpc.MethodKill, onAria(r.aria, nil)},
+		"a set that writes system.ttl":  {rpc.MethodSet, onAria(r.aria, map[string]any{"patch": ttlPatch()})},
+		"a fork that writes system.ttl": {rpc.MethodFork, onAria(r.aria, map[string]any{"patch": ttlPatch()})},
+		"reroute":                       {rpc.MethodReroute, onAria(r.aria, nil)},
+		"a system status call":          {rpc.MethodStatus, nil},
+		"gc":                            {rpc.MethodGC, nil},
+		"create":                        {rpc.MethodCreate, nil},
 		"a send that sets the model": {rpc.MethodQua, onAria(r.aria, map[string]any{
 			"text": "x", "form": map[string]any{"context": map[string]any{"mantra": "x"}, "outfits": []string{"mock"}}})},
 	} {
@@ -190,4 +195,79 @@ func TestARefusedDelegationIsAClearErrorNotTheServicePrincipal(t *testing.T) {
 	_, resp, err := forge(t, r.path, h)
 	require.Error(t, err)
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+}
+
+func plainPatch(t *testing.T, kv map[string]string) form.Patch {
+	t.Helper()
+	set := map[string]json.RawMessage{}
+	for k, v := range kv {
+		b, err := json.Marshal(v)
+		require.NoError(t, err)
+		set[k] = b
+	}
+	return form.FromMap(set).AsPatch()
+}
+
+func ttlPatch() form.Patch {
+	return form.FromMap(map[string]json.RawMessage{"system.ttl": json.RawMessage(`"1h"`)}).AsPatch()
+}
+
+func storeHolds(t *testing.T, dir string, needles ...string) bool {
+	t.Helper()
+	found := false
+	require.NoError(t, filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		raw, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return nil
+		}
+		all := true
+		for _, n := range needles {
+			all = all && bytes.Contains(raw, []byte(n))
+		}
+		found = found || all
+		return nil
+	}))
+	return found
+}
+
+func TestADelegatedSetLandsInTheFormLogAsTheUser(t *testing.T) {
+	r := onBehalfDoor(t)
+	c, _, err := r.as(t, "figchat-gateway", "gluck")
+	require.NoError(t, err)
+
+	reply := c.call(rpc.MethodSet, onAria(r.aria, map[string]any{"patch": plainPatch(t, map[string]string{"mantra": "set through the gateway"}), rpc.CallerKey: "deadbeef", "x-caller": map[string]any{"label": "root"}}))
+	require.Nil(t, reply.Error)
+	var set rpc.SetResponse
+	require.NoError(t, json.Unmarshal(reply.Result, &set))
+	require.Equal(t, rpc.OutcomeApplied, set.Outcome)
+
+	reply = c.call(rpc.MethodForm, onAria(r.aria, nil))
+	require.Nil(t, reply.Error)
+	var got rpc.FormResponse
+	require.NoError(t, json.Unmarshal(reply.Result, &got))
+	require.Equal(t, "set through the gateway", *got.Snapshot.Lookup("mantra"))
+
+	require.True(t, storeHolds(t, r.dir, "set through the gateway", `"principal":"user:gluck@issuer.test.figaro"`), "the form log names the user as the writer")
+	require.False(t, storeHolds(t, r.dir, "set through the gateway", "figchat-gateway"), "the form log names the user, not the service")
+
+	reply = c.call(rpc.MethodSet, onAria(r.aria, map[string]any{"patch": form.Patch{Object: &form.ObjectPatch{Delete: map[string]form.Value{"mantra": form.NewValue(json.RawMessage(`"set through the gateway"`))}}}}))
+	require.Nil(t, reply.Error)
+	reply = c.call(rpc.MethodForm, onAria(r.aria, nil))
+	require.NoError(t, json.Unmarshal(reply.Result, &got))
+	require.Nil(t, got.Snapshot.Lookup("mantra"), "an unset lands too")
+}
+
+func TestADelegatedForkCarriesATitleAndRefusesSystemKeys(t *testing.T) {
+	r := onBehalfDoor(t)
+	c, _, err := r.as(t, "figchat-gateway", "gluck")
+	require.NoError(t, err)
+
+	reply := c.call(rpc.MethodFork, onAria(r.aria, map[string]any{"patch": plainPatch(t, map[string]string{"title": "a side road"})}))
+	require.Nil(t, reply.Error)
+	reply = c.call(rpc.MethodFork, onAria(r.aria, map[string]any{"patch": ttlPatch()}))
+	require.NotNil(t, reply.Error)
+	require.Contains(t, reply.Error.Message, "system.ttl is daemon/owner-held")
 }

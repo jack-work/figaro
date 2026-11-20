@@ -318,12 +318,17 @@ func TestADelegatedSendAndForkCarryNoWrites(t *testing.T) {
 
 func delegatedWriter(t *testing.T) (map[string]jkrpc.HandlerFunc, context.Context, *int) {
 	t.Helper()
+	return delegatedWriterUnder(t, delegatePolicy(t))
+}
+
+func delegatedWriterUnder(t *testing.T, p *Policies) (map[string]jkrpc.HandlerFunc, context.Context, *int) {
+	t.Helper()
 	calls := 0
 	call := func(context.Context, json.RawMessage) (any, error) {
 		calls++
 		return "ok", nil
 	}
-	guarded := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodSet: call, rpc.MethodFork: call, rpc.MethodKill: call, rpc.MethodFormCreate: call}, AriaHeader{}, Enforce(delegatePolicy(t)))
+	guarded := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodSet: call, rpc.MethodFork: call, rpc.MethodKill: call, rpc.MethodFormCreate: call}, AriaHeader{}, Enforce(p))
 	ctx, err := delegationsFor(t, gluckText).Apply(gatewaySession(t), "gluck")
 	require.NoError(t, err)
 	return guarded, WithDoor(ctx, DoorWeb), &calls
@@ -430,10 +435,42 @@ func TestADelegatedForkMayCarryAPatchOfPlainKeys(t *testing.T) {
 }
 
 func TestADelegatedCallerStillMayNotKillOrCreateOrDelete(t *testing.T) {
-	guarded, ctx, calls := delegatedWriter(t)
+	everything := loaded(t, `
+[roles.all]
+permissions = ["*:*"]
+
+[[bind]]
+role = "all"
+principals = ["`+gluckText+`", "`+gatewayText+`"]
+`)
+	guarded, ctx, calls := delegatedWriterUnder(t, everything)
 	for _, m := range []string{rpc.MethodKill, rpc.MethodFormCreate} {
 		_, err := guarded[m](ctx, json.RawMessage(`{"`+rpc.AriaKey+`":"aaaa0002"}`))
 		require.ErrorContains(t, err, "acts for "+gluckText, m)
 	}
 	require.Zero(t, *calls)
+}
+
+func TestADelegatedSetStillNeedsTheUsersOwnSetGrant(t *testing.T) {
+	p := loaded(t, `
+[roles.reader]
+permissions = ["read:*", "send:*"]
+
+[[bind]]
+role = "reader"
+principals = ["`+gluckText+`"]
+
+[roles.gateway]
+permissions = ["read:*", "send:*", "set:*"]
+
+[[bind]]
+role = "gateway"
+principals = ["`+gatewayText+`"]
+`)
+	via, err := delegationsFor(t, gluckText).Apply(gatewaySession(t), "gluck")
+	require.NoError(t, err)
+	sub, err := SubjectOf(via)
+	require.NoError(t, err)
+	require.True(t, p.Allow(sub, rpc.VerbSend, Aria("aaaa0002")).Allowed)
+	require.False(t, p.Allow(sub, rpc.VerbSet, Aria("aaaa0002")).Allowed, "the delegation layer no longer refuses set, the user's policy does")
 }
