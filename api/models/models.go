@@ -59,8 +59,30 @@ func (a *AutoRoute) Capacity() int {
 	return minimum
 }
 
+type PlanWindow struct {
+	Window      string    `json:"window"`
+	UsedPercent *float64  `json:"used_percent,omitempty"`
+	ResetAt     time.Time `json:"reset_at,omitzero"`
+	Status      string    `json:"status,omitempty"`
+	Source      string    `json:"source,omitempty"`
+	FetchedAt   time.Time `json:"fetched_at,omitzero"`
+	Stale       bool      `json:"stale,omitempty"`
+}
+
+const (
+	PlanAllowed        = "allowed"
+	PlanAllowedWarning = "allowed_warning"
+	PlanRejected       = "rejected"
+)
+
+type PlanUsage struct {
+	Plan    string       `json:"plan,omitempty"`
+	Windows []PlanWindow `json:"windows,omitempty"`
+}
+
 type Entry struct {
 	Auto       *AutoRoute        `json:"rou2_auto,omitempty"`
+	PlanUsage  *PlanUsage        `json:"plan_usage,omitempty"`
 	Name       string            `json:"name,omitempty"`
 	Context    Context           `json:"context,omitzero"`
 	MaxOutput  int               `json:"max_output,omitempty"`
@@ -161,6 +183,21 @@ func Lookup(catalog form.Snapshot, provider, model string) (Entry, bool) {
 		return Entry{}, false
 	}
 	return e, true
+}
+
+func PlanUsageOf(catalog form.Snapshot, provider, model string) *PlanUsage {
+	if provider == "" || model == "" || !Current(catalog, provider) {
+		return nil
+	}
+	raw, ok := catalog.Get(provider + ".models." + model + ".plan_usage")
+	if !ok {
+		return nil
+	}
+	var u PlanUsage
+	if json.Unmarshal(raw, &u) != nil || len(u.Windows) == 0 {
+		return nil
+	}
+	return &u
 }
 
 func ProviderStatus(catalog form.Snapshot, provider string) (Status, bool) {

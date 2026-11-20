@@ -324,6 +324,12 @@ func (r *Reader) entry(id string, item any) models.Entry {
 		e.Context = models.Context{Default: auto.Capacity()}
 		e.Mark("context", models.SourceAPI)
 	}
+	if raw := at(item, []string{"plan_usage"}); raw != nil {
+		var usage models.PlanUsage
+		if data, err := json.Marshal(raw); err == nil && json.Unmarshal(data, &usage) == nil && len(usage.Windows) > 0 {
+			e.PlanUsage = &usage
+		}
+	}
 	return e
 }
 
