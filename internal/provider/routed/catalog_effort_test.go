@@ -193,3 +193,43 @@ model_template = "{{ .Model }}-{{ .Effort }}"
 	sendModel(t, p, "gemini-4-neon", `"xhigh"`)
 	assert.Equal(t, []string{"gemini-3.8-flash-tiered", "gemini-4-neon-xhigh"}, f.models())
 }
+
+func TestADeadCatalogDoesNotStallEverySend(t *testing.T) {
+	var (
+		mu      sync.Mutex
+		fetches int
+		sent    []string
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1internal:fetchAvailableModels":
+			mu.Lock()
+			fetches++
+			mu.Unlock()
+			http.Error(w, "down", http.StatusInternalServerError)
+		case "/v1internal:streamGenerateContent":
+			var req gemini.CodeAssistRequest
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &req)
+			mu.Lock()
+			sent = append(sent, req.Model)
+			mu.Unlock()
+			w.Header().Set("Content-Type", "text/event-stream")
+			io.WriteString(w, "data: {\"response\":{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"ack\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":3,\"candidatesTokenCount\":1,\"totalTokenCount\":4}}}\n\n")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	loaded := declaredDir(t, map[string]string{"gca-dead": "api = \"code-assist\"\nbase_url = \"" + srv.URL + "\"\n\n[code_assist]\nproject = \"p\"\n"})
+	require.Contains(t, RegisterDeclared(loaded), "gca-dead")
+	p, err := provider.Lookup("gca-dead").Build(provider.BuildContext{Loaded: loaded, Resolver: staticToken("ya29.tok")})
+	require.NoError(t, err)
+	for range 3 {
+		sendModel(t, p, "gemini-4-neon-high", "")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 1, fetches, "a failed listing is not retried on every send")
+	assert.Equal(t, []string{"gemini-4-neon-high", "gemini-4-neon-high", "gemini-4-neon-high"}, sent)
+}

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	apimodels "github.com/jack-work/figaro/api/models"
@@ -138,6 +139,7 @@ func (d *DeclaredProvider) KeepsCacheOnChange(key string, snap form.Snapshot) bo
 func (d *DeclaredProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	listed, err := d.Provider.Models(ctx)
 	if err != nil {
+		d.shared.failed(time.Now())
 		return listed, err
 	}
 	out := make([]provider.ModelInfo, 0, len(listed))
@@ -197,7 +199,7 @@ func (d *DeclaredProvider) Send(ctx context.Context, in provider.SendInput, bus 
 		model = d.model
 		d.mu.RUnlock()
 	}
-	if !d.spec.CatalogOff && (!d.shared.populated() || (d.outTmpl != nil && d.cat.empty())) &&
+	if !d.spec.CatalogOff && (((d.mapRe != nil || d.listsEffortTiers()) && d.shared.due(time.Now())) || (d.outTmpl != nil && d.cat.empty())) &&
 		(d.spec.Catalog != "" || d.listsEffortTiers()) {
 		cctx, cancel := context.WithTimeout(ctx, catalogTimeout)
 		_, _ = d.Models(cctx)
@@ -454,6 +456,7 @@ func mergeModelEntry(a, b apimodels.Entry) apimodels.Entry {
 type effortCache struct {
 	mu       sync.RWMutex
 	loaded   bool
+	failedAt time.Time
 	matched  map[string]bool
 	suffixed map[string]bool
 	rungs    map[string][]string
@@ -470,6 +473,18 @@ func (c *effortCache) store(matched, suffixed map[string]bool, rungs map[string]
 	c.mu.Lock()
 	c.loaded, c.matched, c.suffixed, c.rungs = true, matched, suffixed, rungs
 	c.mu.Unlock()
+}
+
+func (c *effortCache) failed(at time.Time) {
+	c.mu.Lock()
+	c.failedAt = at
+	c.mu.Unlock()
+}
+
+func (c *effortCache) due(now time.Time) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return !c.loaded && now.Sub(c.failedAt) >= catalogRetry
 }
 
 func (c *effortCache) populated() bool {
