@@ -518,9 +518,6 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 		}
 		line, births = forkOf(req.Parent), births[:1]
 	}
-	if err := h.refuseCallerKeys(ctx, line, born, req.Patch); err != nil {
-		return nil, err
-	}
 	if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
 		return nil, err
 	}
@@ -529,6 +526,13 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	}
 	patch, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
+		return nil, err
+	}
+	base, err := h.listedOutfitKeys(ctx, line, born, req.Outfits)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.refuseCallerKeys(ctx, line, base, &patch); err != nil {
 		return nil, err
 	}
 	if targets := roleTargetsOf(patch); len(targets) > 0 {

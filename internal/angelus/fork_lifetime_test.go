@@ -177,3 +177,37 @@ func TestAnOutfitOnASetIsTheCallersLifetimeWrite(t *testing.T) {
 		t.Errorf("the guest was refused an outfit's lifetime on its own root birth: %v", err)
 	}
 }
+
+// form.create judged its patch before it folded in the outfits it names, so
+// an outfit lengthened the lifetime a form copy inherits.
+func TestAFormCopysOutfitIsHeldToTheLifetimeItInherits(t *testing.T) {
+	r := newRigWith(t, lifetimeLentPolicy)
+	guest := as("user", "guest")
+	raw, _ := json.Marshal(rpc.FormCreateRequest{Patch: heldPatch(t, map[string]any{"name": "x", store.SystemTTLKey: "1h"})})
+	out, err := r.h[rpc.MethodFormCreate](asOwner(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := out.(rpc.FormCreateResponse).FormID
+	create := func(parent string, outfits ...string) (string, error) {
+		raw, _ := json.Marshal(rpc.FormCreateRequest{Parent: parent, Outfits: outfits, Patch: heldPatch(t, map[string]any{"mantra": "m"})})
+		out, err := r.h[rpc.MethodFormCreate](guest, raw)
+		if err != nil {
+			return "", err
+		}
+		return out.(rpc.FormCreateResponse).FormID, nil
+	}
+	if _, err := create(parent, "long-lived"); err == nil || !strings.Contains(err.Error(), "never lengthens or drops") {
+		t.Errorf("a form copy whose outfit lengthens the ttl: %v", err)
+	}
+	if _, err := create(parent, "short-lived"); err != nil {
+		t.Errorf("a form copy whose outfit shortens the ttl: %v", err)
+	}
+	id, err := create("", "long-lived")
+	if err != nil {
+		t.Fatalf("a root form in an outfit with a lifetime: %v", err)
+	}
+	if v, _ := keyOn(t, r, id, store.SystemTTLKey); string(v) != `"24h"` {
+		t.Errorf("the root form's ttl = %s, want the outfit's", v)
+	}
+}

@@ -447,7 +447,10 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 
 func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before form.Snapshot, patch *form.Patch) error {
 	if patch == nil || patch.IsIdentity() {
-		return nil
+		if c := h.callerKeysOf(ctx); c.owns && !c.boxed {
+			return nil
+		}
+		return h.refuseLongerLifetimeAtFork(line, before)
 	}
 	if err := refuseReapKeys(before, *patch); err != nil {
 		return err
