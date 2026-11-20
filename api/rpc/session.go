@@ -62,6 +62,9 @@ type FigaroInfoResponse struct {
 
 	Roles []string `json:"roles,omitempty"`
 
+	// LastTurn is the newest turn id; set only when ListRequest.Turns asks.
+	LastTurn uint64 `json:"last_turn,omitempty"`
+
 	FanUsed  int  `json:"fan_used,omitempty"`
 	FanQuota *int `json:"fan_quota,omitempty"`
 }
@@ -96,6 +99,16 @@ type ListRequest struct {
 	Before  string `json:"before,omitempty"`
 
 	ExceptNodes []string `json:"except_nodes,omitempty"`
+
+	// Under keeps the descendants of one aria (not the aria itself); Holders
+	// keeps arias that hold a role; Match keeps arias whose handle or mantra
+	// contains it, ignoring case. They apply before Limit and Before, so a
+	// page is a page of the filtered list. Turns fills LastTurn on the rows
+	// returned.
+	Under   string `json:"under,omitempty"`
+	Holders bool   `json:"holders,omitempty"`
+	Match   string `json:"match,omitempty"`
+	Turns   bool   `json:"turns,omitempty"`
 }
 
 type ListResponse struct {
