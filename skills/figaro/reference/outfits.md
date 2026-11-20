@@ -250,9 +250,11 @@ daemon, and exits non-zero when the picture has red in it.
 ## Absence
 
 A name that does not exist is an error: with one exception, which exists for a
-reason: the **configured `default_outfit`** may be absent, because that absence
-is what triggers first-run setup. Everything the caller names explicitly must
-resolve. An outfit that resolves but sets no `system.provider` is reported as
+reason: the **configured `default_outfit`** may be absent until something is
+born on it. Then `figaro new` fails with one line naming the outfit, the config
+file, and the fix; no wizard starts (`figaro setup`, deprecated, is the only
+way into it, and sign-in lives in the pager as `:login`). Everything the
+caller names explicitly must resolve. An outfit that resolves but sets no `system.provider` is reported as
 that, and does not offer to reconfigure your store.
 
 `default_outfit` takes a full spec, so it may compose:

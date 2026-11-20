@@ -599,7 +599,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 
 	var figaroEP sdk.Addr
 	if opts.id == "" {
-		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) {
+		createResp, err := createOrSayWhy(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) {
 			return acli.Create(ctx, opts.outfit.names, opts.outfit.patch)
 		})
 		if err != nil {

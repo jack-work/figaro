@@ -222,7 +222,7 @@ func mustConnectAngelus(loaded *config.Loaded) *sdk.Angelus {
 // mustCreate mints an aria and does not attend it: every birth verb says so
 // with attendNew.
 func mustCreate(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, d dressing) (string, sdk.Addr) {
-	createResp, err := createWithFirstRun(ctx, loaded, d, func() (*rpc.CreateResponse, error) {
+	createResp, err := createOrSayWhy(ctx, loaded, d, func() (*rpc.CreateResponse, error) {
 		return acli.Create(ctx, d.names, d.patch)
 	})
 	if err != nil {

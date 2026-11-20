@@ -370,8 +370,7 @@ or a spooled prompt. The first message
 ends the matter: from then on the key does nothing, and `system.ttl` still
 applies on its own. Set it at birth (`-S system.reap_if_empty=true`) or in an
 outfit's `[system]`, so a figaro minted and left unused does not pile up;
-first-run setup writes it into the starter outfit, so on a fresh install that
-is every new figaro, boards included. A shell still attending it holds it until
+the deprecated `figaro setup` writes it into the starter outfit it makes. A shell still attending it holds it until
 the shell exits or attends elsewhere.
 
 What the sweep takes, it first reaps rather than deletes: the node and
