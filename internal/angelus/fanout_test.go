@@ -785,3 +785,25 @@ func TestAnUnreadableLimitRefusesTheReparent(t *testing.T) {
 		t.Fatalf("top's children after the refusal = %v, want none", got)
 	}
 }
+
+func TestARoleHeldOnlyAsARoutingAliasDoesNotCapItsHolder(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	grandparent, _ := b.CreateConversation(outfit)
+	_, holder, err := b.Fork(grandparent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetRaw, _ := json.Marshal(holder)
+	five, _ := json.Marshal(5)
+	one, _ := json.Marshal(1)
+	alias, _ := json.Marshal("routing-alias")
+	mintForm(t, hs.h, "target-aria", string(targetRaw), form.FanoutMaxChildrenKey, string(five))
+	mintForm(t, hs.h, "target-aria", string(targetRaw), form.FanoutMaxChildrenKey, string(one), "lifecycle.status", string(alias))
+	if max, ok, err := hs.h.angelus.fanoutLimit(holder); err != nil || !ok || max != 5 {
+		t.Fatalf("fanoutLimit(holder) = %d, ok=%v, err=%v, want 5: the alias role's 1 must not bind", max, ok, err)
+	}
+	mintForm(t, hs.h, "target-aria", string(targetRaw), form.FanoutMaxChildrenKey, string(one))
+	if max, _, _ := hs.h.angelus.fanoutLimit(holder); max != 1 {
+		t.Fatalf("fanoutLimit(holder) = %d, want 1: a held role that is not an alias still binds", max)
+	}
+}

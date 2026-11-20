@@ -79,7 +79,7 @@ func (a *Angelus) fanoutLimitHeld(ownOf string, holders ...string) (int, bool, e
 	for _, holder := range holders {
 		for _, roleID := range roles.holding(holder) {
 			rsnap, rerr := a.Backend.FormState(roleID)
-			if rerr != nil {
+			if rerr != nil || routingAlias(rsnap) {
 				continue
 			}
 			n, ok, nerr := form.FanoutMaxChildren(rsnap)
@@ -367,4 +367,9 @@ func (a *Angelus) isReaped(id string) bool {
 	}
 	meta, _ := a.Backend.Meta(id)
 	return meta != nil && meta.ReapedAtMS != 0
+}
+
+func routingAlias(role form.Snapshot) bool {
+	v := role.Lookup("lifecycle.status")
+	return v != nil && *v == "routing-alias"
 }
