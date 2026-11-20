@@ -102,9 +102,15 @@ func (c *Aria) Qua(ctx context.Context, text string, cb *rpc.FormInput) (int, bo
 }
 
 func (c *Aria) QuaWith(ctx context.Context, req rpc.QuaRequest) (int, bool, error) {
+	resp, err := c.QuaAnswer(ctx, req)
+	return resp.Cursor, resp.Active, err
+}
+
+// QuaAnswer is QuaWith with the whole answer: on an aria log, the entry's turn and LT.
+func (c *Aria) QuaAnswer(ctx context.Context, req rpc.QuaRequest) (rpc.QuaResponse, error) {
 	var resp rpc.QuaResponse
 	err := c.call(ctx, rpc.MethodQua, req, &resp)
-	return resp.Cursor, resp.Active, err
+	return resp, err
 }
 
 // Read pulls one aria.Page forward from a coordinate. A zero anchor is the head.

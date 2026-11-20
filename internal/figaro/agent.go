@@ -68,7 +68,7 @@ type event struct {
 	resume   bool
 	traces   []string
 	keys     []string
-	appended chan error
+	appended chan LogAppend
 }
 
 // Config is the constructor input for NewAgent.
@@ -536,6 +536,17 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 
 // SubmitPromptFrom applies form input synchronously, so the caller learns of a refusal.
 func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender string) error {
+	_, err := a.submitPrompt(ctx, req, sender)
+	return err
+}
+
+type LogAppend struct {
+	Turn uint64
+	LT   uint64
+	Err  error
+}
+
+func (a *Agent) submitPrompt(ctx context.Context, req rpc.QuaRequest, sender string) (LogAppend, error) {
 	logged := a.isLog()
 	if req.Exact && !logged {
 		req.Text = strings.TrimRight(req.Text, "\n")
@@ -543,17 +554,17 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 	if !logged {
 		text, err := a.rewriteInput(ctx, req.Text)
 		if err != nil {
-			return err
+			return LogAppend{}, err
 		}
 		req.Text = text
 	}
 	images, err := promptImages(req.Images, req.Text, a.settings.InlineImageBudget())
 	if err != nil {
-		return err
+		return LogAppend{}, err
 	}
 	if patch := a.combineFormInput(req.Form); !patch.IsIdentity() {
 		if _, err := a.backend.ApplyForm(a.id, patch); err != nil {
-			return err
+			return LogAppend{}, err
 		}
 		a.form.Apply(patch)
 	}
@@ -564,7 +575,7 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 		keys:   []string{acceptKey()},
 	}
 	if logged {
-		evt.appended = make(chan error, 1)
+		evt.appended = make(chan LogAppend, 1)
 	}
 	if req.TraceParent != "" {
 		evt.traces = []string{req.TraceParent}
@@ -573,21 +584,21 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 		evt.segments = []promptSegment{{sender: sender, principal: authz.PrincipalText(authz.PrincipalOf(ctx)), text: req.Text}}
 	}
 	if !a.inbox.Send(evt) {
-		return ErrStopping
+		return LogAppend{}, ErrStopping
 	}
 	if !a.turnActive() {
 		a.publishRuntime(rpc.RuntimeAccepted, "")
 	}
 	if !logged {
-		return nil
+		return LogAppend{}, nil
 	}
 	select {
-	case err := <-evt.appended:
-		return err
+	case got := <-evt.appended:
+		return got, got.Err
 	case <-ctx.Done():
-		return ctx.Err()
+		return LogAppend{}, ctx.Err()
 	case <-a.done:
-		return ErrStopping
+		return LogAppend{}, ErrStopping
 	}
 }
 
@@ -660,7 +671,7 @@ func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
 
 	if disposition == rpc.QueueClear {
 		for _, e := range a.inbox.DrainUserPrompts() {
-			e.ack(errDroppedBeforeAppend)
+			e.ack(LogAppend{Err: errDroppedBeforeAppend})
 			resp.Queue = append(resp.Queue, rpc.QueuedPrompt{
 				ID:     e.id,
 				Text:   e.text,

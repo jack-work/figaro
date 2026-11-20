@@ -694,8 +694,17 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	}
 	defer fcli.Close()
 
-	if _, _, qerr := quaWith(ctx, fcli, opts.outfit.request(prompt)); qerr != nil {
+	resp, qerr := quaAnswered(ctx, fcli, opts.outfit.request(prompt))
+	if qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)
+	}
+	if opts.json && resp.Turn > 0 {
+		_ = json.NewEncoder(stdout).Encode(struct {
+			Log  string `json:"log"`
+			Turn uint64 `json:"turn"`
+			LT   uint64 `json:"lt"`
+		}{Log: ariaID, Turn: resp.Turn, LT: resp.LT})
+		return
 	}
 	if opts.json {
 		enc := json.NewEncoder(stdout)
