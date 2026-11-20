@@ -1039,7 +1039,7 @@ func (t *thread) check(conn ariaConn, gen, seq uint64, waiting bool) {
 	if dormant {
 		now.state, now.inflight = rpc.RuntimeIdle, 0
 	}
-	quiet := queued == 0 && now.state == rpc.RuntimeIdle
+	quiet := queued == 0 && !now.state.Busy()
 	for s := range t.subs {
 		if s.r == nil && !s.closed && s.seq <= seq && now.turn > s.after && t.folds[s.after+1] == nil {
 			t.want[s.after+1] = true

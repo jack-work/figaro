@@ -69,11 +69,11 @@ func (v *runtimeView) state() runState {
 }
 
 func (s runState) over(turn uint64, sealed bool) bool {
-	return turn < s.turn || s.state == rpc.RuntimeIdle && (turn == s.turn || sealed)
+	return turn < s.turn || sealed && !s.state.Busy() || turn == s.turn && s.state == rpc.RuntimeIdle
 }
 
 func (s runState) settled() bool {
-	return s.state == rpc.RuntimeIdle && s.inflight == 0
+	return !s.state.Busy() && s.inflight == 0
 }
 
 func isDormant(err error) bool {
