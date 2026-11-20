@@ -536,12 +536,14 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 
 // SubmitPromptFrom applies form input synchronously, so the caller learns of a refusal.
 func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender string) error {
-	// A refused token leaves the form unpatched and the inbox untouched.
-	text, err := a.rewriteInput(ctx, req.Text)
-	if err != nil {
-		return err
+	logged := a.isLog()
+	if !logged {
+		text, err := a.rewriteInput(ctx, req.Text)
+		if err != nil {
+			return err
+		}
+		req.Text = text
 	}
-	req.Text = text
 	images, err := promptImages(req.Images, req.Text, a.settings.InlineImageBudget())
 	if err != nil {
 		return err
@@ -558,7 +560,6 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 		images: images,
 		keys:   []string{acceptKey()},
 	}
-	logged := a.isLog()
 	if logged {
 		evt.appended = make(chan error, 1)
 	}
