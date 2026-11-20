@@ -2,6 +2,7 @@ package angelus
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -105,38 +106,52 @@ func TestLoweringAQuotaUnderInFlightBirthsNeverOverdrawsTheParent(t *testing.T) 
 	}
 }
 
-// #183 L1: a seat wrote its successor's quota outside the serialization of
-// quota writes, so it raced a write already in flight on the successor.
-func TestASeatsQuotaMoveWaitsForAQuotaWriteOnTheSuccessor(t *testing.T) {
-	be, err := store.NewXwalBackend(t.TempDir(), 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { be.Close() })
-	born := func(kv map[string]json.RawMessage) string {
-		id, _, err := be.ForkWith("", 0, form.Build(form.Snapshot{}, kv, nil))
-		if err != nil {
-			t.Fatal(err)
+// #183 L1: a seat wrote its successor's quota, and a swap both figaros'
+// fanout keys, outside the serialization of quota writes, so they raced a
+// write already in flight on either figaro.
+func TestASeatsFanoutMovesWaitForAQuotaWriteOnEitherFigaro(t *testing.T) {
+	for name, move := range map[string]func(a *Angelus, pred, succ string) error{
+		"move quota": (*Angelus).moveQuota,
+		"swap keys":  (*Angelus).swapFanoutKeys,
+	} {
+		for _, onPred := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s, write on pred %t", name, onPred), func(t *testing.T) {
+				be, err := store.NewXwalBackend(t.TempDir(), 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { be.Close() })
+				born := func(kv map[string]json.RawMessage) string {
+					id, _, err := be.ForkWith("", 0, form.Build(form.Snapshot{}, kv, nil))
+					if err != nil {
+						t.Fatal(err)
+					}
+					return id
+				}
+				pred := born(map[string]json.RawMessage{form.FanoutQuotaKey: json.RawMessage(`4`)})
+				succ := born(map[string]json.RawMessage{"mantra": json.RawMessage(`"s"`)})
+				a := &Angelus{Backend: be}
+				busy := succ
+				if onPred {
+					busy = pred
+				}
+				release, err := a.fanoutCounts().takeCharge(busy, 2, true, func(err error) error { return err })
+				if err != nil {
+					t.Fatal(err)
+				}
+				moved := make(chan error, 1)
+				go func() { moved <- move(a, pred, succ) }()
+				select {
+				case err := <-moved:
+					release()
+					t.Fatalf("the seat wrote fanout keys with a quota write in flight on %s (err %v)", busy, err)
+				case <-time.After(100 * time.Millisecond):
+				}
+				release()
+				if err := <-moved; err != nil {
+					t.Fatal(err)
+				}
+			})
 		}
-		return id
-	}
-	pred := born(map[string]json.RawMessage{form.FanoutQuotaKey: json.RawMessage(`4`)})
-	succ := born(map[string]json.RawMessage{"mantra": json.RawMessage(`"s"`)})
-	a := &Angelus{Backend: be}
-	release, err := a.fanoutCounts().takeCharge(succ, 2, true, func(err error) error { return err })
-	if err != nil {
-		t.Fatal(err)
-	}
-	moved := make(chan error, 1)
-	go func() { moved <- a.moveQuota(pred, succ) }()
-	select {
-	case err := <-moved:
-		release()
-		t.Fatalf("the seat wrote the successor's quota with a quota write in flight on it (err %v)", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	release()
-	if err := <-moved; err != nil {
-		t.Fatal(err)
 	}
 }

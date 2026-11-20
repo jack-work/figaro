@@ -166,7 +166,7 @@ func (a *Angelus) moveSwappedLimit(p hierarchy.Plan) {
 }
 
 func (a *Angelus) moveQuota(pred, succ string) error {
-	defer a.fanoutCounts().holdWrites(succ)()
+	defer a.fanoutCounts().holdWrites(pred, succ)()
 	ps, err := a.Backend.FormState(pred)
 	if err != nil {
 		return err
@@ -207,6 +207,7 @@ func (a *Angelus) raiseQuotaToUse(id string) error {
 }
 
 func (a *Angelus) swapFanoutKeys(pred, succ string) error {
+	defer a.fanoutCounts().holdWrites(pred, succ)()
 	ps, err := a.Backend.FormState(pred)
 	if err != nil {
 		return err
