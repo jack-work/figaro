@@ -38,20 +38,18 @@ func TestASeededTierIdIsHiddenSoItNeverListsAsItsOwnModel(t *testing.T) {
 	assert.False(t, base.Hidden)
 }
 
-func TestAConfiguredMapModelHidesSeededTierIdsBeforeAnyListing(t *testing.T) {
-	loaded := declaredDir(t, map[string]string{"seedmap": `preset = "gateway"
-base_url = "http://127.0.0.1:1/v1"
-
-[effort]
-map_model = "^(?P<model>.+)-(?P<effort>low|medium|high)$"
-`})
-	require.Contains(t, RegisterDeclared(loaded), "seedmap")
-	built, err := provider.Lookup("seedmap").Build(provider.BuildContext{Loaded: loaded, Resolver: staticToken("t")})
+func TestACodeAssistTierIdIsHiddenEvenBeforeTheFirstListing(t *testing.T) {
+	loaded := declaredDir(t, map[string]string{"gca-cold": "api = \"code-assist\"\nbase_url = \"http://127.0.0.1:1\"\n\n[code_assist]\nproject = \"p\"\n"})
+	require.Contains(t, RegisterDeclared(loaded), "gca-cold")
+	built, err := provider.Lookup("gca-cold").Build(provider.BuildContext{Loaded: loaded, Resolver: staticToken("t")})
 	require.NoError(t, err)
-	e, ok := built.(provider.ModelSeeder).SeedModel("gemini-4-neon-high")
-	if ok {
-		assert.True(t, e.Hidden)
-	}
+	seeder := built.(provider.ModelSeeder)
+	tier, ok := seeder.SeedModel("gemini-4-neon-high")
+	require.True(t, ok)
+	assert.True(t, tier.Hidden)
+	base, ok := seeder.SeedModel("gemini-4-neon")
+	require.True(t, ok)
+	assert.False(t, base.Hidden)
 }
 
 func TestAGatewayFoldsPrefixedTiersFromProviderConfigAlone(t *testing.T) {

@@ -205,6 +205,12 @@ func (d *DeclaredProvider) SeedModel(model string) (apimodels.Entry, bool) {
 		rung = r
 	} else if _, r, folded := d.shared.member(model); folded {
 		rung = r
+	} else if !d.shared.populated() && d.listsEffortTiers() {
+		if cut := strings.LastIndex(model, "-"); cut > 0 {
+			if _, known := d.knownScore(model[cut+1:]); known {
+				rung = model[cut+1:]
+			}
+		}
 	}
 	if rung == "" {
 		return e, ok
