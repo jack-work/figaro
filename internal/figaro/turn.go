@@ -849,8 +849,12 @@ func (a *Agent) appendPromptEvents(prompts []event) error {
 var errDroppedBeforeAppend = errors.New("the send was cleared from the queue before it was appended")
 
 func (e event) ack(err error) {
-	if e.appended != nil {
-		e.appended <- err
+	if e.appended == nil {
+		return
+	}
+	select {
+	case e.appended <- err:
+	default:
 	}
 }
 
