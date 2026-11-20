@@ -107,6 +107,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodCreate:             h.createTopLevel,
 		rpc.MethodFormCreate:         h.formCreate,
 		rpc.MethodFormApply:          h.formApply,
+		rpc.MethodReroute:            h.reroute,
 		rpc.MethodFormBind:           h.formBind,
 		rpc.MethodOutfitReload:       h.outfitReload,
 		rpc.MethodFork:               h.fork,

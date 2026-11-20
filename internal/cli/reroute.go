@@ -34,16 +34,17 @@ func runReroute(loaded *config.Loaded, id, spec string) error {
 	if err != nil {
 		return fmt.Errorf("reroute: %w", err)
 	}
-	req := rpc.SetRequest{Outfits: names, Reroute: true, Patch: form.Build(form.Snapshot{}, t.pinned, nil)}
-	if err := refuseUnknownFields(req); err != nil {
-		return fmt.Errorf("reroute: %w", err)
+	req := rpc.RerouteRequest{FigaroID: t.holder, Outfits: names}
+	if len(t.pinned) > 0 {
+		pins := form.Build(form.Snapshot{}, t.pinned, nil)
+		req.Pins = &pins
 	}
 	var resp *rpc.SetResponse
 	var landed form.Snapshot
 	WithSessionFor(loaded, t.holder, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if resp, err = s.Figaro.SetWith(ctx, req); err != nil {
+		if resp, err = s.Angelus.Reroute(ctx, req); err != nil {
 			return nil
 		}
 		if f, ferr := s.Figaro.Form(ctx); ferr == nil {

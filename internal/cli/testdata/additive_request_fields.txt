@@ -181,3 +181,7 @@ TroupeSignRequest.Rejoin
 TroupeSignRequest.TTLMillis
 TroupeSignRequest.Troupe
 UnbindRequest.PID
+# figaro.reroute is its own method: a daemon without it answers method-not-found.
+RerouteRequest.FigaroID
+RerouteRequest.Outfits
+RerouteRequest.Pins
