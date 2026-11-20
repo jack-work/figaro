@@ -34,22 +34,24 @@ import (
 // store, a peercred unix door for its owner, a TLS node door, and doors
 // that admit a caller by bearer the way the web door does.
 type fedNode struct {
-	t       *testing.T
-	a       *angelus.Angelus
-	id      string
-	dir     string
-	owner   *sdk.Angelus
-	bearer  *authz.Issuers
-	keys    *authz.APIKeys
-	keysAt  atomic.Int32
-	admits  sync.Map
-	issuer  *peertest.Issuer
-	ctx     context.Context
-	stop    context.CancelFunc
-	doorLn  net.Listener
-	tlsCfg  *tls.Config
-	members *peer.Static
-	hs      *angelus.Handlers
+	t      *testing.T
+	a      *angelus.Angelus
+	id     string
+	dir    string
+	owner  *sdk.Angelus
+	bearer *authz.Issuers
+
+	delegations *authz.Delegations
+	keys        *authz.APIKeys
+	keysAt      atomic.Int32
+	admits      sync.Map
+	issuer      *peertest.Issuer
+	ctx         context.Context
+	stop        context.CancelFunc
+	doorLn      net.Listener
+	tlsCfg      *tls.Config
+	members     *peer.Static
+	hs          *angelus.Handlers
 
 	pendingPeers []func() config.Peer
 	alsoOwners   []string
@@ -77,6 +79,13 @@ permissions = ["*:owner:self"]
 [[bind]]
 role = "self"
 principals = ["user:stranger@issuer.test.figaro"]
+
+[roles.gateway]
+permissions = ["read:*", "listen:*", "send:*", "fork:*", "use:sandbox:local"]
+
+[[bind]]
+role = "gateway"
+principals = ["service:gateway@issuer.test.figaro"]
 
 [roles.decider]
 permissions = ["decide:outfit:mock"]
@@ -149,7 +158,15 @@ func (n *fedNode) start() {
 	require.NoError(t, os.WriteFile(n.dir+"/policy.toml", []byte(fmt.Sprintf(fedPolicy, pc.Self().String(), extraPrincipals(n.alsoOwners))), 0o600))
 	n.a.Policies = authz.NewPolicies(pc.Self(), angelus.StoreFacts(n.a.Backend))
 	require.NoError(t, n.a.Policies.Reload(loaded.PolicyPath()))
-	n.bearer, err = authz.NewIssuers(n.issuer.Config("probe", "intruder", "reader", "stranger", "decider"), nil, nil)
+	issuerCfg := n.issuer.Config("probe", "intruder", "reader", "stranger", "decider")
+	issuerCfg[0].Clients["gateway"] = "service"
+	issuerCfg[0].Clients["other-gateway"] = "service"
+	n.bearer, err = authz.NewIssuers(issuerCfg, nil, nil)
+	require.NoError(t, err)
+	n.delegations, err = authz.NewDelegations([]config.DelegationConfig{{
+		Principal: "service:gateway@issuer.test.figaro",
+		Users:     []string{"user:probe@issuer.test.figaro", "user:reader@issuer.test.figaro"},
+	}})
 	require.NoError(t, err)
 	n.keys, err = authz.NewAPIKeys("fed", n.id, nil, nil)
 	require.NoError(t, err)
@@ -174,7 +191,7 @@ func (n *fedNode) start() {
 	waitForAngelus(t, n.a.SocketPath)
 
 	bearers := authz.Bearers{Issuers: n.bearer, Keys: n.keys}
-	door := &peer.Door{Members: members, Verify: func(ctx context.Context, token string) (context.Context, error) {
+	door := &peer.Door{Members: members, Delegate: n.delegations.Apply, Verify: func(ctx context.Context, token string) (context.Context, error) {
 		if apikey.Is(token) {
 			n.keysAt.Add(1)
 		}
@@ -214,6 +231,24 @@ func (n *fedNode) keyDoor(wire string) transport.Endpoint {
 	require.NoError(t, err)
 	go n.a.Serve(n.ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
 		return n.keys.Admit(ctx, wire)
+	})
+	return transport.UnixEndpoint(path)
+}
+
+// delegateDoor is a unix door admitting every connection as the service
+// holding token acting for user, the way the bearer web door does.
+func (n *fedNode) delegateDoor(client, user string) transport.Endpoint {
+	t := n.t
+	path := filepath.Join(n.dir, fmt.Sprintf("delegate-%d.sock", time.Now().UnixNano()))
+	ln, err := net.Listen("unix", path)
+	require.NoError(t, err)
+	token := n.issuer.Mint(client, time.Hour)
+	go n.a.Serve(n.ctx, ln, authz.DoorLocal, func(ctx context.Context, _ net.Conn) (context.Context, error) {
+		s, err := n.bearer.Open(ctx, token)
+		if err != nil {
+			return nil, err
+		}
+		return n.delegations.Apply(authz.WithSession(ctx, s), user)
 	})
 	return transport.UnixEndpoint(path)
 }

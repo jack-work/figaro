@@ -47,11 +47,13 @@ type caller struct {
 	session *Session
 	key     *KeySession
 	bearer  string
+
+	onBehalf *delegated
 }
 
 func Authenticated(authn Authenticator, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
-		params = pinnedToTool(ctx, params)
+		params = pinnedToDelegate(ctx, pinnedToTool(ctx, params))
 		return next(withIdentity(ctx, authn.Authenticate(PrincipalOf(ctx), params)), params)
 	}
 }
@@ -177,18 +179,33 @@ func BearerOf(ctx context.Context) (string, bool) {
 
 func SubjectOf(ctx context.Context) (jkauthz.Subject, error) {
 	c, _ := ctx.Value(callerKey{}).(caller)
+	var (
+		s   jkauthz.Subject
+		err error
+	)
 	switch {
 	case c.session != nil:
-		return c.session.Subject(ctx)
+		s, err = c.session.Subject(ctx)
 	case c.key != nil:
-		return c.key.Subject()
+		s, err = c.key.Subject()
+	default:
+		s = c.subject
 	}
-	return c.subject, nil
+	if err != nil || c.onBehalf == nil {
+		return s, err
+	}
+	if !c.onBehalf.from.permits(c.onBehalf.service, c.onBehalf.user) {
+		return jkauthz.Subject{}, refuseDelegation("%s is no longer listed to act for %s", c.onBehalf.service, c.onBehalf.user)
+	}
+	return c.onBehalf.subject(), nil
 }
 
 func PrincipalOf(ctx context.Context) rpc.Principal {
 	c, _ := ctx.Value(callerKey{}).(caller)
 	p := c.subject.Principal
+	if c.onBehalf != nil {
+		p = c.onBehalf.user
+	}
 	return rpc.Principal{Kind: rpc.PrincipalKind(p.Kind), ID: p.ID, Node: p.Node}
 }
 
@@ -238,10 +255,15 @@ func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Po
 	for name, h := range handlers {
 		method, next := name, h
 		out[method] = func(ctx context.Context, params json.RawMessage) (any, error) {
-			params = pinnedToTool(ctx, params)
+			params = pinnedToDelegate(ctx, pinnedToTool(ctx, params))
 			subject, err := SubjectOf(ctx)
 			if err != nil {
 				return nil, &jkrpc.Error{Code: ErrCode, Message: err.Error()}
+			}
+			if c, _ := ctx.Value(callerKey{}).(caller); c.onBehalf != nil {
+				if err := c.onBehalf.refuses(method, params); err != nil {
+					return nil, &jkrpc.Error{Code: ErrCode, Message: err.Error()}
+				}
 			}
 			id, ok := identityOf(ctx)
 			if !ok {

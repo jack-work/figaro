@@ -121,6 +121,12 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 		slog.Error("config reload refused at a box door; the running config stays", "err", err)
 		return nil, fmt.Errorf("configure: %w", err)
 	}
+	if h.angelus.Delegations != nil {
+		if err := h.angelus.Delegations.Reload(fresh.Config.Authz.Delegation); err != nil {
+			slog.Error("config reload refused at [[authz.delegation]]; the running config stays", "err", err)
+			return nil, fmt.Errorf("configure: %w", err)
+		}
+	}
 	routed.RegisterDeclared(fresh)
 	h.configMu.Lock()
 	h.config = fresh

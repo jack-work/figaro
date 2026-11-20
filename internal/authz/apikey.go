@@ -249,8 +249,9 @@ func (s *KeySession) Subject() (jkauthz.Subject, error) {
 }
 
 type Bearers struct {
-	Issuers *Issuers
-	Keys    *APIKeys
+	Issuers     *Issuers
+	Keys        *APIKeys
+	Delegations *Delegations
 }
 
 func (b Bearers) Verify(ctx context.Context, token string) (context.Context, error) {

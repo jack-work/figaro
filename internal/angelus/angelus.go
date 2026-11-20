@@ -85,6 +85,7 @@ type Angelus struct {
 	Workers      *WorkerPools
 	Issuers      *authz.Issuers
 	APIKeys      *authz.APIKeys
+	Delegations  *authz.Delegations
 	Peercred     *authz.Peercred
 	ToolCgroups  *toolcgroup.Registry
 	Owner        jkauthz.Principal

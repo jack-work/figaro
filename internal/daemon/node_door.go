@@ -303,6 +303,9 @@ func serveNodeDoorOn(ctx context.Context, a *angelus.Angelus, door config.TLSDoo
 	verify := forwardedCallers(authz.Bearers{Issuers: a.Issuers, Keys: a.APIKeys})
 	slog.Info("node door listening", "addr", ln.Addr().String(), "peers", a.Peers.Nodes(), "troupe_version", a.Peers.Version(), "forwarded_callers", verify != nil)
 	nd := &peer.Door{Members: a.Peers, Versions: a.PeerVersions, Verify: verify}
+	if verify != nil {
+		nd.Delegate = a.Delegations.Apply
+	}
 	if m, ok := a.Peers.(*peer.Ledger); ok {
 		m.OnEvict(nd.Evict)
 		gossip(ctx, a, m, door.Advertise)

@@ -473,6 +473,13 @@ func (v Verdict) Reason() string {
 }
 
 func (p *Policies) Allow(s jkauthz.Subject, verb rpc.Verb, r Resource) Verdict {
+	if via, ok := DelegatedVia(s); ok && !delegable(verb, r) {
+		return Verdict{computed: delegateRefusal(via, s.Principal, verb, r)}
+	} else if ok {
+		if d := p.Allow(jkauthz.Subject{Principal: via}, verb, r); !d.Allowed {
+			return Verdict{computed: fmt.Sprintf("%s acts for %s, and %s itself may not %s on %s: a delegated call holds the user's grants only where the service holds them too", via, s.Principal, via, verb, r)}
+		}
+	}
 	if IsProvisioner(s.Principal) {
 		return p.allowProvisioner(s, verb, r)
 	}
