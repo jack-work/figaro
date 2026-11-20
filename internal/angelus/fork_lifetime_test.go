@@ -284,3 +284,32 @@ func TestASeatForkIsHeldToTheHoldersLifetime(t *testing.T) {
 		}
 	}
 }
+
+// An import and a cast that mints its role are root births: the caller gives
+// what it births a lifetime and renews it, as it does what it creates.
+func TestAnImportAndACastsRoleAreTheCallersRootBirths(t *testing.T) {
+	r := newRigWith(t, strings.Replace(lifetimeLentPolicy, `"fork:*",`, `"fork:*", "cast:*",`, 1))
+	guest := as("user", "guest")
+	raw, _ := json.Marshal(rpc.ImportRequest{Outfit: "mock", Form: *heldPatch(t, map[string]any{"mantra": "m", store.SystemTTLKey: "2h"})})
+	out, err := r.h[rpc.MethodImport](guest, raw)
+	if err != nil {
+		t.Fatalf("the guest was refused a lifetime on its import: %v", err)
+	}
+	imported := out.(rpc.ImportResponse).FigaroID
+	if _, err := r.h[rpc.MethodSet](guest, withAria(t, imported, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{store.SystemTTLKey: "6h"})})); err != nil {
+		t.Errorf("the guest was refused a renewal of its import: %v", err)
+	}
+
+	own, err := r.create(guest, "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cast, err := r.h[rpc.MethodCast](guest, withAria(t, own.FigaroID, rpc.CastRequest{RolePatch: heldPatch(t, map[string]any{"name": "r", store.SystemTTLKey: "2h"})}))
+	if err != nil {
+		t.Fatalf("the guest was refused a lifetime on the role its cast mints: %v", err)
+	}
+	role := cast.(rpc.CastResponse).RoleID
+	if _, err := r.h[rpc.MethodSet](guest, withAria(t, role, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{store.SystemTTLKey: "6h"})})); err != nil {
+		t.Errorf("the guest was refused a renewal of the role it minted: %v", err)
+	}
+}

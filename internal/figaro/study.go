@@ -178,7 +178,7 @@ func (a *Agent) serviceCast(op *castOp) castResult {
 		b, _ := json.Marshal(a.id)
 		cast := form.Merge(*op.rolePatch, form.Build(form.Snapshot{},
 			map[string]json.RawMessage{"target-aria": b}, nil))
-		id, _, err := a.backend.CreateForm("", cast, store.MintedBy(op.mintedBy))
+		id, _, err := a.backend.CreateForm("", cast, store.MintedBy(op.mintedBy), store.AtRoot())
 		if err != nil {
 			res.err = fmt.Errorf("cast: mint role: %w", err)
 			return res
