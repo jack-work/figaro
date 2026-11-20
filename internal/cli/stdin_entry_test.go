@@ -60,6 +60,22 @@ func TestAnOlderDaemonRefusesStdinToALogByName(t *testing.T) {
 	}
 }
 
+func TestALogEntryMustBeValidUTF8AndAtMost15MiB(t *testing.T) {
+	seeDaemon(t, rpc.CapLogExact)
+	if _, err := sendExact(true, "bad\xff\xfe"); err == nil || !strings.Contains(err.Error(), "UTF-8") {
+		t.Fatalf("invalid UTF-8 to a log = %v, want refused, never rewritten", err)
+	}
+	if _, err := sendExact(true, strings.Repeat("x", maxLogEntryBytes+1)); err == nil || !strings.Contains(err.Error(), "15 MiB") {
+		t.Fatalf("an entry over 15 MiB = %v, want refused", err)
+	}
+	if got, err := sendExact(true, strings.Repeat("x", maxLogEntryBytes)); err != nil || len(got.Text) != maxLogEntryBytes || !got.Exact {
+		t.Fatalf("an entry of exactly 15 MiB: %v", err)
+	}
+	if got, err := sendExact(false, "bad\xff\n\n"); err != nil || !got.Exact {
+		t.Fatalf("invalid UTF-8 to a figaro = %+v, %v: a figaro's prompt is the daemon's call", got, err)
+	}
+}
+
 func TestACurrentDaemonGetsStdinExactForAnyTarget(t *testing.T) {
 	seeDaemon(t, rpc.CapLogExact)
 	for _, log := range []bool{false, true} {
