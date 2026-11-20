@@ -3,6 +3,8 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/sdk"
 )
 
 func sealedTurn(id uint64, reply string) aria.TurnPart {
@@ -219,6 +222,160 @@ func TestAFailedTurnReadBackFailsWithItsReason(t *testing.T) {
 	ch := th.subscribe(context.Background(), &sub{after: 1, r: newReader(Cursor{Turn: 2})}, nil)
 	th.readBack(rt.response("idle", 2, "error: provider overloaded", 0), sealedTurn(2, "par"))
 	if got := summary(drain(t, ch)); got != `+"par" error:provider overloaded` {
+		t.Fatalf("events: %s", got)
+	}
+}
+
+type fakeConn struct {
+	mu        sync.Mutex
+	notify    sdk.NotifyHandler
+	turns     []aria.TurnPart
+	runtime   *rpc.FormResponse
+	formFails int
+	readGate  chan struct{}
+	reading   chan struct{}
+	dialGate  chan struct{}
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func newFakeConn(rt *rpc.FormResponse, turns ...aria.TurnPart) *fakeConn {
+	return &fakeConn{turns: turns, runtime: rt, done: make(chan struct{})}
+}
+
+func (f *fakeConn) Qua(context.Context, string, *rpc.FormInput) (int, bool, error) {
+	return 0, false, errors.New("fake: no prompts")
+}
+
+func (f *fakeConn) Read(ctx context.Context, at aria.Anchor, _ int) (aria.Page, error) {
+	if f.readGate != nil {
+		if f.reading != nil {
+			close(f.reading)
+			f.reading = nil
+		}
+		select {
+		case <-f.readGate:
+		case <-f.done:
+			return aria.Page{}, errors.New("fake: closed")
+		case <-ctx.Done():
+			return aria.Page{}, ctx.Err()
+		}
+	}
+	var page aria.Page
+	for _, p := range f.turns {
+		if p.ID >= at.Turn {
+			page.Parts = append(page.Parts, p)
+		}
+	}
+	return page, nil
+}
+
+func (f *fakeConn) ReadBefore(context.Context, aria.Anchor, int) (aria.Page, error) {
+	return aria.Page{}, nil
+}
+
+func (f *fakeConn) FormOf(context.Context, string) (*rpc.FormResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.formFails > 0 {
+		f.formFails--
+		return nil, errors.New("fake: busy")
+	}
+	return f.runtime, nil
+}
+
+func (f *fakeConn) Interrupt(context.Context) error { return nil }
+
+func (f *fakeConn) Close() error {
+	f.closeOnce.Do(func() { close(f.done) })
+	return nil
+}
+
+func (f *fakeConn) Done() <-chan struct{} { return f.done }
+
+func fakeClient(conns ...*fakeConn) *Client {
+	c := New(transport.Endpoint{})
+	var mu sync.Mutex
+	c.dial = func(_ context.Context, _ string, notify sdk.NotifyHandler) (ariaConn, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if len(conns) == 0 {
+			return nil, errors.New("fake: no more connections")
+		}
+		f := conns[0]
+		conns = conns[1:]
+		mu.Unlock()
+		if f.dialGate != nil {
+			<-f.dialGate
+		}
+		mu.Lock()
+		f.notify = notify
+		return f, nil
+	}
+	return c
+}
+
+func TestAFailedCatchUpReadIsRetriedWhileTheConnectionLives(t *testing.T) {
+	var rt runtimeFeed
+	conn := newFakeConn(rt.response("idle", 2, "", 0), sealedTurn(2, "ab"))
+	c := fakeClient(conn)
+	ch, err := c.Resume(context.Background(), "x", Cursor{Turn: 2, Text: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.mu.Lock()
+	conn.formFails = 2
+	conn.mu.Unlock()
+	conn.notify(rpc.MethodAriaFrame, frameJSON(aria.TurnPart{Turn: aria.Turn{ID: 2, Live: &aria.Live{From: 0, V: 7, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{"markdown": "abc"}}}}}}))
+	if got := summary(drain(t, ch)); got != `+"b" end:ab` {
+		t.Fatalf("events: %s", got)
+	}
+}
+
+func TestACatchUpCutByAConnectionDropWaitsForTheNextConnection(t *testing.T) {
+	var rt runtimeFeed
+	first := newFakeConn(rt.response("thinking", 2, "", 0))
+	first.readGate = make(chan struct{})
+	reading := make(chan struct{})
+	first.reading = reading
+	second := newFakeConn(rt.response("idle", 2, "", 0), sealedTurn(2, "ab"))
+	second.dialGate = make(chan struct{})
+	c := fakeClient(first, second)
+	ch, err := c.Resume(context.Background(), "x", Cursor{Turn: 2, Text: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-reading
+	first.Close()
+	time.Sleep(100 * time.Millisecond)
+	close(second.dialGate)
+	if got := summary(drain(t, ch)); got != `+"b" end:ab` {
+		t.Fatalf("events: %s", got)
+	}
+}
+
+func TestAListenerAddedAfterADropBringsTheConnectionBack(t *testing.T) {
+	var rt runtimeFeed
+	first := newFakeConn(rt.response("idle", 1, "", 0))
+	second := newFakeConn(rt.response("idle", 2, "", 0), sealedTurn(2, "ab"))
+	c := fakeClient(first, second)
+	th, _, err := c.thread(context.Background(), "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		th.mu.Lock()
+		gone := th.conn == nil
+		th.mu.Unlock()
+		if gone || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	ch := th.subscribe(context.Background(), &sub{after: 1, r: newReader(Cursor{Turn: 2, Text: 1})}, []uint64{2})
+	if got := summary(drain(t, ch)); got != `+"b" end:ab` {
 		t.Fatalf("events: %s", got)
 	}
 }

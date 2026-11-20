@@ -66,10 +66,12 @@ Cancelling the `ctx` given to `Prompt` or `Resume` ends that subscription and
 closes its channel without an `end`. It does not stop the turn; `Cancel`
 does.
 
-If the connection to the daemon drops while a channel is open, the client
-redials for `Client.ReconnectFor` (30 s by default), reads the turn back and
-carries on from where the channel was, with nothing lost or repeated. If it
-cannot, the channel gets `error`.
+If the connection to the daemon drops while a channel is open, or a channel
+is opened while it is down, the client redials for `Client.ReconnectFor`
+(30 s by default), reads the turn back and carries on from where the channel
+was, with nothing lost or repeated. A catch-up read that fails on a live
+connection is retried for as long. If neither recovers, the channel gets
+`error`.
 
 ## Cursors and reconnecting
 

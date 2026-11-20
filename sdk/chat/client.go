@@ -193,17 +193,31 @@ type thread struct {
 
 	dial sync.Mutex
 
-	mu      sync.Mutex
-	conn    ariaConn
-	folds   map[uint64]*turnFold
-	top     uint64
-	syncing bool
-	want    map[uint64]bool
-	rt      runtimeView
-	wantRT  bool
-	rtReady chan struct{}
-	buf     []note
-	subs    map[*sub]struct{}
+	mu           sync.Mutex
+	conn         ariaConn
+	gen          uint64
+	reconnecting bool
+	folds        map[uint64]*turnFold
+	top          uint64
+	syncing      bool
+	want         map[uint64]bool
+	rt           runtimeView
+	wantRT       bool
+	rtReady      chan struct{}
+	buf          []note
+	subs         map[*sub]struct{}
+}
+
+func alive(conn ariaConn) bool {
+	if conn == nil {
+		return false
+	}
+	select {
+	case <-conn.Done():
+		return false
+	default:
+		return true
+	}
 }
 
 func (t *thread) connect(ctx context.Context) (ariaConn, error) {
@@ -212,49 +226,59 @@ func (t *thread) connect(ctx context.Context) (ariaConn, error) {
 	t.mu.Lock()
 	conn := t.conn
 	t.mu.Unlock()
-	if conn != nil {
-		select {
-		case <-conn.Done():
-		default:
-			return conn, nil
-		}
+	if alive(conn) {
+		return conn, nil
 	}
 	conn, err := t.c.dial(ctx, t.id, t.notify)
 	if err != nil {
 		return nil, err
 	}
-	t.mu.Lock()
-	t.conn = conn
-	t.wantRT = true
-	ready := make(chan struct{})
-	t.rtReady = ready
-	t.startSync()
-	t.mu.Unlock()
+	ready := t.attach(conn)
 	go t.watch(conn)
 	select {
 	case <-ready:
+		return conn, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-conn.Done():
 		return nil, errors.New("the connection to figaro closed while reading its state")
 	}
-	return conn, nil
+}
+
+func (t *thread) attach(conn ariaConn) chan struct{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.conn = conn
+	t.gen++
+	t.folds = map[uint64]*turnFold{}
+	t.buf = nil
+	t.want = map[uint64]bool{}
+	for s := range t.subs {
+		t.want[s.next()] = true
+	}
+	t.wantRT = true
+	ready := make(chan struct{})
+	t.rtReady = ready
+	t.startSync()
+	return ready
 }
 
 func (t *thread) watch(conn ariaConn) {
 	<-conn.Done()
 	t.mu.Lock()
-	if t.conn != conn {
-		t.mu.Unlock()
+	if t.conn == conn {
+		t.conn = nil
+	}
+	t.redialLocked()
+	t.mu.Unlock()
+}
+
+func (t *thread) redialLocked() {
+	if t.conn != nil || t.reconnecting || len(t.subs) == 0 {
 		return
 	}
-	t.conn = nil
-	t.folds = map[uint64]*turnFold{}
-	listening := len(t.subs) > 0
-	t.mu.Unlock()
-	if listening {
-		t.reconnect()
-	}
+	t.reconnecting = true
+	go t.reconnect()
 }
 
 func (t *thread) reconnect() {
@@ -266,14 +290,14 @@ func (t *thread) reconnect() {
 		cancel()
 		if err == nil {
 			t.mu.Lock()
-			for s := range t.subs {
-				t.want[s.next()] = true
-			}
-			t.startSync()
+			t.reconnecting = false
 			t.mu.Unlock()
 			return
 		}
 		if errors.Is(err, ErrClosed) || time.Now().Add(wait).After(deadline) {
+			t.mu.Lock()
+			t.reconnecting = false
+			t.mu.Unlock()
 			t.fail("lost the connection to figaro: " + err.Error())
 			return
 		}
@@ -404,17 +428,38 @@ func (t *thread) startSync() {
 }
 
 func (t *thread) sync() {
+	var failing time.Time
+	wait := 100 * time.Millisecond
 	for {
 		t.mu.Lock()
 		if len(t.want) > 0 || t.wantRT {
+			if !alive(t.conn) {
+				t.syncing = false
+				t.mu.Unlock()
+				return
+			}
 			turns := make([]uint64, 0, len(t.want))
 			for id := range t.want {
 				turns = append(turns, id)
 			}
 			t.want, t.wantRT = map[uint64]bool{}, false
-			conn := t.conn
+			conn, gen := t.conn, t.gen
 			t.mu.Unlock()
-			t.seed(conn, turns)
+			err := t.seed(conn, gen, turns)
+			if err == nil {
+				failing, wait = time.Time{}, 100*time.Millisecond
+				continue
+			}
+			if failing.IsZero() {
+				failing = time.Now()
+			}
+			if time.Since(failing) > t.c.ReconnectFor {
+				t.failFrom(turns, "read the thread: "+err.Error())
+				failing = time.Time{}
+				continue
+			}
+			time.Sleep(wait)
+			wait = min(2*wait, 2*time.Second)
 			continue
 		}
 		if len(t.buf) == 0 {
@@ -429,10 +474,7 @@ func (t *thread) sync() {
 	}
 }
 
-func (t *thread) seed(conn ariaConn, turns []uint64) {
-	if conn == nil {
-		return
-	}
+func (t *thread) seed(conn ariaConn, gen uint64, turns []uint64) error {
 	sort.Slice(turns, func(i, j int) bool { return turns[i] < turns[j] })
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -450,14 +492,37 @@ func (t *thread) seed(conn ariaConn, turns []uint64) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if gen != t.gen {
+		return nil
+	}
 	if err != nil {
-		for s := range t.subs {
-			s.push(Event{Kind: Failed, Text: "read the thread: " + err.Error(), Cursor: Cursor{Turn: s.next()}}, true)
-			delete(t.subs, s)
+		if alive(conn) {
+			for _, id := range turns {
+				t.want[id] = true
+			}
+			t.wantRT = true
+			return err
 		}
-		return
+		return nil
 	}
 	t.adopt(rt, parts)
+	return nil
+}
+
+func (t *thread) failFrom(turns []uint64, why string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	floor := ^uint64(0)
+	for _, id := range turns {
+		floor = min(floor, id)
+	}
+	for s := range t.subs {
+		if len(turns) == 0 || s.next() >= floor {
+			s.push(Event{Kind: Failed, Text: why, Cursor: Cursor{Turn: s.next()}}, true)
+			delete(t.subs, s)
+		}
+	}
+	t.want, t.wantRT = map[uint64]bool{}, false
 }
 
 func (t *thread) adopt(rt *rpc.FormResponse, parts []aria.TurnPart) {
@@ -580,6 +645,7 @@ func (t *thread) subscribe(ctx context.Context, s *sub, seed []uint64) <-chan Ev
 		}
 	}
 	t.startSync()
+	t.redialLocked()
 	ids := make([]uint64, 0, len(t.folds))
 	for id := range t.folds {
 		ids = append(ids, id)
