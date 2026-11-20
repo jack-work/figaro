@@ -696,6 +696,9 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	}
 	defer fcli.Close()
 
+	if opts.json && daemonLacks(rpc.CapLogExact) && ariaIsLog(ctx, fcli) {
+		die("%s", lacksForUse(rpc.CapLogExact, "send -j to an aria log"))
+	}
 	resp, qerr := quaAnswered(ctx, fcli, opts.outfit.request(prompt))
 	if qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)
