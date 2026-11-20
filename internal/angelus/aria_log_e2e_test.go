@@ -271,3 +271,17 @@ func TestAnAriaLogReadsByRangeEitherWay(t *testing.T) {
 		t.Fatalf("backward [%d,%d) = %v, want %v", lo, hi, got, want)
 	}
 }
+
+func TestAnEmptyEntryComesOnlyFromAnExactSend(t *testing.T) {
+	r := logRig(t, defaultPolicy, nil)
+	id := mintLog(t, r, asOwner())
+	if _, err := r.h[rpc.MethodQua](asOwner(), withAria(t, id, rpc.QuaRequest{Text: ""})); err == nil || !strings.Contains(err.Error(), "send --stdin") {
+		t.Fatalf("an empty argv send to a log = %v, want refused", err)
+	}
+	if _, err := r.h[rpc.MethodQua](asOwner(), withAria(t, id, rpc.QuaRequest{Text: "", Exact: true})); err != nil {
+		t.Fatalf("an empty exact send to a log: %v", err)
+	}
+	if row := listedRowEventually(t, r, id, 1); row.TurnCount != 1 {
+		t.Fatalf("the empty entry counts as a turn: %+v", row)
+	}
+}

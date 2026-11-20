@@ -57,3 +57,15 @@ func TestAListedLogSaysLogAndCountsItsEntriesAsTurns(t *testing.T) {
 		t.Fatal("a figaro lists as a log")
 	}
 }
+
+func listedRowEventually(t *testing.T, r grantRig, id string, turns int) rpc.FigaroInfoResponse {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		row := listedRow(t, r, id)
+		if row.TurnCount == turns || time.Now().After(deadline) {
+			return row
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}

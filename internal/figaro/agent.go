@@ -3,6 +3,7 @@ package figaro
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"runtime"
 	"strings"
@@ -69,6 +70,7 @@ type event struct {
 	traces   []string
 	keys     []string
 	appended chan LogAppend
+	entry    bool
 }
 
 // Config is the constructor input for NewAgent.
@@ -535,6 +537,8 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 }
 
 // SubmitPromptFrom applies form input synchronously, so the caller learns of a refusal.
+var errEmptyPrompt = errors.New("--stdin: stdin held no prompt")
+
 func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender string) error {
 	_, err := a.submitPrompt(ctx, req, sender)
 	return err
@@ -550,6 +554,9 @@ func (a *Agent) submitPrompt(ctx context.Context, req rpc.QuaRequest, sender str
 	logged := a.isLog()
 	if req.Exact && !logged {
 		req.Text = strings.TrimRight(req.Text, "\n")
+		if strings.TrimSpace(req.Text) == "" && len(req.Images) == 0 {
+			return LogAppend{}, errEmptyPrompt
+		}
 	}
 	if !logged {
 		text, err := a.rewriteInput(ctx, req.Text)
@@ -576,11 +583,12 @@ func (a *Agent) submitPrompt(ctx context.Context, req rpc.QuaRequest, sender str
 	}
 	if logged {
 		evt.appended = make(chan LogAppend, 1)
+		evt.entry = req.Exact
 	}
 	if req.TraceParent != "" {
 		evt.traces = []string{req.TraceParent}
 	}
-	if req.Text != "" {
+	if req.Text != "" || evt.entry {
 		evt.segments = []promptSegment{{sender: sender, principal: authz.PrincipalText(authz.PrincipalOf(ctx)), text: req.Text}}
 	}
 	if !a.inbox.Send(evt) {

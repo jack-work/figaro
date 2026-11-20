@@ -245,3 +245,26 @@ func TestALogEntryIsNeverRewrittenAsAPrompt(t *testing.T) {
 		require.Equal(t, text, entries[i+1].Content[0].Text, "entry %d lands byte-identical", i)
 	}
 }
+
+func TestAnEmptyEntryLandsOnALogOnlyWhenSentExact(t *testing.T) {
+	a := newLogAgent(t)
+	raw, err := a.Handle(context.Background(), rpc.MethodQua, json.RawMessage(`{"text":"","exact":true}`))
+	require.NoError(t, err)
+	resp := raw.(rpc.QuaResponse)
+	require.NotZero(t, resp.Turn, "an empty entry is a turn of its own")
+	require.NoError(t, a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: "after", Exact: true}, "s"))
+	var turns []uint64
+	for _, m := range a.Context() {
+		if message.IsEntry(m) {
+			turns = append(turns, m.TurnID)
+			if m.TurnID == resp.Turn {
+				require.Equal(t, "", m.Content[0].Text)
+			}
+		}
+	}
+	require.Equal(t, []uint64{resp.Turn, resp.Turn + 1}, turns)
+
+	b := newTestAgent(t, "ok")
+	defer b.Kill()
+	require.Error(t, b.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: "\n\n", Exact: true}, ""), "a figaro still refuses an empty stdin")
+}

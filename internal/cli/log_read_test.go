@@ -29,28 +29,27 @@ func (f *fakeLogReads) lt(turn uint64) uint64 {
 func (f *fakeLogReads) Read(_ context.Context, req rpc.ReadRequest) (aria.Page, error) {
 	f.reads = append(f.reads, req)
 	var p aria.Page
-	start := req.At.Turn
-	if start == 0 {
-		start = 1
-	}
-	for turn := start; turn <= uint64(len(f.msgs)); turn++ {
-		if req.Until.Turn > 0 && turn >= req.Until.Turn {
-			p.More.After = true
-			p.Next = &aria.Anchor{Turn: turn}
-			return p, nil
-		}
-		if len(p.Parts) == 2 {
-			p.More.After, p.Next = true, &aria.Anchor{Turn: turn}
-			return p, nil
-		}
+	part := func(turn uint64) aria.TurnPart {
 		lt := f.lt(turn)
-		p.Parts = append(p.Parts, aria.TurnPart{Turn: aria.Turn{ID: turn, LTs: []uint64{lt, lt}}})
+		return aria.TurnPart{Turn: aria.Turn{ID: turn, LTs: []uint64{lt, lt}}}
+	}
+	if req.Backward {
+		if t := req.At.Turn; t > 1 {
+			p.Parts = append(p.Parts, part(t-1))
+		}
+		return p, nil
+	}
+	if t := req.At.Turn; t >= 1 && t <= uint64(len(f.msgs)) {
+		p.Parts = append(p.Parts, part(t))
 	}
 	return p, nil
 }
 
 func (f *fakeLogReads) IRRange(_ context.Context, _ string, from, before uint64) (*rpc.IRResponse, error) {
 	out := &rpc.IRResponse{}
+	if before == 0 {
+		before = uint64(len(f.msgs)) + 1
+	}
 	for lt := from; lt < before && lt <= uint64(len(f.msgs)); lt++ {
 		raw, _ := json.Marshal(f.msgs[lt-1])
 		out.Entries = append(out.Entries, rpc.IREntry{LT: lt, Payload: raw})
@@ -96,15 +95,35 @@ func TestReadPrintsARangeOfEntriesExactly(t *testing.T) {
 			t.Fatalf("entry %d = %+v, want turn %d with its exact text %q", i, e, want, texts[want-1])
 		}
 	}
-	for _, r := range f.reads {
-		if r.Until.Turn != 5 {
-			t.Fatalf("a read did not carry the ceiling: %+v", r)
-		}
-	}
 
 	var plain bytes.Buffer
 	_ = writeEntries(&plain, entries, false)
 	if strings.Contains(plain.String(), "<system-reminder") {
 		t.Fatalf("the reading view printed a live tag:\n%s", plain.String())
+	}
+}
+
+func TestReadKeepsAnEmptyEntryAtEitherEdge(t *testing.T) {
+	f := &fakeLogReads{}
+	for i, text := range []string{"one", "", "three", ""} {
+		f.msgs = append(f.msgs, entryMsg(uint64(i+1), text))
+	}
+	for _, c := range []struct{ from, until uint64 }{{2, 4}, {2, 0}, {1, 3}, {4, 0}} {
+		entries, err := readEntries(context.Background(), f, "log", c.from, c.until)
+		if err != nil {
+			t.Fatal(err)
+		}
+		last := uint64(len(f.msgs)) + 1
+		if c.until > 0 {
+			last = c.until
+		}
+		if uint64(len(entries)) != last-c.from {
+			t.Fatalf("[%d,%d) read %+v", c.from, c.until, entries)
+		}
+		for i, e := range entries {
+			if e.Turn != c.from+uint64(i) {
+				t.Fatalf("[%d,%d) entry %d is turn %d", c.from, c.until, i, e.Turn)
+			}
+		}
 	}
 }
