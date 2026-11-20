@@ -88,7 +88,8 @@ text; the blank line a multi-turn reply puts before a later turn is not
 counted in that turn's cursor.
 
 A `Resume` on a turn that has already finished replays the remainder and ends
-at once. The `end` of a turn read back after it finished carries no failure
+at once, unless the turn after it is still running; then the channel follows
+that turn as one reply, the way the original channel did. The `end` of a turn read back after it finished carries no failure
 reason: a failed turn read back ends with `end`.
 
 ## History

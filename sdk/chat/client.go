@@ -138,12 +138,16 @@ func (c *Client) thread(ctx context.Context, id string) (*thread, *sdk.Aria, err
 	}
 	t := c.threads[id]
 	if t == nil {
-		t = &thread{c: c, id: id, folds: map[uint64]*turnFold{}, want: map[uint64]bool{}, subs: map[*sub]struct{}{}}
+		t = newThread(c, id)
 		c.threads[id] = t
 	}
 	c.mu.Unlock()
 	conn, err := t.connect(ctx)
 	return t, conn, err
+}
+
+func newThread(c *Client, id string) *thread {
+	return &thread{c: c, id: id, folds: map[uint64]*turnFold{}, want: map[uint64]bool{}, subs: map[*sub]struct{}{}}
 }
 
 type note struct {
@@ -395,8 +399,11 @@ func (t *thread) seed(conn *sdk.Aria, turns []uint64) {
 		}
 		return
 	}
+	t.adopt(parts)
+}
+
+func (t *thread) adopt(parts []aria.TurnPart) {
 	rebuilt := map[uint64]*turnFold{}
-	var last uint64
 	for _, p := range parts {
 		f := rebuilt[p.ID]
 		if f == nil {
@@ -404,7 +411,6 @@ func (t *thread) seed(conn *sdk.Aria, turns []uint64) {
 			rebuilt[p.ID] = f
 		}
 		f.apply(p)
-		last = max(last, p.ID)
 	}
 	for id, f := range rebuilt {
 		if old := t.folds[id]; old != nil && old.ended && !f.sealed {
@@ -412,7 +418,8 @@ func (t *thread) seed(conn *sdk.Aria, turns []uint64) {
 		}
 		if f.sealed {
 			f.finish("")
-			f.idle = id == last
+			next := rebuilt[id+1]
+			f.idle = next == nil || next.sealed
 		}
 		t.folds[id] = f
 		t.fold(id)

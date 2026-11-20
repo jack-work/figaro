@@ -375,3 +375,30 @@ func TestASteerBetweenRoundsStillStreamsTheNextRound(t *testing.T) {
 		t.Fatalf("the round after the steer came in %d deltas: %s", len(after), kinds(events))
 	}
 }
+
+func TestResumingAnOlderFinishedTurnEndsWithIt(t *testing.T) {
+	c, id, d := thread(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	var first chat.Cursor
+	for i, p := range []string{"words 2 0", "words 3 0", "words 4 0"} {
+		ch, err := c.Prompt(ctx, id, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		events := collect(t, ch, 30*time.Second)
+		if i == 0 {
+			first = events[0].Cursor
+		}
+	}
+	other := chat.New(d.endpoint())
+	defer other.Close()
+	rest, err := other.Resume(ctx, id, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := collect(t, rest, 30*time.Second)
+	if replyText(after) != " w1" || after[len(after)-1].Kind != chat.End || after[len(after)-1].Text != "w0 w1" {
+		t.Fatalf("events %s, text %q, last %+v", kinds(after), replyText(after), after[len(after)-1])
+	}
+}
