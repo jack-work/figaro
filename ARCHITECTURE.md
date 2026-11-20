@@ -207,6 +207,14 @@ Structured per-figaro state. Patches ride on the user-role tic in `aria.jsonl`; 
 
 The `system.*` namespace is harness-reserved. Clients write under any other key.
 
+## Aria logs
+
+An aria whose form carries `system.kind = "log"`, fixed at birth, has no
+provider, sandbox or tools. `figaro.qua` appends the prompt as the turn's
+inquiry and seals the turn (`logged`); queued sends are never folded, so each
+is one entry. Minted by `form.bind` (`figaro new --log`); `figaro.create`
+refuses one. See [docs/proposals/aria-log/primitive.md](docs/proposals/aria-log/primitive.md).
+
 ## JSON-RPC surface
 
 All IPC is JSON-RPC 2.0 framed as one JSON object per line (NDJSON).
