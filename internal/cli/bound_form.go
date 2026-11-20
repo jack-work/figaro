@@ -113,7 +113,9 @@ func (in *interactiveInput) syncComments() {
 func (in *interactiveInput) recomputeLimit() {
 	if in.recordedWindow > 0 || tapeOnly.Load() {
 		in.mu.Lock()
-		if in.lt.status.setLimit(in.recordedWindow) {
+		limited := in.lt.status.setLimit(in.recordedWindow)
+		if cleared := in.lt.status.setPlanUsage(nil); limited || cleared {
+			in.lt.tr.refreshStatusPit()
 			in.lt.render()
 		}
 		in.mu.Unlock()
@@ -135,6 +137,7 @@ func (in *interactiveInput) recomputeLimit() {
 		moved = true
 	}
 	if moved {
+		in.lt.tr.refreshStatusPit()
 		in.lt.render()
 	}
 	in.mu.Unlock()
