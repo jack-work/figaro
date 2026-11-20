@@ -57,23 +57,35 @@ var boxOnlyLimits = map[string]string{
 	"worker.say":               leaseLimit,
 }
 
-func parityCases() []eqCase {
-	var out []eqCase
-	for _, m := range authz.DeclaredMethods() {
-		for _, target := range []string{"", "C", "S", "O"} {
-			name := m
-			if target != "" {
-				name += " " + target
-			}
-			out = append(out, eqCase{name: name, method: m, params: func(t *testing.T, w *eqWorld) json.RawMessage {
-				if target == "" {
-					return json.RawMessage(`{}`)
+type parityPair struct {
+	figaro string
+	k      eqCase
+}
+
+func parityPairs() []parityPair {
+	var out []parityPair
+	for _, f := range []string{"P", "C"} {
+		for _, m := range authz.DeclaredMethods() {
+			for _, target := range []string{"", "C", "O"} {
+				name := m
+				if target != "" {
+					name += " " + target
 				}
-				return withAria(t, w.id(target), map[string]any{})
-			}})
+				out = append(out, parityPair{f, eqCase{name: name, method: m, params: func(t *testing.T, w *eqWorld) json.RawMessage {
+					if target == "" {
+						return json.RawMessage(`{}`)
+					}
+					return withAria(t, w.id(target), map[string]any{})
+				}}})
+			}
 		}
 	}
-	return append(out, eqCases()...)
+	for _, f := range []string{"P", "C", "S", "R"} {
+		for _, k := range eqCases() {
+			out = append(out, parityPair{f, k})
+		}
+	}
+	return out
 }
 
 func (w *eqWorld) paritySide(t *testing.T, inBox bool, figaro string, k eqCase) string {
@@ -105,31 +117,44 @@ func (w *eqWorld) paritySide(t *testing.T, inBox bool, figaro string, k eqCase) 
 	return strings.ReplaceAll(got, authn.BoxPrincipal("judge").String(), "<subject>")
 }
 
+func newParityWorld(t *testing.T) *eqWorld {
+	t.Helper()
+	w := newEqWorldUnder(t, parityPolicy(), "")
+	root, err := w.create(asOwner(), "judged")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.names[root.FigaroID] = "R"
+	for _, id := range []string{w.parent, w.child, w.sibling, root.FigaroID} {
+		if _, err := w.h[rpc.MethodSet](asOwner(), withAria(t, id, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"system.grants.outfits": []string{"mock", "judged"}})})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return w
+}
+
 func asOwnerCtx(ctx context.Context) context.Context {
 	return authn.WithPrincipal(ctx, rpc.Principal{Kind: rpc.PrincipalUser, ID: strconv.Itoa(os.Getuid())})
 }
 
 func TestTheBoxDoorDecidesAsTheFigarosOwnTool(t *testing.T) {
 	golden := filepath.Join("testdata", "box_door_parity.golden")
-	cases := parityCases()
-	figaros := []string{"P", "C", "S"}
-	rows := make([]string, len(figaros)*len(cases))
+	pairs := parityPairs()
+	rows := make([]string, len(pairs))
 	differ := make([]string, len(rows))
 	t.Run("rows", func(t *testing.T) {
-		for i, f := range figaros {
-			for j, k := range cases {
-				n := i*len(cases) + j
-				t.Run("", func(t *testing.T) {
-					t.Parallel()
-					outside := newEqWorldUnder(t, parityPolicy(), "").paritySide(t, false, f, k)
-					inside := newEqWorldUnder(t, parityPolicy(), "").paritySide(t, true, f, k)
-					mark := "="
-					if outside != inside {
-						mark, differ[n] = "≠", k.name
-					}
-					rows[n] = fmt.Sprintf("%s | as %s | %-32s | outside: %s\n%s | as %s | %-32s | inside:  %s\n", mark, f, k.name, outside, mark, f, k.name, inside)
-				})
-			}
+		for n, p := range pairs {
+			f, k := p.figaro, p.k
+			t.Run("", func(t *testing.T) {
+				t.Parallel()
+				outside := newParityWorld(t).paritySide(t, false, f, k)
+				inside := newParityWorld(t).paritySide(t, true, f, k)
+				mark := "="
+				if outside != inside {
+					mark, differ[n] = "≠", k.name
+				}
+				rows[n] = fmt.Sprintf("%s | as %s | %-32s | outside: %s\n%s | as %s | %-32s | inside:  %s\n", mark, f, k.name, outside, mark, f, k.name, inside)
+			})
 		}
 	})
 	var b strings.Builder
