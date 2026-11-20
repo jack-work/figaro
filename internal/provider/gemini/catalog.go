@@ -111,6 +111,7 @@ func normalizeCodeAssistModels(raw json.RawMessage, groups map[string]effortGrou
 			data[i].Capabilities["reasoning_effort"] = []string{rung}
 		}
 	}
+	retitleSharedNames(data, members)
 	return json.Marshal(map[string]any{"data": data})
 }
 
@@ -160,6 +161,52 @@ func titleNamesRung(name, rung string) bool {
 	}
 	label := strings.ToLower(strings.Join(strings.Fields(name[open+1:len(name)-1]), ""))
 	return label == rung || (rung == "xhigh" && label == "extrahigh")
+}
+
+func familyOf(id string, members map[string]string) string {
+	if rung, ok := members[id]; ok {
+		return strings.TrimSuffix(id, "-"+rung)
+	}
+	return id
+}
+
+func titleFromID(id string) string {
+	words := strings.Split(id, "-")
+	for i, w := range words {
+		if w != "" {
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+func retitleSharedNames(data []normalizedModel, members map[string]string) {
+	families := map[string]map[string]bool{}
+	for _, m := range data {
+		name := stripRungTitle(m.DisplayName)
+		if name == "" {
+			continue
+		}
+		if families[name] == nil {
+			families[name] = map[string]bool{}
+		}
+		families[name][familyOf(m.ID, members)] = true
+	}
+	for i, m := range data {
+		name := stripRungTitle(m.DisplayName)
+		family := familyOf(m.ID, members)
+		if len(families[name]) < 2 || strings.EqualFold(titleFromID(family), name) {
+			continue
+		}
+		data[i].DisplayName = titleFromID(family) + m.DisplayName[len(name):]
+	}
+}
+
+func stripRungTitle(name string) string {
+	if open := strings.LastIndex(name, " ("); open >= 0 && strings.HasSuffix(name, ")") {
+		return name[:open]
+	}
+	return name
 }
 
 func normalizeGenerativeModels(raw json.RawMessage, nextToken, endpoint string) ([]byte, error) {

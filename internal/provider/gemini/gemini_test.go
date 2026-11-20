@@ -543,7 +543,7 @@ func TestAPIErrorMessageRedactsTokensAndCapsBody(t *testing.T) {
 	assert.LessOrEqual(t, len(apiErrorMessage(502, huge)), 530)
 }
 
-func TestRecordedCodeAssistCatalogMarksEffortTiers(t *testing.T) {
+func TestRecordedCodeAssistCatalogMarksEffortTiersAndFixesSharedNames(t *testing.T) {
 	raw, err := os.ReadFile("testdata/code-assist-models-2026-11-20.json")
 	require.NoError(t, err)
 	norm, err := NormalizeCatalogJSON(raw, "/v1internal:streamGenerateContent")
@@ -567,4 +567,10 @@ func TestRecordedCodeAssistCatalogMarksEffortTiers(t *testing.T) {
 	for _, id := range []string{"gemini-2.5-pro", "gemini-3.8-flash-tiered", "gemini-4-hydrogen-sonar", "gemini-2.5-flash-thinking"} {
 		assert.Empty(t, byID[id].Efforts, id)
 	}
+	assert.Equal(t, "Gemini 2.5 Flash", byID["gemini-2.5-flash"].Name)
+	assert.Equal(t, "Gemini 2.5 Flash Lite", byID["gemini-2.5-flash-lite"].Name)
+	assert.Equal(t, "Gemini 2.5 Flash Thinking", byID["gemini-2.5-flash-thinking"].Name)
+	assert.Equal(t, "Gemini 3.5 Flash Lite", byID["gemini-3.5-flash-lite"].Name)
+	assert.Equal(t, "Gemini 4 Hydrogen (High)", byID["gemini-4-hydrogen-high"].Name)
+	assert.Equal(t, "Gemini 4 Hydrogen Tiered (High)", byID["gemini-4-hydrogen-tiered-high"].Name)
 }

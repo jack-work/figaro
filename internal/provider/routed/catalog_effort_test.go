@@ -121,6 +121,22 @@ func TestCodeAssistEffortTiersComeFromTheCatalogWithoutAMapModel(t *testing.T) {
 	assert.Empty(t, byID["gemini-2.5-pro"].Efforts)
 }
 
+func TestCodeAssistNamesNoLongerShareOneWrongDisplayName(t *testing.T) {
+	p, _ := buildRecordedCodeAssist(t, "gca-names", "[effort]\ndefault_rung = \"high\"\n")
+	listed, err := p.Models(context.Background())
+	require.NoError(t, err)
+	names := map[string]string{}
+	for _, m := range listed {
+		names[m.ID] = m.Name
+	}
+	assert.Equal(t, "Gemini 2.5 Flash", names["gemini-2.5-flash"])
+	assert.Equal(t, "Gemini 2.5 Flash Lite", names["gemini-2.5-flash-lite"])
+	assert.Equal(t, "Gemini 2.5 Flash Thinking", names["gemini-2.5-flash-thinking"])
+	assert.Equal(t, "Gemini 3.5 Flash Lite", names["gemini-3.5-flash-lite"])
+	assert.Equal(t, "Gemini 2.5 Pro", names["gemini-2.5-pro"])
+	assert.NotEqual(t, names["gemini-4-hydrogen"], names["gemini-4-hydrogen-tiered"])
+}
+
 func TestCodeAssistSendPicksTheCatalogRungOutbound(t *testing.T) {
 	p, f := buildRecordedCodeAssist(t, "gca-send", "[effort]\ndefault_rung = \"high\"\n")
 	sendModel(t, p, "gemini-4-neon", `95`)
