@@ -187,6 +187,8 @@ type Message struct {
 	Timestamp int64 `json:"timestamp"`
 
 	Principal string `json:"principal,omitempty"`
+
+	Accepted []string `json:"accepted,omitempty"`
 }
 
 func TextContent(text string) Content {

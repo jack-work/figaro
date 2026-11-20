@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -126,4 +128,50 @@ func TestAriaLogConcurrentSendsEachLandAsTheirOwnEntryInSenderOrder(t *testing.T
 		require.Greater(t, m.TurnID, lastTurn, "one entry is one turn")
 		lastTurn = m.TurnID
 	}
+}
+
+func TestAriaLogRedeliveryDropsSendsAlreadyAppended(t *testing.T) {
+	birth := form.Build(form.Snapshot{}, map[string]json.RawMessage{form.KindKey: json.RawMessage(`"log"`)}, nil)
+	be, id := store.NewTestAria(t, "d", birth)
+	dir := filepath.Join(t.TempDir(), "spool")
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	open := func() *figaro.Agent {
+		cb, _ := form.Open("")
+		cb.Apply(birth)
+		a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Backend: be, Form: cb, Spool: figaro.NewSpool(dir)})
+		a.Redeliver()
+		return a
+	}
+	a := open()
+	for _, text := range []string{"a", "b", "c"} {
+		require.NoError(t, a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: text}, "s"))
+	}
+	landed := waitEntries(t, a, 3)
+	a.Kill()
+
+	type queued struct {
+		Text string   `json:"text"`
+		At   int64    `json:"at"`
+		Keys []string `json:"keys"`
+	}
+	var lagging []queued
+	for _, m := range landed {
+		require.Len(t, m.Accepted, 1, "every entry carries the key it was accepted under")
+		lagging = append(lagging, queued{Text: m.Content[0].Text, At: m.Timestamp - 1, Keys: m.Accepted})
+	}
+	lagging = append(lagging, queued{Text: "d", At: time.Now().UnixMilli(), Keys: []string{"never-appended"}})
+	raw, err := json.Marshal(map[string]any{"queued": lagging})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, id+".json"), raw, 0o600))
+
+	b := open()
+	defer b.Kill()
+	entries := waitEntries(t, b, 4)
+	time.Sleep(100 * time.Millisecond)
+	entries = entriesOf(b)
+	var texts []string
+	for _, m := range entries {
+		texts = append(texts, m.Content[0].Text)
+	}
+	require.Equal(t, []string{"a", "b", "c", "d"}, texts, "a send the spool still held after it was appended is not appended twice")
 }
