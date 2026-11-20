@@ -18,10 +18,11 @@ and one per thread in use; a thread with no open channel and no call for
 `Client.IdleClose` (5 min by default) lets its connection go.
 
 The caller's principal needs `fork` on the root and `read`, `listen` and
-`send` on the threads. The daemon must come from the same figaro release or
-a newer one: an older daemon refuses a dormant aria's runtime form without
-the error code that marks it dormant, and every call on a dormant thread
-then waits until it times out.
+`send` on the threads. The daemon must include 45d0076e4 (the first
+release carrying `sdk/chat` or newer): it refuses a dormant aria's runtime
+form with `rpc.ErrCodeIntrinsicDormant` (-32042). An older daemon refuses it
+without that code, and every call on a dormant thread then waits until it
+times out.
 
 ## Calls
 
