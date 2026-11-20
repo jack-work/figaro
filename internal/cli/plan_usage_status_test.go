@@ -28,16 +28,16 @@ func TestPlanUsageLines(t *testing.T) {
 		{"no plan usage", nil, nil},
 		{"no windows", &models.PlanUsage{Plan: "anthropic-max"}, nil},
 		{"absent percentage is unknown, not zero", &models.PlanUsage{Windows: []models.PlanWindow{{Window: "five_hour", Status: models.PlanAllowed}}}, nil},
-		{"one window, reset in local time", &models.PlanUsage{Windows: []models.PlanWindow{{Window: "five_hour", UsedPercent: pct(37), ResetAt: inTwoHours}}}, []string{"5h 37% (resets 21:20)"}},
+		{"one window, reset in local time", &models.PlanUsage{Windows: []models.PlanWindow{{Window: "five_hour", UsedPercent: pct(37), ResetAt: inTwoHours}}}, []string{"5h 37% used (resets 21:20)"}},
 		{"two windows, a far reset names the day", &models.PlanUsage{Windows: []models.PlanWindow{
 			{Window: "five_hour", UsedPercent: pct(37), ResetAt: inTwoHours},
 			{Window: "seven_day", UsedPercent: pct(12), ResetAt: inFiveDays},
-		}}, []string{"5h 37% (resets 21:20)", "7d 12% (resets Tue 14:20)"}},
-		{"reset in the past is dropped", &models.PlanUsage{Windows: []models.PlanWindow{{Window: "seven_day", UsedPercent: pct(12), ResetAt: past}}}, []string{"7d 12%"}},
-		{"stale", &models.PlanUsage{Windows: []models.PlanWindow{{Window: "five_hour", UsedPercent: pct(80), Stale: true}}}, []string{"5h 80% (stale)"}},
-		{"warning", &models.PlanUsage{Windows: []models.PlanWindow{{Window: "five_hour", UsedPercent: pct(91), Status: models.PlanAllowedWarning}}}, []string{"5h 91%"}},
+		}}, []string{"5h 37% used (resets 21:20)", "7d 12% used (resets Tue 14:20)"}},
+		{"reset in the past is dropped", &models.PlanUsage{Windows: []models.PlanWindow{{Window: "seven_day", UsedPercent: pct(12), ResetAt: past}}}, []string{"7d 12% used"}},
+		{"stale", &models.PlanUsage{Windows: []models.PlanWindow{{Window: "five_hour", UsedPercent: pct(80), Stale: true}}}, []string{"5h 80% used (stale)"}},
+		{"warning", &models.PlanUsage{Windows: []models.PlanWindow{{Window: "five_hour", UsedPercent: pct(91), Status: models.PlanAllowedWarning}}}, []string{"5h 91% used"}},
 		{"rejected", &models.PlanUsage{Windows: []models.PlanWindow{{Window: "five_hour", UsedPercent: pct(100), Status: models.PlanRejected, ResetAt: inTwoHours}}}, []string{"5h rejected (resets 21:20)"}},
-		{"unnamed window verbatim", &models.PlanUsage{Windows: []models.PlanWindow{{Window: "seven_day_opus", UsedPercent: pct(3)}}}, []string{"seven_day_opus 3%"}},
+		{"unnamed window verbatim", &models.PlanUsage{Windows: []models.PlanWindow{{Window: "seven_day_opus", UsedPercent: pct(3)}}}, []string{"seven_day_opus 3% used"}},
 	} {
 		var got []string
 		for _, r := range planUsageLines(c.u, now) {
@@ -74,10 +74,10 @@ func TestStatusPitCarriesTheWarningTone(t *testing.T) {
 	for _, r := range tr.pit.list().rows {
 		toned[strings.TrimSpace(r.text)] = r.tone
 	}
-	if tone, ok := toned["usage     5h 37%"]; !ok || tone != toneNone {
+	if tone, ok := toned["usage     5h 37% used"]; !ok || tone != toneNone {
 		t.Fatalf("5h row missing or toned: %v", toned)
 	}
-	if tone, ok := toned["7d 91%"]; !ok || tone != toneWarn {
+	if tone, ok := toned["7d 91% used"]; !ok || tone != toneWarn {
 		t.Fatalf("7d warning row missing or untoned: %v", toned)
 	}
 }
@@ -96,7 +96,7 @@ func TestStatusPanelShowsPlanUsageOnlyWhenKnown(t *testing.T) {
 	}
 	rows := s.panelLines()
 	joined := strings.Join(rows, "\n")
-	if !strings.Contains(joined, "  usage     5h 37%\n            7d 12%") {
+	if !strings.Contains(joined, "  usage     5h 37% used\n            7d 12% used") {
 		t.Fatalf("usage rows missing:\n%s", joined)
 	}
 	if len(rows) != len(strings.Split(without, "\n"))+2 {
