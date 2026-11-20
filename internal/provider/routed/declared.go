@@ -195,6 +195,32 @@ func (d *DeclaredProvider) Models(ctx context.Context) ([]provider.ModelInfo, er
 	return out, nil
 }
 
+func (d *DeclaredProvider) SeedModel(model string) (apimodels.Entry, bool) {
+	e, ok := d.Provider.SeedModel(model)
+	if !ok {
+		return e, ok
+	}
+	rung := ""
+	if _, r, folded := d.mapEffort(model); folded {
+		rung = r
+	} else if _, r, folded := d.shared.member(model); folded {
+		rung = r
+	} else if !d.shared.populated() && d.listsEffortTiers() {
+		if cut := strings.LastIndex(model, "-"); cut > 0 {
+			if _, known := d.knownScore(model[cut+1:]); known {
+				rung = model[cut+1:]
+			}
+		}
+	}
+	if rung == "" {
+		return e, ok
+	}
+	e.Hidden = true
+	e.Efforts = []string{rung}
+	e.Mark("hidden", apimodels.SourceMapping)
+	return e, ok
+}
+
 func (d *DeclaredProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	model := snapshotString(in.Snapshot, "system.model")
 	if model == "" {
