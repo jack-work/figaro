@@ -10,7 +10,10 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-const runtimeIntrinsic = "runtime"
+const (
+	runtimeIntrinsic = "runtime"
+	queueIntrinsic   = "queue"
+)
 
 type runtimeView struct {
 	known bool

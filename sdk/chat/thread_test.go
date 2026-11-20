@@ -232,6 +232,8 @@ type fakeConn struct {
 	turns     []aria.TurnPart
 	runtime   *rpc.FormResponse
 	formFails int
+	queue     *rpc.FormResponse
+	hangAfter int
 	readGate  chan struct{}
 	reading   chan struct{}
 	dialGate  chan struct{}
@@ -274,12 +276,23 @@ func (f *fakeConn) ReadBefore(context.Context, aria.Anchor, int) (aria.Page, err
 	return aria.Page{}, nil
 }
 
-func (f *fakeConn) FormOf(context.Context, string) (*rpc.FormResponse, error) {
+func (f *fakeConn) FormOf(ctx context.Context, name string) (*rpc.FormResponse, error) {
 	f.mu.Lock()
+	if f.hangAfter > 0 {
+		f.hangAfter--
+		if f.hangAfter == 0 {
+			f.mu.Unlock()
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+	}
 	defer f.mu.Unlock()
 	if f.formFails > 0 {
 		f.formFails--
 		return nil, errors.New("fake: busy")
+	}
+	if name == "queue" {
+		return f.queue, nil
 	}
 	return f.runtime, nil
 }
@@ -388,6 +401,44 @@ func TestResumingATurnPastTheTailFailsAtOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := summary(drain(t, ch)); got != "error:turn 5 does not exist; the newest is 2" {
+		t.Fatalf("events: %s", got)
+	}
+}
+
+func queueOf(n int) *rpc.FormResponse {
+	b, _ := json.Marshal(n)
+	return &rpc.FormResponse{Snapshot: form.FromMap(map[string]json.RawMessage{"len": b}), Version: 1, Intrinsic: "queue", Incarnation: 1}
+}
+
+func TestAWaitForAQueuedTurnEndsWhenTheQueueEmptiesWithoutOne(t *testing.T) {
+	var rt runtimeFeed
+	conn := newFakeConn(rt.response("idle", 2, "", 1), sealedTurn(2, "ab"))
+	conn.queue = queueOf(0)
+	c := fakeClient(conn)
+	c.CheckEvery = 20 * time.Millisecond
+	ch, err := c.Resume(context.Background(), "x", Cursor{Turn: 2, Text: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := summary(drain(t, ch)); got != `+"b" end:ab` {
+		t.Fatalf("events: %s", got)
+	}
+}
+
+func TestAConnectionThatStopsAnsweringIsReplaced(t *testing.T) {
+	var rt runtimeFeed
+	running := liveProse(2, 0, "a")
+	running.Nodes = []livedoc.Node{{Type: livedoc.NodeProse, Role: livedoc.RoleOutput, Markdown: "a"}}
+	first := newFakeConn(rt.response("thinking", 2, "", 0), running)
+	first.hangAfter = 3
+	second := newFakeConn(rt.response("idle", 2, "", 0), sealedTurn(2, "ab"))
+	c := fakeClient(first, second)
+	c.CheckEvery = 20 * time.Millisecond
+	ch, err := c.Resume(context.Background(), "x", Cursor{Turn: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := summary(drain(t, ch)); got != `+"a" +"b" end:ab` {
 		t.Fatalf("events: %s", got)
 	}
 }

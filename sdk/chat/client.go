@@ -21,7 +21,9 @@ type Client struct {
 	dial func(ctx context.Context, id string, notify sdk.NotifyHandler) (ariaConn, error)
 
 	ReconnectFor time.Duration
+	CheckEvery   time.Duration
 
+	done    chan struct{}
 	mu      sync.Mutex
 	angelus *sdk.Angelus
 	threads map[string]*thread
@@ -29,7 +31,7 @@ type Client struct {
 }
 
 func New(ep transport.Endpoint) *Client {
-	c := &Client{ep: ep, ReconnectFor: 30 * time.Second, threads: map[string]*thread{}}
+	c := &Client{ep: ep, ReconnectFor: 30 * time.Second, CheckEvery: 15 * time.Second, done: make(chan struct{}), threads: map[string]*thread{}}
 	c.dial = c.dialAria
 	return c
 }
@@ -38,6 +40,9 @@ var ErrClosed = errors.New("chat: client closed")
 
 func (c *Client) Close() error {
 	c.mu.Lock()
+	if !c.closed {
+		close(c.done)
+	}
 	c.closed = true
 	threads := c.threads
 	c.threads = map[string]*thread{}
@@ -197,6 +202,8 @@ type thread struct {
 	conn         ariaConn
 	gen          uint64
 	reconnecting bool
+	watching     bool
+	subSeq       uint64
 	folds        map[uint64]*turnFold
 	top          uint64
 	syncing      bool
@@ -645,7 +652,13 @@ func (t *thread) subscribe(ctx context.Context, s *sub, seed []uint64) <-chan Ev
 	s.wake = make(chan struct{}, 1)
 	t.mu.Lock()
 	s.rtVer = t.rt.ver
+	t.subSeq++
+	s.seq = t.subSeq
 	t.subs[s] = struct{}{}
+	if !t.watching {
+		t.watching = true
+		go t.watchdog()
+	}
 	for _, id := range seed {
 		if f := t.folds[id]; f == nil {
 			t.want[id] = true
@@ -756,6 +769,9 @@ func (t *thread) pump(ctx context.Context, s *sub) {
 }
 
 type sub struct {
+	seq     uint64
+	quiet   bool
+	quietAt uint64
 	resumed bool
 	after   uint64
 	rtVer   uint64
@@ -790,4 +806,85 @@ func (s *sub) push(e Event, last bool) {
 	case s.wake <- struct{}{}:
 	default:
 	}
+}
+
+func (t *thread) watchdog() {
+	tick := time.NewTicker(t.c.CheckEvery)
+	defer tick.Stop()
+	for {
+		select {
+		case <-tick.C:
+		case <-t.c.done:
+			return
+		}
+		t.mu.Lock()
+		if len(t.subs) == 0 {
+			t.watching = false
+			t.mu.Unlock()
+			return
+		}
+		conn, gen, seq := t.conn, t.gen, t.subSeq
+		waiting := false
+		for s := range t.subs {
+			waiting = waiting || s.r == nil
+		}
+		t.mu.Unlock()
+		if alive(conn) {
+			t.check(conn, gen, seq, waiting)
+		}
+	}
+}
+
+func (t *thread) check(conn ariaConn, gen, seq uint64, waiting bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), t.c.CheckEvery)
+	defer cancel()
+	rt, err := conn.FormOf(ctx, runtimeIntrinsic)
+	dormant := isDormant(err)
+	if err != nil && !dormant {
+		_ = conn.Close()
+		return
+	}
+	queued := -1
+	if waiting {
+		queued = queueLen(ctx, conn)
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if gen != t.gen {
+		return
+	}
+	if !dormant {
+		t.adopt(rt, nil)
+	}
+	now := t.rt.state()
+	if dormant {
+		now.state, now.inflight = rpc.RuntimeIdle, 0
+	}
+	quiet := queued == 0 && now.state == rpc.RuntimeIdle
+	for s := range t.subs {
+		if s.r != nil || s.closed || s.seq > seq || s.after < now.turn || !quiet {
+			s.quiet = false
+			continue
+		}
+		if s.quiet && s.quietAt == t.rt.ver {
+			t.finishWaiting(s, runState{})
+			continue
+		}
+		s.quiet, s.quietAt = true, t.rt.ver
+	}
+}
+
+func queueLen(ctx context.Context, conn ariaConn) int {
+	q, err := conn.FormOf(ctx, queueIntrinsic)
+	if isDormant(err) {
+		return 0
+	}
+	if err != nil {
+		return -1
+	}
+	n := -1
+	if raw, ok := q.Snapshot.Get("len"); ok {
+		_ = json.Unmarshal(raw, &n)
+	}
+	return n
 }

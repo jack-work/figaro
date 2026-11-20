@@ -73,6 +73,13 @@ was, with nothing lost or repeated. A catch-up read that fails on a live
 connection is retried for as long. If neither recovers, the channel gets
 `error`.
 
+While a channel is open the client checks its aria every `Client.CheckEvery`
+(15 s by default). A check that gets no answer within that time closes the
+connection, which redials as above, so a link that went silent without
+closing is noticed. A channel waiting for a turn the daemon said would follow
+ends with `end` once two checks in a row find the aria idle with nothing
+queued (the queued prompt was deleted, say).
+
 ## Cursors and reconnecting
 
 ```go
