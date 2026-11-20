@@ -115,9 +115,15 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		MaxTokens:        cbInt("system.max_tokens"),
 		ReminderRenderer: cbStr("system.reminder_renderer"),
 	}
-	prov, err := h.factoryIn(cbStr("system.sandbox"))(provName, knobs)
-	if err != nil {
-		return nil, fmt.Errorf("restore %s: create provider: %w", ariaID, err)
+	logged := form.IsLog(cbSnap)
+	var prov providerPkg.Provider
+	var factory ProviderFactory
+	if !logged {
+		factory = h.factoryIn(cbStr("system.sandbox"))
+		var err error
+		if prov, err = factory(provName, knobs); err != nil {
+			return nil, fmt.Errorf("restore %s: create provider: %w", ariaID, err)
+		}
 	}
 
 	var createdAt, lastActive time.Time
@@ -130,17 +136,21 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 		lastActive = time.UnixMilli(ts)
 	}
 	loaded, _ := h.settings()
-	box, err := sandbox.Open(ctx, h.angelus.Sessions, loaded, cbStr("system.sandbox"), ariaID, cbStr("system.cwd"))
-	if err != nil {
-		return nil, fmt.Errorf("restore %s: sandbox: %w", ariaID, err)
+	reg, closeBox := tool.NewRegistry(), func() {}
+	if !logged {
+		box, err := sandbox.Open(ctx, h.angelus.Sessions, loaded, cbStr("system.sandbox"), ariaID, cbStr("system.cwd"))
+		if err != nil {
+			return nil, fmt.Errorf("restore %s: sandbox: %w", ariaID, err)
+		}
+		reg = h.toolsIn(cbStr("system.sandbox"), ariaID, func() *tool.Registry {
+			return tool.DefaultRegistry(box, cwdFromForm(cb, box), tool.WithImageBudget(loaded.InlineImageBudget()))
+		})
+		closeBox = func() { box.Close() }
 	}
-	reg := h.toolsIn(cbStr("system.sandbox"), ariaID, func() *tool.Registry {
-		return tool.DefaultRegistry(box, cwdFromForm(cb, box), tool.WithImageBudget(loaded.InlineImageBudget()))
-	})
 	agent := figaro.NewAgent(figaro.Config{
 		ID:              ariaID,
 		Provider:        prov,
-		ProviderFactory: h.factoryIn(cbStr("system.sandbox")),
+		ProviderFactory: factory,
 		Models:          h.angelus.Models,
 		Tools:           reg,
 		Projector:       uiir.New(reg).Naming(h.angelus.senderName),
@@ -161,12 +171,12 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figar
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
 		agent.Kill()
-		box.Close()
+		closeBox()
 		return nil, fmt.Errorf("restore %s: register: %w", ariaID, err)
 	}
 
 	agent.OnTeardown(h.bindAgentToHub(ariaID, agent))
-	agent.OnTeardown(func() { box.Close() })
+	agent.OnTeardown(closeBox)
 	agent.Redeliver()
 
 	slog.Info("restored figaro",
