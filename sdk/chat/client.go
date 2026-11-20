@@ -989,9 +989,15 @@ func queueLen(ctx context.Context, conn ariaConn) int {
 	if err != nil {
 		return -1
 	}
-	n := -1
-	if raw, ok := q.Snapshot.Get("len"); ok {
-		_ = json.Unmarshal(raw, &n)
+	pending := 0
+	for key, raw := range q.Snapshot.All() {
+		if !strings.HasPrefix(key, "items.") || !strings.HasSuffix(key, ".state") {
+			continue
+		}
+		var state rpc.QueueState
+		if json.Unmarshal(raw, &state) == nil && (state == rpc.QueueStateQueued || state == rpc.QueueStateCommitting) {
+			pending++
+		}
 	}
-	return n
+	return pending
 }

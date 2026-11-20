@@ -407,15 +407,10 @@ func TestResumingATurnPastTheTailFailsAtOnce(t *testing.T) {
 	}
 }
 
-func queueOf(n int) *rpc.FormResponse {
-	b, _ := json.Marshal(n)
-	return &rpc.FormResponse{Snapshot: form.FromMap(map[string]json.RawMessage{"len": b}), Version: 1, Intrinsic: "queue", Incarnation: 1}
-}
-
 func TestAWaitForAQueuedTurnEndsWhenTheQueueEmptiesWithoutOne(t *testing.T) {
 	var rt runtimeFeed
 	conn := newFakeConn(rt.response("idle", 2, "", 1), sealedTurn(2, "ab"))
-	conn.queue = queueOf(0)
+	conn.queue = queueWith()
 	c := fakeClient(conn)
 	c.CheckEvery = 20 * time.Millisecond
 	ch, err := c.Resume(context.Background(), "x", Cursor{Turn: 2, Text: 1})
@@ -691,6 +686,60 @@ func TestAFinishedTurnEndsOnAnAriaWokenWithoutATurn(t *testing.T) {
 	var rt runtimeFeed
 	th.readBack(rt.response("idle", 0, "", 0), sealedTurn(2, "ab"))
 	if got := summary(drain(t, ch)); got != `+"b" end:ab` {
+		t.Fatalf("events: %s", got)
+	}
+}
+
+func queueWith(states ...string) *rpc.FormResponse {
+	m := map[string]json.RawMessage{}
+	n, _ := json.Marshal(len(states))
+	m["len"] = n
+	for i, st := range states {
+		b, _ := json.Marshal(st)
+		m[fmt.Sprintf("items.%d.state", i+1)] = b
+	}
+	return &rpc.FormResponse{Snapshot: form.FromMap(m), Version: 1, Intrinsic: "queue", Incarnation: 1}
+}
+
+func TestAWaitEndsWhenOnlyAnsweredPromptsRemainInTheQueueForm(t *testing.T) {
+	var rt runtimeFeed
+	conn := newFakeConn(rt.response("idle", 2, "", 1), sealedTurn(2, "ab"))
+	conn.queue = queueWith("committed", "committed", "dropped")
+	c := fakeClient(conn)
+	c.CheckEvery = 20 * time.Millisecond
+	ch, err := c.Resume(context.Background(), "x", Cursor{Turn: 2, Text: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := summary(drain(t, ch)); got != `+"b" end:ab` {
+		t.Fatalf("events: %s", got)
+	}
+}
+
+func TestAWaitHoldsWhileAPromptIsStillQueued(t *testing.T) {
+	var rt runtimeFeed
+	conn := newFakeConn(rt.response("idle", 2, "", 1), sealedTurn(2, "ab"))
+	conn.queue = queueWith("committed", "queued")
+	c := fakeClient(conn)
+	c.CheckEvery = 10 * time.Millisecond
+	ch, err := c.Resume(context.Background(), "x", Cursor{Turn: 2, Text: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []Event
+	timeout := time.After(300 * time.Millisecond)
+	for done := false; !done; {
+		select {
+		case e, ok := <-ch:
+			if !ok {
+				t.Fatalf("ended while a prompt was queued: %s", summary(events))
+			}
+			events = append(events, e)
+		case <-timeout:
+			done = true
+		}
+	}
+	if got := summary(events); got != `+"b"` {
 		t.Fatalf("events: %s", got)
 	}
 }
