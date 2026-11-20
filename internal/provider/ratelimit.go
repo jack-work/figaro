@@ -4,22 +4,17 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"regexp"
-	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/jack-work/figaro/internal/wirelog"
 )
 
-const Rou2UpstreamHeader = "X-Rou2-Upstream"
+const Rou2UpstreamHeader = wirelog.Rou2UpstreamHeader
 
-var rou2UpstreamName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
-
-func Rou2Upstream(h http.Header) (string, bool) {
-	v := strings.TrimSpace(h.Get(Rou2UpstreamHeader))
-	return v, rou2UpstreamName.MatchString(v)
-}
+func Rou2Upstream(h http.Header) (string, bool) { return wirelog.Rou2Upstream(h) }
 
 func RecordRou2Upstream(ctx context.Context, h http.Header) (string, bool) {
 	upstream, ok := Rou2Upstream(h)
