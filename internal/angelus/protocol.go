@@ -285,6 +285,9 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if err := h.refuseCredoChange(method, id, dressed); err != nil {
 			return nil, err
 		}
+		if err := h.refuseModelVerbsOnLog(method, id, dressed); err != nil {
+			return nil, err
+		}
 		if targets := roleTargetsIn(method, dressed); len(targets) > 0 {
 			done, err := h.angelus.guard.enter(targets...)
 			if err != nil {
