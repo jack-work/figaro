@@ -30,7 +30,8 @@ const (
 )
 
 func (c *Client) History(ctx context.Context, threadID string, before uint64, limit int) (History, error) {
-	_, conn, err := c.thread(ctx, threadID, false)
+	_, conn, release, err := c.thread(ctx, threadID, false)
+	defer release()
 	if err != nil {
 		return History{}, err
 	}

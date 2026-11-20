@@ -387,7 +387,8 @@ func TestAListenerAddedAfterADropBringsTheConnectionBack(t *testing.T) {
 	first := newFakeConn(rt.response("idle", 1, "", 0))
 	second := newFakeConn(rt.response("idle", 2, "", 0), sealedTurn(2, "ab"))
 	c := fakeClient(first, second)
-	th, _, err := c.thread(context.Background(), "x", true)
+	th, _, release, err := c.thread(context.Background(), "x", true)
+	defer release()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -458,7 +459,8 @@ func TestANewTurnAnnouncedBeforeItsFramesStreamsWithoutARead(t *testing.T) {
 	conn := newFakeConn(rt.response("idle", 2, "", 0))
 	conn.readGate = make(chan struct{})
 	c := fakeClient(conn)
-	th, _, err := c.thread(context.Background(), "x", true)
+	th, _, release, err := c.thread(context.Background(), "x", true)
+	defer release()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -838,7 +840,8 @@ func TestTheTimedCheckRedialsAThreadLeftWithoutAConnection(t *testing.T) {
 	second := newFakeConn(rt.response("idle", 2, "", 0), sealedTurn(2, "ab"))
 	c := fakeClient(first, second)
 	c.CheckEvery = 20 * time.Millisecond
-	th, _, err := c.thread(context.Background(), "x", true)
+	th, _, release, err := c.thread(context.Background(), "x", true)
+	defer release()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -897,5 +900,21 @@ func TestResumingFarBackReadsEveryPageToTheTail(t *testing.T) {
 	}
 	if got := summary(drain(t, ch)); got != `+"b" end:ab` {
 		t.Fatalf("events: %s", got)
+	}
+}
+
+func TestACallInProgressHoldsItsThreadAgainstIdleClose(t *testing.T) {
+	var rt runtimeFeed
+	c := New(transport.Endpoint{})
+	c.IdleClose = time.Millisecond
+	c.dial = func(context.Context, string, sdk.NotifyHandler) (ariaConn, error) {
+		time.Sleep(2 * time.Millisecond)
+		return newFakeConn(rt.response("idle", 1, "", 0)), nil
+	}
+	for i := range 100 {
+		if err := c.Cancel(context.Background(), "x"); err != nil {
+			t.Fatalf("call %d on an open client: %v", i, err)
+		}
+		time.Sleep(time.Duration(i%3) * time.Millisecond)
 	}
 }

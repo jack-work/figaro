@@ -14,8 +14,8 @@ defer c.Close()
 ```
 
 A `Client` is safe for concurrent use. It keeps one connection to the angelus
-and one per thread in use; a thread with no open channel and no call for
-`Client.IdleClose` (5 min by default) lets its connection go.
+and one per thread in use; a thread with no open channel and no call in
+progress for `Client.IdleClose` (5 min by default) lets its connection go.
 
 The caller's principal needs `fork` on the root and `read`, `listen` and
 `send` on the threads. The daemon must include 45d0076e4 (the first

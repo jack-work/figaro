@@ -125,7 +125,8 @@ func (c *Client) Open(ctx context.Context, root string) (string, error) {
 }
 
 func (c *Client) Prompt(ctx context.Context, threadID, text string) (<-chan Event, error) {
-	t, conn, err := c.thread(ctx, threadID, true)
+	t, conn, release, err := c.thread(ctx, threadID, true)
+	defer release()
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +141,8 @@ func (c *Client) Resume(ctx context.Context, threadID string, from Cursor) (<-ch
 	if from.Turn == 0 {
 		return nil, errors.New("chat: resume needs a cursor with a turn")
 	}
-	t, _, err := c.thread(ctx, threadID, true)
+	t, _, release, err := c.thread(ctx, threadID, true)
+	defer release()
 	if err != nil {
 		return nil, err
 	}
@@ -148,28 +150,31 @@ func (c *Client) Resume(ctx context.Context, threadID string, from Cursor) (<-ch
 }
 
 func (c *Client) Cancel(ctx context.Context, threadID string) error {
-	_, conn, err := c.thread(ctx, threadID, false)
+	_, conn, release, err := c.thread(ctx, threadID, false)
+	defer release()
 	if err != nil {
 		return err
 	}
 	return conn.Interrupt(ctx)
 }
 
-func (c *Client) thread(ctx context.Context, id string, needState bool) (*thread, ariaConn, error) {
+func (c *Client) thread(ctx context.Context, id string, needState bool) (*thread, ariaConn, func(), error) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		return nil, nil, ErrClosed
+		return nil, nil, func() {}, ErrClosed
 	}
 	t := c.threads[id]
 	if t == nil {
 		t = newThread(c, id)
 		c.threads[id] = t
 	}
+	t.mu.Lock()
+	t.calls++
+	t.mu.Unlock()
 	c.mu.Unlock()
-	t.touch()
 	conn, err := t.connect(ctx, needState)
-	return t, conn, err
+	return t, conn, t.release, err
 }
 
 func newThread(c *Client, id string) *thread {
@@ -222,6 +227,7 @@ type thread struct {
 	reconnecting bool
 	closed       bool
 	lastUsed     time.Time
+	calls        int
 	idleTimer    *time.Timer
 	watching     bool
 	subSeq       uint64
@@ -816,15 +822,16 @@ func (t *thread) leave(s *sub) {
 	}
 }
 
-func (t *thread) touch() {
+func (t *thread) release() {
 	t.mu.Lock()
+	t.calls--
 	t.lastUsed = time.Now()
 	t.armIdle()
 	t.mu.Unlock()
 }
 
 func (t *thread) armIdle() {
-	if len(t.subs) > 0 || t.closed {
+	if len(t.subs) > 0 || t.calls > 0 || t.closed {
 		return
 	}
 	if t.idleTimer == nil {
@@ -838,7 +845,7 @@ func (t *thread) idleOut() {
 	c := t.c
 	c.mu.Lock()
 	t.mu.Lock()
-	idle := len(t.subs) == 0 && !t.closed && time.Since(t.lastUsed) >= c.IdleClose && c.threads[t.id] == t
+	idle := len(t.subs) == 0 && t.calls == 0 && !t.closed && time.Since(t.lastUsed) >= c.IdleClose && c.threads[t.id] == t
 	if idle {
 		delete(c.threads, t.id)
 	} else {
