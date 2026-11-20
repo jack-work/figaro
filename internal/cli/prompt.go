@@ -11,6 +11,7 @@ import (
 
 	"github.com/jack-work/figaro/sdk"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 )
@@ -155,6 +156,13 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 			die("send: no trunk bound to this shell (try: <id>:<turn> or attend <id>)")
 		}
 		trunkID = r.FigaroID
+	}
+
+	if d.blank && !d.mintsLog() {
+		trunk, ferr := acli.Form(ctx, trunkID)
+		if ferr != nil || !form.IsLog(trunk.Snapshot) {
+			die("send: %s", errEmptyStdin)
+		}
 	}
 
 	// The coordinate goes on the wire as named; the server owns the turn-to-LT

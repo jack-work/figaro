@@ -437,6 +437,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	if err != nil {
 		dieUsage("%s: %s", verb, err)
 	}
+	opts.outfit.blank = blankStdin(opts.outfit, prompt)
 	if len(opts.images) > 0 && prompt == "" {
 		dieUsage("%s: %s", verb, errImageNeedsPrompt)
 	}

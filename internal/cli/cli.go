@@ -459,6 +459,7 @@ already exists (--id, -x) are refused rather than ignored.
 			if len(opts.images) > 0 && prompt == "" {
 				return fmt.Errorf("new: %s", errImageNeedsPrompt)
 			}
+			opts.outfit.blank = blankStdin(opts.outfit, prompt)
 			if opts.outfit.images, perr = readPromptImages(opts.images); perr != nil {
 				return fmt.Errorf("new: %s", perr)
 			}

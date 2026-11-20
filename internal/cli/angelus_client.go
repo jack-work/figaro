@@ -222,6 +222,9 @@ func mustConnectAngelus(loaded *config.Loaded) *sdk.Angelus {
 // mustCreate mints an aria and does not attend it: every birth verb says so
 // with attendNew.
 func mustCreate(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, d dressing) (string, sdk.Addr) {
+	if d.blank && !d.mintsLog() {
+		die("%s", errEmptyStdin)
+	}
 	createResp, err := createOrSayWhy(ctx, loaded, d, func() (*rpc.CreateResponse, error) {
 		if d.mintsLog() {
 			bound, err := acli.FormBind(ctx, "", d.names, d.patch)

@@ -23,6 +23,7 @@ type dressing struct {
 	patch  *rpc.FormPatch
 	images []rpc.QuaImage
 	exact  bool
+	blank  bool
 }
 
 func (d dressing) request(prompt string) rpc.QuaRequest {
