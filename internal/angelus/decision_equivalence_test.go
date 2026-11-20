@@ -52,7 +52,12 @@ principals = ["user:reader"]
 
 func newEqWorld(t *testing.T, boxExtra string) *eqWorld {
 	t.Helper()
-	d := boxDoorRigConfigured(t, eqPolicy(), "true", judgeListsAnyOutfit+boxExtra)
+	return newEqWorldUnder(t, eqPolicy(), boxExtra)
+}
+
+func newEqWorldUnder(t *testing.T, policy, boxExtra string) *eqWorld {
+	t.Helper()
+	d := boxDoorRigConfigured(t, policy, "true", judgeListsAnyOutfit+boxExtra)
 	p, err := d.create(asOwner(), "judged")
 	if err != nil {
 		t.Fatal(err)

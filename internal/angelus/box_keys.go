@@ -72,6 +72,13 @@ func callerBox(ctx context.Context) (string, bool) {
 	return authn.BoxOf(sub.Principal)
 }
 
+func boxAsItself(ctx context.Context) (string, bool) {
+	if _, tool := authn.ToolOf(ctx); tool {
+		return "", false
+	}
+	return callerBox(ctx)
+}
+
 func changedPaths(before, after form.Snapshot) []string {
 	was := map[string]json.RawMessage{}
 	for k, v := range before.All() {
@@ -110,7 +117,7 @@ type callerKeys struct {
 }
 
 func (h *handlers) callerKeysOf(ctx context.Context) callerKeys {
-	box, boxed := callerBox(ctx)
+	box, boxed := boxAsItself(ctx)
 	owns := h.callerOwns(ctx)
 	tool, _ := authn.ToolOf(ctx)
 	if tool == "" && owns && !boxed && !keyGrantsWaived(ctx) {

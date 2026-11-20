@@ -35,7 +35,7 @@ func (h *handlers) createTopLevel(ctx context.Context, params json.RawMessage) (
 		return nil, err
 	}
 	minter := authn.FigaroOf(ctx)
-	if _, boxed := callerBox(ctx); minter == "" || boxed {
+	if _, boxed := boxAsItself(ctx); minter == "" || boxed {
 		return h.create(ctx, params)
 	}
 	release, forNode, err := h.angelus.holdBirth(minter, 1, false)
@@ -63,7 +63,7 @@ func (h *handlers) refuseUnlicensedMint(ctx context.Context) error {
 		}
 		return nil
 	}
-	if _, boxed := callerBox(ctx); boxed {
+	if _, boxed := boxAsItself(ctx); boxed {
 		return nil
 	}
 	granted := false

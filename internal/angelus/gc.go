@@ -227,7 +227,7 @@ func (h *handlers) holdOf(set []string, root string, now time.Time) (string, str
 
 func (h *handlers) gcCaller(ctx context.Context) (gc.Caller, error) {
 	principal := authn.PrincipalText(authn.PrincipalOf(ctx))
-	if box, ok := callerBox(ctx); ok {
+	if box, ok := boxAsItself(ctx); ok {
 		return gc.Caller{Principal: principal, Box: box, MayKill: func(id string) error {
 			return h.allowed(ctx, rpc.VerbKill, authz.Aria(id))
 		}}, nil

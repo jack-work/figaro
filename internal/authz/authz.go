@@ -115,7 +115,7 @@ func (p *Policies) Call(r Request) Decision {
 		return Deny("%s has no verb, so no policy can allow it", r.Method)
 	}
 	figaro, dropped := r.Identity.FigaroID, false
-	if (r.Door == authn.DoorBox || r.Door == authn.DoorHost) && !p.pinnedToBox(r.Subject, figaro) {
+	if (r.Door == authn.DoorBox || r.Door == authn.DoorHost) && !p.PinnedToBox(r.Subject, figaro) {
 		if box, _ := authn.BoxOf(r.Subject.Principal); r.Door == authn.DoorBox && verb != rpc.VerbNone && p.claimRequiredIn(box) {
 			if figaro == "" {
 				return Deny("%s: box %s's door takes only calls that name their figaro (sandbox.boxes.%s.figaro_claim = \"required\")", r.Method, box, box)
@@ -247,7 +247,7 @@ func poolNamed(params json.RawMessage) (string, error) {
 	return req.Pool, nil
 }
 
-func (p *Policies) pinnedToBox(s jkauthz.Subject, figaro string) bool {
+func (p *Policies) PinnedToBox(s jkauthz.Subject, figaro string) bool {
 	box, ok := authn.BoxOf(s.Principal)
 	if !ok || figaro == "" {
 		return false

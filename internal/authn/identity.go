@@ -215,3 +215,16 @@ func earliest(a, b time.Time) time.Time {
 	}
 	return a
 }
+
+func ClaimedInBox(pinned func(jkauthz.Subject, string) bool, next jkrpc.HandlerFunc) jkrpc.HandlerFunc {
+	return func(ctx context.Context, params json.RawMessage) (any, error) {
+		if d := DoorOf(ctx); d == DoorBox || d == DoorHost {
+			if f := rpc.CallerOf(params); f != "" {
+				if s, err := SubjectOf(ctx); err == nil && pinned(s, f) {
+					ctx = WithToolOf(ctx, f)
+				}
+			}
+		}
+		return next(ctx, params)
+	}
+}

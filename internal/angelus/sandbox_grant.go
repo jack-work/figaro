@@ -34,7 +34,7 @@ func (h *handlers) grantSandbox(ctx context.Context, snap form.Snapshot) (form.P
 	}
 	if d := policies.AllowFigaro(sub, figaro, rpc.VerbUse, authz.Sandbox(kind)); !d.Allowed {
 		home, ok := homeSandbox(sub.Principal)
-		if !ok || sandboxName(home) == "local" {
+		if _, tool := authn.ToolOf(ctx); tool || !ok || sandboxName(home) == "local" {
 			return form.Patch{}, fmt.Errorf("sandbox %q: %s", sandboxName(kind), d.Reason())
 		}
 		pin, _ := json.Marshal(home)

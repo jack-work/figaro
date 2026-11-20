@@ -205,7 +205,11 @@ func (h *handlers) door(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy
 		if p := h.angelus.Policies; p != nil {
 			inner = p.DroppingClaimsNotHeld(m, inner)
 		}
-		guarded[m] = h.angelus.refusingWhenStopping(authn.Authenticated(authn.AriaHeader{}, inner))
+		outer := authn.Authenticated(authn.AriaHeader{}, inner)
+		if p := h.angelus.Policies; p != nil {
+			outer = authn.ClaimedInBox(p.PinnedToBox, outer)
+		}
+		guarded[m] = h.angelus.refusingWhenStopping(outer)
 	}
 	return guarded
 }
