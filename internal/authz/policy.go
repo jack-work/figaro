@@ -473,6 +473,9 @@ func (v Verdict) Reason() string {
 }
 
 func (p *Policies) Allow(s jkauthz.Subject, verb rpc.Verb, r Resource) Verdict {
+	if via, ok := DelegatedVia(s); ok && !delegable(verb, r) {
+		return Verdict{computed: delegateRefusal(via, s.Principal, verb, r)}
+	}
 	if IsProvisioner(s.Principal) {
 		return p.allowProvisioner(s, verb, r)
 	}

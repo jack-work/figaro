@@ -9,15 +9,16 @@ import (
 )
 
 type AuthzConfig struct {
-	Owner         string         `toml:"owner"`
-	Policy        string         `toml:"policy"`
-	TroupeIssuers *bool          `toml:"troupe_issuers"`
-	Peercred      PeercredConfig `toml:"peercred"`
-	Upstream      UpstreamConfig `toml:"upstream"`
-	Issuers       []IssuerConfig `toml:"issuers"`
-	APIKeys       []APIKeyConfig `toml:"api_keys"`
-	ProtectedKeys string         `toml:"protected_keys"`
-	PeerCheck     *bool          `toml:"peer_check"`
+	Owner         string             `toml:"owner"`
+	Policy        string             `toml:"policy"`
+	TroupeIssuers *bool              `toml:"troupe_issuers"`
+	Peercred      PeercredConfig     `toml:"peercred"`
+	Upstream      UpstreamConfig     `toml:"upstream"`
+	Issuers       []IssuerConfig     `toml:"issuers"`
+	Delegation    []DelegationConfig `toml:"delegation"`
+	APIKeys       []APIKeyConfig     `toml:"api_keys"`
+	ProtectedKeys string             `toml:"protected_keys"`
+	PeerCheck     *bool              `toml:"peer_check"`
 
 	EnforceKeyGrants    bool `toml:"enforce_key_grants"`
 	EnforceChildPolicy  bool `toml:"enforce_child_policy"`
@@ -31,6 +32,11 @@ type APIKeyConfig struct {
 	SHA256    string    `toml:"sha256"`
 	NotAfter  time.Time `toml:"not_after"`
 	Nodes     []string  `toml:"nodes"`
+}
+
+type DelegationConfig struct {
+	Principal string   `toml:"principal"`
+	Users     []string `toml:"users"`
 }
 
 type PeercredConfig struct {

@@ -1,0 +1,220 @@
+package authz
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"unicode"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/jkauthz"
+)
+
+const DelegateHeader = "X-Figaro-On-Behalf-Of"
+
+const maxDelegateName = 128
+
+const delegatedMark = "\x00delegated by "
+
+type DelegationError struct{ reason string }
+
+func (e *DelegationError) Error() string { return "on-behalf-of refused: " + e.reason }
+
+func refuseDelegation(format string, args ...any) error {
+	return &DelegationError{reason: fmt.Sprintf(format, args...)}
+}
+
+type Delegations struct {
+	users map[jkauthz.Principal]map[jkauthz.Principal]bool
+}
+
+func NewDelegations(cfgs []config.DelegationConfig) (*Delegations, error) {
+	d := &Delegations{users: map[jkauthz.Principal]map[jkauthz.Principal]bool{}}
+	for i, c := range cfgs {
+		svc, err := jkauthz.ParsePrincipal(c.Principal)
+		if err != nil {
+			return nil, fmt.Errorf("authz.delegation[%d].principal: %w", i, err)
+		}
+		scope, ok := scopeOfPrincipal(svc)
+		if svc.Kind != KindService || svc.Node != "" || !ok {
+			return nil, fmt.Errorf("authz.delegation[%d].principal = %q: want service:<client>@<issuer scope>, a service an issuer vouches for", i, c.Principal)
+		}
+		if _, dup := d.users[svc]; dup {
+			return nil, fmt.Errorf("authz.delegation[%d]: %s is listed twice", i, c.Principal)
+		}
+		if len(c.Users) == 0 {
+			return nil, fmt.Errorf("authz.delegation[%d]: %s lists no users, so it may act for nobody", i, c.Principal)
+		}
+		allowed := map[jkauthz.Principal]bool{}
+		for _, text := range c.Users {
+			u, err := jkauthz.ParsePrincipal(text)
+			if err != nil {
+				return nil, fmt.Errorf("authz.delegation[%d].users: %w", i, err)
+			}
+			if got, _ := scopeOfPrincipal(u); u.Kind != jkauthz.KindUser || u.Node != "" || got != scope {
+				return nil, fmt.Errorf("authz.delegation[%d].users: %q is not a user of @%s; a service acts for users of the issuer that vouches for it", i, text, scope)
+			}
+			allowed[u] = true
+		}
+		d.users[svc] = allowed
+	}
+	return d, nil
+}
+
+func scopeOfPrincipal(p jkauthz.Principal) (string, bool) {
+	at := strings.LastIndex(p.ID, "@")
+	if at <= 0 || at == len(p.ID)-1 {
+		return "", false
+	}
+	return p.ID[at+1:], true
+}
+
+func (d *Delegations) Empty() bool { return d == nil || len(d.users) == 0 }
+
+type delegated struct {
+	service jkauthz.Principal
+	user    jkauthz.Principal
+	name    string
+}
+
+func (d *Delegations) Apply(ctx context.Context, name string) (context.Context, error) {
+	c, _ := ctx.Value(callerKey{}).(caller)
+	if c.session == nil && c.key == nil {
+		return nil, refuseDelegation("only a caller admitted by a bearer may name the user it acts for")
+	}
+	if c.onBehalf != nil {
+		return nil, refuseDelegation("this connection already acts for %s", c.onBehalf.user)
+	}
+	svc, err := SubjectOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if d.Empty() {
+		return nil, refuseDelegation("this node lists no service that may act for a user ([[authz.delegation]]), so %s acts only as itself: drop %s", svc.Principal, DelegateHeader)
+	}
+	allowed, listed := d.users[svc.Principal]
+	if !listed {
+		return nil, refuseDelegation("%s is not listed to act for a user ([[authz.delegation]])", svc.Principal)
+	}
+	if err := checkDelegateName(name); err != nil {
+		return nil, err
+	}
+	scope, _ := scopeOfPrincipal(svc.Principal)
+	user := jkauthz.Principal{Kind: jkauthz.KindUser, ID: name + "@" + scope}
+	if !allowed[user] {
+		return nil, refuseDelegation("%s is not listed to act for %s", svc.Principal, user)
+	}
+	c.onBehalf = &delegated{service: svc.Principal, user: user, name: name}
+	return context.WithValue(ctx, callerKey{}, c), nil
+}
+
+func checkDelegateName(name string) error {
+	if name == "" {
+		return refuseDelegation("%s names no user", DelegateHeader)
+	}
+	if len(name) > maxDelegateName || strings.ContainsFunc(name, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune(":/@*", r)
+	}) {
+		return refuseDelegation("%s is not a user name", DelegateHeader)
+	}
+	return nil
+}
+
+func (d delegated) subject() jkauthz.Subject {
+	return jkauthz.Subject{Principal: d.user, Groups: []string{delegatedMark + d.service.String()}}
+}
+
+func DelegatedVia(s jkauthz.Subject) (jkauthz.Principal, bool) {
+	for _, g := range s.Groups {
+		if text, ok := strings.CutPrefix(g, delegatedMark); ok {
+			p, _ := jkauthz.ParsePrincipal(text)
+			return p, true
+		}
+	}
+	return jkauthz.Principal{}, false
+}
+
+func OnBehalfOf(ctx context.Context) (name string, ok bool) {
+	c, _ := ctx.Value(callerKey{}).(caller)
+	if c.onBehalf == nil {
+		return "", false
+	}
+	return c.onBehalf.name, true
+}
+
+func delegable(verb rpc.Verb, r Resource) bool {
+	switch verb {
+	case rpc.VerbRead, rpc.VerbListen, rpc.VerbSend, rpc.VerbFork:
+		return true
+	case rpc.VerbUse:
+		return r.Kind == ResourceSandbox && r.ID == "local"
+	}
+	return false
+}
+
+func delegateRefusal(via, user jkauthz.Principal, verb rpc.Verb, r Resource) string {
+	return fmt.Sprintf("%s acts for %s and may not %s on %s: a delegated caller may read, listen, send and fork, and use sandbox:local", via, user, verb, r)
+}
+
+func (d delegated) refuses(method string, params json.RawMessage) error {
+	verb, ok := rpc.VerbOf(method)
+	if !ok {
+		return fmt.Errorf("%s has no verb, so no policy can allow it", method)
+	}
+	if verb != rpc.VerbNone && !delegable(verb, Daemon) {
+		return fmt.Errorf("%s: %s", method, delegateRefusal(d.service, d.user, verb, Daemon))
+	}
+	switch method {
+	case rpc.MethodQua:
+		var req rpc.QuaRequest
+		if json.Unmarshal(params, &req) != nil || req.Form == nil {
+			return nil
+		}
+		if (req.Form.Patch != nil && !req.Form.Patch.IsIdentity()) || len(req.Form.Outfits) > 0 || len(writtenContext(req.Form.Context)) > 0 {
+			return fmt.Errorf("%s: %s acts for %s and may send text only: its form input writes nothing (no patch, outfits or context keys)", method, d.service, d.user)
+		}
+	case rpc.MethodFork:
+		var req rpc.ForkRequest
+		if json.Unmarshal(params, &req) != nil {
+			return nil
+		}
+		if (req.Patch != nil && !req.Patch.IsIdentity()) || len(req.Outfits) > 0 || req.Seat != "" || req.Abdicates {
+			return fmt.Errorf("%s: %s acts for %s and may fork as is: no patch, outfits, seat or abdication", method, d.service, d.user)
+		}
+	}
+	return nil
+}
+
+func writtenContext(m map[string]json.RawMessage) map[string]json.RawMessage {
+	out := map[string]json.RawMessage{}
+	for k, v := range m {
+		if !form.HarnessKey(k) && !form.Ephemeral(k) {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func pinnedToDelegate(ctx context.Context, params json.RawMessage) json.RawMessage {
+	c, _ := ctx.Value(callerKey{}).(caller)
+	if c.onBehalf == nil {
+		return params
+	}
+	fields := map[string]json.RawMessage{}
+	if len(params) > 0 && string(params) != "null" {
+		if json.Unmarshal(params, &fields) != nil {
+			return params
+		}
+	}
+	delete(fields, rpc.CallerKey)
+	label, _ := json.Marshal(rpc.CallerRef{Label: c.onBehalf.name})
+	fields[rpc.CallerLabelKey] = label
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return params
+	}
+	return out
+}
