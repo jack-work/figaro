@@ -1,28 +1,45 @@
 package cli
 
 import (
-	"github.com/jack-work/figaro/api/aria"
+	"bytes"
+	"io"
+
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-func fenceLogTurns(turns []aria.Turn) {
-	for i := range turns {
-		turns[i].Inquiry = provider.NeutraliseReservedTags(turns[i].Inquiry)
-		segs := make([]aria.InquirySegment, len(turns[i].InquirySegments))
-		for j, s := range turns[i].InquirySegments {
-			s.Text = provider.NeutraliseReservedTags(s.Text)
-			segs[j] = s
-		}
-		turns[i].InquirySegments = segs
-	}
+type fenceWriter struct {
+	w   io.Writer
+	buf []byte
 }
 
-func fenceLogEntries(entries []irEntry) {
-	for i := range entries {
-		content := append(entries[i].Payload.Content[:0:0], entries[i].Payload.Content...)
-		for j := range content {
-			content[j].Text = provider.NeutraliseReservedTags(content[j].Text)
-		}
-		entries[i].Payload.Content = content
+func (f *fenceWriter) Write(p []byte) (int, error) {
+	f.buf = append(f.buf, p...)
+	cut := bytes.LastIndexByte(f.buf, '\n')
+	if cut < 0 {
+		return len(p), nil
+	}
+	if _, err := io.WriteString(f.w, provider.NeutraliseReservedTags(string(f.buf[:cut+1]))); err != nil {
+		return 0, err
+	}
+	f.buf = append(f.buf[:0], f.buf[cut+1:]...)
+	return len(p), nil
+}
+
+func (f *fenceWriter) Flush() error {
+	if len(f.buf) == 0 {
+		return nil
+	}
+	_, err := io.WriteString(f.w, provider.NeutraliseReservedTags(string(f.buf)))
+	f.buf = f.buf[:0]
+	return err
+}
+
+func fenceStdout() func() {
+	prev := stdout
+	fw := &fenceWriter{w: prev}
+	stdout = fw
+	return func() {
+		_ = fw.Flush()
+		stdout = prev
 	}
 }
