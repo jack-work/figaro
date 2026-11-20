@@ -28,6 +28,10 @@ func (d dressing) request(prompt string) rpc.QuaRequest {
 	return rpc.QuaRequest{Text: prompt, Form: buildPromptForm(d), Images: d.images}
 }
 
+func (d dressing) mintsLog() bool {
+	return d.patch != nil && form.IsLog(form.Snapshot{}.Apply(*d.patch))
+}
+
 func (d dressing) IsEmpty() bool {
 	return len(d.names) == 0 && (d.patch == nil || d.patch.IsIdentity())
 }

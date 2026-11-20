@@ -341,7 +341,7 @@ positional target needs the explicit verb or --id.`,
 		Name:  "new",
 		Group: "Prompt",
 		Short: "Start a fresh aria and prompt it",
-		Usage: "new [-j|--json] [-O <spec>] [-C [<@form>]] [--image <file>]... [--stdin | -- <prompt>]",
+		Usage: "new [-j|--json] [-O <spec>] [-C [<@form>]] [--log] [--image <file>]... [--stdin | -- <prompt>]",
 		Long: `Creates a new aria (server-generated id), binds it to this shell, and: when
 a prompt follows ` + "`--`" + `: sends it.
 
@@ -356,6 +356,12 @@ a prompt follows ` + "`--`" + `: sends it.
   figaro new --image r.jpg --stdin  a picture with the prompt from stdin
   figaro new -CO reviewer           fresh aria, and a role minted from an outfit
   figaro new -CS name=x             fresh aria, and a role minted from keys
+  figaro new --log -- <entry>       fresh aria log, its first entry appended
+
+--log mints an aria log: an aria with no model, whose sends are its entries.
+Each send appends one entry, stamped with its sender and time, and no model
+answers it; show, listen and read read it as they read any aria. Its kind is
+fixed at birth (system.kind = "log").
 
 -C/--cast mints the pair. With a role named, -O/-S dress the ARIA; with no
 role named they mint the ROLE, because that is the thing that does not exist

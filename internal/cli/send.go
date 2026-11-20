@@ -14,6 +14,7 @@ import (
 
 	"github.com/jack-work/figaro/sdk"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
@@ -34,6 +35,7 @@ type sendOpts struct {
 	forget   bool
 	json     bool
 	listen   bool
+	log      bool
 	outfit   dressing
 	// -O is outfit names only; -S carries k=v and JSON literals; -D key paths.
 	outfitText string
@@ -197,6 +199,11 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			opts.listen = true
 			i++
 			continue
+		case a == "--log":
+			opts.log = true
+			opts.setText = joinTerms(opts.setText, form.KindKey+"="+form.KindLog)
+			i++
+			continue
 		case a == "--exec", a == "-x":
 			opts.exec = true
 			i++
@@ -306,6 +313,7 @@ var sendFlagDefs = []cmdkit.FlagDef{
 	{Long: "set", Short: "S", Repeats: true, Description: "Form keys: k=v or a JSON literal, comma-separated; repeats"},
 	{Long: "delete", Short: "D", Repeats: true, Description: "Form key paths to remove, comma-separated; repeats"},
 	{Long: "cast", Short: "C", IsBool: true, Description: "new: cast the fresh aria into a role (named @form, or minted from -O/-S)"},
+	{Long: "log", IsBool: true, Description: "new: mint an aria log, no model; each send appends one entry"},
 }
 
 // Everything after the first bare `--` is the prompt and is never touched.
@@ -534,6 +542,8 @@ func validateNewOpts(opts sendOpts) error {
 		return fmt.Errorf("new always creates an aria; drop the target (or use `send --id`)")
 	case opts.exec || opts.dryRun || opts.skipYes:
 		return fmt.Errorf("--exec is `send -x`")
+	case opts.log && opts.cast:
+		return fmt.Errorf("--log mints a log; cast it after with `figaro cast <log> @role`")
 	}
 	return validateSendOpts(opts, false)
 }
