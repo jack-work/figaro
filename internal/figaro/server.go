@@ -231,7 +231,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if req.Backward {
 			return a.ReadBefore(req.At, req.Floor, req.Limit), nil
 		}
-		return a.Read(req.At, req.Limit), nil
+		return a.ReadUntil(req.At, req.Until, req.Limit), nil
 	}
 	return nil, fmt.Errorf("unknown method: %s", method)
 }

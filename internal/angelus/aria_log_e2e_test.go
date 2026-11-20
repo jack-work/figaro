@@ -237,3 +237,37 @@ func TestAriaLogAppendAndReadFollowTheSendAndReadGrants(t *testing.T) {
 		t.Fatalf("the entry names its sender: %+v", msgs)
 	}
 }
+
+func TestAnAriaLogReadsByRangeEitherWay(t *testing.T) {
+	r := logRig(t, defaultPolicy, nil)
+	id := mintLog(t, r, asOwner())
+	for i := 1; i <= 5; i++ {
+		if err := appendTo(t, r, asOwner(), id, "entry "+strconv.Itoa(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	whole := waitLogParts(t, r, id, 5)
+	lo, hi := whole.Parts[1].ID, whole.Parts[3].ID
+	inquiries := func(p aria.Page) []string {
+		var out []string
+		for _, part := range p.Parts {
+			out = append(out, part.Inquiry)
+		}
+		return out
+	}
+	fwd, err := readLog(t, r, asOwner(), id, rpc.ReadRequest{At: aria.Anchor{Turn: lo}, Until: aria.Anchor{Turn: hi}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := readLog(t, r, asOwner(), id, rpc.ReadRequest{At: aria.Anchor{Turn: hi}, Floor: aria.Anchor{Turn: lo}, Backward: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"entry 2", "entry 3"}
+	if got := inquiries(fwd); strings.Join(got, ",") != strings.Join(want, ",") || !fwd.More.After {
+		t.Fatalf("forward [%d,%d) = %v more=%+v, want %v and more after", lo, hi, got, fwd.More, want)
+	}
+	if got := inquiries(back); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("backward [%d,%d) = %v, want %v", lo, hi, got, want)
+	}
+}

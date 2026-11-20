@@ -80,9 +80,13 @@ func prepend(older, newer []aria.Turn) []aria.Turn {
 func gatherForward(ctx context.Context, acli *sdk.Angelus, figaroID string, opts showOpts) (showTurns, error) {
 	var w showTurns
 	at := aria.Anchor{Turn: uint64(max(opts.from, 0))}
+	var until aria.Anchor
+	if opts.to >= 0 {
+		until = aria.Anchor{Turn: uint64(opts.to) + 1}
+	}
 	for {
 		page, err := acli.Read(ctx, rpc.ReadRequest{
-			FigaroID: figaroID, At: at, Limit: showPageBytes,
+			FigaroID: figaroID, At: at, Until: until, Limit: showPageBytes,
 		})
 		if err != nil {
 			return w, err
@@ -102,7 +106,7 @@ func gatherForward(ctx context.Context, acli *sdk.Angelus, figaroID string, opts
 			w.atTail = true
 			return w, nil
 		}
-		if opts.to >= 0 && last.ID >= uint64(opts.to) {
+		if opts.to >= 0 && (last.ID >= uint64(opts.to) || page.Next.Turn > uint64(opts.to)) {
 			return w, nil
 		}
 		if *page.Next == at {

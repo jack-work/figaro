@@ -355,9 +355,11 @@ Notifications:
   queued work remains;
 - `form.delta`: one committed form patch, in the shape a client sends one.
 
-`figaro.read` is the pull half. Its current request retains pre-turn field
-names: `sinceLT` is a forward **turn** cursor; `before` and `before_node` form a
-backward `(turn,node)` anchor; `limit` is a byte budget. A missed live version
+`figaro.read` is the pull half. `at` is a `(turn,node)` anchor, read forward
+or, with `backward`, before it; `limit` is a byte budget. A range is
+half-open, `[lo, hi)`, and reads either way: forward with `at = lo` and
+`until = hi`, or backward with `at = hi` and `floor = lo`. `until` binds a
+forward read only and `floor` a backward one. A missed live version
 causes a re-read from the client's highest fully sealed turn. Read/push overlap
 is valid and client application is idempotent.
 

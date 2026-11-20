@@ -105,7 +105,11 @@ func (h *handlers) readFromStore(ctx context.Context, id, method string, params 
 				return nil, true, err
 			}
 		}
-		page, err := r.Page(id, req.At, req.Floor, h.angelus.Settings.ClampPageBudget(req.Limit), req.Backward)
+		bound := req.Until
+		if req.Backward {
+			bound = req.Floor
+		}
+		page, err := r.Page(id, req.At, bound, h.angelus.Settings.ClampPageBudget(req.Limit), req.Backward)
 		if err != nil {
 			return nil, true, err
 		}

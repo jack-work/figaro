@@ -61,6 +61,7 @@ type ReadRequest struct {
 	// Floor stops a backward read at this anchor, inclusive; More.Before says
 	// there is more below it. Zero means no floor.
 	Floor aria.Anchor `json:"floor,omitempty"`
+	Until aria.Anchor `json:"until,omitempty"`
 }
 
 type AriaIDRequest struct {
