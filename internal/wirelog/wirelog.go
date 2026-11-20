@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -20,6 +21,15 @@ import (
 
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
+
+const Rou2UpstreamHeader = "X-Rou2-Upstream"
+
+var rou2UpstreamName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+
+func Rou2Upstream(h http.Header) (string, bool) {
+	v := strings.TrimSpace(h.Get(Rou2UpstreamHeader))
+	return v, rou2UpstreamName.MatchString(v)
+}
 
 type ctxKey struct{}
 
@@ -143,6 +153,9 @@ func emitMeta(req *http.Request, resp *http.Response, duration time.Duration, re
 		attrs = append(attrs, attribute.Int("http.status_code", resp.StatusCode))
 		if rid := requestID(resp.Header); rid != "" {
 			attrs = append(attrs, attribute.String("http.request_id", rid))
+		}
+		if upstream, ok := Rou2Upstream(resp.Header); ok {
+			attrs = append(attrs, attribute.String("rou2.upstream", upstream))
 		}
 		if ra := RetryAfter(resp.Header); ra > 0 {
 			attrs = append(attrs, attribute.Int64("http.retry_after_s", int64(ra/time.Second)))
