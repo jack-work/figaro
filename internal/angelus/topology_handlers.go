@@ -813,7 +813,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 			delete(keys, k)
 		}
 		imported := form.Build(form.Snapshot{}, keys, nil)
-		if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, &imported); err != nil {
+		if err := h.refuseCallerKeys(ctx, rootBirth(), form.Snapshot{}, &imported); err != nil {
 			return nil, fmt.Errorf("import: %w", err)
 		}
 	}

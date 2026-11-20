@@ -777,7 +777,7 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 	}
 	line := lineage{of: id}
 	if method == rpc.MethodCast {
-		line = lineage{}
+		line = rootBirth()
 	}
 	if snap, err = h.listedOutfitKeys(ctx, line, snap, requestOutfits(ctx)); err != nil {
 		return err

@@ -91,7 +91,7 @@ func (h *handlers) castForHub(ctx context.Context, ariaID string, req rpc.CastRe
 			return res, err
 		}
 		set["target-aria"] = raw
-		id, _, err := b.CreateForm("", form.Merge(patch, form.Build(form.Snapshot{}, set, nil)), mintedBy(ctx))
+		id, _, err := b.CreateForm("", form.Merge(patch, form.Build(form.Snapshot{}, set, nil)), mintedBy(ctx), store.AtRoot())
 		if err != nil {
 			return res, fmt.Errorf("cast: mint role: %w", err)
 		}
