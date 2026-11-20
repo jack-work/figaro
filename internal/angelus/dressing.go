@@ -19,6 +19,23 @@ import (
 // dress is the only place in the daemon that reads an outfit file on a
 // request's behalf. `default` is the one lenient name; everything else is strict.
 func (h *handlers) dress(outfits []string, patch *rpc.FormPatch) (form.Patch, error) {
+	return h.dressing(outfits, patch, false)
+}
+
+func (h *handlers) dressOffRouteOf(id string, outfits []string, patch *rpc.FormPatch) (form.Patch, error) {
+	return h.dressing(outfits, patch, h.routed(id))
+}
+
+func (h *handlers) routed(id string) bool {
+	snap, err := h.angelus.Backend.FormState(id)
+	if err != nil {
+		return false
+	}
+	p := snap.Lookup("system.provider")
+	return p != nil && *p != ""
+}
+
+func (h *handlers) dressing(outfits []string, patch *rpc.FormPatch, offRoute bool) (form.Patch, error) {
 	var base form.Patch
 	if patch != nil {
 		base = *patch
@@ -35,7 +52,7 @@ func (h *handlers) dress(outfits []string, patch *rpc.FormPatch) (form.Patch, er
 		def = loaded.Config.DefaultOutfit
 	}
 	start := time.Now()
-	out, err := ofit.Dress(outfits, base, def)
+	out, err := ofit.DressOffRoute(outfits, base, def, offRoute)
 	figOtel.RecordOutfitDress(context.Background(), time.Since(start))
 	var missing *outfit.MissingError
 	if errors.As(err, &missing) {
@@ -57,7 +74,7 @@ const outfitNameDefault = "default"
 
 // dressParams expands outfit names before a request enters the hub; a
 // request naming none is handed back byte for byte.
-func (h *handlers) dressParams(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+func (h *handlers) dressParams(ctx context.Context, method, id string, params json.RawMessage) (json.RawMessage, error) {
 	if len(params) == 0 || !mightCarryOutfits(params) {
 		return params, nil
 	}
@@ -73,7 +90,7 @@ func (h *handlers) dressParams(ctx context.Context, method string, params json.R
 		if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
 			return params, err
 		}
-		dressed, err := h.dress(req.Outfits, &req.Patch)
+		dressed, err := h.dressOffRouteOf(id, req.Outfits, &req.Patch)
 		if err != nil {
 			return params, err
 		}
@@ -91,7 +108,7 @@ func (h *handlers) dressParams(ctx context.Context, method string, params json.R
 		if err := h.refuseBoxOutfits(ctx, req.Form.Outfits, false); err != nil {
 			return params, err
 		}
-		dressed, err := h.dress(req.Form.Outfits, req.Form.Patch)
+		dressed, err := h.dressOffRouteOf(id, req.Form.Outfits, req.Form.Patch)
 		if err != nil {
 			return params, err
 		}

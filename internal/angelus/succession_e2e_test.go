@@ -98,6 +98,7 @@ type successionRig struct {
 	ctx  context.Context
 	hs   *angelus.Handlers
 	p    *successionProvider
+	dir  string
 
 	stopped bool
 }
@@ -115,7 +116,7 @@ func successionDaemon(t *testing.T, opts ...func(*angelus.ServerConfig)) *succes
 	a, acli, ctx, hs := daemonWithProvider(t, dir, func(_ *angelus.Angelus, b *store.XwalBackend) {
 		require.NoError(t, wire.Install(b.Store(), tree, wire.Capabilities{Trunks: true}))
 	}, func() provider.Provider { return p }, opts...)
-	r := &successionRig{t: t, a: a, acli: acli, ctx: ctx, hs: hs, p: p}
+	r := &successionRig{t: t, a: a, acli: acli, ctx: ctx, hs: hs, p: p, dir: dir}
 	t.Cleanup(func() {
 		p.set(func() {
 			close(p.release)
@@ -341,7 +342,7 @@ func TestSuccessionKeepsTheSuccessorNarrow(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, next)
-	require.Equal(t, "heir-model", r.key(next, "system.model"), "the role's succession-policy.outfit dresses the successor")
+	require.Equal(t, "lane-model", r.key(next, "system.model"), "the successor keeps its predecessor's route")
 	snap, err := r.a.Backend.FormState(next)
 	require.NoError(t, err)
 	scopes, ok := snap.Get("system.scopes")
@@ -457,7 +458,7 @@ func TestSuccessionKeepsThePredecessorsTools(t *testing.T) {
 	ownerSets(t, r.a, old, map[string]any{"system.tools": []string{}})
 	r.role(old, map[string]any{"name": "warden", "succession-policy": map[string]any{"outfit": "tooled"}})
 	next := r.heldAtItsRamp(old)
-	require.Equal(t, "heir-model", r.key(next, "system.model"))
+	require.Equal(t, "mock-model", r.key(next, "system.model"), "the successor keeps its predecessor's route")
 	snap, err := r.a.Backend.FormState(next)
 	require.NoError(t, err)
 	tools, ok := snap.Get("system.tools")
@@ -936,6 +937,47 @@ func TestSuccessionSeatsTheSuccessorOnTheRolesRoute(t *testing.T) {
 			require.Equal(t, "mock", r.key(next, "system.provider"))
 		})
 	}
+}
+
+// Gluck, 11-20: a figaro's route is its own once it is born. A successor
+// takes the route its predecessor was on, not the one the role's outfit
+// names; the role's own route keys still win, and reroute is how a seat
+// goes back to its outfit.
+func TestASuccessorKeepsItsPredecessorsRouteOverTheRolesOutfit(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	ownerSets(t, r.a, old, map[string]any{"system.model": "lane-model", "system.thinking_effort": "low"})
+	r.role(old, map[string]any{"name": "warden", "succession-policy": map[string]any{"outfit": "heir"}})
+	r.cross(old)
+	next := r.successorOf(old)
+	require.Equal(t, "lane-model", r.key(next, "system.model"), "the role's outfit re-applied the route at succession")
+	require.Equal(t, "low", r.key(next, "system.thinking_effort"))
+	require.Equal(t, "heir", r.key(next, "system.outfit_name"), "canary: the role's outfit still dresses the successor")
+}
+
+func TestASeatForkKeepsItsHoldersRouteOverTheRolesOutfit(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(nil)
+	ownerSets(t, r.a, old, map[string]any{"system.model": "lane-model"})
+	role := r.role(old, map[string]any{"name": "warden", "succession-policy": map[string]any{"outfit": "tooled"}})
+	out, err := r.acli.ForkWith(r.ctx, rpc.ForkRequest{FigaroID: old, Seat: role})
+	require.NoError(t, err)
+	require.Equal(t, "lane-model", r.key(out.Alternative, "system.model"), "the role's outfit re-applied the route on the seat fork")
+	snap, err := r.a.Backend.FormState(out.Alternative)
+	require.NoError(t, err)
+	tools, _ := snap.Get("system.tools")
+	require.JSONEq(t, `["bash"]`, string(tools), "canary: the role's outfit still dresses the fork")
+}
+
+func TestARolelessSuccessorKeepsItsPredecessorsRouteAfterAnOutfitEdit(t *testing.T) {
+	r := successionDaemon(t)
+	old := r.aria(succeeding(nil))
+	require.NoError(t, os.WriteFile(r.dir+"/outfits/mock.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"edited-model\"\n"), 0o600))
+	_, err := r.acli.OutfitReload(r.ctx)
+	require.NoError(t, err)
+	r.cross(old)
+	next := r.successorOf(old)
+	require.Equal(t, "mock-model", r.key(next, "system.model"), "the edited outfit re-applied the route at succession")
 }
 
 func TestSuccessionRefusesDisagreeingRoutes(t *testing.T) {

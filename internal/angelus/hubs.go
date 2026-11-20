@@ -83,7 +83,9 @@ func (h *handlers) hubFor(id string) *ariaHub {
 	hb.wake = h.wakeForHub
 	hb.read = h.readFromStore
 	hb.write = h.writeForHub
-	hb.dress = h.dressParams
+	hb.dress = func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+		return h.dressParams(ctx, method, id, params)
+	}
 	hb.access = h.formAccess
 	hb.view = formViewOf
 	if h.angelus.Backend != nil {

@@ -252,7 +252,7 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if err := h.refuseOutfitGrants(ctx, requestOutfits(ctx)); err != nil {
 			return nil, err
 		}
-		dressed, err := h.dressParams(ctx, method, params)
+		dressed, err := h.dressParams(ctx, method, id, params)
 		if err != nil {
 			return nil, err
 		}
