@@ -171,7 +171,7 @@ func encodeMessage(msg message.Message, reminders []string) ([]Content, error) {
 				if sr := provider.SenderReminder(c.Sender); sr != "" {
 					parts = append(parts, Part{Text: sr})
 				}
-				parts = append(parts, Part{Text: provider.SenderProse(c.Sender, c.Text)})
+				parts = append(parts, Part{Text: provider.Prose(c.Text)})
 			}
 		}
 		parts = placeReminders(parts, reminders)

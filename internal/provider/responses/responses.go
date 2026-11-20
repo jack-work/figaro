@@ -886,7 +886,7 @@ func encodeResponseMessage(
 					if r := provider.SenderReminder(content.Sender); r != "" {
 						userContent = append(userContent, responseContent{Type: "input_text", Text: r})
 					}
-					userContent = append(userContent, responseContent{Type: "input_text", Text: provider.SenderProse(content.Sender, content.Text)})
+					userContent = append(userContent, responseContent{Type: "input_text", Text: provider.Prose(content.Text)})
 				}
 			case message.ContentImage:
 				if content.Data != "" {
