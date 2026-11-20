@@ -1,8 +1,12 @@
 package angelus
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 // #183: two quota writes on one child each priced their charge against the
@@ -98,5 +102,41 @@ func TestLoweringAQuotaUnderInFlightBirthsNeverOverdrawsTheParent(t *testing.T) 
 		{id: "a0", parent: "a", live: true}, {id: "a1", parent: "a", live: true}, {id: "a2", parent: "a", live: true},
 	}, nil); len(d) > 0 {
 		t.Errorf("the cache drifted from the tree once the births landed: %+v", d)
+	}
+}
+
+// #183 L1: a seat wrote its successor's quota outside the serialization of
+// quota writes, so it raced a write already in flight on the successor.
+func TestASeatsQuotaMoveWaitsForAQuotaWriteOnTheSuccessor(t *testing.T) {
+	be, err := store.NewXwalBackend(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { be.Close() })
+	born := func(kv map[string]json.RawMessage) string {
+		id, _, err := be.ForkWith("", 0, form.Build(form.Snapshot{}, kv, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	pred := born(map[string]json.RawMessage{form.FanoutQuotaKey: json.RawMessage(`4`)})
+	succ := born(map[string]json.RawMessage{"mantra": json.RawMessage(`"s"`)})
+	a := &Angelus{Backend: be}
+	release, err := a.fanoutCounts().takeCharge(succ, 2, true, func(err error) error { return err })
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved := make(chan error, 1)
+	go func() { moved <- a.moveQuota(pred, succ) }()
+	select {
+	case err := <-moved:
+		release()
+		t.Fatalf("the seat wrote the successor's quota with a quota write in flight on it (err %v)", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	release()
+	if err := <-moved; err != nil {
+		t.Fatal(err)
 	}
 }
