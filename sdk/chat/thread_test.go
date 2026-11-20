@@ -58,3 +58,19 @@ more` {
 		t.Fatalf("events: %s", got)
 	}
 }
+func TestReadingBackManyTurnsKeepsTheOneAListenerResumes(t *testing.T) {
+	for range 50 {
+		th := newThread(New(transport.Endpoint{}), "x")
+		ch := th.subscribe(context.Background(), &sub{after: 1, r: newReader(Cursor{Turn: 2, Text: 1})}, nil)
+		var parts []aria.TurnPart
+		for id := uint64(2); id <= 9; id++ {
+			parts = append(parts, sealedTurn(id, "ab"))
+		}
+		th.mu.Lock()
+		th.adopt(parts)
+		th.mu.Unlock()
+		if got := summary(drain(t, ch)); got != `+"b" end:ab` {
+			t.Fatalf("events: %s", got)
+		}
+	}
+}

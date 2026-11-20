@@ -335,13 +335,24 @@ func (t *thread) fold(id uint64) *turnFold {
 	}
 	if id > t.top {
 		t.top = id
-		for old := range t.folds {
-			if old+keptTurns <= id {
-				delete(t.folds, old)
-			}
-		}
+		t.trim()
 	}
 	return f
+}
+
+func (t *thread) trim() {
+	floor := uint64(0)
+	if t.top >= keptTurns {
+		floor = t.top - keptTurns + 1
+	}
+	for s := range t.subs {
+		floor = min(floor, s.next())
+	}
+	for id := range t.folds {
+		if id < floor {
+			delete(t.folds, id)
+		}
+	}
 }
 
 const keptTurns = 4
@@ -412,6 +423,7 @@ func (t *thread) adopt(parts []aria.TurnPart) {
 		}
 		f.apply(p)
 	}
+	ids := make([]uint64, 0, len(rebuilt))
 	for id, f := range rebuilt {
 		if old := t.folds[id]; old != nil && old.ended && !f.sealed {
 			continue
@@ -422,16 +434,14 @@ func (t *thread) adopt(parts []aria.TurnPart) {
 			f.idle = next == nil || next.sealed
 		}
 		t.folds[id] = f
-		t.fold(id)
-	}
-	ids := make([]uint64, 0, len(rebuilt))
-	for id := range rebuilt {
+		t.top = max(t.top, id)
 		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	for _, id := range ids {
-		t.deliver(t.folds[id])
+		t.deliver(rebuilt[id])
 	}
+	t.trim()
 }
 
 func readTurns(ctx context.Context, conn *sdk.Aria, turn uint64) ([]aria.TurnPart, error) {

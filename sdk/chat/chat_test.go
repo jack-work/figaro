@@ -402,3 +402,32 @@ func TestResumingAnOlderFinishedTurnEndsWithIt(t *testing.T) {
 		t.Fatalf("events %s, text %q, last %+v", kinds(after), replyText(after), after[len(after)-1])
 	}
 }
+
+func TestResumingATurnFarBehindTheTailReplaysIt(t *testing.T) {
+	c, id, d := thread(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	var first chat.Cursor
+	for i := range 7 {
+		ch, err := c.Prompt(ctx, id, "words 2 0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		events := collect(t, ch, 30*time.Second)
+		if i == 0 {
+			first = events[0].Cursor
+		}
+	}
+	for range 5 {
+		other := chat.New(d.endpoint())
+		rest, err := other.Resume(ctx, id, first)
+		if err != nil {
+			t.Fatal(err)
+		}
+		after := collect(t, rest, 30*time.Second)
+		other.Close()
+		if replyText(after) != " w1" || after[len(after)-1].Text != "w0 w1" {
+			t.Fatalf("events %s, text %q", kinds(after), replyText(after))
+		}
+	}
+}
