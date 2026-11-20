@@ -44,9 +44,7 @@ var ErrClosed = errors.New("chat: client closed")
 
 func (c *Client) Close() error {
 	c.mu.Lock()
-	if !c.closed {
-		close(c.done)
-	}
+	first := !c.closed
 	c.closed = true
 	threads := c.threads
 	c.threads = map[string]*thread{}
@@ -55,6 +53,9 @@ func (c *Client) Close() error {
 	c.mu.Unlock()
 	for _, t := range threads {
 		t.shut(ErrClosed.Error())
+	}
+	if first {
+		close(c.done)
 	}
 	if a != nil {
 		return a.Close()
@@ -875,6 +876,7 @@ func (t *thread) pump(ctx context.Context, s *sub) {
 				t.drop(s)
 				return
 			case <-t.c.done:
+				s.flush()
 				return
 			}
 			continue
@@ -888,6 +890,10 @@ func (t *thread) pump(ctx context.Context, s *sub) {
 			t.drop(s)
 			return
 		case <-t.c.done:
+			s.mu.Lock()
+			s.q = append([]Event{e}, s.q...)
+			s.mu.Unlock()
+			s.flush()
 			return
 		}
 	}
@@ -918,6 +924,19 @@ func (s *sub) next() uint64 {
 		return s.r.cur.Turn
 	}
 	return s.after + 1
+}
+
+func (s *sub) flush() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for len(s.q) > 0 {
+		select {
+		case s.out <- s.q[0]:
+			s.q = s.q[1:]
+		default:
+			return
+		}
+	}
 }
 
 func (s *sub) push(e Event, last bool) {

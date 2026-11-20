@@ -846,3 +846,18 @@ func TestTheTimedCheckRedialsAThreadLeftWithoutAConnection(t *testing.T) {
 		t.Fatalf("events: %s", got)
 	}
 }
+
+func TestAListenerReadingWhenTheClientClosesIsToldWhy(t *testing.T) {
+	for range 50 {
+		var rt runtimeFeed
+		c := fakeClient(newFakeConn(rt.response("thinking", 2, "", 0)))
+		ch, err := c.Resume(context.Background(), "x", Cursor{Turn: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Close()
+		if got := summary(drain(t, ch)); got != "error:chat: client closed" {
+			t.Fatalf("events: %q", got)
+		}
+	}
+}
