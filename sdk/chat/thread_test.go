@@ -442,3 +442,21 @@ func TestAConnectionThatStopsAnsweringIsReplaced(t *testing.T) {
 		t.Fatalf("events: %s", got)
 	}
 }
+
+func TestANewTurnAnnouncedBeforeItsFramesStreamsWithoutARead(t *testing.T) {
+	var rt runtimeFeed
+	conn := newFakeConn(rt.response("idle", 2, "", 0))
+	conn.readGate = make(chan struct{})
+	c := fakeClient(conn)
+	th, _, err := c.thread(context.Background(), "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := th.subscribe(context.Background(), &sub{after: 2}, nil)
+	conn.notify(rpc.MethodFormDelta, rt.delta("thinking", 3, "", 0))
+	conn.notify(rpc.MethodAriaFrame, frameJSON(liveProse(3, 0, "B")))
+	conn.notify(rpc.MethodFormDelta, rt.delta("idle", 3, "", 0))
+	if got := summary(drain(t, ch)); got != `+"B" end:B` {
+		t.Fatalf("events: %s", got)
+	}
+}

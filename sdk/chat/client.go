@@ -609,11 +609,6 @@ func (t *thread) settle() {
 		if s.r != nil || s.closed {
 			continue
 		}
-		if now.turn > s.after && t.folds[s.after+1] == nil {
-			t.want[s.after+1] = true
-			t.startSync()
-			continue
-		}
 		if now.settled() && now.turn <= s.after && t.rt.ver > s.rtVer {
 			t.finishWaiting(s, now)
 		}
@@ -862,6 +857,10 @@ func (t *thread) check(conn ariaConn, gen, seq uint64, waiting bool) {
 	}
 	quiet := queued == 0 && now.state == rpc.RuntimeIdle
 	for s := range t.subs {
+		if s.r == nil && !s.closed && s.seq <= seq && now.turn > s.after && t.folds[s.after+1] == nil {
+			t.want[s.after+1] = true
+			t.startSync()
+		}
 		if s.r != nil || s.closed || s.seq > seq || s.after < now.turn || !quiet {
 			s.quiet = false
 			continue
