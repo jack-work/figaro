@@ -338,6 +338,58 @@ positional target needs the explicit verb or --id.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "read",
+		Group: "Prompt",
+		Short: "Print an aria log's entries exactly as they were sent",
+		Usage: "read [<id>] [--from N] [--until M] [-j]",
+		Long: `Print the entries of an aria log (or the prompts of any aria) in turn
+order, from turn N up to, not including, turn M; both are optional.
+
+  figaro read <log>                    every entry
+  figaro read <log> --from 40          turns 40..end
+  figaro read <log> --from 4 --until 7 turns 4, 5 and 6
+  figaro read <log> -j                 one JSON object per entry
+
+-j prints the exact bytes of each entry, with its turn, LT, time (unix
+millis), sender and principal: what an import or a script reads. Without
+-j the text is for reading, and reserved tags in it are disarmed. Needs a
+daemon that keeps log entries exact (capability log.exact).`,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "from", Description: "First turn to print (default the first)"},
+			{Long: "until", Description: "Stop before this turn (default the end)"},
+			{Long: "json", Short: "j", IsBool: true, Description: "One JSON object per entry, exact bytes"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			turnFlag := func(name string) (uint64, error) {
+				v := ctx.Flag(name)
+				if v == "" {
+					return 0, nil
+				}
+				n, err := strconv.ParseUint(v, 10, 64)
+				if err != nil {
+					return 0, fmt.Errorf("read: --%s %q is not a turn", name, v)
+				}
+				return n, nil
+			}
+			from, err := turnFlag("from")
+			if err != nil {
+				return err
+			}
+			until, err := turnFlag("until")
+			if err != nil {
+				return err
+			}
+			id := ""
+			if len(ctx.Args) > 0 {
+				id = ctx.Args[0]
+			}
+			return runRead(ctx.Extra.(*config.Loaded), id, from, until, ctx.BoolFlag("json"))
+		},
+		CompleteArgs: completeSend,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "new",
 		Group: "Prompt",
 		Short: "Start a fresh aria and prompt it",
