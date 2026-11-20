@@ -1679,7 +1679,8 @@ system.thinking_budget, and removes the ones the outfits leave out.
   figaro reroute --id @king          the role's holder, onto the role's
                                      succession outfit and its own route keys
 
-Only the owner may reroute.`,
+The owner may reroute, and so may a figaro holding whole set on the target
+(keyed set is not enough: the route is owner-held). A box never may.`,
 		ArgsMax: 0,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria or role (overrides pid binding)"},

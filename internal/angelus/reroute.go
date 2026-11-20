@@ -47,10 +47,18 @@ func (h *handlers) reroute(ctx context.Context, params json.RawMessage) (any, er
 }
 
 func (h *handlers) refuseRerouteBy(ctx context.Context, id string) error {
-	if _, boxed := callerBox(ctx); !boxed && authz.FigaroOf(ctx) == "" && h.callerIsOwner(ctx) {
-		return nil
+	if _, boxed := callerBox(ctx); boxed {
+		return fmt.Errorf("reroute: a box never moves a route: it is owner-held")
 	}
-	return fmt.Errorf("reroute: only the owner moves %s's route", id)
+	if authz.FigaroOf(ctx) == "" {
+		if h.callerIsOwner(ctx) {
+			return nil
+		}
+		return fmt.Errorf("reroute: only the owner, or a figaro holding whole set on %s, moves its route", id)
+	}
+	return h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(id), func(v authz.FigaroView, s jkauthz.Subject) bool {
+		return v.AllowWhole(s, rpc.VerbSet, authz.Aria(id))
+	}, "holds only keyed set there, and a reroute writes the owner-held route")
 }
 
 func (h *handlers) dressRoute(outfits []string, pins *rpc.FormPatch) (form.Patch, error) {
