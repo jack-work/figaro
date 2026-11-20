@@ -55,8 +55,9 @@ var formViews = map[string]rpc.FormView{
 		Actions: ariaRowActions,
 	},
 	models.FormID: {
-		Rows:  []string{"*.models.*"},
-		Open:  []string{"*", "*.models"},
+		Rows:  []string{"*.models.*", "*.upstreams.**.models.*"},
+		Via:   models.BranchesKey,
+		Open:  []string{"*", "**.models", "**.upstreams", "**.upstreams.*"},
 		Skip:  "hidden",
 		Label: "name",
 		Mark:  &rpc.ViewMark{GroupSubject: models.ProviderKey, RowSubject: models.ModelKey},

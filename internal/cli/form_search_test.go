@@ -265,11 +265,11 @@ func dottedModelsProbe(t *testing.T) (*inputProbe, *formView) {
 	t.Helper()
 	p := newInputProbe(t, true)
 	snap := catalogFixture(t, map[string]models.Provider{
-		"openrouter": {Models: map[string]models.Entry{
+		"openrouter": {Node: models.NewNode(map[string]models.Entry{
 			"x-ai/grok-4.1":   {Name: "Grok 4.1"},
 			"x-ai/grok-4":     {Name: "Grok 4"},
 			"claude-opus-4.5": {Name: "Claude Opus 4.5"},
-		}},
+		})},
 	})
 	v := modelsView(t, snap, "", "")
 	p.lt.tr.pit.showLive(pitID("models"), v)
@@ -285,16 +285,16 @@ func TestTheFormSearchFindsKeysThatContainADot(t *testing.T) {
 	tr := p.lt.tr
 	feed(t, p.in, "/grok 4.1")
 	ids := strings.Join(pitIDs(tr), ",")
-	if !strings.Contains(ids, "openrouter.models.x-ai/grok-4.1") {
+	if !strings.Contains(ids, "openrouter.upstreams.x-ai.models.grok-4.1") {
 		t.Fatalf("rows %s; want x-ai/grok-4.1 under its provider", ids)
 	}
 	for _, id := range pitIDs(tr) {
-		if id == "openrouter.models.x-ai/grok-4" {
+		if id == "openrouter.upstreams.x-ai.models.grok-4" {
 			t.Errorf("x-ai/grok-4 drawn as a hit for 'grok 4.1': %s", ids)
 		}
 	}
 	sel, _ := tr.pit.selected()
-	if !strings.HasPrefix(sel.id, "openrouter.models.x-ai/grok-4.1") {
+	if !strings.HasPrefix(sel.id, "openrouter.upstreams.x-ai.models.grok-4.1") {
 		t.Fatalf("cursor on %q; want under x-ai/grok-4.1", sel.id)
 	}
 
@@ -303,18 +303,18 @@ func TestTheFormSearchFindsKeysThatContainADot(t *testing.T) {
 	for _, r := range tr.pit.list().rows {
 		flat = append(flat, r.id+" "+r.str())
 	}
-	if !strings.Contains(strings.Join(flat, ","), "openrouter.models.x-ai/grok-4.1 openrouter.models.x-ai/grok-4.1") {
+	if !strings.Contains(strings.Join(flat, ","), "openrouter.upstreams.x-ai.models.grok-4.1 openrouter.upstreams.x-ai.models.grok-4.1") {
 		t.Errorf("the ranked list dropped x-ai/grok-4.1, or split its id: %v", flat)
 	}
 	feed(t, p.in, "\t")
 
 	feed(t, p.in, "\r")
 	for k := range v.open {
-		if k == "openrouter.models.x-ai/grok-4" || k == "openrouter.models.claude-opus-4" {
+		if k == "openrouter.upstreams.x-ai.models.grok-4" || k == "openrouter.models.claude-opus-4" {
 			t.Errorf("Enter opened %q, a branch that does not exist", k)
 		}
 	}
-	if !v.open["openrouter.models.x-ai/grok-4.1"] && sel.id != "openrouter.models.x-ai/grok-4.1" {
+	if !v.open["openrouter.upstreams.x-ai.models.grok-4.1"] && sel.id != "openrouter.upstreams.x-ai.models.grok-4.1" {
 		t.Errorf("Enter did not open x-ai/grok-4.1: %v", v.open)
 	}
 	if row, _ := tr.pit.selected(); row.id != sel.id {

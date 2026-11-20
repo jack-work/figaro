@@ -9,7 +9,7 @@ import (
 
 const FormID = "@models"
 
-const IRVersion = 2
+const IRVersion = 3
 
 const (
 	SourceAPI     = "api"
@@ -136,12 +136,12 @@ func (e *Entry) Mark(field, src string) {
 }
 
 type Provider struct {
-	IR          int              `json:"ir,omitempty"`
-	CatalogOff  bool             `json:"catalog_off,omitempty"`
-	Models      map[string]Entry `json:"models,omitempty"`
-	RefreshedAt int64            `json:"refreshed_at,omitempty"`
-	AttemptedAt int64            `json:"attempted_at,omitempty"`
-	Error       string           `json:"error,omitempty"`
+	Node
+	IR          int    `json:"ir,omitempty"`
+	CatalogOff  bool   `json:"catalog_off,omitempty"`
+	RefreshedAt int64  `json:"refreshed_at,omitempty"`
+	AttemptedAt int64  `json:"attempted_at,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 type Status struct {
@@ -162,7 +162,7 @@ func Providers(catalog form.Snapshot) (map[string]Provider, error) {
 	}
 	for name, p := range out {
 		if p.IR != IRVersion {
-			p.Models = nil
+			p.Node = Node{}
 			out[name] = p
 		}
 	}
@@ -179,7 +179,7 @@ func Lookup(catalog form.Snapshot, provider, model string) (Entry, bool) {
 	if provider == "" || model == "" || !Current(catalog, provider) {
 		return e, false
 	}
-	raw, ok := catalog.Get(provider + ".models." + model)
+	raw, ok := catalog.Get(EntryKey(provider, model))
 	if !ok || json.Unmarshal(raw, &e) != nil {
 		return Entry{}, false
 	}
@@ -190,7 +190,7 @@ func PlanUsageOf(catalog form.Snapshot, provider, model string) *PlanUsage {
 	if provider == "" || model == "" || !Current(catalog, provider) {
 		return nil
 	}
-	raw, ok := catalog.Get(provider + ".models." + model + ".plan_usage")
+	raw, ok := catalog.Get(EntryKey(provider, model) + ".plan_usage")
 	if !ok {
 		return nil
 	}
@@ -241,7 +241,7 @@ func Subject(bound form.Snapshot) (provider, model string) {
 func ContextLimit(catalog, bound form.Snapshot) int {
 	provider, model := Subject(bound)
 	if provider != "" && model != "" && Current(catalog, provider) {
-		if raw, ok := catalog.Get(provider + ".models." + model + ".rou2_auto"); ok {
+		if raw, ok := catalog.Get(EntryKey(provider, model) + ".rou2_auto"); ok {
 			var auto *AutoRoute
 			if json.Unmarshal(raw, &auto) != nil {
 				return 0
@@ -265,7 +265,7 @@ func EntryLimit(catalog form.Snapshot, provider, model, tier string) int {
 	if provider == "" || model == "" || !Current(catalog, provider) {
 		return 0
 	}
-	base := provider + ".models." + model
+	base := EntryKey(provider, model)
 	if raw, ok := catalog.Get(base + ".rou2_auto"); ok {
 		var auto *AutoRoute
 		if json.Unmarshal(raw, &auto) != nil {

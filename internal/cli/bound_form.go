@@ -114,7 +114,8 @@ func (in *interactiveInput) recomputeLimit() {
 	if in.recordedWindow > 0 || tapeOnly.Load() {
 		in.mu.Lock()
 		limited := in.lt.status.setLimit(in.recordedWindow)
-		if cleared := in.lt.status.setPlanUsage(nil); limited || cleared {
+		cleared := in.lt.status.setPlanUsage(nil)
+		if routeGone := in.lt.status.setRoute(nil); limited || cleared || routeGone {
 			in.lt.tr.refreshStatusPit()
 			in.lt.render()
 		}
@@ -134,6 +135,9 @@ func (in *interactiveInput) recomputeLimit() {
 	provider, model := models.Subject(snap)
 	moved := in.lt.status.setLimit(limit)
 	if in.lt.status.setPlanUsage(models.PlanUsageOf(catalog, provider, model)) {
+		moved = true
+	}
+	if in.lt.status.setRoute(models.RouteOf(snap)) {
 		moved = true
 	}
 	if moved {

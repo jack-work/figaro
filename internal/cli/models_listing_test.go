@@ -32,15 +32,15 @@ func catalogFixture(t *testing.T, provs map[string]models.Provider) form.Snapsho
 func modelsFixture(t *testing.T) form.Snapshot {
 	listed := modelsNow.Add(-2 * time.Hour).UnixMilli()
 	return catalogFixture(t, map[string]models.Provider{
-		"anthropic": {RefreshedAt: listed, Models: map[string]models.Entry{
+		"anthropic": {RefreshedAt: listed, Node: models.NewNode(map[string]models.Entry{
 			"claude-opus-5":     {Name: "Claude Opus 5", Context: models.Context{Default: 1_000_000}, MaxOutput: 32000},
 			"claude-sonnet-4-5": {Name: "Claude Sonnet 4.5", Context: models.Context{Default: 200_000}, MaxOutput: 64000},
-		}},
-		"copilot": {RefreshedAt: listed, Models: map[string]models.Entry{
+		})},
+		"copilot": {RefreshedAt: listed, Node: models.NewNode(map[string]models.Entry{
 			"gpt-5":           {Name: "GPT-5", Context: models.Context{Default: 400_000}},
 			"claude-opus-5":   {Name: "Claude Opus 5", Context: models.Context{Default: 128_000}, MaxOutput: 16000},
 			"internal-router": {Context: models.Context{Default: 8_000}, Hidden: true},
-		}},
+		})},
 	})
 }
 
@@ -66,11 +66,11 @@ func TestTabulateAlignsAndClips(t *testing.T) {
 func TestPrintModelsShowsEveryProvidersStateThenTheTable(t *testing.T) {
 	snap := catalogFixture(t, map[string]models.Provider{
 		"anthropic": {AttemptedAt: modelsNow.Add(-3 * time.Minute).UnixMilli(), Error: "no credential"},
-		"copilot": {RefreshedAt: modelsNow.Add(-2 * time.Hour).UnixMilli(), Models: map[string]models.Entry{
+		"copilot": {RefreshedAt: modelsNow.Add(-2 * time.Hour).UnixMilli(), Node: models.NewNode(map[string]models.Entry{
 			"gpt-5":   {Name: "OpenAI GPT-5", Context: models.Context{Default: 400_000}, Src: map[string]string{"context": "api", "name": "api"}},
 			"gpt-6":   {Context: models.Context{Default: 1_000_000}, MaxPrompt: 872_000, MaxOutput: 64_000, Src: map[string]string{"context": "api", "max_output": "config"}},
 			"private": {},
-		}},
+		})},
 	})
 	var buf bytes.Buffer
 	old := stdout
@@ -96,9 +96,9 @@ func TestPrintModelsShowsEveryProvidersStateThenTheTable(t *testing.T) {
 // carrying an escape sequence must print as text, never reach the terminal.
 func TestPrintModelsSanitisesWhatAProviderSays(t *testing.T) {
 	snap := catalogFixture(t, map[string]models.Provider{
-		"evil": {RefreshedAt: modelsNow.Add(-time.Minute).UnixMilli(), Models: map[string]models.Entry{
+		"evil": {RefreshedAt: modelsNow.Add(-time.Minute).UnixMilli(), Node: models.NewNode(map[string]models.Entry{
 			"m\x1b[2Jx": {Name: "Nice\x1b]52;c;cGF3bmVk\x07 Name\x1b[31m", Context: models.Context{Default: 1000}},
-		}},
+		})},
 		"broken": {AttemptedAt: modelsNow.Add(-time.Minute).UnixMilli(), Error: "denied\x1b[2J\r\nfake prompt$ "},
 	})
 	var buf bytes.Buffer
@@ -129,9 +129,9 @@ func TestPrintModelsShowsCatalogOffWithoutFailedLines(t *testing.T) {
 		"tdf-claude": {
 			CatalogOff:  true,
 			RefreshedAt: modelsNow.Add(-48 * time.Hour).UnixMilli(),
-			Models: map[string]models.Entry{
+			Node: models.NewNode(map[string]models.Entry{
 				"claude-sonnet-4-6": {Name: "Claude Sonnet 4.6", Context: models.Context{Default: 200_000}, MaxOutput: 64_000, Src: map[string]string{"context": "config", "max_output": "config"}},
-			},
+			}),
 		},
 	})
 	var buf bytes.Buffer

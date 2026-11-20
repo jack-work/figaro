@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -88,6 +89,7 @@ type sessionStatus struct {
 	metrics   aria.Metrics
 	limit     int
 	plan      *models.PlanUsage
+	route     []string
 	turn      turnStatus
 	tick      uint64
 	more      bool
@@ -264,6 +266,19 @@ func (s *sessionStatus) setPlanUsage(u *models.PlanUsage) bool {
 		return false
 	}
 	s.plan = u
+	return true
+}
+
+func (s *sessionStatus) setRoute(r []string) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if slices.Equal(s.route, r) {
+		return false
+	}
+	s.route = r
 	return true
 }
 
@@ -529,6 +544,9 @@ func (s *sessionStatus) panelRows() []panelRow {
 	}
 	if mantra := strings.Join(strings.Fields(s.metrics.Mantra), " "); mantra != "" {
 		rows = append(rows, panelRow{text: "  mantra    " + mantra})
+	}
+	if len(s.route) > 0 {
+		rows = append(rows, panelRow{text: "  route     " + strings.Join(s.route, " > ")})
 	}
 	if context := formatContextUsage(s.metrics.ContextTokens, s.limit, s.metrics.ContextExact); context != "-" {
 		rows = append(rows, panelRow{text: "  context   " + context})

@@ -11,7 +11,7 @@ func TestAutoCapacityIncludesEveryEligibleCandidate(t *testing.T) {
 	entry := Entry{Auto: auto, Context: Context{Default: large, Long: large}}
 	require.Equal(t, small, entry.Window(""))
 	require.Equal(t, small, entry.Window(LongContextTier))
-	cat := catalogOf(t, map[string]Provider{"routed": {IR: IRVersion, Models: map[string]Entry{"auto": entry}}})
+	cat := catalogOf(t, map[string]Provider{"routed": {IR: IRVersion, Node: NewNode(map[string]Entry{"auto": entry})}})
 	for _, override := range []string{"0", "999999", "64000"} {
 		want := small
 		if override == "64000" {
@@ -32,7 +32,7 @@ func TestUnknownAutoCapacityCannotBorrowPrimaryOrOverride(t *testing.T) {
 	} {
 		entry := Entry{Auto: auto, Context: Context{Default: known, Long: known}}
 		require.Zero(t, entry.Window(""))
-		cat := catalogOf(t, map[string]Provider{"routed": {IR: IRVersion, Models: map[string]Entry{"auto": entry}}})
+		cat := catalogOf(t, map[string]Provider{"routed": {IR: IRVersion, Node: NewNode(map[string]Entry{"auto": entry})}})
 		bound := boundFormOf(map[string]string{"system.provider": `"routed"`, "system.model": `"auto"`, OverrideKey: "999999"})
 		require.Zero(t, ContextLimit(cat, bound))
 		require.Zero(t, EntryLimit(cat, "routed", "auto", LongContextTier))

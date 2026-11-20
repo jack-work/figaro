@@ -19,6 +19,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/internal/actor"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
@@ -739,6 +740,7 @@ func (f *Form) judge(st *formState, w *formWrite) formResult {
 	if !w.priv {
 		patch = form.RecordRetireRequest(st.snap, patch)
 	}
+	patch = models.RecordRoute(st.snap, patch)
 	next, applied := st.snap.ApplyEffective(patch)
 	return formResult{version: st.version, applied: applied, next: next}
 }

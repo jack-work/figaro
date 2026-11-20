@@ -25,6 +25,8 @@ var boxInertOpenKeys = map[string]string{
 	"anthropic":            "a provider registry name, not a board key",
 	"decision":             "a key of a decision response, not a board key",
 	"entries":              "a key of the daemon's ledger form, which no aria writes",
+	"models":               "a key of the daemon's model catalog form, which no aria writes",
+	"upstreams":            "a key of the daemon's model catalog form, which no aria writes",
 	"figaro_id":            "an rpc param, not a board key",
 	"x-internal-figaro-id": "an rpc param, not a board key",
 	"x-caller":             "an rpc param, not a board key",

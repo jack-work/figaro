@@ -32,8 +32,8 @@ func boundFormOf(kv map[string]string) form.Snapshot {
 // is not the vendor's window.
 func TestLookupIsKeyedByProviderAndModel(t *testing.T) {
 	cat := catalogOf(t, map[string]Provider{
-		"anthropic": {IR: IRVersion, Models: map[string]Entry{"claude-opus-4-5": {Context: Context{Default: 200_000}}}},
-		"copilot":   {IR: IRVersion, Models: map[string]Entry{"claude-opus-4-5": {Context: Context{Default: 128_000}}}},
+		"anthropic": {IR: IRVersion, Node: NewNode(map[string]Entry{"claude-opus-4-5": {Context: Context{Default: 200_000}}})},
+		"copilot":   {IR: IRVersion, Node: NewNode(map[string]Entry{"claude-opus-4-5": {Context: Context{Default: 128_000}}})},
 	})
 	a, ok := Lookup(cat, "anthropic", "claude-opus-4-5")
 	require.True(t, ok)
@@ -53,13 +53,13 @@ func TestLookupIsKeyedByProviderAndModel(t *testing.T) {
 // confused with a shorter id it extends.
 func TestDottedModelIDsSurviveTheWire(t *testing.T) {
 	before := catalogOf(t, map[string]Provider{
-		"openai": {IR: IRVersion, Models: map[string]Entry{"gpt-4": {Context: Context{Default: 8_192}}}},
+		"openai": {IR: IRVersion, Node: NewNode(map[string]Entry{"gpt-4": {Context: Context{Default: 8_192}}})},
 	})
-	next, err := json.Marshal(Provider{IR: IRVersion, Models: map[string]Entry{
+	next, err := json.Marshal(Provider{IR: IRVersion, Node: NewNode(map[string]Entry{
 		"gpt-4":     {Context: Context{Default: 8_192}},
 		"gpt-4.1":   {Context: Context{Default: 1_047_576}},
 		"o4.5-mini": {Context: Context{Default: 200_000, Long: 400_000}},
-	}})
+	})})
 	require.NoError(t, err)
 	patch := form.Build(before, map[string]json.RawMessage{"openai": next}, nil)
 
@@ -88,7 +88,7 @@ func TestDottedModelIDsSurviveTheWire(t *testing.T) {
 
 func TestContextLimitPrecedence(t *testing.T) {
 	cat := catalogOf(t, map[string]Provider{
-		"routed": {IR: IRVersion, Models: map[string]Entry{"m": {Context: Context{Default: 128_000, Long: 1_000_000}}}},
+		"routed": {IR: IRVersion, Node: NewNode(map[string]Entry{"m": {Context: Context{Default: 128_000, Long: 1_000_000}}})},
 	})
 	subject := map[string]string{"system.provider": `"routed"`, "system.model": `"m"`}
 	with := func(extra map[string]string) form.Snapshot {
@@ -119,13 +119,13 @@ func TestContextLimitPrecedence(t *testing.T) {
 // effective prompt limit is max_prompt unless system.max_context_tokens pins it.
 func TestContextLimitHonorsSmallerMaxPrompt(t *testing.T) {
 	cat := catalogOf(t, map[string]Provider{
-		"copilot": {IR: IRVersion, Models: map[string]Entry{
+		"copilot": {IR: IRVersion, Node: NewNode(map[string]Entry{
 			"gpt-6.1-sol": {Context: Context{Default: 1_050_000}, MaxPrompt: 922_000},
 			"gpt-6-astra": {Context: Context{Default: 1_050_000}, MaxPrompt: 1_050_000},
 			"tiered":      {Context: Context{Default: 200_000, Long: 1_000_000}, MaxPrompt: 872_000},
 			"wider-cap":   {Context: Context{Default: 200_000}, MaxPrompt: 300_000},
 			"prompt-only": {MaxPrompt: 32_000},
-		}},
+		})},
 	})
 	bound := func(model string, extra map[string]string) form.Snapshot {
 		kv := map[string]string{"system.provider": `"copilot"`, "system.model": `"` + model + `"`}
@@ -167,16 +167,16 @@ func TestProviderStatus(t *testing.T) {
 // as one model, not as a nested object.
 func TestProvidersDecodesTheCatalogWithDottedIDs(t *testing.T) {
 	cat := catalogOf(t, map[string]Provider{
-		"openai": {IR: IRVersion, RefreshedAt: 7, Models: map[string]Entry{
+		"openai": {IR: IRVersion, RefreshedAt: 7, Node: NewNode(map[string]Entry{
 			"gpt-4.1": {Context: Context{Default: 1_047_576}, Hidden: true},
-		}},
+		})},
 		"copilot": {Error: "no credential"},
 	})
 	provs, err := Providers(cat)
 	require.NoError(t, err)
 	require.Len(t, provs, 2)
 	require.Equal(t, int64(7), provs["openai"].RefreshedAt)
-	require.Equal(t, Entry{Context: Context{Default: 1_047_576}, Hidden: true}, provs["openai"].Models["gpt-4.1"])
+	require.Equal(t, Entry{Context: Context{Default: 1_047_576}, Hidden: true}, provs["openai"].Flat()["gpt-4.1"])
 	require.Equal(t, "no credential", provs["copilot"].Error)
 
 	empty, err := Providers(form.Snapshot{})
@@ -189,14 +189,14 @@ func TestProvidersDecodesTheCatalogWithDottedIDs(t *testing.T) {
 func TestAnotherIRVersionReadsAsUnknown(t *testing.T) {
 	for _, ir := range []int{0, IRVersion + 1} {
 		cat := catalogOf(t, map[string]Provider{
-			"rou2": {IR: ir, RefreshedAt: 7, Models: map[string]Entry{"glm": {Context: Context{Default: 1_048_576}}}},
+			"rou2": {IR: ir, RefreshedAt: 7, Node: NewNode(map[string]Entry{"glm": {Context: Context{Default: 1_048_576}}})},
 		})
 		_, ok := Lookup(cat, "rou2", "glm")
 		require.False(t, ok, "ir %d", ir)
 		require.Zero(t, EntryLimit(cat, "rou2", "glm", ""), "ir %d", ir)
 		provs, err := Providers(cat)
 		require.NoError(t, err)
-		require.Empty(t, provs["rou2"].Models, "ir %d", ir)
+		require.Empty(t, provs["rou2"].Flat(), "ir %d", ir)
 		require.Equal(t, int64(7), provs["rou2"].RefreshedAt, "the status still reads")
 	}
 }

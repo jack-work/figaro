@@ -154,7 +154,7 @@ func TestTableSeedsAWantedAliasBeforeTheNetworkAnswers(t *testing.T) {
 
 	c.Want("anthropic", "claude-x")
 	waitFor(t, func() bool { return limitOf(c, "anthropic", "claude-x") == 1_000_000 })
-	require.Equal(t, int32(1), calls.Load(), "the listing is still in flight")
+	waitFor(t, func() bool { return calls.Load() == 1 })
 
 	close(gate)
 	waitFor(t, func() bool { return limitOf(c, "anthropic", "claude-x-20260101") == 400_000 })
@@ -328,7 +328,7 @@ func TestTheCatalogSurvivesARestart(t *testing.T) {
 func TestTheOldCacheFileIsImportedOnceAndRemoved(t *testing.T) {
 	root := t.TempDir()
 	old := New(Config{})
-	old.publish("openai", models.Provider{IR: models.IRVersion, RefreshedAt: 7, Models: map[string]models.Entry{"gpt-4.1": {Context: models.Context{Default: 1_047_576}}}})
+	old.publish("openai", models.Provider{IR: models.IRVersion, RefreshedAt: 7, Node: models.NewNode(map[string]models.Entry{"gpt-4.1": {Context: models.Context{Default: 1_047_576}}})})
 	data, err := json.Marshal(old.Snapshot())
 	require.NoError(t, err)
 	path := filepath.Join(t.TempDir(), "models.json")
@@ -348,7 +348,7 @@ func TestTheOldCacheFileIsImportedOnceAndRemoved(t *testing.T) {
 	require.Equal(t, 1_047_576, models.EntryLimit(snap, "openai", "gpt-4.1", ""))
 
 	stale := New(Config{})
-	stale.publish("openai", models.Provider{IR: models.IRVersion, RefreshedAt: 1, Models: map[string]models.Entry{"gpt-4.1": {Context: models.Context{Default: 8}}}})
+	stale.publish("openai", models.Provider{IR: models.IRVersion, RefreshedAt: 1, Node: models.NewNode(map[string]models.Entry{"gpt-4.1": {Context: models.Context{Default: 8}}})})
 	data, err = json.Marshal(stale.Snapshot())
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, data, 0o644))
@@ -527,7 +527,7 @@ func TestStrangersLeftByAnOlderDaemonAreDroppedAtBoot(t *testing.T) {
 	st, f := openModelsStore(t, root)
 	old := New(Config{Form: f})
 	old.publish("claude-opus-5-5", models.Provider{AttemptedAt: 7, Error: "unknown provider: \"claude-opus-5-5\""})
-	old.publish("anthropic", models.Provider{IR: models.IRVersion, RefreshedAt: 7, Models: map[string]models.Entry{"claude-opus-5-5": {Context: models.Context{Default: 1_000_000}}}})
+	old.publish("anthropic", models.Provider{IR: models.IRVersion, RefreshedAt: 7, Node: models.NewNode(map[string]models.Entry{"claude-opus-5-5": {Context: models.Context{Default: 1_000_000}}})})
 
 	f = st.reopen(t)
 	c := New(Config{Form: f, Known: func(name string) bool { return name == "anthropic" }})

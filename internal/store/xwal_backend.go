@@ -23,6 +23,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/figwal/segment"
 	fwtree "github.com/jack-work/figaro/figwal/tree"
 	"github.com/jack-work/figaro/figwal/xwal"
@@ -709,6 +710,7 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	if pm, _ := b.Meta(parent); pm != nil && pm.ReapedAtMS > 0 {
 		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, form.RuntimeDrops(ReapedKey, ReapedUntilKey, ReapedByKey)))
 	}
+	patch = b.withRoute(parent, patch)
 	release := b.holdMarks(parent)
 	child, version, stamped, err := b.store.ForkWith(parent, atMainLT, patch, opts...)
 	if err != nil {
@@ -764,6 +766,7 @@ func (b *XwalBackend) RecordBaseTurn(trunk string, baseLT, turn uint64, exact bo
 // CreateForm: `fig form new` spawns under the null root, `fig form fork` duplicates
 // a form. Same form-cache hygiene as ForkWith.
 func (b *XwalBackend) CreateForm(parent string, patch message.Patch, opts ...BirthOption) (string, uint64, error) {
+	patch = b.withRoute(parent, patch)
 	id, version, stamped, err := b.store.CreateForm(parent, patch, opts...)
 	if err != nil {
 		return "", 0, err
@@ -1576,4 +1579,12 @@ func (b *XwalBackend) transCacheFor(providerName string) *fwtree.Cache[arialog.E
 	}, transEntrySize, transKey[[]json.RawMessage])
 	b.transCaches[providerName] = c
 	return c
+}
+
+func (b *XwalBackend) withRoute(parent string, patch message.Patch) message.Patch {
+	var base form.Snapshot
+	if parent != "" {
+		base, _ = b.FormState(parent)
+	}
+	return models.RecordRoute(base, patch)
 }
