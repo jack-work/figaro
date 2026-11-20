@@ -50,7 +50,7 @@ func TestTheOperatorAppliesARolesOutfitGrantsAndAFigaroMayNot(t *testing.T) {
 	}
 	managed := []string{form.OutfitGrantsKey}
 	err := applyFanout(t, r, id, "role-outfits", managed, keyOnForm(t, r, id, "target-aria"))
-	if err == nil || !strings.Contains(err.Error(), "reserved") {
+	if err == nil || !strings.Contains(err.Error(), "owner-only") {
 		t.Fatalf("the holder applied its own role's outfit grants: %v", err)
 	}
 	if v, ok := keyOn(t, r, id, form.OutfitGrantsKey); ok {

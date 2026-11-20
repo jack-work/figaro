@@ -72,6 +72,9 @@ func validatePath(path string, operator []string) error {
 	if under(path, operator) {
 		return nil
 	}
+	if under(path, form.OperatorPaths()) {
+		return fmt.Errorf("form apply: %q is owner-only: only the owner, unboxed and not acting as a figaro, may manage it", path)
+	}
 	root := parts[0]
 	if strings.HasPrefix(root, "comment_") || strings.HasPrefix(root, "thread_") {
 		return fmt.Errorf("form apply: %q is runtime-owned", path)

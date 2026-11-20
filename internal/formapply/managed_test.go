@@ -144,3 +144,14 @@ func TestTheOperatorManagesARolesOutfitGrantsAndNothingBesideThem(t *testing.T) 
 		t.Fatal("a caller without the operator prefixes managed system.grants.outfits")
 	}
 }
+
+func TestANonOwnerIsToldOperatorPathsAreOwnerOnlyAndOtherSystemPathsReserved(t *testing.T) {
+	_, err := Plan(form.Snapshot{}, form.Snapshot{}, []string{"system.grants.outfits"}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "owner-only") || strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("operator path without the prefixes: %v", err)
+	}
+	_, err = Plan(form.Snapshot{}, form.Snapshot{}, []string{"system.provider"}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("plain system path: %v", err)
+	}
+}
