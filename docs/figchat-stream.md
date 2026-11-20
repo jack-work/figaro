@@ -92,8 +92,9 @@ counted in that turn's cursor.
 
 A `Resume` on a turn that has already finished replays the remainder and ends
 at once, unless the turn after it is still running; then the channel follows
-that turn as one reply, the way the original channel did. The `end` of a turn read back after it finished carries no failure
-reason: a failed turn read back ends with `end`.
+that turn as one reply, the way the original channel did. A failed turn read back fails with its reason when it is the aria's newest
+turn; an older failed turn read back ends with `end`, since the daemon keeps
+only the latest reason.
 
 ## History
 
@@ -129,5 +130,10 @@ close marker and the next starts again at version 0. The client folds frames
 by node position. A frame whose version it has already seen, or that belongs
 to a round a read already covered, is skipped; a frame that skips a version,
 or that it meets mid-round, makes it read the turn back with `figaro.read`
-and hold later frames until the read lands, then replay them past the read. `turn.done` ends the turn; its `idle`
-flag says whether another turn follows.
+and hold later frames until the read lands, then replay them past the read.
+
+Turn ends come from the aria's `runtime` form, read with every catch-up and
+followed through its deltas: `turn.id` names the turn, a turn is over once a
+later one is named or the state is no longer thinking or tooling, `turn.reason`
+is its failure, and `inflight` says whether another turn follows. A dormant
+aria has no runtime form; it reads as idle.

@@ -184,7 +184,7 @@ func (c *Client) dialAria(ctx context.Context, id string, notify sdk.NotifyHandl
 
 type note struct {
 	part *aria.TurnPart
-	done *rpc.DoneEntry
+	rt   *rpc.FormDelta
 }
 
 type thread struct {
@@ -199,6 +199,9 @@ type thread struct {
 	top     uint64
 	syncing bool
 	want    map[uint64]bool
+	rt      runtimeView
+	wantRT  bool
+	rtReady chan struct{}
 	buf     []note
 	subs    map[*sub]struct{}
 }
@@ -222,8 +225,19 @@ func (t *thread) connect(ctx context.Context) (ariaConn, error) {
 	}
 	t.mu.Lock()
 	t.conn = conn
+	t.wantRT = true
+	ready := make(chan struct{})
+	t.rtReady = ready
+	t.startSync()
 	t.mu.Unlock()
 	go t.watch(conn)
+	select {
+	case <-ready:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-conn.Done():
+		return nil, errors.New("the connection to figaro closed while reading its state")
+	}
 	return conn, nil
 }
 
@@ -303,10 +317,12 @@ func (t *thread) notify(method string, params json.RawMessage) {
 		for i := range p.Parts {
 			notes = append(notes, note{part: &p.Parts[i]})
 		}
-	case rpc.MethodTurnDone:
-		var d rpc.DoneEntry
-		_ = json.Unmarshal(params, &d)
-		notes = append(notes, note{done: &d})
+	case rpc.MethodFormDelta:
+		var d rpc.FormDelta
+		if json.Unmarshal(params, &d) != nil || d.Intrinsic != runtimeIntrinsic {
+			return
+		}
+		notes = append(notes, note{rt: &d})
 	default:
 		return
 	}
@@ -325,14 +341,15 @@ func (t *thread) notify(method string, params json.RawMessage) {
 }
 
 func (t *thread) process(n note) bool {
-	if n.done != nil {
-		f := t.folds[t.top]
-		if f == nil || f.ended {
-			return true
+	if n.rt != nil {
+		switch t.rt.delta(*n.rt) {
+		case gap:
+			t.wantRT = true
+			t.startSync()
+			return false
+		case fresh:
+			t.settle()
 		}
-		f.finish(n.done.Reason)
-		f.idle = n.done.Idle == nil || *n.done.Idle
-		t.deliver(f)
 		return true
 	}
 	p := n.part
@@ -379,7 +396,7 @@ func (t *thread) trim() {
 const keptTurns = 4
 
 func (t *thread) startSync() {
-	if t.syncing || len(t.want) == 0 {
+	if t.syncing || len(t.want) == 0 && !t.wantRT {
 		return
 	}
 	t.syncing = true
@@ -389,12 +406,12 @@ func (t *thread) startSync() {
 func (t *thread) sync() {
 	for {
 		t.mu.Lock()
-		if len(t.want) > 0 {
+		if len(t.want) > 0 || t.wantRT {
 			turns := make([]uint64, 0, len(t.want))
 			for id := range t.want {
 				turns = append(turns, id)
 			}
-			t.want = map[uint64]bool{}
+			t.want, t.wantRT = map[uint64]bool{}, false
 			conn := t.conn
 			t.mu.Unlock()
 			t.seed(conn, turns)
@@ -419,22 +436,43 @@ func (t *thread) seed(conn ariaConn, turns []uint64) {
 	sort.Slice(turns, func(i, j int) bool { return turns[i] < turns[j] })
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	parts, err := readTurns(ctx, conn, turns[0])
+	rt, err := conn.FormOf(ctx, runtimeIntrinsic)
+	dormant := isDormant(err)
+	if dormant {
+		err = nil
+	}
+	var parts []aria.TurnPart
+	if err == nil && len(turns) > 0 {
+		parts, err = readTurns(ctx, conn, turns[0])
+	}
+	if err == nil && dormant {
+		rt = asleep(parts)
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if err != nil {
 		for s := range t.subs {
-			if s.r != nil && s.r.cur.Turn >= turns[0] || s.r == nil && s.after+1 >= turns[0] {
-				s.push(Event{Kind: Failed, Text: "read the thread: " + err.Error(), Cursor: Cursor{Turn: s.next()}}, true)
-				delete(t.subs, s)
-			}
+			s.push(Event{Kind: Failed, Text: "read the thread: " + err.Error(), Cursor: Cursor{Turn: s.next()}}, true)
+			delete(t.subs, s)
 		}
 		return
 	}
-	t.adopt(parts)
+	t.adopt(rt, parts)
 }
 
-func (t *thread) adopt(parts []aria.TurnPart) {
+func (t *thread) adopt(rt *rpc.FormResponse, parts []aria.TurnPart) {
+	if rt != nil {
+		inc := t.rt.inc
+		if t.rt.reset(rt) && t.rt.inc != inc {
+			for s := range t.subs {
+				s.rtVer = 0
+			}
+		}
+		if t.rtReady != nil {
+			close(t.rtReady)
+			t.rtReady = nil
+		}
+	}
 	rebuilt := map[uint64]*turnFold{}
 	for _, p := range parts {
 		f := rebuilt[p.ID]
@@ -446,13 +484,8 @@ func (t *thread) adopt(parts []aria.TurnPart) {
 	}
 	ids := make([]uint64, 0, len(rebuilt))
 	for id, f := range rebuilt {
-		if old := t.folds[id]; old != nil && old.ended && !f.sealed {
+		if old := t.folds[id]; old != nil && old.ended {
 			continue
-		}
-		if f.sealed {
-			f.finish("")
-			next := rebuilt[id+1]
-			f.idle = next == nil || next.sealed
 		}
 		t.folds[id] = f
 		t.top = max(t.top, id)
@@ -462,7 +495,60 @@ func (t *thread) adopt(parts []aria.TurnPart) {
 	for _, id := range ids {
 		t.deliver(rebuilt[id])
 	}
+	t.settle()
 	t.trim()
+}
+
+func (t *thread) settle() {
+	if !t.rt.known {
+		return
+	}
+	now := t.rt.state()
+	ids := make([]uint64, 0, len(t.folds))
+	for id, f := range t.folds {
+		if !f.ended && now.over(id) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for _, id := range ids {
+		f := t.folds[id]
+		reason := ""
+		if id == now.turn && now.state == rpc.RuntimeIdle {
+			reason = now.reason
+		}
+		f.finish(reason)
+		next := t.folds[id+1]
+		running := next != nil && !next.sealed || id+1 == now.turn && now.state.Busy()
+		if id == now.turn {
+			running = !now.settled()
+		}
+		f.idle = !running
+		t.deliver(f)
+	}
+	for s := range t.subs {
+		if s.r != nil || s.closed {
+			continue
+		}
+		if now.turn > s.after && t.folds[s.after+1] == nil {
+			t.want[s.after+1] = true
+			t.startSync()
+			continue
+		}
+		if now.settled() && now.turn <= s.after && t.rt.ver > s.rtVer {
+			t.finishWaiting(s, now)
+		}
+	}
+}
+
+func (t *thread) finishWaiting(s *sub, now runState) {
+	cur := Cursor{Turn: s.after + 1}
+	if why, failed := strings.CutPrefix(now.reason, "error:"); failed {
+		s.push(Event{Kind: Failed, Text: strings.TrimSpace(why), Cursor: cur}, true)
+	} else {
+		s.push(Event{Kind: End, Text: joinReplies(s.replies), Cursor: cur}, true)
+	}
+	delete(t.subs, s)
 }
 
 func readTurns(ctx context.Context, conn ariaConn, turn uint64) ([]aria.TurnPart, error) {
@@ -486,6 +572,7 @@ func (t *thread) subscribe(ctx context.Context, s *sub, seed []uint64) <-chan Ev
 	s.out = make(chan Event, 64)
 	s.wake = make(chan struct{}, 1)
 	t.mu.Lock()
+	s.rtVer = t.rt.ver
 	t.subs[s] = struct{}{}
 	for _, id := range seed {
 		if f := t.folds[id]; f == nil {
@@ -597,6 +684,7 @@ func (t *thread) pump(ctx context.Context, s *sub) {
 
 type sub struct {
 	after   uint64
+	rtVer   uint64
 	r       *reader
 	replies []string
 

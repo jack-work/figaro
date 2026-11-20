@@ -457,3 +457,24 @@ func TestADaemonKilledMidReplyNeverTakesShownTextBack(t *testing.T) {
 		t.Fatalf("shown before the kill %q\nin all %q\nend %+v", seen, got, last)
 	}
 }
+
+func TestResumingAFailedTurnFailsWithItsReason(t *testing.T) {
+	c, id, d := thread(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	ch, err := c.Prompt(ctx, id, "fail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := collect(t, ch, 30*time.Second)
+	other := chat.New(d.endpoint())
+	defer other.Close()
+	rest, err := other.Resume(ctx, id, chat.Cursor{Turn: events[len(events)-1].Cursor.Turn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := collect(t, rest, 30*time.Second)
+	if last := after[len(after)-1]; last.Kind != chat.Failed || !strings.Contains(last.Text, "stub refused") {
+		t.Fatalf("events %s, last %+v", kinds(after), last)
+	}
+}
