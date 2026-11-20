@@ -183,3 +183,16 @@ func TestAriaLogSendReturnsOnceTheEntryIsDurable(t *testing.T) {
 		require.Len(t, entriesOf(a), i+1, "the ack follows the append")
 	}
 }
+
+func TestALogEntryIsNeverRewrittenAsAPrompt(t *testing.T) {
+	a := newLogAgent(t)
+	require.NoError(t, a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: "seed", Form: &rpc.FormInput{Patch: ptrPatch(form.Build(form.Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"the ledger"`)}, nil))}}, "s"))
+	texts := []string{"the title is @mantra! here", "an unknown @nosuchkey! ref", "<1>! a leading quote"}
+	for _, text := range texts {
+		require.NoError(t, a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: text}, "s"), "a log refuses no entry for what a prompt rewrite would refuse")
+	}
+	entries := waitEntries(t, a, len(texts)+1)
+	for i, text := range texts {
+		require.Equal(t, text, entries[i+1].Content[0].Text, "entry %d lands byte-identical", i)
+	}
+}
