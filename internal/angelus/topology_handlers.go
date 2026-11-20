@@ -326,7 +326,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	holder := inherited
 	claimed := authz.FigaroOf(ctx) != ""
-	heir := req.Seat != "" && (!claimed || authz.FigaroOf(ctx) == req.FigaroID)
+	heir := req.Seat != "" && ((!claimed && h.callerOwns(ctx)) || authz.FigaroOf(ctx) == req.FigaroID)
+	keys := h.callerKeysOf(ctx)
+	byOwner := keys.owns && !keys.boxed
 	lane := claimed && !heir
 	if lane && req.Patch != nil && removesFanoutBirthKey(*req.Patch) {
 		p := withFanoutBirthDefault(*req.Patch)
@@ -408,7 +410,12 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		return nil, err
 	}
 	if heir {
-		dress = withHolderTTL(dress, holder)
+		dress = withHolderLifetime(dress, holder)
+	}
+	if !byOwner {
+		if err := h.refuseLongerLifetimeAtFork(forkOf(req.FigaroID), inherited.Apply(dress)); err != nil {
+			return nil, err
+		}
 	}
 	// interior is read off the coordinate, not the LT: forking at turn 1 has
 	// LT 0, which is also the head-fork sentinel.
@@ -451,6 +458,13 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		release()
 		if err != nil {
 			return err
+		}
+		if interior && !byOwner {
+			if cerr := h.clampToHolderLifetime(alt, holder); cerr != nil {
+				h.discardBirth(alt)
+				alt = ""
+				return cerr
+			}
 		}
 		if !reapedBefore && h.angelus.isReaped(req.FigaroID) {
 			h.discardBirth(alt)
