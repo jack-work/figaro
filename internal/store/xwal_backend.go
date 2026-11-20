@@ -703,8 +703,12 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	if pm, _ := b.Meta(parent); pm != nil && pm.RetiredAtMS > 0 {
 		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, form.RuntimeDrops(RetiredKey)))
 	}
-	if snap, err := b.FormState(parent); err == nil && snap.Has(SystemSuccessionFailedKey) {
+	inherited, _ := b.FormState(parent)
+	if inherited.Has(SystemSuccessionFailedKey) {
 		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, []string{SystemSuccessionFailedKey}))
+	}
+	if err := form.CheckKind(inherited, inherited.Apply(patch), true); err != nil {
+		return "", 0, err
 	}
 	if pm, _ := b.Meta(parent); pm != nil && pm.ReapedAtMS > 0 {
 		patch = form.Merge(patch, form.Build(form.Snapshot{}, nil, form.RuntimeDrops(ReapedKey, ReapedUntilKey, ReapedByKey)))
@@ -764,6 +768,10 @@ func (b *XwalBackend) RecordBaseTurn(trunk string, baseLT, turn uint64, exact bo
 // CreateForm: `fig form new` spawns under the null root, `fig form fork` duplicates
 // a form. Same form-cache hygiene as ForkWith.
 func (b *XwalBackend) CreateForm(parent string, patch message.Patch, opts ...BirthOption) (string, uint64, error) {
+	inherited, _ := b.FormState(parent)
+	if err := form.CheckKind(inherited, inherited.Apply(patch), true); err != nil {
+		return "", 0, err
+	}
 	id, version, stamped, err := b.store.CreateForm(parent, patch, opts...)
 	if err != nil {
 		return "", 0, err

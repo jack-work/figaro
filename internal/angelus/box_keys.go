@@ -429,11 +429,6 @@ func keyGrantsWaived(ctx context.Context) bool {
 }
 
 func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before form.Snapshot, patch *form.Patch) error {
-	if patch != nil {
-		if err := refuseLogKeys(line, before, before.Apply(*patch)); err != nil {
-			return err
-		}
-	}
 	err := h.checkCallerKeys(ctx, line, before, patch)
 	p := h.angelus.Policies
 	if err == nil || p.Enforces(authz.KeyGrants) {
@@ -774,9 +769,6 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 		return err
 	}
 	if shapesOnly {
-		if err := refuseLogKeys(lineage{of: id}, snap, snap.Apply(*patch)); err != nil {
-			return err
-		}
 		if err := refuseRuntimeKeys(snap, *patch); err != nil {
 			return err
 		}

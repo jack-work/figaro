@@ -159,7 +159,7 @@ func (h *handlers) createWith(ctx context.Context, params json.RawMessage, birth
 		dress = birth(dress)
 	}
 	base := mergePatches(stumpPatch, dress)
-	if err := refuseLogKeys(rootBirth(), form.Snapshot{}, form.Snapshot{}.Apply(base)); err != nil {
+	if err := form.CheckKind(form.Snapshot{}, form.Snapshot{}.Apply(base), true); err != nil {
 		return nil, err
 	}
 	// A named default missing on disk falls through to the missing-provider error.

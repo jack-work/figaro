@@ -37,3 +37,23 @@ func TestALogCarriesNoModelFromAnyBirth(t *testing.T) {
 		t.Fatalf("the forked log's form: %v", snap)
 	}
 }
+
+func TestAnOutfitCannotDressALogInAModel(t *testing.T) {
+	r := logRig(t, defaultPolicy, nil)
+	id := mintLog(t, r, asOwner())
+	_, err := r.h[rpc.MethodSet](asOwner(), withAria(t, id, rpc.SetRequest{Outfits: []string{"mock"}}))
+	if err == nil || !strings.Contains(err.Error(), "has no model") {
+		t.Fatalf("set -O mock on a log = %v, want refused", err)
+	}
+	_, err = r.h[rpc.MethodQua](asOwner(), withAria(t, id, rpc.QuaRequest{Text: "x", Form: &rpc.FormInput{Outfits: []string{"mock"}}}))
+	if err == nil || !strings.Contains(err.Error(), "has no model") {
+		t.Fatalf("send -O mock to a log = %v, want refused", err)
+	}
+	snap, err := r.backend.FormState(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Has("system.provider") || snap.Has("system.model") {
+		t.Fatalf("an outfit dressed a log in a model: %v", snap)
+	}
+}
