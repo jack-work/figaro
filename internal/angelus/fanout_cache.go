@@ -483,12 +483,7 @@ func (c *fanoutCache) chargeChange(id string, quota int, capped bool) (from stri
 func (c *fanoutCache) takeCharge(id string, quota int, capped bool, judge func(error) error) (func(), error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for c.writing[id] != nil {
-		inFlight := c.writing[id]
-		c.mu.Unlock()
-		<-inFlight
-		c.mu.Lock()
-	}
+	c.awaitWriteLocked(id)
 	from, d, _ := c.chargeChangeLocked(id, quota, capped)
 	if err := c.fitsLocked(from, d); err != nil {
 		if err = judge(err); err != nil {
@@ -496,6 +491,26 @@ func (c *fanoutCache) takeCharge(id string, quota int, capped bool, judge func(e
 		}
 	}
 	at, charge := c.reserveLocked(from, d)
+	return c.writeLocked(id, at, charge), nil
+}
+
+func (c *fanoutCache) holdWrites(id string) func() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.awaitWriteLocked(id)
+	return c.writeLocked(id, "", 0)
+}
+
+func (c *fanoutCache) awaitWriteLocked(id string) {
+	for c.writing[id] != nil {
+		inFlight := c.writing[id]
+		c.mu.Unlock()
+		<-inFlight
+		c.mu.Lock()
+	}
+}
+
+func (c *fanoutCache) writeLocked(id, at string, charge int) func() {
 	landed := make(chan struct{})
 	c.writing[id] = landed
 	var once sync.Once
@@ -507,7 +522,7 @@ func (c *fanoutCache) takeCharge(id string, quota int, capped bool, judge func(e
 			delete(c.writing, id)
 			close(landed)
 		})
-	}, nil
+	}
 }
 
 func (c *fanoutCache) chargeChangeLocked(id string, quota int, capped bool) (from string, d int, used int) {
