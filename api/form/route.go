@@ -6,7 +6,7 @@ var RouteKeys = []string{"system.provider", "system.model", "system.thinking_eff
 
 func IsRouteKey(key string) bool {
 	for _, k := range RouteKeys {
-		if key == k || strings.HasPrefix(key, k+".") || strings.HasPrefix(k, key+".") {
+		if key == k || strings.HasPrefix(key, k+".") {
 			return true
 		}
 	}
