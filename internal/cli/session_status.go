@@ -590,9 +590,9 @@ func planWindowLine(w models.PlanWindow, now time.Time) (panelRow, bool) {
 	case w.Status == models.PlanRejected:
 		b.WriteString(" rejected")
 	case w.UsedPercent != nil && w.Status == models.PlanAllowedWarning && *w.UsedPercent >= 99.5 && *w.UsedPercent < 100:
-		fmt.Fprintf(&b, " %.1f%%", math.Floor(*w.UsedPercent*10)/10)
+		fmt.Fprintf(&b, " %.1f%% used", math.Floor(*w.UsedPercent*10)/10)
 	case w.UsedPercent != nil:
-		fmt.Fprintf(&b, " %.0f%%", *w.UsedPercent)
+		fmt.Fprintf(&b, " %.0f%% used", *w.UsedPercent)
 	default:
 		return panelRow{}, false
 	}
