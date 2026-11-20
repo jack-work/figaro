@@ -21,6 +21,8 @@ Set or removed only by the owner: the local door, an in-process call, or the own
 - `system.retirement` and everything under it
 - `system.succession_failed` and everything under it
 - `system.grants` and everything under it
+- `system.delegate` and everything under it
+- `system.delegate_roles` and everything under it
 - `system.keep` and everything under it
 - `system.ttl` and everything under it
 - `system.reap_if_empty` and everything under it
