@@ -135,7 +135,7 @@ func keepHushAlive(ctx context.Context, h *managed.Hush) {
 				claim()
 			}
 		case <-t.C:
-			renewed, err := boot.RenewHushAgent(h, 2*interval)
+			renewed, err := boot.RenewHushAgent(ctx, h, 2*interval)
 			if err != nil {
 				slog.Warn("hush keep-alive: renewal failed", "err", err)
 				continue

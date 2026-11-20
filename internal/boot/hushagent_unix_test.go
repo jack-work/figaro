@@ -3,6 +3,7 @@
 package boot
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -33,7 +34,7 @@ func TestARenewalWaitsForTheOldAgentsPidLock(t *testing.T) {
 		syscall.Flock(fd, syscall.LOCK_UN)
 	}()
 	start := time.Now()
-	if err := awaitAgentGone(dir, time.Minute); err != nil {
+	if err := awaitAgentGone(context.Background(), dir, time.Minute); err != nil {
 		t.Fatal(err)
 	}
 	if waited := time.Since(start); waited < drain {
@@ -51,13 +52,36 @@ func TestARenewalGivesUpOnAnAgentThatNeverLetsGo(t *testing.T) {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		t.Fatal(err)
 	}
-	if err := awaitAgentGone(dir, 100*time.Millisecond); err == nil {
+	if err := awaitAgentGone(context.Background(), dir, 100*time.Millisecond); err == nil {
 		t.Fatal("no error while the old agent still holds agent.pid")
 	}
 }
 
 func TestARenewalDoesNotWaitWithoutAnAgent(t *testing.T) {
-	if err := awaitAgentGone(t.TempDir(), time.Minute); err != nil {
+	if err := awaitAgentGone(context.Background(), t.TempDir(), time.Minute); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// hush#37 L2 Low: the wait ignored its context, so a daemon stopping while an
+// old agent drained waited up to the two-minute ceiling.
+func TestARenewalStopsWaitingWhenItsDaemonStops(t *testing.T) {
+	dir := t.TempDir()
+	f, err := os.OpenFile(filepath.Join(dir, "agent.pid"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if err := awaitAgentGone(ctx, dir, time.Minute); err == nil {
+		t.Fatal("no error while the old agent still holds agent.pid")
+	}
+	if waited := time.Since(start); waited > 10*time.Second {
+		t.Fatalf("waited %s after its context ended", waited)
 	}
 }
