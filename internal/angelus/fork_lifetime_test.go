@@ -133,3 +133,47 @@ func TestANonOwnersFormForkOnlyShortensTheLifetimeItInherits(t *testing.T) {
 		t.Errorf("a bind shortening its ttl: %v", err)
 	}
 }
+
+// An outfit named on a set is the caller's write for the lifetime keys it
+// carries: only a root birth takes them on the outfit's word.
+func TestAnOutfitOnASetIsTheCallersLifetimeWrite(t *testing.T) {
+	r := newRigWith(t, lifetimeLentPolicy)
+	guest := as("user", "guest")
+	resp, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners := resp.FigaroID
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, owners, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{store.SystemTTLKey: "1h"})})); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(rpc.ForkRequest{FigaroID: owners})
+	out, err := r.h[rpc.MethodFork](guest, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fork := out.(rpc.ForkResponse).Alternative
+	own, err := r.create(guest, "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := func(id string, outfit string) error {
+		_, err := r.h[rpc.MethodSet](guest, withAria(t, id, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{"note": "n"}), Outfits: []string{outfit}}))
+		return err
+	}
+	if err := set(fork, "long-lived"); err == nil {
+		t.Error("the guest lengthened its fork of the owner's aria to 24h through an outfit")
+	}
+	if v, _ := keyOn(t, r, fork, store.SystemTTLKey); string(v) != `"1h"` {
+		t.Errorf("the fork's ttl = %s, want \"1h\"", v)
+	}
+	if err := set(owners, "short-lived"); err == nil {
+		t.Error("the guest set a 1m ttl on the owner's aria through an outfit")
+	}
+	if v, _ := keyOn(t, r, owners, store.SystemTTLKey); string(v) != `"1h"` {
+		t.Errorf("the owner's ttl = %s, want \"1h\"", v)
+	}
+	if err := set(own.FigaroID, "long-lived"); err != nil {
+		t.Errorf("the guest was refused an outfit's lifetime on its own root birth: %v", err)
+	}
+}

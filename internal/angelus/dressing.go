@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 // dress is the only place in the daemon that reads an outfit file on a
@@ -188,7 +189,7 @@ func (h *handlers) refuseOutfitAuthority(ctx context.Context, outfits []string) 
 	return nil
 }
 
-func (h *handlers) listedOutfitKeys(ctx context.Context, before form.Snapshot, outfits []string) (form.Snapshot, error) {
+func (h *handlers) listedOutfitKeys(ctx context.Context, line lineage, before form.Snapshot, outfits []string) (form.Snapshot, error) {
 	box, boxed := callerBox(ctx)
 	if len(outfits) == 0 {
 		return before, nil
@@ -200,11 +201,26 @@ func (h *handlers) listedOutfitKeys(ctx context.Context, before form.Snapshot, o
 	held := map[string]json.RawMessage{}
 	for _, e := range dressed.Entries() {
 		own := boxed && e.Key == "system.sandbox" && e.NewString() == box
+		if lifetimeKey(e.Key) && !(line.birth && (!line.fork || boxed)) {
+			continue
+		}
 		if !e.IsRemoval() && (own || form.WriterOf(e.Key) == form.WriterOwner) {
 			held[e.Key] = e.New
 		}
 	}
 	return before.Apply(form.Build(before, held, nil)), nil
+}
+
+var lifetimeKeys = []string{store.SystemTTLKey, store.SystemKeepaliveKey, store.SystemReapIfEmptyKey,
+	store.SystemRetiredKey, store.SystemRetirementKey, store.SystemSuccessionFailedKey}
+
+func lifetimeKey(key string) bool {
+	for _, k := range lifetimeKeys {
+		if key == k || strings.HasPrefix(key, k+".") {
+			return true
+		}
+	}
+	return false
 }
 
 type requestOutfitsKey struct{}

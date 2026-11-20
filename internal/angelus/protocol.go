@@ -606,13 +606,13 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	if err := h.refuseOutfitGrants(ctx, req.Outfits); err != nil {
 		return nil, err
 	}
-	base, err := h.listedOutfitKeys(ctx, inherited, req.Outfits)
-	if err != nil {
-		return nil, err
-	}
 	line, births := forkOf(parent), []store.BirthOption{mintedBy(ctx)}
 	if parent == "" || isStump {
 		line, births = birthUnder(parent), append(births, store.AtRoot())
+	}
+	base, err := h.listedOutfitKeys(ctx, line, inherited, req.Outfits)
+	if err != nil {
+		return nil, err
 	}
 	if err := h.refuseCallerKeys(ctx, line, base, &dress); err != nil {
 		return nil, err
