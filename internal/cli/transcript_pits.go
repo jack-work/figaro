@@ -166,14 +166,24 @@ func (t *transcript) openHelpPit() {
 }
 
 func (t *transcript) openStatusPit() {
+	t.pit.showList(pitStatus, "", t.statusPitRows())
+	t.focused = focusPit
+}
+
+func (t *transcript) refreshStatusPit() {
+	if t.showing(pitStatus) {
+		t.pit.replaceRows(t.statusPitRows(), "")
+	}
+}
+
+func (t *transcript) statusPitRows() []pitRow {
 	rows := make([]pitRow, 0, 12)
 	for _, r := range t.status.panelRows() {
 		row := staticRow(r.text)
 		row.tone = r.tone
 		rows = append(rows, row)
 	}
-	t.pit.showList(pitStatus, "", rows)
-	t.focused = focusPit
+	return rows
 }
 
 // Opening it is reading it, so the unread mark goes.
