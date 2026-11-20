@@ -280,9 +280,9 @@ listener's authenticator stamped, and nothing in params can change it:
 | listener | authenticator | principal |
 |---|---|---|
 | CLI door (`angelus.sock`) | `Peercred.Admit`: `SO_PEERCRED` on the unix socket | `user:<uid>`; another uid only through `[authz.peercred] uids`. Off linux, any unix peer is the daemon's uid. A non-unix peer is refused. |
-| web door (`[door.web]`) | per upgrade request, `authn = "upstream"` or `"bearer"`; any other value and the door does not start | upstream: the edge's `Remote-User` / `Remote-Groups`, scoped by `[authz.upstream] issuer`, trusted only on that socket and never on the CLI door's path. They are read once, at the upgrade, so the connection ends at `[door] edge_follow_max_age` (default 1h) with a `door.lapsed` notice and the reason in the close frame; the pager dials the edge again and follows on, judged on the groups the edge names then. `[door.web] max_conn_age` (default 8h) ends any web connection the same way. bearer: a session bound at the upgrade, refused once the token expires; the client reconnects. A bearer starting `fgk_` is an api key (Troupe api keys, below) and goes only to the key table; anything else goes only to the issuers. |
+| web door (`[door.web]`) | per upgrade request, `authn = "upstream"` or `"bearer"`; any other value and the door does not start | upstream: the edge's `Remote-User` / `Remote-Groups`, scoped by `[authz.upstream] issuer`, trusted only on that socket and never on the CLI door's path. They are read once, at the upgrade, so the connection ends at `[door] edge_follow_max_age` (default 1h) with a `door.lapsed` notice and the reason in the close frame; the pager dials the edge again and follows on, judged on the groups the edge names then. `[door.web] max_conn_age` (default 8h) ends any web connection the same way. bearer: a session bound at the upgrade, refused once the token expires; the client reconnects. A bearer starting `fgk_` is an api key (Troupe api keys, below) and goes only to the key table; anything else goes only to the issuers. A service may also name the user it acts for (On behalf of, below). |
 | box door (`[sandbox.boxes.<name>] door`) | `authz.BoxAdmit`: every caller is the box, whatever its uid; seated only if the policy binds it | `sandbox:<name>@local:box`. `local:box` is not a host, so no issuer or api key can mint it. |
-| node door (`[door.tls]`) | `peer.Door.Admit`: mTLS against `[peers.<node>]` | `node:<id>`; a forwarded caller is its bearer, verified again against `[[authz.issuers]]` or, for an api key, this node's key table, and refused when neither applies |
+| node door (`[door.tls]`) | `peer.Door.Admit`: mTLS against `[peers.<node>]` | `node:<id>`; a forwarded caller is its bearer, verified again against `[[authz.issuers]]` or, for an api key, this node's key table, and refused when neither applies; a delegating service is forwarded as its bearer plus the user it names, checked again against this node's `[[authz.delegation]]` |
 
 **Issuers.** `[[authz.issuers]]` lists the identity issuers this node
 trusts (`issuer`, `jwks`, `userinfo`, `audience`, `types`, `users`,
@@ -296,6 +296,29 @@ refused. Policies name the scoped spelling; one that grants an unscoped
 user (other than a uid) or group still loads, and each such name is
 logged with what to write. The retired single `[authz.bearer]` table is
 refused by name.
+
+**On behalf of.** A trusted service can act for a human it has already
+gated. `[[authz.delegation]]` lists the service (`principal =
+"service:figchat-gateway@auth.kelliher.info"`) and the users it may act
+for (`users = ["user:gluck@auth.kelliher.info"]`, the service's own
+issuer only); nothing is delegable until the owner writes it. At
+`authn = "bearer"` the service presents its bearer and
+`X-Figaro-On-Behalf-Of: <name>`, the bare name its edge calls
+`Remote-User`; the door scopes it into the service's issuer and either
+seats the connection as that user or answers 403 with the reason. A
+refusal never falls back to the service principal; a request without the
+header is the service as itself. The upstream door refuses the header.
+Over the node door the entry node sends the service's bearer and the
+name in `Passage.on_behalf`, and the owner node applies its own list.
+
+The effective principal is the user: its seat, its grants, and the
+sender recorded on messages (the user's name, whatever the params
+assert; the figaro claim is dropped). The service's verbs are a ceiling
+on those grants: `read`, `listen`, `send`, `fork` and `use` on
+`sandbox:local`. `kill`, `set`, `admin` and every other verb are refused,
+and so is a send or fork that carries a form patch, outfits, a seat, an
+abdication or non-harness context keys, so no write to `system.*` rides
+in on a send.
 
 **Every call is decided.** `authz.Guard` wraps the whole handler map with
 `authz.Enforce`: each method maps to one verb (`api/rpc/verbs.go`; an
