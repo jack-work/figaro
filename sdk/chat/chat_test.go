@@ -558,3 +558,176 @@ func TestResumingOnAnAriaWokenByACancelReplaysTheTurn(t *testing.T) {
 		t.Fatalf("first %q then %s %q", events[0].Text, kinds(after), replyText(after))
 	}
 }
+
+func collectUntil(t *testing.T, ch <-chan chat.Event, within time.Duration, done func([]chat.Event) bool) []chat.Event {
+	t.Helper()
+	var out []chat.Event
+	timeout := time.After(within)
+	for !done(out) {
+		select {
+		case e, ok := <-ch:
+			if !ok {
+				t.Fatalf("channel closed after %s", kinds(out))
+			}
+			out = append(out, e)
+		case <-timeout:
+			t.Fatalf("not done within %s; got %s", within, kinds(out))
+		}
+	}
+	return out
+}
+
+func ends(n int) func([]chat.Event) bool {
+	return func(events []chat.Event) bool {
+		got := 0
+		for _, e := range events {
+			if e.Kind == chat.End || e.Kind == chat.Failed {
+				got++
+			}
+		}
+		return got >= n
+	}
+}
+
+func TestFollowSeesEveryTurnSomeoneElseStarts(t *testing.T) {
+	c, id, d := thread(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	ch, err := c.Follow(ctx, id, chat.Cursor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.must(t, "send", "--id", id, "-r", "--", "words 6 0")
+	d.must(t, "send", "--id", id, "-r", "--", "words 3 0")
+	events := collectUntil(t, ch, 30*time.Second, ends(2))
+	var starts, wholes []string
+	for _, e := range events {
+		switch e.Kind {
+		case chat.TurnStart:
+			starts = append(starts, e.Text)
+		case chat.End:
+			wholes = append(wholes, e.Text)
+		}
+	}
+	if strings.Join(starts, "|") != "words 6 0|words 3 0" || strings.Join(wholes, "|") != "w0 w1 w2 w3 w4 w5|w0 w1 w2" {
+		t.Fatalf("starts %q ends %q (%s)", starts, wholes, kinds(events))
+	}
+	if events[0].Cursor.Turn == 0 || events[0].Kind != chat.TurnStart {
+		t.Fatalf("first event %+v", events[0])
+	}
+}
+
+func TestFollowNamesWhoSentThePrompt(t *testing.T) {
+	c, id, d := thread(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	ch, err := c.Follow(ctx, id, chat.Cursor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender := d.root(t)
+	send := d.cmd("send", "--id", id, "-r", "--", "words 2 0")
+	send.Env = append(send.Env, "FIGARO_ARIA="+sender)
+	if out, err := send.CombinedOutput(); err != nil {
+		t.Fatalf("send: %v\n%s", err, out)
+	}
+	d.must(t, "send", "--id", id, "-r", "--", "words 2 0")
+	events := collectUntil(t, ch, 30*time.Second, ends(2))
+	var starts []chat.Event
+	for _, e := range events {
+		if e.Kind == chat.TurnStart {
+			starts = append(starts, e)
+		}
+	}
+	if len(starts) != 2 || starts[0].Sender == nil || starts[0].Sender.ID != sender || starts[1].Sender != nil {
+		t.Fatalf("starts %+v", starts)
+	}
+}
+
+func followSplits(t *testing.T, fresh bool) {
+	c, id, d := thread(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	ch, err := c.Follow(ctx, id, chat.Cursor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := chat.New(d.endpoint())
+	defer other.Close()
+	if _, err := other.Prompt(ctx, id, "words 30 40"); err != nil {
+		t.Fatal(err)
+	}
+	var before []chat.Event
+	for e := range ch {
+		before = append(before, e)
+		if len(before) == 5 {
+			break
+		}
+	}
+	cut := before[len(before)-1].Cursor
+	again := c
+	if fresh {
+		again = chat.New(d.endpoint())
+		defer again.Close()
+	}
+	c.Forget(id)
+	for range ch {
+	}
+	rest, err := again.Follow(ctx, id, cut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := collectUntil(t, rest, 30*time.Second, ends(1))
+	events := append(before, after...)
+	var want []string
+	for i := range 30 {
+		want = append(want, "w"+strconv.Itoa(i))
+	}
+	whole := strings.Join(want, " ")
+	if replyText(events) != whole {
+		t.Fatalf("cut at %+v\nbefore %q\nafter  %q", cut, replyText(before), replyText(after))
+	}
+	if last := events[len(events)-1]; last.Kind != chat.End || last.Text != whole || last.Cursor.Turn != cut.Turn+1 {
+		t.Fatalf("end %+v", last)
+	}
+	starts := 0
+	for _, e := range events {
+		if e.Kind == chat.TurnStart {
+			starts++
+		}
+	}
+	if starts != 1 {
+		t.Fatalf("%d turn.start in %s", starts, kinds(events))
+	}
+}
+
+func TestFollowResumedMidTurnInTheSameClientLosesAndRepeatsNothing(t *testing.T) {
+	followSplits(t, false)
+}
+
+func TestFollowResumedMidTurnFromAnotherClientLosesAndRepeatsNothing(t *testing.T) {
+	followSplits(t, true)
+}
+
+func TestFollowResumedFromAnEndCursorCatchesTheNextTurn(t *testing.T) {
+	c, id, d := thread(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	ch, err := c.Follow(ctx, id, chat.Cursor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.must(t, "send", "--id", id, "-r", "--", "words 4 0")
+	first := collectUntil(t, ch, 30*time.Second, ends(1))
+	cut := first[len(first)-1].Cursor
+	c.Forget(id)
+	d.must(t, "send", "--id", id, "-r", "--", "words 2 0")
+	again, err := c.Follow(ctx, id, cut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := collectUntil(t, again, 30*time.Second, ends(1))
+	if got := kinds(second); !strings.HasPrefix(got, "turn.start") || second[0].Text != "words 2 0" || replyText(second) != "w0 w1" {
+		t.Fatalf("second %s %q", got, replyText(second))
+	}
+}
