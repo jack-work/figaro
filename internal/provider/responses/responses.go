@@ -646,6 +646,7 @@ func postResponses(ctx context.Context, endpoint string, headers http.Header, pa
 	if err != nil {
 		return nil, err
 	}
+	provider.RecordRou2Upstream(ctx, resp.Header)
 	dump.Response(resp.Proto+" "+resp.Status, resp.Header)
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, provider.FallbackBodyLimit+1))
@@ -768,6 +769,9 @@ func dialResponses(ctx context.Context, endpoint string, headers http.Header) (*
 	conn, response, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{
 		HTTPClient: client, HTTPHeader: headers,
 	})
+	if response != nil {
+		provider.RecordRou2Upstream(ctx, response.Header)
+	}
 	if err != nil {
 		if response != nil {
 			code := statusRejectionCode(response.StatusCode, "handshake_rejected")

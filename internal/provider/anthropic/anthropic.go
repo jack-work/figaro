@@ -245,7 +245,7 @@ func finalRateLimit(resp *http.Response, retryAfter time.Duration, now time.Time
 		return nil
 	}
 	limit := &provider.RateLimited{Provider: providerName, Window: rateLimitWindow(resp.Header.Get("anthropic-ratelimit-unified-representative-claim"))}
-	if u, ok := rou2Upstream(resp.Header); ok {
+	if u, ok := provider.Rou2Upstream(resp.Header); ok {
 		limit.Upstream = u
 	}
 	if secs, err := strconv.ParseInt(strings.TrimSpace(resp.Header.Get("anthropic-ratelimit-unified-reset")), 10, 64); err == nil && secs > 0 {
@@ -339,7 +339,7 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 				return nil, apiKey, limit
 			}
 			lastErr = fmt.Errorf("anthropic %d (transient)", resp.StatusCode)
-			if u, ok := rou2Upstream(resp.Header); ok {
+			if u, ok := provider.Rou2Upstream(resp.Header); ok {
 				lastErr = fmt.Errorf("anthropic %d (transient, upstream %s)", resp.StatusCode, u)
 			}
 			if ra > 0 {

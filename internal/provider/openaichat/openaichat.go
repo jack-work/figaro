@@ -221,6 +221,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return err
 	}
 	defer resp.Body.Close()
+	provider.RecordRou2Upstream(ctx, resp.Header)
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(resp.Body)
 		return imagesRefusalOf(resp.StatusCode, errBody, fmt.Errorf("%s: HTTP %d: %s", p.Route.Name, resp.StatusCode, errBody))

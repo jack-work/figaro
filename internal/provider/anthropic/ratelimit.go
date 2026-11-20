@@ -4,30 +4,21 @@ import (
 	"context"
 	"math"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/jack-work/figaro/internal/provider"
 )
 
-const (
-	unifiedRateLimitPrefix = "anthropic-ratelimit-unified-"
-	rou2UpstreamHeader     = "X-Rou2-Upstream"
-)
-
-var rou2UpstreamName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+const unifiedRateLimitPrefix = "anthropic-ratelimit-unified-"
 
 type requestedModelKey struct{}
 
 func withRequestedModel(ctx context.Context, model string) context.Context {
 	return context.WithValue(ctx, requestedModelKey{}, model)
-}
-
-func rou2Upstream(h http.Header) (string, bool) {
-	v := strings.TrimSpace(h.Get(rou2UpstreamHeader))
-	return v, rou2UpstreamName.MatchString(v)
 }
 
 type rateLimitKind int
@@ -70,8 +61,7 @@ func recordUnifiedRateLimit(ctx context.Context, h http.Header) {
 			attrs = append(attrs, kv)
 		}
 	}
-	if upstream, ok := rou2Upstream(h); ok {
-		attrs = append(attrs, attribute.String("rou2.upstream", upstream))
+	if _, ok := provider.RecordRou2Upstream(ctx, h); ok {
 		if model, _ := ctx.Value(requestedModelKey{}).(string); model != "" {
 			attrs = append(attrs, attribute.String("figaro.ratelimit.requested_model", model))
 		}
