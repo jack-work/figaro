@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -139,7 +140,9 @@ func (d *DeclaredProvider) KeepsCacheOnChange(key string, snap form.Snapshot) bo
 func (d *DeclaredProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	listed, err := d.Provider.Models(ctx)
 	if err != nil {
-		d.shared.failed(time.Now())
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			d.shared.failed(time.Now())
+		}
 		return listed, err
 	}
 	out := make([]provider.ModelInfo, 0, len(listed))

@@ -72,6 +72,11 @@ func buildRecordedCodeAssist(t *testing.T, name, effort string) (provider.Provid
 
 func sendModel(t *testing.T, p provider.Provider, model string, effort string) {
 	t.Helper()
+	require.NoError(t, sendModelCtx(t, context.Background(), p, model, effort))
+}
+
+func sendModelCtx(t *testing.T, ctx context.Context, p provider.Provider, model string, effort string) error {
+	t.Helper()
 	be, ariaID := store.NewTestAria(t, "d", message.Patch{})
 	figLog, err := be.OpenFigIR(ariaID)
 	require.NoError(t, err)
@@ -84,9 +89,9 @@ func sendModel(t *testing.T, p provider.Provider, model string, effort string) {
 	if effort != "" {
 		vals["system.thinking_effort"] = json.RawMessage(effort)
 	}
-	require.NoError(t, p.Send(context.Background(), provider.SendInput{
+	return p.Send(ctx, provider.SendInput{
 		AriaID: ariaID, FigLog: figLog, Snapshot: form.FromMap(vals), MaxTokens: 1024,
-	}, &nullBus{}))
+	}, &nullBus{})
 }
 
 func TestCodeAssistEffortTiersComeFromTheCatalogWithoutAMapModel(t *testing.T) {
@@ -173,6 +178,17 @@ func TestCodeAssistWithoutAnEffortSectionStillFoldsTiers(t *testing.T) {
 	sendModel(t, p, "claude-opus-5-5", "")
 	assert.Equal(t, []string{"gemini-4-neon-medium", "gemini-4-carbon-low", "gemini-4-neon-medium", "claude-opus-5-5-medium"}, f.models(),
 		"a base with no effort set goes out as its middle tier, never as the bare base id upstream does not list")
+}
+
+func TestACancelledFirstSendDoesNotLeaveTheBaseBare(t *testing.T) {
+	p, f := buildRecordedCodeAssist(t, "gca-cancel", "")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_ = sendModelCtx(t, ctx, p, "gemini-4-neon", "")
+	assert.Empty(t, f.models())
+	sendModel(t, p, "gemini-4-neon", "")
+	assert.Equal(t, []string{"gemini-4-neon-medium"}, f.models(),
+		"the caller giving up is not a catalog failure, so the next send still loads the catalog and folds the base")
 }
 
 func TestMapModelStillOverridesTheCatalog(t *testing.T) {
