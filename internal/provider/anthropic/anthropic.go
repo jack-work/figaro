@@ -245,6 +245,7 @@ func finalRateLimit(resp *http.Response, retryAfter time.Duration, now time.Time
 		return nil
 	}
 	limit := &provider.RateLimited{Provider: providerName, Window: rateLimitWindow(resp.Header.Get("anthropic-ratelimit-unified-representative-claim"))}
+	limit.Upstream, _ = rou2Upstream(resp.Header)
 	if secs, err := strconv.ParseInt(strings.TrimSpace(resp.Header.Get("anthropic-ratelimit-unified-reset")), 10, 64); err == nil && secs > 0 {
 		limit.Resets = time.Unix(secs, 0)
 	} else if retryAfter > 0 {

@@ -7,6 +7,7 @@ import (
 
 type RateLimited struct {
 	Provider string
+	Upstream string
 	Window   string
 	Resets   time.Time
 }
@@ -16,7 +17,11 @@ func (e *RateLimited) Error() string {
 	if e.Window != "" {
 		limit = e.Window + " rate limit"
 	}
-	msg := fmt.Sprintf("%s: %s reached", e.Provider, limit)
+	who := e.Provider
+	if e.Upstream != "" {
+		who += " (" + e.Upstream + ")"
+	}
+	msg := fmt.Sprintf("%s: %s reached", who, limit)
 	if !e.Resets.IsZero() {
 		msg += "; resets " + e.Resets.Local().Format("Mon 2 Jan 15:04 MST")
 	}

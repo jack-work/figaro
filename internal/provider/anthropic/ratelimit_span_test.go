@@ -198,6 +198,19 @@ func TestRou2UpstreamOnARejected429StillAttributes(t *testing.T) {
 	require.Equal(t, attribute.StringValue("anthropic-kic-2"), got["rou2.upstream"])
 }
 
+func TestARejected429NamesTheServingSeatInTheError(t *testing.T) {
+	_, err := roundSpanAttrs(t, func(w http.ResponseWriter) {
+		w.Header().Set("anthropic-ratelimit-unified-status", "rejected")
+		w.Header().Set("X-Rou2-Upstream", "anthropic-kic-2")
+		w.Header().Set("Retry-After", "132670")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	var limit *provider.RateLimited
+	require.True(t, errors.As(err, &limit))
+	require.Equal(t, "anthropic-kic-2", limit.Upstream)
+	require.Contains(t, err.Error(), "anthropic (anthropic-kic-2)")
+}
+
 func TestWithoutRou2UpstreamTheSpanIsUnchanged(t *testing.T) {
 	got, err := roundSpanAttrs(t, func(w http.ResponseWriter) {
 		setUnified(w.Header())
