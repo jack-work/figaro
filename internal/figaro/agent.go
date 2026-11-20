@@ -68,6 +68,7 @@ type event struct {
 	resume   bool
 	traces   []string
 	keys     []string
+	appended chan error
 }
 
 // Config is the constructor input for NewAgent.
@@ -557,6 +558,10 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 		images: images,
 		keys:   []string{acceptKey()},
 	}
+	logged := a.isLog()
+	if logged {
+		evt.appended = make(chan error, 1)
+	}
 	if req.TraceParent != "" {
 		evt.traces = []string{req.TraceParent}
 	}
@@ -569,7 +574,17 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 	if !a.turnActive() {
 		a.publishRuntime(rpc.RuntimeAccepted, "")
 	}
-	return nil
+	if !logged {
+		return nil
+	}
+	select {
+	case err := <-evt.appended:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-a.done:
+		return ErrStopping
+	}
 }
 
 // promptIDs is the id plus every id folded into it: the set a turn stamp must cover.
@@ -641,6 +656,7 @@ func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
 
 	if disposition == rpc.QueueClear {
 		for _, e := range a.inbox.DrainUserPrompts() {
+			e.ack(errDroppedBeforeAppend)
 			resp.Queue = append(resp.Queue, rpc.QueuedPrompt{
 				ID:     e.id,
 				Text:   e.text,
