@@ -45,11 +45,9 @@ func (f *fakeLogReads) Read(_ context.Context, req rpc.ReadRequest) (aria.Page, 
 	return p, nil
 }
 
-func (f *fakeLogReads) IRRange(_ context.Context, _ string, from, before uint64) (*rpc.IRResponse, error) {
+func (f *fakeLogReads) IRFrom(_ context.Context, _ string, from uint64) (*rpc.IRResponse, error) {
 	out := &rpc.IRResponse{}
-	if before == 0 {
-		before = uint64(len(f.msgs)) + 1
-	}
+	before := uint64(len(f.msgs)) + 1
 	for lt := from; lt < before && lt <= uint64(len(f.msgs)); lt++ {
 		raw, _ := json.Marshal(f.msgs[lt-1])
 		out.Entries = append(out.Entries, rpc.IREntry{LT: lt, Payload: raw})

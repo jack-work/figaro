@@ -27,13 +27,13 @@ type logEntry struct {
 
 type entryReader interface {
 	Read(ctx context.Context, req rpc.ReadRequest) (aria.Page, error)
-	IRRange(ctx context.Context, figaroID string, from, before uint64) (*rpc.IRResponse, error)
+	IRFrom(ctx context.Context, figaroID string, from uint64) (*rpc.IRResponse, error)
 }
 
 type angelusEntries struct{ *sdk.Angelus }
 
-func (a angelusEntries) IRRange(ctx context.Context, id string, from, before uint64) (*rpc.IRResponse, error) {
-	return a.IRBefore(ctx, id, from, before, 0)
+func (a angelusEntries) IRFrom(ctx context.Context, id string, from uint64) (*rpc.IRResponse, error) {
+	return a.IRBefore(ctx, id, from, 0, 0)
 }
 
 func pageFirstLT(page aria.Page) uint64 {
@@ -67,12 +67,15 @@ func readEntries(ctx context.Context, r entryReader, id string, from, until uint
 		hi = pageFirstLT(after)
 	}
 	var out []logEntry
-	for next := lo; hi == 0 || next < hi; {
-		resp, err := r.IRRange(ctx, id, next, hi)
+	for next := lo; ; {
+		resp, err := r.IRFrom(ctx, id, next)
 		if err != nil {
 			return nil, err
 		}
 		for _, e := range resp.Entries {
+			if hi > 0 && e.LT >= hi {
+				return out, nil
+			}
 			var m message.Message
 			if err := json.Unmarshal(e.Payload, &m); err != nil {
 				return nil, fmt.Errorf("lt %d: %w", e.LT, err)
