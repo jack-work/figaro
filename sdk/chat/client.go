@@ -14,18 +14,20 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/sdk"
+	"github.com/jack-work/jkrpc"
 )
 
 type Client struct {
-	ep   transport.Endpoint
-	dial func(ctx context.Context, id string, notify sdk.NotifyHandler) (ariaConn, error)
+	ep          transport.Endpoint
+	dial        func(ctx context.Context, id string, notify sdk.NotifyHandler) (ariaConn, error)
+	dialAngelus func() (angelusConn, error)
 
 	ReconnectFor time.Duration
 	CheckEvery   time.Duration
 
 	done    chan struct{}
 	mu      sync.Mutex
-	angelus *sdk.Angelus
+	angelus angelusConn
 	threads map[string]*thread
 	closed  bool
 }
@@ -33,6 +35,7 @@ type Client struct {
 func New(ep transport.Endpoint) *Client {
 	c := &Client{ep: ep, ReconnectFor: 30 * time.Second, CheckEvery: 15 * time.Second, done: make(chan struct{}), threads: map[string]*thread{}}
 	c.dial = c.dialAria
+	c.dialAngelus = func() (angelusConn, error) { return sdk.DialAngelus(ep) }
 	return c
 }
 
@@ -58,42 +61,57 @@ func (c *Client) Close() error {
 	return nil
 }
 
-func (c *Client) withAngelus(ctx context.Context, fn func(*sdk.Angelus) error) error {
-	err := c.tryAngelus(fn)
-	if err == nil || ctx.Err() != nil || errors.Is(err, ErrClosed) {
+type angelusConn interface {
+	Fork(ctx context.Context, figaroID string, atTurn, atLT uint64, outfits []string, patch *rpc.FormPatch) (*rpc.ForkResponse, error)
+	Attach(ctx context.Context, figaroID string) (*rpc.AttachResponse, error)
+	Close() error
+}
+
+func (c *Client) withAngelus(ctx context.Context, retry bool, fn func(angelusConn) error) error {
+	a, err := c.tryAngelus(fn)
+	if err == nil || ctx.Err() != nil || errors.Is(err, ErrClosed) || refused(err) {
 		return err
 	}
 	c.mu.Lock()
-	if c.angelus != nil {
-		_ = c.angelus.Close()
+	if a != nil && c.angelus == a {
+		_ = a.Close()
 		c.angelus = nil
 	}
 	c.mu.Unlock()
-	return c.tryAngelus(fn)
+	if !retry {
+		return err
+	}
+	_, err = c.tryAngelus(fn)
+	return err
 }
 
-func (c *Client) tryAngelus(fn func(*sdk.Angelus) error) error {
+func refused(err error) bool {
+	var refusal *jkrpc.Error
+	return errors.As(err, &refusal)
+}
+
+func (c *Client) tryAngelus(fn func(angelusConn) error) (angelusConn, error) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		return ErrClosed
+		return nil, ErrClosed
 	}
 	if c.angelus == nil {
-		a, err := sdk.DialAngelus(c.ep)
+		a, err := c.dialAngelus()
 		if err != nil {
 			c.mu.Unlock()
-			return fmt.Errorf("dial figaro: %w", err)
+			return nil, fmt.Errorf("dial figaro: %w", err)
 		}
 		c.angelus = a
 	}
 	a := c.angelus
 	c.mu.Unlock()
-	return fn(a)
+	return a, fn(a)
 }
 
 func (c *Client) Open(ctx context.Context, root string) (string, error) {
 	var id string
-	err := c.withAngelus(ctx, func(a *sdk.Angelus) error {
+	err := c.withAngelus(ctx, false, func(a angelusConn) error {
 		resp, err := a.Fork(ctx, root, 0, 0, nil, nil)
 		if err != nil {
 			return fmt.Errorf("fork %s: %w", root, err)
@@ -167,7 +185,7 @@ type ariaConn interface {
 
 func (c *Client) dialAria(ctx context.Context, id string, notify sdk.NotifyHandler) (ariaConn, error) {
 	var canonical string
-	if err := c.withAngelus(ctx, func(a *sdk.Angelus) error {
+	if err := c.withAngelus(ctx, true, func(a angelusConn) error {
 		att, err := a.Attach(ctx, id)
 		if err != nil {
 			return fmt.Errorf("attach %s: %w", id, err)
@@ -199,6 +217,7 @@ type thread struct {
 	conn         ariaConn
 	gen          uint64
 	reconnecting bool
+	closed       bool
 	watching     bool
 	subSeq       uint64
 	folds        map[uint64]*turnFold
@@ -237,7 +256,10 @@ func (t *thread) connect(ctx context.Context) (ariaConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	ready := t.attach(conn)
+	ready, err := t.attach(conn)
+	if err != nil {
+		return nil, err
+	}
 	go t.watch(conn)
 	select {
 	case <-ready:
@@ -249,9 +271,13 @@ func (t *thread) connect(ctx context.Context) (ariaConn, error) {
 	}
 }
 
-func (t *thread) attach(conn ariaConn) chan struct{} {
+func (t *thread) attach(conn ariaConn) (chan struct{}, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.closed {
+		_ = conn.Close()
+		return nil, ErrClosed
+	}
 	t.conn = conn
 	t.gen++
 	t.folds = map[uint64]*turnFold{}
@@ -264,7 +290,7 @@ func (t *thread) attach(conn ariaConn) chan struct{} {
 	ready := make(chan struct{})
 	t.rtReady = ready
 	t.startSync()
-	return ready
+	return ready, nil
 }
 
 func (t *thread) watch(conn ariaConn) {
@@ -311,11 +337,12 @@ func (t *thread) reconnect() {
 }
 
 func (t *thread) shut(why string) {
-	t.fail(why)
 	t.mu.Lock()
+	t.closed = true
 	conn := t.conn
 	t.conn = nil
 	t.mu.Unlock()
+	t.fail(why)
 	if conn != nil {
 		_ = conn.Close()
 	}

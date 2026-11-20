@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/sdk"
+	"github.com/jack-work/jkrpc"
 )
 
 func sealedTurn(id uint64, reply string) aria.TurnPart {
@@ -530,5 +532,91 @@ func TestClosingTheClientReleasesAListenerThatStoppedReading(t *testing.T) {
 	case <-s.exited:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the delivery goroutine outlived the client")
+	}
+}
+
+type fakeAngelus struct {
+	mu      sync.Mutex
+	forks   int
+	closes  int
+	forkErr error
+}
+
+func (a *fakeAngelus) Fork(context.Context, string, uint64, uint64, []string, *rpc.FormPatch) (*rpc.ForkResponse, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.forks++
+	if a.forkErr != nil {
+		return nil, a.forkErr
+	}
+	return &rpc.ForkResponse{Alternative: "child"}, nil
+}
+
+func (a *fakeAngelus) Attach(_ context.Context, id string) (*rpc.AttachResponse, error) {
+	return &rpc.AttachResponse{FigaroID: id}, nil
+}
+
+func (a *fakeAngelus) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.closes++
+	return nil
+}
+
+func withFakeAngelus(c *Client, a *fakeAngelus) *int {
+	dials := new(int)
+	c.dialAngelus = func() (angelusConn, error) {
+		*dials++
+		return a, nil
+	}
+	return dials
+}
+
+func TestAForkWhoseReplyIsLostIsNotSentAgain(t *testing.T) {
+	c := New(transport.Endpoint{})
+	a := &fakeAngelus{forkErr: io.ErrUnexpectedEOF}
+	withFakeAngelus(c, a)
+	if _, err := c.Open(context.Background(), "root"); err == nil {
+		t.Fatal("the lost fork reported success")
+	}
+	if a.forks != 1 {
+		t.Fatalf("the fork was sent %d times", a.forks)
+	}
+}
+
+func TestARefusedForkKeepsTheSharedConnection(t *testing.T) {
+	c := New(transport.Endpoint{})
+	a := &fakeAngelus{forkErr: &jkrpc.Error{Code: -32000, Message: "fanout: no room"}}
+	dials := withFakeAngelus(c, a)
+	for range 2 {
+		if _, err := c.Open(context.Background(), "root"); err == nil {
+			t.Fatal("the refused fork reported success")
+		}
+	}
+	if a.closes != 0 || *dials != 1 || a.forks != 2 {
+		t.Fatalf("closes %d, dials %d, forks %d", a.closes, *dials, a.forks)
+	}
+}
+
+func TestClosingTheClientWhileAThreadDialsLeavesNoConnection(t *testing.T) {
+	var rt runtimeFeed
+	conn := newFakeConn(rt.response("idle", 1, "", 0))
+	conn.dialGate = make(chan struct{})
+	c := fakeClient(conn)
+	resumed := make(chan error, 1)
+	go func() {
+		_, err := c.Resume(context.Background(), "x", Cursor{Turn: 1})
+		resumed <- err
+	}()
+	time.Sleep(20 * time.Millisecond)
+	c.Close()
+	close(conn.dialGate)
+	select {
+	case <-conn.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("a connection dialed across Close was kept")
+	}
+	if err := <-resumed; err == nil {
+		t.Fatal("a resume across Close reported success")
 	}
 }

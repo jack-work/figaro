@@ -20,7 +20,7 @@ has touched, plus one to the angelus.
 
 | call | does |
 |---|---|
-| `Open(ctx, root) (thread, error)` | forks `root` into a new aria and returns its id. The root needs `system.fanout.max_children` above 0. Store the id; it is the thread. |
+| `Open(ctx, root) (thread, error)` | forks `root` into a new aria and returns its id. The root needs `system.fanout.max_children` above 0. Store the id; it is the thread. Never retried: an `Open` that fails because the connection dropped may still have forked. |
 | `Prompt(ctx, thread, text) (<-chan Event, error)` | sends `text`; the channel carries its reply. If a turn is already running the text steers it: when that turn takes the text in, the channel closes with no events once the turn ends, and the reply arrives on the running turn's channel; when the text waits for a turn of its own, the channel carries that turn. |
 | `Resume(ctx, thread, cursor) (<-chan Event, error)` | replays the turn named by `cursor` from the point the cursor counts, then follows it live. A turn past the newest fails at once. |
 | `Cancel(ctx, thread) error` | interrupts the running turn. |
