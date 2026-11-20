@@ -17,6 +17,8 @@ const (
 	FanoutMintKey = "system.fanout.mint"
 
 	FanoutQuotaKey = "system.fanout.quota"
+
+	LifecycleStatusKey = "lifecycle.status"
 )
 
 func ProtectedKeys() []string { return RootsOf(WriterLineage) }

@@ -116,6 +116,7 @@ type lifetimeChange struct {
 	reapedUntil  *int64
 	reapedBy     *string
 	quotaSpoke   bool
+	aliasSpoke   bool
 	quota        *int
 	ownerMade    *bool
 }
@@ -178,6 +179,9 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 		made := form.Truthy(raw)
 		c.ownerMade = &made
 	}
+	if _, spoke := valueOf(form.LifecycleStatusKey); spoke {
+		c.aliasSpoke = true
+	}
 	if raw, spoke := valueOf(form.FanoutQuotaKey); spoke {
 		c.quotaSpoke = true
 		if raw != "" {
@@ -188,7 +192,7 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 			}
 		}
 	}
-	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapIfEmpty != nil || c.reapedRoot != nil || c.reapedUntil != nil || c.reapedBy != nil || c.quotaSpoke || c.ownerMade != nil
+	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapIfEmpty != nil || c.reapedRoot != nil || c.reapedUntil != nil || c.reapedBy != nil || c.quotaSpoke || c.aliasSpoke || c.ownerMade != nil
 }
 
 func retiredValue(raw string) bool { return form.Truthy(raw) }
@@ -297,7 +301,7 @@ func (b *XwalBackend) mirrorLifetime(id string, c lifetimeChange) {
 	if c.retired != nil || c.reapedRoot != nil {
 		b.livenessChanged(id, &meta)
 	}
-	if c.quotaSpoke {
+	if c.quotaSpoke || c.aliasSpoke {
 		b.limitsChanged(id)
 	}
 	if c.ttl != nil {
