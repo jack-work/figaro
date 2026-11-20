@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -41,7 +42,7 @@ func settleExact(ctx context.Context, a quaer, req rpc.QuaRequest) (rpc.QuaReque
 	}
 	lacks := daemonLacks(rpc.CapLogExact)
 	valid := utf8.ValidString(req.Text)
-	if !lacks && valid && len(req.Text) <= maxLogEntryBytes {
+	if !lacks && valid && wireBytes(req.Text) <= maxLogEntryBytes {
 		return req, nil
 	}
 	if !ariaIsLog(ctx, a) {
@@ -61,5 +62,13 @@ func settleExact(ctx context.Context, a quaer, req rpc.QuaRequest) (rpc.QuaReque
 	if !valid {
 		return req, errors.New("--stdin: an aria log entry must be valid UTF-8, and stdin is not")
 	}
-	return req, fmt.Errorf("--stdin: an aria log entry holds at most %d bytes (15 MiB); stdin held %d", maxLogEntryBytes, len(req.Text))
+	return req, fmt.Errorf("--stdin: an aria log entry holds at most %d bytes (15 MiB) as sent, JSON-escaped; stdin is %d", maxLogEntryBytes, wireBytes(req.Text))
+}
+
+func wireBytes(text string) int {
+	if len(text) <= maxLogEntryBytes/6 {
+		return len(text)
+	}
+	b, _ := json.Marshal(text)
+	return len(b)
 }

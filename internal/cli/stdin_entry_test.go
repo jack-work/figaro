@@ -68,8 +68,14 @@ func TestALogEntryMustBeValidUTF8AndAtMost15MiB(t *testing.T) {
 	if _, err := sendExact(true, strings.Repeat("x", maxLogEntryBytes+1)); err == nil || !strings.Contains(err.Error(), "15 MiB") {
 		t.Fatalf("an entry over 15 MiB = %v, want refused", err)
 	}
-	if got, err := sendExact(true, strings.Repeat("x", maxLogEntryBytes)); err != nil || len(got.Text) != maxLogEntryBytes || !got.Exact {
-		t.Fatalf("an entry of exactly 15 MiB: %v", err)
+	if _, err := sendExact(true, strings.Repeat("<", 3_000_000)); err == nil || !strings.Contains(err.Error(), "15 MiB") {
+		t.Fatalf("3 MB of '<', 18 MB escaped on the wire = %v, want refused", err)
+	}
+	if _, err := sendExact(true, strings.Repeat("<", 2_000_000)); err != nil {
+		t.Fatalf("2 MB of '<' fits escaped: %v", err)
+	}
+	if got, err := sendExact(true, strings.Repeat("x", maxLogEntryBytes-2)); err != nil || len(got.Text) != maxLogEntryBytes-2 || !got.Exact {
+		t.Fatalf("an entry of exactly 15 MiB on the wire: %v", err)
 	}
 	if got, err := sendExact(false, "bad\xff\n\n"); err != nil || !got.Exact {
 		t.Fatalf("invalid UTF-8 to a figaro = %+v, %v: a figaro's prompt is the daemon's call", got, err)
