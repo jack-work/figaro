@@ -252,7 +252,7 @@ Done.` {
 func TestEveryEventCursorCountsWhatWasDelivered(t *testing.T) {
 	r := newRun(t)
 	r.frame(0, set(0, map[string]any{"type": "prose", "markdown": "Hi"}), set(1, map[string]any{"type": "tool", "name": "read", "status": "ok"}))
-	want := []Cursor{{1, 2, 0, 0}, {1, 2, 1, 0}, {1, 2, 1, 1}}
+	want := []Cursor{{Turn: 1, Text: 2}, {Turn: 1, Text: 2, Started: 1}, {Turn: 1, Text: 2, Started: 1, Ended: 1}}
 	for i, e := range r.events {
 		if e.Cursor != want[i] {
 			t.Fatalf("event %d %s at %+v, want %+v", i, e.Kind, e.Cursor, want[i])
