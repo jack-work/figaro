@@ -167,10 +167,17 @@ func (h *handlers) dressForSeat(req rpc.ForkRequest) (rpc.ForkRequest, string, e
 	return req, deferred, nil
 }
 
-func withHolderTTL(dress form.Patch, holder form.Snapshot) form.Patch {
+func withHolderLifetime(dress form.Patch, holder form.Snapshot) form.Patch {
 	ttl, ok := holder.Get(store.SystemTTLKey)
 	if !ok {
 		ttl = json.RawMessage(`"0"`)
 	}
-	return form.Merge(dress, form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemTTLKey: ttl}, nil))
+	set := map[string]json.RawMessage{store.SystemTTLKey: ttl}
+	var drop []string
+	if ka, ok := holder.Get(store.SystemKeepaliveKey); ok {
+		set[store.SystemKeepaliveKey] = ka
+	} else {
+		drop = append(drop, store.SystemKeepaliveKey)
+	}
+	return form.Merge(dress, form.Build(form.Snapshot{}, set, drop))
 }

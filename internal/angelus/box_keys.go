@@ -930,6 +930,32 @@ func (h *handlers) refuseLongerLifetimeAtFork(line lineage, after form.Snapshot)
 	return nil
 }
 
+func (h *handlers) clampToHolderLifetime(id string, holder form.Snapshot) error {
+	snap, err := h.angelus.Backend.FormState(id)
+	if err != nil {
+		return err
+	}
+	set := map[string]json.RawMessage{}
+	var drop []string
+	for _, key := range []string{store.SystemTTLKey, store.SystemKeepaliveKey} {
+		if h.lifetimeShortened(key, holder, snap) {
+			continue
+		}
+		if v, ok := holder.Get(key); ok {
+			set[key] = v
+		} else {
+			drop = append(drop, key)
+		}
+	}
+	if len(set) == 0 && len(drop) == 0 {
+		return nil
+	}
+	if _, err := h.angelus.Backend.ApplyForm(id, form.Build(snap, set, drop)); err != nil {
+		return fmt.Errorf("fork: holding the fork to the lifetime of its holder: %w", err)
+	}
+	return nil
+}
+
 func (h *handlers) lifetimeShortened(key string, before, after form.Snapshot) bool {
 	was, ok := h.lifetimeOf(key, before)
 	if !ok {

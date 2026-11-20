@@ -211,3 +211,76 @@ func TestAFormCopysOutfitIsHeldToTheLifetimeItInherits(t *testing.T) {
 		t.Errorf("the root form's ttl = %s, want the outfit's", v)
 	}
 }
+
+// An interior fork cuts the form as it stood at the cut, which may be from
+// before the owner gave the aria its lifetime; anyone but the owner gets the
+// holder's lifetime when the cut has none or a longer one.
+func TestANonOwnersInteriorForkIsHeldToTheHoldersLifetime(t *testing.T) {
+	r := newRigWith(t, lifetimeLentPolicy)
+	guest := as("user", "guest")
+	resp, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder := resp.FigaroID
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, holder, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{
+		store.SystemTTLKey: "1h", store.SystemKeepaliveKey: "30m"})})); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(rpc.ForkRequest{FigaroID: holder, AtLT: 1})
+	out, err := r.h[rpc.MethodFork](guest, raw)
+	if err != nil {
+		t.Fatalf("the guest's fork at the genesis root: %v", err)
+	}
+	child := out.(rpc.ForkResponse).Alternative
+	for key, want := range map[string]string{store.SystemTTLKey: `"1h"`, store.SystemKeepaliveKey: `"30m"`} {
+		if v, _ := keyOn(t, r, child, key); string(v) != want {
+			t.Errorf("the interior fork's %s = %s, want the holder's %s", key, v, want)
+		}
+	}
+	out, err = r.h[rpc.MethodFork](asOwner(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := keyOn(t, r, out.(rpc.ForkResponse).Alternative, store.SystemTTLKey); ok {
+		t.Errorf("the owner's interior fork took ttl %s; the owner forks as it likes", v)
+	}
+}
+
+// A seat's role outfit was folded in after the fork's lifetime was judged,
+// a guest counted as the holder's heir, and the heir took the holder's ttl
+// but not its keepalive.
+func TestASeatForkIsHeldToTheHoldersLifetime(t *testing.T) {
+	r := newRigWith(t, strings.Replace(lifetimeLentPolicy, `"fork:*",`, `"fork:*", "succeed:*",`, 1))
+	guest := as("user", "guest")
+	resp, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder := resp.FigaroID
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, holder, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{
+		store.SystemTTLKey: "1h", store.SystemKeepaliveKey: "30m"})})); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(rpc.FormCreateRequest{Patch: heldPatch(t, map[string]any{
+		"name": "seat", "target-aria": holder, "succession-policy": map[string]any{"outfit": "lasting"}})})
+	out, err := r.h[rpc.MethodFormCreate](asOwner(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seat := out.(rpc.FormCreateResponse).FormID
+	raw, _ = json.Marshal(rpc.ForkRequest{FigaroID: holder, Seat: seat})
+	if _, err := r.h[rpc.MethodFork](guest, raw); err == nil || !strings.Contains(err.Error(), "never lengthens or drops") {
+		t.Errorf("a guest's seat fork in a role outfit that lengthens the lifetime: %v", err)
+	}
+	fork, err := r.h[rpc.MethodFork](asOwner(), raw)
+	if err != nil {
+		t.Fatalf("the owner's seat fork: %v", err)
+	}
+	heir := fork.(rpc.ForkResponse).Alternative
+	for key, want := range map[string]string{store.SystemTTLKey: `"1h"`, store.SystemKeepaliveKey: `"30m"`} {
+		if v, _ := keyOn(t, r, heir, key); string(v) != want {
+			t.Errorf("the heir's %s = %s, want the holder's %s", key, v, want)
+		}
+	}
+}
