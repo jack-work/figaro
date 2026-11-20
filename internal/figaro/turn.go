@@ -222,6 +222,7 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (arialog.Entry[mes
 		Role:      message.RoleInput,
 		Steering:  steering && prompt.text != "",
 		Timestamp: time.Now().UnixMilli(),
+		Accepted:  prompt.keys,
 	}
 	// Seed the mantra from the first prompt, only when unset.
 	seed := map[string]json.RawMessage{}
@@ -863,6 +864,7 @@ func mergePromptEvents(prompts []event) (event, bool) {
 		out.merged = append(out.merged, p.merged...)
 		out.resume = out.resume || p.resume
 		out.traces = append(out.traces, p.traces...)
+		out.keys = append(out.keys, p.keys...)
 		if i > 0 && p.id != 0 {
 			out.merged = append(out.merged, p.id)
 		}

@@ -2,6 +2,8 @@ package figaro
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,6 +53,7 @@ type spooledPrompt struct {
 	Segments []spooledSegment  `json:"segments,omitempty"`
 	At       int64             `json:"at,omitempty"`
 	Resume   bool              `json:"resume,omitempty"`
+	Keys     []string          `json:"keys,omitempty"`
 }
 
 type spooledSegment struct {
@@ -186,7 +189,7 @@ func (s *Spool) Arias() ([]string, error) {
 }
 
 func spooled(e event) spooledPrompt {
-	p := spooledPrompt{Text: e.text, Images: e.images, Form: e.form, At: e.at, Resume: e.resume}
+	p := spooledPrompt{Text: e.text, Images: e.images, Form: e.form, At: e.at, Resume: e.resume, Keys: e.keys}
 	for _, s := range e.segments {
 		p.Segments = append(p.Segments, spooledSegment{Sender: s.sender, Principal: s.principal, Text: s.text, Notice: s.notice, Delivery: s.delivery})
 	}
@@ -194,11 +197,48 @@ func spooled(e event) spooledPrompt {
 }
 
 func (p spooledPrompt) event() event {
-	e := event{typ: eventUserPrompt, text: p.Text, images: p.Images, form: p.Form, at: p.At, resume: p.Resume}
+	e := event{typ: eventUserPrompt, text: p.Text, images: p.Images, form: p.Form, at: p.At, resume: p.Resume, keys: p.Keys}
 	for _, s := range p.Segments {
 		e.segments = append(e.segments, promptSegment{sender: s.Sender, principal: s.Principal, text: s.Text, notice: s.Notice, delivery: s.Delivery})
 	}
 	return e
+}
+
+func acceptKey() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+func (a *Agent) acceptedSince(queued []spooledPrompt) map[string]bool {
+	if len(queued) == 0 {
+		return nil
+	}
+	oldest := queued[0].At
+	for _, p := range queued {
+		oldest = min(oldest, p.At)
+	}
+	landed := map[string]bool{}
+	before := ^uint64(0)
+	for {
+		page, _ := a.figLog.ReadPage(0, before, 64)
+		if len(page) == 0 {
+			return landed
+		}
+		for i := len(page) - 1; i >= 0; i-- {
+			m := page[i].Payload
+			if m.Timestamp != 0 && m.Timestamp < oldest {
+				return landed
+			}
+			for _, k := range m.Accepted {
+				landed[k] = true
+			}
+		}
+		if page[0].LT == 0 {
+			return landed
+		}
+		before = page[0].LT
+	}
 }
 
 func resumeEvent() event {
@@ -231,7 +271,11 @@ func (a *Agent) Redeliver() {
 	case f.Cut != nil:
 		slog.Warn("a resumed turn was cut again by a crash; not resuming it twice", "aria", a.id, "turn", f.Cut.Turn)
 	}
+	landed := a.acceptedSince(f.Queued)
 	for _, p := range f.Queued {
+		if len(p.Keys) > 0 && landed[p.Keys[0]] {
+			continue
+		}
 		events = append(events, p.event())
 	}
 	if len(events) > 0 {

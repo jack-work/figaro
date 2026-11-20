@@ -67,6 +67,7 @@ type event struct {
 	segments []promptSegment
 	resume   bool
 	traces   []string
+	keys     []string
 }
 
 // Config is the constructor input for NewAgent.
@@ -554,6 +555,7 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 		typ:    eventUserPrompt,
 		text:   req.Text,
 		images: images,
+		keys:   []string{acceptKey()},
 	}
 	if req.TraceParent != "" {
 		evt.traces = []string{req.TraceParent}
