@@ -279,11 +279,15 @@ func (s *Server) Read(at Anchor, budget int) Page {
 	return s.page(at, Anchor{}, Forward, budget)
 }
 
+func (s *Server) ReadUntil(at, until Anchor, budget int) Page {
+	return s.page(at, until, Forward, budget)
+}
+
 func (s *Server) ReadBefore(at, floor Anchor, budget int) Page {
 	return s.page(at, floor, Backward, budget)
 }
 
-func (s *Server) page(at, floor Anchor, dir Direction, budget int) Page {
+func (s *Server) page(at, bound Anchor, dir Direction, budget int) Page {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := s.cache.Len()
@@ -293,22 +297,28 @@ func (s *Server) page(at, floor Anchor, dir Direction, budget int) Page {
 	lo, hi := s.cache.ChunkFor(at, dir, budget)
 	// Turns under the floor are neither composed nor walked, and widening
 	// stops there: a page the floor ended would re-cut unchanged forever.
-	bottom := 0
-	if dir == Backward && !floor.Zero() {
-		if fi := s.cache.FloorIndex(floor); fi <= hi {
+	bottom, top := 0, n-1
+	if dir == Backward && !bound.Zero() {
+		if fi := s.cache.FloorIndex(bound); fi <= hi {
 			bottom = fi
 			if lo < bottom {
 				lo = bottom
 			}
 		}
 	}
+	if dir == Forward && !bound.Zero() {
+		if ci := s.cache.FloorIndex(bound); ci+1 < top {
+			top = max(ci+1, lo)
+			hi = min(hi, top)
+		}
+	}
 	for {
 		turns := s.overlayOpen(s.cache.Slice(lo, hi), hi >= n-1)
 		var p Page
 		if dir == Backward {
-			p = PaginateBefore(turns, at, floor, budget)
+			p = PaginateBefore(turns, at, bound, budget)
 		} else {
-			p = Paginate(turns, at, dir, budget)
+			p = paginate(turns, at, dir, budget, bound)
 		}
 		covered := lo == 0 && hi >= n-1
 		if covered {
@@ -317,7 +327,7 @@ func (s *Server) page(at, floor Anchor, dir Direction, budget int) Page {
 		// A page ending at the window's edge may have been cut by the window
 		// rather than its budget; widen and re-cut.
 		touchLo := lo > bottom && len(p.Parts) > 0 && p.Parts[0].ID == turns[0].ID
-		touchHi := hi < n-1 && len(p.Parts) > 0 && p.Parts[len(p.Parts)-1].ID == turns[len(turns)-1].ID
+		touchHi := hi < top && len(p.Parts) > 0 && p.Parts[len(p.Parts)-1].ID == turns[len(turns)-1].ID
 		if !touchLo && !touchHi {
 			if lo > 0 {
 				p.More.Before = true
@@ -336,8 +346,8 @@ func (s *Server) page(at, floor Anchor, dir Direction, budget int) Page {
 		}
 		if touchHi {
 			hi += span
-			if hi > n-1 {
-				hi = n - 1
+			if hi > top {
+				hi = top
 			}
 		}
 	}
