@@ -1,0 +1,1860 @@
+{
+  "anthropic": {
+    "attempted_at": 1795135701243,
+    "ir": 2,
+    "models": {
+      "anthropic-kic/claude-opus-5-5": {
+        "context": {
+          "default": 1000000
+        },
+        "src": {
+          "context": "mapping"
+        }
+      },
+      "claude-fable-5": {
+        "context": {
+          "default": 1000000
+        },
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Fable 5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-fable-5-1": {
+        "context": {
+          "default": 1000000
+        },
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Fable 5.1",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-fable-5-2": {
+        "context": {
+          "default": 1000000
+        },
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Fable 5.2",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-haiku-4-5-20251001": {
+        "context": {
+          "default": 200000
+        },
+        "images": true,
+        "max_output": 64000,
+        "name": "Claude Haiku 4.5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-haiku-5-5": {
+        "context": {
+          "default": 1000000
+        },
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Haiku 5.5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-opus-4-5-20251101": {
+        "context": {
+          "default": 200000
+        },
+        "images": true,
+        "max_output": 64000,
+        "name": "Claude Opus 4.5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-opus-4-6": {
+        "context": {
+          "default": 1000000
+        },
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Opus 4.6",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-opus-4-7": {
+        "context": {
+          "default": 1000000
+        },
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Opus 4.7",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-opus-4-8": {
+        "context": {
+          "default": 1000000
+        },
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Opus 4.8",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-opus-5": {
+        "context": {
+          "default": 1000000
+        },
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Opus 5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-opus-5-5": {
+        "context": {
+          "default": 1000000
+        },
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Opus 5.5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-opus-5.5": {
+        "context": {
+          "default": 1000000
+        },
+        "src": {
+          "context": "mapping"
+        }
+      },
+      "claude-sonnet-4-5-20250929": {
+        "context": {
+          "default": 200000
+        },
+        "images": true,
+        "max_output": 64000,
+        "name": "Claude Sonnet 4.5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-sonnet-4-6": {
+        "context": {
+          "default": 1000000
+        },
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Sonnet 4.6",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-sonnet-5": {
+        "context": {
+          "default": 1000000
+        },
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Sonnet 5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "claude-sonnet-5-5": {
+        "context": {
+          "default": 1000000
+        },
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Sonnet 5.5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      }
+    },
+    "refreshed_at": 1795135701243
+  },
+  "gemini": {
+    "attempted_at": 1795122338250,
+    "ir": 2,
+    "models": {
+      "claude-opus-5-5-high": {
+        "context": {
+          "default": 1000000
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Opus 5.5 (High)",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "claude-opus-5-5-low": {
+        "context": {
+          "default": 1000000
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Opus 5.5 (Low)",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "claude-opus-5-5-medium": {
+        "context": {
+          "default": 1000000
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Opus 5.5 (Medium)",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "claude-sonnet-5-5-high": {
+        "context": {
+          "default": 1000000
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Sonnet 5.5 (High)",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "claude-sonnet-5-5-low": {
+        "context": {
+          "default": 1000000
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Sonnet 5.5 (Low)",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "claude-sonnet-5-5-medium": {
+        "context": {
+          "default": 1000000
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 128000,
+        "name": "Claude Sonnet 5.5 (Medium)",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-2.5-flash": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 65535,
+        "name": "Gemini 3.5 Flash Lite",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-2.5-flash-lite": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 65535,
+        "name": "Gemini 3.5 Flash Lite",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-2.5-flash-thinking": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 65535,
+        "name": "Gemini 3.5 Flash Lite",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-2.5-pro": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 65535,
+        "name": "Gemini 2.5 Pro",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "mapping",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-3-flash": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 65536,
+        "name": "Gemini 3 Flash",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-3.1-flash-image": {
+        "context": {
+          "default": 65536
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 65536,
+        "name": "Gemini 3.1 Flash Image",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "mapping",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-3.1-flash-lite": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 65535,
+        "name": "Gemini 3.1 Flash Lite",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-3.5-flash-lite": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 65535,
+        "name": "Gemini 3.5 Flash Lite",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-3.8-flash": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 65536,
+        "name": "Gemini 3.8 Flash",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-3.8-flash-high": {
+        "context": {
+          "default": 1048576
+        },
+        "images": true,
+        "max_output": 65536,
+        "reasoning": true,
+        "src": {
+          "context": "mapping",
+          "images": "mapping",
+          "max_output": "mapping",
+          "reasoning": "mapping",
+          "tools": "mapping"
+        },
+        "tools": true
+      },
+      "gemini-3.8-flash-tiered": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 65536,
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-4-argon": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 65536,
+        "name": "Gemini 4 Argon",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-4-argon-high": {
+        "context": {
+          "default": 1048576
+        },
+        "images": true,
+        "max_output": 65536,
+        "reasoning": true,
+        "src": {
+          "context": "mapping",
+          "images": "mapping",
+          "max_output": "mapping",
+          "reasoning": "mapping",
+          "tools": "mapping"
+        },
+        "tools": true
+      },
+      "gemini-4-carbon": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 262144,
+        "name": "Gemini 4 Carbon",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-4-carbon-high": {
+        "context": {
+          "default": 1048576
+        },
+        "images": true,
+        "max_output": 65536,
+        "reasoning": true,
+        "src": {
+          "context": "mapping",
+          "images": "mapping",
+          "max_output": "mapping",
+          "reasoning": "mapping",
+          "tools": "mapping"
+        },
+        "tools": true
+      },
+      "gemini-4-carbon-medium": {
+        "context": {
+          "default": 1048576
+        },
+        "images": true,
+        "max_output": 65536,
+        "reasoning": true,
+        "src": {
+          "context": "mapping",
+          "images": "mapping",
+          "max_output": "mapping",
+          "reasoning": "mapping",
+          "tools": "mapping"
+        },
+        "tools": true
+      },
+      "gemini-4-hydrogen": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 262144,
+        "name": "Gemini 4 Hydrogen",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-4-hydrogen-sonar": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 65536,
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-4-hydrogen-tiered-high": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 262144,
+        "name": "Gemini 4 Hydrogen (High)",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-4-hydrogen-tiered-xhigh": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 262144,
+        "name": "Gemini 4 Hydrogen (XHigh)",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-4-neon-high": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 262144,
+        "name": "Gemini 4 Neon (High)",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-4-neon-low": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 262144,
+        "name": "Gemini 4 Neon (Low)",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-4-neon-medium": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 262144,
+        "name": "Gemini 4 Neon (Medium)",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gemini-4-neon-xhigh": {
+        "context": {
+          "default": 1048576
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "images": true,
+        "max_output": 262144,
+        "name": "Gemini 4 Neon (XHigh)",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "images": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "gpt-oss-120b-medium": {
+        "context": {
+          "default": 131072
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "max_output": 32768,
+        "name": "GPT-OSS 120B (Medium)",
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "max_output": "api",
+          "name": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "tab_flash_lite_preview": {
+        "context": {
+          "default": 16384
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "max_output": 4096,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "max_output": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "tab_jump_flash_lite_preview": {
+        "context": {
+          "default": 16384
+        },
+        "endpoints": [
+          "/v1internal:streamGenerateContent"
+        ],
+        "max_output": 4096,
+        "src": {
+          "context": "api",
+          "endpoints": "api",
+          "max_output": "api",
+          "tools": "api"
+        },
+        "tools": true
+      }
+    },
+    "refreshed_at": 1795122338250
+  },
+  "rou2": {
+    "attempted_at": 1795135801233,
+    "ir": 2,
+    "models": {
+      "anthropic-kic-2/claude-fable-5-2": {
+        "endpoints": [
+          "/v1/messages"
+        ],
+        "src": {
+          "endpoints": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "anthropic-kic-2/claude-opus-5-5": {
+        "endpoints": [
+          "/v1/messages"
+        ],
+        "src": {
+          "endpoints": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "anthropic-kic-2/claude-sonnet-5-5": {
+        "endpoints": [
+          "/v1/messages"
+        ],
+        "src": {
+          "endpoints": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "anthropic-kic/claude-fable-5-2": {
+        "endpoints": [
+          "/v1/messages"
+        ],
+        "src": {
+          "endpoints": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "anthropic-kic/claude-opus-5-5": {
+        "endpoints": [
+          "/v1/messages"
+        ],
+        "src": {
+          "endpoints": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "anthropic-kic/claude-sonnet-5-5": {
+        "endpoints": [
+          "/v1/messages"
+        ],
+        "src": {
+          "endpoints": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "anthropic-max/claude-fable-5-2": {
+        "endpoints": [
+          "/v1/messages"
+        ],
+        "src": {
+          "endpoints": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "anthropic-max/claude-opus-5-5": {
+        "endpoints": [
+          "/v1/messages"
+        ],
+        "src": {
+          "endpoints": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "anthropic-max/claude-sonnet-5-5": {
+        "endpoints": [
+          "/v1/messages"
+        ],
+        "src": {
+          "endpoints": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-fable-5": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Fable 5",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-fable-5.1": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Fable 5.1",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-fable-5.2": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Fable 5.2",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-fable-latest": {
+        "context": {
+          "default": 1000000
+        },
+        "name": "Claude Fable Latest",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-haiku-4.5": {
+        "context": {
+          "default": 200000
+        },
+        "max_output": 64000,
+        "name": "Claude Haiku 4.5",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-haiku-5.5": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Haiku 5.5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-haiku-latest": {
+        "context": {
+          "default": 200000
+        },
+        "name": "Claude Haiku Latest",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-opus-4.5": {
+        "context": {
+          "default": 200000
+        },
+        "max_output": 64000,
+        "name": "Claude Opus 4.5",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-opus-4.6": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Opus 4.6",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-opus-4.7": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Opus 4.7",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-opus-4.8": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Opus 4.8",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-opus-5": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Opus 5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-opus-5.5": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Opus 5.5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-opus-latest": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Opus Latest",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-sonnet-4.5": {
+        "context": {
+          "default": 200000
+        },
+        "max_output": 64000,
+        "name": "Claude Sonnet 4.5",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-sonnet-4.6": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Sonnet 4.6",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-sonnet-5": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Sonnet 5",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-sonnet-5.5": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Sonnet 5.5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/claude-sonnet-latest": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 128000,
+        "name": "Claude Sonnet Latest",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/gemini-4-argon": {
+        "context": {
+          "default": 1048576
+        },
+        "max_output": 32768,
+        "name": "Gemini 4 Argon",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/gemini-4-carbon": {
+        "context": {
+          "default": 1048576
+        },
+        "max_output": 65536,
+        "name": "Gemini 4 Carbon",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/gemini-4-hydrogen": {
+        "context": {
+          "default": 1048576
+        },
+        "max_output": 65536,
+        "name": "Gemini 4 Hydrogen",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/gemini-4-neon": {
+        "context": {
+          "default": 1048576
+        },
+        "max_output": 65536,
+        "name": "Gemini 4 Neon",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/gemini-4-neon:free": {
+        "reasoning": false,
+        "src": {
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/glm-4.6v": {
+        "context": {
+          "default": 131072
+        },
+        "max_output": 32768,
+        "name": "GLM 4.6V",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/glm-4.7": {
+        "context": {
+          "default": 202752
+        },
+        "max_output": 131072,
+        "name": "GLM 4.7",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/glm-4.7-flash": {
+        "context": {
+          "default": 200000
+        },
+        "max_output": 131072,
+        "name": "GLM 4.7 Flash",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api"
+        }
+      },
+      "explabs/glm-5": {
+        "context": {
+          "default": 204800
+        },
+        "max_output": 128000,
+        "name": "GLM 5",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/glm-5-turbo": {
+        "context": {
+          "default": 202752
+        },
+        "max_output": 131072,
+        "name": "GLM 5 Turbo",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/glm-5.1": {
+        "context": {
+          "default": 204800
+        },
+        "max_output": 128000,
+        "name": "GLM 5.1",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/glm-5.2": {
+        "context": {
+          "default": 1048576
+        },
+        "max_output": 131072,
+        "name": "GLM 5.2",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/glm-5.3": {
+        "context": {
+          "default": 1048576
+        },
+        "images": false,
+        "max_output": 131072,
+        "name": "GLM 5.3",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "config",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/glm-5.3-flash": {
+        "context": {
+          "default": 1048576
+        },
+        "max_output": 131072,
+        "name": "GLM-5.3 Flash",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/glm-5.3-flash-uncensored": {
+        "context": {
+          "default": 1048576
+        },
+        "max_output": 131072,
+        "name": "GLM-5.3 Flash Uncensored",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/glm-5.3-uncensored": {
+        "context": {
+          "default": 1048576
+        },
+        "images": false,
+        "max_output": 131072,
+        "name": "GLM-5.3 Uncensored",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "images": "config",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/glm-5v-turbo": {
+        "context": {
+          "default": 202752
+        },
+        "max_output": 131072,
+        "name": "GLM 5V Turbo",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/glm-latest": {
+        "context": {
+          "default": 1048576
+        },
+        "max_output": 131072,
+        "name": "GLM Latest",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/kimi-k2-0905": {
+        "context": {
+          "default": 262144
+        },
+        "max_output": 98304,
+        "name": "Kimi K2 0905",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/kimi-k2-thinking": {
+        "context": {
+          "default": 262144
+        },
+        "max_output": 262144,
+        "name": "Kimi K2 Thinking",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/kimi-k2.5": {
+        "context": {
+          "default": 262144
+        },
+        "max_output": 262144,
+        "name": "Kimi K2.5",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/kimi-k2.6": {
+        "context": {
+          "default": 262144
+        },
+        "max_output": 262144,
+        "name": "Kimi K2.6",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/kimi-k2.7-code": {
+        "context": {
+          "default": 262144
+        },
+        "max_output": 262144,
+        "name": "Kimi K2.7 Code",
+        "reasoning": false,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/kimi-k3": {
+        "context": {
+          "default": 1048576
+        },
+        "name": "Kimi K3",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/kimi-k3.1-pro": {
+        "name": "Kimi K3.1 Pro",
+        "reasoning": false,
+        "src": {
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": false
+      },
+      "explabs/kimi-latest": {
+        "context": {
+          "default": 1048576
+        },
+        "name": "Kimi Latest",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/qwen3.8-2.4t-a95b": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 131072,
+        "name": "Qwen3.8 2.4T A95B",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/qwen3.8-27b": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 131072,
+        "name": "Qwen3.8 27B",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/qwen3.8-flash": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 131072,
+        "name": "Qwen3.8 Flash",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/qwen3.8-max": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 131072,
+        "name": "Qwen3.8 Max",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/qwen3.8-max-0902": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 131072,
+        "name": "Qwen3.8 Max (0902)",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "explabs/qwen3.8-omni-flash": {
+        "context": {
+          "default": 1000000
+        },
+        "max_output": 131072,
+        "name": "Qwen3.8 Omni Flash",
+        "reasoning": true,
+        "src": {
+          "context": "api",
+          "max_output": "api",
+          "name": "api",
+          "reasoning": "api",
+          "tools": "api"
+        },
+        "tools": true
+      },
+      "modelflare/claude-fable-5": {},
+      "modelflare/claude-fable-5-1": {},
+      "modelflare/claude-fable-5-2": {},
+      "modelflare/claude-haiku-4-5": {},
+      "modelflare/claude-haiku-5-5": {},
+      "modelflare/claude-opus-4-8": {},
+      "modelflare/claude-opus-5": {},
+      "modelflare/claude-opus-5-5": {},
+      "modelflare/claude-sonnet-5": {},
+      "modelflare/claude-sonnet-5-5": {},
+      "modelflare/glm-5.2": {},
+      "modelflare/glm-5.3": {},
+      "modelflare/glm-5.3-flash": {}
+    },
+    "refreshed_at": 1795135801233
+  }
+}
