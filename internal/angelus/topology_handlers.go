@@ -124,7 +124,7 @@ func (h *handlers) createWith(ctx context.Context, params json.RawMessage, birth
 	if err := h.refuseBoxOutfits(ctx, req.Outfits, true); err != nil {
 		return nil, err
 	}
-	if err := h.refuseCallerKeys(ctx, rootBirth(), form.Snapshot{}, req.Patch); err != nil {
+	if err := h.judgeWrite(ctx, formWrite{line: rootBirth(), before: form.Snapshot{}, patch: req.Patch}); err != nil {
 		return nil, err
 	}
 	if err := h.refuseOutfitGrants(ctx, req.Outfits); err != nil {
@@ -348,7 +348,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		return nil, err
 	}
-	if err := h.refuseCallerKeys(ctx, birthUnder(req.FigaroID), base, &asked); err != nil {
+	if err := h.judgeWrite(ctx, formWrite{line: birthUnder(req.FigaroID), before: base, patch: &asked}); err != nil {
 		return nil, err
 	}
 	var policy form.Patch
@@ -792,7 +792,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 		return nil, errors.New("import: no outfit named")
 	}
 	if !h.callerKeysOf(ctx).owns {
-		if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, &req.OutfitPatch); err != nil {
+		if err := h.judgeWrite(ctx, formWrite{line: lineage{}, before: form.Snapshot{}, patch: &req.OutfitPatch}); err != nil {
 			return nil, fmt.Errorf("import: outfit %q: %w", req.Outfit, err)
 		}
 		keys := importedKeys(req.Form)
@@ -800,7 +800,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 			delete(keys, k)
 		}
 		imported := form.Build(form.Snapshot{}, keys, nil)
-		if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, &imported); err != nil {
+		if err := h.judgeWrite(ctx, formWrite{line: lineage{}, before: form.Snapshot{}, patch: &imported}); err != nil {
 			return nil, fmt.Errorf("import: %w", err)
 		}
 	}

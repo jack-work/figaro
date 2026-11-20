@@ -49,16 +49,16 @@ func TestANamedWriterPassesTheCallerKeyCheck(t *testing.T) {
 	gary := jkauthz.Principal{Kind: "user", ID: "gary"}
 	ctx := authn.WithSubject(authn.WithDoor(context.Background(), authn.DoorWeb), jkauthz.Subject{Principal: gary})
 	mode := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.KeyRetentionMode: json.RawMessage(`"none"`)}, nil)
-	if err := hs.h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, &mode); err == nil {
+	if err := hs.h.judgeWrite(ctx, formWrite{before: form.Snapshot{}, patch: &mode}); err == nil {
 		t.Fatal("a caller nobody named set system.retention.mode")
 	}
 	raw, _ := json.Marshal([]string{gary.String()})
 	named := form.Snapshot{}.SetPath(store.KeyRetentionWriters, raw)
-	if err := hs.h.refuseCallerKeys(ctx, lineage{}, named, &mode); err != nil {
+	if err := hs.h.judgeWrite(ctx, formWrite{before: named, patch: &mode}); err != nil {
 		t.Fatalf("a named writer was refused system.retention.mode: %v", err)
 	}
 	widen := form.Build(named, map[string]json.RawMessage{store.KeyRetentionWriters: json.RawMessage(`["user:gary","user:eve"]`)}, nil)
-	if err := hs.h.refuseCallerKeys(ctx, lineage{}, named, &widen); err == nil {
+	if err := hs.h.judgeWrite(ctx, formWrite{before: named, patch: &widen}); err == nil {
 		t.Fatal("a named writer widened the list")
 	}
 }

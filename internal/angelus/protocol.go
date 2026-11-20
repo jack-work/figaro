@@ -505,7 +505,7 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if err := h.refuseCallerKeys(ctx, lineage{}, form.Snapshot{}, req.Patch); err != nil {
+	if err := h.judgeWrite(ctx, formWrite{line: lineage{}, before: form.Snapshot{}, patch: req.Patch}); err != nil {
 		return nil, err
 	}
 	if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
@@ -612,7 +612,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	if err != nil {
 		return nil, err
 	}
-	if err := h.refuseCallerKeys(ctx, birthUnder(parent), base, &dress); err != nil {
+	if err := h.judgeWrite(ctx, formWrite{line: birthUnder(parent), before: base, patch: &dress}); err != nil {
 		return nil, err
 	}
 	cwd := birthCwd(req.Cwd)

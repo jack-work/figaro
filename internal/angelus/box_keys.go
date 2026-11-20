@@ -429,108 +429,6 @@ func keyGrantsWaived(ctx context.Context) bool {
 	return waived
 }
 
-func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before form.Snapshot, patch *form.Patch) error {
-	err := h.checkCallerKeys(ctx, line, before, patch)
-	p := h.angelus.Policies
-	if err == nil || p.Enforces(authz.KeyGrants) {
-		return err
-	}
-	if pre := h.checkCallerKeys(context.WithValue(ctx, waivedKeyGrants{}, true), line, before, patch); pre != nil {
-		return pre
-	}
-	p.WouldRefuse(authz.KeyGrants, err.Error())
-	return nil
-}
-
-func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before form.Snapshot, patch *form.Patch) error {
-	if patch == nil || patch.IsIdentity() {
-		return nil
-	}
-	if err := refuseReapKeys(before, *patch); err != nil {
-		return err
-	}
-	if err := refuseRuntimeKeys(before, *patch); err != nil {
-		return err
-	}
-	if err := refuseMalformedRetirement(before, *patch); err != nil {
-		return err
-	}
-	after := before.Apply(*patch)
-	if err := form.CheckScopes(after); err != nil {
-		return err
-	}
-	if err := checkScopesParse(before, after); err != nil {
-		return err
-	}
-	if _, _, err := form.FanoutMaxChildren(after); err != nil {
-		return err
-	}
-	if _, err := form.FanoutMint(after); err != nil {
-		return err
-	}
-	if h.angelus.Policies.Enforces(authz.KeyGrants) {
-		if err := form.RefuseRetiredMintWrite(before, after); err != nil {
-			return err
-		}
-	}
-	if _, _, err := form.FanoutQuota(after); err != nil {
-		return err
-	}
-	if err := refuseMisshapenKeys(after, *patch); err != nil {
-		return err
-	}
-	if keyChanged(before, after, form.ChildPolicyKey) {
-		if err := form.CheckChildPolicyFanout(after); err != nil {
-			return err
-		}
-		if c := h.callerKeysOf(ctx); !(c.owns && !c.boxed) {
-			if keys := form.ChildPolicyOwnerKeysChanged(before, after); len(keys) > 0 {
-				return fmt.Errorf("%s: %s is owner-held: only the owner puts it in a child policy", form.ChildPolicyKey, keys[0])
-			}
-		}
-	}
-	if err := h.refuseKeysBeyondGrants(ctx, line, before, *patch, after); err != nil {
-		return err
-	}
-	c := h.callerKeysOf(ctx)
-	if c.owns && !c.boxed {
-		if err := h.refuseFanoutByLabelAlone(ctx, line, before, after); err != nil {
-			return err
-		}
-		if err := h.refuseQuotaByLabelAlone(ctx, line, before, after); err != nil {
-			return err
-		}
-		return h.refuseMintByLabelAlone(ctx, line, before, after)
-	}
-	for _, p := range writtenPaths(before, *patch, after) {
-		if k, ok := form.Protected(p); ok && c.lineage {
-			if err := h.refuseProtected(ctx, c, line, k, before); err != nil {
-				return err
-			}
-			continue
-		}
-		if retentionGranted(ctx, before, p) {
-			continue
-		}
-		if h.toolShortensLifetime(ctx, c, line, before, after, p) {
-			continue
-		}
-		if err := c.refusal(p); err != nil {
-			return err
-		}
-	}
-	if err := h.refuseScopesBeyondWriter(ctx, c, line, before, after); err != nil {
-		return err
-	}
-	if err := h.refuseFanoutBeyondGranter(ctx, before, after); err != nil {
-		return err
-	}
-	if err := h.refuseQuotaBeyondBudget(ctx, line, before, after); err != nil {
-		return err
-	}
-	return h.refuseMintBeyondGranter(ctx, before, after)
-}
-
 func (h *handlers) refuseQuotaByLabelAlone(ctx context.Context, line lineage, before, after form.Snapshot) error {
 	f := authn.FigaroOf(ctx)
 	if !keyChanged(before, after, form.FanoutQuotaKey) {
@@ -741,11 +639,11 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 					return err
 				}
 				openPatch := form.FromMap(open).AsPatch()
+				w := formWrite{line: lineage{of: id}, before: snap, patch: &openPatch}
 				if owner {
-					if err := refuseMisshapenKeys(snap.Apply(openPatch), openPatch); err != nil {
-						return err
-					}
-				} else if err := h.refuseCallerKeys(ctx, lineage{of: id}, snap, &openPatch); err != nil {
+					w.mode = patchOwnerContext
+				}
+				if err := h.judgeWrite(ctx, w); err != nil {
 					return err
 				}
 			}
@@ -769,17 +667,14 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 	if snap, err = h.listedOutfitKeys(ctx, snap, requestOutfits(ctx)); err != nil {
 		return err
 	}
-	if shapesOnly {
-		if err := refuseRuntimeKeys(snap, *patch); err != nil {
-			return err
-		}
-		return refuseMisshapenKeys(snap.Apply(*patch), *patch)
-	}
-	line := lineage{of: id}
+	w := formWrite{line: lineage{of: id}, before: snap, patch: patch}
 	if method == rpc.MethodCast {
-		line = lineage{}
+		w.line = lineage{}
 	}
-	return h.refuseCallerKeys(ctx, line, snap, patch)
+	if shapesOnly {
+		w.mode = patchOwnerShapes
+	}
+	return h.judgeWrite(ctx, w)
 }
 
 func contextWrites(m map[string]json.RawMessage) map[string]json.RawMessage {
