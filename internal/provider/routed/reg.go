@@ -149,6 +149,7 @@ func buildGatewayAs(ctx provider.BuildContext, name, envPrefix string) (provider
 		Mapping:      catalogmaps.Builtin("generic"),
 		Default:      Chat,
 		Caps:         caps,
+		RetryGateway: true,
 	}
 	if isGemini || isCodeAssist {
 		baseSpec.Catalog = ""

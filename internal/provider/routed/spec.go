@@ -113,6 +113,7 @@ type Spec struct {
 	TransportHeaders map[Transport]map[string]string
 	IdentityHeaders  func(responses.IDs) map[string]string
 	SendFigaroID     bool
+	RetryGateway     bool
 	CodeAssist       gemini.CodeAssistConfig
 
 	Catalog      string

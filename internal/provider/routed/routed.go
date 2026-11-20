@@ -303,6 +303,9 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if p.spec.SendFigaroID {
 		ctx = provider.WithFigaroID(ctx, in.AriaID)
 	}
+	if p.spec.RetryGateway {
+		ctx = upstream.WithGatewayRetry(ctx)
+	}
 	ctx = provider.WithLease(ctx, p.knobs.Lease)
 	model := snapshotString(in.Snapshot, "system.model")
 	if model == "" {
@@ -814,6 +817,9 @@ func (p *Provider) EncodeMessage(msg message.Message, prev form.Snapshot) ([]jso
 }
 
 func (p *Provider) fetchCatalog(ctx context.Context) (listed []catalog.Model, err error) {
+	if p.spec.RetryGateway {
+		ctx = upstream.WithGatewayRetry(ctx)
+	}
 	start := time.Now()
 	defer func() {
 		attrs := []attribute.KeyValue{
