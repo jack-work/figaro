@@ -26,7 +26,7 @@ func TestAutoAgentMetricsUseAllCandidatesAndKeepUnknownExplicit(t *testing.T) {
 	defer a.Kill()
 	auto := &models.AutoRoute{ContextStatus: "known", Candidates: []models.RouteCandidate{{ContextLength: &large}, {ContextLength: &small}}}
 	fill := func() {
-		raw, err := json.Marshal(models.Provider{IR: models.IRVersion, Models: map[string]models.Entry{"auto": {Auto: auto, Context: models.Context{Default: large}}}})
+		raw, err := json.Marshal(models.Provider{IR: models.IRVersion, Node: models.NewNode(map[string]models.Entry{"auto": {Auto: auto, Context: models.Context{Default: large}}})})
 		require.NoError(t, err)
 		cat.mu.Lock()
 		cat.snap = cat.snap.Apply(form.Build(cat.snap, map[string]json.RawMessage{"metrics": raw}, nil))

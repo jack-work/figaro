@@ -204,8 +204,9 @@ func TestDropKeysLeaveAFormPitsRowsAlone(t *testing.T) {
 }
 
 var modelsHint = &rpc.FormView{
-	Rows: []string{"*.models.*"},
-	Open: []string{"*", "*.models"},
+	Rows: []string{"*.models.*", "*.upstreams.**.models.*"},
+	Via:  "upstreams",
+	Open: []string{"*", "**.models", "**.upstreams", "**.upstreams.*"},
 	Skip: "hidden",
 	Mark: &rpc.ViewMark{GroupSubject: "system.provider", RowSubject: "system.model"},
 	Actions: []rpc.ViewAction{
@@ -251,16 +252,16 @@ func TestTheModelsCatalogNestsByProviderAndMarksTheSubjectsChoice(t *testing.T) 
 // model come from the row, the aria is the one on screen, never the row.
 func TestEnterOnAModelPicksItForTheSubject(t *testing.T) {
 	snap := catalogFixture(t, map[string]models.Provider{
-		"openrouter": {RefreshedAt: modelsNow.UnixMilli(), Models: map[string]models.Entry{
+		"openrouter": {RefreshedAt: modelsNow.UnixMilli(), Node: models.NewNode(map[string]models.Entry{
 			"x-ai/grok-4.1": {Context: models.Context{Default: 1}},
-		}},
+		})},
 	})
 	v := modelsView(t, snap, "", "")
 	v.Items(120)
 	if !v.OwnsKey('\r') || !v.OwnsKey('\n') {
 		t.Fatal("Enter is not the view's")
 	}
-	k, ok := v.rowKeyOf("openrouter.models.x-ai/grok-4.1")
+	k, ok := v.rowKeyOf("openrouter.upstreams.x-ai.models.grok-4.1")
 	if !ok || k.group != "openrouter" || k.row != "x-ai/grok-4.1" {
 		t.Fatalf("row key = %+v %v, want openrouter / x-ai/grok-4.1 intact", k, ok)
 	}
@@ -287,9 +288,9 @@ func TestEnterOnAModelPicksItForTheSubject(t *testing.T) {
 // session (seen live on x-ai/grok-4.1).
 func TestEnterTypedOnAModelSendsThePickWithoutHanging(t *testing.T) {
 	snap := catalogFixture(t, map[string]models.Provider{
-		"openrouter": {RefreshedAt: modelsNow.UnixMilli(), Models: map[string]models.Entry{
+		"openrouter": {RefreshedAt: modelsNow.UnixMilli(), Node: models.NewNode(map[string]models.Entry{
 			"x-ai/grok-4.1": {Context: models.Context{Default: 1}},
-		}},
+		})},
 	})
 	var out countingWriter
 	in, lt := navInput(t, &out, true)
@@ -311,7 +312,7 @@ func TestEnterTypedOnAModelSendsThePickWithoutHanging(t *testing.T) {
 	}
 	lt.tr.showLivePit("models", v, false)
 	lt.tr.pit.lines(100, 20)
-	if !lt.tr.pit.focus("openrouter.models.x-ai/grok-4.1") {
+	if !lt.tr.pit.focus("openrouter.upstreams.x-ai.models.grok-4.1") {
 		t.Fatal("the model row is not in the pit")
 	}
 
@@ -609,5 +610,125 @@ func TestLsOpensAFormWithAPeerInTheTroupe(t *testing.T) {
 	))}, open: map[string]bool{}}
 	if keep := p.keep(in); keep != nil && !keep(v) {
 		t.Fatal(":ls with a peer in the troupe dropped its form")
+	}
+}
+
+func nestedModelsFixture(t *testing.T) form.Snapshot {
+	return catalogFixture(t, map[string]models.Provider{
+		"anthropic": {RefreshedAt: modelsNow.UnixMilli(), Node: models.NewNode(map[string]models.Entry{
+			"claude-opus-5": {Name: "Claude Opus 5"},
+		})},
+		"rou2": {RefreshedAt: modelsNow.UnixMilli(), Node: models.NewNode(map[string]models.Entry{
+			"explabs/claude-opus-5":              {Name: "Claude Opus 5"},
+			"explabs/glm-5.3":                    {Name: "GLM 5.3"},
+			"copilot/anthropic/claude-opus-5":    {Name: "Claude Opus 5"},
+			"copilot/anthropic/claude-sonnet-5":  {Name: "Claude Sonnet 5"},
+			"copilot/anthropic/internal-routing": {Hidden: true},
+		})},
+	})
+}
+
+func modelRowKeys(t *testing.T, v *formView) map[string]viewRowKey {
+	t.Helper()
+	out := map[string]viewRowKey{}
+	for _, r := range v.Items(120) {
+		if r.hint == "" {
+			continue
+		}
+		k, ok := v.rowKeyOf(r.id)
+		if !ok {
+			t.Fatalf("model row %s has no key", r.id)
+		}
+		out[r.id] = k
+	}
+	return out
+}
+
+// A model reached through two upstreams is two rows, and each row names the
+// whole route below its provider, so Enter on either picks the right one.
+func TestNestedModelRowsNameTheirWholeRouteBelowTheProvider(t *testing.T) {
+	v := modelsView(t, nestedModelsFixture(t), "", "")
+	got := modelRowKeys(t, v)
+	want := map[string]viewRowKey{
+		"anthropic.models.claude-opus-5":                                    {group: "anthropic", row: "claude-opus-5"},
+		"rou2.upstreams.explabs.models.claude-opus-5":                       {group: "rou2", row: "explabs/claude-opus-5"},
+		"rou2.upstreams.explabs.models.glm-5.3":                             {group: "rou2", row: "explabs/glm-5.3"},
+		"rou2.upstreams.copilot.upstreams.anthropic.models.claude-opus-5":   {group: "rou2", row: "copilot/anthropic/claude-opus-5"},
+		"rou2.upstreams.copilot.upstreams.anthropic.models.claude-sonnet-5": {group: "rou2", row: "copilot/anthropic/claude-sonnet-5"},
+	}
+	for path, k := range want {
+		if got[path] != k {
+			t.Errorf("%s = %+v, want %+v", path, got[path], k)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("model rows = %v, want exactly %d (the hidden one is skipped)", got, len(want))
+	}
+}
+
+func TestEnterOnADeepModelPicksItsFullRoute(t *testing.T) {
+	v := modelsView(t, nestedModelsFixture(t), "", "")
+	got := modelRowKeys(t, v)
+	k := got["rou2.upstreams.copilot.upstreams.anthropic.models.claude-opus-5"]
+	a, _ := v.actionFor('\r')
+	params, _, err := actionCall(a, k, "subject-aria")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req rpc.ModelsPickRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.Provider != "rou2" || req.Model != "copilot/anthropic/claude-opus-5" {
+		t.Errorf("pick = %+v", req)
+	}
+}
+
+func TestOnlyTheSubjectsOwnRouteCarriesTheMark(t *testing.T) {
+	v := modelsView(t, nestedModelsFixture(t), "rou2", "copilot/anthropic/claude-opus-5")
+	var marked []string
+	for _, r := range v.Items(120) {
+		if r.note == "●" {
+			marked = append(marked, r.id)
+		}
+	}
+	want := "rou2.upstreams.copilot.upstreams.anthropic.models.claude-opus-5"
+	if len(marked) != 1 || marked[0] != want {
+		t.Errorf("marked = %v, want [%s]", marked, want)
+	}
+}
+
+// Every depth opens and closes on its own: closing one upstream hides its
+// models and leaves its sibling and the provider alone.
+func TestEveryUpstreamCollapsesOnItsOwn(t *testing.T) {
+	v := modelsView(t, nestedModelsFixture(t), "rou2", "explabs/glm-5.3")
+	ids := func() string {
+		var out []string
+		for _, r := range v.Items(120) {
+			out = append(out, r.id)
+		}
+		return strings.Join(out, ",")
+	}
+	all := ids()
+	for _, id := range []string{
+		"rou2.upstreams.copilot", "rou2.upstreams.copilot.upstreams.anthropic",
+		"rou2.upstreams.explabs.models.glm-5.3", "rou2.upstreams.copilot.upstreams.anthropic.models.claude-sonnet-5",
+	} {
+		if !strings.Contains(all, id) {
+			t.Fatalf("%s is not drawn: %s", id, all)
+		}
+	}
+	v.mu.Lock()
+	v.open["rou2.upstreams.copilot.upstreams.anthropic"] = false
+	v.openRev++
+	v.mu.Unlock()
+	closed := ids()
+	if strings.Contains(closed, "rou2.upstreams.copilot.upstreams.anthropic.models.") {
+		t.Errorf("a closed sub-provider still shows its models: %s", closed)
+	}
+	for _, id := range []string{"rou2.upstreams.copilot.upstreams.anthropic", "rou2.upstreams.explabs.models.glm-5.3", "anthropic.models.claude-opus-5"} {
+		if !strings.Contains(closed, id) {
+			t.Errorf("closing one sub-provider hid %s: %s", id, closed)
+		}
 	}
 }

@@ -396,11 +396,8 @@ func (c *Catalog) fetch(ctx context.Context, providerName string, wanted []strin
 
 func (c *Catalog) merge(providerName string, seeded map[string]models.Entry) {
 	cur := c.current(providerName)
-	if cur.Models == nil {
-		cur.Models = map[string]models.Entry{}
-	}
 	for id, e := range seeded {
-		cur.Models[id] = withoutEchoedName(id, e)
+		cur.Place(id, withoutEchoedName(id, e))
 	}
 	c.publish(providerName, cur)
 }
@@ -424,7 +421,7 @@ func (c *Catalog) record(providerName string, seeder provider.ModelSeeder, liste
 		}
 		next[info.ID] = withoutEchoedName(info.ID, info.Entry)
 	}
-	for id, prev := range cur.Models {
+	for id, prev := range cur.Flat() {
 		if _, listed := next[id]; listed {
 			continue
 		}
@@ -438,7 +435,7 @@ func (c *Catalog) record(providerName string, seeder provider.ModelSeeder, liste
 			next[id] = prev
 		}
 	}
-	cur.Models = next
+	cur.Node = models.NewNode(next)
 	cur.RefreshedAt = now.UnixMilli()
 	cur.Error = ""
 	c.publish(providerName, cur)
@@ -458,7 +455,7 @@ func (c *Catalog) current(providerName string) models.Provider {
 		_ = json.Unmarshal(raw, &p)
 	}
 	if p.IR != models.IRVersion {
-		p.Models = nil
+		p.Node = models.Node{}
 	}
 	p.IR = models.IRVersion
 	return p

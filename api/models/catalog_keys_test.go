@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -27,8 +28,30 @@ func realCatalog(t *testing.T, patch func(map[string]map[string]any)) form.Snaps
 }
 
 func rou2Row(provs map[string]map[string]any, model string, row map[string]any) {
-	provs["rou2"]["models"].(map[string]any)[model] = row
+	var n node = provs["rou2"]
+	segs := strings.Split(model, "/")
+	for _, seg := range segs[:len(segs)-1] {
+		up, _ := n[BranchesKey].(map[string]any)
+		if up == nil {
+			up = map[string]any{}
+			n[BranchesKey] = up
+		}
+		next, _ := up[seg].(map[string]any)
+		if next == nil {
+			next = map[string]any{}
+			up[seg] = next
+		}
+		n = next
+	}
+	leaves, _ := n[LeavesKey].(map[string]any)
+	if leaves == nil {
+		leaves = map[string]any{}
+		n[LeavesKey] = leaves
+	}
+	leaves[segs[len(segs)-1]] = row
 }
+
+type node = map[string]any
 
 // The keys that read "capacity unknown" on 11-19 against the catalog as the
 // daemon held it, with the rows rou2 does not yet fill sent the way it is

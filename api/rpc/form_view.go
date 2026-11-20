@@ -7,6 +7,7 @@ import (
 
 type FormView struct {
 	Rows    []string     `json:"rows"`
+	Via     string       `json:"via,omitempty"`
 	RowAria string       `json:"row_aria,omitempty"`
 	Mount   string       `json:"mount,omitempty"`
 	Open    []string     `json:"open,omitempty"`

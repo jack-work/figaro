@@ -140,10 +140,11 @@ func (p *Provider) seedFromIR(snap form.Snapshot) {
 		return
 	}
 	known := provs[p.spec.Name]
-	if len(known.Models) == 0 {
+	flat := known.Flat()
+	if len(flat) == 0 {
 		return
 	}
-	p.cat.seed(known.Models, time.UnixMilli(known.RefreshedAt))
+	p.cat.seed(flat, time.UnixMilli(known.RefreshedAt))
 }
 
 func (p *Provider) Warm() {

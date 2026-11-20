@@ -38,9 +38,10 @@ func catalogListings(catalog form.Snapshot, now time.Time) []providerListing {
 			AttemptedAt: p.AttemptedAt,
 			Error:       p.Error,
 			Stale:       !p.CatalogOff && (p.RefreshedAt == 0 || now.Sub(time.UnixMilli(p.RefreshedAt)) >= modelcat.DefaultTTL),
-			Models:      make([]modelRow, 0, len(p.Models)),
 		}
-		for id, e := range p.Models {
+		flat := p.Flat()
+		l.Models = make([]modelRow, 0, len(flat))
+		for id, e := range flat {
 			l.Models = append(l.Models, modelRow{ID: id, Entry: e})
 		}
 		sort.Slice(l.Models, func(i, j int) bool { return l.Models[i].ID < l.Models[j].ID })

@@ -43,9 +43,9 @@ func (g *slowCatalog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func persistedIR(t *testing.T, name string, refreshed time.Time, ids ...string) form.Snapshot {
 	t.Helper()
 	f := store.NewMemForm()
-	p := apimodels.Provider{IR: apimodels.IRVersion, RefreshedAt: refreshed.UnixMilli(), Models: map[string]apimodels.Entry{}}
+	p := apimodels.Provider{IR: apimodels.IRVersion, RefreshedAt: refreshed.UnixMilli()}
 	for _, id := range ids {
-		p.Models[id] = apimodels.Entry{Endpoints: []string{"/chat/completions"}}
+		p.Place(id, apimodels.Entry{Endpoints: []string{"/chat/completions"}})
 	}
 	raw, err := json.Marshal(p)
 	if err != nil {

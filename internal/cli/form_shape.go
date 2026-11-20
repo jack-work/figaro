@@ -83,7 +83,18 @@ func (s *viewShape) row(segs []string) (viewRowKey, bool) {
 	if !ok {
 		return viewRowKey{}, false
 	}
-	return viewRowKey{group: group, row: segs[len(segs)-1]}, true
+	if s.hint.Via == "" {
+		return viewRowKey{group: group, row: segs[len(segs)-1]}, true
+	}
+	return viewRowKey{group: segs[0], row: s.viaRow(segs)}, true
+}
+
+func (s *viewShape) viaRow(segs []string) string {
+	var path []string
+	for i := 1; i+2 < len(segs) && segs[i] == s.hint.Via; i += 2 {
+		path = append(path, segs[i+1])
+	}
+	return strings.Join(append(path, segs[len(segs)-1]), "/")
 }
 
 func (s *viewShape) order(labels []string, kids []*formNode, open map[string]bool) []*formNode {
