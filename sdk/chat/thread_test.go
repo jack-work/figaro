@@ -861,3 +861,16 @@ func TestAListenerReadingWhenTheClientClosesIsToldWhy(t *testing.T) {
 		}
 	}
 }
+
+func TestMergingABacklogOfDeltasDoesNotCopyItOverAndOver(t *testing.T) {
+	s := &sub{wake: make(chan struct{}, 1)}
+	allocs := testing.AllocsPerRun(5, func() {
+		s.q, s.more = nil, nil
+		for i := range 2000 {
+			s.push(Event{Kind: Delta, Text: "xxxxxxxx", Cursor: Cursor{Text: i}}, false)
+		}
+	})
+	if allocs > 200 {
+		t.Fatalf("merging 2000 deltas allocated %.0f times", allocs)
+	}
+}

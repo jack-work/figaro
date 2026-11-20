@@ -881,6 +881,9 @@ func (t *thread) pump(ctx context.Context, s *sub) {
 			}
 			continue
 		}
+		if len(s.q) == 1 {
+			s.seal()
+		}
 		e := s.q[0]
 		s.q = s.q[1:]
 		s.mu.Unlock()
@@ -916,6 +919,7 @@ type sub struct {
 
 	mu     sync.Mutex
 	q      []Event
+	more   []string
 	closed bool
 }
 
@@ -926,9 +930,19 @@ func (s *sub) next() uint64 {
 	return s.after + 1
 }
 
+func (s *sub) seal() {
+	if len(s.more) == 0 || len(s.q) == 0 {
+		return
+	}
+	last := &s.q[len(s.q)-1]
+	last.Text += strings.Join(s.more, "")
+	s.more = s.more[:0]
+}
+
 func (s *sub) flush() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.seal()
 	for len(s.q) > 0 {
 		select {
 		case s.out <- s.q[0]:
@@ -946,9 +960,10 @@ func (s *sub) push(e Event, last bool) {
 		return
 	}
 	if n := len(s.q); e.Kind == Delta && n > 0 && s.q[n-1].Kind == Delta {
-		s.q[n-1].Text += e.Text
+		s.more = append(s.more, e.Text)
 		s.q[n-1].Cursor = e.Cursor
 	} else if e.Kind != "" {
+		s.seal()
 		s.q = append(s.q, e)
 	}
 	s.closed = last
