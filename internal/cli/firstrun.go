@@ -20,7 +20,6 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/outfit"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/tui"
@@ -106,7 +105,7 @@ func catalogFor(available []string) []providerChoice {
 
 type createFn func() (*rpc.CreateResponse, error)
 
-func createOrSayWhy(_ context.Context, loaded *config.Loaded, d dressing, fn createFn) (*rpc.CreateResponse, error) {
+func createOrSayWhy(_ context.Context, _ *config.Loaded, d dressing, fn createFn) (*rpc.CreateResponse, error) {
 	resp, err := fn()
 	if err == nil {
 		return resp, nil
@@ -121,24 +120,24 @@ func createOrSayWhy(_ context.Context, loaded *config.Loaded, d dressing, fn cre
 			return nil, fmt.Errorf("-O %s sets no system.provider: add one to that outfit, or layer one that has it",
 				d.label())
 		}
-		return nil, errors.New(unroutedDefault(loaded, data.Outfit))
+		return nil, errors.New(unroutedDefault(data))
 	default:
 		return nil, err
 	}
 }
 
-func unroutedDefault(loaded *config.Loaded, name string) string {
-	if name == "" {
-		return fmt.Sprintf("no default_outfit in %s: name an outfit that sets system.provider there (figaro state outfit --list)", loaded.ConfigPath)
+func unroutedDefault(data rpc.ErrorData) string {
+	where := "the config"
+	if data.ConfigPath != "" {
+		where = data.ConfigPath
 	}
-	idx, _ := loaded.OutfitIndex()
-	names, _ := outfit.TermNames(name)
-	for _, n := range names {
-		if _, ok := idx[n]; !ok {
-			return fmt.Sprintf("outfit %q, the default_outfit in %s, does not exist: create it with a system.provider, or name another there", n, loaded.ConfigPath)
-		}
+	switch {
+	case data.Outfit == "":
+		return fmt.Sprintf("no default_outfit in %s: name an outfit that sets system.provider there (figaro state outfit --list)", where)
+	case len(data.Missing) > 0:
+		return fmt.Sprintf("outfit %q, the default_outfit in %s, does not exist: create it with a system.provider, or name another there", data.Missing[0], where)
 	}
-	return fmt.Sprintf("outfit %q, the default_outfit in %s, names no system.provider: add one to it, or name another there", name, loaded.ConfigPath)
+	return fmt.Sprintf("outfit %q, the default_outfit in %s, names no system.provider: add one to it, or name another there", data.Outfit, where)
 }
 
 func decodeTypedError(err error) (rpc.ErrorData, int, bool) {

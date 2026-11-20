@@ -12,6 +12,8 @@ type ErrorData struct {
 	Outfit             string   `json:"outfit,omitempty"`
 	Name               string   `json:"name,omitempty"`
 	SearchPaths        []string `json:"search_paths,omitempty"`
+	ConfigPath         string   `json:"config_path,omitempty"`
+	Missing            []string `json:"missing,omitempty"`
 
 	// OutfitClosure accompanies ErrOutfitNotFound; each node reports whether
 	// it was found on disk.
