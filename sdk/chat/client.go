@@ -17,7 +17,8 @@ import (
 )
 
 type Client struct {
-	ep transport.Endpoint
+	ep   transport.Endpoint
+	dial func(ctx context.Context, id string, notify sdk.NotifyHandler) (ariaConn, error)
 
 	ReconnectFor time.Duration
 
@@ -28,7 +29,9 @@ type Client struct {
 }
 
 func New(ep transport.Endpoint) *Client {
-	return &Client{ep: ep, ReconnectFor: 30 * time.Second, threads: map[string]*thread{}}
+	c := &Client{ep: ep, ReconnectFor: 30 * time.Second, threads: map[string]*thread{}}
+	c.dial = c.dialAria
+	return c
 }
 
 var ErrClosed = errors.New("chat: client closed")
@@ -130,7 +133,7 @@ func (c *Client) Cancel(ctx context.Context, threadID string) error {
 	return conn.Interrupt(ctx)
 }
 
-func (c *Client) thread(ctx context.Context, id string) (*thread, *sdk.Aria, error) {
+func (c *Client) thread(ctx context.Context, id string) (*thread, ariaConn, error) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -150,6 +153,35 @@ func newThread(c *Client, id string) *thread {
 	return &thread{c: c, id: id, folds: map[uint64]*turnFold{}, want: map[uint64]bool{}, subs: map[*sub]struct{}{}}
 }
 
+type ariaConn interface {
+	Qua(ctx context.Context, text string, form *rpc.FormInput) (int, bool, error)
+	Read(ctx context.Context, at aria.Anchor, budget int) (aria.Page, error)
+	ReadBefore(ctx context.Context, at aria.Anchor, budget int) (aria.Page, error)
+	FormOf(ctx context.Context, intrinsic string) (*rpc.FormResponse, error)
+	Interrupt(ctx context.Context) error
+	Close() error
+	Done() <-chan struct{}
+}
+
+func (c *Client) dialAria(ctx context.Context, id string, notify sdk.NotifyHandler) (ariaConn, error) {
+	var canonical string
+	if err := c.withAngelus(ctx, func(a *sdk.Angelus) error {
+		att, err := a.Attach(ctx, id)
+		if err != nil {
+			return fmt.Errorf("attach %s: %w", id, err)
+		}
+		canonical = att.FigaroID
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	conn, err := sdk.DialAria(sdk.Addr{Door: c.ep, ID: canonical}, notify)
+	if err != nil {
+		return nil, fmt.Errorf("dial %s: %w", id, err)
+	}
+	return conn, nil
+}
+
 type note struct {
 	part *aria.TurnPart
 	done *rpc.DoneEntry
@@ -162,7 +194,7 @@ type thread struct {
 	dial sync.Mutex
 
 	mu      sync.Mutex
-	conn    *sdk.Aria
+	conn    ariaConn
 	folds   map[uint64]*turnFold
 	top     uint64
 	syncing bool
@@ -171,7 +203,7 @@ type thread struct {
 	subs    map[*sub]struct{}
 }
 
-func (t *thread) connect(ctx context.Context) (*sdk.Aria, error) {
+func (t *thread) connect(ctx context.Context) (ariaConn, error) {
 	t.dial.Lock()
 	defer t.dial.Unlock()
 	t.mu.Lock()
@@ -184,20 +216,9 @@ func (t *thread) connect(ctx context.Context) (*sdk.Aria, error) {
 			return conn, nil
 		}
 	}
-	var canonical string
-	if err := t.c.withAngelus(ctx, func(a *sdk.Angelus) error {
-		att, err := a.Attach(ctx, t.id)
-		if err != nil {
-			return fmt.Errorf("attach %s: %w", t.id, err)
-		}
-		canonical = att.FigaroID
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	conn, err := sdk.DialAria(sdk.Addr{Door: t.c.ep, ID: canonical}, t.notify)
+	conn, err := t.c.dial(ctx, t.id, t.notify)
 	if err != nil {
-		return nil, fmt.Errorf("dial %s: %w", t.id, err)
+		return nil, err
 	}
 	t.mu.Lock()
 	t.conn = conn
@@ -206,7 +227,7 @@ func (t *thread) connect(ctx context.Context) (*sdk.Aria, error) {
 	return conn, nil
 }
 
-func (t *thread) watch(conn *sdk.Aria) {
+func (t *thread) watch(conn ariaConn) {
 	<-conn.Done()
 	t.mu.Lock()
 	if t.conn != conn {
@@ -391,7 +412,7 @@ func (t *thread) sync() {
 	}
 }
 
-func (t *thread) seed(conn *sdk.Aria, turns []uint64) {
+func (t *thread) seed(conn ariaConn, turns []uint64) {
 	if conn == nil {
 		return
 	}
@@ -444,7 +465,7 @@ func (t *thread) adopt(parts []aria.TurnPart) {
 	t.trim()
 }
 
-func readTurns(ctx context.Context, conn *sdk.Aria, turn uint64) ([]aria.TurnPart, error) {
+func readTurns(ctx context.Context, conn ariaConn, turn uint64) ([]aria.TurnPart, error) {
 	var out []aria.TurnPart
 	at := aria.Anchor{Turn: turn}
 	for range 64 {
