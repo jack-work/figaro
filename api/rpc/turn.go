@@ -23,6 +23,7 @@ type QuaRequest struct {
 	Form        *FormInput `json:"form,omitempty"`
 	Images      []QuaImage `json:"images,omitempty"`
 	TraceParent string     `json:"traceparent,omitempty"`
+	Exact       bool       `json:"exact,omitempty"`
 }
 
 const (

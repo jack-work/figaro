@@ -291,6 +291,7 @@ func (o *sendOpts) armOutfit() error {
 	if err != nil {
 		return err
 	}
+	d.exact = o.stdin
 	o.outfit = d
 	return nil
 }

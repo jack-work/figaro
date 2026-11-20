@@ -20,9 +20,8 @@ func promptFromStdin(opts sendOpts, rest []string, in io.Reader) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("--stdin: %w", err)
 	}
-	prompt := strings.TrimRight(string(b), "\n")
-	if strings.TrimSpace(prompt) == "" {
+	if strings.TrimSpace(string(b)) == "" {
 		return "", errors.New("--stdin: stdin held no prompt")
 	}
-	return prompt, nil
+	return string(b), nil
 }
