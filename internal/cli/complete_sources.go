@@ -34,7 +34,7 @@ func described(c *cmdkit.CompleteContext, value, desc string) string {
 // place of the shell's binding.
 var completionSubject string
 
-func ariaCandidates(c *cmdkit.CompleteContext) []string { return fetchNames(c, "conversation") }
+func ariaCandidates(c *cmdkit.CompleteContext) []string { return fetchNames(c, "conversation", "log") }
 
 const (
 	idCandidatesBare  = 50
@@ -42,7 +42,7 @@ const (
 )
 
 func idCandidates(c *cmdkit.CompleteContext) []string {
-	return fetchNames(c, "conversation", "form")
+	return fetchNames(c, "conversation", "log", "form")
 }
 
 func fetchNames(c *cmdkit.CompleteContext, kinds ...string) []string {

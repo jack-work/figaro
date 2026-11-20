@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -52,6 +53,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			if meta, _ := h.angelus.Backend.Meta(info.ID); meta != nil {
 				entry.RetiredAt, entry.RetiredReason = meta.RetiredAtMS, meta.RetiredReason
 				entry.ReapedAt = meta.ReapedAtMS
+				entry.Kind, entry.TurnCount = meta.Kind, meta.TurnCount
 			}
 			h.fillFanout(&entry)
 		}
@@ -306,6 +308,8 @@ func (h *handlers) contextLimit(m *limitMemo, provider, model string) int {
 
 func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoResponse, limits *limitMemo) {
 	entry.MessageCount = meta.MessageCount
+	entry.TurnCount = meta.TurnCount
+	entry.Kind = meta.Kind
 	entry.TokensIn = meta.TokensIn
 	entry.TokensOut = meta.TokensOut
 	entry.CacheReadTokens = meta.CacheReadTokens
@@ -342,7 +346,9 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, vers map[string
 	entry.Parent = n.Parent
 	entry.Present = n.Present
 	entry.BranchedLT = n.BranchedLT
-	entry.Kind = n.Kind
+	if entry.Kind != form.KindLog {
+		entry.Kind = n.Kind
+	}
 	if n.Kind == string(outfitKind) {
 		entry.OutfitName = n.Outfit
 		entry.OutfitVer = h.outfitVer(vers, n.Version, n.Outfit)

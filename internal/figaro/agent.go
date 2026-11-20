@@ -407,6 +407,7 @@ func (a *Agent) refreshMetrics() {
 	contextTokens, contextExact := a.contextTokens, a.contextExact
 	a.mu.RUnlock()
 
+	kind := form.KindOf(a.Snapshot())
 	tail, hasTail := a.figLog.PeekTail()
 	if metricsLT > 0 && (!hasTail || tail.LT < metricsLT) {
 		a.refreshMetricsFrom(a.Context())
@@ -431,7 +432,7 @@ func (a *Agent) refreshMetrics() {
 		if !message.IsCeremonial(m) {
 			messageCount++
 		}
-		if m.Role == message.RoleOutput {
+		if store.CountsAsTurn(m, kind) {
 			turnCount++
 		}
 		metricsLT = e.LT
@@ -497,8 +498,9 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	contextTokens, contextExact := tokens.ContextSize(msgs)
 	turnCount := 0
 	var metricsLT uint64
+	kind := form.KindOf(a.Snapshot())
 	for _, m := range msgs {
-		if m.Role == message.RoleOutput {
+		if store.CountsAsTurn(m, kind) {
 			turnCount++
 		}
 		if m.LogicalTime > metricsLT {
