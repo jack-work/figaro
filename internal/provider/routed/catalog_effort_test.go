@@ -169,7 +169,10 @@ func TestCodeAssistWithoutAnEffortSectionStillFoldsTiers(t *testing.T) {
 	assert.False(t, ids["gemini-4-neon-high"])
 	sendModel(t, p, "gemini-4-neon", `"medium"`)
 	sendModel(t, p, "gemini-4-carbon-low", "")
-	assert.Equal(t, []string{"gemini-4-neon-medium", "gemini-4-carbon-low"}, f.models())
+	sendModel(t, p, "gemini-4-neon", "")
+	sendModel(t, p, "claude-opus-5-5", "")
+	assert.Equal(t, []string{"gemini-4-neon-medium", "gemini-4-carbon-low", "gemini-4-neon-medium", "claude-opus-5-5-medium"}, f.models(),
+		"a base with no effort set goes out as its middle tier, never as the bare base id upstream does not list")
 }
 
 func TestMapModelStillOverridesTheCatalog(t *testing.T) {

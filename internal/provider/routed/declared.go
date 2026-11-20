@@ -219,6 +219,9 @@ func (d *DeclaredProvider) Send(ctx context.Context, in provider.SendInput, bus 
 	if rawEffort == "" {
 		rawEffort = d.spec.Effort.DefaultRung
 	}
+	if rawEffort == "" && suffixed && len(rungs) > 0 {
+		rawEffort = rungs[(len(rungs)-1)/2]
+	}
 	if effort, ok := d.resolveEffort(rawEffort, rungs, matched); ok {
 		in.Snapshot = in.Snapshot.SetPath("system.thinking_effort", mustJSONString(effort))
 		if (d.outTmpl != nil || suffixed) && model != "" {
