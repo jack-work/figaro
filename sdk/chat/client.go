@@ -113,10 +113,7 @@ func (c *Client) Prompt(ctx context.Context, threadID, text string) (<-chan Even
 	if err != nil {
 		return nil, fmt.Errorf("send to %s: %w", threadID, err)
 	}
-	if active {
-		return nil, nil
-	}
-	return t.subscribe(ctx, &sub{after: uint64(cursor)}, nil), nil
+	return t.subscribe(ctx, &sub{after: uint64(cursor), steer: active}, nil), nil
 }
 
 func (c *Client) Resume(ctx context.Context, threadID string, from Cursor) (<-chan Event, error) {
@@ -617,7 +614,9 @@ func (t *thread) settle() {
 
 func (t *thread) finishWaiting(s *sub, now runState) {
 	cur := Cursor{Turn: s.after + 1}
-	if why, failed := strings.CutPrefix(now.reason, "error:"); failed {
+	if s.steer && len(s.replies) == 0 {
+		s.push(Event{}, true)
+	} else if why, failed := strings.CutPrefix(now.reason, "error:"); failed {
 		s.push(Event{Kind: Failed, Text: strings.TrimSpace(why), Cursor: cur}, true)
 	} else {
 		s.push(Event{Kind: End, Text: joinReplies(s.replies), Cursor: cur}, true)
@@ -702,7 +701,7 @@ func (t *thread) offer(s *sub, f *turnFold) {
 			return
 		}
 		s.replies = append(s.replies, e.Text)
-		if f.idle {
+		if f.idle || t.claimed(s, f.id) {
 			e.Text = joinReplies(s.replies)
 			s.push(e, true)
 			return
@@ -718,6 +717,15 @@ func (t *thread) offer(s *sub, f *turnFold) {
 			t.offer(s, next)
 		}
 	}
+}
+
+func (t *thread) claimed(by *sub, turn uint64) bool {
+	for s := range t.subs {
+		if s != by && s.steer && s.r == nil && !s.closed && s.after == turn {
+			return true
+		}
+	}
+	return false
 }
 
 func joinReplies(rs []string) string {
@@ -764,6 +772,7 @@ func (t *thread) pump(ctx context.Context, s *sub) {
 }
 
 type sub struct {
+	steer   bool
 	seq     uint64
 	quiet   bool
 	quietAt uint64
@@ -794,7 +803,9 @@ func (s *sub) push(e Event, last bool) {
 		s.mu.Unlock()
 		return
 	}
-	s.q = append(s.q, e)
+	if e.Kind != "" {
+		s.q = append(s.q, e)
+	}
 	s.closed = last
 	s.mu.Unlock()
 	select {

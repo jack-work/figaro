@@ -460,3 +460,38 @@ func TestANewTurnAnnouncedBeforeItsFramesStreamsWithoutARead(t *testing.T) {
 		t.Fatalf("events: %s", got)
 	}
 }
+
+func TestASteerTheRunningTurnAbsorbedClosesItsChannelEmpty(t *testing.T) {
+	th := newThread(New(transport.Endpoint{}), "x")
+	var rt runtimeFeed
+	th.readBack(rt.response("thinking", 2, "", 0))
+	first := th.subscribe(context.Background(), &sub{after: 1}, nil)
+	th.notify(rpc.MethodAriaFrame, frameJSON(liveProse(2, 0, "A")))
+	steer := th.subscribe(context.Background(), &sub{after: 2, steer: true}, nil)
+	th.notify(rpc.MethodFormDelta, rt.delta("idle", 2, "", 0))
+	if got := summary(drain(t, first)); got != `+"A" end:A` {
+		t.Fatalf("first: %s", got)
+	}
+	if got := summary(drain(t, steer)); got != "" {
+		t.Fatalf("steer: %s", got)
+	}
+}
+
+func TestASteerThatOpensItsOwnTurnCarriesThatReply(t *testing.T) {
+	th := newThread(New(transport.Endpoint{}), "x")
+	var rt runtimeFeed
+	th.readBack(rt.response("thinking", 2, "", 0))
+	first := th.subscribe(context.Background(), &sub{after: 1}, nil)
+	th.notify(rpc.MethodAriaFrame, frameJSON(liveProse(2, 0, "A")))
+	steer := th.subscribe(context.Background(), &sub{after: 2, steer: true}, nil)
+	th.notify(rpc.MethodFormDelta, rt.delta("idle", 2, "", 1))
+	th.notify(rpc.MethodFormDelta, rt.delta("thinking", 3, "", 0))
+	th.notify(rpc.MethodAriaFrame, frameJSON(liveProse(3, 0, "B")))
+	th.notify(rpc.MethodFormDelta, rt.delta("idle", 3, "", 0))
+	if got := summary(drain(t, first)); got != `+"A" end:A` {
+		t.Fatalf("first: %s", got)
+	}
+	if got := summary(drain(t, steer)); got != `+"B" end:B` {
+		t.Fatalf("steer: %s", got)
+	}
+}

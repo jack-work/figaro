@@ -115,7 +115,7 @@ func TestAToolCallStreamsBetweenTheProseAroundIt(t *testing.T) {
 	}
 }
 
-func TestAPromptDuringARunningTurnSteersAndReturnsNoChannel(t *testing.T) {
+func TestAPromptDuringATurnThatOpensAnotherGetsThatReply(t *testing.T) {
 	c, id, _ := thread(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -125,12 +125,32 @@ func TestAPromptDuringARunningTurnSteersAndReturnsNoChannel(t *testing.T) {
 	}
 	<-ch
 	steer, err := c.Prompt(ctx, id, "also this")
-	if err != nil || steer != nil {
+	if err != nil || steer == nil {
 		t.Fatalf("steer: %v %v", steer, err)
 	}
-	events := collect(t, ch, 30*time.Second)
-	if events[len(events)-1].Kind != chat.End {
-		t.Fatalf("events %s", kinds(events))
+	first := collect(t, ch, 30*time.Second)
+	if last := first[len(first)-1]; last.Kind != chat.End || strings.Contains(last.Text, "ok") {
+		t.Fatalf("first channel %s, last %+v", kinds(first), last)
+	}
+	second := collect(t, steer, 30*time.Second)
+	if last := second[len(second)-1]; last.Kind != chat.End || last.Text != "ok" || replyText(second) != "ok" {
+		t.Fatalf("steer channel %s %q", kinds(second), replyText(second))
+	}
+}
+
+func TestBackToBackPromptsEachGetTheirReply(t *testing.T) {
+	c, id, _ := thread(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	for i := range 25 {
+		ch, err := c.Prompt(ctx, id, "words 1 0")
+		if err != nil || ch == nil {
+			t.Fatalf("prompt %d: %v %v", i, ch, err)
+		}
+		events := collect(t, ch, 15*time.Second)
+		if last := events[len(events)-1]; last.Kind != chat.End || last.Text != "w0" {
+			t.Fatalf("prompt %d: %s %+v", i, kinds(events), last)
+		}
 	}
 }
 
@@ -354,13 +374,14 @@ func TestASteerBetweenRoundsStillStreamsTheNextRound(t *testing.T) {
 	}
 	var after []time.Time
 	var events []chat.Event
+	var steer <-chan chat.Event
 	ended := false
 	for e := range ch {
 		events = append(events, e)
 		switch {
 		case e.Kind == chat.ToolStart:
-			if _, err := c.Prompt(ctx, id, "also say hello"); err != nil {
-				t.Fatal(err)
+			if steer, err = c.Prompt(ctx, id, "also say hello"); err != nil || steer == nil {
+				t.Fatal(steer, err)
 			}
 		case e.Kind == chat.ToolEnd:
 			ended = true
@@ -373,6 +394,9 @@ func TestASteerBetweenRoundsStillStreamsTheNextRound(t *testing.T) {
 	}
 	if len(after) < 4 || after[len(after)-1].Sub(after[0]) < 200*time.Millisecond {
 		t.Fatalf("the round after the steer came in %d deltas: %s", len(after), kinds(events))
+	}
+	if absorbed := collect(t, steer, 30*time.Second); len(absorbed) != 0 {
+		t.Fatalf("the absorbed steer's channel carried %s", kinds(absorbed))
 	}
 }
 

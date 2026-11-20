@@ -21,7 +21,7 @@ has touched, plus one to the angelus.
 | call | does |
 |---|---|
 | `Open(ctx, root) (thread, error)` | forks `root` into a new aria and returns its id. The root needs `system.fanout.max_children` above 0. Store the id; it is the thread. |
-| `Prompt(ctx, thread, text) (<-chan Event, error)` | sends `text`. If a turn is already running the text steers it and the channel is nil. Otherwise the channel carries the reply. |
+| `Prompt(ctx, thread, text) (<-chan Event, error)` | sends `text`; the channel carries its reply. If a turn is already running the text steers it: when that turn takes the text in, the channel closes with no events once the turn ends, and the reply arrives on the running turn's channel; when the text waits for a turn of its own, the channel carries that turn. |
 | `Resume(ctx, thread, cursor) (<-chan Event, error)` | replays the turn named by `cursor` from the point the cursor counts, then follows it live. A turn past the newest fails at once. |
 | `Cancel(ctx, thread) error` | interrupts the running turn. |
 | `History(ctx, thread, before, limit) (History, error)` | up to `limit` (0 means 20) turns older than turn `before` (0 means newest), oldest first. `More` says older turns exist: pass `Turns[0].ID` as the next `before`. |
@@ -56,9 +56,10 @@ type Event struct {
   keeps it, and History holds what the daemon kept.
 
 A reply can span turns: when the daemon finishes a turn with a prompt still
-queued for the aria (a steer that arrived too late to join, or a resume after
-a daemon restart), the channel continues into the next turn, starting with a
-blank line, and ends when the aria goes idle.
+queued for the aria and no steer channel of this client is waiting for it (a
+resume after a daemon restart, a prompt sent from elsewhere), the channel
+continues into the next turn, starting with a blank line, and ends when the
+aria goes idle.
 
 ## Cancellation and lifetime
 
