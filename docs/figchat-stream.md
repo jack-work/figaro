@@ -52,6 +52,8 @@ type Event struct {
   the `end` text; a `Resume` channel's deltas are the part after the cursor.
 - `tool.start` is sent once the call's arguments are whole (or the tool has
   finished, or the model has moved past it). `Args` is the arguments as JSON.
+  A call with no arguments looks the same as one whose arguments have not
+  streamed yet, so it starts only when it finishes or the model moves on.
 - `tool.end` carries `Result` (the output) and `Error` (empty on success).
   Tool ids are `"<turn>.<node>"`, stable across resumes and in History.
   Args and Result are clipped to `MaxToolText` (4 KiB) with a trailing `…`.
