@@ -354,6 +354,9 @@ func (in *interactiveInput) turnDone(params json.RawMessage) {
 		if in.prompt != "" && in.sendCursor >= 0 {
 			in.turnFailed = true
 		}
+		if in.prompt == "" {
+			in.offerLoginLocked(d.Reason)
+		}
 	}
 	in.lt.finishTurn(d.Reason)
 	if in.prompt == "" {

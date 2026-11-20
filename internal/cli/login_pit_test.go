@@ -419,3 +419,71 @@ func TestNonTTYProviderLoginPointsToNonInteractiveCredentials(t *testing.T) {
 		}
 	}
 }
+
+func failTurn(in *interactiveInput, reason string) {
+	in.mu.Lock()
+	in.offerLoginLocked(reason)
+	in.mu.Unlock()
+}
+
+func focusedRow(in *interactiveInput) string {
+	p := in.lt.tr.pit.list()
+	if p == nil || p.cursor < 0 || p.cursor >= len(p.rows) {
+		return ""
+	}
+	return p.rows[p.cursor].id
+}
+
+// Gluck, 11-20: login lives in the pager. A turn that fails for want of a
+// sign-in opens the login pit on that provider, once, and starts nothing.
+func TestATurnThatNeedsASignInOpensTheLoginPitOnItsProvider(t *testing.T) {
+	list := func() ([]loginProvider, string) {
+		return []loginProvider{{name: "anthropic", state: "not signed in"}, {name: "copilot", state: "not signed in"}}, ""
+	}
+	in, _ := loginRig(t, loginBackend{list: list})
+	failTurn(in, "error: copilot is not signed in: type :login, or run figaro provider login copilot")
+	in.eventually(t, "the pit opens on copilot", func(tr *transcript, s *loginSession) bool {
+		return tr.showing(pitLogin) && s.listed && focusedRow(in) == loginRowID("copilot")
+	})
+	in.mu.Lock()
+	started := in.login.flow != nil
+	in.lt.tr.closePanels()
+	in.mu.Unlock()
+	if started {
+		t.Fatal("a failed turn started a sign-in nobody asked for")
+	}
+	failTurn(in, "error: copilot is not signed in: type :login, or run figaro provider login copilot")
+	in.mu.Lock()
+	again := in.lt.tr.showing(pitLogin)
+	in.mu.Unlock()
+	if again {
+		t.Fatal("the pit opened a second time after it was closed")
+	}
+}
+
+func TestATurnThatFailsForAnotherReasonOpensNoLoginPit(t *testing.T) {
+	in, _ := loginRig(t, loginBackend{list: oneProvider("not signed in", false)})
+	failTurn(in, "error: the provider is down")
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.lt.tr.showing(pitLogin) {
+		t.Fatal("a provider outage opened the login pit")
+	}
+}
+
+func TestSignInWantedReadsTheProviderOffTheReason(t *testing.T) {
+	for reason, want := range map[string]string{
+		"error: copilot is not signed in: type :login, or run figaro provider login copilot": "copilot",
+		"error: no provider signed in: type :login, or run figaro provider login anthropic":  "anthropic",
+		"error: anthropic: sign-in expired, run: figaro provider login anthropic":            "anthropic",
+		"error: resolve token: no credential available for \"meta\" (hush holds none)":       "",
+	} {
+		got, ok := signInWanted(reason)
+		if !ok || got != want {
+			t.Errorf("%q: got %q %v, want %q", reason, got, ok, want)
+		}
+	}
+	if _, ok := signInWanted("error: the provider is down"); ok {
+		t.Error("an outage read as a sign-in")
+	}
+}
