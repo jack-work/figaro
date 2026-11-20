@@ -734,7 +734,8 @@ func (t *thread) offer(s *sub, f *turnFold) {
 			return
 		}
 		s.replies = append(s.replies, e.Text)
-		if f.idle || t.claimed(s, f.id) {
+		follows := !f.idle || !s.resumed && t.folds[f.id+1] != nil
+		if !follows || t.claimed(s, f.id) {
 			e.Text = joinReplies(s.replies)
 			s.push(e, true)
 			return

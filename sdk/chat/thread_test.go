@@ -43,7 +43,7 @@ func drain(t *testing.T, ch <-chan Event) []Event {
 
 func TestAFinishedTurnReadBackEndsWithoutRunningIntoLaterTurns(t *testing.T) {
 	th := newThread(New(transport.Endpoint{}), "x")
-	ch := th.subscribe(context.Background(), &sub{after: 1, r: newReader(Cursor{Turn: 2, Text: 1})}, nil)
+	ch := th.subscribe(context.Background(), &sub{after: 1, r: newReader(Cursor{Turn: 2, Text: 1}), resumed: true}, nil)
 	var rt runtimeFeed
 	th.readBack(rt.response("idle", 3, "", 0), sealedTurn(2, "ab"), sealedTurn(3, "later"))
 	if got := summary(drain(t, ch)); got != `+"b" end:ab` {
@@ -67,7 +67,7 @@ more` {
 func TestReadingBackManyTurnsKeepsTheOneAListenerResumes(t *testing.T) {
 	for range 50 {
 		th := newThread(New(transport.Endpoint{}), "x")
-		ch := th.subscribe(context.Background(), &sub{after: 1, r: newReader(Cursor{Turn: 2, Text: 1})}, nil)
+		ch := th.subscribe(context.Background(), &sub{after: 1, r: newReader(Cursor{Turn: 2, Text: 1}), resumed: true}, nil)
 		var parts []aria.TurnPart
 		for id := uint64(2); id <= 9; id++ {
 			parts = append(parts, sealedTurn(id, "ab"))
@@ -741,5 +741,21 @@ func TestAWaitHoldsWhileAPromptIsStillQueued(t *testing.T) {
 	}
 	if got := summary(events); got != `+"b"` {
 		t.Fatalf("events: %s", got)
+	}
+}
+
+func TestALiveChannelCarriesOnIntoATurnThatFinishedDuringAnOutage(t *testing.T) {
+	th := newThread(New(transport.Endpoint{}), "x")
+	var rt runtimeFeed
+	th.readBack(rt.response("thinking", 2, "", 0))
+	ch := th.subscribe(context.Background(), &sub{after: 1}, nil)
+	th.feed(liveProse(2, 0, "w0 w1"))
+	th.mu.Lock()
+	th.folds = map[uint64]*turnFold{}
+	th.mu.Unlock()
+	th.readBack(rt.response("idle", 3, "", 0), sealedTurn(2, "w0"), sealedTurn(3, "ok"))
+	events := drain(t, ch)
+	if last := events[len(events)-1]; text(events) != "w0 w1\n\nok" || last.Kind != End || last.Text != text(events) {
+		t.Fatalf("events: %s", summary(events))
 	}
 }

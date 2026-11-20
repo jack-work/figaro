@@ -480,7 +480,7 @@ func TestADaemonKilledMidReplyNeverTakesShownTextBack(t *testing.T) {
 	events = append(events, collect(t, ch, time.Minute)...)
 	last := events[len(events)-1]
 	got := replyText(events)
-	if last.Kind != chat.End || !strings.HasPrefix(got, seen) || last.Text != got {
+	if last.Kind != chat.End || !strings.HasPrefix(got, seen) || !strings.HasSuffix(got, "\n\nok") || last.Text != got {
 		t.Fatalf("shown before the kill %q\nin all %q\nend %+v", seen, got, last)
 	}
 }

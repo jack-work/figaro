@@ -70,7 +70,9 @@ A reply can span turns: when the daemon finishes a turn with a prompt still
 queued for the aria and no steer channel of this client is waiting for it (a
 resume after a daemon restart, a prompt sent from elsewhere), the channel
 continues into the next turn, starting with a blank line, and ends when the
-aria goes idle.
+aria goes idle. A `Prompt` channel that loses its connection mid-reply also
+carries on into turns that ran and finished while it was away; a `Resume`
+channel does not.
 
 ## Cancellation and lifetime
 
