@@ -16,12 +16,9 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
-// Client speaks for one consumer to one figaro daemon. Safe for concurrent use.
 type Client struct {
 	ep transport.Endpoint
 
-	// ReconnectFor bounds how long a thread with listeners retries a lost
-	// connection before failing them.
 	ReconnectFor time.Duration
 
 	mu      sync.Mutex
@@ -86,7 +83,6 @@ func (c *Client) tryAngelus(fn func(*sdk.Angelus) error) error {
 	return fn(a)
 }
 
-// Open forks root into a new thread aria and returns its id.
 func (c *Client) Open(ctx context.Context, root string) (string, error) {
 	var id string
 	err := c.withAngelus(ctx, func(a *sdk.Angelus) error {
@@ -100,10 +96,6 @@ func (c *Client) Open(ctx context.Context, root string) (string, error) {
 	return id, err
 }
 
-// Prompt sends text to the thread. When a turn was already running the text
-// steers it and the channel is nil. Otherwise the channel carries the reply
-// and closes after End or Failed; cancelling ctx ends the subscription, not
-// the turn.
 func (c *Client) Prompt(ctx context.Context, threadID, text string) (<-chan Event, error) {
 	t, conn, err := c.thread(ctx, threadID)
 	if err != nil {
@@ -119,8 +111,6 @@ func (c *Client) Prompt(ctx context.Context, threadID, text string) (<-chan Even
 	return t.subscribe(ctx, &sub{after: uint64(cursor)}, nil), nil
 }
 
-// Resume replays the turn named by from, past what the cursor counts, then
-// follows it live to End or Failed.
 func (c *Client) Resume(ctx context.Context, threadID string, from Cursor) (<-chan Event, error) {
 	if from.Turn == 0 {
 		return nil, errors.New("chat: resume needs a cursor with a turn")
@@ -132,7 +122,6 @@ func (c *Client) Resume(ctx context.Context, threadID string, from Cursor) (<-ch
 	return t.subscribe(ctx, &sub{after: from.Turn - 1, r: newReader(from)}, []uint64{from.Turn}), nil
 }
 
-// Cancel interrupts the thread's running turn.
 func (c *Client) Cancel(ctx context.Context, threadID string) error {
 	_, conn, err := c.thread(ctx, threadID)
 	if err != nil {
@@ -310,8 +299,6 @@ func (t *thread) notify(method string, params json.RawMessage) {
 	}
 }
 
-// process folds one note; false when it opened a gap and later notes must
-// wait for the resync. Caller holds t.mu.
 func (t *thread) process(n note) bool {
 	if n.done != nil {
 		f := t.folds[t.top]
@@ -440,7 +427,6 @@ func (t *thread) seed(conn *sdk.Aria, turns []uint64) {
 	}
 }
 
-// readTurns pages forward from turn to the live tail.
 func readTurns(ctx context.Context, conn *sdk.Aria, turn uint64) ([]aria.TurnPart, error) {
 	var out []aria.TurnPart
 	at := aria.Anchor{Turn: turn}
@@ -488,7 +474,6 @@ func (t *thread) deliver(f *turnFold) {
 	}
 }
 
-// offer advances one subscriber over a fold. Caller holds t.mu.
 func (t *thread) offer(s *sub, f *turnFold) {
 	if s.closed {
 		return

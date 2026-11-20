@@ -19,8 +19,6 @@ type Turn struct {
 	Cursor Cursor    `json:"cursor"`
 }
 
-// History is oldest first. More says older turns exist: pass Turns[0].ID as
-// the next before.
 type History struct {
 	Turns []Turn `json:"turns"`
 	More  bool   `json:"more"`
@@ -31,8 +29,6 @@ const (
 	historyTurns = 20
 )
 
-// History reads up to limit turns older than before; before 0 is the newest,
-// limit 0 is 20.
 func (c *Client) History(ctx context.Context, threadID string, before uint64, limit int) (History, error) {
 	_, conn, err := c.thread(ctx, threadID)
 	if err != nil {

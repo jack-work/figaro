@@ -1,6 +1,3 @@
-// Package chat streams a figaro aria's replies as chat events: text deltas,
-// tool calls and turn ends, resumable from a cursor. docs/figchat-stream.md
-// is the contract.
 package chat
 
 type Kind string
@@ -21,9 +18,6 @@ type Tool struct {
 	Error  string `json:"error,omitempty"`
 }
 
-// Cursor is how much of a turn a consumer has been given. Text counts bytes
-// of the turn's reply text; Started and Ended count tool events, which are
-// released in the order their tools appear in the turn.
 type Cursor struct {
 	Turn    uint64 `json:"turn"`
 	Text    int    `json:"text"`
@@ -31,8 +25,6 @@ type Cursor struct {
 	Ended   int    `json:"ended"`
 }
 
-// Event.Cursor is the position after the event; Resume from it continues
-// with the next one.
 type Event struct {
 	Kind   Kind   `json:"kind"`
 	Text   string `json:"text,omitempty"`
