@@ -34,6 +34,13 @@ principals = ["user:UID", "user:gluck@issuer.test.figaro"]
 [[bind]]
 role = "guest"
 principals = ["user:ana@issuer.test.figaro"]
+
+[roles.gateway]
+permissions = ["read:*", "listen:*", "send:*", "fork:*", "use:sandbox:local"]
+
+[[bind]]
+role = "gateway"
+principals = ["service:figchat-gateway@issuer.test.figaro"]
 `
 
 type onBehalfRig struct {
@@ -134,10 +141,6 @@ func TestADelegateIsRefusedWhatTheUserMayDo(t *testing.T) {
 	r := onBehalfDoor(t)
 	c, _, err := r.as(t, "figchat-gateway", "gluck")
 	require.NoError(t, err)
-
-	owner, _, err := forge(t, r.path, http.Header{"Authorization": {"Bearer " + r.mint("figchat-gateway")}})
-	require.Error(t, err, "without the header the service is only itself, and it is bound to no role")
-	require.Nil(t, owner)
 
 	for name, call := range map[string]struct {
 		method string

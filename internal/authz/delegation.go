@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"unicode"
 
 	"github.com/jack-work/figaro/api/form"
@@ -27,12 +28,42 @@ func refuseDelegation(format string, args ...any) error {
 	return &DelegationError{reason: fmt.Sprintf(format, args...)}
 }
 
+type delegationTable map[jkauthz.Principal]map[jkauthz.Principal]bool
+
 type Delegations struct {
-	users map[jkauthz.Principal]map[jkauthz.Principal]bool
+	table atomic.Pointer[delegationTable]
 }
 
 func NewDelegations(cfgs []config.DelegationConfig) (*Delegations, error) {
-	d := &Delegations{users: map[jkauthz.Principal]map[jkauthz.Principal]bool{}}
+	d := &Delegations{}
+	return d, d.Reload(cfgs)
+}
+
+func (d *Delegations) users() delegationTable {
+	if d == nil {
+		return nil
+	}
+	if t := d.table.Load(); t != nil {
+		return *t
+	}
+	return nil
+}
+
+func (d *Delegations) permits(service, user jkauthz.Principal) bool {
+	return d.users()[service][user]
+}
+
+func (d *Delegations) Reload(cfgs []config.DelegationConfig) error {
+	table, err := compileDelegations(cfgs)
+	if err != nil {
+		return err
+	}
+	d.table.Store(&table)
+	return nil
+}
+
+func compileDelegations(cfgs []config.DelegationConfig) (delegationTable, error) {
+	d := struct{ users delegationTable }{delegationTable{}}
 	for i, c := range cfgs {
 		svc, err := jkauthz.ParsePrincipal(c.Principal)
 		if err != nil {
@@ -61,7 +92,7 @@ func NewDelegations(cfgs []config.DelegationConfig) (*Delegations, error) {
 		}
 		d.users[svc] = allowed
 	}
-	return d, nil
+	return d.users, nil
 }
 
 func scopeOfPrincipal(p jkauthz.Principal) (string, bool) {
@@ -72,12 +103,13 @@ func scopeOfPrincipal(p jkauthz.Principal) (string, bool) {
 	return p.ID[at+1:], true
 }
 
-func (d *Delegations) Empty() bool { return d == nil || len(d.users) == 0 }
+func (d *Delegations) Empty() bool { return len(d.users()) == 0 }
 
 type delegated struct {
 	service jkauthz.Principal
 	user    jkauthz.Principal
 	name    string
+	from    *Delegations
 }
 
 func (d *Delegations) Apply(ctx context.Context, name string) (context.Context, error) {
@@ -95,7 +127,7 @@ func (d *Delegations) Apply(ctx context.Context, name string) (context.Context, 
 	if d.Empty() {
 		return nil, refuseDelegation("this node lists no service that may act for a user ([[authz.delegation]]), so %s acts only as itself: drop %s", svc.Principal, DelegateHeader)
 	}
-	allowed, listed := d.users[svc.Principal]
+	allowed, listed := d.users()[svc.Principal]
 	if !listed {
 		return nil, refuseDelegation("%s is not listed to act for a user ([[authz.delegation]])", svc.Principal)
 	}
@@ -107,7 +139,7 @@ func (d *Delegations) Apply(ctx context.Context, name string) (context.Context, 
 	if !allowed[user] {
 		return nil, refuseDelegation("%s is not listed to act for %s", svc.Principal, user)
 	}
-	c.onBehalf = &delegated{service: svc.Principal, user: user, name: name}
+	c.onBehalf = &delegated{service: svc.Principal, user: user, name: name, from: d}
 	return context.WithValue(ctx, callerKey{}, c), nil
 }
 
@@ -170,7 +202,10 @@ func (d delegated) refuses(method string, params json.RawMessage) error {
 	switch method {
 	case rpc.MethodQua:
 		var req rpc.QuaRequest
-		if json.Unmarshal(params, &req) != nil || req.Form == nil {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return fmt.Errorf("%s: a delegated call's params must decode: %w", method, err)
+		}
+		if req.Form == nil {
 			return nil
 		}
 		if (req.Form.Patch != nil && !req.Form.Patch.IsIdentity()) || len(req.Form.Outfits) > 0 || len(writtenContext(req.Form.Context)) > 0 {
@@ -178,8 +213,8 @@ func (d delegated) refuses(method string, params json.RawMessage) error {
 		}
 	case rpc.MethodFork:
 		var req rpc.ForkRequest
-		if json.Unmarshal(params, &req) != nil {
-			return nil
+		if err := json.Unmarshal(params, &req); err != nil {
+			return fmt.Errorf("%s: a delegated call's params must decode: %w", method, err)
 		}
 		if (req.Patch != nil && !req.Patch.IsIdentity()) || len(req.Outfits) > 0 || req.Seat != "" || req.Abdicates {
 			return fmt.Errorf("%s: %s acts for %s and may fork as is: no patch, outfits, seat or abdication", method, d.service, d.user)
@@ -201,7 +236,10 @@ func writtenContext(m map[string]json.RawMessage) map[string]json.RawMessage {
 func pinnedToDelegate(ctx context.Context, params json.RawMessage) json.RawMessage {
 	c, _ := ctx.Value(callerKey{}).(caller)
 	if c.onBehalf == nil {
-		return params
+		if c.session == nil && c.key == nil {
+			return params
+		}
+		return withoutLabel(params)
 	}
 	fields := map[string]json.RawMessage{}
 	if len(params) > 0 && string(params) != "null" {
@@ -212,6 +250,28 @@ func pinnedToDelegate(ctx context.Context, params json.RawMessage) json.RawMessa
 	delete(fields, rpc.CallerKey)
 	label, _ := json.Marshal(rpc.CallerRef{Label: c.onBehalf.name})
 	fields[rpc.CallerLabelKey] = label
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return params
+	}
+	return out
+}
+
+func withoutLabel(params json.RawMessage) json.RawMessage {
+	ref := rpc.CallerRefOf(params)
+	if ref == nil || ref.Label == "" {
+		return params
+	}
+	fields := map[string]json.RawMessage{}
+	if json.Unmarshal(params, &fields) != nil {
+		return params
+	}
+	if ref.Duke {
+		kept, _ := json.Marshal(rpc.CallerRef{Duke: true})
+		fields[rpc.CallerLabelKey] = kept
+	} else {
+		delete(fields, rpc.CallerLabelKey)
+	}
 	out, err := json.Marshal(fields)
 	if err != nil {
 		return params

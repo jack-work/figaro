@@ -80,6 +80,13 @@ permissions = ["*:owner:self"]
 role = "self"
 principals = ["user:stranger@issuer.test.figaro"]
 
+[roles.gateway]
+permissions = ["read:*", "listen:*", "send:*", "fork:*", "use:sandbox:local"]
+
+[[bind]]
+role = "gateway"
+principals = ["service:gateway@issuer.test.figaro"]
+
 [roles.decider]
 permissions = ["decide:outfit:mock"]
 

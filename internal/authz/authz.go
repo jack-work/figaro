@@ -194,6 +194,9 @@ func SubjectOf(ctx context.Context) (jkauthz.Subject, error) {
 	if err != nil || c.onBehalf == nil {
 		return s, err
 	}
+	if !c.onBehalf.from.permits(c.onBehalf.service, c.onBehalf.user) {
+		return jkauthz.Subject{}, refuseDelegation("%s is no longer listed to act for %s", c.onBehalf.service, c.onBehalf.user)
+	}
 	return c.onBehalf.subject(), nil
 }
 

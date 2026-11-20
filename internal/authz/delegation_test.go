@@ -139,7 +139,67 @@ permissions = ["*:*"]
 [[bind]]
 role = "owner"
 principals = ["`+gluckText+`"]
+
+[roles.gateway]
+permissions = ["read:*", "listen:*", "send:*", "fork:*", "use:sandbox:local"]
+
+[[bind]]
+role = "gateway"
+principals = ["`+gatewayText+`"]
 `)
+}
+
+func TestADelegateIsNoWiderThanTheServiceItself(t *testing.T) {
+	p := loaded(t, `
+[roles.owner]
+permissions = ["*:*"]
+
+[roles.narrow]
+permissions = ["read:aria:aaaa0002"]
+
+[[bind]]
+role = "owner"
+principals = ["`+gluckText+`"]
+
+[[bind]]
+role = "narrow"
+principals = ["`+gatewayText+`"]
+`)
+	ctx, err := delegationsFor(t, gluckText).Apply(gatewaySession(t), "gluck")
+	require.NoError(t, err)
+	sub, err := SubjectOf(ctx)
+	require.NoError(t, err)
+	require.True(t, p.Allow(sub, rpc.VerbRead, Aria("aaaa0002")).Allowed)
+	for _, verb := range []rpc.Verb{rpc.VerbSend, rpc.VerbFork, rpc.VerbListen} {
+		d := p.Allow(sub, verb, Aria("aaaa0002"))
+		require.False(t, d.Allowed, verb)
+		require.Contains(t, d.Reason(), "itself may not")
+	}
+	require.False(t, p.Allow(sub, rpc.VerbRead, Aria("aaaa0001")).Allowed)
+	none := loaded(t, "[roles.owner]\npermissions = [\"*:*\"]\n[[bind]]\nrole = \"owner\"\nprincipals = [\""+gluckText+"\"]\n")
+	require.False(t, none.Allow(sub, rpc.VerbSend, Aria("aaaa0002")).Allowed, "a service the policy does not name holds nothing")
+}
+
+func TestARemovedDelegationEndsALiveDelegatedConnection(t *testing.T) {
+	d := delegationsFor(t, gluckText)
+	ctx, err := d.Apply(gatewaySession(t), "gluck")
+	require.NoError(t, err)
+	_, err = SubjectOf(ctx)
+	require.NoError(t, err)
+	require.NoError(t, d.Reload(nil))
+	_, err = SubjectOf(ctx)
+	require.ErrorContains(t, err, "no longer listed")
+}
+
+func TestOnlyADelegatedCallerHasASenderLabel(t *testing.T) {
+	plain := gatewaySession(t)
+	raw := json.RawMessage(`{"x-caller":{"label":"gluck"}}`)
+	require.Equal(t, "", rpc.SenderFrom(pinnedToDelegate(plain, raw), nil), "a service typing the name is not the delegated user")
+	duke := pinnedToDelegate(plain, json.RawMessage(`{"x-caller":{"duke":true,"label":"x"}}`))
+	require.Equal(t, rpc.DefaultDukeTitle, rpc.SenderFrom(duke, nil))
+	ctx, err := delegationsFor(t, gluckText).Apply(plain, "gluck")
+	require.NoError(t, err)
+	require.Equal(t, "gluck", rpc.SenderFrom(pinnedToDelegate(ctx, raw), nil))
 }
 
 func TestADelegateHoldsTheUsersGrantsOnlyForTheCeilingVerbs(t *testing.T) {
