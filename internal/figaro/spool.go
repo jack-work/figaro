@@ -54,6 +54,7 @@ type spooledPrompt struct {
 	At       int64             `json:"at,omitempty"`
 	Resume   bool              `json:"resume,omitempty"`
 	Keys     []string          `json:"keys,omitempty"`
+	Entry    bool              `json:"entry,omitempty"`
 }
 
 type spooledSegment struct {
@@ -189,7 +190,7 @@ func (s *Spool) Arias() ([]string, error) {
 }
 
 func spooled(e event) spooledPrompt {
-	p := spooledPrompt{Text: e.text, Images: e.images, Form: e.form, At: e.at, Resume: e.resume, Keys: e.keys}
+	p := spooledPrompt{Text: e.text, Images: e.images, Form: e.form, At: e.at, Resume: e.resume, Keys: e.keys, Entry: e.entry}
 	for _, s := range e.segments {
 		p.Segments = append(p.Segments, spooledSegment{Sender: s.sender, Principal: s.principal, Text: s.text, Notice: s.notice, Delivery: s.delivery})
 	}
@@ -197,7 +198,7 @@ func spooled(e event) spooledPrompt {
 }
 
 func (p spooledPrompt) event() event {
-	e := event{typ: eventUserPrompt, text: p.Text, images: p.Images, form: p.Form, at: p.At, resume: p.Resume, keys: p.Keys}
+	e := event{typ: eventUserPrompt, text: p.Text, images: p.Images, form: p.Form, at: p.At, resume: p.Resume, keys: p.Keys, entry: p.Entry}
 	for _, s := range p.Segments {
 		e.segments = append(e.segments, promptSegment{sender: s.Sender, principal: s.Principal, text: s.Text, notice: s.Notice, delivery: s.Delivery})
 	}
