@@ -149,6 +149,26 @@ func (c *Client) Resume(ctx context.Context, threadID string, from Cursor) (<-ch
 	return t.subscribe(ctx, &sub{after: from.Turn - 1, r: newReader(from), resumed: true}, []uint64{from.Turn}), nil
 }
 
+func (c *Client) Follow(ctx context.Context, threadID string, from Cursor) (<-chan Event, error) {
+	t, conn, release, err := c.thread(ctx, threadID, true)
+	defer release()
+	if err != nil {
+		return nil, err
+	}
+	if from.Turn > 0 {
+		return t.subscribe(ctx, &sub{follow: true, after: from.Turn - 1, r: newReader(from)}, []uint64{from.Turn}), nil
+	}
+	page, err := conn.ReadBefore(ctx, aria.Anchor{}, 1)
+	if err != nil {
+		return nil, fmt.Errorf("find the newest turn of %s: %w", threadID, err)
+	}
+	var newest uint64
+	for _, p := range page.Parts {
+		newest = max(newest, p.ID)
+	}
+	return t.subscribe(ctx, &sub{follow: true, fromNow: true, after: newest}, nil), nil
+}
+
 func (c *Client) Cancel(ctx context.Context, threadID string) error {
 	_, conn, release, err := c.thread(ctx, threadID, false)
 	defer release()
@@ -670,7 +690,7 @@ func (t *thread) settle() {
 				continue
 			}
 		}
-		if s.r != nil || s.closed {
+		if s.r != nil || s.closed || s.follow {
 			continue
 		}
 		if now.settled() && now.turn <= s.after && t.rt.ver > s.rtVer {
@@ -716,6 +736,9 @@ func (t *thread) subscribe(ctx context.Context, s *sub, seed []uint64) <-chan Ev
 	s.exited = make(chan struct{})
 	t.mu.Lock()
 	s.rtVer = t.rt.ver
+	if s.fromNow {
+		s.after = max(s.after, t.rt.state().turn, t.top)
+	}
 	t.subSeq++
 	s.seq = t.subSeq
 	t.subs[s] = struct{}{}
@@ -765,7 +788,22 @@ func (t *thread) offer(s *sub, f *turnFold) {
 	if f.id != s.r.cur.Turn {
 		return
 	}
+	if s.follow && !s.r.cur.Begun {
+		if !f.headed() {
+			return
+		}
+		s.r.cur.Begun = true
+		s.push(Event{Kind: TurnStart, Text: f.inquiry, Sender: f.sender, Cursor: s.r.cur}, false)
+	}
 	s.r.advance(f, func(e Event) {
+		if s.follow {
+			if e.Kind == End || e.Kind == Failed {
+				e.Cursor = Cursor{Turn: f.id + 1}
+				s.after, s.r = f.id, nil
+			}
+			s.push(e, false)
+			return
+		}
 		if e.Kind != End {
 			s.push(e, e.Kind == Failed)
 			return
@@ -913,6 +951,8 @@ func (t *thread) pump(ctx context.Context, s *sub) {
 
 type sub struct {
 	steer   bool
+	follow  bool
+	fromNow bool
 	seq     uint64
 	quiet   bool
 	quietAt uint64
@@ -1001,7 +1041,7 @@ func (t *thread) watchdog() {
 		conn, gen, seq := t.conn, t.gen, t.subSeq
 		waiting := false
 		for s := range t.subs {
-			waiting = waiting || s.r == nil
+			waiting = waiting || s.r == nil && !s.follow
 		}
 		if !alive(conn) {
 			t.conn = nil
@@ -1045,7 +1085,7 @@ func (t *thread) check(conn ariaConn, gen, seq uint64, waiting bool) {
 			t.want[s.after+1] = true
 			t.startSync()
 		}
-		if s.r != nil || s.closed || s.seq > seq || s.after < now.turn || !quiet {
+		if s.r != nil || s.closed || s.follow || s.seq > seq || s.after < now.turn || !quiet {
 			s.quiet = false
 			continue
 		}

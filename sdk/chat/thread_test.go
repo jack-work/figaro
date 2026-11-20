@@ -234,6 +234,7 @@ type fakeConn struct {
 	turns     []aria.TurnPart
 	runtime   *rpc.FormResponse
 	formFails int
+	dormant   bool
 	queue     *rpc.FormResponse
 	hangAfter int
 	pageSize  int
@@ -288,6 +289,11 @@ func (f *fakeConn) Read(ctx context.Context, at aria.Anchor, _ int) (aria.Page, 
 }
 
 func (f *fakeConn) ReadBefore(context.Context, aria.Anchor, int) (aria.Page, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if n := len(f.turns); n > 0 {
+		return aria.Page{Parts: f.turns[n-1:]}, nil
+	}
 	return aria.Page{}, nil
 }
 
@@ -302,6 +308,9 @@ func (f *fakeConn) FormOf(ctx context.Context, name string) (*rpc.FormResponse, 
 		}
 	}
 	defer f.mu.Unlock()
+	if f.dormant && name == "runtime" {
+		return nil, &jkrpc.Error{Code: rpc.ErrCodeIntrinsicDormant, Message: "dormant"}
+	}
 	if f.formFails > 0 {
 		f.formFails--
 		return nil, errors.New("fake: busy")
