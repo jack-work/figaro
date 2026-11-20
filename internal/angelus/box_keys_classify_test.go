@@ -29,6 +29,7 @@ var boxInertOpenKeys = map[string]string{
 	"x-internal-figaro-id": "an rpc param, not a board key",
 	"x-caller":             "an rpc param, not a board key",
 
+	"lifecycle.status":                                 "routing-alias only withdraws a role's delegation; unset, the role delegates no more than the owner wrote in system.delegate",
 	"anthropic-ratelimit-unified-status":               "an HTTP response header, not a board key",
 	"anthropic-ratelimit-unified-reset":                "an HTTP response header, not a board key",
 	"anthropic-ratelimit-unified-representative-claim": "an HTTP response header, not a board key",

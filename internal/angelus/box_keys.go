@@ -501,7 +501,12 @@ func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before for
 		}
 		return h.refuseMintByLabelAlone(ctx, line, before, after)
 	}
+	var delegated []delegatedWrite
 	for _, p := range writtenPaths(before, *patch, after) {
+		if w, ok := h.delegation(ctx, c, line, p); ok {
+			delegated = append(delegated, w)
+			continue
+		}
 		if k, ok := form.Protected(p); ok && c.lineage {
 			if err := h.refuseProtected(ctx, c, line, k, before); err != nil {
 				return err
@@ -527,7 +532,11 @@ func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before for
 	if err := h.refuseQuotaBeyondBudget(ctx, line, before, after); err != nil {
 		return err
 	}
-	return h.refuseMintBeyondGranter(ctx, before, after)
+	if err := h.refuseMintBeyondGranter(ctx, before, after); err != nil {
+		return err
+	}
+	auditDelegatedWrites(delegated, before, after)
+	return nil
 }
 
 func (h *handlers) refuseQuotaByLabelAlone(ctx context.Context, line lineage, before, after form.Snapshot) error {
