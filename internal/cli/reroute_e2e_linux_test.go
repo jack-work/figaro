@@ -109,3 +109,36 @@ func TestRerouteIsForTheOwnerAndAFigaroHoldingWholeSet(t *testing.T) {
 		t.Fatalf("the delegated reroute landed on %q", got)
 	}
 }
+
+// review-lane-usability-1 #3: a figaro born on the configured default wears
+// its name, default_kic here; a delegate holding whole set reroutes it
+// without a grant for that outfit, since only the route is read.
+func TestADelegateReroutesAFigaroBornOnANamedDefault(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns a daemon; skipped under -short")
+	}
+	r := newRestartRig(t)
+	r.enforceAll()
+	r.outfit("default_kic", "[system]\nprovider = \"anthropic\"\nmodel = \"claude-opus-4-5\"\n")
+	config := filepath.Join(r.root, "config", "config.toml")
+	raw, err := os.ReadFile(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config, []byte(strings.Replace(string(raw), `default_outfit = "default"`, `default_outfit = "default_kic"`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	parent := r.newEmptyAria()
+	if got := r.key(parent, "system.outfit_name"); got != "default_kic" {
+		t.Fatalf("canary: born wearing %q", got)
+	}
+	r.run("set", "--id", parent, "system.model", "runtime-model")
+	lane := r.laneOf(parent)
+	r.run("set", "--id", lane, "system.scopes", `["send:parent","read:aria:`+parent+`","write:aria:`+parent+`","read:aria:self","write:aria:self#@self"]`)
+	if out, err := r.as(lane, "reroute", "--id", parent); err != nil {
+		t.Fatalf("a whole-set delegate could not reroute a default_kic figaro: %v\n%s", err, out)
+	}
+	if got := r.key(parent, "system.model"); got != "claude-opus-4-5" {
+		t.Fatalf("landed on %q", got)
+	}
+}
