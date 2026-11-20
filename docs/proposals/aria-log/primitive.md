@@ -21,6 +21,12 @@ are immutable: no method edits or deletes a turn. Order is the IR's LT order;
 a log's inbox never folds queued sends together, so N sends are N entries,
 each sender's in the order it sent them.
 
+A send to a log returns once its entry is appended (or with the error that
+stopped it), so the ack is the durability. Every accepted prompt carries a key
+that rides onto its IR message (`accepted`); after a crash, redelivery drops a
+queued prompt whose key is already in the IR, so an entry is never appended
+twice. A log marks no turn cut, so a restart never resumes it.
+
 ## The kind
 
 `log` is named at three levels, one source:
@@ -41,13 +47,13 @@ the form or the sidecar.
 
 ## Rules
 
-Two log rules, both refused for every caller, the owner included, and both
-judged where caller patches are judged today: `refuseCallerKeys` (births:
-`form.bind`, `figaro.fork`, and `figaro.create` on its dressed base) and the
-owner's shapes-only branch of `refuseCallerPatch` (set, send). On lane A's
-Patch hook they become one `judgeWrite` rule placed first in every mode, ahead
-of the owner shortcut; this branch rebases on A when the hook lands and adds
-log rows to its equivalence golden.
+Two log rules hold for every writer: any caller, the owner, a box, and the
+daemon itself. They live once (`form.CheckKind`) and are enforced where every
+write lands: the form writer's judge (`store.Form`), and every birth
+(`ForkWith`, `CreateForm`). So an outfit's keys folded in by `set`/`send -O`,
+and daemon writes (seat, succession, lifetime clamps), meet them as a
+caller's patch does. Lane A's `judgeWrite` needs no log rule; its
+equivalence golden gains log rows that end in the store's refusal.
 
 1. `system.kind` is fixed at birth: a write to an existing node's form may not
    add, change or remove it. Another kind is another birth (`fork -S`/`-D`).
@@ -69,7 +75,10 @@ and charges the minter's `max_children` and quota and places the new aria
 under it, exactly as `figaro.create` does (`holdBirth`, a birth quota of 0,
 `place`); the owner, a box, and an unclaimed caller mint uncharged as before.
 This applies to every `form.bind` by a figaro, not only logs: it closed a
-path that minted around the fan-out budget.
+path that minted around the fan-out budget. Named break: a figaro's `fig bind
+@form` now counts against its `max_children`, the child is born with
+`system.fanout.quota = 0` (it can neither fork nor mint until given budget),
+and it is drawn under the minter instead of under its form.
 
 ## JSON-RPC methods
 
@@ -137,11 +146,18 @@ branch. The column says what that means and whether a log should differ.
 ## Context safety
 
 What a log feeds a figaro's context is escaped like #143. `figaro show` of a
-log neutralises reserved tags (`<system-reminder`, `<law`) in every entry's
-text, in the rendered, `-j` and `-v`/`-l` views, with the same neutraliser the
-provider applies to reminder bodies. Study deltas of a log's form are
-reminder bodies and are already escaped. A fork of a log into a figaro replays
-entries as sender-attributed text, also escaped. When lane laws-v077's
+log disarms reserved tags twice: before rendering, the `<` of a reserved tag
+in any spelling (`<`, `&lt;`, `&#60;`) becomes `‹`, which neither markdown nor
+the highlighter decodes; after rendering, every printed line passes the
+provider's neutraliser and a match that ANSI escapes split (glamour highlights
+code blocks) is disarmed too, since the bash tool strips ANSI before a figaro
+reads it. This holds in the rendered, `-j` and `-v`/`-l` views. Study deltas of
+a log's form are reminder bodies and are already escaped. A log forked into
+a figaro replays its entries as user prose, and every prose block, whoever
+sent it, passes the neutraliser on every wire (`provider.Prose`), so an entry
+from any principal reaches the model inert. That changes what every provider
+is sent; `scripts/live/senderlive.sh` (real models, a few cents) is owed
+before release. When lane laws-v077's
 tool-output neutraliser lands it covers every CLI output a figaro reads,
 `listen` through tmux included. Ingrain will arrive as the `ingrain` reminder
 kind (proposal/reminder-kinds), whose bodies pass the same neutraliser.
@@ -170,13 +186,34 @@ already refuse caller patches to `runtime.*`.
 
 ## Open
 
-1. `studiesAFigaro` keeps a study of any figaro's bound form owner-only until
-   #74 stores the studier and re-checks read at delivery. A log's bound form
-   is a figaro's bound form, so a non-owner figaro cannot study
-   `index.<handle>.head` today. Either #74 is fixed first, or the log's form
-   takes the unbound-form branch, which re-opens #74's leak for logs. The
-   Engineer's call; this branch leaves it closed.
-2. The tail of Gluck's 11-19 comment: open, as in the work order.
+1. Studies (decided): a study of another figaro's bound form stays owner-only
+   (#74), logs included, with no special case. Lane A step 1 opens it under
+   the same read grant as `figaro.read` for every bound form at once. Until
+   then `index.<handle>.head` studies are the owner's, enough for the import
+   and the first tests.
+2. On a log, the first entry seeds `mantra` when it is unset, as on any aria;
+   and a log forked from a figaro mid-tool gets that tool closed at its first
+   append, as any turn start does.
+3. The tail of Gluck's 11-19 comment: open, as in the work order.
+
+## Release note
+
+- New: aria logs (`system.kind = "log"`, `figaro new --log`): an aria with no
+  model whose sends are entries.
+- `figaro.read` takes `until`, a forward ceiling; capability `read.until`.
+- Listings carry `kind: "log"` for a log, and `turn_count` for every aria.
+- IR input messages carry `accepted` keys; a restart no longer re-appends a
+  prompt that reached the IR before its spool write.
+- Break: every `form.bind` by a figaro charges its `max_children` and quota,
+  births the child with quota 0, and draws it under the minter, as
+  `figaro.create` does.
+- Change: every prose block is neutralised on the wire, the owner's included:
+  a literal `<system-reminder` or `<law` in a prompt reaches the model as
+  `&lt;`. Ordinary angle brackets are untouched. Break: an aria whose history
+  holds such a tag re-encodes that prompt once and loses its prompt cache
+  once.
+- Break: `system.kind` cannot change after birth, and no writer, the owner
+  and the daemon included, may give a log a provider or model.
 
 ## Step 5 (not started)
 
