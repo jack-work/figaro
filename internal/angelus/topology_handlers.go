@@ -196,7 +196,7 @@ func (h *handlers) createWith(ctx context.Context, params json.RawMessage, birth
 			return nil, serr
 		}
 		var cerr error
-		id, _, cerr = backend.ForkWith(formID, 0, childBirthPatch(dress, cwd), mintedBy(ctx), bootStamp(cwd))
+		id, _, cerr = backend.ForkWith(formID, 0, childBirthPatch(dress, cwd), mintedBy(ctx), store.AtRoot(), bootStamp(cwd))
 		if cerr != nil {
 			return nil, fmt.Errorf("mint aria: %w", cerr)
 		}
@@ -347,7 +347,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		return nil, err
 	}
-	if err := h.refuseCallerKeys(ctx, birthUnder(req.FigaroID), base, &asked); err != nil {
+	if err := h.refuseCallerKeys(ctx, forkOf(req.FigaroID), base, &asked); err != nil {
 		return nil, err
 	}
 	var policy form.Patch
@@ -807,7 +807,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	if err != nil {
 		return nil, fmt.Errorf("import: outfit %q: %w", req.Outfit, err)
 	}
-	id, err := h.angelus.Backend.CreateConversation(outfitID, mintedBy(ctx))
+	id, err := h.angelus.Backend.CreateConversation(outfitID, mintedBy(ctx), store.AtRoot())
 	if err != nil {
 		return nil, fmt.Errorf("import: create conversation: %w", err)
 	}

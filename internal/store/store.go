@@ -65,6 +65,7 @@ type AriaMeta struct {
 	Refold bool `json:"refold,omitempty"`
 
 	MintedBy       string `json:"minted_by,omitempty"`
+	MintedAtRoot   bool   `json:"minted_at_root,omitempty"`
 	TombstonedAtMS int64  `json:"tombstoned_at_ms,omitempty"`
 
 	FanoutQuota *int `json:"fanout_quota,omitempty"`

@@ -503,7 +503,22 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if err := h.refuseCallerKeys(ctx, rootBirth(), form.Snapshot{}, req.Patch); err != nil {
+	line, born, births := rootBirth(), form.Snapshot{}, []store.BirthOption{mintedBy(ctx), store.AtRoot()}
+	if req.Parent != "" {
+		parent, err := h.canonicalID(ctx, req.Parent)
+		if err != nil {
+			return nil, fmt.Errorf("form.create: %w", err)
+		}
+		req.Parent = parent
+		if err := h.allowed(ctx, rpc.VerbRead, authz.Aria(req.Parent)); err != nil {
+			return nil, fmt.Errorf("form.create: a copy of %s reads it: %w", req.Parent, err)
+		}
+		if born, err = h.angelus.Backend.FormState(req.Parent); err != nil {
+			return nil, err
+		}
+		line, births = forkOf(req.Parent), births[:1]
+	}
+	if err := h.refuseCallerKeys(ctx, line, born, req.Patch); err != nil {
 		return nil, err
 	}
 	if err := h.refuseBoxOutfits(ctx, req.Outfits, false); err != nil {
@@ -523,32 +538,16 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 		}
 		defer done()
 	}
-	if req.Parent != "" {
-		parent, err := h.canonicalID(ctx, req.Parent)
-		if err != nil {
-			return nil, fmt.Errorf("form.create: %w", err)
-		}
-		req.Parent = parent
-		if err := h.allowed(ctx, rpc.VerbRead, authz.Aria(req.Parent)); err != nil {
-			return nil, fmt.Errorf("form.create: a copy of %s reads it: %w", req.Parent, err)
-		}
-	}
 	if patch.IsIdentity() {
 		return nil, fmt.Errorf("form.create: a form is born of its patch and outfits; an empty one names nothing")
 	}
 	if patch, err = h.holdInCallerBox(ctx, patch); err != nil {
 		return nil, fmt.Errorf("form.create: %w", err)
 	}
-	born := form.Snapshot{}
-	if req.Parent != "" {
-		if born, err = h.angelus.Backend.FormState(req.Parent); err != nil {
-			return nil, err
-		}
-	}
 	if err := h.refuseRoleOutOfBox(born.Apply(patch)); err != nil {
 		return nil, fmt.Errorf("form.create: %w", err)
 	}
-	id, version, err := h.angelus.Backend.CreateForm(req.Parent, patch, mintedBy(ctx))
+	id, version, err := h.angelus.Backend.CreateForm(req.Parent, patch, births...)
 	if err != nil {
 		return nil, err
 	}
@@ -575,6 +574,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		parent = ""
 	}
 	var inherited form.Snapshot
+	isStump := false
 	if parent != "" {
 		var err error
 		if parent, err = h.canonicalID(ctx, parent); err != nil {
@@ -584,7 +584,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 			return nil, fmt.Errorf("form.bind: a fork of %s reads it: %w", parent, err)
 		}
 		n, ok := h.angelus.Backend.NodeLink(parent)
-		isStump := ok && n.Kind == "outfit"
+		isStump = ok && n.Kind == "outfit"
 		if !ok || (n.Kind != store.KindForm && !isStump) {
 			return nil, fmt.Errorf("form.bind: %s is not an unbound form (bind forks forms; a figaro forks with `fig fork`)", req.Parent)
 		}
@@ -610,11 +610,15 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	if err != nil {
 		return nil, err
 	}
-	if err := h.refuseCallerKeys(ctx, birthUnder(parent), base, &dress); err != nil {
+	line, births := forkOf(parent), []store.BirthOption{mintedBy(ctx)}
+	if parent == "" || isStump {
+		line, births = birthUnder(parent), append(births, store.AtRoot())
+	}
+	if err := h.refuseCallerKeys(ctx, line, base, &dress); err != nil {
 		return nil, err
 	}
 	cwd := birthCwd(req.Cwd)
-	id, _, err := h.angelus.Backend.ForkWith(parent, 0, childBirthPatch(dress, cwd), mintedBy(ctx), bootStamp(cwd))
+	id, _, err := h.angelus.Backend.ForkWith(parent, 0, childBirthPatch(dress, cwd), append(births, bootStamp(cwd))...)
 	if err != nil {
 		return nil, fmt.Errorf("form.bind: mint figaro: %w", err)
 	}

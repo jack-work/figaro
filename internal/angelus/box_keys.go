@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -136,9 +137,12 @@ type lineage struct {
 	of    string
 	self  bool
 	birth bool
+	fork  bool
 }
 
 func birthUnder(parent string) lineage { return lineage{of: parent, self: true, birth: true} }
+
+func forkOf(parent string) lineage { return lineage{of: parent, self: true, birth: true, fork: true} }
 
 func rootBirth() lineage { return lineage{birth: true} }
 
@@ -511,12 +515,15 @@ func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before for
 		if retentionGranted(ctx, before, p) {
 			continue
 		}
-		if h.toolShortensLifetime(ctx, c, line, before, after, p) || h.creatorSetsLifetime(ctx, c, line, p) {
+		if h.toolShortensLifetime(ctx, c, line, before, after, p) || h.creatorSetsLifetime(ctx, c, line, before, after, p) {
 			continue
 		}
 		if err := c.refusal(p); err != nil {
 			return err
 		}
+	}
+	if err := h.refuseLongerLifetimeAtFork(line, after); err != nil {
+		return err
 	}
 	if err := h.refuseScopesBeyondWriter(ctx, c, line, before, after); err != nil {
 		return err
@@ -884,7 +891,7 @@ func (h *handlers) toolShortensLifetime(ctx context.Context, c callerKeys, line 
 	return line.of != "" && (line.of == c.tool || slices.Contains(h.ancestorsOf(line), c.tool) || h.lifetimeGranted(ctx, c.tool, line.of, path))
 }
 
-func (h *handlers) creatorSetsLifetime(ctx context.Context, c callerKeys, line lineage, path string) bool {
+func (h *handlers) creatorSetsLifetime(ctx context.Context, c callerKeys, line lineage, before, after form.Snapshot, path string) bool {
 	if c.boxed || c.tool != "" || (path != store.SystemTTLKey && path != store.SystemKeepaliveKey) {
 		return false
 	}
@@ -895,8 +902,63 @@ func (h *handlers) creatorSetsLifetime(ctx context.Context, c callerKeys, line l
 	if err != nil || line.of == "" {
 		return false
 	}
-	owner, ok := StoreFacts(h.angelus.Backend).Owner(line.of)
-	return ok && owner == sub.Principal
+	if owner, ok := StoreFacts(h.angelus.Backend).Owner(line.of); !ok || owner != sub.Principal {
+		return false
+	}
+	if m, err := h.angelus.Backend.Meta(line.of); err == nil && m != nil && m.MintedAtRoot {
+		return true
+	}
+	return h.lifetimeShortened(path, before, after)
+}
+
+func (h *handlers) refuseLongerLifetimeAtFork(line lineage, after form.Snapshot) error {
+	if !line.fork {
+		return nil
+	}
+	parent, err := h.angelus.Backend.FormState(line.of)
+	if err != nil {
+		return fmt.Errorf("the lifetime of %s cannot be read to hold its fork to it: %w", line.of, err)
+	}
+	for _, key := range []string{store.SystemTTLKey, store.SystemKeepaliveKey} {
+		if !h.lifetimeShortened(key, parent, after) {
+			return fmt.Errorf("%s: a fork by anyone but the owner keeps or shortens the lifetime it inherits from %s, never lengthens or drops it", key, line.of)
+		}
+	}
+	return nil
+}
+
+func (h *handlers) lifetimeShortened(key string, before, after form.Snapshot) bool {
+	was, ok := h.lifetimeOf(key, before)
+	if !ok {
+		return false
+	}
+	now, ok := h.lifetimeOf(key, after)
+	return ok && (was < 0 || (now >= 0 && now <= was))
+}
+
+func (h *handlers) lifetimeOf(key string, snap form.Snapshot) (time.Duration, bool) {
+	raw, set := snap.Get(key)
+	text := ""
+	if set {
+		text = strings.TrimSpace(lifetimeText(raw))
+	}
+	d, err := store.ParseTTL(text)
+	if err != nil {
+		return 0, false
+	}
+	switch key {
+	case store.SystemTTLKey:
+		if d <= 0 {
+			return -1, true
+		}
+		return d, true
+	case store.SystemKeepaliveKey:
+		if text == "" {
+			return max(h.angelus.keepalive(), 0), true
+		}
+		return max(d, 0), true
+	}
+	return 0, false
 }
 
 func (h *handlers) lifetimeGranted(ctx context.Context, figaro, target, key string) bool {

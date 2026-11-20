@@ -34,8 +34,9 @@ principals = ["user:guest"]
 // and have its history deleted, mark an empty one for reaping, or bring an
 // owner's ttl forward. All four are owner-held: the guest is refused by set, a prompt's patch, a fork and a
 // birth, while the same guest may still set an open key, so the refusal is
-// the key's and not a missing grant. A fork or an aria the guest births is
-// its own, so it may give that one a ttl or keepalive (#155).
+// the key's and not a missing grant. An aria the guest births is its own, and
+// a fork may shorten the lifetime it inherits, so the guest gives those a
+// ttl or keepalive (#155).
 func TestAnUnboxedGuestCannotGiveTheOwnersAriaALifetime(t *testing.T) {
 	r := newRigWith(t, lifetimeLentPolicy)
 	guest := as("user", "guest")

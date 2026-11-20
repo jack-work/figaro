@@ -81,6 +81,7 @@ func newRigProviding(t *testing.T, policyText, extraConfig string, factory func(
 		"mock":             "[system]\nprovider = \"mock\"\nmodel = \"m\"\n",
 		"judged":           "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"judge\"\n",
 		"judged-chat":      "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"judge\"\nttl = \"24h\"\nkeepalive = \"24h\"\n",
+		"long-lived":       "[system]\nprovider = \"mock\"\nmodel = \"m\"\nttl = \"24h\"\n",
 		"judged-elsewhere": "[system]\nprovider = \"anthropic\"\nmodel = \"m\"\nsandbox = \"judge\"\n",
 		"seatfull":         "[system]\nprovider = \"mock\"\nmodel = \"m\"\nsandbox = \"judge\"\nscopes = [\"*:*\"]\n[system.fanout]\nmax_children = 4\n",
 		"runtimebad":       "[system]\nprovider = \"mock\"\nmodel = \"m\"\n[runtime]\nforked_from = \"x\"\n",
