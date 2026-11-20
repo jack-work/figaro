@@ -644,6 +644,7 @@ func readTurns(ctx context.Context, conn ariaConn, turn uint64) ([]aria.TurnPart
 func (t *thread) subscribe(ctx context.Context, s *sub, seed []uint64) <-chan Event {
 	s.out = make(chan Event, 64)
 	s.wake = make(chan struct{}, 1)
+	s.exited = make(chan struct{})
 	t.mu.Lock()
 	s.rtVer = t.rt.ver
 	t.subSeq++
@@ -745,27 +746,35 @@ func (t *thread) drop(s *sub) {
 }
 
 func (t *thread) pump(ctx context.Context, s *sub) {
+	defer close(s.exited)
 	defer close(s.out)
 	for {
-		select {
-		case <-s.wake:
-		case <-ctx.Done():
-			t.drop(s)
-			return
-		}
 		s.mu.Lock()
-		batch, last := s.q, s.closed
-		s.q = nil
-		s.mu.Unlock()
-		for _, e := range batch {
+		if len(s.q) == 0 {
+			last := s.closed
+			s.mu.Unlock()
+			if last {
+				return
+			}
 			select {
-			case s.out <- e:
+			case <-s.wake:
 			case <-ctx.Done():
 				t.drop(s)
 				return
+			case <-t.c.done:
+				return
 			}
+			continue
 		}
-		if last {
+		e := s.q[0]
+		s.q = s.q[1:]
+		s.mu.Unlock()
+		select {
+		case s.out <- e:
+		case <-ctx.Done():
+			t.drop(s)
+			return
+		case <-t.c.done:
 			return
 		}
 	}
@@ -782,8 +791,9 @@ type sub struct {
 	r       *reader
 	replies []string
 
-	out  chan Event
-	wake chan struct{}
+	out    chan Event
+	wake   chan struct{}
+	exited chan struct{}
 
 	mu     sync.Mutex
 	q      []Event
@@ -803,7 +813,10 @@ func (s *sub) push(e Event, last bool) {
 		s.mu.Unlock()
 		return
 	}
-	if e.Kind != "" {
+	if n := len(s.q); e.Kind == Delta && n > 0 && s.q[n-1].Kind == Delta {
+		s.q[n-1].Text += e.Text
+		s.q[n-1].Cursor = e.Cursor
+	} else if e.Kind != "" {
 		s.q = append(s.q, e)
 	}
 	s.closed = last

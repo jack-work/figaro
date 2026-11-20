@@ -67,6 +67,11 @@ Cancelling the `ctx` given to `Prompt` or `Resume` ends that subscription and
 closes its channel without an `end`. It does not stop the turn; `Cancel`
 does.
 
+Delivery never waits on the consumer. One that falls behind finds the text it
+has not yet taken merged into a single delta, so its backlog is bounded by
+the reply, not by the number of frames; tool, end and error events are never
+merged. `Client.Close` closes every channel, read or not.
+
 If the connection to the daemon drops while a channel is open, or a channel
 is opened while it is down, the client redials for `Client.ReconnectFor`
 (30 s by default), reads the turn back and carries on from where the channel

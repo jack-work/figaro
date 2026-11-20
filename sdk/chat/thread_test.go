@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -209,10 +211,8 @@ func TestATurnEndIsMatchedToItsTurnAcrossAResync(t *testing.T) {
 	th.notify(rpc.MethodTurnDone, json.RawMessage(`{"reason":"end_turn","idle":true}`))
 	th.notify(rpc.MethodFormDelta, rt.delta("idle", 3, "", 0))
 	events := drain(t, ch)
-	if got := summary(events); got != `+"A" +"\n\nB" +" more" end:A
-
-B more` {
-		t.Fatalf("events: %s", got)
+	if last := events[len(events)-1]; text(events) != "A\n\nB more" || last.Kind != End || last.Text != "A\n\nB more" {
+		t.Fatalf("events: %s", summary(events))
 	}
 }
 
@@ -493,5 +493,42 @@ func TestASteerThatOpensItsOwnTurnCarriesThatReply(t *testing.T) {
 	}
 	if got := summary(drain(t, steer)); got != `+"B" end:B` {
 		t.Fatalf("steer: %s", got)
+	}
+}
+
+func TestDeltasPileUpAsOneWhileTheConsumerLags(t *testing.T) {
+	th := newThread(New(transport.Endpoint{}), "x")
+	s := &sub{after: 1}
+	ch := th.subscribe(context.Background(), s, nil)
+	for i := range 5000 {
+		s.push(Event{Kind: Delta, Text: "x", Cursor: Cursor{Turn: 2, Text: i + 1}}, false)
+	}
+	s.mu.Lock()
+	queued := len(s.q)
+	s.mu.Unlock()
+	if queued > 1 {
+		t.Fatalf("%d events queued for a consumer that is not reading", queued)
+	}
+	s.push(Event{Kind: End, Text: "done", Cursor: Cursor{Turn: 2, Text: 5000}}, true)
+	events := drain(t, ch)
+	if text(events) != strings.Repeat("x", 5000) || events[len(events)-1].Cursor.Text != 5000 {
+		t.Fatalf("%d events, %d bytes", len(events), len(text(events)))
+	}
+}
+
+func TestClosingTheClientReleasesAListenerThatStoppedReading(t *testing.T) {
+	c := New(transport.Endpoint{})
+	th := newThread(c, "x")
+	s := &sub{after: 1}
+	th.subscribe(context.Background(), s, nil)
+	for i := range 200 {
+		s.push(Event{Kind: ToolStart, Tool: &Tool{ID: fmt.Sprint(i)}}, false)
+	}
+	time.Sleep(10 * time.Millisecond)
+	c.Close()
+	select {
+	case <-s.exited:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the delivery goroutine outlived the client")
 	}
 }
