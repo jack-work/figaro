@@ -181,6 +181,8 @@ func delegable(verb rpc.Verb, r Resource) bool {
 	switch verb {
 	case rpc.VerbRead, rpc.VerbListen, rpc.VerbSend, rpc.VerbFork:
 		return true
+	case rpc.VerbSet:
+		return r.Kind == ResourceAria && !reservedForm(r.ID)
 	case rpc.VerbUse:
 		return r.Kind == ResourceSandbox && r.ID == "local"
 	}
@@ -188,7 +190,7 @@ func delegable(verb rpc.Verb, r Resource) bool {
 }
 
 func delegateRefusal(via, user jkauthz.Principal, verb rpc.Verb, r Resource) string {
-	return fmt.Sprintf("%s acts for %s and may not %s on %s: a delegated caller may read, listen, send and fork, and use sandbox:local", via, user, verb, r)
+	return fmt.Sprintf("%s acts for %s and may not %s on %s: a delegated caller may read, listen, send, fork, set plain keys on an aria or role form, and use sandbox:local", via, user, verb, r)
 }
 
 func (d delegated) refuses(method string, params json.RawMessage) error {
@@ -196,10 +198,24 @@ func (d delegated) refuses(method string, params json.RawMessage) error {
 	if !ok {
 		return fmt.Errorf("%s has no verb, so no policy can allow it", method)
 	}
-	if verb != rpc.VerbNone && !delegable(verb, Daemon) {
+	if verb != rpc.VerbNone && method != rpc.MethodSet && !delegable(verb, Daemon) {
 		return fmt.Errorf("%s: %s", method, delegateRefusal(d.service, d.user, verb, Daemon))
 	}
 	switch method {
+	case rpc.MethodSet:
+		var req rpc.SetRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return fmt.Errorf("%s: a delegated call's params must decode: %w", method, err)
+		}
+		if id := rpc.AriaOf(params); reservedForm(id) {
+			return fmt.Errorf("%s: %s", method, delegateRefusal(d.service, d.user, verb, Aria(id)))
+		}
+		if len(req.Outfits) > 0 {
+			return fmt.Errorf("%s: %s acts for %s and may not dress a form in outfits", method, d.service, d.user)
+		}
+		if err := d.refusesPatch(method, req.Patch); err != nil {
+			return err
+		}
 	case rpc.MethodQua:
 		var req rpc.QuaRequest
 		if err := json.Unmarshal(params, &req); err != nil {
@@ -216,11 +232,62 @@ func (d delegated) refuses(method string, params json.RawMessage) error {
 		if err := json.Unmarshal(params, &req); err != nil {
 			return fmt.Errorf("%s: a delegated call's params must decode: %w", method, err)
 		}
-		if (req.Patch != nil && !req.Patch.IsIdentity()) || len(req.Outfits) > 0 || req.Seat != "" || req.Abdicates {
-			return fmt.Errorf("%s: %s acts for %s and may fork as is: no patch, outfits, seat or abdication", method, d.service, d.user)
+		if len(req.Outfits) > 0 || req.Seat != "" || req.Abdicates {
+			return fmt.Errorf("%s: %s acts for %s and may fork with a patch of plain keys only: no outfits, seat or abdication", method, d.service, d.user)
+		}
+		if req.Patch != nil {
+			return d.refusesPatch(method, *req.Patch)
 		}
 	}
 	return nil
+}
+
+const (
+	maxDelegatedValueBytes = 64 << 10
+	maxDelegatedPatchKeys  = 32
+)
+
+func reservedForm(id string) bool {
+	switch id {
+	case rpc.AriasFormID, rpc.GlobalAriasFormID, rpc.TroupeFormID, rpc.TopologyFormID, rpc.RecentFormID:
+		return true
+	}
+	return false
+}
+
+func (d delegated) refusesPatch(method string, patch form.Patch) error {
+	if patch.IsIdentity() {
+		return nil
+	}
+	entries := patch.Entries()
+	if len(entries) > maxDelegatedPatchKeys {
+		return fmt.Errorf("%s: %s acts for %s and may write at most %d keys in one patch, this one writes %d", method, d.service, d.user, maxDelegatedPatchKeys, len(entries))
+	}
+	for _, e := range entries {
+		if why := userUnwritable(e.Key); why != "" {
+			return fmt.Errorf("%s: %s (%s acts for %s)", method, why, d.service, d.user)
+		}
+		if len(e.New) > maxDelegatedValueBytes {
+			return fmt.Errorf("%s: %s acts for %s and may write a value of at most %d bytes, %s is %d", method, d.service, d.user, maxDelegatedValueBytes, e.Key, len(e.New))
+		}
+	}
+	return nil
+}
+
+func userUnwritable(key string) string {
+	if form.HarnessKey(key) {
+		return key + " is daemon/owner-held: a delegated caller writes no system.* or runtime.* key"
+	}
+	if _, held := form.OwnerHeld(key); held {
+		return key + " is owner-held"
+	}
+	if _, held := form.Protected(key); held {
+		return key + " is protected lineage state"
+	}
+	if w := form.WriterOf(key); w != form.WriterSelf {
+		return fmt.Sprintf("%s is written by its %s, not by a user", key, w)
+	}
+	return ""
 }
 
 func writtenContext(m map[string]json.RawMessage) map[string]json.RawMessage {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,7 +143,7 @@ role = "owner"
 principals = ["`+gluckText+`"]
 
 [roles.gateway]
-permissions = ["read:*", "listen:*", "send:*", "fork:*", "use:sandbox:local"]
+permissions = ["read:*", "listen:*", "send:*", "fork:*", "set:*", "use:sandbox:local"]
 
 [[bind]]
 role = "gateway"
@@ -209,13 +211,13 @@ func TestADelegateHoldsTheUsersGrantsOnlyForTheCeilingVerbs(t *testing.T) {
 	sub, err := SubjectOf(via)
 	require.NoError(t, err)
 
-	for _, verb := range []rpc.Verb{rpc.VerbRead, rpc.VerbListen, rpc.VerbSend, rpc.VerbFork} {
+	for _, verb := range []rpc.Verb{rpc.VerbRead, rpc.VerbListen, rpc.VerbSend, rpc.VerbFork, rpc.VerbSet} {
 		require.True(t, p.Allow(user, verb, Aria("aaaa0002")).Allowed, "the user holds %s", verb)
 		require.True(t, p.Allow(sub, verb, Aria("aaaa0002")).Allowed, "the delegate passes %s", verb)
 	}
 	require.True(t, p.Allow(sub, rpc.VerbUse, Sandbox("local")).Allowed)
 	require.True(t, p.Allow(sub, rpc.VerbUse, Sandbox("")).Allowed)
-	for _, verb := range []rpc.Verb{rpc.VerbKill, rpc.VerbSet, rpc.VerbAdmin, rpc.VerbCreate, rpc.VerbMint, rpc.VerbDelete, rpc.VerbCast, rpc.VerbSucceed, rpc.VerbAdopt, rpc.VerbDecide} {
+	for _, verb := range []rpc.Verb{rpc.VerbKill, rpc.VerbAdmin, rpc.VerbCreate, rpc.VerbMint, rpc.VerbDelete, rpc.VerbCast, rpc.VerbSucceed, rpc.VerbAdopt, rpc.VerbDecide} {
 		require.True(t, p.Allow(user, verb, Aria("aaaa0002")).Allowed, "the user holds %s", verb)
 		d := p.Allow(sub, verb, Aria("aaaa0002"))
 		require.False(t, d.Allowed, "the delegate is refused %s", verb)
@@ -223,6 +225,10 @@ func TestADelegateHoldsTheUsersGrantsOnlyForTheCeilingVerbs(t *testing.T) {
 	}
 	require.False(t, p.Allow(sub, rpc.VerbUse, Sandbox("figbox")).Allowed)
 	require.False(t, p.Allow(sub, rpc.VerbSet, Daemon).Allowed)
+	require.True(t, p.Allow(sub, rpc.VerbSet, Aria("@role")).Allowed)
+	for _, id := range []string{rpc.AriasFormID, rpc.TopologyFormID, rpc.TroupeFormID} {
+		require.False(t, p.Allow(sub, rpc.VerbSet, Aria(id)).Allowed, id)
+	}
 }
 
 func TestTheGuardRefusesWhatADelegateMayNotCallAndPinsItsSender(t *testing.T) {
@@ -245,7 +251,7 @@ func TestTheGuardRefusesWhatADelegateMayNotCallAndPinsItsSender(t *testing.T) {
 		_, err := guarded[m](ctx, json.RawMessage(`{`+aria+`}`))
 		require.NoError(t, err, m)
 	}
-	for _, m := range []string{rpc.MethodKill, rpc.MethodSet, rpc.MethodStatus, rpc.MethodFormApply} {
+	for _, m := range []string{rpc.MethodKill, rpc.MethodStatus, rpc.MethodFormApply} {
 		_, err := guarded[m](ctx, json.RawMessage(`{`+aria+`}`))
 		var je *jkrpc.Error
 		require.True(t, errors.As(err, &je), m)
@@ -308,4 +314,126 @@ func TestADelegatedSendAndForkCarryNoWrites(t *testing.T) {
 		_, err := guarded[c.method](ctx, body(c.params))
 		require.NoError(t, err, name)
 	}
+}
+
+func delegatedWriter(t *testing.T) (map[string]jkrpc.HandlerFunc, context.Context, *int) {
+	t.Helper()
+	calls := 0
+	call := func(context.Context, json.RawMessage) (any, error) {
+		calls++
+		return "ok", nil
+	}
+	guarded := Guard(map[string]jkrpc.HandlerFunc{rpc.MethodSet: call, rpc.MethodFork: call, rpc.MethodKill: call, rpc.MethodFormCreate: call}, AriaHeader{}, Enforce(delegatePolicy(t)))
+	ctx, err := delegationsFor(t, gluckText).Apply(gatewaySession(t), "gluck")
+	require.NoError(t, err)
+	return guarded, WithDoor(ctx, DoorWeb), &calls
+}
+
+func writeBody(t *testing.T, id string, fields map[string]any) json.RawMessage {
+	t.Helper()
+	raw := map[string]json.RawMessage{}
+	set := map[string]json.RawMessage{}
+	for k, v := range fields {
+		b, err := json.Marshal(v)
+		require.NoError(t, err)
+		set[k] = b
+	}
+	patch, err := json.Marshal(form.FromMap(set).AsPatch())
+	require.NoError(t, err)
+	raw["patch"] = patch
+	raw[rpc.AriaKey] = json.RawMessage(`"` + id + `"`)
+	out, err := json.Marshal(raw)
+	require.NoError(t, err)
+	return out
+}
+
+func removeBody(t *testing.T, id, key string) json.RawMessage {
+	t.Helper()
+	patch, err := json.Marshal(form.Patch{Object: &form.ObjectPatch{Delete: map[string]form.Value{key: form.NewValue(json.RawMessage(`"x"`))}}})
+	require.NoError(t, err)
+	out, err := json.Marshal(map[string]json.RawMessage{"patch": patch, rpc.AriaKey: json.RawMessage(`"` + id + `"`)})
+	require.NoError(t, err)
+	return out
+}
+
+func TestADelegatedSetWritesPlainKeysOnArias(t *testing.T) {
+	guarded, ctx, calls := delegatedWriter(t)
+	for name, body := range map[string]json.RawMessage{
+		"a plain key":             writeBody(t, "aaaa0002", map[string]any{"mantra": "fixing the gate"}),
+		"a role form key":         writeBody(t, "@gateway", map[string]any{"mantra": "held"}),
+		"an unset of a plain key": removeBody(t, "aaaa0002", "mantra"),
+		"a value at the size cap": writeBody(t, "aaaa0002", map[string]any{"note": strings.Repeat("x", maxDelegatedValueBytes-2)}),
+		"a patch at the key cap":  writeBody(t, "aaaa0002", manyKeys(maxDelegatedPatchKeys)),
+	} {
+		before := *calls
+		_, err := guarded[rpc.MethodSet](ctx, body)
+		require.NoError(t, err, name)
+		require.Equal(t, before+1, *calls, name)
+	}
+}
+
+func manyKeys(n int) map[string]any {
+	out := map[string]any{}
+	for i := 0; i < n; i++ {
+		out[fmt.Sprintf("k%02d", i)] = i
+	}
+	return out
+}
+
+func TestADelegatedSetRefusesTheWholeCallAtTheFirstKeyAUserMayNotWrite(t *testing.T) {
+	guarded, ctx, calls := delegatedWriter(t)
+	for name, c := range map[string]struct {
+		body json.RawMessage
+		want string
+	}{
+		"a system key":             {writeBody(t, "aaaa0002", map[string]any{"system.ttl": "1h"}), "system.ttl is daemon/owner-held: a delegated caller writes no system.* or runtime.* key"},
+		"a runtime key":            {writeBody(t, "aaaa0002", map[string]any{"runtime.x": 1}), "runtime.x is daemon/owner-held"},
+		"an owner-held key":        {writeBody(t, "@gateway", map[string]any{"succession-policy": map[string]any{"variants": "hard"}}), "succession-policy.variants is owner-held"},
+		"a protected key":          {writeBody(t, "@gateway", map[string]any{"target-aria": "aaaa0002"}), "target-aria is protected lineage state"},
+		"a good key beside one":    {writeBody(t, "aaaa0002", map[string]any{"mantra": "x", "system.model": "y"}), "system.model is daemon/owner-held"},
+		"a value over the cap":     {writeBody(t, "aaaa0002", map[string]any{"note": strings.Repeat("x", maxDelegatedValueBytes-1)}), "at most 65536 bytes"},
+		"too many keys":            {writeBody(t, "aaaa0002", manyKeys(maxDelegatedPatchKeys+1)), "at most 32 keys"},
+		"a daemon-held form":       {writeBody(t, rpc.TopologyFormID, map[string]any{"mantra": "x"}), "may not set on aria:@topology"},
+		"an unset of a system key": {removeBody(t, "aaaa0002", "system.model"), "system.model is daemon/owner-held"},
+	} {
+		_, err := guarded[rpc.MethodSet](ctx, c.body)
+		require.ErrorContains(t, err, c.want, name)
+		require.ErrorContains(t, err, "acts for "+gluckText, name)
+	}
+	require.Zero(t, *calls, "a refused set reaches no handler")
+}
+
+func TestADelegatedSetCarriesNoOutfits(t *testing.T) {
+	guarded, ctx, _ := delegatedWriter(t)
+	_, err := guarded[rpc.MethodSet](ctx, json.RawMessage(`{"`+rpc.AriaKey+`":"aaaa0002","patch":{},"outfits":["root"]}`))
+	require.ErrorContains(t, err, "outfits")
+}
+
+func TestADelegatedForkMayCarryAPatchOfPlainKeys(t *testing.T) {
+	guarded, ctx, calls := delegatedWriter(t)
+	fork := func(f map[string]any, extra string) json.RawMessage {
+		body := writeBody(t, "aaaa0002", f)
+		return json.RawMessage(strings.Replace(string(body), `{"`, `{`+extra+`"`, 1))
+	}
+	_, err := guarded[rpc.MethodFork](ctx, fork(map[string]any{"title": "side road"}, ""))
+	require.NoError(t, err)
+	require.Equal(t, 1, *calls)
+
+	_, err = guarded[rpc.MethodFork](ctx, fork(map[string]any{"title": "x", "system.ttl": "1h"}, ""))
+	require.ErrorContains(t, err, "system.ttl is daemon/owner-held")
+	require.Equal(t, 1, *calls)
+
+	for _, extra := range []string{`"outfits":["root"],`, `"seat":"@role",`, `"abdicates":true,`} {
+		_, err = guarded[rpc.MethodFork](ctx, fork(map[string]any{"title": "x"}, extra))
+		require.ErrorContains(t, err, "no outfits, seat or abdication", extra)
+	}
+}
+
+func TestADelegatedCallerStillMayNotKillOrCreateOrDelete(t *testing.T) {
+	guarded, ctx, calls := delegatedWriter(t)
+	for _, m := range []string{rpc.MethodKill, rpc.MethodFormCreate} {
+		_, err := guarded[m](ctx, json.RawMessage(`{"`+rpc.AriaKey+`":"aaaa0002"}`))
+		require.ErrorContains(t, err, "acts for "+gluckText, m)
+	}
+	require.Zero(t, *calls)
 }
