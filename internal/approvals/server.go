@@ -8,6 +8,7 @@ import (
 	"crypto/subtle"
 	"embed"
 	"encoding/hex"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"net"
@@ -258,4 +259,24 @@ func (s *Server) sameOrigin(r *http.Request) bool {
 
 func (s *Server) servesSPA(path string) bool {
 	return strings.HasPrefix(path, "/app") || strings.HasPrefix(path, "/fonts/") || s.spaPaths[path]
+}
+
+func (s *Server) CheckSPA() error {
+	if s.SPA == nil {
+		return nil
+	}
+	entries, err := fs.ReadDir(s.SPA, ".")
+	if err != nil {
+		return fmt.Errorf("spa dir: %w", err)
+	}
+	for _, e := range entries {
+		switch e.Name() {
+		case "page.css", "classic", "api", "r", "approve", "deny", "app":
+			return fmt.Errorf("spa dir holds %q, a name the server routes itself", e.Name())
+		}
+	}
+	if _, err := fs.Stat(s.SPA, "index.html"); err != nil {
+		return fmt.Errorf("spa dir has no index.html")
+	}
+	return nil
 }

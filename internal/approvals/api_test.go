@@ -163,3 +163,23 @@ func TestSPAIsTheRootAndTheHTMLPageMovesToClassic(t *testing.T) {
 		t.Fatal("without --spa-dir the root must stay the HTML page and /classic must not exist")
 	}
 }
+
+func TestStartupRefusesASPADirThatClashesWithAServerRoute(t *testing.T) {
+	peers := []netip.Addr{netip.MustParseAddr("192.0.2.1")}
+	mk := func(files fstest.MapFS) error {
+		s := NewServer(decider(newFake(), &bytes.Buffer{}), []string{king}, "gluck", "o", []byte(edgeSecret), peers)
+		s.SPA = files
+		return s.CheckSPA()
+	}
+	if err := mk(fstest.MapFS{"index.html": {Data: []byte("x")}, "placet.js": {Data: []byte("1")}}); err != nil {
+		t.Fatalf("a clean dir was refused: %v", err)
+	}
+	for _, name := range []string{"page.css", "classic", "api", "approve"} {
+		if err := mk(fstest.MapFS{"index.html": {Data: []byte("x")}, name: {Data: []byte("1")}}); err == nil {
+			t.Errorf("%s in the spa dir was accepted", name)
+		}
+	}
+	if err := mk(fstest.MapFS{"placet.js": {Data: []byte("1")}}); err == nil {
+		t.Error("a dir without index.html was accepted")
+	}
+}

@@ -89,6 +89,9 @@ Remote-User read.
 		server := approvals.NewServer(d, forms, admin, origin, secret, peers)
 		if dir := ctx.Flag("spa-dir"); dir != "" {
 			server.SPA = os.DirFS(dir)
+			if err := server.CheckSPA(); err != nil {
+				return err
+			}
 		}
 		srv := &http.Server{Addr: listen, Handler: server.Handler(),
 			ReadHeaderTimeout: 10 * time.Second}
