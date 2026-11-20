@@ -51,7 +51,15 @@ func newFanoutCache() *fanoutCache {
 }
 
 func (c *fanoutCache) reset(nodes []fanoutNode, roles map[string]fanoutRole) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t := fanoutTree(nodes, roles, c.pending)
+	c.parent, c.live, c.kids, c.own, c.roles, c.eff, c.used, c.owners = t.parent, t.live, t.kids, t.own, t.roles, t.eff, t.used, t.owners
+}
+
+func fanoutTree(nodes []fanoutNode, roles map[string]fanoutRole, pending map[string]int) *fanoutCache {
 	t := newFanoutCache()
+	maps.Copy(t.pending, pending)
 	for _, n := range nodes {
 		t.parent[n.id], t.live[n.id] = n.parent, n.live
 		if n.capped {
@@ -95,9 +103,7 @@ func (c *fanoutCache) reset(nodes []fanoutNode, roles map[string]fanoutRole) {
 			ready = append(ready, p)
 		}
 	}
-	c.mu.Lock()
-	c.parent, c.live, c.kids, c.own, c.roles, c.eff, c.used, c.owners = t.parent, t.live, t.kids, t.own, t.roles, t.eff, t.used, t.owners
-	c.mu.Unlock()
+	return t
 }
 
 func (c *fanoutCache) effOf(id string) {
@@ -119,12 +125,12 @@ func (c *fanoutCache) effOf(id string) {
 
 func (c *fanoutCache) chargeOf(id string) int {
 	if !c.live[id] {
-		return c.used[id]
+		return c.spent(id)
 	}
 	if q, ok := c.eff[id]; ok {
-		return 1 + max(q, c.used[id])
+		return 1 + max(q, c.spent(id))
 	}
-	return 1 + c.used[id]
+	return 1 + c.spent(id)
 }
 
 func (c *fanoutCache) absorbs(id string) bool {
@@ -323,7 +329,7 @@ func (c *fanoutCache) reserveLocked(from string, charge int) (string, int) {
 	if !ok {
 		return "", 0
 	}
-	c.pending[at] += charge
+	c.addPendingLocked(at, charge)
 	return at, charge
 }
 
@@ -359,9 +365,15 @@ func (c *fanoutCache) settleLocked(at string, charge int) {
 	if charge <= 0 {
 		return
 	}
-	if c.pending[at] -= charge; c.pending[at] <= 0 {
+	c.addPendingLocked(at, -charge)
+}
+
+func (c *fanoutCache) addPendingLocked(at string, d int) {
+	before := c.chargeOf(at)
+	if c.pending[at] += d; c.pending[at] <= 0 {
 		delete(c.pending, at)
 	}
+	c.carry(c.parent[at], c.chargeOf(at)-before)
 }
 
 func (c *fanoutCache) spent(id string) int { return c.used[id] + c.pending[id] }
@@ -509,9 +521,9 @@ func (c *fanoutCache) chargeChangeLocked(id string, quota int, capped bool) (fro
 	if q, held := c.roleCeiling(id); held && (!capped || q < quota) {
 		quota, capped = q, true
 	}
-	after := 1 + used
+	after := 1 + c.spent(id)
 	if capped {
-		after = 1 + max(quota, used)
+		after = 1 + max(quota, c.spent(id))
 	}
 	return c.parent[id], after - c.chargeOf(id), used
 }
@@ -555,10 +567,9 @@ func (c *fanoutCache) fitsMoves(moves []hierarchy.Move) error {
 }
 
 func (c *fanoutCache) drift(nodes []fanoutNode, roles map[string]fanoutRole) []rpc.FanoutDrift {
-	tree := newFanoutCache()
-	tree.reset(nodes, roles)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	tree := fanoutTree(nodes, roles, c.pending)
 	var out []rpc.FanoutDrift
 	seen := map[string]bool{}
 	note := func(id string) {

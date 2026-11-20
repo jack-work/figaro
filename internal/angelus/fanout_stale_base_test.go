@@ -47,3 +47,56 @@ func TestAQuotaWriteIsPricedAgainstTheWriteBeforeIt(t *testing.T) {
 		t.Fatalf("top uses %d, want 4", got)
 	}
 }
+
+// #183 M2: lowering a quota while births under it were in flight priced the
+// change against its landed use alone, so it freed budget above that those
+// births then took back when they landed.
+func TestLoweringAQuotaUnderInFlightBirthsNeverOverdrawsTheParent(t *testing.T) {
+	pass := func(err error) error { return err }
+	c := newFanoutCache()
+	c.put(fanoutNode{id: "top", live: true, capped: true, quota: 10})
+	c.put(fanoutNode{id: "a", parent: "top", live: true, capped: true, quota: 5})
+	c.put(fanoutNode{id: "b", parent: "top", live: true, capped: true, quota: 3})
+	var holds []fanoutHold
+	for range 3 {
+		h, err := c.take("a", 100, false, 1, false, pass)
+		if err != nil {
+			t.Fatal(err)
+		}
+		holds = append(holds, h)
+	}
+	lower, err := c.takeCharge("a", 0, true, pass)
+	if err != nil {
+		t.Fatalf("lowering a: %v", err)
+	}
+	c.setOwn("a", 0, true)
+	lower()
+	free := 10 - c.budget("top").used
+	if free != 2 {
+		t.Errorf("lowering a to 0 with 3 births in flight frees %d at top, want 2", free)
+	}
+	raise, err := c.takeCharge("b", 3+free, true, pass)
+	if err != nil {
+		t.Fatalf("raising b into what is free: %v", err)
+	}
+	c.setOwn("b", 3+free, true)
+	raise()
+	if _, err := c.takeCharge("b", 4+free, true, pass); err == nil {
+		t.Error("b was raised past what top has free")
+	}
+	for i, h := range holds {
+		c.put(fanoutNode{id: "a" + string(rune('0'+i)), parent: "a", live: true})
+		c.give(h, "")
+	}
+	if got := c.budget("top"); got.used > got.quota {
+		t.Errorf("top uses %d of quota %d", got.used, got.quota)
+	}
+	if d := c.drift([]fanoutNode{
+		{id: "top", live: true, capped: true, quota: 10},
+		{id: "a", parent: "top", live: true, capped: true, quota: 0},
+		{id: "b", parent: "top", live: true, capped: true, quota: 3 + free},
+		{id: "a0", parent: "a", live: true}, {id: "a1", parent: "a", live: true}, {id: "a2", parent: "a", live: true},
+	}, nil); len(d) > 0 {
+		t.Errorf("the cache drifted from the tree once the births landed: %+v", d)
+	}
+}
