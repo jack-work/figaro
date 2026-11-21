@@ -322,6 +322,9 @@ func userUnwritable(key string) string {
 	if root := rootSegment(key); root == "name" || root == "role-name" {
 		return key + " names the form for @name resolution: a delegated caller may not set or unset it"
 	}
+	if rootSegment(key) == "aria_id" {
+		return key + " is the figaro's own identity: a delegated caller may not set or unset it"
+	}
 	if form.HarnessKey(key) {
 		return key + " is daemon/owner-held: a delegated caller writes no system.* or runtime.* key"
 	}
