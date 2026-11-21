@@ -44,6 +44,7 @@ func (w Web) lapseFor(ctx context.Context) (time.Duration, string) {
 
 const (
 	webReadLimit         = 64 << 20
+	webDeflateThreshold  = 128
 	webWriteGrace        = 500 * time.Millisecond
 	webReadHeaderTimeout = 10 * time.Second
 	webAgeReason         = "connection age limit: reconnect"
@@ -115,7 +116,7 @@ func (a *Angelus) webDoor(ctx context.Context, w Web) http.Handler {
 			http.Error(rw, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		c, err := websocket.Accept(rw, r, nil)
+		c, err := websocket.Accept(rw, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionContextTakeover, CompressionThreshold: webDeflateThreshold})
 		if err != nil {
 			return
 		}

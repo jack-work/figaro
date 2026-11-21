@@ -292,3 +292,14 @@ func TestADelegatedForkCarriesATitleAndRefusesSystemKeys(t *testing.T) {
 	require.NotNil(t, reply.Error)
 	require.Contains(t, reply.Error.Message, "system.ttl is daemon/owner-held")
 }
+
+// The gateway's leg to the daemon carries every form.delta and history page;
+// permessage-deflate with context takeover removes most of their repetition.
+func TestTheWebDoorNegotiatesPermessageDeflate(t *testing.T) {
+	r := onBehalfDoor(t)
+	c, resp, err := r.as(t, "figchat-gateway", "gluck")
+	require.NoError(t, err)
+	require.Contains(t, resp.Header.Get("Sec-WebSocket-Extensions"), "permessage-deflate")
+	reply := c.call(rpc.MethodForm, onAria(r.aria, nil))
+	require.Nil(t, reply.Error, "a compressed connection still answers")
+}

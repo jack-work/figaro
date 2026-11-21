@@ -89,7 +89,7 @@ func forge(t *testing.T, path string, header http.Header) (*edgeClient, *http.Re
 	}}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	c, resp, err := websocket.Dial(ctx, "ws://fig.kelliher.info/", &websocket.DialOptions{HTTPClient: client, HTTPHeader: header})
+	c, resp, err := websocket.Dial(ctx, "ws://fig.kelliher.info/", &websocket.DialOptions{HTTPClient: client, HTTPHeader: header, CompressionMode: websocket.CompressionContextTakeover})
 	if err != nil {
 		return nil, resp, err
 	}
