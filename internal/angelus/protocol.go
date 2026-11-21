@@ -200,7 +200,7 @@ func (h *handlers) door(daemon map[string]jkrpc.HandlerFunc, policy authz.Policy
 		guarded[rpc.MethodList] = h.listingPeers(list)
 	}
 	for m, fn := range guarded {
-		inner := h.angelus.joined(m, h.resolvingIDs(m, h.touching(m, fn)))
+		inner := refusingShapelessPatches(m, h.angelus.joined(m, h.resolvingIDs(m, h.touching(m, fn))))
 		if p := h.angelus.Policies; p != nil {
 			inner = p.DroppingClaimsNotHeld(m, inner)
 		}
