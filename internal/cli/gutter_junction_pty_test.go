@@ -17,6 +17,7 @@ func TestGutterJunctionPTY(t *testing.T) {
 			ID: 1, Sealed: true, Inquiry: "what should happen here?",
 			InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: "what should happen here?"}},
 			FormDeltas:      adornDeltas("system.forked_from", "", "e87bb154", "mode", "", "testing"),
+			ForkedFrom:      "e87bb154",
 			Nodes:           []livedoc.Node{gutterThinking()},
 		}}}}, "Then check the tests")
 		rows := p.rows()
@@ -77,6 +78,7 @@ func TestGutterJunctionPTY(t *testing.T) {
 			ID: 1, Sealed: true, Inquiry: "keep the question above the scrolling text",
 			InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: "keep the question above the scrolling text"}},
 			FormDeltas:      adornDeltas("system.forked_from", "", "e87bb154", "mode", "", "testing"),
+			ForkedFrom:      "e87bb154",
 			Nodes:           []livedoc.Node{n},
 		}}}}, "GUTTERLAST")
 		p.key("C-n")

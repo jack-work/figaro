@@ -1,9 +1,6 @@
 package cli
 
 import (
-	"strings"
-
-	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/sdk/aria"
 )
@@ -19,13 +16,8 @@ type forkAt struct {
 func (t *transcript) forkPoints() []forkAt {
 	var out []forkAt
 	collect := func(m aria.Message) {
-		if p := forkParentOf(m.FormDeltas); p != "" {
-			out = append(out, forkAt{ref: nodeRef{turn: m.Turn, index: inquiryNode}, parent: p})
-		}
-		for i := range m.Nodes {
-			if p := forkParentOf(m.Nodes[i].FormDeltas); p != "" {
-				out = append(out, forkAt{ref: nodeRefAt(m, i), parent: p})
-			}
+		if m.ForkedFrom != "" {
+			out = append(out, forkAt{ref: nodeRef{turn: m.Turn, index: inquiryNode}, parent: m.ForkedFrom})
 		}
 	}
 	for _, m := range t.messages() {
@@ -35,21 +27,6 @@ func (t *transcript) forkPoints() []forkAt {
 		collect(*open)
 	}
 	return out
-}
-
-// A lookup, not a survey: this runs per block per frame under the render lock, and
-// a bound form has one forked_from.
-func forkParentOf(deltas map[string]livedoc.FormDelta) string {
-	for key, d := range deltas {
-		if d.Kind != livedoc.FormBound || d.Event != livedoc.FormSet {
-			continue
-		}
-		if !isForkedFromKey(strings.TrimPrefix(key, d.Form+".")) {
-			continue
-		}
-		return unquote(d.Value).text
-	}
-	return ""
 }
 
 func pagerForkNext(t *transcript) { t.jumpFork(1) }

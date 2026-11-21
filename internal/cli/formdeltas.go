@@ -50,10 +50,10 @@ type deltaCell struct {
 	present bool
 }
 
-// deltaRows: the fork banner first when lifted, then this figaro's own bound form,
-// then every other form by id. liftFork is the inquiry's: a fork happens only
-// on the turn's question.
-func deltaRows(deltas map[string]livedoc.FormDelta, liftFork bool) []deltaRow {
+// deltaRows: this figaro's own bound form first, then every other form by id.
+// forked is the turn's ForkedFrom being set: its glyph and parent ride the
+// question's header, so the birth keys leave no rows.
+func deltaRows(deltas map[string]livedoc.FormDelta, forked bool) []deltaRow {
 	if len(deltas) == 0 {
 		return nil
 	}
@@ -66,9 +66,7 @@ func deltaRows(deltas map[string]livedoc.FormDelta, liftFork bool) []deltaRow {
 			out = append(out, deltaRow{glyph: deadGlyph, key: sanitize(formID), banner: true})
 		}
 		for _, k := range g.keys {
-			// A lifted fork leaves no rows behind: the glyph and
-			// parent id ride the question's header.
-			if liftFork && forkKey(g.kind, k) && forkParent(g) != "" {
+			if forked && forkKey(g.kind, k) {
 				continue
 			}
 			d := g.byKey[k]
@@ -82,9 +80,9 @@ func deltaRows(deltas map[string]livedoc.FormDelta, liftFork bool) []deltaRow {
 	return out
 }
 
-// deltaRowCount counts without building rows; forked says the lift found a
-// parent, the only thing that suppresses a key.
-func deltaRowCount(deltas map[string]livedoc.FormDelta, liftFork, forked bool) int {
+// deltaRowCount counts without building rows; forked is the only thing that
+// suppresses a key.
+func deltaRowCount(deltas map[string]livedoc.FormDelta, forked bool) int {
 	n := 0
 	var dead map[string]bool
 	for key, d := range deltas {
@@ -98,7 +96,7 @@ func deltaRowCount(deltas map[string]livedoc.FormDelta, liftFork, forked bool) i
 			}
 			continue
 		}
-		if liftFork && forked && forkKey(d.Kind, strings.TrimPrefix(key, d.Form+".")) {
+		if forked && forkKey(d.Kind, strings.TrimPrefix(key, d.Form+".")) {
 			continue
 		}
 		n++
@@ -106,8 +104,8 @@ func deltaRowCount(deltas map[string]livedoc.FormDelta, liftFork, forked bool) i
 	return n
 }
 
-func anyDeltaRow(deltas map[string]livedoc.FormDelta, liftFork, forked bool) bool {
-	return deltaRowCount(deltas, liftFork, forked) > 0
+func anyDeltaRow(deltas map[string]livedoc.FormDelta, forked bool) bool {
+	return deltaRowCount(deltas, forked) > 0
 }
 
 // One row per key: a value too long is elided, not wrapped; yank gives it back whole.
@@ -248,18 +246,6 @@ func groupDeltas(deltas map[string]livedoc.FormDelta) (map[string]*deltaGroup, [
 		return order[i] < order[j]
 	})
 	return groups, order
-}
-
-func forkParent(g *deltaGroup) string {
-	if g.kind != livedoc.FormBound {
-		return ""
-	}
-	for _, k := range form.RuntimeDrops(form.ForkedFromKey) {
-		if d, ok := g.byKey[k]; ok && d.Event == livedoc.FormSet {
-			return unquote(d.Value).text
-		}
-	}
-	return ""
 }
 
 func forkKey(kind livedoc.FormKind, key string) bool {

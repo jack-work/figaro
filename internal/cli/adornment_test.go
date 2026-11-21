@@ -48,6 +48,7 @@ func adornFixtureH(t testing.TB, h, turns int) *transcript {
 			"datetime", "", "Saturday, September 12, 2026",
 			"system.forked_from", "", "e5abf08d",
 		),
+		ForkedFrom: "e5abf08d",
 		Nodes: []livedoc.Node{
 			{
 				Type: livedoc.NodeTool, ID: "t1", Name: "bash", Status: livedoc.StatusOK,
@@ -656,6 +657,6 @@ func TestWashStopsAtTheAdornmentsCorner(t *testing.T) {
 	}
 }
 
-func adornRowCount(deltas map[string]livedoc.FormDelta, lift bool) int {
-	return deltaRowCount(deltas, lift, lift && forkParentOf(deltas) != "")
+func adornRowCount(deltas map[string]livedoc.FormDelta, forked bool) int {
+	return deltaRowCount(deltas, forked)
 }

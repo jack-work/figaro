@@ -549,3 +549,24 @@ func TestAttachSparseLTsSkipsUnpopulatedSpan(t *testing.T) {
 		t.Fatalf("sparse seam delta did not move to next turn: %+v", turns[1].FormDeltas)
 	}
 }
+
+func TestAttachNamesTheParentOnTheTurnTheForkOpens(t *testing.T) {
+	fork := map[string]livedoc.FormDelta{
+		"a1.runtime.forked_from": {Value: json.RawMessage(`"90ec6584"`), Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1"},
+		"a1.mantra":              {Value: json.RawMessage(`"x"`), Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1"},
+	}
+	turns := []aria.Turn{
+		{ID: 1, LTs: []uint64{10, 12}, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Src: []livedoc.Src{{LT: 11, Block: 0}}}}},
+		{ID: 2, LTs: []uint64{13, 14}, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Src: []livedoc.Src{{LT: 14, Block: 0}}}}},
+	}
+	Attach(turns, map[uint64]map[string]livedoc.FormDelta{12: fork})
+	if turns[0].ForkedFrom != "" || turns[1].ForkedFrom != "90ec6584" {
+		t.Fatalf("the birth record belongs to the turn after it: %q, %q", turns[0].ForkedFrom, turns[1].ForkedFrom)
+	}
+
+	one := aria.Turn{ID: 3, LTs: []uint64{20, 21}}
+	AttachOne(&one, map[uint64]map[string]livedoc.FormDelta{20: fork})
+	if one.ForkedFrom != "90ec6584" {
+		t.Fatalf("AttachOne dropped the parent: %q", one.ForkedFrom)
+	}
+}

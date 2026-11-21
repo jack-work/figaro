@@ -83,6 +83,9 @@ func turnComposer(m aria.Message, width int, tick uint64, set renderSettings) ld
 				deltas: deltas,
 				open:   set.details && len(deltas) > 0,
 			}
+			if block == ldrender.BlockInquiry {
+				sec.forkedFrom = m.ForkedFrom
+			}
 			if sec.open {
 				held := m
 				sec.src, sec.m = metaSource{layout: set.coordFormat}, &held

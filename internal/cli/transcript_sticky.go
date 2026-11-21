@@ -51,7 +51,7 @@ func (t *transcript) stickyBlockOf(turn int) stickyQuestion {
 		return q
 	}
 	m := aria.Message{
-		Turn: turn, Inquiry: inq.Text, InquirySegments: inq.Segments, FormDeltas: inq.FormDeltas,
+		Turn: turn, Inquiry: inq.Text, InquirySegments: inq.Segments, FormDeltas: inq.FormDeltas, ForkedFrom: inq.ForkedFrom,
 	}
 	q.rows = t.renderMsgBase(m).rows
 	sec := t.section(m, ldrender.BlockInquiry, livedoc.Node{}, inq.FormDeltas)

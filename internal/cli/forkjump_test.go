@@ -35,7 +35,7 @@ func forkedTranscriptOn(t *testing.T, turns int, forks map[int]string) (*transcr
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("body ", 6)}},
 		}
 		if parent, ok := forks[i]; ok {
-			turn.FormDeltas = forkDeltas("a1", parent)
+			turn.FormDeltas, turn.ForkedFrom = forkDeltas("a1", parent), parent
 		}
 		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: turn}}}, aria.Notify)
 	}

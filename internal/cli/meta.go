@@ -63,7 +63,7 @@ func (s metaSource) entries(m aria.Message, block int) []metaEntry {
 				out = append(out, senderEntry(seg.Sender, seg.Name))
 			}
 		}
-		out = append(out, deltaEntries(m.FormDeltas, true)...)
+		out = append(out, deltaEntries(m.FormDeltas, m.ForkedFrom != "")...)
 	} else if block >= 0 && block < len(m.Nodes) {
 		n := m.Nodes[block]
 		out = append(out, nodeFields(n, ref, s.layout)...)
@@ -110,8 +110,8 @@ func senderEntry(sender, name string) metaEntry {
 	return metaEntry{key: "from", value: senderLabel(sender, name), other: senderOther(sender, name)}
 }
 
-func deltaEntries(deltas map[string]livedoc.FormDelta, lift bool) []metaEntry {
-	rows := deltaRows(deltas, lift)
+func deltaEntries(deltas map[string]livedoc.FormDelta, forked bool) []metaEntry {
+	rows := deltaRows(deltas, forked)
 	out := make([]metaEntry, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, metaEntry{kind: metaDelta, delta: r})
@@ -298,6 +298,9 @@ func (t *transcript) section(m aria.Message, block int, n livedoc.Node, deltas m
 		notes:     len(t.comments.at(m, block)),
 		open:      t.metaOpen[ref],
 		entryOpen: t.entryOpen,
+	}
+	if block == ldrender.BlockInquiry {
+		sec.forkedFrom = m.ForkedFrom
 	}
 	if sec.open {
 		held := m

@@ -8,6 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/arialog"
 
+	wire "github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
@@ -369,6 +370,11 @@ func Attach(turns []aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
 			t.FormDeltas = merge(t.FormDeltas, d)
 		}
 	}
+	for i := range turns {
+		if parent := wire.ForkedFromOf(turns[i].FormDeltas); parent != "" {
+			turns[i].ForkedFrom = parent
+		}
+	}
 }
 
 // AttachOne is Attach for one turn, without the seam rule.
@@ -391,6 +397,9 @@ func AttachOne(t *aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
 			continue
 		}
 		t.FormDeltas = merge(t.FormDeltas, d)
+	}
+	if parent := wire.ForkedFromOf(t.FormDeltas); parent != "" {
+		t.ForkedFrom = parent
 	}
 }
 

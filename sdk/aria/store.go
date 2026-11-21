@@ -119,6 +119,7 @@ func sliceNodes(m Message, lo, hi uint64) Message {
 		out.Inquiry = m.Inquiry
 		out.InquirySegments = m.InquirySegments
 		out.InquiryLT = m.InquiryLT
+		out.ForkedFrom = m.ForkedFrom
 	}
 	return out
 }

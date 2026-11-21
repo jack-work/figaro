@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	wire "github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
@@ -551,15 +552,17 @@ func (s *Server) OpenInquiry(id uint64, inquiry string, deltas map[string]livedo
 	tl := s.cache.Tail()
 	tl.Inquiry = inquiry
 	tl.InquirySegments = segments
+	forkedFrom := wire.ForkedFromOf(deltas)
 	if len(deltas) > 0 {
 		tl.FormDeltas = deltas
+		tl.ForkedFrom = forkedFrom
 	}
 	s.cache.TailMutated()
 	from := uint64(len(tl.Nodes))
 	subs := s.subsLocked()
 	s.mu.Unlock()
 	deliver(subs, Page{Parts: []TurnPart{{
-		Turn:        Turn{ID: id, Inquiry: inquiry, InquirySegments: segments, FormDeltas: deltas},
+		Turn:        Turn{ID: id, Inquiry: inquiry, InquirySegments: segments, FormDeltas: deltas, ForkedFrom: forkedFrom},
 		From:        from,
 		ClippedHead: from > 0,
 	}}})

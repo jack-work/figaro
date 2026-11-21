@@ -16,7 +16,7 @@ func TestShowDrawsTheDeltaTable(t *testing.T) {
 		"a1.mantra":             {Value: json.RawMessage(`"` + strings.Repeat("m", 60) + `"`), Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1"},
 	}
 	m := aria.Message{
-		Turn: 2, Role: livedoc.RoleOutput, Inquiry: "go", FormDeltas: deltas,
+		Turn: 2, Role: livedoc.RoleOutput, Inquiry: "go", FormDeltas: deltas, ForkedFrom: "aaaa1111",
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "done"}},
 	}
 	collapsed := strings.Join(renderTurnRows(m, 100, 0, renderSettings{}), "\n")

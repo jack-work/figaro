@@ -61,14 +61,14 @@ func TestDeltaRowCountAgreesWithDeltaRows(t *testing.T) {
 			bound("mantra", "sing"), one("a1", livedoc.FormBound, livedoc.FormRemoved, "mode", ""))},
 	}
 	for _, tc := range cases {
-		for _, lift := range []bool{false, true} {
-			want := len(deltaRows(tc.deltas, lift))
-			got := adornRowCount(tc.deltas, lift)
+		for _, forked := range []bool{false, true} {
+			want := len(deltaRows(tc.deltas, forked))
+			got := adornRowCount(tc.deltas, forked)
 			if got != want {
-				t.Errorf("%s (lift=%v): counted %d rows, deltaRows draws %d", tc.name, lift, got, want)
+				t.Errorf("%s (forked=%v): counted %d rows, deltaRows draws %d", tc.name, forked, got, want)
 			}
-			if any := anyDeltaRow(tc.deltas, lift, lift && forkParentOf(tc.deltas) != ""); any != (want > 0) {
-				t.Errorf("%s (lift=%v): anyDeltaRow says %v, deltaRows draws %d", tc.name, lift, any, want)
+			if any := anyDeltaRow(tc.deltas, forked); any != (want > 0) {
+				t.Errorf("%s (forked=%v): anyDeltaRow says %v, deltaRows draws %d", tc.name, forked, any, want)
 			}
 		}
 	}

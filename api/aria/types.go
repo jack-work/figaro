@@ -26,6 +26,11 @@ type Turn struct {
 	// opened the turn, keyed "<formid>.<path>".
 	FormDeltas map[string]livedoc.FormDelta `json:"formDeltas,omitempty"`
 
+	// ForkedFrom is the figaro id this aria was forked from, set on the turn
+	// that opens the branch: the fork's birth patch is among FormDeltas, and
+	// this is its parent, so a client needs no knowledge of the key.
+	ForkedFrom string `json:"forked_from,omitempty"`
+
 	LTs    []uint64       `json:"lts,omitempty"`
 	Sealed bool           `json:"sealed"`
 	Nodes  []livedoc.Node `json:"nodes,omitempty"`
@@ -77,10 +82,11 @@ func (d NodeDelta) Empty() bool {
 type Message struct {
 	Turn int    // turn id, not unique per message
 	From uint64 // node offset within the turn
-	// Inquiry, InquirySegments and FormDeltas are carried only by the slice
-	// that starts the turn (From == 0).
+	// Inquiry, InquirySegments, ForkedFrom and FormDeltas are carried only by
+	// the slice that starts the turn (From == 0).
 	Inquiry         string
 	InquirySegments []InquirySegment
+	ForkedFrom      string
 	// InquiryLT is Turn.LTs[0], known once the turn is sealed; zero until then.
 	InquiryLT  uint64
 	FormDeltas map[string]livedoc.FormDelta

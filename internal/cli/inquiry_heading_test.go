@@ -20,6 +20,7 @@ func TestInquiryHeadingNamesTheSender(t *testing.T) {
 			m := aria.Message{Turn: 1, Inquiry: "please run the tests", Role: livedoc.RoleOutput,
 				InquirySegments: []aria.InquirySegment{{Sender: tc.sender, Text: "please run the tests"}},
 				FormDeltas:      adornDeltas("system.forked_from", "", "e87bb154", "mantra", "", "test the heading"),
+				ForkedFrom:      "e87bb154",
 				Nodes:           []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "done"}},
 			}
 			rows := plain(renderTurnRows(m, 100, 0, renderSettings{}))
@@ -39,6 +40,7 @@ func TestStickyHeadingKeepsSenderForkTurnAndDelta(t *testing.T) {
 	m := aria.Turn{ID: 1, Inquiry: "what should happen here?", Sealed: true,
 		InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: "what should happen here?"}},
 		FormDeltas:      adornDeltas("system.forked_from", "", "e87bb154", "mantra", "", "test the heading"),
+		ForkedFrom:      "e87bb154",
 		Nodes:           []livedoc.Node{{Type: livedoc.NodeThinking, Markdown: strings.Repeat("Thinking below the question.\n\n", 20)}},
 	}
 	tr.client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: m}}}, aria.Notify)

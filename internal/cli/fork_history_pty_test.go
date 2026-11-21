@@ -16,6 +16,7 @@ func TestForkHistoryPTY(t *testing.T) {
 		ID: 138, Sealed: true, Inquiry: "inspect the fork seam",
 		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: "inspect the fork seam"}},
 		FormDeltas:      adornDeltas("system.forked_from", "", "6a2a5d694665e751f5533e46ecbec399", "system.model", "old-model", "new-model", "system.provider", "old-provider", "new-provider"),
+		ForkedFrom:      "6a2a5d694665e751f5533e46ecbec399",
 		Nodes:           []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "FORKHISTORYBODY", FormDeltas: adornDeltas("operations.subscription_policy", "", "keep the legitimate policy change")}},
 	}}}}
 	p := newAdornPaneFor(t, page, "FORKHISTORYBODY")

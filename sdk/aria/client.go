@@ -44,6 +44,7 @@ type Inquiry struct {
 	Text       string
 	Segments   []InquirySegment
 	FormDeltas map[string]livedoc.FormDelta
+	ForkedFrom string
 	LT         uint64 // see Message.InquiryLT
 }
 
@@ -327,7 +328,7 @@ func (c *Client) fold(p Page) (finalized []Message, desync int) {
 		id := int(part.ID)
 		staged := c.claimsOpen(part)
 
-		if part.Inquiry != "" || len(part.FormDeltas) > 0 {
+		if part.Inquiry != "" || len(part.FormDeltas) > 0 || part.ForkedFrom != "" {
 			// Text, deltas and LT arrive on different parts; each is sticky.
 			q := c.inquiry[id]
 			if part.Inquiry != "" {
@@ -335,6 +336,9 @@ func (c *Client) fold(p Page) (finalized []Message, desync int) {
 			}
 			if len(part.FormDeltas) > 0 {
 				q.FormDeltas = part.FormDeltas
+			}
+			if part.ForkedFrom != "" {
+				q.ForkedFrom = part.ForkedFrom
 			}
 			if len(part.LTs) > 0 {
 				q.LT = part.LTs[0]
@@ -523,6 +527,7 @@ func (c *Client) message(turn, from int, nodes []livedoc.Node) Message {
 		m.Inquiry, m.InquirySegments = q.Text, q.Segments
 		m.InquiryLT = q.LT
 		m.FormDeltas = q.FormDeltas
+		m.ForkedFrom = q.ForkedFrom
 	}
 	return m
 }

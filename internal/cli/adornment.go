@@ -78,32 +78,29 @@ func adornerFor(block int, n livedoc.Node) adorner {
 }
 
 type metaSection struct {
-	ref       nodeRef
-	src       metaSource
-	m         *aria.Message
-	block     int
-	deltas    map[string]livedoc.FormDelta
-	notes     int
-	open      bool
-	entryOpen map[nodeRef]bool
-	thread    func(text string, width int) []string
+	ref        nodeRef
+	src        metaSource
+	m          *aria.Message
+	block      int
+	deltas     map[string]livedoc.FormDelta
+	forkedFrom string
+	notes      int
+	open       bool
+	entryOpen  map[nodeRef]bool
+	thread     func(text string, width int) []string
 }
 
 func buildAdornment(a adorner, sec metaSection, w int) ldrender.Adornment {
 	out := ldrender.Adornment{GutterLast: a.gutterLast(), Tail: a.tail()}
-	lift := a.liftFork()
-	forked := false
-	if lift {
-		if parent := forkParentOf(sec.deltas); parent != "" {
-			head := forkGlyph + " " + ariaName(parent)
-			out.Suffix = term.StateDim(head)
-			out.SuffixMore = otherSpot(ldrender.Width(head), otherName(parent))
-			forked = true
-		}
+	forked := a.liftFork() && sec.forkedFrom != ""
+	if forked {
+		head := forkGlyph + " " + ariaName(sec.forkedFrom)
+		out.Suffix = term.StateDim(head)
+		out.SuffixMore = otherSpot(ldrender.Width(head), otherName(sec.forkedFrom))
 	}
 	if !sec.open || w < adornFloor(a) {
 		switch {
-		case anyDeltaRow(sec.deltas, lift, forked):
+		case anyDeltaRow(sec.deltas, forked):
 			out.Gutter = term.StateDim(deltaGlyph)
 		case sec.notes > 0:
 			out.Gutter = term.CommentMark(commentGlyph)

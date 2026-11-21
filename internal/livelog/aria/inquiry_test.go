@@ -89,6 +89,16 @@ func TestTheOpeningFrameCarriesTheFormState(t *testing.T) {
 	if _, ok := fold()["a1.system.forked_from"]; !ok {
 		t.Fatalf("the seal dropped the state the turn opened with: %+v", fold())
 	}
+
+	forkedFrom := ""
+	for _, m := range c.View().Closed {
+		if m.Turn == 1 {
+			forkedFrom = m.ForkedFrom
+		}
+	}
+	if forkedFrom != "90ec6584" {
+		t.Fatalf("the turn does not name its parent after the seal: %q", forkedFrom)
+	}
 }
 
 // A client that missed the opening frames recovers through the read it
