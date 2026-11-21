@@ -19,7 +19,7 @@ func (h *handlers) trustTraceparent(ctx context.Context, method string, params j
 	if json.Unmarshal(params, &req) != nil || req.TraceParent == "" {
 		return params, nil
 	}
-	if figOtel.ValidTraceParent(req.TraceParent) && h.callerIsOwner(ctx) {
+	if figOtel.ValidTraceParent(req.TraceParent) && (h.callerIsOwner(ctx) || callerIsDelegated(ctx)) {
 		return params, nil
 	}
 	var raw map[string]json.RawMessage
@@ -37,4 +37,13 @@ func (h *handlers) trustTraceparent(ctx context.Context, method string, params j
 func (h *handlers) callerIsOwner(ctx context.Context) bool {
 	sub, err := authz.SubjectOf(ctx)
 	return err == nil && authz.OwnerCall(ctx, h.angelus.owner(), sub)
+}
+
+func callerIsDelegated(ctx context.Context) bool {
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil {
+		return false
+	}
+	_, ok := authz.DelegatedVia(sub)
+	return ok
 }
