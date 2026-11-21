@@ -2,9 +2,12 @@ package angelus
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -67,4 +70,38 @@ func (h *handlers) createdFor(ctx context.Context) (store.BirthOption, error) {
 		return nil, fmt.Errorf("mint: %s, and a delegated figaro is born the owner's, but this daemon knows no owner", who)
 	}
 	return store.MintedBy(owner.String()), nil
+}
+
+type judgedVersion struct{}
+
+func withJudgedVersion(ctx context.Context) (context.Context, *uint64) {
+	v := new(uint64)
+	return context.WithValue(ctx, judgedVersion{}, v), v
+}
+
+func pinSetToJudgedVersion(ctx context.Context, method string, params json.RawMessage, version uint64) (json.RawMessage, error) {
+	if _, delegated := delegatedVia(ctx); !delegated || method != rpc.MethodSet || version == 0 {
+		return params, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(params, &fields); err != nil {
+		return nil, err
+	}
+	fields["if_version"] = json.RawMessage(strconv.FormatUint(version, 10))
+	delete(fields, "seq")
+	return json.Marshal(fields)
+}
+
+func (h *handlers) refuseForkOfAMovedBoard(ctx context.Context, parent string, judged uint64) error {
+	if _, delegated := delegatedVia(ctx); !delegated {
+		return nil
+	}
+	now, err := h.angelus.Backend.FormAt(parent)
+	if err != nil {
+		return err
+	}
+	if now.Version != judged {
+		return fmt.Errorf("fork: %w: %s was at version %d when the patch was judged and is at %d, retry", store.ErrFormMoved, parent, judged, now.Version)
+	}
+	return nil
 }

@@ -798,9 +798,13 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 	if patch == nil || patch.IsIdentity() {
 		return nil
 	}
-	snap, err := h.angelus.Backend.FormState(id)
+	at, err := h.angelus.Backend.FormAt(id)
 	if err != nil {
 		return err
+	}
+	snap := at.Snapshot
+	if j, ok := ctx.Value(judgedVersion{}).(*uint64); ok {
+		*j = at.Version
 	}
 	line := lineage{of: id}
 	if method == rpc.MethodCast {

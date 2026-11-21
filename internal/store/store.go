@@ -157,6 +157,7 @@ type Backend interface {
 	// FormState folds the reducible form channel; the channel is the durable
 	// truth, there is no separate form file.
 	FormState(ariaID string) (form.Snapshot, error)
+	FormAt(ariaID string) (FormAt, error)
 
 	// FormVersion is the durable index of the last patch appended: the version a conditional Set quotes.
 	FormVersion(ariaID string) (uint64, error)

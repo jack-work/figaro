@@ -65,3 +65,13 @@ func ReadsFormsThrough(f *FormFault) func(*ServerConfig) {
 		cfg.Angelus.Backend = f
 	}
 }
+
+func (f *FormFault) FormAt(id string) (store.FormAt, error) {
+	f.mu.Lock()
+	broken := f.ids[id]
+	f.mu.Unlock()
+	if broken {
+		return store.FormAt{}, errFormFault
+	}
+	return f.XwalBackend.FormAt(id)
+}

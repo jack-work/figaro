@@ -94,6 +94,10 @@ func (b *liveForkBackend) ForkAt(id string, _ uint64) (string, string, error) {
 	return id, "alternative", nil
 }
 
+func (b *liveForkBackend) FormAt(id string) (store.FormAt, error) {
+	return store.FormAt{Snapshot: form.Snapshot{}.Apply(b.form[id]), Version: b.formVer}, nil
+}
+
 func (b *liveForkBackend) FormState(id string) (form.Snapshot, error) {
 	return form.Snapshot{}.Apply(b.form[id]), nil
 }

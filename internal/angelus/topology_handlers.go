@@ -327,10 +327,11 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	inherited, err := h.angelus.Backend.FormState(req.FigaroID)
+	judged, err := h.angelus.Backend.FormAt(req.FigaroID)
 	if err != nil {
 		return nil, fmt.Errorf("fork: the board of %s cannot be read to check the patch against it: %w", req.FigaroID, err)
 	}
+	inherited := judged.Snapshot
 	holder := inherited
 	claimed := authz.FigaroOf(ctx) != ""
 	heir := req.Seat != "" && ((!claimed && h.callerOwns(ctx)) || authz.FigaroOf(ctx) == req.FigaroID)
@@ -465,6 +466,11 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		release()
 		if err != nil {
 			return err
+		}
+		if cerr := h.refuseForkOfAMovedBoard(ctx, req.FigaroID, judged.Version); cerr != nil {
+			h.discardBirth(alt)
+			alt = ""
+			return cerr
 		}
 		if interior && !byOwner {
 			if cerr := h.clampToHolderLifetime(alt, holder); cerr != nil {

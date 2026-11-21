@@ -260,7 +260,11 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if dressed, err = h.keepGrantsBesideScopes(method, id, dressed); err != nil {
 			return nil, err
 		}
+		ctx, judged := withJudgedVersion(ctx)
 		if err := h.refuseCallerPatch(ctx, method, id, dressed); err != nil {
+			return nil, err
+		}
+		if dressed, err = pinSetToJudgedVersion(ctx, method, dressed, *judged); err != nil {
 			return nil, err
 		}
 		if err := h.refuseCastPlacement(ctx, method, id, dressed); err != nil {
