@@ -17,6 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/jack-work/figaro/internal/apikey"
 	"github.com/jack-work/figaro/internal/config"
@@ -425,9 +426,12 @@ func scopedGroups(groups []string, scope string) []string {
 	if len(groups) == 0 {
 		return nil
 	}
-	out := make([]string, len(groups))
-	for n, g := range groups {
-		out[n] = g + "@" + scope
+	out := make([]string, 0, len(groups))
+	for _, g := range groups {
+		if strings.ContainsFunc(g, unicode.IsControl) {
+			continue
+		}
+		out = append(out, g+"@"+scope)
 	}
 	return out
 }

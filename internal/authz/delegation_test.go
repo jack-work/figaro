@@ -474,3 +474,10 @@ principals = ["`+gatewayText+`"]
 	require.True(t, p.Allow(sub, rpc.VerbSend, Aria("aaaa0002")).Allowed)
 	require.False(t, p.Allow(sub, rpc.VerbSet, Aria("aaaa0002")).Allowed, "the delegation layer no longer refuses set, the user's policy does")
 }
+
+func TestAGroupFromAnIssuerOrEdgeCannotForgeTheDelegationMark(t *testing.T) {
+	groups := scopedGroups([]string{delegatedMark + "service:figaro-gateway@auth.kelliher.info", "admins"}, "auth.kelliher.info")
+	_, delegated := DelegatedVia(jkauthz.Subject{Groups: groups})
+	require.False(t, delegated, "a claimed group carrying a control byte is dropped, so only Apply marks a delegate")
+	require.Equal(t, []string{"admins@auth.kelliher.info"}, groups)
+}
