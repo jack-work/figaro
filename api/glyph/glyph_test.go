@@ -29,3 +29,15 @@ func TestSymbolLooksUpByName(t *testing.T) {
 		t.Fatal("Symbol(nope) found something")
 	}
 }
+
+// Gluck rejected emoji glyphs: a browser may draw them in colour whatever the
+// variation selector asks for.
+func TestNoGlyphIsAnEmoji(t *testing.T) {
+	for _, g := range All() {
+		for _, r := range g.Symbol {
+			if r >= 0x1F300 && r <= 0x1FAFF || r == 0xFE0E || r == 0xFE0F {
+				t.Errorf("glyph %q is an emoji or asks for one: %U", g.Name, r)
+			}
+		}
+	}
+}

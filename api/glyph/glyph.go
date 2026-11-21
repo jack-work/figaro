@@ -74,8 +74,8 @@ const (
 	MarkCompletion    = "♪"
 	MarkLogin         = "▸"
 
-	Voice  = "🎙\uFE0E"
-	Attach = "📎\uFE0E"
+	Voice  = "\uF130"
+	Attach = "\uF0C6"
 )
 
 type Glyph struct {
