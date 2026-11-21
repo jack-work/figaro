@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 func delegatedVia(ctx context.Context) (string, bool) {
@@ -40,4 +41,16 @@ func (h *handlers) refuseUndeclaredOutfits(ctx context.Context, outfits []string
 		}
 	}
 	return nil
+}
+
+func (h *handlers) createdFor(ctx context.Context) (store.BirthOption, error) {
+	who, ok := delegatedVia(ctx)
+	if !ok {
+		return mintedBy(ctx), nil
+	}
+	owner := h.angelus.owner()
+	if owner.IsZero() {
+		return nil, fmt.Errorf("mint: %s, and a delegated figaro is born the owner's, but this daemon knows no owner", who)
+	}
+	return store.MintedBy(owner.String()), nil
 }

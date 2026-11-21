@@ -185,6 +185,10 @@ func (h *handlers) createWith(ctx context.Context, params json.RawMessage, birth
 	}
 
 	cwd := birthCwd(req.Cwd)
+	owner, err := h.createdFor(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	backend := h.angelus.Backend
 
@@ -199,7 +203,7 @@ func (h *handlers) createWith(ctx context.Context, params json.RawMessage, birth
 			return nil, serr
 		}
 		var cerr error
-		id, _, cerr = backend.ForkWith(formID, 0, childBirthPatch(dress, cwd), mintedBy(ctx), store.AtRoot(), bootStamp(cwd))
+		id, _, cerr = backend.ForkWith(formID, 0, childBirthPatch(dress, cwd), owner, store.AtRoot(), bootStamp(cwd))
 		if cerr != nil {
 			return nil, fmt.Errorf("mint aria: %w", cerr)
 		}

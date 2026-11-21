@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,6 +20,44 @@ func (r onBehalfRig) delegatedCreate(t *testing.T, c *edgeClient, params map[str
 	require.NoError(t, json.Unmarshal(reply.Result, &out))
 	require.NotEmpty(t, out.FigaroID)
 	return out.FigaroID
+}
+
+func TestADelegatedCreateMintsATopLevelFigaroTheOwnerOwnsAsIfMadeInHisTerminal(t *testing.T) {
+	r := onBehalfDoor(t)
+	c, _, err := r.as(t, "figchat-gateway", "gluck")
+	require.NoError(t, err)
+
+	id := r.delegatedCreate(t, c, map[string]any{"outfits": []string{"mock"}, "cwd": ""})
+
+	terminal, err := r.daemon.Backend.Meta(r.aria)
+	require.NoError(t, err)
+	web, err := r.daemon.Backend.Meta(id)
+	require.NoError(t, err)
+	require.NotEmpty(t, terminal.MintedBy)
+	require.Equal(t, terminal.MintedBy, web.MintedBy, "a web-minted figaro is the owner's, not the gateway's or the web user's")
+	require.Equal(t, terminal.MintedAtRoot, web.MintedAtRoot)
+	require.True(t, web.MintedAtRoot)
+
+	tl, ok := r.daemon.Backend.NodeLink(r.aria)
+	require.True(t, ok)
+	wl, ok := r.daemon.Backend.NodeLink(id)
+	require.True(t, ok)
+	require.Equal(t, tl.Parent, wl.Parent, "born where a terminal create of the same outfit is born")
+
+	listed, err := r.owner.List(r.ctx)
+	require.NoError(t, err)
+	var ids []string
+	for _, f := range listed.Figaros {
+		ids = append(ids, f.ID)
+	}
+	require.Contains(t, ids, id, "the owner's list shows it")
+
+	got := delegatedFormOf(t, c, id)
+	cwd := got.Snapshot.Lookup("system.cwd")
+	require.NotNil(t, cwd)
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	require.Equal(t, wd, *cwd, "born in the daemon's default directory")
 }
 
 func TestADelegatedCreateAnswersItsFirstPrompt(t *testing.T) {

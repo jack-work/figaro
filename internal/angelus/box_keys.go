@@ -841,6 +841,9 @@ func hostCwdOf(ctx context.Context, requested string) string {
 	if _, ok := callerBox(ctx); ok {
 		return ""
 	}
+	if _, ok := delegatedVia(ctx); ok {
+		return ""
+	}
 	return requested
 }
 
