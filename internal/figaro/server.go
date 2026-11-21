@@ -90,10 +90,11 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		// The hub dresses on the way in; a missing spec already failed the qua.
 		cursor := int(a.turnCursor())
 		active := a.turnActive()
-		if err := a.SubmitPromptFrom(ctx, req, rpc.SenderFrom(params, a.dukeTitle)); err != nil {
+		got, err := a.submitPrompt(ctx, req, rpc.SenderFrom(params, a.dukeTitle))
+		if err != nil {
 			return nil, err
 		}
-		return rpc.QuaResponse{OK: true, Cursor: cursor, Active: active}, nil
+		return rpc.QuaResponse{OK: true, Cursor: cursor, Active: active, Turn: got.Turn, LT: got.LT}, nil
 
 	case rpc.MethodContext:
 		msgs := a.Context()
@@ -231,7 +232,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if req.Backward {
 			return a.ReadBefore(req.At, req.Floor, req.Limit), nil
 		}
-		return a.Read(req.At, req.Limit), nil
+		return a.ReadUntil(req.At, req.Until, req.Limit), nil
 	}
 	return nil, fmt.Errorf("unknown method: %s", method)
 }

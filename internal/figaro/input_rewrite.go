@@ -1,8 +1,5 @@
 package figaro
 
-// Input rewrites run in SubmitPromptFrom before anything is queued or patched:
-// a terminated token that does not resolve refuses the message.
-
 import (
 	"context"
 	"fmt"

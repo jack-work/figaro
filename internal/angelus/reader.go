@@ -87,18 +87,17 @@ func (r *AriaReader) Context(id string) ([]message.Message, *aria.Metrics, error
 	return msgs, r.metrics(id, msgs), nil
 }
 
-// Page serves sealed history; at.Turn == 0 with before means the tail, and
-// floor applies to a backward read only.
-func (r *AriaReader) Page(id string, at, floor aria.Anchor, budget int, before bool) (aria.Page, error) {
+// Page serves sealed history; at.Turn == 0 with before means the tail.
+func (r *AriaReader) Page(id string, at, bound aria.Anchor, budget int, before bool) (aria.Page, error) {
 	srv, metrics, err := r.serverFor(id)
 	if err != nil {
 		return aria.Page{}, err
 	}
 	var page aria.Page
 	if before {
-		page = srv.ReadBefore(at, floor, budget)
+		page = srv.ReadBefore(at, bound, budget)
 	} else {
-		page = srv.Read(at, budget)
+		page = srv.ReadUntil(at, bound, budget)
 	}
 	page.Metrics = metrics
 	return page, nil

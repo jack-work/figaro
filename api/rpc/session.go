@@ -14,6 +14,7 @@ type FigaroInfoResponse struct {
 	Provider         string `json:"provider"`
 	Model            string `json:"model"`
 	MessageCount     int    `json:"message_count"`
+	TurnCount        int    `json:"turn_count,omitempty"`
 	TokensIn         int    `json:"tokens_in"`
 	TokensOut        int    `json:"tokens_out"`
 	CacheReadTokens  int    `json:"cache_read_tokens"`
@@ -53,7 +54,7 @@ type FigaroInfoResponse struct {
 	// Present is where the row is drawn: Parent unless a promote moved it.
 	// Vector follows Present.
 	Present string `json:"present,omitempty"`
-	Kind    string `json:"kind,omitempty"` // "conversation" | "form" | "outfit" | "null"; global listings only
+	Kind    string `json:"kind,omitempty"` // "conversation" | "log" | "form" | "outfit" | "null"; "log" in every listing, the rest in global listings only
 
 	// Unbound-form rows only; TargetAria is set when the form is a role.
 	Name       string `json:"name,omitempty"`
