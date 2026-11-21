@@ -149,3 +149,27 @@ func TestADelegatedCreateOnADaemonWhoseDefaultSandboxIsNotLocalNamesTheSandbox(t
 	require.Contains(t, reply.Error.Message, `default sandbox is "judge"`)
 	require.Contains(t, reply.Error.Message, "may use only the local sandbox")
 }
+
+func TestADelegatedCreateIsMintedByTheConfiguredOwner(t *testing.T) {
+	t.Run("authz.owner unset: the daemon's own principal", func(t *testing.T) {
+		r := onBehalfDoor(t)
+		require.True(t, r.daemon.Owner.IsZero())
+		c, _, err := r.as(t, "figchat-gateway", "gluck")
+		require.NoError(t, err)
+		id := r.delegatedCreate(t, c, map[string]any{})
+		meta, err := r.daemon.Backend.Meta(id)
+		require.NoError(t, err)
+		require.Equal(t, r.daemon.Peercred.Self().String(), meta.MintedBy)
+		require.NotEqual(t, "user:gluck@issuer.test.figaro", meta.MintedBy)
+	})
+	t.Run("authz.owner set: that principal, not the web user", func(t *testing.T) {
+		r := onBehalfDoor(t)
+		r.daemon.Owner = jkauthz.Principal{Kind: jkauthz.KindUser, ID: "boss@issuer.test.figaro"}
+		c, _, err := r.as(t, "figchat-gateway", "gluck")
+		require.NoError(t, err)
+		id := r.delegatedCreate(t, c, map[string]any{})
+		meta, err := r.daemon.Backend.Meta(id)
+		require.NoError(t, err)
+		require.Equal(t, "user:boss@issuer.test.figaro", meta.MintedBy)
+	})
+}
