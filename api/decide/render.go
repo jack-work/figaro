@@ -5,10 +5,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/rpc"
 )
 
-const Marker = "←"
+const Marker = glyph.DecideMarker
 
 func Lines(r rpc.DecideResponse) []string {
 	width := 0

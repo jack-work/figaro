@@ -2,13 +2,17 @@
 // UTF-8 markdown string that mutates only by single-region splices.
 package livedoc
 
-import "unicode/utf8"
+import (
+	"unicode/utf8"
+
+	"github.com/jack-work/figaro/api/glyph"
+)
 
 // SpinnerSentinel is the PUA rune the producer writes for a running spinner;
 // the renderer substitutes a frame locally, so animation never hits the wire.
 const SpinnerSentinel = '\ue000'
 
-var SpinnerFrames = []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+var SpinnerFrames = []rune(glyph.Frames)
 
 // Delta replaces bytes [At, At+Del) with Ins; both bounds are rune-aligned.
 type Delta struct {

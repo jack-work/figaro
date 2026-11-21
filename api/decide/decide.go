@@ -3,9 +3,11 @@ package decide
 import (
 	"fmt"
 	"strings"
+
+	"github.com/jack-work/figaro/api/glyph"
 )
 
-const Sigil = "??"
+const Sigil = glyph.DecideSigil
 
 const (
 	openBrace  = '{'

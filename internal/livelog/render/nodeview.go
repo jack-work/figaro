@@ -1,8 +1,11 @@
 package render
 
-import "github.com/jack-work/figaro/api/livedoc"
+import (
+	"github.com/jack-work/figaro/api/glyph"
+	"github.com/jack-work/figaro/api/livedoc"
+)
 
-var defaultFrames = []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+var defaultFrames = []rune(glyph.Frames)
 
 // NodeText is a minimal NodeView: a status header and the body under a gutter.
 type NodeText struct {
@@ -30,9 +33,9 @@ func (r NodeText) Render(n livedoc.Node, width, tick int) []string {
 func (r NodeText) glyph(status string, tick int) string {
 	switch status {
 	case livedoc.StatusOK:
-		return "✓"
+		return glyph.OK
 	case livedoc.StatusError:
-		return "✗"
+		return glyph.Fail
 	case livedoc.StatusRunning:
 		f := r.Frames
 		if len(f) == 0 {
@@ -43,6 +46,6 @@ func (r NodeText) glyph(status string, tick int) string {
 		}
 		return string(f[tick%len(f)])
 	default:
-		return "·"
+		return glyph.Pending
 	}
 }
