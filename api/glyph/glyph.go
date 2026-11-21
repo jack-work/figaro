@@ -74,7 +74,8 @@ const (
 	MarkCompletion    = "♪"
 	MarkLogin         = "▸"
 
-	Voice = "♫"
+	Voice  = "♫"
+	Attach = "⊕"
 )
 
 type Glyph struct {
@@ -155,6 +156,7 @@ var table = []Glyph{
 	{"pit.login.mark", MarkLogin, "the selection mark in the login pit"},
 	{"pit.answer", PitKey, "the answer box"},
 	{"voice", Voice, "spoken input: the mic toggle and a composer filling from speech"},
+	{"attach", Attach, "a file or photo added to the draft, and the control that adds one"},
 }
 
 func All() []Glyph { return append([]Glyph(nil), table...) }
