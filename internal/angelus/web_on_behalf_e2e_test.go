@@ -22,6 +22,7 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer/peertest"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/sdk"
 )
 
@@ -67,6 +68,11 @@ func onBehalfDoor(t *testing.T) onBehalfRig {
 
 func onBehalfDoorWith(t *testing.T, mockOutfit, authzExtra string, setupOutfit ...string) onBehalfRig {
 	t.Helper()
+	return onBehalfDoorOn(t, nil, mockOutfit, authzExtra, setupOutfit...)
+}
+
+func onBehalfDoorOn(t *testing.T, wrap func(store.Backend) store.Backend, mockOutfit, authzExtra string, setupOutfit ...string) onBehalfRig {
+	t.Helper()
 	is := peertest.NewIssuer(t)
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
@@ -90,7 +96,11 @@ clients = { figchat-gateway = "service", other-service = "service" }
 principal = "service:figchat-gateway@issuer.test.figaro"
 users = ["user:gluck@issuer.test.figaro"]
 `), 0o600))
-	a, acli, ctx := daemonOnStore(t, dir, nil)
+	var onStore func(*angelus.Angelus, *store.XwalBackend)
+	if wrap != nil {
+		onStore = func(a *angelus.Angelus, _ *store.XwalBackend) { a.Backend = wrap(a.Backend) }
+	}
+	a, acli, ctx := daemonOnStore(t, dir, onStore)
 	setup := "mock"
 	if len(setupOutfit) > 0 {
 		setup = setupOutfit[0]

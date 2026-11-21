@@ -26,15 +26,13 @@ func (b *writeAfterJudging) FormAt(id string) (store.FormAt, error) {
 }
 
 func TestADelegatedSetThatLosesARaceIsRefusedAndMayRetry(t *testing.T) {
-	r := onBehalfDoor(t)
+	hook := &writeAfterJudging{}
+	r := onBehalfDoorOn(t, func(b store.Backend) store.Backend { hook.Backend = b; return hook }, plainMockOutfit, "")
 	c, _, err := r.as(t, "figchat-gateway", "gluck")
 	require.NoError(t, err)
-
-	hook := &writeAfterJudging{Backend: r.daemon.Backend}
 	hook.land = func() {
 		r.ownerSets(t, r.aria, map[string]json.RawMessage{"mantra": json.RawMessage(`"owner"`)})
 	}
-	r.daemon.Backend = hook
 
 	hook.armed.Store(true)
 	reply := c.call(rpc.MethodSet, onAria(r.aria, map[string]any{"patch": plainPatch(t, map[string]string{"duke-title": "web"})}))
@@ -49,17 +47,15 @@ func TestADelegatedSetThatLosesARaceIsRefusedAndMayRetry(t *testing.T) {
 }
 
 func TestADelegatedForkThatLosesARaceIsRefusedAndLeavesNoChild(t *testing.T) {
-	r := onBehalfDoor(t)
+	hook := &writeAfterJudging{}
+	r := onBehalfDoorOn(t, func(b store.Backend) store.Backend { hook.Backend = b; return hook }, plainMockOutfit, "")
 	c, _, err := r.as(t, "figchat-gateway", "gluck")
 	require.NoError(t, err)
 	before, err := r.owner.List(r.ctx)
 	require.NoError(t, err)
-
-	hook := &writeAfterJudging{Backend: r.daemon.Backend}
 	hook.land = func() {
 		r.ownerSets(t, r.aria, map[string]json.RawMessage{"mantra": json.RawMessage(`"owner"`)})
 	}
-	r.daemon.Backend = hook
 
 	hook.armed.Store(true)
 	reply := c.call(rpc.MethodFork, onAria(r.aria, map[string]any{"patch": plainPatch(t, map[string]string{"duke-title": "web"})}))
