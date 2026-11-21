@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
@@ -51,4 +52,21 @@ func TestShadowedKeyGrantsStillRefuseADelegatedForkWithASeat(t *testing.T) {
 	require.NoError(t, err)
 	reply := c.call(rpc.MethodFork, onAria(r.aria, map[string]any{"seat": "someone"}))
 	require.NotNil(t, reply.Error)
+}
+
+func TestADelegatedCreateMayNotRemoveAnOwnerHeldKeyItsOutfitGives(t *testing.T) {
+	r := onBehalfDoorWith(t, plainMockOutfit+"[lifecycle]\nstatus = \"routing-alias\"\n", "")
+	c, _, err := r.as(t, "figchat-gateway", "gluck")
+	require.NoError(t, err)
+	plain, err := r.owner.Create(r.ctx, nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, delegatedFormOf(t, c, plain.FigaroID).Snapshot.Lookup(form.LifecycleStatusKey))
+	strip := form.Patch{Object: &form.ObjectPatch{Delete: map[string]form.Value{"lifecycle": rv(`{"status":"routing-alias"}`)}}}
+	before, err := r.owner.List(r.ctx)
+	require.NoError(t, err)
+	reply := c.call(rpc.MethodCreate, map[string]any{"patch": strip})
+	require.NotNil(t, reply.Error)
+	after, err := r.owner.List(r.ctx)
+	require.NoError(t, err)
+	require.Len(t, after.Figaros, len(before.Figaros))
 }

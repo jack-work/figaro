@@ -126,9 +126,6 @@ func (h *handlers) createWith(ctx context.Context, params json.RawMessage, birth
 	if err := h.refuseUndeclaredOutfits(ctx, req.Outfits); err != nil {
 		return nil, err
 	}
-	if err := h.refuseCallerKeys(ctx, rootBirth(), form.Snapshot{}, req.Patch); err != nil {
-		return nil, err
-	}
 	if err := h.refuseOutfitGrants(ctx, req.Outfits); err != nil {
 		return nil, err
 	}
@@ -149,6 +146,9 @@ func (h *handlers) createWith(ctx context.Context, params json.RawMessage, birth
 		stumpPatch, err = h.dressDefault()
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := h.refuseCallerKeys(ctx, rootBirth(), form.Snapshot{}.Apply(stumpPatch), req.Patch); err != nil {
 		return nil, err
 	}
 
