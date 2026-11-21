@@ -238,72 +238,92 @@ func (in *interactiveInput) execCommandAs(line string, switchID uint64) {
 	in.runThroughRouter(argv)
 }
 
-func (in *interactiveInput) runOverlay(verb string, args []string, switchID uint64) {
-	switch verb {
-	case "listen":
-		in.switchAsync(switchID, func(ctx context.Context) (string, error) {
-			spec, err := oneSpec(verb, args)
-			if err != nil {
-				return "", err
+type overlayFunc func(in *interactiveInput, word string, args []string, switchID uint64)
+
+var overlays map[string]overlayFunc
+
+func init() {
+	overlays = map[string]overlayFunc{
+		"listen": func(in *interactiveInput, _ string, args []string, switchID uint64) {
+			in.switchAsync(switchID, func(ctx context.Context) (string, error) {
+				spec, err := oneSpec("listen", args)
+				if err != nil {
+					return "", err
+				}
+				return in.switchSubject(ctx, spec, false)
+			})
+		},
+		"attend": func(in *interactiveInput, _ string, args []string, switchID uint64) {
+			in.switchAsync(switchID, func(ctx context.Context) (string, error) {
+				spec, err := oneSpec("attend", args)
+				if err != nil {
+					return "", err
+				}
+				return in.switchSubject(ctx, spec, true)
+			})
+		},
+		"back":    func(in *interactiveInput, word string, args []string, _ uint64) { in.hopBy(word, args, -1) },
+		"forward": func(in *interactiveInput, word string, args []string, _ uint64) { in.hopBy(word, args, 1) },
+		"history": func(in *interactiveInput, _ string, _ []string, _ uint64) {
+			if shellPID <= 0 || bindingDisabled() {
+				in.noteErr("history: this pager attends no shell, so it has no history")
+				return
 			}
-			return in.switchSubject(ctx, spec, false)
-		})
-	case "attend", "at":
-		in.switchAsync(switchID, func(ctx context.Context) (string, error) {
-			spec, err := oneSpec("attend", args)
-			if err != nil {
-				return "", err
+			in.openFormPit(formPit{name: "history", form: rpc.NavFormID(shellPID), bare: true})
+		},
+		"kill": func(in *interactiveInput, _ string, args []string, _ uint64) { in.askKill(args) },
+		"send": func(in *interactiveInput, _ string, args []string, _ uint64) {
+			in.commandAsync(func(ctx context.Context) (string, error) {
+				return in.commandSend(ctx, args)
+			})
+		},
+		"fork": func(in *interactiveInput, _ string, args []string, switchID uint64) {
+			in.switchAsync(switchID, func(ctx context.Context) (string, error) {
+				return in.commandFork(ctx, args)
+			})
+		},
+		"new": func(in *interactiveInput, _ string, args []string, switchID uint64) {
+			in.switchAsync(switchID, func(ctx context.Context) (string, error) {
+				return in.commandNew(ctx, args)
+			})
+		},
+		"succeed": func(in *interactiveInput, _ string, args []string, _ uint64) { in.commandSucceed(args) },
+		"decide":  func(in *interactiveInput, _ string, args []string, _ uint64) { in.commandDecide(args) },
+		"notifications": func(in *interactiveInput, _ string, args []string, _ uint64) {
+			in.mu.Lock()
+			defer in.mu.Unlock()
+			if len(args) > 0 && args[0] == "clear" {
+				in.lt.tr.notes.clear()
+				in.lt.tr.setCommandNote("notifications cleared")
+				return
 			}
-			return in.switchSubject(ctx, spec, true)
-		})
-	case "aria-back", "back", "aria-forward", "forward":
-		n, err := hopCount(verb, args)
-		if err != nil {
-			in.noteErr(err.Error())
-			return
-		}
-		if verb == "aria-back" || verb == "back" {
-			n = -n
-		}
-		in.hopAria(n)
-	case "history":
-		if shellPID <= 0 || bindingDisabled() {
-			in.noteErr("history: this pager attends no shell, so it has no history")
-			return
-		}
-		in.openFormPit(formPit{name: "history", form: rpc.NavFormID(shellPID), bare: true})
-	case "kill":
-		in.askKill(args)
-	case "send", "s":
-		in.commandAsync(func(ctx context.Context) (string, error) {
-			return in.commandSend(ctx, args)
-		})
-	case "fork":
-		in.switchAsync(switchID, func(ctx context.Context) (string, error) {
-			return in.commandFork(ctx, args)
-		})
-	case "new":
-		in.switchAsync(switchID, func(ctx context.Context) (string, error) {
-			return in.commandNew(ctx, args)
-		})
-	case "succeed":
-		in.commandSucceed(args)
-	case "decide":
-		in.commandDecide(args)
-	case "notifications", "no":
-		in.mu.Lock()
-		if len(args) > 0 && args[0] == "clear" {
-			in.lt.tr.notes.clear()
-			in.lt.tr.setCommandNote("notifications cleared")
-		} else {
 			in.lt.tr.closePanels()
 			in.lt.tr.openNotificationsPit()
 			in.lt.tr.render()
-		}
-		in.mu.Unlock()
-	default:
-		in.note(fmt.Sprintf("%s: not available inside the pager (%s)", verb, pagerVerb(verb).Refusal))
+		},
 	}
+}
+
+func (in *interactiveInput) hopBy(word string, args []string, sign int) {
+	n, err := hopCount(word, args)
+	if err != nil {
+		in.noteErr(err.Error())
+		return
+	}
+	in.hopAria(sign * n)
+}
+
+func (in *interactiveInput) runOverlay(word string, args []string, switchID uint64) {
+	if run, ok := overlayFor(word); ok {
+		run(in, word, args, switchID)
+		return
+	}
+	in.note(fmt.Sprintf("%s: not available inside the pager (%s)", word, pagerVerb(word).Refusal))
+}
+
+func overlayFor(word string) (overlayFunc, bool) {
+	run, ok := overlays[pagerVerb(word).Name]
+	return run, ok
 }
 
 func (in *interactiveInput) openFormPit(p formPit) {
