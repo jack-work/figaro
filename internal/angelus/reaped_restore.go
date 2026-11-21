@@ -52,8 +52,30 @@ func (h *handlers) mayRestore(ctx context.Context, group reapedGroup) error {
 	if err != nil {
 		return err
 	}
-	_, err = h.angelus.topology().Check(ctx, by, hierarchy.Plan{Op: hierarchy.Restore, Revive: group.nodes})
-	return err
+	if _, err = h.angelus.topology().Check(ctx, by, hierarchy.Plan{Op: hierarchy.Restore, Revive: group.nodes}); err != nil {
+		return err
+	}
+	return h.refuseRestoreOverMaxChildren(group)
+}
+
+func (h *handlers) refuseRestoreOverMaxChildren(group reapedGroup) error {
+	returning := map[string]int{}
+	for _, id := range group.nodes {
+		if meta, _ := h.angelus.Backend.Meta(id); meta != nil && meta.RetiredAtMS > 0 {
+			continue
+		}
+		returning[h.angelus.drawnParentOf(id)]++
+	}
+	for parent, n := range returning {
+		max, capped, err := h.angelus.fanoutLimit(parent)
+		if err != nil {
+			return fmt.Errorf("the limit of %s cannot be read to admit the restore: %w", parent, err)
+		}
+		if held := h.angelus.liveChildCount(parent); capped && held+n > max {
+			return fmt.Errorf("restoring %d would put %s over max_children %d with %d live children: %w", n, parent, max, held, maxChildrenRefusal(parent, held, max))
+		}
+	}
+	return nil
 }
 
 func (h *handlers) restoreGroup(ctx context.Context, group reapedGroup, keep bool) (rpc.ReapedRestoreResponse, error) {
