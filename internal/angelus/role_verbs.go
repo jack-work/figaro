@@ -10,7 +10,7 @@ import (
 
 func (h *handlers) refuseCastWithoutGrant(ctx context.Context, role string) error {
 	if err := h.allowed(ctx, rpc.VerbCast, authz.Aria(role)); err != nil {
-		return h.angelus.Policies.Shadow(authz.KeyGrants, fmt.Errorf("cast: %w", err))
+		return h.shadowKeyGrants(ctx, fmt.Errorf("cast: %w", err))
 	}
 	f := authz.FigaroOf(ctx)
 	if f == "" || h.roleHeld(role) {
@@ -21,7 +21,7 @@ func (h *handlers) refuseCastWithoutGrant(ctx context.Context, role string) erro
 			return nil
 		}
 	}
-	return h.angelus.Policies.Shadow(authz.KeyGrants, fmt.Errorf("cast: %s is held by nobody, and figaro %s takes an empty seat only with cast written in its system.scopes (cast:%s or cast:*)", role, f, role))
+	return h.shadowKeyGrants(ctx, fmt.Errorf("cast: %s is held by nobody, and figaro %s takes an empty seat only with cast written in its system.scopes (cast:%s or cast:*)", role, f, role))
 }
 
 func (h *handlers) roleHeld(role string) bool {
@@ -36,7 +36,7 @@ func (h *handlers) roleHeld(role string) bool {
 func (h *handlers) refuseSucceedWithoutGrant(ctx context.Context, roles ...string) error {
 	for _, role := range roles {
 		if err := h.allowed(ctx, rpc.VerbSucceed, authz.Aria(role)); err != nil {
-			return h.angelus.Policies.Shadow(authz.KeyGrants, fmt.Errorf("succeed: %w", err))
+			return h.shadowKeyGrants(ctx, fmt.Errorf("succeed: %w", err))
 		}
 	}
 	return nil

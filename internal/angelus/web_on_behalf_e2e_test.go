@@ -58,18 +58,27 @@ type onBehalfRig struct {
 	ctx    context.Context
 }
 
+const plainMockOutfit = "[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\n"
+
 func onBehalfDoor(t *testing.T) onBehalfRig {
+	t.Helper()
+	return onBehalfDoorWith(t, plainMockOutfit, "")
+}
+
+func onBehalfDoorWith(t *testing.T, mockOutfit, authzExtra string) onBehalfRig {
 	t.Helper()
 	is := peertest.NewIssuer(t)
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
-	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\n"), 0o600))
+	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(mockOutfit), 0o600))
+	require.NoError(t, os.WriteFile(dir+"/outfits/unboxed.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\nsandbox = \"none\"\ntools = [\"bash\"]\n"), 0o600))
 	require.NoError(t, os.WriteFile(dir+"/outfits/scoped.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\nscopes = [\"read:*\"]\n"), 0o600))
 	policy := filepath.Join(dir, "policy.toml")
 	require.NoError(t, os.WriteFile(policy, []byte(strings.ReplaceAll(onBehalfPolicy, "UID", strconv.Itoa(os.Getuid()))), 0o600))
 	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte(`default_outfit = "mock"
 [authz]
 policy = "`+policy+`"
+`+authzExtra+`
 
 [[authz.issuers]]
 issuer = "`+peertest.IssuerURL+`"

@@ -12,7 +12,6 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -171,7 +170,7 @@ func (h *handlers) refuseOutfitGrants(ctx context.Context, outfits []string) err
 	if err := h.refuseOutfitRuntimeKeys(outfits); err != nil {
 		return err
 	}
-	return h.angelus.Policies.Shadow(authz.KeyGrants, h.refuseOutfitAuthority(ctx, outfits))
+	return h.shadowKeyGrants(ctx, h.refuseOutfitAuthority(ctx, outfits))
 }
 
 func (h *handlers) refuseOutfitRuntimeKeys(outfits []string) error {

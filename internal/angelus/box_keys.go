@@ -462,7 +462,7 @@ func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before fo
 	}
 	err := h.checkCallerKeys(ctx, line, before, patch)
 	p := h.angelus.Policies
-	if err == nil || p.Enforces(authz.KeyGrants) {
+	if err == nil || h.enforcesKeyGrantsFor(ctx) {
 		return err
 	}
 	if pre := h.checkCallerKeys(context.WithValue(ctx, waivedKeyGrants{}, true), line, before, patch); pre != nil {
@@ -501,7 +501,7 @@ func (h *handlers) checkCallerKeys(ctx context.Context, line lineage, before for
 	if _, err := form.FanoutMint(after); err != nil {
 		return err
 	}
-	if h.angelus.Policies.Enforces(authz.KeyGrants) {
+	if h.enforcesKeyGrantsFor(ctx) {
 		if err := form.RefuseRetiredMintWrite(before, after); err != nil {
 			return err
 		}

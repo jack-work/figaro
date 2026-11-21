@@ -21,6 +21,20 @@ func delegatedVia(ctx context.Context) (string, bool) {
 	return fmt.Sprintf("%s acts for %s", via, sub.Principal), true
 }
 
+func (h *handlers) shadowKeyGrants(ctx context.Context, err error) error {
+	if _, delegated := delegatedVia(ctx); delegated {
+		return err
+	}
+	return h.angelus.Policies.Shadow(authz.KeyGrants, err)
+}
+
+func (h *handlers) enforcesKeyGrantsFor(ctx context.Context) bool {
+	if _, delegated := delegatedVia(ctx); delegated {
+		return true
+	}
+	return h.angelus.Policies.Enforces(authz.KeyGrants)
+}
+
 func (h *handlers) refuseUndeclaredOutfits(ctx context.Context, outfits []string) error {
 	who, ok := delegatedVia(ctx)
 	if !ok || len(outfitLayers(outfits)) == 0 {

@@ -208,7 +208,7 @@ func (h *handlers) figaroGrant(ctx context.Context, verb rpc.Verb, res authz.Res
 }
 
 func (h *handlers) checkAriaMethod(ctx context.Context, method, id string, params json.RawMessage) error {
-	keyed := func(err error) error { return h.angelus.Policies.Shadow(authz.KeyGrants, err) }
+	keyed := func(err error) error { return h.shadowKeyGrants(ctx, err) }
 	switch method {
 	case rpc.MethodDrop:
 		return keyed(h.figaroGrant(ctx, rpc.VerbSet, authz.Aria(id), func(v authz.FigaroView, s jkauthz.Subject) bool {
