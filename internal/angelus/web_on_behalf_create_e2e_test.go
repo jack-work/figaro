@@ -146,7 +146,7 @@ func TestADelegatedCreateOnADaemonWhoseDefaultSandboxIsNotLocalNamesTheSandbox(t
 	require.NoError(t, err)
 	reply := c.call(rpc.MethodCreate, map[string]any{})
 	require.NotNil(t, reply.Error)
-	require.Contains(t, reply.Error.Message, `default sandbox is "judge"`)
+	require.Contains(t, reply.Error.Message, `this daemon's default sandbox is "judge"`)
 	require.Contains(t, reply.Error.Message, "may use only the local sandbox")
 }
 
@@ -172,4 +172,14 @@ func TestADelegatedCreateIsMintedByTheConfiguredOwner(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "user:boss@issuer.test.figaro", meta.MintedBy)
 	})
+}
+
+func TestADelegatedCreateNamingAnUnboxedOutfitDoesNotBlameTheDefaultSandbox(t *testing.T) {
+	r := onBehalfDoor(t)
+	c, _, err := r.as(t, "figchat-gateway", "gluck")
+	require.NoError(t, err)
+	reply := c.call(rpc.MethodCreate, map[string]any{"outfits": []string{"unboxed"}})
+	require.NotNil(t, reply.Error)
+	require.Contains(t, reply.Error.Message, `its outfit names "none"`)
+	require.NotContains(t, reply.Error.Message, "default sandbox")
 }

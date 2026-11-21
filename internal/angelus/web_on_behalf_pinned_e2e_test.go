@@ -72,3 +72,21 @@ func TestADelegatedForkThatLosesARaceIsRefusedAndLeavesNoChild(t *testing.T) {
 	reply = c.call(rpc.MethodFork, onAria(r.aria, map[string]any{"patch": plainPatch(t, map[string]string{"duke-title": "web"})}))
 	require.Nil(t, reply.Error)
 }
+
+func TestADelegatedSetKeepsTheClientsOwnIfVersion(t *testing.T) {
+	r := onBehalfDoor(t)
+	c, _, err := r.as(t, "figchat-gateway", "gluck")
+	require.NoError(t, err)
+	stale := delegatedFormOf(t, c, r.aria).Version
+	require.NotZero(t, stale)
+	r.ownerSets(t, r.aria, map[string]json.RawMessage{"mantra": json.RawMessage(`"owner"`)})
+
+	reply := c.call(rpc.MethodSet, onAria(r.aria, map[string]any{"patch": plainPatch(t, map[string]string{"duke-title": "web"}), "if_version": stale}))
+	require.NotNil(t, reply.Error)
+	require.Contains(t, reply.Error.Message, "moved")
+	require.Nil(t, delegatedFormOf(t, c, r.aria).Snapshot.Lookup("duke-title"))
+
+	current := delegatedFormOf(t, c, r.aria).Version
+	reply = c.call(rpc.MethodSet, onAria(r.aria, map[string]any{"patch": plainPatch(t, map[string]string{"duke-title": "web"}), "if_version": current}))
+	require.Nil(t, reply.Error)
+}

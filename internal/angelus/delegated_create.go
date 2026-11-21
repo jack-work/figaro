@@ -87,6 +87,15 @@ func pinSetToJudgedVersion(ctx context.Context, method string, params json.RawMe
 	if err := json.Unmarshal(params, &fields); err != nil {
 		return nil, err
 	}
+	if sent, ok := fields["if_version"]; ok {
+		asked, err := strconv.ParseUint(string(sent), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("set: if_version %s is not a version", sent)
+		}
+		if asked != 0 && asked != version {
+			return nil, fmt.Errorf("set: %w: the board is at version %d, not %d, retry", store.ErrFormMoved, version, asked)
+		}
+	}
 	fields["if_version"] = json.RawMessage(strconv.FormatUint(version, 10))
 	delete(fields, "seq")
 	return json.Marshal(fields)

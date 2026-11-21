@@ -33,7 +33,12 @@ func (h *handlers) grantSandbox(ctx context.Context, snap form.Snapshot) (form.P
 	}
 	if d := policies.AllowFigaro(sub, figaro, rpc.VerbUse, authz.Sandbox(kind)); !d.Allowed {
 		if who, delegated := delegatedVia(ctx); delegated && sandboxName(kind) != "local" {
-			return form.Patch{}, fmt.Errorf("sandbox %q: %s and may use only the local sandbox, but this daemon's default sandbox is %q: a delegated create needs [sandbox] default unset or \"local\"", sandboxName(kind), who, sandboxName(kind))
+			loaded, _ := h.settings()
+			source := "its outfit names"
+			if loaded != nil && loaded.DefaultSandbox() == kind {
+				source = "this daemon's default sandbox is"
+			}
+			return form.Patch{}, fmt.Errorf("sandbox %q: %s and may use only the local sandbox, but %s %q", sandboxName(kind), who, source, sandboxName(kind))
 		}
 		home, ok := homeSandbox(sub.Principal)
 		if !ok || sandboxName(home) == "local" {
