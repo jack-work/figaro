@@ -28,6 +28,8 @@ var requestFieldCapabilities = map[string]rpc.Capability{
 	"FormApplyRequest.Check":          rpc.CapFormApply,
 	"ForkRequest.Studies":             rpc.CapForkStudies,
 	"ForkRequest.Seat":                rpc.CapForkSeat,
+	"ReadRequest.Until":               rpc.CapReadUntil,
+	"QuaRequest.Exact":                rpc.CapLogExact,
 }
 
 type quaer interface {
@@ -36,6 +38,10 @@ type quaer interface {
 }
 
 func quaWith(ctx context.Context, a quaer, req rpc.QuaRequest) (int, bool, error) {
+	req, err := settleExact(ctx, a, req)
+	if err != nil {
+		return 0, false, err
+	}
 	if err := refuseUnknownFields(req); err != nil {
 		return 0, false, err
 	}

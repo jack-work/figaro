@@ -47,6 +47,8 @@ func (d *portableAria) UnmarshalJSON(b []byte) error {
 
 const portableFormat = "aria/v1"
 
+const importPerMessage = 10 * time.Millisecond
+
 func runExport(loaded *config.Loaded, args []string) {
 	id, out := "", ""
 	for i := 0; i < len(args); i++ {
@@ -218,7 +220,7 @@ func runImport(loaded *config.Loaded, args []string) {
 		die("import: the export carries no messages")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), importTimeout(len(doc.Messages)))
 	defer cancel()
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
@@ -240,6 +242,10 @@ func runImport(loaded *config.Loaded, args []string) {
 	if resp.WasID != "" {
 		fmt.Fprintf(stderrw, "  it was %s where it came from: a trunk id is unique per store, so this one is new\n", resp.WasID)
 	}
+}
+
+func importTimeout(messages int) time.Duration {
+	return 2*time.Minute + time.Duration(messages)*importPerMessage
 }
 
 func readAllStdin() ([]byte, error) {

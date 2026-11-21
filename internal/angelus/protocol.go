@@ -290,6 +290,9 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 		if err := h.refuseCredoChange(method, id, dressed); err != nil {
 			return nil, err
 		}
+		if err := h.refuseModelVerbsOnLog(method, id, dressed); err != nil {
+			return nil, err
+		}
 		if targets := roleTargetsIn(method, dressed); len(targets) > 0 {
 			done, err := h.angelus.guard.enter(targets...)
 			if err != nil {
@@ -577,6 +580,28 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	if err := h.refuseUnlicensedMint(ctx); err != nil {
 		return nil, fmt.Errorf("form.bind: %w", err)
 	}
+	minter := authz.FigaroOf(ctx)
+	if _, boxed := callerBox(ctx); minter == "" || boxed {
+		return h.formBindWith(ctx, req, nil)
+	}
+	release, forNode, err := h.angelus.holdBirth(minter, 1, false)
+	if err != nil {
+		return nil, fmt.Errorf("form.bind: %s pays for what it mints: %w", minter, err)
+	}
+	defer release()
+	out, err := h.formBindWith(ctx, req, withQuotaBirthDefault)
+	if err != nil {
+		return nil, err
+	}
+	id := out.FigaroID
+	forNode(id)
+	if err := h.place(h.ownerContext(), id, minter); err != nil {
+		slog.Warn("form.bind: the new figaro stays where it was born, and its minter is not charged", "figaro", id, "minter", minter, "err", err)
+	}
+	return out, nil
+}
+
+func (h *handlers) formBindWith(ctx context.Context, req rpc.FormBindRequest, birth func(form.Patch) form.Patch) (rpc.FormBindResponse, error) {
 	req.Cwd = hostCwdOf(ctx, req.Cwd)
 	parent := req.Parent
 	if parent == "null" {
@@ -587,18 +612,18 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	if parent != "" {
 		var err error
 		if parent, err = h.canonicalID(ctx, parent); err != nil {
-			return nil, fmt.Errorf("form.bind: %w", err)
+			return rpc.FormBindResponse{}, fmt.Errorf("form.bind: %w", err)
 		}
 		if err := h.allowed(ctx, rpc.VerbRead, authz.Aria(parent)); err != nil {
-			return nil, fmt.Errorf("form.bind: a fork of %s reads it: %w", parent, err)
+			return rpc.FormBindResponse{}, fmt.Errorf("form.bind: a fork of %s reads it: %w", parent, err)
 		}
 		n, ok := h.angelus.Backend.NodeLink(parent)
 		isStump = ok && n.Kind == "outfit"
 		if !ok || (n.Kind != store.KindForm && !isStump) {
-			return nil, fmt.Errorf("form.bind: %s is not an unbound form (bind forks forms; a figaro forks with `fig fork`)", req.Parent)
+			return rpc.FormBindResponse{}, fmt.Errorf("form.bind: %s is not an unbound form (bind forks forms; a figaro forks with `fig fork`)", req.Parent)
 		}
 		if inherited, err = h.angelus.Backend.FormState(parent); err != nil {
-			return nil, fmt.Errorf("form.bind: the board of %s cannot be read to check the patch against it: %w", parent, err)
+			return rpc.FormBindResponse{}, fmt.Errorf("form.bind: the board of %s cannot be read to check the patch against it: %w", parent, err)
 		}
 	}
 	inherited, req.Patch = withoutInherited(form.FanoutQuotaKey, inherited, req.Patch)
@@ -606,14 +631,14 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 		inherited, req.Patch = withoutInherited(form.FanoutMintKey, inherited, req.Patch)
 	}
 	if err := h.refuseBoxOutfits(ctx, req.Outfits, true); err != nil {
-		return nil, err
+		return rpc.FormBindResponse{}, err
 	}
 	dress, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
-		return nil, err
+		return rpc.FormBindResponse{}, err
 	}
 	if err := h.refuseOutfitGrants(ctx, req.Outfits); err != nil {
-		return nil, err
+		return rpc.FormBindResponse{}, err
 	}
 	line, births := forkOf(parent), []store.BirthOption{mintedBy(ctx)}
 	if parent == "" || isStump {
@@ -621,23 +646,26 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	}
 	base, err := h.listedOutfitKeys(ctx, line, inherited, req.Outfits)
 	if err != nil {
-		return nil, err
+		return rpc.FormBindResponse{}, err
 	}
 	if err := h.refuseCallerKeys(ctx, line, base, &dress); err != nil {
-		return nil, err
+		return rpc.FormBindResponse{}, err
+	}
+	if birth != nil {
+		dress = birth(dress)
 	}
 	cwd := birthCwd(req.Cwd)
 	id, _, err := h.angelus.Backend.ForkWith(parent, 0, childBirthPatch(dress, cwd), append(births, bootStamp(cwd))...)
 	if err != nil {
-		return nil, fmt.Errorf("form.bind: mint figaro: %w", err)
+		return rpc.FormBindResponse{}, fmt.Errorf("form.bind: mint figaro: %w", err)
 	}
 	if err := h.grantSandboxOn(ctx, id); err != nil {
 		h.discardBirth(id)
-		return nil, fmt.Errorf("form.bind: %w", err)
+		return rpc.FormBindResponse{}, fmt.Errorf("form.bind: %w", err)
 	}
 	if err := h.dropHostCwdInBox(id, patchTouches(dress, "system.cwd")); err != nil {
 		h.discardBirth(id)
-		return nil, fmt.Errorf("form.bind: %w", err)
+		return rpc.FormBindResponse{}, fmt.Errorf("form.bind: %w", err)
 	}
 	return rpc.FormBindResponse{FigaroID: id}, nil
 }

@@ -136,6 +136,8 @@ func (b *turnBus) PushToolReady(call message.Content) {
 	}
 }
 
+const ReasonLogged = "logged"
+
 // runTurn drives one prompt to completion: provider.Send, tool dispatch, repeat.
 func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	if a.halted.Load() {
@@ -194,20 +196,30 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		cancel()
 	}()
 
-	if prompt.text != "" {
+	logged := a.isLog()
+	if prompt.text != "" && !logged {
 		methodsCtx, methodsSpan := figOtel.Start(turnCtx, "figaro.methods")
 		a.runInquiryMethods(methodsCtx, prompt.text)
 		methodsSpan.End()
 	}
-	if _, err := a.appendUserPrompt(prompt, false); err != nil {
+	entry, err := a.appendUserPrompt(prompt, false)
+	if err != nil {
+		prompt.ack(LogAppend{Err: err})
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
+	prompt.ack(LogAppend{Turn: a.turnID, LT: entry.LT})
 	span.SetAttributes(attribute.Int64("figaro.turn", int64(a.turnID)))
-	a.markCut(a.turnID, prompt.resume)
+	if !logged {
+		a.markCut(a.turnID, prompt.resume)
+	}
 	// From here a delete aimed at this prompt is refused as committed.
 	a.inbox.MarkCommitted([]event{prompt})
 	a.inbox.MarkTurn(promptIDs(prompt), a.turnID)
+	if logged {
+		a.endTurn(ReasonLogged)
+		return
+	}
 	a.startAssistantUnit()
 
 	allowSteering := false
@@ -228,6 +240,7 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (arialog.Entry[mes
 		Role:      message.RoleInput,
 		Steering:  steering && prompt.text != "",
 		Timestamp: time.Now().UnixMilli(),
+		Accepted:  prompt.keys,
 	}
 	// Seed the mantra from the first prompt, only when unset.
 	seed := map[string]json.RawMessage{}
@@ -256,6 +269,10 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (arialog.Entry[mes
 		msg.Content = append(msg.Content, blocks...)
 	} else if prompt.text != "" {
 		msg.Content = append(msg.Content, message.TextContent(prompt.text))
+	} else if prompt.entry && len(prompt.segments) > 0 {
+		blank := message.SenderText(prompt.segments[0].sender, "")
+		blank.Principal = prompt.segments[0].principal
+		msg.Content = append(msg.Content, blank)
 	}
 	if warn && !asksForHandoff(prompt.segments) {
 		msg.Content = append(msg.Content, message.SenderText(successionSender, warning))
@@ -849,6 +866,18 @@ func (a *Agent) appendPromptEvents(prompts []event) error {
 	return nil
 }
 
+var errDroppedBeforeAppend = errors.New("the send was cleared from the queue before it was appended")
+
+func (e event) ack(got LogAppend) {
+	if e.appended == nil {
+		return
+	}
+	select {
+	case e.appended <- got:
+	default:
+	}
+}
+
 // mergePromptEvents folds a batch into one prompt; a later prompt's form value wins.
 func mergePromptEvents(prompts []event) (event, bool) {
 	if len(prompts) == 0 {
@@ -869,6 +898,7 @@ func mergePromptEvents(prompts []event) (event, bool) {
 		out.merged = append(out.merged, p.merged...)
 		out.resume = out.resume || p.resume
 		out.traces = append(out.traces, p.traces...)
+		out.keys = append(out.keys, p.keys...)
 		if i > 0 && p.id != 0 {
 			out.merged = append(out.merged, p.id)
 		}

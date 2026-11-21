@@ -207,6 +207,17 @@ Structured per-figaro state. Patches ride on the user-role tic in `aria.jsonl`; 
 
 The `system.*` namespace is harness-reserved. Clients write under any other key.
 
+## Aria logs
+
+An aria whose form carries `system.kind = "log"`, fixed at birth, has no
+provider, sandbox or tools. `figaro.qua` appends the prompt as the turn's
+inquiry and seals the turn (`logged`); queued sends are never folded, so each
+is one entry. Minted by `form.bind` (`figaro new --log`); `figaro.create`
+refuses one. A send to a log skips input rewrites; an `exact` qua
+(`send --stdin`) keeps its bytes and may be empty, and the qua answers the
+entry's `turn` and `lt`. `figaro read` takes exact entries from `figaro.ir`.
+Daemons that do this report `log.exact`. See [docs/proposals/aria-log/primitive.md](docs/proposals/aria-log/primitive.md).
+
 ## JSON-RPC surface
 
 All IPC is JSON-RPC 2.0 framed as one JSON object per line (NDJSON).
@@ -355,9 +366,11 @@ Notifications:
   queued work remains;
 - `form.delta`: one committed form patch, in the shape a client sends one.
 
-`figaro.read` is the pull half. Its current request retains pre-turn field
-names: `sinceLT` is a forward **turn** cursor; `before` and `before_node` form a
-backward `(turn,node)` anchor; `limit` is a byte budget. A missed live version
+`figaro.read` is the pull half. `at` is a `(turn,node)` anchor, read forward
+or, with `backward`, before it; `limit` is a byte budget. A range is
+half-open, `[lo, hi)`, and reads either way: forward with `at = lo` and
+`until = hi`, or backward with `at = hi` and `floor = lo`. `until` binds a
+forward read only and `floor` a backward one. A missed live version
 causes a re-read from the client's highest fully sealed turn. Read/push overlap
 is valid and client application is idempotent.
 

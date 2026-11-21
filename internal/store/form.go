@@ -742,6 +742,9 @@ func (f *Form) judge(st *formState, w *formWrite) formResult {
 	}
 	patch = models.RecordRoute(st.snap, patch)
 	next, applied := st.snap.ApplyEffective(patch)
+	if err := form.CheckKind(st.snap, next, false); err != nil {
+		return formResult{version: st.version, err: err}
+	}
 	return formResult{version: st.version, applied: applied, next: next}
 }
 

@@ -3,6 +3,7 @@ package figaro
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"runtime"
 	"strings"
@@ -67,6 +68,9 @@ type event struct {
 	segments []promptSegment
 	resume   bool
 	traces   []string
+	keys     []string
+	appended chan LogAppend
+	entry    bool
 }
 
 // Config is the constructor input for NewAgent.
@@ -407,6 +411,7 @@ func (a *Agent) refreshMetrics() {
 	contextTokens, contextExact := a.contextTokens, a.contextExact
 	a.mu.RUnlock()
 
+	kind := form.KindOf(a.Snapshot())
 	tail, hasTail := a.figLog.PeekTail()
 	if metricsLT > 0 && (!hasTail || tail.LT < metricsLT) {
 		a.refreshMetricsFrom(a.Context())
@@ -431,7 +436,7 @@ func (a *Agent) refreshMetrics() {
 		if !message.IsCeremonial(m) {
 			messageCount++
 		}
-		if m.Role == message.RoleOutput {
+		if store.CountsAsTurn(m, kind) {
 			turnCount++
 		}
 		metricsLT = e.LT
@@ -497,8 +502,9 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	contextTokens, contextExact := tokens.ContextSize(msgs)
 	turnCount := 0
 	var metricsLT uint64
+	kind := form.KindOf(a.Snapshot())
 	for _, m := range msgs {
-		if m.Role == message.RoleOutput {
+		if store.CountsAsTurn(m, kind) {
 			turnCount++
 		}
 		if m.LogicalTime > metricsLT {
@@ -530,21 +536,42 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 	_ = a.SubmitPromptFrom(context.Background(), req, "")
 }
 
+var errEmptyPrompt = errors.New("--stdin: stdin held no prompt")
+
 // SubmitPromptFrom applies form input synchronously, so the caller learns of a refusal.
 func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender string) error {
-	// A refused token leaves the form unpatched and the inbox untouched.
-	text, err := a.rewriteInput(ctx, req.Text)
-	if err != nil {
-		return err
+	_, err := a.submitPrompt(ctx, req, sender)
+	return err
+}
+
+type LogAppend struct {
+	Turn uint64
+	LT   uint64
+	Err  error
+}
+
+func (a *Agent) submitPrompt(ctx context.Context, req rpc.QuaRequest, sender string) (LogAppend, error) {
+	logged := a.isLog()
+	if req.Exact && !logged {
+		req.Text = strings.TrimRight(req.Text, "\n")
+		if strings.TrimSpace(req.Text) == "" && len(req.Images) == 0 {
+			return LogAppend{}, errEmptyPrompt
+		}
 	}
-	req.Text = text
+	if !logged {
+		text, err := a.rewriteInput(ctx, req.Text)
+		if err != nil {
+			return LogAppend{}, err
+		}
+		req.Text = text
+	}
 	images, err := promptImages(req.Images, req.Text, a.settings.InlineImageBudget())
 	if err != nil {
-		return err
+		return LogAppend{}, err
 	}
 	if patch := a.combineFormInput(req.Form); !patch.IsIdentity() {
 		if _, err := a.backend.ApplyForm(a.id, patch); err != nil {
-			return err
+			return LogAppend{}, err
 		}
 		a.form.Apply(patch)
 	}
@@ -552,20 +579,35 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 		typ:    eventUserPrompt,
 		text:   req.Text,
 		images: images,
+		keys:   []string{acceptKey()},
+	}
+	if logged {
+		evt.appended = make(chan LogAppend, 1)
+		evt.entry = req.Exact
 	}
 	if req.TraceParent != "" {
 		evt.traces = []string{req.TraceParent}
 	}
-	if req.Text != "" {
+	if req.Text != "" || evt.entry {
 		evt.segments = []promptSegment{{sender: sender, principal: authz.PrincipalText(authz.PrincipalOf(ctx)), text: req.Text}}
 	}
 	if !a.inbox.Send(evt) {
-		return ErrStopping
+		return LogAppend{}, ErrStopping
 	}
 	if !a.turnActive() {
 		a.publishRuntime(rpc.RuntimeAccepted, "")
 	}
-	return nil
+	if !logged {
+		return LogAppend{}, nil
+	}
+	select {
+	case got := <-evt.appended:
+		return got, got.Err
+	case <-ctx.Done():
+		return LogAppend{}, ctx.Err()
+	case <-a.done:
+		return LogAppend{}, ErrStopping
+	}
 }
 
 // promptIDs is the id plus every id folded into it: the set a turn stamp must cover.
@@ -637,6 +679,7 @@ func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
 
 	if disposition == rpc.QueueClear {
 		for _, e := range a.inbox.DrainUserPrompts() {
+			e.ack(LogAppend{Err: errDroppedBeforeAppend})
 			resp.Queue = append(resp.Queue, rpc.QueuedPrompt{
 				ID:     e.id,
 				Text:   e.text,
@@ -663,7 +706,9 @@ func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
 	cancel := a.turnCancel
 	a.mu.Unlock()
 	if !resp.Cleared {
-		a.inbox.CoalesceUserPromptRuns()
+		if !a.isLog() {
+			a.inbox.CoalesceUserPromptRuns()
+		}
 		_, resp.Queue = a.QueuedPrompts(true)
 	}
 	cancel()
@@ -934,7 +979,10 @@ func (a *Agent) act(ctx context.Context) {
 		}
 		switch evt.typ {
 		case eventUserPrompt:
-			batch := append([]event{evt}, a.inbox.TakeReadyUserPrompts()...)
+			batch := []event{evt}
+			if !a.isLog() {
+				batch = append(batch, a.inbox.TakeReadyUserPrompts()...)
+			}
 			merged, ok := mergePromptEvents(batch)
 			if !ok {
 				continue

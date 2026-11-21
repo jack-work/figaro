@@ -25,6 +25,7 @@ type QuaRequest struct {
 	Form        *FormInput `json:"form,omitempty"`
 	Images      []QuaImage `json:"images,omitempty"`
 	TraceParent string     `json:"traceparent,omitempty"`
+	Exact       bool       `json:"exact,omitempty"`
 }
 
 const (
@@ -74,7 +75,9 @@ type QuaResponse struct {
 	Cursor int `json:"cursor"`
 	// Active reports that a turn was already in flight, so the prompt queued
 	// or steered rather than starting fresh.
-	Active bool `json:"active,omitempty"`
+	Active bool   `json:"active,omitempty"`
+	Turn   uint64 `json:"turn,omitempty"`
+	LT     uint64 `json:"lt,omitempty"`
 }
 
 type InterruptRequest struct {
