@@ -139,3 +139,13 @@ func TestADelegatedCallerReadsTheOutfitList(t *testing.T) {
 	require.Contains(t, got.Names, "mock")
 	require.Contains(t, got.Names, "scoped")
 }
+
+func TestADelegatedCreateOnADaemonWhoseDefaultSandboxIsNotLocalNamesTheSandbox(t *testing.T) {
+	r := onBehalfDoorWith(t, plainMockOutfit, "\n[sandbox]\ndefault = \"judge\"\n[sandbox.boxes.judge]\nexec = \"/nonexistent/judge.sock\"\n", "onlocal")
+	c, _, err := r.as(t, "figchat-gateway", "gluck")
+	require.NoError(t, err)
+	reply := c.call(rpc.MethodCreate, map[string]any{})
+	require.NotNil(t, reply.Error)
+	require.Contains(t, reply.Error.Message, `default sandbox is "judge"`)
+	require.Contains(t, reply.Error.Message, "may use only the local sandbox")
+}

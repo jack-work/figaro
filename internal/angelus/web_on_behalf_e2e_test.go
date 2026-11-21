@@ -65,12 +65,13 @@ func onBehalfDoor(t *testing.T) onBehalfRig {
 	return onBehalfDoorWith(t, plainMockOutfit, "")
 }
 
-func onBehalfDoorWith(t *testing.T, mockOutfit, authzExtra string) onBehalfRig {
+func onBehalfDoorWith(t *testing.T, mockOutfit, authzExtra string, setupOutfit ...string) onBehalfRig {
 	t.Helper()
 	is := peertest.NewIssuer(t)
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
 	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(mockOutfit), 0o600))
+	require.NoError(t, os.WriteFile(dir+"/outfits/onlocal.toml", []byte(plainMockOutfit+"sandbox = \"local\"\n"), 0o600))
 	require.NoError(t, os.WriteFile(dir+"/outfits/unboxed.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\nsandbox = \"none\"\ntools = [\"bash\"]\n"), 0o600))
 	require.NoError(t, os.WriteFile(dir+"/outfits/scoped.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\nscopes = [\"read:*\"]\n"), 0o600))
 	policy := filepath.Join(dir, "policy.toml")
@@ -90,7 +91,11 @@ principal = "service:figchat-gateway@issuer.test.figaro"
 users = ["user:gluck@issuer.test.figaro"]
 `), 0o600))
 	a, acli, ctx := daemonOnStore(t, dir, nil)
-	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	setup := "mock"
+	if len(setupOutfit) > 0 {
+		setup = setupOutfit[0]
+	}
+	created, err := acli.Create(ctx, dress(t, setup), nil)
 	require.NoError(t, err)
 
 	loaded, err := config.Load(dir)
