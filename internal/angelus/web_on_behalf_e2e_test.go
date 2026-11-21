@@ -41,7 +41,7 @@ role = "guest"
 principals = ["user:ana@issuer.test.figaro"]
 
 [roles.gateway]
-permissions = ["read:*", "listen:*", "send:*", "fork:*", "set:*", "use:sandbox:local"]
+permissions = ["read:*", "listen:*", "send:*", "fork:*", "set:*", "mint:*", "use:sandbox:local"]
 
 [[bind]]
 role = "gateway"
@@ -64,6 +64,7 @@ func onBehalfDoor(t *testing.T) onBehalfRig {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
 	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\n"), 0o600))
+	require.NoError(t, os.WriteFile(dir+"/outfits/scoped.toml", []byte("[system]\nprovider = \"mock\"\nmodel = \"mock-model\"\nscopes = [\"read:*\"]\n"), 0o600))
 	policy := filepath.Join(dir, "policy.toml")
 	require.NoError(t, os.WriteFile(policy, []byte(strings.ReplaceAll(onBehalfPolicy, "UID", strconv.Itoa(os.Getuid()))), 0o600))
 	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte(`default_outfit = "mock"
@@ -160,7 +161,9 @@ func TestADelegateIsRefusedWhatTheUserMayDo(t *testing.T) {
 		"reroute":                       {rpc.MethodReroute, onAria(r.aria, nil)},
 		"a system status call":          {rpc.MethodStatus, nil},
 		"gc":                            {rpc.MethodGC, nil},
-		"create":                        {rpc.MethodCreate, nil},
+		"form.create":                   {rpc.MethodFormCreate, map[string]any{"patch": plainPatch(t, map[string]string{"mantra": "x"})}},
+		"form.bind":                     {rpc.MethodFormBind, nil},
+		"import":                        {rpc.MethodImport, nil},
 		"a send that sets the model": {rpc.MethodQua, onAria(r.aria, map[string]any{
 			"text": "x", "form": map[string]any{"context": map[string]any{"mantra": "x"}, "outfits": []string{"mock"}}})},
 	} {

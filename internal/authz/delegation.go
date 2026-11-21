@@ -185,12 +185,14 @@ func delegable(verb rpc.Verb, r Resource) bool {
 		return r.Kind == ResourceAria && !reservedForm(r.ID)
 	case rpc.VerbUse:
 		return r.Kind == ResourceSandbox && r.ID == "local"
+	case rpc.VerbMint:
+		return r.Kind == ResourceDaemon
 	}
 	return false
 }
 
 func delegateRefusal(via, user jkauthz.Principal, verb rpc.Verb, r Resource) string {
-	return fmt.Sprintf("%s acts for %s and may not %s on %s: a delegated caller may read, listen, send, fork, set plain keys on an aria or role form, and use sandbox:local", via, user, verb, r)
+	return fmt.Sprintf("%s acts for %s and may not %s on %s: a delegated caller may read, listen, send, fork, mint a top-level figaro, set plain keys on an aria or role form, and use sandbox:local", via, user, verb, r)
 }
 
 func (d delegated) refuses(method string, params json.RawMessage) error {
@@ -226,6 +228,22 @@ func (d delegated) refuses(method string, params json.RawMessage) error {
 		}
 		if (req.Form.Patch != nil && !req.Form.Patch.IsIdentity()) || len(req.Form.Outfits) > 0 || len(writtenContext(req.Form.Context)) > 0 {
 			return fmt.Errorf("%s: %s acts for %s and may send text only: its form input writes nothing (no patch, outfits or context keys)", method, d.service, d.user)
+		}
+	case rpc.MethodCreate:
+		var req rpc.CreateRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return fmt.Errorf("%s: a delegated call's params must decode: %w", method, err)
+		}
+		if req.Cwd != "" {
+			return fmt.Errorf("%s: %s acts for %s and may not choose a working directory: the figaro is born in the owner's default", method, d.service, d.user)
+		}
+		for _, name := range req.Outfits {
+			if err := config.ValidOutfitName(name); err != nil {
+				return fmt.Errorf("%s: %s acts for %s and may name declared outfits only: %w", method, d.service, d.user, err)
+			}
+		}
+		if req.Patch != nil {
+			return d.refusesPatch(method, *req.Patch)
 		}
 	case rpc.MethodFork:
 		var req rpc.ForkRequest

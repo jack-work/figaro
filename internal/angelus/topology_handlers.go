@@ -123,6 +123,9 @@ func (h *handlers) createWith(ctx context.Context, params json.RawMessage, birth
 	if err := h.refuseBoxOutfits(ctx, req.Outfits, true); err != nil {
 		return nil, err
 	}
+	if err := h.refuseUndeclaredOutfits(ctx, req.Outfits); err != nil {
+		return nil, err
+	}
 	if err := h.refuseCallerKeys(ctx, rootBirth(), form.Snapshot{}, req.Patch); err != nil {
 		return nil, err
 	}
