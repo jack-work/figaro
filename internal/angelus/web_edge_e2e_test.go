@@ -108,8 +108,13 @@ type rpcReply struct {
 
 func (e *edgeClient) call(method string, params any) rpcReply {
 	e.t.Helper()
+	return e.callWithin(5*time.Second, method, params)
+}
+
+func (e *edgeClient) callWithin(wait time.Duration, method string, params any) rpcReply {
+	e.t.Helper()
 	e.n++
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 	req, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": e.n, "method": method, "params": params})
 	require.NoError(e.t, err)

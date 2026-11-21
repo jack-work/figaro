@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -199,7 +200,7 @@ func TestTheDelegatedSizeCapBoundsWhatTheStoreKeeps(t *testing.T) {
 		"an unset whose Old is 8 MB":           {Object: &form.ObjectPatch{Delete: map[string]form.Value{"mantra": rv(big)}}},
 		"a root scalar carrying an 8 MB key":   {Scalar: &form.ScalarPatch{Before: rv(`{}`), After: rv(withKey(t, c, r.aria, "big", big))}},
 	} {
-		reply := c.call(rpc.MethodSet, onAria(r.aria, map[string]any{"patch": p}))
+		reply := c.callWithin(time.Minute, rpc.MethodSet, onAria(r.aria, map[string]any{"patch": p}))
 		t.Logf("%s: error %+v; store grew %d bytes", name, reply.Error, storeBytes(t, r.dir)-start)
 	}
 	require.Less(t, storeBytes(t, r.dir)-start, int64(3*64<<10*32), "the store kept more than the caps allow")
