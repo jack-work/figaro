@@ -2,6 +2,7 @@ package angelus_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io/fs"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/peer/peertest"
+	"github.com/jack-work/figaro/sdk"
 )
 
 const onBehalfPolicy = `
@@ -52,6 +54,8 @@ type onBehalfRig struct {
 	aria   string
 	mint   func(client string) string
 	daemon *angelus.Angelus
+	owner  *sdk.Angelus
+	ctx    context.Context
 }
 
 func onBehalfDoor(t *testing.T) onBehalfRig {
@@ -91,7 +95,7 @@ users = ["user:gluck@issuer.test.figaro"]
 	ln, err := angelus.ListenUnix(path, 0o660)
 	require.NoError(t, err)
 	go a.ServeWeb(ctx, ln, angelus.Web{Admit: authz.Bearers{Issuers: issuers, Delegations: delegations}.AdmitRequest})
-	return onBehalfRig{path: path, dir: dir, aria: created.FigaroID, daemon: a, mint: func(client string) string { return is.Mint(client, time.Hour) }}
+	return onBehalfRig{path: path, dir: dir, aria: created.FigaroID, daemon: a, owner: acli, ctx: ctx, mint: func(client string) string { return is.Mint(client, time.Hour) }}
 }
 
 func (r onBehalfRig) as(t *testing.T, client, user string) (*edgeClient, *http.Response, error) {

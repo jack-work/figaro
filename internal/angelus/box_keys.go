@@ -433,7 +433,33 @@ func keyGrantsWaived(ctx context.Context) bool {
 	return waived
 }
 
+func refuseDelegatedChanges(ctx context.Context, before form.Snapshot, patch *form.Patch) error {
+	sub, err := authz.SubjectOf(ctx)
+	if err != nil {
+		return nil
+	}
+	via, ok := authz.DelegatedVia(sub)
+	if !ok || patch == nil || patch.IsIdentity() {
+		return nil
+	}
+	after := before.Apply(*patch)
+	paths := changedPaths(before, after)
+	if len(paths) > authz.MaxDelegatedChangedKeys() {
+		return fmt.Errorf("%s acts for %s and may change at most %d keys in one write, this one changes %d", via, sub.Principal, authz.MaxDelegatedChangedKeys(), len(paths))
+	}
+	for _, p := range paths {
+		raw, _ := after.Get(p)
+		if why := authz.DelegatedKeyRefusal(p, raw); why != "" {
+			return fmt.Errorf("%s (%s acts for %s)", why, via, sub.Principal)
+		}
+	}
+	return nil
+}
+
 func (h *handlers) refuseCallerKeys(ctx context.Context, line lineage, before form.Snapshot, patch *form.Patch) error {
+	if err := refuseDelegatedChanges(ctx, before, patch); err != nil {
+		return err
+	}
 	err := h.checkCallerKeys(ctx, line, before, patch)
 	p := h.angelus.Policies
 	if err == nil || p.Enforces(authz.KeyGrants) {

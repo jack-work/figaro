@@ -242,6 +242,18 @@ func (d delegated) refuses(method string, params json.RawMessage) error {
 	return nil
 }
 
+func DelegatedKeyRefusal(key string, after json.RawMessage) string {
+	if why := userUnwritable(key); why != "" {
+		return why
+	}
+	if len(after) > maxDelegatedValueBytes {
+		return fmt.Sprintf("%s is %d bytes, over the %d a delegated caller may write in one value", key, len(after), maxDelegatedValueBytes)
+	}
+	return ""
+}
+
+func MaxDelegatedChangedKeys() int { return maxDelegatedPatchKeys }
+
 const (
 	maxDelegatedValueBytes = 64 << 10
 	maxDelegatedPatchKeys  = 32
@@ -274,7 +286,21 @@ func (d delegated) refusesPatch(method string, patch form.Patch) error {
 	return nil
 }
 
+func rootSegment(key string) string {
+	if i := strings.IndexAny(key, ".["); i >= 0 {
+		return key[:i]
+	}
+	return key
+}
+
+func emptySegment(key string) bool {
+	return key == "" || strings.HasPrefix(key, ".") || strings.HasSuffix(key, ".") || strings.Contains(key, "..") || strings.Contains(key, ".[")
+}
+
 func userUnwritable(key string) string {
+	if emptySegment(key) {
+		return fmt.Sprintf("%q has an empty path segment", key)
+	}
 	if form.HarnessKey(key) {
 		return key + " is daemon/owner-held: a delegated caller writes no system.* or runtime.* key"
 	}
