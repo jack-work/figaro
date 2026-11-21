@@ -13,11 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/sandbox/box"
 )
 
-var boxVerb = &cmdkit.Command{
-	Name:  "box",
-	Group: "System",
-	Short: "Serve a sandbox over a unix socket, or run one command through it",
-	Usage: "box serve --socket <path> --workspace <dir> [--door <path>] | box exec --socket <path> [--cwd <dir>] [--scope <s>] -- <command>",
+var boxVerb = verb("box", &cmdkit.Command{
 	Long: `A box is a sandbox a daemon reaches over a unix socket: the daemon names
 it in [sandbox.boxes.<name>] and an aria picks it with system.sandbox.
 
@@ -32,14 +28,6 @@ it in [sandbox.boxes.<name>] and an aria picks it with system.sandbox.
   exec    run one shell command through a served box, stream its output
           and exit with its code (130 cancelled, 124 timed out). stdin
           is not forwarded`,
-	Flags: []cmdkit.FlagDef{
-		{Long: "socket", Short: "s", Description: "the box's unix socket"},
-		{Long: "workspace", Short: "w", Description: "serve: the directory every relative path and cwd resolves against"},
-		{Long: "door", Description: "serve: the daemon's door socket for this box, as a path inside it"},
-		{Long: "cwd", Description: "exec: working directory, relative to the workspace"},
-		{Long: "scope", Description: "exec: session scope (default: this pid)"},
-	},
-	ArgsMin: 1,
 	Run: func(ctx *cmdkit.RunContext) error {
 		sock := ctx.Flag("socket")
 		if sock == "" {
@@ -64,7 +52,7 @@ it in [sandbox.boxes.<name>] and an aria picks it with system.sandbox.
 		}
 		return fmt.Errorf("box: want serve or exec, not %q", ctx.Args[0])
 	},
-}
+})
 
 func runBoxStandalone(progName string, args []string) int {
 	r := cmdkit.NewRouter(progName)

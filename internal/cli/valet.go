@@ -17,11 +17,7 @@ import (
 	"github.com/jack-work/figaro/internal/sandbox/valet"
 )
 
-var valetVerb = &cmdkit.Command{
-	Name:  "valet",
-	Group: "System",
-	Short: "Grant figaros paths for the tools your valet runs as you",
-	Usage: "valet grant <figaro|*> <path> ro|rw [--for 8h] | valet grants [-j] | valet revoke <figaro|*> [<path>] | valet serve [--peer <user>] [--door <path>] [--hide <path>]",
+var valetVerb = verb("valet", &cmdkit.Command{
 	Long: `The valet runs a figaro's tools as you, inside a fence that shows them
 only the paths you granted that figaro. Grants live in your own table,
 ~/.local/state/figaro-valet/grants.toml (0600), which no tool can see.
@@ -44,16 +40,6 @@ socket, and an outfit picks it with system.sandbox.
            runtime directory, the nix daemon socket, the valet's state and
            every --hide path are absent. Refuses when unprivileged user
            namespaces are off`,
-	Flags: []cmdkit.FlagDef{
-		{Long: "for", Description: "grant: how long the grant lasts (default 8h; d and w suffixes work)"},
-		{Long: "max-grant", Description: "grant, serve: the longest grant to accept or honour (default 7d)"},
-		{Long: "state", Description: "the valet's state directory (default ~/.local/state/figaro-valet)"},
-		{Long: "json", Short: "j", IsBool: true, Description: "grants: machine-readable output"},
-		{Long: "peer", Repeats: true, Description: "serve: a user or uid that may call the valet; repeats"},
-		{Long: "door", Description: "serve: the daemon's door socket for this box, bound into the fence"},
-		{Long: "hide", Repeats: true, Description: "serve: a path no tool sees; a grant overlapping it is dropped; repeats"},
-	},
-	ArgsMin: 1,
 	Run: func(ctx *cmdkit.RunContext) error {
 		state := ctx.Flag("state")
 		if state == "" {
@@ -93,7 +79,7 @@ socket, and an outfit picks it with system.sandbox.
 		}
 		return fmt.Errorf("valet: want grant, grants, revoke or serve, not %q", ctx.Args[0])
 	},
-}
+})
 
 func runValetStandalone(progName string, args []string) int {
 	r := cmdkit.NewRouter(progName)

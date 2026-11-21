@@ -11,6 +11,7 @@ import (
 
 	jkrpc "github.com/jack-work/jkrpc"
 
+	"github.com/jack-work/figaro/api/command"
 	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cli/figtree"
@@ -42,8 +43,6 @@ func runStateOutfit(loaded *config.Loaded, ctx *cmdkit.RunContext, args []string
 	return nil
 }
 
-var stateSubwords = []string{"show", "set", "delete", "outfit", "new", "fork", "ls", "rm", "listen", "help"}
-
 func completeStateArgs(c *cmdkit.CompleteContext) []string {
 	if c == nil {
 		return nil
@@ -60,7 +59,12 @@ func completeStateArgs(c *cmdkit.CompleteContext) []string {
 			return ariaCandidates(c)
 		}
 	}
-	return append(append([]string{}, stateSubwords...), completeAriaIDsPositionalOrFlag(c)...)
+	state, _ := command.Shell("state")
+	var words []string
+	for _, ch := range state.Choices() {
+		words = append(words, ch.Name)
+	}
+	return append(words, completeAriaIDsPositionalOrFlag(c)...)
 }
 
 // completeOutfits sources names from the config, so it works with no aria

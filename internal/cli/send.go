@@ -732,26 +732,3 @@ func forgotHint(ariaID string, grant rpc.AttachResponse) string {
 	}
 	return fmt.Sprintf("forgot %s: use `figaro listen %s` to follow", ariaName(ariaID), ariaName(ariaID))
 }
-
-// promptFlagDefs exists for completion only: send, new and fork are PassRaw and
-// parse their own argv.
-var promptFlagDefs = []cmdkit.FlagDef{
-	{Long: "id", Description: "Target a specific existing aria"},
-	{Long: "outfit", Short: "O", Description: "Dress the aria in an outfit"},
-	{Long: "set", Short: "S", Repeats: true, Description: "Patch the bound form in the same call: k=v; repeats"},
-	{Long: "delete", Short: "D", Repeats: true, Description: "Remove bound form keys in the same call; repeats"},
-	{Long: "raw", Short: "r", IsBool: true, Description: "Stream verbatim to stdout: no ANSI, no markdown"},
-	{Long: "verbatim", Short: "v", IsBool: true, Description: "Dump the raw wire frames as JSON"},
-	{Long: "verbose", Short: "o", IsBool: true, Description: "Expand full tool inputs"},
-	{Long: "listen", Short: "l", IsBool: true, Description: "Open the transcript pager at startup"},
-	{Long: "exec", Short: "x", IsBool: true, Description: "Treat the prompt as a bash instruction"},
-	{Long: "dry-run", Short: "n", IsBool: true, Description: "--exec only: print the script without running it"},
-	{Long: "yes", Short: "y", IsBool: true, Description: "--exec only: skip the confirmation prompt"},
-	{Long: "forget", Short: "f", IsBool: true, Description: "Submit the prompt and exit immediately"},
-	{Long: "json", Short: "j", IsBool: true, Description: "Emit a single JSON line on stdout"},
-	{Long: "stay", IsBool: true, Description: "Do not move this shell"},
-	{Long: "no-studies", IsBool: true, Description: "fork only: the branch studies nothing"},
-	{Long: "record", Description: "Record the wire to a tape file"},
-	{Long: "stdin", IsBool: true, Description: "Read the prompt from stdin, never from argv; to an aria log the entry lands byte for byte, empty included"},
-	{Long: "image", Description: "Attach an image file to the prompt (repeatable)"},
-}

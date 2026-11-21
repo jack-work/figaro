@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/api/command"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/arialog"
@@ -186,7 +187,7 @@ func TestComposeTurnsKeepsStoredIDsInATailWindow(t *testing.T) {
 	}
 }
 
-// Every flag the `show` command declares must survive reassembly in cli.go and
+// Every flag api/command gives `show` must survive reassembly in cli.go and
 // land in showOpts.
 func TestEveryShowFlagIsWiredThrough(t *testing.T) {
 	opts := parseShowArgs([]string{"--max-bytes", "50", "--last", "7", "--from", "3", "--to", "9", "-o", "-j"})
@@ -204,11 +205,12 @@ func TestEveryShowFlagIsWiredThrough(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(src)
-	showBlock := body[strings.Index(body, `Name:    "show",`):]
-	showBlock = showBlock[:strings.Index(showBlock, `Name:    "send",`)]
-	for _, flag := range []string{"details", "verbose", "literal", "all", "json", "from", "to", "before", "max-bytes", "last"} {
-		if !strings.Contains(showBlock, `"`+flag+`"`) {
-			t.Errorf("show declares %q but never reassembles it: renderAria will never see it", flag)
+	showBlock := body[strings.Index(body, `verb("show",`):]
+	showBlock = showBlock[:strings.Index(showBlock, `verb("send",`)]
+	show, _ := command.Shell("show")
+	for _, f := range show.Flags {
+		if f.Long != "id" && !strings.Contains(showBlock, `"`+f.Long+`"`) {
+			t.Errorf("show declares %q but never reassembles it: renderAria will never see it", f.Long)
 		}
 	}
 }
