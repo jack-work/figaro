@@ -25,8 +25,8 @@ func TestTroupeCarriesWhatExistsOnly(t *testing.T) {
 	for _, absent := range []string{"approve", "invite"} {
 		require.NotContains(t, cmd.Usage, absent)
 	}
-	require.True(t, terminalSubverbs["troupe login"], ":troupe login reads the keyboard")
-	require.True(t, terminalSubverbs["troupe join"], ":troupe join asks before trusting a root")
+	require.True(t, readsKeyboard([]string{"troupe", "login"}), ":troupe login reads the keyboard")
+	require.True(t, readsKeyboard([]string{"troupe", "join"}), ":troupe join asks before trusting a root")
 }
 
 func troupeRig(t *testing.T, files map[string]string) *config.Loaded {

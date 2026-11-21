@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jack-work/figaro/api/command"
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 )
@@ -69,7 +70,7 @@ func topologyArgs(argv []string) (*pagerTopology, error) {
 }
 
 func topologyFormPit(argv []string) (formPit, bool, error) {
-	if len(argv) == 0 {
+	if len(argv) == 0 || pagerVerb(argv[0]).Pager != command.View {
 		return formPit{}, false, nil
 	}
 	if argv[0] == "ls" || argv[0] == "list" || argv[0] == "lsh" {
