@@ -219,15 +219,21 @@ func (h *handlers) rebuildArias(w *ariasWatch) {
 					global = append(global, r)
 				}
 			}
-			next[rpc.GlobalAriasFormID] = ariasSnapshot(global, peers)
+			next[rpc.GlobalAriasFormID] = ariasSnapshot(global, peers, 0)
 		}
 	}
+	shownRows, moreRows := rows, 0
+	recentRows, moreRecent := rows, 0
+	if authz.DoorOf(w.ctx) == authz.DoorWeb {
+		shownRows, moreRows = newestWithAncestors(rows, webWindowRows)
+		recentRows, moreRecent = newestRows(rows, webWindowRows)
+	}
 	if fresh {
-		next[rpc.AriasFormID] = ariasSnapshot(rows, peers)
+		next[rpc.AriasFormID] = ariasSnapshot(shownRows, peers, moreRows)
 		next[rpc.TopologyFormID] = topologySnapshot(rows)
 	}
 	if w.recent.asked && (fresh || !w.recent.built) {
-		next[rpc.RecentFormID] = recent.Snapshot(recent.Rows(rows))
+		next[rpc.RecentFormID] = recent.Snapshot(recent.Rows(recentRows), moreRecent)
 		w.recent.built = true
 	}
 	for id, next := range next {
@@ -287,7 +293,7 @@ func ariasPrint(rows []rpc.FigaroInfoResponse, peers int) uint64 {
 	return f.Sum64()
 }
 
-func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers int) form.Snapshot {
+func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers, more int) form.Snapshot {
 	keys := map[string]json.RawMessage{}
 	put := func(k string, v any) {
 		raw, _ := json.Marshal(v)
@@ -295,6 +301,9 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers int) form.Snapshot {
 	}
 	if peers > 0 {
 		put("peers", peers)
+	}
+	if more > 0 {
+		put(recent.KeyMore, more)
 	}
 	byID := make(map[string]*rpc.FigaroInfoResponse, len(rows))
 	for i := range rows {
