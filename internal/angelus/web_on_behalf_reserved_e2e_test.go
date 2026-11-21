@@ -21,3 +21,13 @@ func TestADelegatedSetMayNotRewriteAFigarosAriaID(t *testing.T) {
 	require.NotNil(t, reply.Error)
 	require.Equal(t, r.aria, deref(delegatedFormOf(t, c, r.aria).Snapshot.Lookup("aria_id")))
 }
+
+func TestADelegatedSetMayNotGiveARuntimeRowChildren(t *testing.T) {
+	r := onBehalfDoor(t)
+	c, _, err := r.as(t, "figchat-gateway", "gluck")
+	require.NoError(t, err)
+	for _, k := range []string{"truncation.x", "model.x", "token_budget.x"} {
+		reply := c.call(rpc.MethodSet, onAria(r.aria, map[string]any{"patch": plainPatch(t, map[string]string{k: "forged"})}))
+		require.NotNil(t, reply.Error, k)
+	}
+}

@@ -325,6 +325,9 @@ func userUnwritable(key string) string {
 	if rootSegment(key) == "aria_id" {
 		return key + " is the figaro's own identity: a delegated caller may not set or unset it"
 	}
+	if row, under := form.UnderExactRow(key); under {
+		return fmt.Sprintf("%s is under %s, a runtime row that takes no children: a delegated caller may not write it", key, row)
+	}
 	if form.HarnessKey(key) {
 		return key + " is daemon/owner-held: a delegated caller writes no system.* or runtime.* key"
 	}

@@ -219,3 +219,12 @@ func WriterOf(path string) Writer {
 	}
 	return WriterSelf
 }
+
+func UnderExactRow(path string) (string, bool) {
+	for _, s := range registry {
+		if s.Exact && !s.placeholder() && strings.HasPrefix(path, s.Path+".") {
+			return s.Path, true
+		}
+	}
+	return "", false
+}
