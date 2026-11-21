@@ -1,6 +1,7 @@
 package aria
 
 import (
+	"maps"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -23,6 +24,8 @@ type Server struct {
 	// inside one turn must reopen at the same boundary, not after the first.
 	baseTurn uint64
 	base     uint64
+
+	announced map[string]livedoc.FormDelta
 }
 
 // openTurn is the streaming suffix of the tail turn: the nodes at ids >= from.
@@ -237,6 +240,8 @@ func (s *Server) Seal(lts []uint64) {
 	}
 	s.cache.TailMutated()
 	sealed := *tl
+	sealed.FormDeltas = unannounced(sealed.FormDeltas, s.announced)
+	s.announced = nil
 	subs := s.subsLocked()
 	s.mu.Unlock()
 	deliver(subs, Page{Parts: []TurnPart{{Turn: sealed}}})
@@ -554,9 +559,10 @@ func (s *Server) OpenInquiry(id uint64, inquiry string, deltas map[string]livedo
 	tl.InquirySegments = segments
 	forkedFrom := wire.ForkedFromOf(deltas)
 	if len(deltas) > 0 {
-		tl.FormDeltas = deltas
+		tl.FormDeltas = maps.Clone(deltas)
 		tl.ForkedFrom = forkedFrom
 	}
+	s.announced = deltas
 	s.cache.TailMutated()
 	from := uint64(len(tl.Nodes))
 	subs := s.subsLocked()
@@ -659,4 +665,14 @@ func (s *Server) AppendSealed(turns []Turn) {
 	s.mu.Lock()
 	s.cache.appendSealed(turns)
 	s.mu.Unlock()
+}
+
+func unannounced(deltas, announced map[string]livedoc.FormDelta) map[string]livedoc.FormDelta {
+	if len(announced) == 0 || len(deltas) == 0 {
+		return deltas
+	}
+	if reflect.DeepEqual(deltas, announced) {
+		return nil
+	}
+	return deltas
 }

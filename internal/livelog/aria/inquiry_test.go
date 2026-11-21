@@ -214,3 +214,61 @@ func BenchmarkTurnPushBytes(b *testing.B) {
 	}
 	b.ReportMetric(float64(pushed), "B/turn")
 }
+
+func TestTheSealFrameDoesNotResendTheOpeningDeltas(t *testing.T) {
+	delta := func(v string) livedoc.FormDelta {
+		return livedoc.FormDelta{Value: json.RawMessage(v), Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1"}
+	}
+	opening := map[string]livedoc.FormDelta{
+		"a1.system.forked_from": delta(`"90ec6584"`),
+		"a1.credo.content":      delta(`"the birth credo"`),
+	}
+	run := func(stamp func(tail *Turn)) (frames []Page, c *client.Client) {
+		s := NewServer()
+		s.Subscribe(func(p Page) { frames = append(frames, p) })
+		s.OpenInquiry(1, "q", opening)
+		s.OpenTurn(1)
+		s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answer"}}, 0)
+		s.Close()
+		s.StampTail(func(tail *Turn, _ []Turn) { stamp(tail) })
+		s.Seal(nil)
+		c = client.NewClient()
+		for _, f := range frames {
+			c.Apply(f, client.Notify)
+		}
+		return frames, c
+	}
+	carried := func(frames []Page) int {
+		n := 0
+		for _, f := range frames {
+			for _, p := range f.Parts {
+				n += len(p.FormDeltas)
+			}
+		}
+		return n
+	}
+	folded := func(c *client.Client) map[string]livedoc.FormDelta {
+		for _, m := range c.View().Closed {
+			if m.Turn == 1 {
+				return m.FormDeltas
+			}
+		}
+		return nil
+	}
+
+	frames, c := run(func(tail *Turn) {})
+	if got := carried(frames); got != len(opening) {
+		t.Fatalf("each opening delta must cross the wire once, %d went out for %d", got, len(opening))
+	}
+	if len(folded(c)) != len(opening) {
+		t.Fatalf("a client folding the frames lost deltas: %+v", folded(c))
+	}
+
+	frames, c = run(func(tail *Turn) { tail.FormDeltas["a1.cwd"] = delta(`"/tmp"`) })
+	if len(folded(c)) != len(opening)+1 {
+		t.Fatalf("a delta stamped at seal never reached the client: %+v", folded(c))
+	}
+	if carried(frames) <= len(opening) {
+		t.Fatalf("the seal dropped a stamped delta: %d carried", carried(frames))
+	}
+}
