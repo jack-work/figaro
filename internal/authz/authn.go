@@ -545,7 +545,7 @@ func (p *Peercred) admit(ctx context.Context, uid uint32, pid int32) (context.Co
 		return nil, err
 	}
 	ctx = WithSubject(ctx, s)
-	if p.tools == nil {
+	if p.tools == nil || pid == 0 {
 		return ctx, nil
 	}
 	figaro, err := p.toolOf(pid)

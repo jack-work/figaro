@@ -74,3 +74,28 @@ func TestAnOrdinaryPeerCarriesNoToolMark(t *testing.T) {
 		t.Fatalf("principal = %+v", got)
 	}
 }
+
+func TestAPeerOutsideTheDaemonsPidNamespaceIsAdmittedUnattributed(t *testing.T) {
+	read := func(pid int) (string, error) {
+		t.Fatalf("read the cgroup of pid %d for a peer the kernel could not name", pid)
+		return "", nil
+	}
+	p := attributing(t, read)
+	ctx, err := p.admit(context.Background(), 1000, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := ToolOf(ctx); ok {
+		t.Fatal("an outside peer was marked as a tool")
+	}
+	if got := PrincipalOf(ctx); got != (rpc.Principal{Kind: rpc.PrincipalUser, ID: "1000"}) {
+		t.Fatalf("principal = %+v", got)
+	}
+}
+
+func TestAnOutsidePeerOfAnotherUIDIsStillRefused(t *testing.T) {
+	p := attributing(t, func(int) (string, error) { return "", nil })
+	if _, err := p.admit(context.Background(), 1001, 0); !errors.Is(err, ErrUnadmitted) {
+		t.Fatalf("err = %v", err)
+	}
+}
