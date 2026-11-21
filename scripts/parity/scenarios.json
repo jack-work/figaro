@@ -1,0 +1,796 @@
+{
+ "version": 1,
+ "provider": {
+  "rules": [
+   {
+    "when": "think and run",
+    "rounds": [
+     {
+      "thinking": "I should check the directory first.",
+      "text": "Looking now.",
+      "tool": {
+       "name": "bash",
+       "input": {
+        "command": "echo parity-ok"
+       }
+      },
+      "pace": 0.3,
+      "hold": 2
+     },
+     {
+      "text": "Done: parity-ok seen.",
+      "pace": 0.05
+     }
+    ]
+   },
+   {
+    "when": "steered work",
+    "rounds": [
+     {
+      "text": "Starting the long step.",
+      "tool": {
+       "name": "bash",
+       "input": {
+        "command": "sleep 8; echo woke"
+       }
+      }
+     },
+     {
+      "text": "Steered work done."
+     }
+    ]
+   },
+   {
+    "when": "steer ack",
+    "rounds": [
+     {
+      "text": "Steer acknowledged."
+     }
+    ]
+   },
+   {
+    "when": "slow work",
+    "rounds": [
+     {
+      "hold": 3,
+      "text": "Slow work finished."
+     }
+    ]
+   },
+   {
+    "when": "doomed",
+    "fail": {
+     "status": 400,
+     "times": 1
+    },
+    "rounds": [
+     {
+      "text": "Second try worked."
+     }
+    ]
+   }
+  ],
+  "default": {
+   "text": "Ecco fatto."
+  }
+ },
+ "scenarios": [
+  {
+   "id": "attend",
+   "title": "Attend a fresh figaro",
+   "slice": "messages.attend",
+   "setup": {
+    "aria": "main",
+    "seed": []
+   },
+   "steps": [
+    {
+     "id": "attended",
+     "do": {
+      "attend": "main"
+     },
+     "expect": {
+      "turns": [],
+      "state": {
+       "system.provider": "anthropic"
+      },
+      "screen": {
+       "glyphs": []
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "send",
+   "title": "Send one prompt, get one reply",
+   "slice": "messages.show-everything",
+   "setup": {
+    "aria": "main",
+    "seed": []
+   },
+   "steps": [
+    {
+     "id": "attended",
+     "do": {
+      "attend": "main"
+     },
+     "expect": {
+      "turns": []
+     }
+    },
+    {
+     "id": "sent",
+     "do": {
+      "send": "hello parity"
+     },
+     "expect": {
+      "turns_started": true
+     }
+    },
+    {
+     "id": "replied",
+     "do": {
+      "wait": "idle"
+     },
+     "expect": {
+      "running": false,
+      "turns": [
+       {
+        "turn": 1,
+        "inquiry": "hello parity",
+        "nodes": [
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Ecco fatto."
+         }
+        ]
+       }
+      ],
+      "screen": {
+       "contains": [
+        "hello parity",
+        "Ecco fatto."
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "streamed",
+   "title": "Streamed reply: thinking, prose, a tool run, prose",
+   "slice": "messages.show-everything",
+   "setup": {
+    "aria": "main",
+    "seed": []
+   },
+   "steps": [
+    {
+     "id": "attended",
+     "do": {
+      "attend": "main"
+     },
+     "expect": {
+      "turns": []
+     }
+    },
+    {
+     "id": "streaming",
+     "do": {
+      "send": "think and run it",
+      "then": {
+       "wait": "running"
+      }
+     },
+     "expect": {
+      "running": true
+     }
+    },
+    {
+     "id": "settled",
+     "do": {
+      "wait": "idle"
+     },
+     "expect": {
+      "running": false,
+      "turns": [
+       {
+        "turn": 1,
+        "inquiry": "think and run it",
+        "nodes": [
+         {
+          "type": "thinking",
+          "role": "output",
+          "text_contains": "check the directory",
+          "open": true
+         },
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Looking now."
+         },
+         {
+          "type": "tool",
+          "role": "output",
+          "name": "bash",
+          "status": "ok",
+          "output_contains": "parity-ok",
+          "open": true
+         },
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Done: parity-ok seen."
+         }
+        ]
+       }
+      ],
+      "glyphs_on_screen": [
+       "tool.ok"
+      ],
+      "screen": {
+       "contains": [
+        "I should check the directory first.",
+        "Looking now.",
+        "parity-ok",
+        "Done: parity-ok seen."
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "steering",
+   "title": "Steer a turn that is mid tool run",
+   "slice": "messages.show-everything",
+   "setup": {
+    "aria": "main",
+    "seed": []
+   },
+   "steps": [
+    {
+     "id": "attended",
+     "do": {
+      "attend": "main"
+     },
+     "expect": {
+      "turns": []
+     }
+    },
+    {
+     "id": "working",
+     "do": {
+      "send": "steered work please",
+      "then": {
+       "wait": "running",
+       "sleep": 1.5
+      }
+     },
+     "expect": {
+      "running": true
+     }
+    },
+    {
+     "id": "steered",
+     "do": {
+      "send": "steer ack now"
+     },
+     "expect": {
+      "running": true
+     }
+    },
+    {
+     "id": "settled",
+     "do": {
+      "wait": "idle",
+      "timeout": 30
+     },
+     "expect": {
+      "running": false,
+      "turns": [
+       {
+        "turn": 1,
+        "inquiry": "steered work please",
+        "nodes": [
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Starting the long step."
+         },
+         {
+          "type": "tool",
+          "role": "output",
+          "name": "bash",
+          "status": "ok",
+          "output_contains": "woke"
+         },
+         {
+          "type": "steering",
+          "role": "input",
+          "text_contains": "steer ack now"
+         },
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Steer acknowledged."
+         }
+        ]
+       }
+      ],
+      "glyphs_on_screen": [
+       "steering"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "fork",
+   "title": "Fork at a turn",
+   "slice": "tree.fork",
+   "setup": {
+    "aria": "main",
+    "seed": [
+     "first question",
+     "second question"
+    ]
+   },
+   "steps": [
+    {
+     "id": "attended",
+     "do": {
+      "attend": "main"
+     },
+     "expect": {
+      "turns": [
+       {
+        "turn": 1,
+        "inquiry": "first question",
+        "nodes": [
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Ecco fatto."
+         }
+        ]
+       },
+       {
+        "turn": 2,
+        "inquiry": "second question",
+        "nodes": [
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Ecco fatto."
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "id": "forked",
+     "do": {
+      "fork": {
+       "aria": "main",
+       "at_turn": 2,
+       "as": "branch"
+      }
+     },
+     "expect": {
+      "tree": {
+       "edges": [
+        [
+         "main",
+         "branch"
+        ]
+       ]
+      }
+     }
+    },
+    {
+     "id": "branch-attended",
+     "do": {
+      "attend": "branch"
+     },
+     "expect": {
+      "turns": [
+       {
+        "turn": 1,
+        "inquiry": "first question",
+        "nodes": [
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Ecco fatto."
+         }
+        ]
+       }
+      ],
+      "tree": {
+       "edges": [
+        [
+         "main",
+         "branch"
+        ]
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "delta",
+   "title": "A turn that carries a form delta",
+   "slice": "deltas.rows",
+   "setup": {
+    "aria": "main",
+    "seed": [
+     "before the change"
+    ]
+   },
+   "steps": [
+    {
+     "id": "attended",
+     "do": {
+      "attend": "main"
+     },
+     "expect": {
+      "turns": [
+       {
+        "turn": 1,
+        "inquiry": "before the change",
+        "nodes": [
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Ecco fatto."
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "id": "changed",
+     "do": {
+      "set": {
+       "key": "stage",
+       "value": "two"
+      }
+     },
+     "expect": {
+      "state": {
+       "stage": "two"
+      }
+     }
+    },
+    {
+     "id": "asked",
+     "do": {
+      "send": "after the change",
+      "then": {
+       "wait": "idle"
+      }
+     },
+     "expect": {
+      "running": false,
+      "turns": [
+       {
+        "turn": 1,
+        "inquiry": "before the change",
+        "nodes": [
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Ecco fatto."
+         }
+        ]
+       },
+       {
+        "turn": 2,
+        "inquiry": "after the change",
+        "nodes": [
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Ecco fatto."
+         }
+        ],
+        "deltas": [
+         {
+          "key": "stage",
+          "old": null,
+          "new": "two",
+          "header_glyph": "delta"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "pits",
+   "title": "Open each pit: control, state, tree, queue",
+   "slice": "pits.control",
+   "setup": {
+    "aria": "main",
+    "seed": [
+     "warm up"
+    ]
+   },
+   "steps": [
+    {
+     "id": "attended",
+     "do": {
+      "attend": "main"
+     },
+     "expect": {
+      "turns": [
+       {
+        "turn": 1,
+        "inquiry": "warm up",
+        "nodes": [
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Ecco fatto."
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "id": "control",
+     "do": {
+      "pit": "control"
+     },
+     "expect": {
+      "pit": {
+       "name": "control",
+       "rows": [
+        "aria",
+        "status",
+        "mantra",
+        "route",
+        "context",
+        "tokens",
+        "cache",
+        "started"
+       ]
+      }
+     }
+    },
+    {
+     "id": "control-closed",
+     "do": {
+      "pit": "close"
+     },
+     "expect": {
+      "pit": null
+     }
+    },
+    {
+     "id": "state",
+     "do": {
+      "pit": "state"
+     },
+     "expect": {
+      "pit": {
+       "name": "state",
+       "glyph": "pit.form.mark",
+       "rows": [
+        "aria_id",
+        "datetime",
+        "mantra",
+        "runtime",
+        "system"
+       ]
+      }
+     }
+    },
+    {
+     "id": "state-closed",
+     "do": {
+      "pit": "close"
+     },
+     "expect": {
+      "pit": null
+     }
+    },
+    {
+     "id": "tree",
+     "do": {
+      "pit": "tree"
+     },
+     "expect": {
+      "pit": {
+       "name": "tree",
+       "rows": [
+        "arias",
+        "warm up"
+       ]
+      }
+     }
+    },
+    {
+     "id": "tree-closed",
+     "do": {
+      "pit": "close"
+     },
+     "expect": {
+      "pit": null
+     }
+    },
+    {
+     "id": "queue",
+     "do": {
+      "pit": "queue"
+     },
+     "expect": {
+      "pit": {
+       "name": "queue",
+       "rows": [],
+       "footer": "message queue is empty"
+      }
+     }
+    },
+    {
+     "id": "queue-closed",
+     "do": {
+      "pit": "close"
+     },
+     "expect": {
+      "pit": null
+     }
+    }
+   ]
+  },
+  {
+   "id": "command",
+   "title": "Command mode",
+   "slice": "command.mode",
+   "setup": {
+    "aria": "main",
+    "seed": [
+     "warm up"
+    ]
+   },
+   "steps": [
+    {
+     "id": "attended",
+     "do": {
+      "attend": "main"
+     },
+     "expect": {
+      "turns": [
+       {
+        "turn": 1,
+        "inquiry": "warm up",
+        "nodes": [
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Ecco fatto."
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "id": "typing",
+     "do": {
+      "command_typed": "set mood calm"
+     },
+     "expect": {
+      "screen": {
+       "contains": [
+        ":set mood calm"
+       ]
+      },
+      "glyphs_on_screen": [
+       "pit.command"
+      ]
+     }
+    },
+    {
+     "id": "ran",
+     "do": {
+      "command_enter": true
+     },
+     "expect": {
+      "state": {
+       "mood": "calm"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "error",
+   "title": "A failed turn, then the retry",
+   "slice": "errors.retry",
+   "setup": {
+    "aria": "main",
+    "seed": []
+   },
+   "steps": [
+    {
+     "id": "attended",
+     "do": {
+      "attend": "main"
+     },
+     "expect": {
+      "turns": []
+     }
+    },
+    {
+     "id": "failed",
+     "do": {
+      "send": "doomed request",
+      "then": {
+       "wait": "idle"
+      }
+     },
+     "expect": {
+      "running": false,
+      "turns": [
+       {
+        "turn": 1,
+        "inquiry": "doomed request",
+        "nodes": []
+       }
+      ],
+      "screen": {
+       "contains": [
+        "invalid_request_error"
+       ]
+      }
+     }
+    },
+    {
+     "id": "retried",
+     "do": {
+      "send": "doomed request",
+      "then": {
+       "wait": "idle"
+      }
+     },
+     "expect": {
+      "running": false,
+      "turns": [
+       {
+        "turn": 1,
+        "inquiry": "doomed request",
+        "nodes": []
+       },
+       {
+        "turn": 2,
+        "inquiry": "doomed request",
+        "nodes": [
+         {
+          "type": "prose",
+          "role": "output",
+          "text_contains": "Second try worked."
+         }
+        ]
+       }
+      ],
+      "screen": {
+       "contains": [
+        "Second try worked."
+       ]
+      }
+     }
+    }
+   ]
+  }
+ ]
+}
