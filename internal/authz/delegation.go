@@ -301,6 +301,9 @@ func userUnwritable(key string) string {
 	if emptySegment(key) {
 		return fmt.Sprintf("%q has an empty path segment", key)
 	}
+	if root := rootSegment(key); root == "name" || root == "role-name" {
+		return key + " names the form for @name resolution: a delegated caller may not set or unset it"
+	}
 	if form.HarnessKey(key) {
 		return key + " is daemon/owner-held: a delegated caller writes no system.* or runtime.* key"
 	}

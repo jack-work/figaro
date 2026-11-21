@@ -232,3 +232,29 @@ func TestADelegatedSetRefusesTheBareRuntimeRows(t *testing.T) {
 		}
 	}
 }
+func TestADelegatedSetMayNotMoveARoleNameToAnotherHolder(t *testing.T) {
+	r := onBehalfDoor(t)
+	c, _, err := r.as(t, "figchat-gateway", "gluck")
+	require.NoError(t, err)
+	other, err := r.owner.Create(r.ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	role := func(name, target string) string {
+		n, _ := json.Marshal(name)
+		tg, _ := json.Marshal(target)
+		p := form.FromMap(map[string]json.RawMessage{"name": n, "target-aria": tg}).AsPatch()
+		made, err := r.owner.FormCreate(r.ctx, "", nil, &p)
+		require.NoError(t, err)
+		return made.FormID
+	}
+	engineer := role("engineer", r.aria)
+	decoy := role("decoy", other.FigaroID)
+	require.Equal(t, r.aria, deref(delegatedFormOf(t, c, "@engineer").Snapshot.Lookup("target-aria")))
+
+	unset := form.Patch{Object: &form.ObjectPatch{Delete: map[string]form.Value{"name": rv(`"engineer"`)}}}
+	reply := c.call(rpc.MethodSet, onAria(engineer, map[string]any{"patch": unset}))
+	t.Logf("unset name: %+v", reply.Error)
+	reply = c.call(rpc.MethodSet, onAria(decoy, map[string]any{"patch": form.FromMap(map[string]json.RawMessage{"name": json.RawMessage(`"engineer"`)}).AsPatch()}))
+	t.Logf("set name: %+v", reply.Error)
+
+	require.Equal(t, r.aria, deref(delegatedFormOf(t, c, "@engineer").Snapshot.Lookup("target-aria")), "a delegated caller moved @engineer to another aria with two plain-key writes")
+}
