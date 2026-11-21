@@ -328,6 +328,9 @@ func userUnwritable(key string) string {
 	if row, under := form.UnderExactRow(key); under {
 		return fmt.Sprintf("%s is under %s, a runtime row that takes no children: a delegated caller may not write it", key, row)
 	}
+	if key == "worker.pool" || strings.HasPrefix(key, "worker.pool.") {
+		return key + " places a pool node: a delegated caller may not set or unset it"
+	}
 	if form.HarnessKey(key) {
 		return key + " is daemon/owner-held: a delegated caller writes no system.* or runtime.* key"
 	}

@@ -31,3 +31,11 @@ func TestADelegatedSetMayNotGiveARuntimeRowChildren(t *testing.T) {
 		require.NotNil(t, reply.Error, k)
 	}
 }
+
+func TestADelegatedSetMayNotMovePoolPlacement(t *testing.T) {
+	r := onBehalfDoor(t)
+	c, _, err := r.as(t, "figchat-gateway", "gluck")
+	require.NoError(t, err)
+	reply := c.call(rpc.MethodSet, onAria(r.aria, map[string]any{"patch": plainPatch(t, map[string]string{"worker.pool": "other"})}))
+	require.NotNil(t, reply.Error)
+}
