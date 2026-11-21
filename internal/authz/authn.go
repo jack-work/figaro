@@ -43,6 +43,7 @@ func kindOf(name string) (jkauthz.Kind, error) {
 
 type Peercred struct {
 	tools   *toolcgroup.Registry
+	cgroup  func(pid int) (string, error)
 	self    jkauthz.Principal
 	selfUID uint32
 	uids    map[uint32]jkauthz.Principal
@@ -535,6 +536,10 @@ func (p *Peercred) Admit(ctx context.Context, conn net.Conn) (context.Context, e
 	if err != nil {
 		return nil, err
 	}
+	return p.admit(ctx, uid, pid)
+}
+
+func (p *Peercred) admit(ctx context.Context, uid uint32, pid int32) (context.Context, error) {
 	s, err := p.Subject(uid)
 	if err != nil {
 		return nil, err
@@ -554,7 +559,11 @@ func (p *Peercred) Admit(ctx context.Context, conn net.Conn) (context.Context, e
 }
 
 func (p *Peercred) toolOf(pid int32) (string, error) {
-	cg, err := toolcgroup.ProcCgroupOf(int(pid))
+	read := p.cgroup
+	if read == nil {
+		read = toolcgroup.ProcCgroupOf
+	}
+	cg, err := read(int(pid))
 	if err != nil {
 		return "", fmt.Errorf("%w: the caller's cgroup is unreadable, so it may be a figaro's tool: %v", ErrUnadmitted, err)
 	}
