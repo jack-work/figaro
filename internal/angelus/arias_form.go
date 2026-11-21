@@ -281,6 +281,7 @@ func ariasPrint(rows []rpc.FigaroInfoResponse, peers int) uint64 {
 		putInt(int64(r.ContextTokens))
 		putInt(int64(r.ContextLimit))
 		putInt(r.LastActive)
+		putInt(r.RetiredAt)
 		putStr(rpc.JoinRoleAddresses(r.Roles))
 	}
 	return f.Sum64()
@@ -334,6 +335,9 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers int) form.Snapshot {
 		}
 		if r.LastActive > 0 {
 			put(base+"active_at", r.LastActive)
+		}
+		if r.RetiredAt > 0 {
+			put(base+"retired_at", r.RetiredAt)
 		}
 		if r.Cwd != "" {
 			put(base+"cwd", r.Cwd)

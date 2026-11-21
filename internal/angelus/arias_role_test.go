@@ -18,3 +18,24 @@ func TestAriasSnapshotCarriesTheRoleOnlyWhereOneIsHeld(t *testing.T) {
 		t.Fatalf("bravo holds no role but carries %q", *v)
 	}
 }
+
+func TestAriasSnapshotMarksARetiredFigaro(t *testing.T) {
+	snap := ariasSnapshot([]rpc.FigaroInfoResponse{
+		{ID: "a", Handle: "alpha", RetiredAt: 1700000000000},
+		{ID: "b", Handle: "bravo"},
+	}, 0)
+	if v, ok := snap.Get("arias.alpha.retired_at"); !ok || string(v) != "1700000000000" {
+		t.Fatalf("alpha's retired_at = %s, want 1700000000000", v)
+	}
+	if v, ok := snap.Get("arias.bravo.retired_at"); ok {
+		t.Fatalf("bravo is live but carries retired_at %s", v)
+	}
+}
+
+func TestARetireChangesTheAriasPrint(t *testing.T) {
+	live := []rpc.FigaroInfoResponse{{ID: "a", Handle: "alpha"}}
+	retired := []rpc.FigaroInfoResponse{{ID: "a", Handle: "alpha", RetiredAt: 1700000000000}}
+	if ariasPrint(live, 0) == ariasPrint(retired, 0) {
+		t.Fatal("a retire leaves the @arias print unchanged, so the form is not rebuilt")
+	}
+}
