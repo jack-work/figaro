@@ -3,14 +3,15 @@ package cli
 import (
 	"fmt"
 
+	"github.com/jack-work/figaro/api/glyph"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
 )
 
 const (
 	headMinRows    = 4
-	headOpenGlyph  = "∧"
-	headShutGlyph  = "∨"
+	headOpenGlyph  = glyph.HeadOpen
+	headShutGlyph  = glyph.HeadShut
 	headPaneShare  = 4
 	headChromeRows = 2
 )

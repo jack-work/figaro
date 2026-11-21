@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jack-work/figaro/api/glyph"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/sdk/aria"
@@ -392,11 +393,11 @@ func (t *transcript) bandEdge(from, step int) int {
 // is the first or second cell.
 func isRuleRow(row string) bool {
 	rest, _ := firstVisible(row)
-	if strings.HasPrefix(rest, "─") {
+	if strings.HasPrefix(rest, glyph.RuleSingle) {
 		return true
 	}
 	_, n := utf8.DecodeRuneInString(rest)
-	return n > 0 && strings.HasPrefix(rest[n:], "─")
+	return n > 0 && strings.HasPrefix(rest[n:], glyph.RuleSingle)
 }
 
 // Applied at paint time: the region moves on every keystroke and the rows do not.

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/rpc"
 )
 
@@ -254,11 +255,11 @@ func (v *notificationsView) AriaOf(id string) string {
 func (l alertLevel) glyph() string {
 	switch l {
 	case alertError:
-		return "✗"
+		return glyph.Fail
 	case alertWarn:
-		return "!"
+		return glyph.AlertWarn
 	}
-	return "·"
+	return glyph.Pending
 }
 
 func (l alertLevel) tone() pitTone {

@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/internal/render"
 )
 
@@ -30,11 +31,11 @@ func (t *transcript) queuedPitRows() []pitRow {
 	for _, q := range t.queued {
 		live[q.id] = true
 		if !t.queueOpen[q.id] {
-			rows = append(rows, pitRow{text: q.mark() + " ▸ " + firstLineTrim(q.text), yank: q.text, id: queueRowID(q.id)})
+			rows = append(rows, pitRow{text: q.mark() + " " + glyph.CommentClosed + " " + firstLineTrim(q.text), yank: q.text, id: queueRowID(q.id)})
 			continue
 		}
 		lines := queueBodyLines(q.text, max(t.w-queueBodyIndent-1, 8))
-		rows = append(rows, pitRow{text: q.mark() + " ▾ " + lines[0], yank: q.text, id: queueRowID(q.id)})
+		rows = append(rows, pitRow{text: q.mark() + " " + glyph.CommentOpen + " " + lines[0], yank: q.text, id: queueRowID(q.id)})
 		indent := strings.Repeat(" ", queueBodyIndent)
 		for n, line := range lines[1:] {
 			rows = append(rows, pitRow{text: indent + line, yank: q.text, id: queueBodyRowID(q.id, n)})

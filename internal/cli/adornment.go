@@ -3,6 +3,7 @@ package cli
 import (
 	"strings"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/livedoc"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
@@ -10,10 +11,10 @@ import (
 )
 
 const (
-	snakeHang  = "╭"
-	snakeBody  = "│"
-	snakeClose = "╰"
-	snakeElbow = "╯"
+	snakeHang  = glyph.SnakeHang
+	snakeBody  = glyph.SnakeBody
+	snakeClose = glyph.SnakeClose
+	snakeElbow = glyph.SnakeElbow
 )
 
 // adorner is what differs between a tool, a line of prose and a turn's question.
@@ -43,7 +44,7 @@ func (proseAdorner) gutterLast() bool          { return true }
 // adding a second spine.
 type thinkingAdorner struct{ proseAdorner }
 
-func (thinkingAdorner) anchorRow() (string, bool) { return " ─" + snakeElbow, true }
+func (thinkingAdorner) anchorRow() (string, bool) { return " " + glyph.RuleSingle + snakeElbow, true }
 
 type toolAdorner struct{}
 

@@ -3,7 +3,11 @@ package cli
 // The pit identity is the source of the keyMode; nothing else may derive one from
 // the screen.
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/jack-work/figaro/api/glyph"
+)
 
 type pitID string
 
@@ -44,27 +48,27 @@ type pitFace struct {
 // reader's terminal.
 var pitFaces = map[pitID]pitFace{
 	pitNothing:       {"", "", "", modeTranscript},
-	pitQueue:         {"𝄚", "queue", "♭", modePanel},
-	pitNotifications: {"𝄞", "notifications", "♩", modePanel},
-	pitCommand:       {"∴", "command", "", modeBox},
-	pitComposer:      {"✎", "composer", "", modeBox},
-	pitSearch:        {"⌕", "search", "", modeSearch},
-	pitHelp:          {"?", "help", "", modePanel},
-	pitStatus:        {"!", "status", "", modePanel},
+	pitQueue:         {glyph.PitQueue, "queue", glyph.MarkQueue, modePanel},
+	pitNotifications: {glyph.PitNotifications, "notifications", glyph.MarkNotifications, modePanel},
+	pitCommand:       {glyph.PitCommand, "command", "", modeBox},
+	pitComposer:      {glyph.Composer, "composer", "", modeBox},
+	pitSearch:        {glyph.PitSearch, "search", "", modeSearch},
+	pitHelp:          {glyph.PitHelp, "help", "", modePanel},
+	pitStatus:        {glyph.PitStatus, "status", "", modePanel},
 	pitNote:          {"", "", "", modePanel},
-	pitOutput:        {"", "", "♭", modePanel},
-	pitDropped:       {"𝄽", "dropped", "♭", modePanel},
+	pitOutput:        {"", "", glyph.MarkQueue, modePanel},
+	pitDropped:       {glyph.PitDropped, "dropped", glyph.MarkQueue, modePanel},
 	// 웃 is East Asian Wide, not ambiguous: runewidth reports 2 everywhere.
-	pitForm:       {"웃", "form", "⌖", modePanel},
-	pitModels:     {"웃", "models", "⟡", modePanel},
-	pitReaped:     {"웃", "reaped", "⁂", modePanel},
-	pitTroupe:     {"웃", "troupe", "⌘", modePanel},
-	pitConfirm:    {"[y/N]", "confirm", "", modeConfirm},
-	pitCompletion: {"", "completion", "♪", modeBox},
-	pitDecision:   {"⁇", "decision", "", modePanel},
-	pitLogin:      {"⚷", "login", "▸", modePanel},
-	pitAsk:        {"⚷", "answer", "", modeBox},
-	pitSendTo:     {"✎", "send", "", modeBox},
+	pitForm:       {glyph.PitFolk, "form", glyph.MarkForm, modePanel},
+	pitModels:     {glyph.PitFolk, "models", glyph.MarkModels, modePanel},
+	pitReaped:     {glyph.PitFolk, "reaped", glyph.MarkReaped, modePanel},
+	pitTroupe:     {glyph.PitFolk, "troupe", glyph.MarkTroupe, modePanel},
+	pitConfirm:    {glyph.PitConfirm, "confirm", "", modeConfirm},
+	pitCompletion: {"", "completion", glyph.MarkCompletion, modeBox},
+	pitDecision:   {glyph.PitDecision, "decision", "", modePanel},
+	pitLogin:      {glyph.PitKey, "login", glyph.MarkLogin, modePanel},
+	pitAsk:        {glyph.PitKey, "answer", "", modeBox},
+	pitSendTo:     {glyph.Send, "send", "", modeBox},
 }
 
 func (d pitID) face() pitFace {
@@ -103,5 +107,5 @@ func (d pitID) selectionGlyph() string {
 	if g := d.face().selection; g != "" {
 		return g
 	}
-	return "▸"
+	return glyph.Select
 }

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
@@ -38,15 +39,15 @@ func (st turnStatus) symbol(tick uint64) string {
 	}
 	switch st {
 	case turnStatusCompleted:
-		return "✓"
+		return glyph.OK
 	case turnStatusInterrupted:
-		return "!"
+		return glyph.SessionInterrupted
 	case turnStatusError:
-		return "✗"
+		return glyph.Fail
 	case turnStatusDisconnected:
-		return "⠸"
+		return glyph.SessionDisconnected
 	}
-	return "𝄐"
+	return glyph.SessionIdle
 }
 
 // Thinking has no name: the animation says it.
@@ -536,7 +537,7 @@ func (s *sessionStatus) panelRows() []panelRow {
 	defer s.mu.RUnlock()
 	state := s.turnLabel(true)
 	if state == "" {
-		state = "idle 𝄐"
+		state = "idle " + glyph.SessionIdle
 	}
 	rows := []panelRow{
 		{text: "  aria      " + ariaName(s.figaroID) + "  " + term.Dim(s.figaroID)},

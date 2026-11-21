@@ -8,6 +8,7 @@ import (
 
 	"github.com/jack-work/hush/managed"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
@@ -399,9 +400,9 @@ func (l loginLine) row() string {
 	case loginCode:
 		return "code  " + l.text
 	case loginDone:
-		return "✓ " + l.text
+		return glyph.OK + " " + l.text
 	case loginFail:
-		return "✗ " + l.text
+		return glyph.Fail + " " + l.text
 	}
 	return l.text
 }
@@ -423,12 +424,12 @@ func (v *loginView) Items(width int) []pitRow {
 		rows = append(rows, staticRow("  …reading what each provider holds"))
 	}
 	for _, p := range s.providers {
-		mark := "·"
+		mark := glyph.Pending
 		switch {
 		case s.flow.running() && s.flow.provider == p.name:
-			mark = "…"
+			mark = glyph.Busy
 		case p.in:
-			mark = "✓"
+			mark = glyph.OK
 		}
 		rows = append(rows, pitRow{id: loginRowID(p.name), text: fmt.Sprintf("  %s %-*s  %s", mark, col, p.name, p.state)})
 	}
@@ -452,7 +453,7 @@ func (v *loginView) Items(width int) []pitRow {
 			rows = append(rows, r)
 		}
 		if f.ask != nil && v.in.lt.tr.ask == f.ask && !v.in.lt.tr.asking() {
-			rows = append(rows, pitRow{id: "ask", text: "  ▸ answer: " + f.ask.prompt + "  (Enter)"})
+			rows = append(rows, pitRow{id: "ask", text: "  " + glyph.Select + " answer: " + f.ask.prompt + "  (Enter)"})
 		}
 	}
 	hint := "  Enter signs in · x signs out · y copies a row · Esc closes"

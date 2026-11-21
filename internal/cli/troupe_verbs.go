@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/config"
@@ -174,7 +175,7 @@ func runTroupeList(loaded *config.Loaded, jsonOut bool) {
 		for _, r := range rows {
 			mark := ""
 			if r.Selected {
-				mark = "●"
+				mark = glyph.StateHere
 			}
 			if r.Error != "" {
 				fmt.Fprintf(w, "%s\t%s\t-\terror: %s\n", mark, r.Name, r.Error)

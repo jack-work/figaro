@@ -17,6 +17,7 @@ import (
 	"github.com/BurntSushi/toml"
 	hush "github.com/jack-work/hush/client"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
@@ -211,8 +212,8 @@ func runWizard(ctx context.Context, loaded *config.Loaded, data rpc.ErrorData) e
 	if err != nil {
 		return fmt.Errorf("outfit: %w", err)
 	}
-	fmt.Fprintln(os.Stderr, "  "+green("✓")+" wrote outfit "+cyan(outfitName)+" → provider="+cyan(chosen.provider))
-	fmt.Fprintln(os.Stderr, "  "+green("✓")+" set as default_outfit in "+dim(loaded.ConfigPath))
+	fmt.Fprintln(os.Stderr, "  "+green(glyph.OK)+" wrote outfit "+cyan(outfitName)+" → provider="+cyan(chosen.provider))
+	fmt.Fprintln(os.Stderr, "  "+green(glyph.OK)+" set as default_outfit in "+dim(loaded.ConfigPath))
 	fmt.Fprintln(os.Stderr)
 
 	printDone()

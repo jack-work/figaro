@@ -3,7 +3,11 @@ package cli
 // The composer's normal mode: motions, marks and search over the draft; no editing
 // verbs.
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/jack-work/figaro/api/glyph"
+)
 
 type composerKeys uint8
 
@@ -20,8 +24,8 @@ func (t *transcript) composerSigil() string {
 }
 
 const (
-	composerNormalSigil = "✎"
-	composerGlyph       = "✎"
+	composerNormalSigil = glyph.Composer
+	composerGlyph       = glyph.Send
 )
 
 func composerNormalEnter(t *transcript) {

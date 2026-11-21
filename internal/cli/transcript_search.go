@@ -8,6 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/render"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/sdk/aria"
 )
@@ -509,7 +510,7 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 		if more && has(coordLabel(m.Turn, int(m.From)+i, nodeCoordAt(n), t.coordFormat())) {
 			return true
 		}
-		if n.Type == livedoc.NodeSteering && has("↳ input") {
+		if n.Type == livedoc.NodeSteering && has(glyph.Steering+" input") {
 			return true
 		}
 		if n.Type != livedoc.NodeTool {
@@ -518,8 +519,8 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 		if n.Name == "" && has("tool") {
 			return true
 		}
-		glyph := "✓✗" + string(livedoc.SpinnerFrames)
-		if has(glyph) {
+		marks := glyph.OK + glyph.Fail + glyph.Frames
+		if has(marks) {
 			return true
 		}
 		if n.StartedAt != 0 {

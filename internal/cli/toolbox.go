@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/internal/partialjson"
 	"github.com/jack-work/figaro/internal/render"
@@ -98,7 +99,7 @@ func pick(fields []partialjson.Field, name string, settled bool) (partialjson.Fi
 }
 
 const (
-	toolGutter      = "  │ "
+	toolGutter      = "  " + glyph.Gutter + " "
 	toolGutterCells = 4
 )
 
@@ -148,13 +149,13 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 		n.Status == livedoc.StatusOK || n.Status == livedoc.StatusError
 	headline, hasHeadline := pick(fields, st.Headline, settled)
 
-	glyph := term.Green("✓")
+	status := term.Green(glyph.OK)
 	switch n.Status {
 	case livedoc.StatusError:
-		glyph = term.Red("✗")
+		status = term.Red(glyph.Fail)
 	case livedoc.StatusRunning, "":
 		frames := livedoc.SpinnerFrames
-		glyph = term.Cyan(string(frames[int(tick)%len(frames)]))
+		status = term.Cyan(string(frames[int(tick)%len(frames)]))
 	}
 	dur := ""
 	if d := toolElapsed(n); d != "" {
@@ -170,12 +171,12 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 	if st.Label != "" {
 		name = st.Label
 	}
-	head := glyph + " " + term.Arg(name)
+	head := status + " " + term.Arg(name)
 	if !expand && hasHeadline && headline.Value != "" {
 		room := width - term.VisibleLen(head) - term.VisibleLen(dur) - 1
 		head += " " + term.Body(clipToWidthEllipsis(oneLine(headline.Value), room))
 	} else if expand {
-		head = glyph + " " + term.Arg(n.Name)
+		head = status + " " + term.Arg(n.Name)
 	}
 	rows := []string{clipToWidth(head+dur, width)}
 
@@ -283,7 +284,7 @@ func headOutput(text string, limit int) (string, int) {
 // oneLine: a header row with a newline desyncs the painter's cursor math.
 func oneLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return strings.TrimRight(s[:i], " \t") + " ⏎"
+		return strings.TrimRight(s[:i], " \t") + " " + glyph.Newline
 	}
 	return s
 }

@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/relay"
 )
@@ -50,7 +51,7 @@ func runServe(loaded *config.Loaded, addr, only string) error {
 	}
 	base := "http://" + ln.Addr().String()
 	for _, n := range served {
-		fmt.Fprintf(stderrw, "  %s %-10s %s/u/%s\n", green("✓"), n, base, n)
+		fmt.Fprintf(stderrw, "  %s %-10s %s/u/%s\n", green(glyph.OK), n, base, n)
 	}
 	fmt.Fprintf(stderrw, "  serving %s/v1 with models named <provider>/<model>\n", base)
 

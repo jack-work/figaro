@@ -8,6 +8,7 @@ import (
 
 	"github.com/mattn/go-runewidth"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/quote"
 	"github.com/jack-work/figaro/internal/config"
@@ -307,7 +308,7 @@ func nodeMarkdown(n livedoc.Node) string { return n.Markdown }
 
 // quoteGutter is drawn on every rendered row; glamour prefixes markdown lines, not
 // rows.
-const quoteGutter = "  │ "
+const quoteGutter = "  " + glyph.Gutter + " "
 
 func quoted(t livedoc.NodeType) bool {
 	return t == livedoc.NodeThinking || t == livedoc.NodeSteering

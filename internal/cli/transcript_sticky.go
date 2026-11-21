@@ -3,6 +3,7 @@ package cli
 import (
 	"strings"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/quote"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
@@ -194,7 +195,7 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 	if q.ownWords > 0 && len(out) > 1 {
 		out[1] = ldrender.OverlayColumn(out[1], 0, quoteMark)
 	}
-	out[0] = ldrender.OverlayColumn(out[0], 0, "∨")
+	out[0] = ldrender.OverlayColumn(out[0], 0, glyph.HeadShut)
 	out[0] = ldrender.OverlayRight(out[0], term.Dim(coordLabel(turn, inquiryNode, 0, t.coordFormat())+" "), t.w-ldrender.GutterCols)
 	out[0] = ldrender.OverlayGutter(out[0], q.gutter, t.w)
 	if above >= len(q.rows) {
@@ -263,7 +264,7 @@ func (c gutterCut) column() (int, bool) {
 // Only indentation may precede it: a vertical line inside the text is content.
 func gutterColumn(row string) (int, bool) {
 	rest, col := firstVisible(row)
-	for _, glyph := range []string{"│", quoteOpen, quoteClose} {
+	for _, glyph := range []string{glyph.Gutter, quoteOpen, quoteClose} {
 		if strings.HasPrefix(rest, glyph) {
 			return col, true
 		}

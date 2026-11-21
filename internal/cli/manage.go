@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jack-work/figaro/sdk"
 	"io"
 	"os"
 	"slices"
@@ -14,6 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/sdk"
+
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/cli/figtree"
@@ -231,11 +233,11 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		width := listOutputWidth()
 		summary := ""
 		if width < listCompactWidth {
-			summary = fmt.Sprintf("%d aria(s) · %d branch(es) · %d/%d%s · ● here ▸ running ○ idle",
-				len(roots), branches, shown, total, hint)
+			summary = fmt.Sprintf("%d aria(s) · %d branch(es) · %d/%d%s · %s",
+				len(roots), branches, shown, total, hint, lsLegend)
 		} else {
-			summary = fmt.Sprintf("%d top-level aria(s), %d branch(es) · showing %d of %d%s        ●=here ▸=running ○=idle",
-				len(roots), branches, shown, total, hint)
+			summary = fmt.Sprintf("%d top-level aria(s), %d branch(es) · showing %d of %d%s        %s",
+				len(roots), branches, shown, total, hint, lsLegendEq)
 		}
 		fmt.Fprintln(stderrw, truncateVisible(summary, width))
 		fmt.Fprintln(stderrw)
@@ -518,9 +520,9 @@ func renderFormScope(figs []rpc.FigaroInfoResponse, formID string, limit int) {
 		shown = limit
 	}
 	width := listOutputWidth()
-	summary := fmt.Sprintf("form %s · showing %d of %d        ●=here ▸=running ○=idle", label, shown, total)
+	summary := fmt.Sprintf("form %s · showing %d of %d        %s", label, shown, total, lsLegendEq)
 	if width < listCompactWidth {
-		summary = fmt.Sprintf("form %s · %d/%d · ● here ▸ running ○ idle", label, shown, total)
+		summary = fmt.Sprintf("form %s · %d/%d · %s", label, shown, total, lsLegend)
 	}
 	fmt.Fprintln(stderrw, truncateVisible(summary, width))
 	fmt.Fprintln(stderrw)
@@ -545,9 +547,9 @@ func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 	width := listOutputWidth()
 	summary := ""
 	if width < listCompactWidth {
-		summary = fmt.Sprintf("global · %d/%d%s · ● here ▸ running ○ idle", shown, total, hint)
+		summary = fmt.Sprintf("global · %d/%d%s · %s", shown, total, hint, lsLegend)
 	} else {
-		summary = fmt.Sprintf("global · showing %d of %d%s        ●=here ▸=running ○=idle", shown, total, hint)
+		summary = fmt.Sprintf("global · showing %d of %d%s        %s", shown, total, hint, lsLegendEq)
 	}
 	fmt.Fprintln(stderrw, truncateVisible(summary, width))
 	fmt.Fprintln(stderrw)
@@ -1314,11 +1316,11 @@ func printUnreachable(nodes []rpc.NodeUnreachable) {
 func lsMark(f rpc.FigaroInfoResponse, here bool) string {
 	switch {
 	case f.State == "active":
-		return "▸"
+		return glyph.StateRunning
 	case here:
-		return "●"
+		return glyph.StateHere
 	}
-	return "○"
+	return glyph.StateIdle
 }
 
 func runHop(loaded *config.Loaded, verb string, steps int) {
@@ -1358,3 +1360,8 @@ func fanCell(f rpc.FigaroInfoResponse) string {
 	}
 	return cell
 }
+
+const (
+	lsLegend   = glyph.StateHere + " here " + glyph.StateRunning + " running " + glyph.StateIdle + " idle"
+	lsLegendEq = glyph.StateHere + "=here " + glyph.StateRunning + "=running " + glyph.StateIdle + "=idle"
+)

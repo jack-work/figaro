@@ -7,15 +7,16 @@ import (
 
 	"github.com/mattn/go-runewidth"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/quote"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
 )
 
 const (
-	quoteOpen       = "╭"
-	quoteClose      = "╰"
-	quoteMark       = "❝"
+	quoteOpen       = glyph.QuoteOpen
+	quoteClose      = glyph.QuoteClose
+	quoteMark       = glyph.Quote
 	quoteBriefRows  = 3
 	quoteHeadingCol = "  "
 )

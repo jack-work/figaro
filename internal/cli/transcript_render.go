@@ -8,6 +8,7 @@ import (
 
 	"github.com/mattn/go-runewidth"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/livedoc"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
@@ -407,7 +408,7 @@ func dimTransRule(w int) string {
 	if w < 3 {
 		w = 3
 	}
-	return "\x1b[2m" + strings.Repeat("─", w) + "\x1b[0m"
+	return "\x1b[2m" + strings.Repeat(glyph.RuleSingle, w) + "\x1b[0m"
 }
 
 func (t *transcript) gapRow(g *aria.Gap) string {
@@ -426,8 +427,8 @@ func (t *transcript) gapRow(g *aria.Gap) string {
 		return "\x1b[2m" + clipToWidth(label, w) + "\x1b[0m"
 	}
 	lead := (w - runewidth.StringWidth(label)) / 2
-	return "\x1b[2m" + strings.Repeat("─", lead) + label +
-		strings.Repeat("─", w-lead-runewidth.StringWidth(label)) + "\x1b[0m"
+	return "\x1b[2m" + strings.Repeat(glyph.RuleSingle, lead) + label +
+		strings.Repeat(glyph.RuleSingle, w-lead-runewidth.StringWidth(label)) + "\x1b[0m"
 }
 
 // A tall turn is several slices, so one toggle can touch more than one.

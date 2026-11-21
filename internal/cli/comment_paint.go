@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/livedoc"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/render"
@@ -27,12 +28,12 @@ func commentEntryRows(c comment, open bool, width int, render func(string, int) 
 		if n := len(c.thread) - 1; n > 0 {
 			more = term.StateDim(" · " + pluralReplies(n))
 		}
-		lead := "▸ " + label + ": "
+		lead := glyph.CommentClosed + " " + label + ": "
 		tail := ldrender.Width(more) + ldrender.Width(id)
 		first := elide(headLine(head.text), width-ldrender.Width(lead)-tail)
-		return []entryRow{{text: term.CommentMark("▸ "+label) + term.StateDim(": ") + first + more + id}}
+		return []entryRow{{text: term.CommentMark(glyph.CommentClosed+" "+label) + term.StateDim(": ") + first + more + id}}
 	}
-	rows := []entryRow{{text: term.CommentMark("▾ "+c.token) + id}}
+	rows := []entryRow{{text: term.CommentMark(glyph.CommentOpen+" "+c.token) + id}}
 	body := max(width-commentBodyShift, 8)
 	shift := strings.Repeat(" ", commentBodyShift)
 	for k, e := range c.thread {
@@ -43,7 +44,7 @@ func commentEntryRows(c comment, open bool, width int, render func(string, int) 
 		if by == "" {
 			by = "comment"
 		}
-		rows = append(rows, entryRow{reply: k + 1, text: strings.Repeat(" ", commentBodyShift-2) + term.CommentMark("› "+by) + term.StateDim("  "+commentAddress(c, k+1))})
+		rows = append(rows, entryRow{reply: k + 1, text: strings.Repeat(" ", commentBodyShift-2) + term.CommentMark(glyph.CommentReply+" "+by) + term.StateDim("  "+commentAddress(c, k+1))})
 		lines := wrapPlain(e.text, body)
 		if render != nil {
 			lines = render(e.text, body)

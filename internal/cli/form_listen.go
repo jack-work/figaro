@@ -17,6 +17,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/form/replica"
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
 )
@@ -446,7 +447,7 @@ func (v *formView) Items(width int) []pitRow {
 		}
 		if k, ok := shape.head(n.path); ok {
 			if shape.marked(n, k) {
-				row.note = "●"
+				row.note = glyph.StateHere
 			}
 			row.note = merge.note(n.path, row.note)
 			row.hint = hint

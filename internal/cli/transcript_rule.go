@@ -3,12 +3,13 @@ package cli
 import (
 	"strings"
 
+	"github.com/jack-work/figaro/api/glyph"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
 const (
-	ruleSingle = "─"
-	ruleDouble = "═"
+	ruleSingle = glyph.RuleSingle
+	ruleDouble = glyph.RuleDouble
 )
 
 type junctions struct{ up, down, cross string }

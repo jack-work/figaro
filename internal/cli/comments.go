@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/quote"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
@@ -15,7 +16,7 @@ import (
 
 const (
 	commentsKey      = "comments"
-	commentGlyph     = "✎"
+	commentGlyph     = glyph.Comment
 	commentIndent    = 2
 	commentBodyShift = 6
 )

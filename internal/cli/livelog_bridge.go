@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/quote"
 	"github.com/jack-work/figaro/api/rpc"
@@ -779,7 +780,7 @@ func (t *livelogTurn) queuedRows() []string {
 		return nil
 	}
 	w, h := t.term.Size()
-	rows := []string{"", term.Dim(clipToWidth("↳ queued messages", w))}
+	rows := []string{"", term.Dim(clipToWidth(glyph.Steering+" queued messages", w))}
 	if t.queuedErr != "" {
 		return append(rows, term.Dim(clipToWidth("   "+t.queuedErr, w)))
 	}
@@ -891,9 +892,9 @@ type queuedItem struct {
 
 func (q queuedItem) mark() string {
 	if q.state == rpc.QueueStateCommitting {
-		return "→"
+		return glyph.QueueCommitting
 	}
-	return "·"
+	return glyph.QueueWaiting
 }
 
 // adopt puts a parked aria back on screen. Called with the render lock held.

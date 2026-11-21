@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jack-work/figaro/sdk"
 	"strings"
+
+	"github.com/jack-work/figaro/sdk"
 
 	jkrpc "github.com/jack-work/jkrpc"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cli/figtree"
 	"github.com/jack-work/figaro/internal/cmdkit"
@@ -264,9 +266,9 @@ func outfitOverlaidParts(overlaid []rpc.OutfitSource) []string {
 
 func outfitClosureMarker(l *rpc.OutfitLayer) string {
 	if l.Found && !l.Cycle {
-		return "✓"
+		return glyph.OK
 	}
-	return "✗"
+	return glyph.Fail
 }
 
 func runOutfitTree(loaded *config.Loaded, arg string) {

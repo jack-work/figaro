@@ -18,6 +18,7 @@ import (
 
 	"github.com/jack-work/figaro/sdk"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
@@ -1221,7 +1222,7 @@ func (in *interactiveInput) coalesceNewline(b byte) bool {
 	return false
 }
 
-func dimRule() string { return term.Dim(strings.Repeat("─", termWidth())) }
+func dimRule() string { return term.Dim(strings.Repeat(glyph.RuleSingle, termWidth())) }
 
 // endSession is the last write: the shell prompts where the cursor is left, and a
 // lone CR adds no row.

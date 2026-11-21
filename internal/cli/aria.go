@@ -12,6 +12,7 @@ import (
 
 	"github.com/jack-work/largo"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/config"
@@ -141,7 +142,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		auditRows(rows, width, "show")
 		fmt.Fprintln(stdout, strings.Join(rows, "\n"))
 		if failed && failure.turn == u.ID {
-			fmt.Fprintln(stdout, term.Red(clipToWidth("✗ "+failure.line(), width)))
+			fmt.Fprintln(stdout, term.Red(clipToWidth(glyph.Fail+" "+failure.line(), width)))
 		}
 		fmt.Fprintln(stdout)
 	}
@@ -395,9 +396,9 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 			fmt.Fprintf(w, "**input** [#%d]%s\n\n> %s\n\n", lt, from, indentBlockquote(text))
 		}
 		for _, c := range toolResults {
-			marker := "↩"
+			marker := glyph.ResultBack
 			if c.IsError {
-				marker = "⚠"
+				marker = glyph.ResultFail
 			}
 			fmt.Fprintf(w, "%s **%s** result\n\n```\n%s\n```\n\n", marker, c.ToolName, truncate(c.Text, 800))
 		}
@@ -436,7 +437,7 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 					fmt.Fprintf(w, "> *🤔 %s*\n\n", c.Text)
 				}
 			case message.ContentToolInvoke:
-				fmt.Fprintf(w, "→ **%s** %s\n\n", c.ToolName, toolCallSummary(c))
+				fmt.Fprintf(w, glyph.CallOut+" **%s** %s\n\n", c.ToolName, toolCallSummary(c))
 			}
 		}
 		if verbose && m.Usage != nil {

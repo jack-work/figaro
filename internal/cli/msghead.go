@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/api/aria"
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/rpc"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
@@ -31,13 +32,13 @@ func inputHeader(seg aria.InquirySegment) (string, []ldrender.Spot) {
 }
 
 func steeringHead(n livedoc.Node) (string, []ldrender.Spot) {
-	head := term.Dim("↳ input")
+	head := term.Dim(glyph.Steering + " input")
 	if n.Sender == "" {
 		return head, nil
 	}
 	label := "· " + senderLabel(n.Sender, n.SenderName)
 	head += " " + term.Dim(label)
-	return head, otherSpot(ldrender.Width("↳ input "+label), senderOther(n.Sender, n.SenderName))
+	return head, otherSpot(ldrender.Width(glyph.Steering+" input "+label), senderOther(n.Sender, n.SenderName))
 }
 
 func headMore(n livedoc.Node) []ldrender.Spot {

@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cli/figtree"
 	"github.com/jack-work/figaro/internal/cmdkit"
@@ -287,9 +288,9 @@ func printStumps(out, errw io.Writer, stumps []rpc.GCStump, planned bool) {
 }
 
 func gcNode(st rpc.GCStump, planned bool) *figtree.Node {
-	used, marker, fate := "yes", "●", "kept"
+	used, marker, fate := "yes", glyph.StateHere, "kept"
 	if st.Children == 0 {
-		used, marker = "no", "○"
+		used, marker = "no", glyph.StateIdle
 		fate = "collected"
 		if planned {
 			fate = "would collect"

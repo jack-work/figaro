@@ -9,6 +9,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/glyph"
 	"github.com/jack-work/figaro/api/livedoc"
 )
 
@@ -19,17 +20,17 @@ const formDeltaKeyCap = 28
 const formDeltaValueFloor = 6
 
 // U+2442 is carried by FreeMono, the same fallback that paints the pit's glyphs.
-const forkGlyph = "⑂"
+const forkGlyph = glyph.Fork
 
-const deltaGlyph = "Δ"
+const deltaGlyph = glyph.Delta
 
-const headGlyph = "•"
+const headGlyph = glyph.Head
 
-const deadGlyph = "⊘"
+const deadGlyph = glyph.Dead
 
 // absentValue is the missing side of a transition: a key born has no old, a key
 // removed has no new.
-const absentValue = "∅"
+const absentValue = glyph.Absent
 
 const emptyValue = `""`
 
