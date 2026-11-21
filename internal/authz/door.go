@@ -76,5 +76,8 @@ func PassesUnpoliced(d Door, owner jkauthz.Principal, s jkauthz.Subject) bool {
 }
 
 func IsOwner(owner jkauthz.Principal, s jkauthz.Subject) bool {
+	if _, delegated := DelegatedVia(s); delegated {
+		return false
+	}
 	return !owner.IsZero() && s.Principal == owner
 }
