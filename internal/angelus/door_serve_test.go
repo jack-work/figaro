@@ -60,3 +60,48 @@ func TestASlowRequestDoesNotHoldBackTheNextOnItsConnection(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// A request whose id is not an integer gets an invalid-request error, and the
+// connection keeps serving: the gateway's handover lost whole connections to
+// one string id.
+func TestARequestWithAStringIDIsRefusedAndTheConnectionKeepsServing(t *testing.T) {
+	a := &Angelus{Handlers: map[string]jkrpc.HandlerFunc{
+		"fast": func(context.Context, json.RawMessage) (interface{}, error) { return "fast", nil },
+	}}
+	ln, err := net.Listen("unix", shortSocketPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		server, err := ln.Accept()
+		if err == nil {
+			a.handleConn(ctx, authz.DoorLocal, server)
+		}
+	}()
+	client, err := net.Dial("unix", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := client.Write([]byte(`{"jsonrpc":"2.0","id":"gw-1","method":"fast"}` + "\n" + `{"jsonrpc":"2.0","id":7,"method":"fast"}` + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	dec := json.NewDecoder(client)
+	var refused, answered map[string]any
+	if err := dec.Decode(&refused); err != nil {
+		t.Fatalf("no answer to the string id: %v", err)
+	}
+	if e, _ := refused["error"].(map[string]any); e == nil || e["code"] != float64(-32600) {
+		t.Fatalf("string id: want -32600, got %v", refused)
+	}
+	if err := dec.Decode(&answered); err != nil {
+		t.Fatalf("connection ended after the string id: %v", err)
+	}
+	if answered["id"] != float64(7) || answered["result"] != "fast" {
+		t.Fatalf("next request: got %v", answered)
+	}
+}

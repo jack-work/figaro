@@ -16,6 +16,12 @@ func serveRequests(ctx context.Context, conn *jkrpc.Conn, handlers map[string]jk
 	slots := make(chan struct{}, doorRequestsInFlight)
 	for {
 		msg, err := conn.Recv()
+		var badField *json.UnmarshalTypeError
+		if errors.As(err, &badField) {
+			_ = conn.Send(jkrpc.Message{JSONRPC: "2.0",
+				Error: &jkrpc.Error{Code: -32600, Message: fmt.Sprintf("invalid request: %s must be %s", badField.Field, badField.Type)}})
+			continue
+		}
 		if err != nil {
 			if errors.Is(err, io.EOF) || ctx.Err() != nil {
 				return nil
