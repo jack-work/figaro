@@ -99,3 +99,17 @@ func TestAnOutsidePeerOfAnotherUIDIsStillRefused(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestAPeerOnAPlatformThatNamesNoPidIsNotTakenForAnOutsider(t *testing.T) {
+	asked := false
+	p := attributing(t, func(int) (string, error) {
+		asked = true
+		return "", fmt.Errorf("toolcgroup: %w", fs.ErrNotExist)
+	})
+	if _, err := p.admit(context.Background(), 1000, -1); !errors.Is(err, ErrUnadmitted) {
+		t.Fatalf("err = %v", err)
+	}
+	if !asked {
+		t.Fatal("an unknown pid skipped the tool check")
+	}
+}

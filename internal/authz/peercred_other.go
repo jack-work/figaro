@@ -28,5 +28,5 @@ func PeerCred(conn net.Conn) (uint32, int32, error) {
 	if _, ok := conn.(*net.UnixConn); !ok {
 		return 0, 0, fmt.Errorf("%w: peercred vouches only for a unix socket, not %T", ErrUnadmitted, conn)
 	}
-	return uint32(os.Getuid()), 0, nil
+	return uint32(os.Getuid()), -1, nil
 }
