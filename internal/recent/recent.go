@@ -70,7 +70,7 @@ func name(rows []Row) {
 	for i := range rows {
 		byWord[firstWordOf(rows[i])]++
 	}
-	taken := make(map[string]bool, len(rows))
+	taken := map[string]bool{KeyMore: true}
 	for i := range rows {
 		r := &rows[i]
 		r.Name = firstWordOf(*r)
@@ -91,11 +91,16 @@ func firstWordOf(r Row) string {
 	return FirstWord(r.Handle)
 }
 
-func Snapshot(rows []Row) form.Snapshot {
-	keys := make(map[string]json.RawMessage, len(rows)*5)
+const KeyMore = "more"
+
+func Snapshot(rows []Row, more int) form.Snapshot {
+	keys := make(map[string]json.RawMessage, len(rows)*5+1)
 	put := func(k string, v any) {
 		raw, _ := json.Marshal(v)
 		keys[k] = raw
+	}
+	if more > 0 {
+		put(KeyMore, more)
 	}
 	for _, r := range rows {
 		base := r.Name + "."

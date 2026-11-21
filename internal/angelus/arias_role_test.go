@@ -10,7 +10,7 @@ func TestAriasSnapshotCarriesTheRoleOnlyWhereOneIsHeld(t *testing.T) {
 	snap := ariasSnapshot([]rpc.FigaroInfoResponse{
 		{ID: "a", Handle: "alpha", Mantra: "one", Roles: []string{"@boss", "@ee927"}},
 		{ID: "b", Handle: "bravo", Mantra: "two"},
-	}, 0)
+	}, 0, 0)
 	if v := snap.Lookup("arias.alpha.role"); v == nil || *v != "@boss @ee927" {
 		t.Fatalf("alpha's role = %v, want @boss @ee927", v)
 	}
@@ -23,7 +23,7 @@ func TestAriasSnapshotMarksARetiredFigaro(t *testing.T) {
 	snap := ariasSnapshot([]rpc.FigaroInfoResponse{
 		{ID: "a", Handle: "alpha", RetiredAt: 1700000000000},
 		{ID: "b", Handle: "bravo"},
-	}, 0)
+	}, 0, 0)
 	if v, ok := snap.Get("arias.alpha.retired_at"); !ok || string(v) != "1700000000000" {
 		t.Fatalf("alpha's retired_at = %s, want 1700000000000", v)
 	}

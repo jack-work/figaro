@@ -94,7 +94,7 @@ func TestASnapshotDecodesToItsRows(t *testing.T) {
 		fig("2", "ox-one", "", 2),
 		fig("3", "", "", 0),
 	})
-	out := Decode(Snapshot(in))
+	out := Decode(Snapshot(in, 0))
 	if len(out) != len(in) {
 		t.Fatalf("decoded %d rows from %d", len(out), len(in))
 	}
