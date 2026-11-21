@@ -45,3 +45,40 @@ func TestTheRouterIsTheCatalog(t *testing.T) {
 		}
 	}
 }
+
+func TestThePagerDispatchesByTheCatalog(t *testing.T) {
+	for _, spec := range command.All() {
+		for _, w := range append(spec.Names(), spec.PagerAliases...) {
+			if c, _ := command.Pager(w); c.Name != spec.Name {
+				continue
+			}
+			argv := []string{w}
+			_, view, _ := topologyFormPit(argv)
+			switch spec.Pager {
+			case command.Hosted, command.Refused:
+				if !hostedByPager(w) && w != "login" && w != "comment" {
+					t.Errorf(":%s is %s in the catalog but the pager does not answer it", w, spec.Pager)
+				}
+			case command.View:
+				if !view && spec.Name != "state" {
+					t.Errorf(":%s is a view in the catalog but opens no pit", w)
+				}
+			case command.Routed:
+				if hostedByPager(w) || view {
+					t.Errorf(":%s is routed in the catalog but the pager keeps it", w)
+				}
+			}
+			if switchesSubject(w) != spec.Switches {
+				t.Errorf(":%s switches=%v, catalog %v", w, switchesSubject(w), spec.Switches)
+			}
+		}
+	}
+	for _, line := range []string{"state apply x=1", "form unset mantra", "state set mantra x"} {
+		if _, _, ok := liveForm(tokenize(line)); ok {
+			t.Errorf(":%s is a state verb, not a form read", line)
+		}
+	}
+	if !readsKeyboard([]string{"vault", "unlock"}) || readsKeyboard([]string{"vault", "status"}) {
+		t.Error("vault unlock reads the keyboard; vault status does not")
+	}
+}

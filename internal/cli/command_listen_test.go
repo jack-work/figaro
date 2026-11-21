@@ -19,15 +19,15 @@ import (
 
 // `:listen` is `figaro listen`; `:at` is `:attend`; there is no `:open`.
 func TestOverlay_ListenAttendAndNoOpen(t *testing.T) {
-	if !overlayVerbs["listen"] {
+	if !hostedByPager("listen") {
 		t.Fatal(":listen is not an overlay verb")
 	}
 	for _, gone := range []string{"open", "o"} {
-		if overlayVerbs[gone] {
+		if hostedByPager(gone) {
 			t.Fatalf(":%s is still an overlay verb", gone)
 		}
 	}
-	if !overlayVerbs["attend"] || !overlayVerbs["at"] {
+	if !hostedByPager("attend") || !hostedByPager("at") {
 		t.Fatal(":attend / :at must stay")
 	}
 	env := verbEnv{}

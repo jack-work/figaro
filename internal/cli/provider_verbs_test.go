@@ -14,6 +14,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/command"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
@@ -30,9 +31,10 @@ func TestBareLoginIsGoneAndProviderCarriesTheVerbs(t *testing.T) {
 	require.Contains(t, cmd.Usage, "login")
 	require.Contains(t, cmd.Usage, "logout")
 	require.Contains(t, cmd.Usage, "ls")
-	require.False(t, overlayVerbs["login"], "the pager must not keep a :login")
-	require.True(t, terminalSubverbs["provider login"], ":provider login reads the keyboard")
-	require.True(t, terminalSubverbs["provider logout"], ":provider logout may ask for the vault")
+	login, _ := command.Pager("login")
+	require.True(t, login.PagerOnly, ":login is the pager's pit, never a shell verb")
+	require.True(t, readsKeyboard([]string{"provider", "login"}), ":provider login reads the keyboard")
+	require.True(t, readsKeyboard([]string{"provider", "logout"}), ":provider logout may ask for the vault")
 }
 
 func providerRig(t *testing.T) *config.Loaded {

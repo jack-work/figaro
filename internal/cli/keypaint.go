@@ -99,9 +99,5 @@ func switchesSubject(line string) bool {
 	if len(argv) == 0 {
 		return false
 	}
-	switch argv[0] {
-	case "fork", "attend", "at", "listen", "new":
-		return true
-	}
-	return false
+	return pagerVerb(argv[0]).Switches
 }

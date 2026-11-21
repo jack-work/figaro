@@ -7,14 +7,16 @@ package cli
 import (
 	"context"
 	"fmt"
-	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/api/models"
-	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/cmdkit"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jack-work/figaro/api/command"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/models"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/cmdkit"
 
 	"github.com/jack-work/figaro/internal/config"
 )
@@ -68,21 +70,17 @@ func tokenize(line string) []string {
 	return out
 }
 
-// overlayVerbs are answered by the pager itself: they would take the terminal,
-// or they resolve an aria and so must show it.
-var overlayVerbs = map[string]bool{
-	"notifications": true, "no": true,
-	"listen": true,
-	"attend": true, "at": true,
-	"send": true, "s": true,
-	"decide": true,
-	"new":    true, "replay": true, "fork": true,
-	"succeed":   true,
-	"kill":      true, // may kill the aria on screen, and must then move
-	"import":    true, // reads os.Stdin for `-`
-	"aria-back": true, "back": true,
-	"aria-forward": true, "forward": true,
-	"history": true,
+func pagerVerb(word string) command.Command {
+	c, _ := command.Pager(word)
+	return c
+}
+
+func hostedByPager(word string) bool {
+	switch pagerVerb(word).Pager {
+	case command.Hosted, command.Refused:
+		return true
+	}
+	return false
 }
 
 type formPit struct {
@@ -112,7 +110,7 @@ func formPitFor(verb string) (formPit, bool) {
 
 func opensPit(line string) bool {
 	argv := tokenize(line)
-	if len(argv) == 0 || isCommentVerb(line) || overlayVerbs[argv[0]] {
+	if len(argv) == 0 || isCommentVerb(line) || hostedByPager(argv[0]) {
 		return false
 	}
 	if _, ok, _ := topologyFormPit(argv); ok {
@@ -122,25 +120,18 @@ func opensPit(line string) bool {
 	return ok
 }
 
-// terminalSubverbs take the terminal: `form listen` reads os.Stdin in a loop,
-// which would race the pager's input loop for the fd and hold routerMu forever.
-var terminalSubverbs = map[string]bool{
-	"vault unlock":    true,
-	"vault init":      true,
-	"vault reset":     true,
-	"provider login":  true,
-	"provider logout": true,
-	"troupe login":    true,
-	"troupe join":     true,
-	"troupe leave":    true,
+func readsKeyboard(argv []string) bool {
+	return len(argv) > 1 && pagerVerb(argv[0]).Keyboard(argv[1])
 }
 
-// A form read in the pager is the live view; formSubverbs do something else and
-// go to the router.
-var formSubverbs = map[string]bool{
-	"set": true, "delete": true, "unset": true,
-	"new": true, "fork": true, "ls": true, "rm": true,
-	"outfit": true, "help": true,
+func stateSubverb(word string) bool {
+	state, _ := command.Shell("state")
+	for _, ch := range state.Choices() {
+		if ch.Name == word {
+			return true
+		}
+	}
+	return false
 }
 
 // liveForm decides whether argv is a form read; an empty spec means the aria on screen.
@@ -151,11 +142,11 @@ func liveForm(argv []string) (name, spec string, ok bool) {
 	rest := argv[1:]
 	name = "form show"
 	if len(rest) > 0 {
-		if formSubverbs[rest[0]] {
-			return "", "", false
-		}
-		if rest[0] == "show" || rest[0] == "listen" {
+		switch {
+		case rest[0] == "show" || rest[0] == "listen":
 			name, rest = "form "+rest[0], rest[1:]
+		case stateSubverb(rest[0]):
+			return "", "", false
 		}
 	}
 	for i := 0; i < len(rest); i++ {
@@ -221,7 +212,7 @@ func (in *interactiveInput) execCommandAs(line string, switchID uint64) {
 		in.askLogout(argv[2])
 		return
 	}
-	if overlayVerbs[verb] {
+	if hostedByPager(verb) {
 		in.runOverlay(verb, argv[1:], switchID)
 		return
 	}
@@ -240,7 +231,7 @@ func (in *interactiveInput) execCommandAs(line string, switchID uint64) {
 	if in.editShownForm(argv) {
 		return
 	}
-	if len(argv) > 1 && terminalSubverbs[verb+" "+argv[1]] {
+	if readsKeyboard(argv) {
 		in.note(verb + " " + argv[1] + ": not available inside the pager (it reads the keyboard)")
 		return
 	}
@@ -311,7 +302,7 @@ func (in *interactiveInput) runOverlay(verb string, args []string, switchID uint
 		}
 		in.mu.Unlock()
 	default:
-		in.note(fmt.Sprintf("%s: not available inside the pager (it opens a view of its own)", verb))
+		in.note(fmt.Sprintf("%s: not available inside the pager (%s)", verb, pagerVerb(verb).Refusal))
 	}
 }
 
