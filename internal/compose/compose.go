@@ -111,6 +111,7 @@ func toolNode(inv message.Content, lt uint64, block int, at int64, results map[s
 		Args:       args,
 		Summary:    summaryFor(args),
 	}
+	livedoc.StyleTool(&n)
 	if quarantined {
 		n.Input = tailBound(rawArgs)
 	}

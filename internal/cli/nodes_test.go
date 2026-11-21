@@ -152,6 +152,7 @@ func TestRenderToolNode_ColoursAreConsistent(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
 		Args: map[string]any{"path": "/x.md", "content": "a line"}}
+	livedoc.StyleTool(&n)
 	joined := strings.Join(renderToolNode(n, 60, 10, 0, false), "\n")
 	// A golden records the layout; only a test can say what colour a run carries.
 	for _, want := range []string{term.Arg("write"), term.Body("/x.md"), term.Dim(toolGutter)} {
@@ -167,6 +168,7 @@ func TestRenderToolNode_DiffRowsArePainted(t *testing.T) {
 	out := "-1 was\n+1 is"
 	edit := livedoc.Node{Type: livedoc.NodeTool, Name: "edit", Status: livedoc.StatusOK,
 		Args: map[string]any{"path": "/x.py"}, Output: out}
+	livedoc.StyleTool(&edit)
 	joined := strings.Join(renderToolNode(edit, 60, 10, 0, false), "\n")
 	for _, want := range []string{term.DiffDel("-1 was"), term.DiffAdd("+1 is")} {
 		if !strings.Contains(joined, want) {
@@ -246,6 +248,7 @@ func TestWriteBodyKeepsItsFences(t *testing.T) {
 	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
 		Args:   map[string]any{"path": "/tmp/notes.md", "content": "# notes\n```diff\n-a\n+b\n```"},
 		Output: "/tmp/notes.md"}
+	livedoc.StyleTool(&n)
 	rows := plain2(renderToolNode(n, 80, nodeOutputUnlimited, 0, false))
 	if !strings.Contains(strings.Join(rows, "\n"), "```diff") {
 		t.Fatalf("a written file lost its fence:\n%s", strings.Join(rows, "\n"))

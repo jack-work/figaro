@@ -66,6 +66,10 @@ func toolBlockCases() []struct {
 		Input:    `{"path":"/var/tmp/x/retry.py","old_text":"` + strings.ReplaceAll(oldText, "\n", `\n`) + `","new_text":"def retry(fn, retries=DEFAULT_RETRIES):\n    last = None\n    for i in ra`,
 		OpenedAt: o}
 
+	for _, n := range []*livedoc.Node{&bash, &write, &streaming, &read, &proc, &unknown, &failed, &legacy, &edit, &fenced, &editing} {
+		livedoc.StyleTool(n)
+	}
+
 	return []struct {
 		name              string
 		node              livedoc.Node

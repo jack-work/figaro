@@ -622,6 +622,7 @@ func adornPage() aria.Page {
 			},
 		},
 	}
+	livedoc.StyleTool(&turn.Nodes[len(turn.Nodes)-1])
 	return aria.Page{Parts: []aria.TurnPart{{Turn: turn}}}
 }
 

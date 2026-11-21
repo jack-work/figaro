@@ -261,13 +261,15 @@ func quotedPager(t testing.TB, lines int) *transcript {
 		quote += "\n> and another line of the passage, long enough to stand on its own row"
 	}
 	client := aria.NewClient()
+	bash := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		Args:   map[string]any{"command": "grep -rn federate ."},
+		Output: "(no output)\nsecond line\nthird line\nfourth line"}
+	livedoc.StyleTool(&bash)
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 1, Sealed: true, Inquiry: quote,
 		InquirySegments: []aria.InquirySegment{{Sender: "Duke", Text: quote}},
 		Nodes: []livedoc.Node{
-			{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
-				Args:   map[string]any{"command": "grep -rn federate ."},
-				Output: "(no output)\nsecond line\nthird line\nfourth line"},
+			bash,
 			{Type: livedoc.NodeThinking, Markdown: "Thinking about the loop."},
 		},
 	}}}}, aria.Notify)

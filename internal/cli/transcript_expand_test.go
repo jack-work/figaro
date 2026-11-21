@@ -210,6 +210,7 @@ func streamingFixture(t *testing.T, body string) (*transcript, nodeRef, livedoc.
 		Type: livedoc.NodeTool, ID: "t1", Name: "write", Status: livedoc.StatusRunning,
 		Input: `{"path":"/x.md","content":"` + body,
 	}
+	livedoc.StyleTool(&tool)
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
 	client.Apply(aria.Page{Parts: []aria.TurnPart{

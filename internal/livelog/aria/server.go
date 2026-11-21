@@ -441,6 +441,16 @@ func delta(id uint64, old, n livedoc.Node) NodeDelta {
 	scalar("role", old.Role, n.Role)
 	scalar("name", old.Name, n.Name)
 	scalar("summary", old.Summary, n.Summary)
+	scalar("label", old.Label, n.Label)
+	scalar("head_arg", old.HeadArg, n.HeadArg)
+	scalar("body_arg", old.BodyArg, n.BodyArg)
+	if old.Diff != n.Diff {
+		if n.Diff {
+			set["diff"] = true
+		} else {
+			unset = append(unset, "diff")
+		}
+	}
 	scalar("sender", old.Sender, n.Sender)
 	scalar("sender_name", old.SenderName, n.SenderName)
 	scalar("status", old.Status, n.Status)
@@ -487,6 +497,12 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 	str("role", n.Role)
 	str("name", n.Name)
 	str("summary", n.Summary)
+	str("label", n.Label)
+	str("head_arg", n.HeadArg)
+	str("body_arg", n.BodyArg)
+	if n.Diff {
+		set["diff"] = true
+	}
 	str("status", n.Status)
 	str("tool_call_id", n.ToolCallID)
 	str("markdown", n.Markdown)

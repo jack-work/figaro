@@ -31,6 +31,7 @@ func frameFixture(t *testing.T) *transcript {
 		},
 		{Type: livedoc.NodeProse, Markdown: "done."},
 	}
+	livedoc.StyleTool(&nodes[2])
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
 	client.Apply(aria.Page{Parts: []aria.TurnPart{

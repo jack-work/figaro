@@ -142,7 +142,7 @@ func (t *transcript) nodeQuoteSource(ref nodeRef) (text string, at quote.Coord, 
 		if len(n.Src) < 2 {
 			return "", quote.Coord{}, 0, "a tool with no result yet has no text to quote"
 		}
-		if styleFor(n.Name).Body != "" {
+		if n.BodyArg != "" {
 			return "", quote.Coord{}, 0, "this tool shows an argument, not its result, and arguments are not quotable yet"
 		}
 		// The rows are the output's tail when folded, and the producer

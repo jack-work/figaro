@@ -20,15 +20,9 @@ type toolStyle struct {
 	Diff     bool   // declared, never guessed from the shape of a line
 }
 
-var toolStyles = map[string]toolStyle{
-	"bash":    {Label: "$", Headline: "command"},
-	"process": {Label: "$", Headline: "command"},
-	"write":   {Headline: "path", Body: "content"},
-	"read":    {Headline: "path"},
-	"edit":    {Headline: "path", Diff: true},
+func toolStyleOf(n livedoc.Node) toolStyle {
+	return toolStyle{Label: n.Label, Headline: n.HeadArg, Body: n.BodyArg, Diff: n.Diff}
 }
-
-func styleFor(name string) toolStyle { return toolStyles[name] }
 
 // toolArgFields sorts by name in both phases, or the block reshuffles the instant
 // the arguments land.
@@ -142,7 +136,7 @@ type bodyLine struct {
 }
 
 func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool) []string {
-	st := styleFor(n.Name)
+	st := toolStyleOf(n)
 	fields := toolArgFields(n)
 	settled := strings.TrimSpace(n.Input) == ""
 	settledResult := n.FinishedAt != 0 ||

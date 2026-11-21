@@ -109,6 +109,14 @@ type Node struct {
 	// the producer truncates to its last lines.
 	OutputBase int    `json:"output_base,omitempty"`
 	Summary    string `json:"summary,omitempty"` // client renders verbatim
+	// Label replaces the tool's name on the collapsed header; HeadArg names
+	// the argument that rides that header; BodyArg names the argument drawn in
+	// place of the output; Diff declares the output a diff. All four come from
+	// the tool's name (StyleTool) and are only meaningful on a tool node.
+	Label   string `json:"label,omitempty"`
+	HeadArg string `json:"head_arg,omitempty"`
+	BodyArg string `json:"body_arg,omitempty"`
+	Diff    bool   `json:"diff,omitempty"`
 	// OpenedAt is when the tool block opened on the provider stream;
 	// StartedAt is when the call began running.
 	OpenedAt   int64 `json:"opened_at,omitempty"`
