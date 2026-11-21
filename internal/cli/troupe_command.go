@@ -6,11 +6,7 @@ import (
 )
 
 func registerTroupe(r *cmdkit.Router) {
-	r.Register(&cmdkit.Command{
-		Name:  "troupe",
-		Group: "System",
-		Short: "Sign in to a troupe's door, list troupes, and hold this node's troupe keys",
-		Usage: "troupe <login <name> | ls | join <name> | leave <name> | revoke <name> <node> | renewer <name> <node> <renewer> | keygen --out <dir> | leaf <name> --for <node-id> --public-key <hex> --door <host:port> --out <dir> [--ttl <days>] | policy show <name> | policy set <name> <file|-> | apikey mint|ls|revoke <name> ... | create <name> | intermediate <name> [--for <node-id> --out <dir>]> [-j]",
+	r.Register(verb("troupe", &cmdkit.Command{
 		Long: `A troupe is a set of figaro nodes; troupes/<name>.toml is one as this
 CLI reaches it: its url (unix:// or wss://), an optional audience, and
 an [auth] table naming how a human signs in.
@@ -94,40 +90,10 @@ listing. Not yet settled: moves, cross-node answers, policy v2.
                  troupe admin, else the ones you minted or that name you
   apikey revoke <name> <id>  revoke a key (its minter, its own principal
                  or a troupe admin) and tell every member`,
-		Flags: []cmdkit.FlagDef{
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON for ls and policy show"},
-			{Long: "delegate", Description: "join: all or none, what this node lends the troupe policy (required unless asked)"},
-			{Long: "door", Description: "join: host:port other nodes dial (default [door.tls] advertise)"},
-			{Long: "listen", Description: "join: host:port the node door listens on (default the door)"},
-			{Long: "root-sha256", Description: "join: trust the troupe root only if its sha256 is this"},
-			{Long: "yes", Short: "y", IsBool: true, Description: "join: trust the root shown without asking; leave: do not ask"},
-			{Long: "for", Description: "intermediate: the node id to issue for, instead of this node"},
-			{Long: "out", Description: "intermediate --for: the directory (a tmpfs) that receives the keys"},
-			{Long: "allow-disk", IsBool: true, Description: "intermediate --for: allow an --out that is not a tmpfs"},
-			{Long: "root", IsBool: true, Description: "policy set: sign with the root key on stdin (the first version needs it)"},
-			{Long: "public-key", Description: "leaf: the node's Ed25519 public key in hex, as troupe keygen prints it"},
-			{Long: "ttl", Description: "apikey mint: how long the key lives, like 7d or 12h (default 90d, at most 365d; keep everyday keys short). leaf: the leaf's life (default 7d, at most [troupe] max_leaf_ttl)"},
-			{Long: "nodes", Description: "apikey mint: the node ids the key is good on, comma-separated, or all (default: the minting node)"},
-			{Long: "static", IsBool: true, Description: "apikey mint: print the key and a config stanza; no daemon"},
-		},
-		ArgsMin: 1,
-		ArgsMax: 4,
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runTroupeVerb(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"), joinOpts{
 				Delegate: ctx.Flag("delegate"), Door: ctx.Flag("door"), Listen: ctx.Flag("listen"), RootSHA256: ctx.Flag("root-sha256"), Yes: ctx.BoolFlag("yes"),
 			}, keyOpts{For: ctx.Flag("for"), Out: ctx.Flag("out"), AllowDisk: ctx.BoolFlag("allow-disk"), Root: ctx.BoolFlag("root"), PublicKey: ctx.Flag("public-key")}, apiKeyOpts{TTL: ctx.Flag("ttl"), Nodes: ctx.Flag("nodes"), Static: ctx.BoolFlag("static")})
 		},
-		CompleteArgs: completeWords([][2]string{
-			{"login", "sign in to a troupe's door"},
-			{"ls", "the troupes this CLI knows"},
-			{"join", "sign this node into a troupe"},
-			{"leave", "sign this node out of its troupe for good"},
-			{"revoke", "with the root, revoke a node"},
-			{"renewer", "with the root, name a node's renewer"},
-			{"keygen", "a node key for a credential"},
-			{"leaf", "with the root, issue another node's leaf for its key"},
-			{"policy", "show or set the troupe policy"},
-			{"apikey", "mint, list or revoke api keys"},
-		}, completeTroupeAfterLogin),
-	})
+	}))
 }

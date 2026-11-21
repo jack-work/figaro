@@ -107,6 +107,10 @@ func (r *Router) CommandCandidates() []string {
 	return out
 }
 
+func (r *Router) Commands() []*Command {
+	return append([]*Command(nil), r.commands...)
+}
+
 func (r *Router) HasCommand(name string) bool {
 	_, ok := r.index[name]
 	return ok

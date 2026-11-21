@@ -33,19 +33,6 @@ type decidePlan struct {
 	question string
 }
 
-var decideFlagDefs = []cmdkit.FlagDef{
-	{Long: "id", Description: "Read this aria's conversation and form (default: the one bound to this shell)"},
-	{Long: "outfit", Short: "O", Description: "Decide in this outfit's [system.decide] instead of an aria's, unbound"},
-	{Long: "choices", Short: "C", Description: "Options, comma separated: -C=\"option 1\",\"option 2\"; @key names a form key"},
-	{Long: "provider", Description: "Provider to send the decision through, for this call (default: system.decide.provider)"},
-	{Long: "model", Short: "m", Description: "Decision model for this call (default: system.decide.model)"},
-	{Long: "api", Description: "Decision API: systemone (jev, decision-1) or openai (luna); default inferred from the model"},
-	{Long: "context", Description: "Text to decide over; - reads stdin"},
-	{Long: "budget", Description: "Cap the context tokens sent"},
-	{Long: "score", IsBool: true, Description: "Treat the options as a scale, lowest first, and answer with the probability-weighted level"},
-	{Long: "json", Short: "j", IsBool: true, Description: "Emit the response as JSON"},
-}
-
 func parseDecideArgs(args []string) (decidePlan, error) {
 	var p decidePlan
 	var words []string
@@ -211,11 +198,7 @@ func decideTarget(ctx context.Context, acli *sdk.Angelus, p decidePlan) (string,
 }
 
 func registerDecide(r *cmdkit.Router) {
-	r.Register(&cmdkit.Command{
-		Name:  "decide",
-		Group: "Prompt",
-		Short: "Ask a decision model a yes/no or multiple-choice question",
-		Usage: "decide [--id <id> | -O <outfit>] [-C <a,b,...>] [--provider <name>] [-m <model>] [--api systemone|openai] [--context <text|->] [--score] [-j] -- <question>",
+	r.Register(verb("decide", &cmdkit.Command{
 		Long: `Asks a System One decision model (jev) one typed question and prints its
 scored answer. Nothing is written to any aria: bound to one, decide only READS
 its conversation and form, and never waits on a running turn.
@@ -268,7 +251,6 @@ Set them once in an outfit, core.toml to reach every aria:
   [system.decide]
   provider = "rou2"
   model    = "openai/gpt-6-luna"`,
-		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			outw := ctx.Out
@@ -281,6 +263,5 @@ Set them once in an outfit, core.toml to reach every aria:
 			}
 			return runDecide(ld, ctx.RawArgs, inr, outw)
 		},
-		CompleteFlags: decideFlagDefs,
-	})
+	}))
 }

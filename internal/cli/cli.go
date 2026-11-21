@@ -148,15 +148,11 @@ func telemetryFlush(ctx context.Context, shutdown func(context.Context) error) f
 
 func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 	r := cmdkit.NewRouter(progName)
+	describeHelp(r)
 	r.Extra = loaded
 	r.AlsoCalled = []string{"fig"}
 
-	r.Register(&cmdkit.Command{
-		Name:    "show",
-		Aliases: []string{"history"},
-		Group:   "Prompt",
-		Short:   "Render an aria's message history",
-		Usage:   "show [<id>] [-n N | --from A [--to B] | --before T | -a] [--max-bytes N] [-j] [-o] [-v] [-l]",
+	r.Register(verb("show", &cmdkit.Command{
 		Long: `Render an aria's history as turns. A turn is one exchange: your
 question and every node the agent produced about it. The optional
 positional is the target aria id; default is the pid-bound aria.
@@ -190,20 +186,6 @@ line on stderr says how many.
 LT is the model's coordinate: it counts the steps the model experienced,
 and most LTs sit mid-tool. It stays visible under -v/-l for debugging the
 fig IR, but it is not an address: turns are.`,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id (alias for the positional)"},
-			{Long: "details", Short: "o", IsBool: true, Description: "Block addresses and timestamps, as m shows in the pager"},
-			{Long: "verbose", Short: "v", IsBool: true, Description: "Raw IR with patches, thinking, usage, transitions"},
-			{Long: "literal", Short: "l", IsBool: true, Description: "No ANSI / markdown rendering"},
-			{Long: "all", Short: "a", IsBool: true, Description: "Show every turn, not just last N"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Emit turns as raw JSON (the wire IR verbatim)"},
-			{Long: "from", Description: "Start turn id (inclusive)"},
-			{Long: "to", Description: "End turn id (inclusive)"},
-			{Long: "before", Description: "Show N turns before this turn id (paginate backwards)"},
-			{Long: "max-bytes", Description: "Cap the painted size; the oldest turns of the selection are dropped first"},
-			{Long: "last", Short: "n", Description: "Show the last N turns (paginate backwards from the end)"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			ariaID := ctx.Flag("id")
@@ -246,15 +228,9 @@ fig IR, but it is not an address: turns are.`,
 			runShow(ld, ariaID, args)
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "send",
-		Aliases: []string{"qua"},
-		Group:   "Prompt",
-		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-O <spec>] [-S <k=v>] [-D <paths>] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] [--image <file>]... [--stdin | -- <prompt>]",
+	r.Register(verb("send", &cmdkit.Command{
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding): or, inside an aria's
 own bash tool, the aria itself (FIGARO_ARIA). With --id, targets
@@ -327,21 +303,14 @@ The bare form drops the verb: ` + "`figaro [flags] -- <prompt>`" + ` parses exac
 like ` + "`figaro send [flags] -- <prompt>`" + `: same flags, same semantics. The
 ` + "`--`" + ` is mandatory there (so a mistyped subcommand stays an error), and a
 positional target needs the explicit verb or --id.`,
-		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			runSend(ld, ctx.RawArgs)
 			return nil
 		},
-		CompleteArgs:  completeSend,
-		CompleteFlags: promptFlagDefs,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "new",
-		Group: "Prompt",
-		Short: "Start a fresh aria and prompt it",
-		Usage: "new [-j|--json] [-O <spec>] [-C [<@form>]] [--image <file>]... [--stdin | -- <prompt>]",
+	r.Register(verb("new", &cmdkit.Command{
 		Long: `Creates a new aria (server-generated id), binds it to this shell, and: when
 a prompt follows ` + "`--`" + `: sends it.
 
@@ -375,7 +344,6 @@ identically; the flags that only make sense when sending to something that
 already exists (--id, -x) are refused rather than ignored.
 
 -j/--json emits {aria_id, mode:'new'} on stdout.`,
-		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			// The role positional is lifted before the prompt parser
@@ -417,15 +385,9 @@ already exists (--id, -x) are refused rather than ignored.
 			runNewPrompt(ld, prompt, opts.outfit, set)
 			return nil
 		},
-		CompleteArgs:  completeNewPrompt,
-		CompleteFlags: promptFlagDefs,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "listen",
-		Group: "Prompt",
-		Short: "Open an aria in the pager without sending a prompt",
-		Usage: "listen [<id>]",
+	r.Register(verb("listen", &cmdkit.Command{
 		Long: `Attach to an aria's live stream without calling figaro.qua. Listen
 opens straight into the full-screen transcript pager, caught up to the
 committed cursor and following live frames. It has no inline view: the
@@ -452,12 +414,6 @@ this CLI exchanged with the agent, with the time it crossed. Replay it
 with ` + "`figaro replay <file>`" + ` to reproduce the exact stream, and
 the exact rendering, with no daemon and no provider. A tape carries the
 aria's content; it is written only when you ask for it.`,
-		ArgsMin: 0,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "record", Description: "Record the aria wire to a tape file (testing)"},
-			{Long: "note", Description: "Note stored in the tape header: what you are hunting"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			var id string
@@ -467,14 +423,9 @@ aria's content; it is written only when you ask for it.`,
 			runListen(ld, id, ctx.Flag("record"), ctx.Flag("note"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "replay",
-		Group: "Prompt",
-		Short: "Replay a recorded aria wire tape through the real renderer",
-		Usage: "replay <tape> [--speed <x>] [--summary] [--lockstep <sock> [--fps <n>] [--anim-fps <n>]]",
+	r.Register(verb("replay", &cmdkit.Command{
 		Long: `Play back a tape taken with ` + "`figaro listen --record`" + `.
 
 The tape is the whole world: no angelus, no agent, no provider, no aria
@@ -500,15 +451,6 @@ between steps, with no tape time passing, and redraws as a terminal
 resize would: OSC 7717;resize=<cols>x<rows> BEL follows the redraw and
 the answer is "resized <cols> <rows> <bytes>". At least 20x5, at most
 four times the tape's size. Closing the socket ends the replay.`,
-		ArgsMin: 1,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "speed", Description: "Playback rate; 1 is real time (default 1)"},
-			{Long: "summary", IsBool: true, Description: "Describe the tape and exit"},
-			{Long: "lockstep", Description: "Step on a virtual clock, driven over this unix socket"},
-			{Long: "fps", Description: "Lockstep steps per tape second (default 60)"},
-			{Long: "anim-fps", Description: "Lockstep animation rate, spinner included (default 12)"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			opt := replayOpts{speed: 1, summary: ctx.BoolFlag("summary"), lockstep: ctx.Flag("lockstep"),
@@ -540,14 +482,9 @@ four times the tape's size. Closing the socket ends the replay.`,
 			runReplay(ld, ctx.Args[0], opt)
 			return nil
 		},
-		CompleteArgs: completeFileArg,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "hup",
-		Group: "Prompt",
-		Short: "Hang up: stop the turn, KEEP queued messages (-d discards them)",
-		Usage: "hup [<id>] [-d|--drop-queued-messages] [-j|--json]",
+	r.Register(verb("hup", &cmdkit.Command{
 		Long: `Hang up on the turn in flight: the same RPC Ctrl-C fires inside a
 send stream. Anything queued behind it is KEPT.
 
@@ -567,12 +504,6 @@ with -j: so dropping them is not the same as losing them:
 
 ` + "`figaro cut`" + ` is the shorthand for ` + "`figaro hup -d`" + `. With no id, the
 pid-bound aria is used.`,
-		ArgsMin: 0,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "drop-queued-messages", Short: "d", IsBool: true, Description: "Discard the queued messages (they are still returned)"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Print one JSON object (aria, cleared, queue) and exit"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			var id string
@@ -586,14 +517,9 @@ pid-bound aria is used.`,
 			runHangup(ld, id, disposition, ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "cut",
-		Group: "Prompt",
-		Short: "Shorthand for `hup -d`: stop the turn, DISCARD queued messages (returned)",
-		Usage: "cut [<id>] [-j|--json]",
+	r.Register(verb("cut", &cmdkit.Command{
 		Long: `Cut the line: stop the turn in flight AND drop everything queued
 behind it.
 
@@ -609,11 +535,6 @@ Unlike ` + "`figaro hup`" + `, nothing survives to be answered. Clearing does
 not need a turn to be running, a queue is worth dropping between turns
 too. A queued form set or fork is not a question and is left
 alone. With no id, the pid-bound aria is used.`,
-		ArgsMin: 0,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "json", Short: "j", IsBool: true, Description: "Print one JSON object (aria, cleared, the drained queue) and exit"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			var id string
@@ -623,14 +544,9 @@ alone. With no id, the pid-bound aria is used.`,
 			runHangup(ld, id, rpc.QueueClear, ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "queue",
-		Group: "Prompt",
-		Short: "Read, edit and delete the messages an aria has not answered yet",
-		Usage: "queue [ls] | queue rm <id>... | queue rm --all | queue edit <id> -- <text>   [--id <aria>] [-j]",
+	r.Register(verb("queue", &cmdkit.Command{
 		Long: `The queue is what the aria has accepted but not yet answered.
 
   figaro queue                    list it: id, state, age, text
@@ -665,12 +581,6 @@ applies. Exit is 0 when every id was applied, 1 when any was refused.
 
 The aria is --id <aria>, or the one this shell is attended to. The
 positional slot belongs to the sub-verb.`,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Address a specific aria (default: the attended one)"},
-			{Long: "all", IsBool: true, Description: "queue rm: drop every queued message"},
-			{Long: "watch", Short: "w", IsBool: true, Description: "Follow the queue live (the <aria>/queue intrinsic)"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Print one JSON object and exit"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			ariaID := ctx.Flag("id")
@@ -722,15 +632,9 @@ positional slot belongs to the sub-verb.`,
 			}
 			return nil
 		},
-		CompleteArgs: completeWords([][2]string{{"ls", "list what is waiting"}, {"rm", "drop messages by id"}, {"edit", "rewrite one message"}}, nil),
-	})
+	}))
 
-	listCmd := &cmdkit.Command{
-		Name:    "list",
-		Aliases: []string{"ls"},
-		Group:   "Session",
-		Short:   "List arias: scoped to where you're attended (attend is `cd`)",
-		Usage:   "list [<id>|^N|/] [-H|--home | -g|--global] [-a|--all | -n <count>] [-j|--json]",
+	listCmd := verb("list", &cmdkit.Command{
 		Long: "Lists arias `ls`-style relative to where you're attended (attend is\nthe `cd`).\n\n" +
 			"Scope:\n" +
 			"  (default)     attended → you and everything forked below you (● = you);\n" +
@@ -748,20 +652,11 @@ positional slot belongs to the sub-verb.`,
 			"  -n <count>    cap to <count>\n\n" +
 			"  -j, --json    pro/dev: every aria incl. null + outfits as JSON;\n" +
 			"                takes no other flags",
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "home", Short: "H", IsBool: true, Description: "Home view: all top-level arias, without unbinding (-h is help)"},
-			{Long: "global", Short: "g", IsBool: true, Description: "Full hierarchy incl. the null + outfit anchors"},
-			{Long: "all", Short: "a", IsBool: true, Description: "Show all (remove the 10-row cap)"},
-			{Long: "limit", Short: "n", Description: "Cap to N rows (default 10)"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Pro/dev: all arias (incl. anchors) as JSON; no other flags"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			runList(ctx.Extra.(*config.Loaded), listOptsFrom(ctx, false))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	}
+	})
 	r.Register(listCmd)
 
 	lshCmd := *listCmd
@@ -776,11 +671,7 @@ positional slot belongs to the sub-verb.`,
 	}
 	r.Register(&lshCmd)
 
-	r.Register(&cmdkit.Command{
-		Name:  "recent",
-		Group: "Session",
-		Short: "Every figaro, most recently active first, one row each",
-		Usage: "recent [-n <count>] [-j|--json]",
+	r.Register(verb("recent", &cmdkit.Command{
 		Long: "Every figaro you may read on this node, newest activity first, with no\n" +
 			"tree: the list M-l and :recent show in the pager. A row leads with the\n" +
 			"first word of the figaro's handle (its whole handle when another row\n" +
@@ -789,11 +680,6 @@ positional slot belongs to the sub-verb.`,
 			"  -n <count>    the newest <count> rows\n" +
 			"  -j, --json    the rows as JSON: name, id, handle, title, state, cwd,\n" +
 			"                last_active (unix ms)",
-		ArgsMax: 0,
-		Flags: []cmdkit.FlagDef{
-			{Long: "limit", Short: "n", Description: "The newest N rows"},
-			{Long: "json", Short: "j", IsBool: true, Description: "The rows as JSON"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			limit := 0
 			if v := ctx.Flag("limit"); v != "" {
@@ -806,7 +692,7 @@ positional slot belongs to the sub-verb.`,
 			runRecent(ctx.Extra.(*config.Loaded), limit, ctx.BoolFlag("json"))
 			return nil
 		},
-	})
+	}))
 
 	for _, hop := range []struct {
 		name, short string
@@ -815,13 +701,8 @@ positional slot belongs to the sub-verb.`,
 		{"back", "Attend the figaro this shell attended before (ctrl+o in the pager)", -1},
 		{"forward", "Undo a back: attend the next figaro in this shell's history (Tab in the pager)", 1},
 	} {
-		r.Register(&cmdkit.Command{
-			Name:    hop.name,
-			Group:   "Session",
-			Short:   hop.short,
-			Usage:   hop.name + " [<n>]",
-			Long:    "Moves this shell's attendance along its history, n steps (default 1).\nEvery attend is an entry: an attend after a back drops what was ahead,\nand the newest 50 are kept. A figaro killed or reaped since is passed over\nand dropped. The daemon keeps the history with the shell's attendance, so\nevery pager on this shell shares it; `:history` in the pager lists it.",
-			ArgsMax: 1,
+		r.Register(verb(hop.name, &cmdkit.Command{
+			Long: "Moves this shell's attendance along its history, n steps (default 1).\nEvery attend is an entry: an attend after a back drops what was ahead,\nand the newest 50 are kept. A figaro killed or reaped since is passed over\nand dropped. The daemon keeps the history with the shell's attendance, so\nevery pager on this shell shares it; `:history` in the pager lists it.",
 			Run: func(ctx *cmdkit.RunContext) error {
 				n, err := hopCount(hop.name, ctx.Args)
 				if err != nil {
@@ -830,31 +711,19 @@ positional slot belongs to the sub-verb.`,
 				runHop(ctx.Extra.(*config.Loaded), hop.name, hop.sign*n)
 				return nil
 			},
-		})
+		}))
 	}
 
-	r.Register(&cmdkit.Command{
-		Name:    "attend",
-		Aliases: []string{"at"},
-		Group:   "Session",
-		Short:   "Bind this shell to an existing aria (optionally at a turn)",
-		Usage:   "attend <id> | <id>:<turn> | <id>.<lt> | :<turn> | :head | null",
-		Long:    "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point: the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria, and `:head`\nalone drops its pending fork-point.\n\n`attend <node>/<id>` binds an aria on another troupe node: it is resolved\nthrough the door of the troupes/*.toml profile that answers for that node,\nand plain figaro, listen and `fig -- …` then reach it there. A fork-point\non another node is refused.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live outfit.\n\nTerminal-only. Inside an aria's own bash tool, FIGARO_ARIA statically\nattends that shell to the aria that spawned it, and attend refuses: reach\nanother aria with an explicit --id instead.",
-		ArgsMin: 1,
-		ArgsMax: 1,
+	r.Register(verb("attend", &cmdkit.Command{
+		Long: "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point: the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria, and `:head`\nalone drops its pending fork-point.\n\n`attend <node>/<id>` binds an aria on another troupe node: it is resolved\nthrough the door of the troupes/*.toml profile that answers for that node,\nand plain figaro, listen and `fig -- …` then reach it there. A fork-point\non another node is refused.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live outfit.\n\nTerminal-only. Inside an aria's own bash tool, FIGARO_ARIA statically\nattends that shell to the aria that spawned it, and attend refuses: reach\nanother aria with an explicit --id instead.",
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			runAttend(ld, ctx.Args[0])
 			return nil
 		},
-		CompleteArgs: completeAttend,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "outfit",
-		Group: "State",
-		Short: "Outfit lifecycle: reload flags the default form for recomputation",
-		Usage: "outfit reload",
+	r.Register(verb("outfit", &cmdkit.Command{
 		Long: `The outfit files are ONE-WAY sources of truth: figaro reads them, and
 nothing ever writes form state back (deliberate: they may be tracked in
 git; access controls will fence the gap later).
@@ -868,8 +737,6 @@ git; access controls will fence the gap later).
 
 Folding an outfit onto a LIVE aria is a different act: see
 ` + "`figaro state outfit`" + `.`,
-		ArgsMin: 1,
-		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			if ctx.Args[0] != "reload" {
@@ -890,14 +757,9 @@ Folding an outfit onto a LIVE aria is a different act: see
 			}
 			return nil
 		},
-		CompleteArgs: completeWords([][2]string{{"reload", "flag the default form for recomputation"}}, nil),
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "study",
-		Group: "Session",
-		Short: "Subscribe this figaro to a form or another figaro (see its changes)",
-		Usage: "study [<aria>] <@form-id | figaro-id> [--keys <prefix,...>] | study [-j]",
+	r.Register(verb("study", &cmdkit.Command{
 		Long: `Subscribes a figaro to an unbound form, or to another figaro's bound
 form: committed patches reach the figaro as <system-reminder> blocks on
 its next turn. Durable on the figaro's own bound form (system.studies);
@@ -910,40 +772,20 @@ key but system.* is mirrored. A figaro cannot study itself, and only the
 owner may study another figaro.
 
   figaro study <me> <parent> --keys comments`,
-		ArgsMax: 2,
-		Flags: []cmdkit.FlagDef{
-			{Long: "keys", Short: "k", Description: "Mirror only keys under these comma-separated prefixes"},
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			runStudy(ctx.Extra.(*config.Loaded), ctx.Args, ctx.Flag("keys"), false, ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeFormVerb,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "drop",
-		Group:   "Session",
-		Short:   "Unsubscribe this figaro from a studied form",
-		Usage:   "drop [<aria>] <@form-id | figaro-id>",
-		ArgsMin: 1,
-		ArgsMax: 2,
-		Flags: []cmdkit.FlagDef{
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
-		},
+	r.Register(verb("drop", &cmdkit.Command{
 		Run: func(ctx *cmdkit.RunContext) error {
 			runStudy(ctx.Extra.(*config.Loaded), ctx.Args, "", true, ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeFormVerb,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "cast",
-		Group: "Session",
-		Short: "Cast a figaro into a role (point target-aria here, and study it)",
-		Usage: "cast [<aria>] <@form-id> | cast [<aria>] -O <names> [-S <k=v>] [-j] | cast (attending a form)",
+	r.Register(verb("cast", &cmdkit.Command{
 		Long: `One casting call: ensure the figaro studies the role, then point the
 role's target-aria at it: serialized through the figaro's actor loop, so
 no two castings of one figaro interleave. With -O the role is MINTED by
@@ -966,27 +808,13 @@ exists; attending an ARIA they mint the ROLE, for the same reason.
 
 The form is always the LAST positional. Bound forms are refused: roles
 are unbound forms only.`,
-		ArgsMax: 2,
-		Flags: []cmdkit.FlagDef{
-			{Long: "outfit", Short: "O", Description: "Mint the role from these outfit NAMES (occupies the form slot)"},
-			{Long: "set", Short: "S", Repeats: true, Description: "Mint the role with these keys (occupies the form slot); repeats"},
-			{Long: "delete", Short: "D", Repeats: true, Description: "Key paths the minted role's birth patch removes; repeats"},
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
-			{Long: "stay", IsBool: true, Description: "Do not attend the role this call mints"},
-			{Long: "under", Description: "Mint the role as a fork of this role, the one it reports to (occupies the form slot)"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			runCast(ctx.Extra.(*config.Loaded), ctx.Args, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), ctx.Flag("under"), ctx.BoolFlag("json"), ctx.BoolFlag("stay"))
 			return nil
 		},
-		CompleteArgs: completeFormVerb,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "bind",
-		Group: "Session",
-		Short: "Birth a figaro from an unbound form (dormant; never rebinds this shell)",
-		Usage: "bind [<@form-id> | null] [-O <names>] [-S <k=v>] [-j]",
+	r.Register(verb("bind", &cmdkit.Command{
 		Long: `Births a FIGARO by forking an unbound form: the form's state becomes the
 figaro's inherited prefix, the form goes on living, and nothing converts.
 
@@ -1000,13 +828,6 @@ figaro's inherited prefix, the form goes on living, and nothing converts.
 The figaro is born DORMANT: no agent, no provider constructed, and
 wakes on first use. Your shell's attendance never moves: attend the
 printed id yourself. See ` + "`figaro help form`" + ` for the form family.`,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "outfit", Short: "O", Description: "Outfit NAMES folded into the birth patch"},
-			{Long: "set", Short: "S", Repeats: true, Description: "Birth keys: k=v or a JSON literal; repeats"},
-			{Long: "delete", Short: "D", Repeats: true, Description: "Key paths the birth patch removes; repeats"},
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			target := ""
@@ -1016,14 +837,9 @@ printed id yourself. See ` + "`figaro help form`" + ` for the form family.`,
 			runBind(ld, target, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeFormVerb,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "fork",
-		Group: "Session",
-		Short: "Branch a conversation: keep this id, mint an alternative",
-		Usage: "fork [--id <id> | <id>[:<turn>[.<node>]]] [--stay] [--no-studies] [-r|-v|-o|-l|-x|-n|-y|-f|-j] [-- <prompt>]",
+	r.Register(verb("fork", &cmdkit.Command{
 		Long: `Branch a conversation. A HEAD fork keeps the target's id on the
 continuation line and mints ONE new aria, the alternative. The target is
 NOT frozen and does NOT become read-only: it stays live at the same id,
@@ -1093,44 +909,22 @@ With a prompt: ` + "`figaro fork [flags] -- <prompt>`" + `: it also sends, the w
                  said to it, so the first turn is answered wearing it. Legal
                  with or without a prompt. See ` + "`figaro help outfits`" + `.
 `,
-		PassRaw: true,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id (defaults to this shell's); :<turn> for an interior fork"},
-			{Long: "stay", IsBool: true, Description: "Do not rebind this shell to the new branch/continuation"},
-			{Long: "no-studies", IsBool: true, Description: "The new branch studies no form"},
-			{Long: "outfit", Short: "O", Description: "Dress the new branch (see `figaro help outfits`)"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Emit machine-readable result on stdout (parent, continuation, alternative, ...)"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			runForkCmd(ld, ctx.RawArgs)
 			return nil
 		},
-		CompleteArgs:  completeForkPrompt,
-		CompleteFlags: promptFlagDefs,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "normalize",
-		Hidden:  true,
-		ArgsMin: 0,
-		ArgsMax: 0,
-		Flags: []cmdkit.FlagDef{
-			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would change; touch nothing"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Emit the report as JSON"},
-		},
+	r.Register(verb("normalize", &cmdkit.Command{
 		Run: func(ctx *cmdkit.RunContext) error {
 			fmt.Fprintln(stderrw, "figaro normalize moved to `figaro doctor normalize`")
 			runNormalize(ctx.Extra.(*config.Loaded), ctx.BoolFlag("dry-run"), ctx.BoolFlag("json"))
 			return nil
 		},
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "export",
-		Group: "Session",
-		Short: "Write an aria to a portable file",
-		Usage: "export [<id>] [-o <file>]",
+	r.Register(verb("export", &cmdkit.Command{
 		Long: `Write an aria to a file that another store can import: its outfit,
 its form, and every message, with no store-local identity in it.
 
@@ -1143,19 +937,13 @@ destination mints its own. That is what makes an import unable to collide.
 
 The provider translation caches do not travel either. They are a derivable
 wire cache; the price is one cache-miss on the first turn after an import.`,
-		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			runExport(ctx.Extra.(*config.Loaded), ctx.RawArgs)
 			return nil
 		},
-		CompleteArgs: completeExport,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "import",
-		Group: "Session",
-		Short: "Restore an exported aria into this store",
-		Usage: "import <file>",
+	r.Register(verb("import", &cmdkit.Command{
 		Long: `Restore an aria written by ` + "`figaro export`" + ` as a NEW conversation.
 
   figaro import keep.json
@@ -1168,20 +956,13 @@ an import can never collide with what is already here.
 
 The exported id is offered, not demanded: it is taken when free and replaced
 when not, and the tool says which happened.`,
-		ArgsMin: 0,
-		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {
 			runImport(ctx.Extra.(*config.Loaded), ctx.Args)
 			return nil
 		},
-		CompleteArgs: completeFileArg,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "promote",
-		Group: "Session",
-		Short: "Raise an aria in the tree ls draws",
-		Usage: "promote [--id <id> | <id>] [levels]",
+	r.Register(verb("promote", &cmdkit.Command{
 		Long: `Raise an aria in the tree ` + "`figaro ls`" + ` draws: it takes its parent's
 place, and the parent comes to sit under it.
 
@@ -1198,24 +979,14 @@ nothing to promote into ("cannot promote into an outfit").
 
 Needs the trunk capability (` + "`trunks = true`" + `, the default). Without it,
 aria nesting follows fork history alone and there is nothing to promote.`,
-		ArgsMin: 0,
-		ArgsMax: 2,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id (defaults to this shell's)"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			runPromote(ld, ctx.Flag("id"), ctx.Args)
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "adopt",
-		Group: "Session",
-		Short: "List, accept or refuse moves waiting on an aria",
-		Usage: "adopt <parent> [-j] | adopt accept <parent> <id> | adopt refuse <parent> <id>",
+	r.Register(verb("adopt", &cmdkit.Command{
 		Long: `A move that puts an aria under another one needs adopt on the receiving
 parent, unless the parent is the caller's own. Without it nothing moves:
 the move waits on that parent as a proposal until someone with adopt on it
@@ -1231,23 +1002,13 @@ If the tree changed meanwhile, the move is planned again, and it is refused
 if it would now need some other parent's consent. Proposals live in the
 daemon's memory: they lapse after a day, or when the proposer's connection
 or token would have, and a restart drops them.`,
-		ArgsMin: 1,
-		ArgsMax: 3,
-		Flags: []cmdkit.FlagDef{
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON output (list)"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			runAdopt(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "demote",
-		Group: "Session",
-		Short: "Sink an aria to a leaf so deleting it takes nothing else",
-		Usage: "demote [--id <id> | <id>] [--under <child>] [-j]",
+	r.Register(verb("demote", &cmdkit.Command{
 		Long: `Sink an aria to the bottom of the tree ` + "`figaro ls`" + ` draws. One of its
 children takes its place, its other children move under that child at the
 depth they had, and the aria hangs beneath it with nothing under it. A kill
@@ -1258,26 +1019,14 @@ or a reap of the demoted aria then takes it alone.
 
 Presentation only, like promote: no history moves. An aria with no
 children is left where it is. ` + "`figaro succeed`" + ` demotes the aria it replaces.`,
-		ArgsMin: 0,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Aria to demote (defaults to this shell's)"},
-			{Long: "under", Description: "The child that takes its place"},
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			runDemote(ld, ctx.Flag("id"), ctx.Args, ctx.Flag("under"), ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "place",
-		Group: "Session",
-		Short: "Draw a figaro under another figaro or form",
-		Usage: "place [--id <id> | <id>] --under <parent> [-j]",
+	r.Register(verb("place", &cmdkit.Command{
 		Long: `Draw a figaro, and everything drawn under it, under another figaro or
 form in the tree ` + "`figaro ls`" + ` draws. Presentation only: no history moves.
 
@@ -1287,26 +1036,14 @@ A parent drawn under the figaro itself is refused, as is a parent whose
 max_children it would overfill. Under a parent you did not mint, and on
 which you hold no adopt, the move waits as a proposal until its holder
 runs ` + "`figaro adopt accept <parent> <proposal>`" + `.`,
-		ArgsMin: 0,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Figaro to place (defaults to this shell's)"},
-			{Long: "under", Description: "The figaro or form to draw it under"},
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			runPlace(ld, ctx.Flag("id"), ctx.Args, ctx.Flag("under"), ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "kill",
-		Group: "Session",
-		Short: "Stop a trunk and reap it; purged after a grace",
-		Usage: "kill [--id <trunk> | <trunk>] [-r | --keep-children] [--when <duration> | --now]",
+	r.Register(verb("kill", &cmdkit.Command{
 		Long: `Stop a figaro and reap it. What ` + "`figaro ls`" + ` draws under it decides the rest:
 
   figaro kill <id>                    refuses when anything is drawn under it
@@ -1314,28 +1051,14 @@ runs ` + "`figaro adopt accept <parent> <proposal>`" + `.`,
   figaro kill --keep-children <id>    takes it alone; its children move up to its parent, or to the top
 
 A lifted child keeps the scopes the killed figaro narrowed it to.`,
-		ArgsMin: 0,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target trunk id"},
-			{Long: "recursive", Short: "r", IsBool: true, Description: "Also take everything drawn under it"},
-			{Long: "keep-children", IsBool: true, Description: "Take it alone and lift its children to its parent, or to the top"},
-			{Long: "when", Description: "Grace before the purge (90m, 6h, 2d, 1w; 0 deletes now); default [memory] kill_grace_hours, 3 days"},
-			{Long: "now", IsBool: true, Description: "Delete at once instead of reaping"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			runKill(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("recursive"), ctx.BoolFlag("keep-children"), ctx.BoolFlag("now"), ctx.Flag("when"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "succeed",
-		Group: "Session",
-		Short: "Hand a role to a successor and wind the old aria down",
-		Usage: "succeed <@role> [--turn <n>|head | --successor <aria>] [--no-studies] [--title <t>] [-O <outfits>] [-S <k=v>] [-D <keys>] [--ttl <d>] [--abdication retire|linger] [--stay] [-j] -- <prompt>",
+	r.Register(verb("succeed", &cmdkit.Command{
 		Long: `Replace the aria a role points at. The role must already target an aria
 that exists; that aria is the predecessor.
 
@@ -1386,20 +1109,6 @@ place, and the error lists the commands that finish the job by hand.
 
 In the pager, :succeed takes the same flags. When the aria on screen is the
 predecessor, the pager moves to the successor afterwards; --stay keeps it.`,
-		ArgsMin: 0,
-		Flags: []cmdkit.FlagDef{
-			{Long: "turn", Description: "Fork the predecessor at this turn, or head to keep every turn (default 2)"},
-			{Long: "successor", Description: "An existing aria to take the role, instead of a fork"},
-			{Long: "title", Description: "The successor's mantra"},
-			{Long: "ttl", Description: "Reap the predecessor this long from now; 0 kills it (default 10m)"},
-			{Long: "abdication", Description: "retire (refuse prompts) or linger (keep taking them)"},
-			{Long: "stay", IsBool: true, Description: "In the pager, keep showing the predecessor"},
-			{Long: "no-studies", IsBool: true, Description: "The successor studies what the predecessor studied at --turn, not what it studies now"},
-			{Long: "outfit", Short: "O", Description: "Outfit NAMES folded into the successor's birth patch"},
-			{Long: "set", Short: "S", Repeats: true, Description: "Successor birth keys: k=v or a JSON literal; repeats"},
-			{Long: "delete", Short: "D", Repeats: true, Description: "Key paths the successor's birth patch removes; repeats"},
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON report"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			plan, err := succeedPlanFrom(ctx)
 			if err != nil {
@@ -1407,14 +1116,9 @@ predecessor, the pager moves to the successor afterwards; --stay keeps it.`,
 			}
 			return runSucceed(plan, ctx.BoolFlag("json"))
 		},
-		CompleteArgs: completeSucceed,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "retire",
-		Group: "Session",
-		Short: "Stop an aria taking prompts, and dress it on the way out",
-		Usage: "retire [--id <aria> | <aria>] [--ttl <d>] [-O <outfits>] [-S <keys>] [-D <paths>] [--undo] [-j]",
+	r.Register(verb("retire", &cmdkit.Command{
 		Long: `A retired aria refuses every prompt; reading it (show, attend, ls,
 fork) still works, and a fork of it is not retired. The outfits and keys
 land in the same write as the retirement, so a tombstone can carry its own
@@ -1429,30 +1133,14 @@ A retired aria is not kept alive by the default keepalive, only by a
 system.keepalive of its own. Its sweep still waits for a live agent, a
 bound shell, a role pointing into it, or a recently used branch under it.
 --undo lets it take prompts again.`,
-		ArgsMin: 0,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Aria to retire"},
-			{Long: "outfit", Short: "O", Description: "Outfit NAMES folded in with the retirement"},
-			{Long: "set", Short: "S", Repeats: true, Description: "Keys set with the retirement: k=v or a JSON literal; repeats"},
-			{Long: "delete", Short: "D", Repeats: true, Description: "Key paths removed with the retirement; repeats"},
-			{Long: "ttl", Description: "Reap the aria this long from now (sets system.ttl from its age)"},
-			{Long: "undo", IsBool: true, Description: "Let the aria take prompts again"},
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			return runRetire(ld, ctx.Flag("id"), ctx.Args, ctx.Flag("outfit"), ctx.Flag("set"),
 				ctx.Flag("delete"), ctx.Flag("ttl"), ctx.BoolFlag("undo"), ctx.BoolFlag("json"))
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "reaped",
-		Group: "Session",
-		Short: "Arias kill, gc and the ttl sweep reaped: list, restore or purge them",
-		Usage: "reaped [ls | restore <id> [--keep] | purge <id>] [-j]",
+	r.Register(verb("reaped", &cmdkit.Command{
 		Long: `When an aria's lifetime is spent and nothing holds it, the sweep does not
 delete it at once: it reaps it. A reaped aria and everything under it are
 hidden from ls, refuse prompts, and wait [memory] reaped_grace_hours (seven
@@ -1466,49 +1154,27 @@ reaped_grace_hours becomes an optional age cap. The index is the catalog
   figaro reaped restore <id>    bring the group back; the keepalive holds
                                 it for a day, --keep also unsets system.ttl
   figaro reaped purge <id>      delete the group now`,
-		ArgsMax: 2,
-		Flags: []cmdkit.FlagDef{
-			{Long: "keep", IsBool: true, Description: "restore: also unset system.ttl on the root"},
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			return runReaped(ld, ctx.Args, ctx.BoolFlag("keep"), ctx.BoolFlag("json"))
 		},
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "move",
-		Group: "Session",
-		Short: "Move an aria and its whole fork tree to another node",
-		Usage: "move [--id <aria> | <aria>] --to <node> [-j]",
+	r.Register(verb("move", &cmdkit.Command{
 		Long: `Moves the aria's fork tree (every aria sharing its history) to a peer
 node under the same ids. The old node keeps a forwarding address, so the
 ids keep working from anywhere. Refused while any aria of the tree has a
 turn in flight or queued. Reaching another node needs a bearer.
 
 Status: in development; cross-node moves are not settled yet.`,
-		ArgsMin: 0,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Aria to move (defaults to this shell's)"},
-			{Long: "to", Description: "Node id, or a unique prefix of one"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Print the result as one JSON object"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			runMove(ld, ctx.Flag("id"), ctx.Args, ctx.Flag("to"), ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "state",
-		Aliases: []string{"form"},
-		Group:   "State",
-		Short:   "Show the form, or shape it",
-		Usage:   "state [show] [<id>] | state set <k> <v> | state delete <paths> | state new [-O <names>] [-S <k=v>] | state outfit <names>",
+	r.Register(verb("state", &cmdkit.Command{
 		Long: `The aria's state, and the verbs that shape it.
 
   figaro state                     print the form
@@ -1551,20 +1217,6 @@ aria sees a <system-reminder> for exactly what changed. It is the same fold
 state is an action, not a modifier on one.
 
 See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id (overrides pid binding)"},
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON output (new/fork/ls emit machine-readable ids)"},
-			{Long: "outfit", Short: "O", Subwords: []string{"new", "fork", "apply"}, Description: "new/fork/apply: outfit NAMES"},
-			{Long: "managed", Subwords: []string{"apply"}, Description: "apply: comma-separated paths managed by the outfit"},
-			{Long: "check", IsBool: true, Subwords: []string{"apply"}, Description: "apply: report changes without writing"},
-			{Long: "manifest", Subwords: []string{"apply"}, Description: "apply: TOML file of declared roles; replaces --id, --outfit and --managed"},
-			{Long: "set", Short: "S", Repeats: true, Subwords: []string{"new", "fork"}, Description: "new/fork: birth keys, k=v or a JSON literal; repeats"},
-			{Long: "delete", Short: "D", Repeats: true, Subwords: []string{"new", "fork"}, Description: "new/fork: key paths the birth patch removes; repeats"},
-			{Long: "list", IsBool: true, Subwords: []string{"outfit"}, Description: "outfit: list available outfits and exit"},
-			{Long: "tree", IsBool: true, Subwords: []string{"outfit"}, Description: "outfit: print the layer closure and exit; applies nothing"},
-			{Long: "refresh", IsBool: true, Subwords: []string{"outfit"}, Description: "outfit: re-read outfits and config from disk"},
-			{Long: "recursive", IsBool: true, Subwords: []string{"rm"}, Description: "rm: also remove the form's live branches"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			args := ctx.Args
@@ -1631,43 +1283,23 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 			runForm(ld, id)
 			return nil
 		},
-		CompleteArgs: completeStateArgs,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "set",
-		Group:   "State",
-		Short:   "Patch a form key (no LLM round-trip)",
-		Usage:   "set [--id <id>] <key> <value>",
-		ArgsMin: 2,
-		ArgsMax: 2,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id (overrides pid binding)"},
-		},
+	r.Register(verb("set", &cmdkit.Command{
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			runSetArgs(ld, ctx.Flag("id"), ctx.Args[0], ctx.Args[1])
 			return nil
 		},
-		CompleteArgs: completeSetArgs,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "setup",
-		Group:   "State",
-		Short:   "Deprecated: the first-run wizard; sign in with :login in the pager",
-		Usage:   "setup",
-		ArgsMax: 0,
+	r.Register(verb("setup", &cmdkit.Command{
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runSetup(ctx.Extra.(*config.Loaded))
 		},
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "reroute",
-		Group: "State",
-		Short: "Put a figaro back on the provider and model its outfits name",
-		Usage: "reroute [--id <id|@role>] [-O <outfits>]",
+	r.Register(verb("reroute", &cmdkit.Command{
 		Long: `A figaro's provider and model are set at its birth and are its own from then on:
 editing, reloading or re-applying an outfit leaves them alone, and so does a
 restart or a succession. reroute is the one verb that reads them from outfits
@@ -1681,22 +1313,12 @@ system.thinking_budget, and removes the ones the outfits leave out.
 
 The owner may reroute, and so may a figaro holding whole set on the target
 (keyed set is not enough: the route is owner-held). A box never may.`,
-		ArgsMax: 0,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria or role (overrides pid binding)"},
-			{Long: "outfit", Short: "O", Description: "Outfit NAMES to read the route from instead"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runReroute(ctx.Extra.(*config.Loaded), ctx.Flag("id"), ctx.Flag("outfit"))
 		},
-		CompleteArgs: completeAriaIDsAfterFlag(nil),
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "get",
-		Group: "State",
-		Short: "Print form values by path",
-		Usage: "get [--id <id>] [-j] <path> [<path>...]",
+	r.Register(verb("get", &cmdkit.Command{
 		Long: `Print form values, by the same paths set and unset take.
 
   figaro get system.cwd             a string prints bare
@@ -1712,65 +1334,31 @@ is an error naming it (exit 1); the paths that are print first.
 
 A leading '.' stands for get, before any verb or as show's argument. '.N'
 (digits only) is refused: it reads as an LT coordinate.`,
-		ArgsMin: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target figaro or form id (overrides pid binding)"},
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON for every value; several paths make one object"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			return runGet(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("json"))
 		},
-		CompleteArgs: completeAriaIDsAfterFlag(completeFormKeys),
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "pwd",
-		Group: "State",
-		Short: "Print the directory a figaro's tools run in",
-		Usage: "pwd [--id <id>] [-j]",
+	r.Register(verb("pwd", &cmdkit.Command{
 		Long: `Print system.cwd: the directory a figaro's tools resolve relative paths
 against, and where the pager resolves a relative path it opens in your editor.
 When system.cwd is unset, the tools run in the daemon's own working directory,
 and pwd prints that. Change it with figaro cd.`,
-		ArgsMax: 0,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target figaro id (overrides pid binding)"},
-			{Long: "json", Short: "j", IsBool: true, Description: "The directory as a JSON string"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			return runPwd(ld, ctx.Flag("id"), ctx.BoolFlag("json"))
 		},
-		CompleteArgs: completeAriaIDsAfterFlag(nil),
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "toggle",
-		Group:   "State",
-		Short:   "Flip a true/false form key; absent reads the default outfit's, else false",
-		Usage:   "toggle [--id <id>] <key>",
-		ArgsMin: 1,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id (overrides pid binding)"},
-		},
+	r.Register(verb("toggle", &cmdkit.Command{
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			return runToggle(ld, ctx.Flag("id"), ctx.Args[0])
 		},
-		CompleteArgs: completeSetArgs,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "cd",
-		Group:   "State",
-		Short:   "Change an aria's working directory",
-		Usage:   "cd [--id <id>] [<path>]",
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id (overrides pid binding)"},
-		},
+	r.Register(verb("cd", &cmdkit.Command{
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			path := ""
@@ -1779,32 +1367,17 @@ and pwd prints that. Change it with figaro cd.`,
 			}
 			return runCd(ld, ctx.Flag("id"), path)
 		},
-		CompleteArgs: completeCdDirs,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "unset",
-		Group:   "State",
-		Short:   "Remove form key(s)",
-		Usage:   "unset [--id <id>] <key> [<key>...]",
-		ArgsMin: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id (overrides pid binding)"},
-		},
+	r.Register(verb("unset", &cmdkit.Command{
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			runUnsetArgs(ld, ctx.Flag("id"), ctx.Args)
 			return nil
 		},
-		CompleteArgs: completeAriaIDsAfterFlag(completeFormKeys),
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:   "outfits",
-		Group:  "State",
-		Hidden: true,
-		Short:  "The outfit syntax (a help topic)",
-		Usage:  "help outfits",
+	r.Register(verb("outfits", &cmdkit.Command{
 		Long: `An OUTFIT is a named patch for an aria's form: model, credo,
 skills, and anything else you keep together. Dressing has TWO AXES, and they
 are never mixed:
@@ -1868,13 +1441,9 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			}
 			return nil
 		},
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "gc",
-		Group: "System",
-		Short: "Choose figaros nobody uses and reap them, after a plan you confirm",
-		Usage: "gc [--idle <d>] [--empty] [--older <d>] [--outfit <name>] [--under <id>] [--match <query>] [--box <name>] [--yes | --dry-run] [-j] | gc --undo <run>",
+	r.Register(verb("gc", &cmdkit.Command{
 		Long: "gc plans first. It prints what it would reap, what it keeps and why,\n" +
 			"and the bytes freed at purge; on a terminal it then asks. Piped, it\n" +
 			"prints the plan and changes nothing unless --yes is given.\n\n" +
@@ -1901,19 +1470,6 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			"  figaro gc --idle 30d             plan, then ask\n" +
 			"  figaro gc --empty --older 1d -y  apply without asking\n" +
 			"  figaro gc --undo <run>           restore what one run reaped",
-		Flags: []cmdkit.FlagDef{
-			{Long: "idle", Description: "Choose figaros unused for at least this long (30d, 12h, 2w)"},
-			{Long: "empty", IsBool: true, Description: "Choose figaros that never had a message"},
-			{Long: "older", Description: "Choose figaros born at least this long ago"},
-			{Long: "outfit", Description: "Choose figaros born under this outfit"},
-			{Long: "under", Description: "Choose figaros presented under this aria or form"},
-			{Long: "match", Description: "Choose figaros whose mantra, handle, id or cwd hold every term (fzf syntax, no spread letters)"},
-			{Long: "box", Description: "Choose figaros in this box"},
-			{Long: "yes", Short: "y", IsBool: true, Description: "Apply the plan without asking"},
-			{Long: "dry-run", IsBool: true, Description: "Print the plan only"},
-			{Long: "undo", Description: "Restore every figaro one run reaped"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Print the plan (or with --yes, the result) as JSON"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			o, err := gcOptsOf(ctx)
 			if err != nil {
@@ -1922,74 +1478,34 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			runGCCommand(ctx.Extra.(*config.Loaded), o)
 			return nil
 		},
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "status",
-		Aliases: []string{"info"},
-		Group:   "Session",
-		Short:   "Show a focused view of one aria",
-		Usage:   "status [<id> | --id <id>] [-m] [-j]",
-		Long:    "Prints mantra, provider, model, message count, context-window usage,\nand cumulative token cost for the named aria (or the one bound to this\nshell). Reads the same data the `list` table uses; dormant arias are\nbackfilled from the meta derivation.\n\n  -m/--more   also surface cwd, outfit version, fork origin, created\n  -j/--json   emit the full status as JSON (combine: -mj)",
-		ArgsMin: 0,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id"},
-			{Long: "more", Short: "m", IsBool: true, Description: "Surface derived/extra detail"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Emit the full status as JSON"},
-		},
+	r.Register(verb("status", &cmdkit.Command{
+		Long: "Prints mantra, provider, model, message count, context-window usage,\nand cumulative token cost for the named aria (or the one bound to this\nshell). Reads the same data the `list` table uses; dormant arias are\nbackfilled from the meta derivation.\n\n  -m/--more   also surface cwd, outfit version, fork origin, created\n  -j/--json   emit the full status as JSON (combine: -mj)",
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			runStatus(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("more"), ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "scopes",
-		Aliases: []string{"grants"},
-		Group:   "Session",
-		Short:   "Show what an aria may do",
-		Usage:   "scopes [<id> | --id <id>] [-j]",
-		Long:    "Prints the aria's effective scopes (what figaro enforces on calls that\nname it, and what a sandbox provider should read), the policy's [figaros]\nceiling, and the system.scopes each aria on its lineage sets, top first.\ngrants is the command's old name.\nEffective is the ceiling, intersected with each set down to this aria.\nAn aria that sets none narrows nothing for figaro's verbs and holds no\nother verb (egress, cred).\n\n  -j/--json   emit the answer as JSON",
-		ArgsMin: 0,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Emit the answer as JSON"},
-		},
+	r.Register(verb("scopes", &cmdkit.Command{
+		Long: "Prints the aria's effective scopes (what figaro enforces on calls that\nname it, and what a sandbox provider should read), the policy's [figaros]\nceiling, and the system.scopes each aria on its lineage sets, top first.\ngrants is the command's old name.\nEffective is the ceiling, intersected with each set down to this aria.\nAn aria that sets none narrows nothing for figaro's verbs and holds no\nother verb (egress, cred).\n\n  -j/--json   emit the answer as JSON",
 		Run: func(ctx *cmdkit.RunContext) error {
 			runScopes(ctx.Extra.(*config.Loaded), ctx.Flag("id"), ctx.Args, ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "name",
-		Group:   "Session",
-		Short:   "Print an aria's name the way this CLI shows it",
-		Usage:   "name [<id> | --id <id>] [-m]",
-		Long:    "Prints the name [cli] ids chooses for the named aria (or the one bound to\nthis shell, or FIGARO_ARIA inside a tool): its word handle, or its short\nhex. For a script or a reply footer that should name an aria the way\nfigaro does.\n\n  -m/--more   add the other spelling in parentheses",
-		ArgsMin: 0,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id"},
-			{Long: "more", Short: "m", IsBool: true, Description: "Add the other spelling"},
-		},
+	r.Register(verb("name", &cmdkit.Command{
+		Long: "Prints the name [cli] ids chooses for the named aria (or the one bound to\nthis shell, or FIGARO_ARIA inside a tool): its word handle, or its short\nhex. For a script or a reply footer that should name an aria the way\nfigaro does.\n\n  -m/--more   add the other spelling in parentheses",
 		Run: func(ctx *cmdkit.RunContext) error {
 			runName(ctx.Extra.(*config.Loaded), ctx.Flag("id"), ctx.Args, ctx.BoolFlag("more"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "provider",
-		Group: "System",
-		Short: "Sign in to, sign out of, and list model providers",
-		Usage: "provider <login | logout | ls> [<name>] [-j]",
+	r.Register(verb("provider", &cmdkit.Command{
 		Long: `Model credentials, one provider at a time.
 
   login <name>    run the provider's sign-in: OAuth or device code where it
@@ -2003,30 +1519,16 @@ flow writes both through the daemon, so a client never has to know the path.`,
 
 logout removes figaro's copy only: a token the provider issued stays valid
 there until you revoke it with the provider.`,
-		Flags: []cmdkit.FlagDef{
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON for ls and logout"},
-		},
-		ArgsMin: 1,
-		ArgsMax: 2,
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runProviderVerb(ctx.Extra.(*config.Loaded), ctx.Args, ctx.BoolFlag("json"))
 		},
-		CompleteArgs: completeWords([][2]string{
-			{"login", "sign in to a provider"},
-			{"logout", "remove figaro's credential for a provider"},
-			{"ls", "where each provider's credential comes from"},
-		}, completeProviderAfterVerb),
-	})
+	}))
 
 	registerTroupe(r)
 	r.Register(boxVerb)
 	r.Register(valetVerb)
 
-	r.Register(&cmdkit.Command{
-		Name:  "models",
-		Group: "System",
-		Short: "List the models every provider offers, from the daemon's catalog",
-		Usage: "models [--refresh] [-j]",
+	r.Register(verb("models", &cmdkit.Command{
 		Long: `Reads the catalog @models: instant, no provider is asked. The daemon
 lists every configured provider in the background ([models] poll_minutes,
 six hours by default), once at start when its snapshot is stale, and after
@@ -2036,44 +1538,21 @@ error of its last attempt if that failed.
   figaro models             the catalog as the daemon holds it
   figaro models --refresh   list every provider now and wait for the answers
   figaro models -j          every entry, hidden ones included, as JSON`,
-		Flags: []cmdkit.FlagDef{
-			{Long: "refresh", IsBool: true, Description: "ask the daemon to list every provider now, and wait"},
-			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
-		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			return runModels(ld, ctx.BoolFlag("refresh"), ctx.BoolFlag("json"))
 		},
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "serve",
-		Group: "System",
-		Short: "Relay model requests to configured providers over loopback HTTP",
-		Usage: "serve [-l <addr>] [-p <provider,...>]",
-		Long:  "Runs a stateless, unauthenticated model router on a loopback address. It\ntouches no aria, store or daemon: each request is forwarded to a provider\nwith figaro's credential for it, and the response streams back unchanged.\n\n  /u/<provider>/<path>                    base URL + path, any method\n  /v1/responses, /v1/chat/completions,    model \"<provider>/<model>\" picks\n  /v1/messages, /v1/systemone,            the provider; the prefix is removed\n  /v1/decisions\n  /v1/models                              every provider's models, prefixed\n\nDecision models go the same way: /v1/systemone (System One: jev,\ndecision-1) and /v1/decisions (OpenAI: luna), model \"<provider>/<model>\".\n\nRequests whose Host is not a loopback name, or that carry a non-loopback\nOrigin, are refused.",
-		Flags: []cmdkit.FlagDef{
-			{Long: "listen", Short: "l", Description: "loopback address to listen on (default 127.0.0.1:8788)"},
-			{Long: "provider", Short: "p", Description: "comma-separated providers to serve (default: every one with a credential)"},
-		},
+	r.Register(verb("serve", &cmdkit.Command{
+		Long: "Runs a stateless, unauthenticated model router on a loopback address. It\ntouches no aria, store or daemon: each request is forwarded to a provider\nwith figaro's credential for it, and the response streams back unchanged.\n\n  /u/<provider>/<path>                    base URL + path, any method\n  /v1/responses, /v1/chat/completions,    model \"<provider>/<model>\" picks\n  /v1/messages, /v1/systemone,            the provider; the prefix is removed\n  /v1/decisions\n  /v1/models                              every provider's models, prefixed\n\nDecision models go the same way: /v1/systemone (System One: jev,\ndecision-1) and /v1/decisions (OpenAI: luna), model \"<provider>/<model>\".\n\nRequests whose Host is not a loopback name, or that carry a non-loopback\nOrigin, are refused.",
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runServe(ctx.Extra.(*config.Loaded), ctx.Flag("listen"), ctx.Flag("provider"))
 		},
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "stop",
-		Aliases: []string{"rest"},
-		Group:   "System",
-		Short:   "Shut down the angelus daemon and its hush agent",
-		Usage:   "stop [-f] [-k] [--forget-bindings] [--hup]",
-		Long:    "Stops the angelus, then retires the embedded hush agent that daemon\nspawned: it is figaro's own binary re-exec'd, and nothing else would ever\nretire it. An EXTERNAL hush agent is never touched.\n\nOne agent can have several daemons (the share-hush, snapshot and sandbox\ndev shells share a hush surface across isolated runtime dirs). It is\nretired only when no other live daemon is still using it; otherwise stop\nnames the one that is holding it.\n\nWith no daemon answering, the agent is still retired: one outlives a\ndaemon that was killed rather than stopped, which is where orphans come\nfrom.\n\nEvery shell's binding outlives the daemon: the next angelus binds each\nshell that is still running to the aria it attended, however this one\nended (stop, upgrade, a unit restart, a crash). --forget-bindings is the\none way to start the next angelus with no shell attended.\n\nA turn the stop cuts off resumes on its own when the next angelus starts,\nwith a note telling the aria it was interrupted, and every queued message\nis delivered then. --hup is the brake: it hangs up every running turn\nfirst, as `figaro hup` would, so none of them resumes. Queued messages are\nkept either way; `figaro cut <aria>` drops one aria's queue.\n\nThe angelus respawns on the next command, so this is how you pick up a\nrebuilt binary.",
-		Flags: []cmdkit.FlagDef{
-			{Long: "force", Short: "f", IsBool: true, Description: "SIGKILL instead of graceful shutdown"},
-			{Long: "keep-agent", Short: "k", IsBool: true, Description: "A restart is coming: keep the unlocked hush agent"},
-			{Long: "forget-bindings", IsBool: true, Description: "The next angelus starts with no shell attended"},
-			{Long: "hup", IsBool: true, Description: "Hang up every running turn first, so none resumes after the restart"},
-		},
+	r.Register(verb("stop", &cmdkit.Command{
+		Long: "Stops the angelus, then retires the embedded hush agent that daemon\nspawned: it is figaro's own binary re-exec'd, and nothing else would ever\nretire it. An EXTERNAL hush agent is never touched.\n\nOne agent can have several daemons (the share-hush, snapshot and sandbox\ndev shells share a hush surface across isolated runtime dirs). It is\nretired only when no other live daemon is still using it; otherwise stop\nnames the one that is holding it.\n\nWith no daemon answering, the agent is still retired: one outlives a\ndaemon that was killed rather than stopped, which is where orphans come\nfrom.\n\nEvery shell's binding outlives the daemon: the next angelus binds each\nshell that is still running to the aria it attended, however this one\nended (stop, upgrade, a unit restart, a crash). --forget-bindings is the\none way to start the next angelus with no shell attended.\n\nA turn the stop cuts off resumes on its own when the next angelus starts,\nwith a note telling the aria it was interrupted, and every queued message\nis delivered then. --hup is the brake: it hangs up every running turn\nfirst, as `figaro hup` would, so none of them resumes. Queued messages are\nkept either way; `figaro cut <aria>` drops one aria's queue.\n\nThe angelus respawns on the next command, so this is how you pick up a\nrebuilt binary.",
 		Run: func(ctx *cmdkit.RunContext) error {
 			runStop(stopOptions{
 				force:          ctx.BoolFlag("force"),
@@ -2083,22 +1562,9 @@ error of its last attempt if that failed.
 			})
 			return nil
 		},
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:   "upgrade",
-		Group:  "System",
-		Hidden: true,
-		Usage:  "upgrade --to <figaro> [-n] [--if-changed] [--wait <seconds>] [--force] [--tmux-socket <name>]",
-		Short:  "Restart the angelus on a build already installed, and the tmux panes that cannot reconnect",
-		Flags: []cmdkit.FlagDef{
-			{Long: "to", Description: "The installed figaro binary to move to"},
-			{Long: "dry-run", Short: "n", IsBool: true, Description: "Print the plan and change nothing"},
-			{Long: "if-changed", IsBool: true, Description: "Do nothing when the running build is already this one"},
-			{Long: "wait", Description: "Seconds to wait for running turns (default 120)"},
-			{Long: "force", IsBool: true, Description: "Interrupt turns still running after --wait"},
-			{Long: "tmux-socket", Description: "The tmux server's socket name (tmux -L)"},
-		},
+	r.Register(verb("upgrade", &cmdkit.Command{
 		Run: func(ctx *cmdkit.RunContext) error {
 			wait := 120 * time.Second
 			if s := ctx.Flag("wait"); s != "" {
@@ -2118,28 +1584,16 @@ error of its last attempt if that failed.
 			})
 			return nil
 		},
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "version",
-		Aliases: []string{"v"},
-		Group:   "System",
-		Short:   "Print build identity (revision, exe path, Go version) and the reachable daemon's node id",
-		Usage:   "version [-j]",
-		Flags: []cmdkit.FlagDef{
-			{Long: "json", Short: "j", IsBool: true, Description: "One line of JSON"},
-		},
+	r.Register(verb("version", &cmdkit.Command{
 		Run: func(ctx *cmdkit.RunContext) error {
 			runVersion(ctx.BoolFlag("json"))
 			return nil
 		},
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "keys",
-		Group: "System",
-		Short: "Show and edit the pager's keybindings (~/.config/figaro/keys.toml)",
-		Usage: "keys [layers | actions | init | bind <keys> <action> [<layer>] | unbind <keys> [<layer>] | reset [<keys> [<layer>]] | path]",
+	r.Register(verb("keys", &cmdkit.Command{
 		Long: `The live key map, and the file behind it.
 
 A key is written the way the help panel prints it: a letter, ^D, M-y, Tab,
@@ -2162,34 +1616,12 @@ that arms it (g, f, c, Space).
 
 keys.toml is read when the process starts, and is the client's own file:
 the daemon neither reads nor writes it.`,
-		ArgsMax: 3,
 		Run: func(ctx *cmdkit.RunContext) error {
 			return runKeys(ctx.Extra.(*config.Loaded), ctx.Args)
 		},
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "doctor",
-		Group: "System",
-		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; pprof arms the profiler on the running daemon; provider shows recent provider round-trips (including in-flight) and the decision routes methods have stopped asking; librettos recounts derived-form observers; normalize makes every aria own its history and drops the overrides its history now agrees with, and with --from opens a stopped store to move daemon-written keys under runtime.* (--revert moves them back); skills lists what the binary ships; outfits names the overlay files a managed .locked refuses; ttl lists the nodes carrying a lifetime and when it is spent; residents lists live agents, open endpoints and _meta sidecars whose id the store no longer holds; admission compares the daemon's cached fan-out counts with the tree; snapshot copies the most recently active arias, with their history and every form, into a new store; misread-lineage lists, read-only, the nodes whose stored chain has a falling fork base and what a translations v4 to v5 open does to them (clears their derived channels, refolds their _meta counters); quarantine lists the segments a corrupt frame keeps closed and releases one by cutting it at the bad frame, after copying it aside (owner only); unit says whether the daemon on the socket is the systemd unit's; mode says home or house, whether user namespaces let a valet fence tools, and whether the valet and each box answer",
-		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] [--from <store> [--revert]] | prune-channel-dirs [-n|--dry-run] [-j] | skills [-j] | keys | form-keys [--audit] [-j] | outfits | ttl [-j] | tombstones [-j] [-n|--dry-run] [--reap] | residents [-j] | admission [-j] | unit [-j] | mode [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | misread-lineage [--from <store>] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>",
-		Flags: []cmdkit.FlagDef{
-			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
-			{Long: "reap", IsBool: true, Description: "tombstones: reap listed tombstoned arias through kill"},
-			{Long: "audit", IsBool: true, Description: "form-keys: read every form through the daemon and name the values that fail their shape"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem, provider, form-keys, normalize, prune-channel-dirs, tombstones, residents, misread-lineage)"},
-			{Long: "id", Description: "Restrict to one aria (provider)"},
-			// -n is already dry-run on this command.
-			{Long: "count", Short: "c", Description: "How many rows to show (provider); default 20"},
-			{Long: "gc", IsBool: true, Description: "mem: collect first, then report -- the only honest live-set reading (stops the world)"},
-			{Long: "from", Description: "snapshot, misread-lineage: the store to read (default: this one); normalize: open that store offline, which moves daemon-written keys under runtime.*"},
-			{Long: "revert", IsBool: true, Description: "normalize --from: move runtime.* keys back to their system.* names, for a figaro from before runtime.*"},
-			{Long: "arias", Description: "snapshot: how many of the most recently active arias (default 50, 0 = all)"},
-			{Long: "max-mb", Description: "snapshot: the size cap in MB (default 500, 0 = none)"},
-			{Long: "at", Description: "quarantine release: the corrupt frame's byte offset, as ls prints it"},
-			{Long: "channel", Description: "quarantine release: the channel, when several hold a bad frame at that offset"},
-			{Long: "yes", Short: "y", IsBool: true, Description: "quarantine release: release without asking"},
-		},
+	r.Register(verb("doctor", &cmdkit.Command{
 		Run: func(ctx *cmdkit.RunContext) error {
 			if len(ctx.Args) == 2 && ctx.Args[0] == "pprof" {
 				return runDoctorPprof(ctx.Args[1])
@@ -2252,29 +1684,9 @@ the daemon neither reads nor writes it.`,
 			}
 			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | pprof <on | off> | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | normalize [--dry-run] [-j] [--from <store> [--revert]] | prune-channel-dirs [-n|--dry-run] [-j] | toolcalls [--dry-run] | skills [-j] | keys | outfits | ttl [-j] | residents [-j] | admission [-j] | unit [-j] | mode [-j] | snapshot <dir> [--from <store>] [--arias N] [--max-mb M] [-j] | misread-lineage [--from <store>] [-j] | quarantine [ls | release <figaro> --at <offset> [--channel <name>] [--yes]]>")
 		},
-		CompleteArgs: completeWords([][2]string{
-			{"gc", "remove dead channels"}, {"schema", "channel versions"}, {"term", "terminal capabilities"},
-			{"mem", "the daemon's footprint"}, {"pprof", "arm or disarm the live profiler"}, {"provider", "recent provider round-trips"},
-			{"librettos", "recount derived-form observers"}, {"normalize", "detach promoted arias, drop overrides history agrees with"},
-			{"prune-channel-dirs", "remove channel directories that hold no rows"},
-			{"skills", "what the binary ships"}, {"form-keys", "the form key registry: writer, shape, doc; --audit checks every form"}, {"outfits", "overlay files a managed .locked refuses"}, {"ttl", "nodes carrying a lifetime"},
-			{"tombstones", "listed arias whose bound form is tombstoned"},
-			{"residents", "agents, endpoints and sidecars the store no longer holds"},
-			{"admission", "the cached fan-out counts against the tree, and the enforcement switches with their would-refuse counts"},
-			{"unit", "whether the daemon on the socket is the systemd unit's"},
-			{"mode", "home or house, user namespaces, and whether the valet answers"},
-			{"snapshot", "copy recent arias into a new store"},
-			{"misread-lineage", "nodes whose stored chain falls, read-only"},
-			{"quarantine", "segments a corrupt frame keeps closed, and releasing one"},
-		}, nil),
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:    "vault",
-		Aliases: []string{"hush"},
-		Group:   "System",
-		Short:   "Inspect and repair figaro's embedded secrets vault",
-		Usage:   "vault <status | init | reset | forget | unlock | lock> [--file | --passphrase] [--yes]",
+	r.Register(verb("vault", &cmdkit.Command{
 		Long: `figaro runs its own hush: its own identity, agent, and keyring entry
 (service "figaro"). The hush binary on PATH addresses a different
 instance, so these are the levers for this one.
@@ -2295,13 +1707,6 @@ is a question asked on every command.
 What reset costs you: the provider tokens this identity encrypted, and
 nothing else. Arias, forms and outfits are not encrypted with it. The
 old identity and token files are renamed, not deleted.`,
-		Flags: []cmdkit.FlagDef{
-			{Long: "file", IsBool: true, Description: "Unlock from a 0600 passphrase file: no prompt, ever"},
-			{Long: "passphrase", IsBool: true, Description: "Unlock from a passphrase you type"},
-			{Long: "yes", Short: "y", IsBool: true, Description: "Skip the reset confirmation"},
-		},
-		ArgsMin: 1,
-		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {
 			kind, err := vaultUnlockKindFromFlags(ctx.BoolFlag("file"), ctx.BoolFlag("passphrase"))
 			if err != nil {
@@ -2323,16 +1728,9 @@ old identity and token files are renamed, not deleted.`,
 			}
 			return fmt.Errorf("usage: vault <status | init | reset | forget | unlock | lock>")
 		},
-		CompleteArgs: func(ctx *cmdkit.CompleteContext) []string {
-			return []string{"status", "init", "reset", "forget", "unlock", "lock"}
-		},
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "update",
-		Group: "System",
-		Short: "Check for a newer figaro release",
-		Usage: "update [--check] [--json] [--apply]",
+	r.Register(verb("update", &cmdkit.Command{
 		Long: `Ask the Go module proxy for the latest tagged figaro release,
 compare it against this binary, and tell you how to upgrade: respecting
 whichever install channel you used (` + "`go install`" + `, Nix, dev shell).
@@ -2350,26 +1748,19 @@ The passive one-line startup nudge is controlled by
 ` + "`check_updates`" + ` in ~/.config/figaro/config.toml (default true);
 the cache TTL is ` + "`update_check_ttl_hours`" + ` (default 24).
 This command itself is always available regardless of those settings.`,
-		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			return runUpdate(ld, ctx.RawArgs)
 		},
-	})
+	}))
 
-	r.Register(&cmdkit.Command{
-		Name:  "completion",
-		Group: "System",
-		Short: "Generate or install a shell completion script",
-		Usage: "completion <bash|zsh|fish|powershell>  |  completion install [<shell>]",
+	r.Register(verb("completion", &cmdkit.Command{
 		Long: `Print a completion script to stdout, or install it where the shell will
 auto-load it on the next tab.
 
   figaro completion bash               # print bash script to stdout
   figaro completion install            # auto-detect $SHELL, write to autoload path
   figaro completion install fish       # explicit shell`,
-		ArgsMin: 1,
-		ArgsMax: 2,
 		Run: func(ctx *cmdkit.RunContext) error {
 			first := ctx.Args[0]
 			if first == "install" {
@@ -2384,11 +1775,7 @@ auto-load it on the next tab.
 			}
 			return r.WriteCompletion(os.Stdout, cmdkit.CompletionShell(first))
 		},
-		CompleteArgs: completeWords([][2]string{
-			{"bash", "print the bash script"}, {"zsh", "print the zsh script"}, {"fish", "print the fish script"},
-			{"powershell", "print the powershell script"}, {"install", "write it where the shell autoloads it"},
-		}, nil),
-	})
+	}))
 
 	r.SetBarePromptComplete(completePromptContext)
 
