@@ -8,7 +8,6 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/models"
-	"github.com/jack-work/figaro/internal/modelcat"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -27,7 +26,7 @@ type providerListing struct {
 	Models      []modelRow `json:"models"`
 }
 
-func catalogListings(catalog form.Snapshot, now time.Time) []providerListing {
+func catalogListings(catalog form.Snapshot, now time.Time, interval func(string) time.Duration) []providerListing {
 	provs, _ := models.Providers(catalog)
 	out := make([]providerListing, 0, len(provs))
 	for name, p := range provs {
@@ -37,7 +36,7 @@ func catalogListings(catalog form.Snapshot, now time.Time) []providerListing {
 			RefreshedAt: p.RefreshedAt,
 			AttemptedAt: p.AttemptedAt,
 			Error:       p.Error,
-			Stale:       !p.CatalogOff && (p.RefreshedAt == 0 || now.Sub(time.UnixMilli(p.RefreshedAt)) >= modelcat.DefaultTTL),
+			Stale:       !p.CatalogOff && (p.RefreshedAt == 0 || now.Sub(time.UnixMilli(p.RefreshedAt)) >= interval(name)),
 		}
 		flat := p.Flat()
 		l.Models = make([]modelRow, 0, len(flat))

@@ -500,7 +500,7 @@ func Run() {
 		Build:     func(name string) (providerPkg.Provider, error) { return build(name, providerPkg.Knobs{}) },
 		Providers: func() []string { return catalogProviders(loaded) },
 		Known:     func(name string) bool { reg := providerPkg.Lookup(name); return reg != nil && reg.IsConfigured(loaded) },
-		Poll:      loaded.ModelsPoll(),
+		Interval:  loaded.CatalogRefresh,
 		Form:      modelsForm(backend),
 	})
 	a.Go("model catalog", func() { a.Models.Run(ctx) })

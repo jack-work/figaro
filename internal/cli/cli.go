@@ -1586,8 +1586,9 @@ there until you revoke it with the provider.`,
 
 	r.Register(verb("models", &cmdkit.Command{
 		Long: `Reads the catalog @models: instant, no provider is asked. The daemon
-lists every configured provider in the background ([models] poll_minutes,
-six hours by default), once at start when its snapshot is stale, and after
+lists each configured provider in the background once its entry is older
+than that provider's catalog_refresh (a Go duration in its provider file,
+24h by default, 1m at least), at start when its snapshot is stale, and after
 figaro provider login. Each provider shows when it was last listed, and the
 error of its last attempt if that failed.
 

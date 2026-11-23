@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"os"
 	"sort"
 	"sync"
@@ -24,16 +23,17 @@ type Config struct {
 	Build        Builder
 	Providers    func() []string
 	Known        func(providerName string) bool
-	Poll         time.Duration
+	Interval     func(providerName string) time.Duration
 	Form         *store.Form
-	TTL          time.Duration
 	Retry        time.Duration
 	FetchTimeout time.Duration
 	Now          func() time.Time
+	After        func(time.Duration) <-chan time.Time
 }
 
 const (
-	DefaultTTL          = 24 * time.Hour
+	DefaultInterval     = 24 * time.Hour
+	Tick                = 30 * time.Second
 	DefaultRetry        = 10 * time.Minute
 	DefaultFetchTimeout = 30 * time.Second
 )
@@ -62,9 +62,6 @@ type provState struct {
 }
 
 func New(cfg Config) *Catalog {
-	if cfg.TTL <= 0 {
-		cfg.TTL = DefaultTTL
-	}
 	if cfg.Retry <= 0 {
 		cfg.Retry = DefaultRetry
 	}
@@ -73,6 +70,9 @@ func New(cfg Config) *Catalog {
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
+	}
+	if cfg.After == nil {
+		cfg.After = time.After
 	}
 	f := cfg.Form
 	if f == nil {
@@ -133,33 +133,16 @@ func (c *Catalog) Run(ctx context.Context) {
 	c.mu.Lock()
 	c.ctx = ctx
 	c.mu.Unlock()
-	c.listStale()
-	var poll *time.Timer
-	var polled <-chan time.Time
-	if c.cfg.Poll > 0 && c.cfg.Providers != nil {
-		poll = time.NewTimer(c.jittered())
-		defer poll.Stop()
-		polled = poll.C
-	}
 	for {
+		c.listDue()
 		select {
 		case <-ctx.Done():
 			c.stopWanting()
 			c.wg.Wait()
 			return
-		case <-polled:
-			c.listAll()
-			poll.Reset(c.jittered())
+		case <-c.cfg.After(Tick):
 		}
 	}
-}
-
-func (c *Catalog) jittered() time.Duration {
-	spread := int64(c.cfg.Poll / 5)
-	if spread <= 0 {
-		return c.cfg.Poll
-	}
-	return c.cfg.Poll - time.Duration(spread/2) + time.Duration(rand.Int64N(spread))
 }
 
 func (c *Catalog) providers() []string {
@@ -169,27 +152,36 @@ func (c *Catalog) providers() []string {
 	return c.cfg.Providers()
 }
 
-func (c *Catalog) staleAfter() time.Duration {
-	if c.cfg.Poll > 0 && c.cfg.Poll < c.cfg.TTL {
-		return c.cfg.Poll
+func (c *Catalog) interval(providerName string) time.Duration {
+	if c.cfg.Interval != nil {
+		if d := c.cfg.Interval(providerName); d > 0 {
+			return d
+		}
 	}
-	return c.cfg.TTL
+	return DefaultInterval
 }
 
-func (c *Catalog) listStale() {
+func (c *Catalog) listDue() {
 	snap := c.Snapshot()
 	now := c.cfg.Now()
 	for _, name := range c.providers() {
-		if !c.fresh(snap, name, now, c.staleAfter()) {
+		if c.due(snap, name, now) {
 			c.list(name)
 		}
 	}
 }
 
-func (c *Catalog) listAll() {
-	for _, name := range c.providers() {
-		c.list(name)
+func (c *Catalog) due(snap form.Snapshot, providerName string, now time.Time) bool {
+	if c.fresh(snap, providerName, now, c.interval(providerName)) {
+		return false
 	}
+	if status, ok := models.ProviderStatus(snap, providerName); !ok || status.Error == "" {
+		return true
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	st := c.provs[providerName]
+	return st == nil || st.attempt.IsZero() || now.Sub(st.attempt) >= c.cfg.Retry
 }
 
 func (c *Catalog) Refresh(ctx context.Context, names ...string) error {
@@ -268,7 +260,7 @@ func (c *Catalog) Want(providerName, model string) {
 	snap := c.Snapshot()
 	now := c.cfg.Now()
 	_, known := models.Lookup(snap, providerName, model)
-	if known && c.fresh(snap, providerName, now, c.cfg.TTL) {
+	if known && c.fresh(snap, providerName, now, c.interval(providerName)) {
 		return
 	}
 

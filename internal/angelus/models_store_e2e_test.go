@@ -57,7 +57,7 @@ func TestAColdDaemonAnswersModelsFromTheStoreWithoutListing(t *testing.T) {
 		a.Models = modelcat.New(modelcat.Config{
 			Build:     build,
 			Providers: func() []string { return []string{"openai"} },
-			Poll:      time.Hour,
+			Interval:  func(string) time.Duration { return time.Hour },
 			Form:      f,
 		})
 	})
