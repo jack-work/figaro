@@ -68,6 +68,7 @@ rewritten. Read entries back exactly with `figaro read`:
 |---|---|
 | `figaro read <log> [--from N] [--until M]` | Entries of turns N up to, not including, M, for reading: reserved tags are disarmed. |
 | `figaro read <log> ... -j` | One JSON object per entry, `{turn, lt, at, sender, principal, text}`, `text` the exact bytes sent. What an import or a script reads. |
+| `figaro read <log> --follow [-j]` | Print from `--from` as above, then stay attached and print each new entry once, in LT order, in the same shape. Exits 0 on a signal or stdin EOF (a pipe or file), non-zero if the log is killed or the daemon goes away. Logs only; a conversation is refused. |
 
 Exact entries need a daemon reporting the `log.exact` capability. Against an
 older daemon, `read`, `--stdin` to a log and `send -j` to a log are refused by

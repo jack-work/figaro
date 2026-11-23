@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jack-work/figaro/api/aria"
@@ -13,8 +14,15 @@ import (
 )
 
 type fakeLogReads struct {
+	mu    sync.Mutex
 	msgs  []message.Message
 	reads []rpc.ReadRequest
+}
+
+func (f *fakeLogReads) add(ms ...message.Message) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.msgs = append(f.msgs, ms...)
 }
 
 func (f *fakeLogReads) lt(turn uint64) uint64 {
@@ -27,6 +35,8 @@ func (f *fakeLogReads) lt(turn uint64) uint64 {
 }
 
 func (f *fakeLogReads) Read(_ context.Context, req rpc.ReadRequest) (aria.Page, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.reads = append(f.reads, req)
 	var p aria.Page
 	part := func(turn uint64) aria.TurnPart {
@@ -46,6 +56,8 @@ func (f *fakeLogReads) Read(_ context.Context, req rpc.ReadRequest) (aria.Page, 
 }
 
 func (f *fakeLogReads) IRFrom(_ context.Context, _ string, from uint64) (*rpc.IRResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	out := &rpc.IRResponse{}
 	before := uint64(len(f.msgs)) + 1
 	for lt := from; lt < before && lt <= uint64(len(f.msgs)); lt++ {

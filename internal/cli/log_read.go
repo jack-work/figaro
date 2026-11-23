@@ -135,29 +135,37 @@ func writeEntries(w io.Writer, entries []logEntry, asJSON bool) error {
 	return nil
 }
 
-func runRead(loaded *config.Loaded, ref string, from, until uint64, asJSON bool) error {
+func resolveReadTarget(ctx context.Context, acli *sdk.Angelus, ref string) (string, error) {
+	if ref != "" {
+		return doorID(ctx, acli, ref)
+	}
+	r, err := resolveBinding(ctx, acli, shellPID)
+	if err != nil {
+		return "", fmt.Errorf("resolve: %w", err)
+	}
+	if !r.Found {
+		return "", fmt.Errorf("no figaro bound to this shell")
+	}
+	return r.FigaroID, nil
+}
+
+func runRead(loaded *config.Loaded, ref string, from, until uint64, asJSON, follow bool) error {
 	if err := needCapability(rpc.CapLogExact, "figaro read"); err != nil {
 		return err
+	}
+	if follow {
+		if until > 0 {
+			return fmt.Errorf("read: --follow has no end, so it takes no --until")
+		}
+		return runReadFollow(loaded, ref, from, asJSON)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
-	id := ref
-	if id == "" {
-		r, err := resolveBinding(ctx, acli, shellPID)
-		if err != nil {
-			return fmt.Errorf("resolve: %w", err)
-		}
-		if !r.Found {
-			return fmt.Errorf("no figaro bound to this shell")
-		}
-		id = r.FigaroID
-	} else {
-		var err error
-		if id, err = doorID(ctx, acli, ref); err != nil {
-			return err
-		}
+	id, err := resolveReadTarget(ctx, acli, ref)
+	if err != nil {
+		return err
 	}
 	entries, err := readEntries(ctx, angelusEntries{acli}, id, from, until)
 	if err != nil {

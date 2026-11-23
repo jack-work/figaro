@@ -263,6 +263,33 @@ func TestKillRemovesEndpoint(t *testing.T) {
 	require.ErrorContains(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &after), "not found")
 }
 
+func TestASoftKillTellsAFollowerTheAriaClosed(t *testing.T) {
+	a, acli, ctx := daemonFixture(t)
+
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	closed := make(chan string, 4)
+	client := dialAria(t, a, created.FigaroID, func(m string, p json.RawMessage) {
+		if m == rpc.MethodAriaClosed {
+			closed <- rpc.AriaOf(p)
+		}
+	})
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var followed rpc.FollowResponse
+	require.NoError(t, client.Call(callCtx, rpc.MethodFollow, nil, &followed))
+
+	resp, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: created.FigaroID})
+	require.NoError(t, err)
+	require.NotZero(t, resp.PurgeAt, "the kill was soft")
+	select {
+	case id := <-closed:
+		require.Equal(t, created.FigaroID, id)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the follower of a soft-killed aria was not told it closed")
+	}
+}
+
 // Reads answer and never subscribe: a connection that only reads collects no
 // pushes, however busy the aria is.
 func TestReadOnlyConnectionCollectsNoPushes(t *testing.T) {
