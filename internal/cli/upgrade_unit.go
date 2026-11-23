@@ -5,7 +5,9 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/jack-work/figaro/internal/boot"
 )
@@ -62,6 +64,21 @@ func procExe(pid int) string {
 	return exe
 }
 
+const unitServeWait = 30 * time.Second
+
+func servingPID(scope string) int {
+	owner, err := socketOwnerPID(boot.AngelusSocketPath())
+	if err != nil {
+		return 0
+	}
+	if isManagerOwner(scope, owner) {
+		if recorded, err := readPidFile(filepath.Join(boot.AngelusRuntimeDir(), "angelus.pid")); err == nil {
+			return recorded
+		}
+	}
+	return owner
+}
+
 func restartUnitServing(u *daemonUnit, to string) {
 	cur := showDaemonUnit(u.Name, u.Scope)
 	if cur == nil {
@@ -70,12 +87,17 @@ func restartUnitServing(u *daemonUnit, to string) {
 	if err := liveUnitWatch(cur, true).await(cur); err != nil {
 		die("%s", err)
 	}
-	owner, err := socketOwnerPID(boot.AngelusSocketPath())
-	if err != nil {
-		owner = 0
-	}
-	if cur = showDaemonUnit(u.Name, u.Scope); cur == nil {
-		die("%s is no longer loaded", u.Name)
+	var owner int
+	deadline := time.Now().Add(unitServeWait)
+	for {
+		if cur = showDaemonUnit(u.Name, u.Scope); cur == nil {
+			die("%s is no longer loaded", u.Name)
+		}
+		owner = servingPID(cur.Scope)
+		if owner == cur.MainPID || !time.Now().Before(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	if err := servingMismatch(cur, owner, to, procExe); err != nil {
 		die("upgrade not confirmed: %s", err)
