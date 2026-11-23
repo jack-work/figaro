@@ -584,12 +584,27 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	if _, boxed := callerBox(ctx); minter == "" || boxed {
 		return h.formBindWith(ctx, req, nil)
 	}
-	release, forNode, err := h.angelus.holdBirth(minter, 1, false)
+	policy, err := h.mintedChildFanout(minter)
 	if err != nil {
-		return nil, fmt.Errorf("form.bind: %s pays for what it mints: %w", minter, err)
+		return nil, fmt.Errorf("form.bind: %w", err)
 	}
-	defer release()
-	out, err := h.formBindWith(ctx, req, withQuotaBirthDefault)
+	var release func()
+	var forNode func(string)
+	defer func() {
+		if release != nil {
+			release()
+		}
+	}()
+	birth := func(dress form.Patch, inherited form.Snapshot) (form.Patch, error) {
+		dress = boundChildFanout(form.Merge(policy, dress), inherited)
+		var err error
+		release, forNode, err = h.angelus.holdBirth(minter, forkCharge(dress), false)
+		if err != nil {
+			return dress, fmt.Errorf("form.bind: %s pays for what it mints: %w", minter, err)
+		}
+		return dress, nil
+	}
+	out, err := h.formBindWith(ctx, req, birth)
 	if err != nil {
 		return nil, err
 	}
@@ -601,7 +616,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	return out, nil
 }
 
-func (h *handlers) formBindWith(ctx context.Context, req rpc.FormBindRequest, birth func(form.Patch) form.Patch) (rpc.FormBindResponse, error) {
+func (h *handlers) formBindWith(ctx context.Context, req rpc.FormBindRequest, birth func(form.Patch, form.Snapshot) (form.Patch, error)) (rpc.FormBindResponse, error) {
 	req.Cwd = hostCwdOf(ctx, req.Cwd)
 	parent := req.Parent
 	if parent == "null" {
@@ -652,7 +667,9 @@ func (h *handlers) formBindWith(ctx context.Context, req rpc.FormBindRequest, bi
 		return rpc.FormBindResponse{}, err
 	}
 	if birth != nil {
-		dress = birth(dress)
+		if dress, err = birth(dress, inherited); err != nil {
+			return rpc.FormBindResponse{}, err
+		}
 	}
 	cwd := birthCwd(req.Cwd)
 	id, _, err := h.angelus.Backend.ForkWith(parent, 0, childBirthPatch(dress, cwd), append(births, bootStamp(cwd))...)

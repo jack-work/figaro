@@ -72,13 +72,17 @@ Two verbs refuse on a log, in the aria method chain beside the credo check:
 the birth patch and mints through `form.bind` from the null root: no outfit,
 no provider, dormant until the first send. `form.bind` by a figaro now holds
 and charges the minter's `max_children` and quota and places the new aria
-under it, exactly as `figaro.create` does (`holdBirth`, a birth quota of 0,
-`place`); the owner, a box, and an unclaimed caller mint uncharged as before.
+under it (`holdBirth`, `place`); the owner, a box, and an unclaimed caller
+mint uncharged as before. The bound child's fan-out keys are born as a fork's
+are: the minter's child policy gives `max_children` and quota, a silent policy
+gives 0, and the charge is 1 plus the child's quota. A log has no turns and
+always gets 0.
 This applies to every `form.bind` by a figaro, not only logs: it closed a
 path that minted around the fan-out budget. Named break: a figaro's `fig bind
-@form` now counts against its `max_children`, the child is born with
-`system.fanout.quota = 0` (it can neither fork nor mint until given budget),
-and it is drawn under the minter instead of under its form.
+@form` now counts against its `max_children` and quota, and the child is
+drawn under the minter instead of under its form (the live count follows the
+drawn parent, and a form holds none). The child's quota follows the minter's
+child policy, as a fork's does.
 
 ## JSON-RPC methods
 
@@ -204,9 +208,10 @@ already refuse caller patches to `runtime.*`.
 - Listings carry `kind: "log"` for a log, and `turn_count` for every aria.
 - IR input messages carry `accepted` keys; a restart no longer re-appends a
   prompt that reached the IR before its spool write.
-- Break: every `form.bind` by a figaro charges its `max_children` and quota,
-  births the child with quota 0, and draws it under the minter, as
-  `figaro.create` does.
+- Break: every `form.bind` by a figaro charges its `max_children` and quota
+  (1 plus the child's quota) and draws the child under the minter. The child's
+  `max_children` and quota come from the minter's child policy, 0 when it is
+  silent, as a fork's do; a log gets 0.
 - Change: every prose block is neutralised on the wire, the owner's included:
   a literal `<system-reminder` or `<law` in a prompt reaches the model as
   `&lt;`. Ordinary angle brackets are untouched. Break: an aria whose history
