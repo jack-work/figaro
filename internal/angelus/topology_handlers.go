@@ -543,7 +543,7 @@ func (h *handlers) forkRefusals(parent string, charge int, abdicating, ownerMade
 		return nil, nil
 	}
 	if abdicating {
-		if err := h.angelus.fanoutCounts().over(parent); err != nil {
+		if err := h.angelus.settledFanout().over(parent); err != nil {
 			return nil, fmt.Errorf("%w; a succession that retires its predecessor fits only a budget that is not already overdrawn", err)
 		}
 		return nil, nil
@@ -551,7 +551,7 @@ func (h *handlers) forkRefusals(parent string, charge int, abdicating, ownerMade
 	if err := h.admitMaxChildren(parent); err != nil {
 		return err, nil
 	}
-	return nil, h.angelus.fanoutCounts().fits(parent, charge)
+	return nil, h.angelus.settledFanout().fits(parent, charge)
 }
 
 func (h *handlers) admitMaxChildren(parent string) error {

@@ -593,7 +593,7 @@ func (h *handlers) refuseQuotaBeyondBudget(ctx context.Context, line lineage, be
 		return err
 	}
 	dropQuotaHold(ctx, line.of)
-	release, err := h.angelus.fanoutCounts().takeCharge(line.of, n, capped, func(err error) error {
+	release, err := h.angelus.settledFanout().takeCharge(line.of, n, capped, func(err error) error {
 		return h.angelus.Policies.Shadow(authz.Quota, fmt.Errorf("%s: %w", form.FanoutQuotaKey, err))
 	})
 	if err != nil {

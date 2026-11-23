@@ -122,3 +122,25 @@ func TestAPurgedChildFreesItsSlotAndStaysFreeAcrossARebuild(t *testing.T) {
 		t.Fatalf("after a rebuild the parent counts %d children, want only the one fork made since the purge", n)
 	}
 }
+
+func TestAChildPastItsTTLFreesItsSlotBeforeTheSweepTakesIt(t *testing.T) {
+	hs, b, top, kid := oneSlotParent(t)
+	applyKeys(t, b, kid, map[string]any{store.SystemTTLKey: "1h"})
+	if n := hs.h.angelus.liveChildCount(top); n != 1 {
+		t.Fatalf("a child inside its ttl counts %d, want 1", n)
+	}
+	meta, err := b.Meta(kid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta.CreatedAtMS = time.Now().Add(-2 * time.Hour).UnixMilli()
+	meta.LastAccessMS = time.Now().UnixMilli()
+	if err := b.SetMeta(kid, meta); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := b.Node(kid); !ok {
+		t.Fatal("the expired child left the tree before the sweep ran")
+	}
+	requireSlotFree(t, hs, top, "the child's ttl ran out")
+	requireCacheMatchesTree(t, hs, "a ttl running out")
+}

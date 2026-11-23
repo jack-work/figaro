@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -657,7 +658,7 @@ func (a *Angelus) fanoutNodeOf(id, parent string) fanoutNode {
 	n := fanoutNode{id: id, parent: parent, live: true}
 	meta, _ := a.Backend.Meta(id)
 	if meta != nil {
-		n.live, n.ownerMade = meta.RetiredAtMS == 0 && meta.ReapedAtMS == 0, meta.OwnerMade
+		n.live, n.ownerMade = meta.CountsAt(time.Now().UnixMilli()), meta.OwnerMade
 		if meta.FanoutQuota != nil && a.chargesQuota(id) {
 			n.quota, n.capped = *meta.FanoutQuota, true
 		}
@@ -702,7 +703,7 @@ func (a *Angelus) fanoutNodes() []fanoutNode {
 		}
 		n := fanoutNode{id: v.ID, parent: parent, live: true}
 		if meta, _ := a.Backend.Meta(v.ID); meta != nil {
-			n.live, n.ownerMade = meta.RetiredAtMS == 0 && meta.ReapedAtMS == 0, meta.OwnerMade
+			n.live, n.ownerMade = meta.CountsAt(time.Now().UnixMilli()), meta.OwnerMade
 			if meta.FanoutQuota != nil && v.Kind == store.KindConversation {
 				n.quota, n.capped = *meta.FanoutQuota, true
 			}
@@ -727,8 +728,23 @@ func (a *Angelus) fanoutRoles() map[string]fanoutRole {
 	return out
 }
 
+func (a *Angelus) settledFanout() *fanoutCache {
+	c := a.fanoutCounts()
+	keeper, ok := a.Backend.(ttlKeeper)
+	if !ok {
+		return c
+	}
+	now := time.Now().UnixMilli()
+	for _, e := range keeper.TTLDue(now) {
+		if e.Expired(now) {
+			c.setLive(e.ID, false)
+		}
+	}
+	return c
+}
+
 func (a *Angelus) liveChildCount(id string) int {
-	return a.fanoutCounts().admitted(id)
+	return a.settledFanout().admitted(id)
 }
 
 func (a *Angelus) holdFork(parent string, charge int, abdicating bool) (func(), error) {
@@ -741,7 +757,7 @@ func (a *Angelus) holdBirth(parent string, charge int, abdicating bool) (release
 	if err != nil {
 		return nil, nil, fmt.Errorf("fork: the limit of %s cannot be read to admit the fork: %w", parent, err)
 	}
-	c := a.fanoutCounts()
+	c := a.settledFanout()
 	h, err := c.take(parent, max, capped, charge, abdicating, func(err error) error { return a.Policies.Shadow(authz.Quota, err) })
 	if err != nil {
 		return nil, nil, err
@@ -800,8 +816,8 @@ func (a *Angelus) reconcileFanout() {
 	if a.Backend == nil {
 		return
 	}
+	c := a.settledFanout()
 	nodes, roles := a.fanoutNodes(), a.fanoutRoles()
-	c := a.fanoutCounts()
 	if d := c.drift(nodes, roles); c.driftPersists(d) {
 		slog.Warn("fanout: the cached counts drifted from the tree across two sweeps and were rebuilt", "nodes", len(d), "first", d[0].ID)
 		c.reset(nodes, roles)
@@ -855,7 +871,7 @@ func (a *Angelus) fanoutOver() []rpc.FanoutOver {
 	if a.Backend == nil {
 		return nil
 	}
-	c := a.fanoutCounts()
+	c := a.settledFanout()
 	out := c.overQuota()
 	for id, n := range c.parents() {
 		if max, ok, err := a.fanoutLimit(id); err == nil && ok && n > max {

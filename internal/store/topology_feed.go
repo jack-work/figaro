@@ -1,5 +1,7 @@
 package store
 
+import "time"
+
 type TopologyFeed struct {
 	Born     func(id, parent string)
 	Liveness func(id string, live bool)
@@ -29,7 +31,7 @@ func (b *XwalBackend) born(id string) {
 
 func (b *XwalBackend) livenessChanged(id string, meta *AriaMeta) {
 	if f := b.feed.Load(); f != nil && f.Liveness != nil {
-		f.Liveness(id, meta.RetiredAtMS == 0 && meta.ReapedAtMS == 0)
+		f.Liveness(id, meta.CountsAt(time.Now().UnixMilli()))
 	}
 }
 

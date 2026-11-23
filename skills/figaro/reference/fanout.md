@@ -5,8 +5,10 @@
 A protected form key, same writers as `system.scopes`: the owner sets any
 value, an ancestor figaro sets a descendant's value up to its own, a figaro
 never sets its own. It is an integer count of a figaro's **live** direct
-children in the drawn topology: neither retired nor reaped. Dormant and idle
-children count; they are inventory and can wake.
+children in the drawn topology: neither retired, reaped, nor past its
+`system.ttl`. A child stops counting the moment its ttl runs out, though the
+sweep may keep it on disk through its keepalive. Dormant and idle children
+count; they are inventory and can wake.
 
 Absent means unlimited, for that figaro alone: it does not propagate as
 "unlimited" to anything forked from it.
