@@ -11,9 +11,10 @@ import (
 )
 
 var (
-	ErrFull       = errors.New("segment full")
-	ErrOutOfRange = errors.New("index out of range")
-	ErrReadOnly   = errors.New("segment is read-only")
+	ErrFull        = errors.New("segment full")
+	ErrOutOfRange  = errors.New("index out of range")
+	ErrReadOnly    = errors.New("segment is read-only")
+	ErrStaleHandle = errors.New("segment file changed under this handle")
 )
 
 // Segment is one append-only file framed by a SegmentCodec.
@@ -32,6 +33,7 @@ type Segment struct {
 	hasHeader bool
 	header    []byte
 	headerLen int64
+	poisoned  bool
 
 	closed atomic.Bool
 
@@ -204,19 +206,45 @@ func (s *Segment) Append(payload []byte) (offset int64, err error) {
 	if s.maxSize > 0 && s.count > 0 && s.size-s.headerLen+int64(len(frame)) > s.maxSize {
 		return 0, ErrFull
 	}
-	offset = s.size
-	n, err := s.f.WriteAt(frame, offset)
-	if err != nil {
+	if err := s.checkTail(); err != nil {
 		return 0, err
 	}
-	if n != len(frame) {
-		return 0, fmt.Errorf("short write: %d/%d", n, len(frame))
+	offset = s.size
+	n, err := s.f.WriteAt(frame, offset)
+	if err == nil && n != len(frame) {
+		err = fmt.Errorf("short write: %d/%d", n, len(frame))
+	}
+	if err != nil {
+		s.rollbackTail()
+		return 0, err
 	}
 	s.size += int64(n)
 	s.offsets = append(s.offsets, offset)
 	s.count++
 	s.extendTail(payload)
 	return offset, nil
+}
+
+func (s *Segment) checkTail() error {
+	if s.poisoned {
+		return fmt.Errorf("%w: %s: an earlier failed write could not be rolled back", ErrStaleHandle, s.path)
+	}
+	fi, err := s.f.Stat()
+	if err != nil {
+		return err
+	}
+	if fi.Size() != s.size {
+		return fmt.Errorf("%w: %s: handle expects %d bytes, file has %d", ErrStaleHandle, s.path, s.size, fi.Size())
+	}
+	return nil
+}
+
+func (s *Segment) rollbackTail() {
+	if err := s.f.Truncate(s.size); err != nil {
+		s.poisoned = true
+		slog.Error("segment rollback of failed write failed; refusing further appends",
+			"path", s.path, "size", s.size, "err", err)
+	}
 }
 
 // WriteHeader writes the opaque block-0 header on a fresh segment, before
@@ -233,12 +261,16 @@ func (s *Segment) WriteHeader(payload []byte) error {
 	if err != nil {
 		return err
 	}
-	n, err := s.f.WriteAt(frame, 0)
-	if err != nil {
+	if err := s.checkTail(); err != nil {
 		return err
 	}
-	if n != len(frame) {
-		return fmt.Errorf("short write: %d/%d", n, len(frame))
+	n, err := s.f.WriteAt(frame, 0)
+	if err == nil && n != len(frame) {
+		err = fmt.Errorf("short write: %d/%d", n, len(frame))
+	}
+	if err != nil {
+		s.rollbackTail()
+		return err
 	}
 	s.size = int64(n)
 	s.headerLen = int64(n)
