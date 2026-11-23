@@ -175,3 +175,26 @@ const TroupeFormID = "@troupe"
 const TopologyFormID = "@topology"
 
 const RecentFormID = "@recent"
+
+func (r FigaroInfoResponse) ListingRow() FigaroInfoResponse {
+	return FigaroInfoResponse{
+		ID:         r.ID,
+		Short:      r.Short,
+		Handle:     r.Handle,
+		Node:       r.Node,
+		State:      r.State,
+		CreatedAt:  r.CreatedAt,
+		LastActive: r.LastActive,
+		Mantra:     r.Mantra,
+		RetiredAt:  r.RetiredAt,
+		ReapedAt:   r.ReapedAt,
+		Vector:     r.Vector,
+		Trunk:      r.Trunk,
+		Parent:     r.Parent,
+		Present:    r.Present,
+		Kind:       r.Kind,
+		Name:       r.Name,
+		TargetAria: r.TargetAria,
+		Roles:      r.Roles,
+	}
+}

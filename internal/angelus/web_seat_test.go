@@ -172,6 +172,6 @@ func TestTheHandlersOwnContextIsInProcess(t *testing.T) {
 }
 
 func readableRows(h *handlers, ctx context.Context, rows []rpc.FigaroInfoResponse) []rpc.FigaroInfoResponse {
-	out, _ := h.readable(ctx, rows)
+	out, _, _ := h.readable(ctx, rows)
 	return out
 }

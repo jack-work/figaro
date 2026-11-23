@@ -445,6 +445,11 @@ func lend(verbs []string, ids ...string) string {
 func lendGuest(t *testing.T, r grantRig, grants ...string) {
 	t.Helper()
 	text := doorPolicy + "\n[roles.lent]\npermissions = [" + strings.Join(grants, ", ") + "]\n\n[[bind]]\nrole = \"lent\"\nprincipals = [\"user:guest\"]\n"
+	lendPolicy(t, r, text)
+}
+
+func lendPolicy(t *testing.T, r grantRig, text string) {
+	t.Helper()
 	if err := os.WriteFile(r.policy, []byte(strings.ReplaceAll(text, "SELF", strconv.Itoa(os.Getuid()))), 0o600); err != nil {
 		t.Fatal(err)
 	}
