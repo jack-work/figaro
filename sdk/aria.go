@@ -73,6 +73,9 @@ func DialAriaWith(a Addr, onNotify NotifyHandler, tap transport.Tap) (*Aria, err
 		}
 	})
 	close(ready)
+	if a.Door.Bearer != nil {
+		go keepPresented(c.cli, a.Door.Bearer)
+	}
 	if onNotify != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), followTimeout)
 		defer cancel()

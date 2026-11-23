@@ -40,7 +40,11 @@ func DialAngelus(ep transport.Endpoint) (*Angelus, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Angelus{cli: jkrpc.NewClient(conn, nil), caller: rpc.CallerFromEnv(), ref: rpc.CallerRefFromEnv()}, nil
+	cli := jkrpc.NewClient(conn, nil)
+	if ep.Bearer != nil {
+		go keepPresented(cli, ep.Bearer)
+	}
+	return &Angelus{cli: cli, caller: rpc.CallerFromEnv(), ref: rpc.CallerRefFromEnv()}, nil
 }
 
 func callerCwd() string {
