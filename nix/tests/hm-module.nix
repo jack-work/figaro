@@ -22,6 +22,18 @@ let
       type = lib.types.attrsOf lib.types.anything;
       default = { };
     };
+    options.home.sessionVariables = lib.mkOption {
+      type = lib.types.attrsOf lib.types.anything;
+      default = { };
+    };
+    options.systemd.user.services = lib.mkOption {
+      type = lib.types.attrsOf lib.types.anything;
+      default = { };
+    };
+    options.systemd.user.sockets = lib.mkOption {
+      type = lib.types.attrsOf lib.types.anything;
+      default = { };
+    };
   };
   eval =
     extra:
@@ -107,7 +119,103 @@ let
   dressed = eval {
     programs.figaro.outfits.fixture.charter.purpose = "Fixture purpose";
   };
+  unit = eval {
+    programs.figaro.restartOnSwitch = true;
+    programs.figaro.daemon = {
+      enable = true;
+      path = [ pkgs.git ];
+      pathExtra = [ "/usr/bin" ];
+      environment.GREETING = "hello world";
+      environmentFile = "%h/.config/figaro/daemon.env";
+      sshAuthSock = "%t/fleet-ssh-agent.sock";
+      memoryMax = "6G";
+      wants = [ "fleet-ssh-agent.service" ];
+    };
+  };
+  svc = unit.systemd.user.services.figaro;
+  env = svc.Service.Environment;
+  bare = eval {
+    programs.figaro.daemon = {
+      enable = true;
+      socketActivation = false;
+    };
+  };
   checks = [
+    {
+      ok = !(off.systemd.user.services ? figaro) && !(off.systemd.user.sockets ? figaro) && off.home.sessionVariables == { };
+      why = "no daemon unit and no session variable unless daemon.enable";
+    }
+    {
+      ok =
+        svc.Service.ExecStart == "${exe} --angelus"
+        && svc.Service.Type == "exec"
+        && svc.Service.Restart == "on-failure"
+        && svc.Service.RestartSec == 5
+        && svc.Service.RestartSteps == 6
+        && svc.Service.RestartMaxDelaySec == "5min"
+        && svc.Service.KillMode == "mixed"
+        && svc.Service.TimeoutStopSec == 30
+        && svc.Service.OOMPolicy == "continue"
+        && svc.Install.WantedBy == [ "default.target" ];
+      why = "the unit runs the angelus as Spain's does, restarted on failure with a growing delay";
+    }
+    {
+      ok =
+        builtins.elem "\"FIGARO_NO_SELF_SPAWN=1\"" env
+        && builtins.elem "\"FIGARO_RUNTIME_DIR=%t/figaro\"" env
+        && unit.home.sessionVariables.FIGARO_NO_SELF_SPAWN == "1";
+      why = "the unit and every session refuse to self-spawn, and the unit binds the runtime directory a user's CLI resolves";
+    }
+    {
+      ok = builtins.elem "\"PATH=${pkgs.git}/bin:%h/.nix-profile/bin:%h/.local/bin:/usr/bin\"" env;
+      why = "the PATH is the declared packages, then the profile, then ~/.local/bin, then the extras";
+    }
+    {
+      ok =
+        builtins.elem "\"SSH_AUTH_SOCK=%t/fleet-ssh-agent.sock\"" env
+        && builtins.elem "\"GREETING=hello world\"" env;
+      why = "specifiers pass through unescaped and values with spaces stay one assignment";
+    }
+    {
+      ok = svc.Service.EnvironmentFile == "-%h/.config/figaro/daemon.env" && svc.Service.MemoryMax == "6G";
+      why = "secrets come from a file that may be missing, never from the store";
+    }
+    {
+      ok =
+        svc.Unit.Wants == [ "fleet-ssh-agent.service" ]
+        && svc.Unit.After == [
+          "figaro.socket"
+          "fleet-ssh-agent.service"
+        ]
+        && svc.Unit.Requires == [ "figaro.socket" ]
+        && svc.Service.Sockets == "figaro.socket";
+      why = "declared dependencies are wanted and ordered before the daemon, behind its socket";
+    }
+    {
+      ok = svc.Unit.X-SwitchMethod == "keep-old" && unit.systemd.user.sockets.figaro.Unit.X-SwitchMethod == "keep-old";
+      why = "a switch loads the new units but never restarts the daemon under running turns";
+    }
+    {
+      ok =
+        unit.systemd.user.sockets.figaro.Socket.ListenStream == "%t/figaro/angelus.sock"
+        && unit.systemd.user.sockets.figaro.Socket.SocketMode == "0600"
+        && unit.systemd.user.sockets.figaro.Socket.FileDescriptorName == "angelus";
+      why = "the socket holds the door the CLI dials, for its owner only";
+    }
+    {
+      ok =
+        !(bare.systemd.user.sockets ? figaro)
+        && !(bare.systemd.user.services.figaro.Service ? Sockets)
+        && bare.systemd.user.services.figaro.Unit.Requires == [ ];
+      why = "without socket activation the daemon binds its own door";
+    }
+    {
+      ok = unit.home.activation.figaroRestartOnSwitch.after == [
+        "linkGeneration"
+        "reloadSystemd"
+      ];
+      why = "the restart step runs after the switch has loaded the new unit file";
+    }
     {
       ok =
         dressed.xdg.configFile ? "figaro/outfits/fixture.toml"
