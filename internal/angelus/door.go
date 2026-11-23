@@ -224,6 +224,12 @@ func (a *Angelus) handleConn(ctx context.Context, door authz.Door, conn io.ReadW
 		conn.Close()
 		return
 	}
+	life := lifeOf(ctx)
+	if life == nil {
+		life = newLifetime(0, "", nil)
+		ctx = context.WithValue(ctx, lifeKey{}, life)
+	}
+	life.settle(ctx)
 	out := newOutbox(conn, a.outboxBudget(), func(err error) {
 		slog.Warn("door dropped a follower", "door", door.String(), "err", err)
 		endWith(conn, err)
@@ -241,26 +247,39 @@ func (a *Angelus) handleConn(ctx context.Context, door authz.Door, conn io.ReadW
 		}
 		close(done)
 	}()
-	var lapsed <-chan time.Time
-	l, lapses := lapseOf(ctx)
-	if lapses {
-		t := time.NewTimer(l.after)
-		defer t.Stop()
-		lapsed = t.C
-	}
-	select {
-	case <-done:
-	case <-lapsed:
-		_ = f.srv.Notify(rpc.MethodDoorLapsed, rpc.DoorLapsed{Reason: l.reason, AfterMS: l.after.Milliseconds()})
-		out.drain(lapseNoticeGrace)
-		l.end(errors.New(l.reason))
-		f.srv.Stop()
-	case <-ctx.Done():
-		if shut := doorShut(ctx); shut != nil {
-			_ = f.srv.Notify(rpc.MethodDoorLapsed, rpc.DoorLapsed{Reason: shut.Reason})
-			out.drain(shut.noticeGrace())
+	for {
+		due, why, moved, end := life.next()
+		var lapsed <-chan time.Time
+		var timer *time.Timer
+		if !due.IsZero() {
+			timer = time.NewTimer(time.Until(due))
+			lapsed = timer.C
 		}
-		f.srv.Stop()
+		select {
+		case <-done:
+		case <-moved:
+			if timer != nil {
+				timer.Stop()
+			}
+			continue
+		case <-lapsed:
+			_ = f.srv.Notify(rpc.MethodDoorLapsed, rpc.DoorLapsed{Reason: why, AfterMS: time.Since(life.born).Milliseconds()})
+			out.drain(lapseNoticeGrace)
+			if end != nil {
+				end(errors.New(why))
+			}
+			f.srv.Stop()
+		case <-ctx.Done():
+			if shut := doorShut(ctx); shut != nil {
+				_ = f.srv.Notify(rpc.MethodDoorLapsed, rpc.DoorLapsed{Reason: shut.Reason})
+				out.drain(shut.noticeGrace())
+			}
+			f.srv.Stop()
+		}
+		if timer != nil {
+			timer.Stop()
+		}
+		return
 	}
 }
 
@@ -282,19 +301,50 @@ func endWith(conn io.Closer, reason error) {
 	conn.Close()
 }
 
-type lapse struct {
-	after  time.Duration
-	reason string
+type lifetime struct {
+	born   time.Time
+	maxAge time.Duration
+	ageWhy string
 	end    context.CancelCauseFunc
+
+	mu    sync.Mutex
+	due   time.Time
+	why   string
+	moved chan struct{}
 }
 
-type lapseKey struct{}
+type lifeKey struct{}
 
-func withLapse(ctx context.Context, l lapse) context.Context {
-	return context.WithValue(ctx, lapseKey{}, l)
+func newLifetime(maxAge time.Duration, ageWhy string, end context.CancelCauseFunc) *lifetime {
+	return &lifetime{born: time.Now(), maxAge: maxAge, ageWhy: ageWhy, end: end, moved: make(chan struct{})}
 }
 
-func lapseOf(ctx context.Context) (lapse, bool) {
-	l, ok := ctx.Value(lapseKey{}).(lapse)
-	return l, ok && l.after > 0
+func lifeOf(ctx context.Context) *lifetime {
+	l, _ := ctx.Value(lifeKey{}).(*lifetime)
+	return l
+}
+
+func (l *lifetime) settle(ctx context.Context) {
+	var due time.Time
+	var why string
+	if l.maxAge > 0 {
+		due, why = l.born.Add(l.maxAge), l.ageWhy
+	}
+	if exp, ok := authz.ExpiryOf(ctx); ok && (due.IsZero() || exp.Before(due)) {
+		due, why = exp, webTokenReason
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if due.Equal(l.due) && why == l.why {
+		return
+	}
+	l.due, l.why = due, why
+	close(l.moved)
+	l.moved = make(chan struct{})
+}
+
+func (l *lifetime) next() (time.Time, string, <-chan struct{}, context.CancelCauseFunc) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.due, l.why, l.moved, l.end
 }

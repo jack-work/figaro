@@ -158,6 +158,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		rpc.MethodWorkerDeliver:      h.workerDeliver,
 		rpc.MethodWorkerSay:          h.workerSay,
 		rpc.MethodHello:              h.hello,
+		rpc.MethodEndpointPresent:    h.endpointPresent,
 		rpc.MethodNodeResolve:        h.nodeResolve,
 		rpc.MethodTroupeMembers:      h.troupeMembers,
 		rpc.MethodTroupeEntries:      h.troupeEntries,
@@ -327,6 +328,21 @@ func (h *handlers) hello(ctx context.Context, params json.RawMessage) (any, erro
 		return nil, fmt.Errorf("protocol version %d; this node speaks %d", req.Version, rpc.ProtocolVersion)
 	}
 	return rpc.HelloResponse{Version: rpc.ProtocolVersion, Capabilities: daemonCapabilities, Node: h.nodeID(), Principal: authz.PrincipalOf(ctx)}, nil
+}
+
+func (h *handlers) endpointPresent(ctx context.Context, params json.RawMessage) (any, error) {
+	var req rpc.PresentRequest
+	if err := json.Unmarshal(params, &req); err != nil || req.Token == "" {
+		return nil, fmt.Errorf("%s takes a token", rpc.MethodEndpointPresent)
+	}
+	exp, err := authz.PresentOn(ctx, req.Token)
+	if err != nil {
+		return nil, err
+	}
+	if life := lifeOf(ctx); life != nil {
+		life.settle(ctx)
+	}
+	return rpc.PresentResponse{ExpiresMS: exp.UnixMilli()}, nil
 }
 
 func (h *handlers) nodeID() string {

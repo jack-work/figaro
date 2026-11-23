@@ -37,7 +37,8 @@ func Verbs() []Verb {
 const VerbNone Verb = ""
 
 var methodVerbs = map[string]Verb{
-	MethodHello: VerbNone,
+	MethodHello:           VerbNone,
+	MethodEndpointPresent: VerbListen,
 
 	MethodAriaFrame:  VerbListen,
 	MethodTurnDone:   VerbListen,

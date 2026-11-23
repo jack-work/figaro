@@ -111,6 +111,7 @@ NormalizeRequest.Segments
 OutfitsRequest.Fold
 OutfitsRequest.Spec
 ParkedRequest.FigaroID
+PresentRequest.Token
 PprofArmRequest.Arm
 PromoteRequest.FigaroID
 PromoteRequest.Levels

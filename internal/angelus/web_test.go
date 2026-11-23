@@ -349,13 +349,6 @@ func TestABearerConnectionEndsWhenItsTokenExpires(t *testing.T) {
 	session, err := issuers.Open(context.Background(), is.Mint("probe", 2*time.Second))
 	require.NoError(t, err)
 
-	after, reason := (Web{MaxConnAge: 8 * time.Hour, FollowMaxAge: time.Hour}).lapseFor(authz.WithSession(context.Background(), session))
-	require.LessOrEqual(t, after, 2*time.Second)
-	require.Equal(t, webTokenReason, reason)
-	after, reason = (Web{MaxConnAge: 300 * time.Millisecond}).lapseFor(authz.WithSession(context.Background(), session))
-	require.Equal(t, 300*time.Millisecond, after)
-	require.Equal(t, webAgeReason, reason)
-
 	admit := func(ctx context.Context, r *http.Request) (context.Context, error) {
 		if r.Header.Get("Remote-User") == "" {
 			return nil, errors.New("no Remote-User")

@@ -159,11 +159,27 @@ func IssuerOf(ctx context.Context) string {
 
 func ExpiryOf(ctx context.Context) (time.Time, bool) {
 	c, _ := ctx.Value(callerKey{}).(caller)
-	if c.session == nil {
-		return time.Time{}, false
+	var exp time.Time
+	switch {
+	case c.session != nil:
+		exp = c.session.Expiry()
+	case c.key != nil:
+		exp = c.key.expiry()
 	}
-	exp := c.session.Expiry()
 	return exp, !exp.IsZero()
+}
+
+var ErrNoSession = errors.New("authz: this connection holds no issuer session to renew; an api key connection renews by reconnecting")
+
+func PresentOn(ctx context.Context, token string) (time.Time, error) {
+	c, _ := ctx.Value(callerKey{}).(caller)
+	if c.session == nil {
+		return time.Time{}, ErrNoSession
+	}
+	if err := c.session.Present(ctx, token); err != nil {
+		return time.Time{}, err
+	}
+	return c.session.Expiry(), nil
 }
 
 func BearerOf(ctx context.Context) (string, bool) {
