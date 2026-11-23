@@ -318,11 +318,19 @@ order, from turn N up to, not including, turn M; both are optional.
   figaro read <log> --from 40          turns 40..end
   figaro read <log> --from 4 --until 7 turns 4, 5 and 6
   figaro read <log> -j                 one JSON object per entry
+  figaro read <log> --follow -j        the entries so far, then each new one as it lands
 
 -j prints the exact bytes of each entry, with its turn, LT, time (unix
 millis), sender and principal: what an import or a script reads. Without
 -j the text is for reading, and reserved tags in it are disarmed. Needs a
-daemon that keeps log entries exact (capability log.exact).`,
+daemon that keeps log entries exact (capability log.exact).
+
+--follow (logs only) prints from --from as above, then stays attached and
+prints each new entry once, in LT order, in the same shape, with no model and
+no pager: a script folding a log reads it from a pipe. It exits 0 on a signal
+or when stdin, if a pipe or file, reaches EOF; it exits non-zero when the aria
+is killed or the daemon goes away. A conversation is refused: figaro listen
+follows those. It takes no --until.`,
 		Run: func(ctx *cmdkit.RunContext) error {
 			turnFlag := func(name string) (uint64, error) {
 				v := ctx.Flag(name)
@@ -347,7 +355,7 @@ daemon that keeps log entries exact (capability log.exact).`,
 			if len(ctx.Args) > 0 {
 				id = ctx.Args[0]
 			}
-			return runRead(ctx.Extra.(*config.Loaded), id, from, until, ctx.BoolFlag("json"))
+			return runRead(ctx.Extra.(*config.Loaded), id, from, until, ctx.BoolFlag("json"), ctx.BoolFlag("follow"))
 		},
 	}))
 

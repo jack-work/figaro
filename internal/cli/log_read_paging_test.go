@@ -15,6 +15,8 @@ type daemonShapedLogReads struct {
 }
 
 func (f *daemonShapedLogReads) IRFrom(_ context.Context, _ string, from uint64) (*rpc.IRResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	out := &rpc.IRResponse{}
 	n := uint64(len(f.msgs))
 	if from < 1 {

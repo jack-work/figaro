@@ -55,7 +55,7 @@ var table = []Command{
 		Name:  "read",
 		Group: "Prompt",
 		Help:  "Print an aria log's entries exactly as they were sent",
-		Usage: "read [<id>] [--from N] [--until M] [-j]",
+		Usage: "read [<id>] [--from N] [--until M | --follow] [-j]",
 		Args: []Arg{
 			{Name: "aria", Kind: Aria, Optional: true},
 		},
@@ -63,6 +63,7 @@ var table = []Command{
 		Flags: []Flag{
 			{Long: "from", Value: Count, Help: "First turn to print (default the first)"},
 			{Long: "until", Value: Count, Help: "Stop before this turn (default the end)"},
+			{Long: "follow", Help: "Stay attached after the last entry and print each new one (logs only)"},
 			{Long: "json", Short: "j", Help: "One JSON object per entry, exact bytes"},
 		},
 	},
