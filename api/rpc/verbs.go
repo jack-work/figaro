@@ -27,10 +27,11 @@ const (
 
 	VerbCast    Verb = "cast"
 	VerbSucceed Verb = "succeed"
+	VerbList    Verb = "list"
 )
 
 func Verbs() []Verb {
-	return []Verb{VerbRead, VerbListen, VerbSend, VerbFork, VerbSet, VerbCreate, VerbMint, VerbKill, VerbAdmin, VerbUse, VerbJoin, VerbDecide, VerbAdopt, VerbLease, VerbSay, VerbDelete, VerbCast, VerbSucceed}
+	return []Verb{VerbRead, VerbListen, VerbSend, VerbFork, VerbSet, VerbCreate, VerbMint, VerbKill, VerbAdmin, VerbUse, VerbJoin, VerbDecide, VerbAdopt, VerbLease, VerbSay, VerbDelete, VerbCast, VerbSucceed, VerbList}
 }
 
 const VerbNone Verb = ""

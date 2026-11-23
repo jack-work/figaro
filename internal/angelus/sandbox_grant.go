@@ -322,31 +322,38 @@ type unreadableRows struct {
 	why   string
 }
 
-func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) ([]rpc.FigaroInfoResponse, unreadableRows) {
+func (h *handlers) readable(ctx context.Context, rows []rpc.FigaroInfoResponse) ([]rpc.FigaroInfoResponse, unreadableRows, map[string]bool) {
 	sub, err := authz.SubjectOf(ctx)
 	if err != nil {
-		return nil, unreadableRows{}
+		return nil, unreadableRows{}, nil
 	}
 	if h.angelus.Policies == nil {
 		if h.passesUnpoliced(ctx, sub) {
-			return rows, unreadableRows{}
+			return rows, unreadableRows{}, nil
 		}
-		return nil, unreadableRows{}
+		return nil, unreadableRows{}, nil
 	}
 	view := h.angelus.Policies.Figaro(authz.FigaroOf(ctx))
 	out := rows[:0]
 	var refused unreadableRows
+	var listedOnly map[string]bool
 	for _, r := range rows {
 		d := view.Allow(sub, rpc.VerbRead, authz.Aria(r.ID))
 		switch {
 		case d.Allowed:
+			out = append(out, r)
+		case view.Allow(sub, rpc.VerbList, authz.Aria(r.ID)).Allowed:
+			if listedOnly == nil {
+				listedOnly = map[string]bool{}
+			}
+			listedOnly[r.ID] = true
 			out = append(out, r)
 		case d.Unreadable():
 			refused.count++
 			refused.why = d.Reason()
 		}
 	}
-	return out, refused
+	return out, refused, listedOnly
 }
 
 func (h *handlers) takenWith(id string) []string {

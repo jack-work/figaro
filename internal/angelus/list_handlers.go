@@ -135,7 +135,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
-	filtered, refused := h.readable(ctx, result)
+	filtered, refused, listedOnly := h.readable(ctx, result)
 	if len(filtered) != len(result) {
 		result = filtered
 		enrichments = pageEnrichments(result, enrichments)
@@ -167,6 +167,11 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 	}
 	h.fillNames(result)
 	h.fillRoles(result)
+	for i := range result {
+		if listedOnly[result[i].ID] {
+			result[i] = result[i].ListingRow()
+		}
+	}
 
 	return rpc.ListResponse{Figaros: result, NextBefore: nextBefore, Refused: refused.count, RefusedWhy: refused.why}, nil
 }

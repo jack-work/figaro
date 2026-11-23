@@ -48,6 +48,9 @@ func ParseFigaroGrants(texts []string) (jkauthz.Grants, error) {
 				return nil, fmt.Errorf("grant %q: %w", t, err)
 			}
 		}
+		if g.Verb == string(rpc.VerbList) && strings.Contains(g.Object, keySep) {
+			return nil, fmt.Errorf("grant %q: list covers a whole row and takes no key glob", t)
+		}
 		if figaroVerb(g.Verb) && sel != jkauthz.Any && sel != selParent && sel != selChildren {
 			if err := schema.Selectors.Validate(sel); err != nil {
 				return nil, fmt.Errorf("grant %q: %w", t, err)
