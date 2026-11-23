@@ -170,6 +170,9 @@ func (h *handlers) stopAria(id string) {
 	if n := h.killSessions(id); n > 0 {
 		slog.Info("killed aria sessions", "id", id, "sessions", n)
 	}
+	if hb := h.angelus.Hubs.drop(id); hb != nil {
+		hb.Close()
+	}
 }
 
 func (h *handlers) reapLateBorn(rk killReaper, id string, marked []string, patch form.Patch) ([]string, error) {
