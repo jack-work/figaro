@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAuthzTableLoadsAndThePolicyPathResolvesAgainstTheConfigDir(t *testing.T) {
@@ -59,5 +60,17 @@ func TestTheRetiredBearerTableIsRefusedByName(t *testing.T) {
 func TestNoPolicyConfiguredMeansNoPath(t *testing.T) {
 	if p := (&Loaded{ConfigDir: t.TempDir()}).PolicyPath(); p != "" {
 		t.Fatalf("%q", p)
+	}
+}
+
+func TestIssuerStaleTakesADurationAndZeroFailsClosed(t *testing.T) {
+	for in, want := range map[string]time.Duration{"0": 0, "6h": 6 * time.Hour} {
+		got, err := AuthzConfig{IssuerStale: in}.IssuerStaleFor()
+		if err != nil || got != want {
+			t.Errorf("issuer_stale %q: %v, %v; want %v", in, got, err, want)
+		}
+	}
+	if _, err := (AuthzConfig{IssuerStale: "soon"}).IssuerStaleFor(); err == nil {
+		t.Error("a non-duration issuer_stale was accepted")
 	}
 }

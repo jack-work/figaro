@@ -126,6 +126,7 @@ type testIssuer struct {
 	mu    sync.Mutex
 	users map[string]map[string]any
 	uiHit atomic.Int32
+	down  atomic.Bool
 }
 
 func newTestIssuer(t testing.TB) *testIssuer { return newTestIssuerAt(t, kelliher) }
@@ -138,10 +139,18 @@ func newTestIssuerAt(t testing.TB, url string) *testIssuer {
 	is := &testIssuer{t: t, url: url, key: k, users: map[string]map[string]any{}}
 	is.now.Store(time.Date(2026, 10, 17, 20, 0, 0, 0, time.UTC).Unix())
 	is.jwks = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if is.down.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &k.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"}}})
 	}))
 	is.ui = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		is.uiHit.Add(1)
+		if is.down.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		is.mu.Lock()
 		defer is.mu.Unlock()
 		body, ok := is.users[r.Header.Get("Authorization")]

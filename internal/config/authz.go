@@ -18,6 +18,7 @@ type AuthzConfig struct {
 	Delegation    []DelegationConfig `toml:"delegation"`
 	APIKeys       []APIKeyConfig     `toml:"api_keys"`
 	ProtectedKeys string             `toml:"protected_keys"`
+	IssuerStale   string             `toml:"issuer_stale"`
 	PeerCheck     *bool              `toml:"peer_check"`
 
 	EnforceKeyGrants    bool `toml:"enforce_key_grants"`
@@ -74,6 +75,22 @@ func (c AuthzConfig) checkProtectedKeys() error {
 		return nil
 	}
 	return fmt.Errorf("[authz] protected_keys = %q: want %q or %q", c.ProtectedKeys, ProtectedByLineage, ProtectedOpen)
+}
+
+const DefaultIssuerStale = 24 * time.Hour
+
+func (c AuthzConfig) IssuerStaleFor() (time.Duration, error) {
+	switch c.IssuerStale {
+	case "":
+		return DefaultIssuerStale, nil
+	case "0":
+		return 0, nil
+	}
+	d, err := time.ParseDuration(c.IssuerStale)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("[authz] issuer_stale = %q: want a positive duration, or \"0\" to fail closed the moment an issuer is unreachable", c.IssuerStale)
+	}
+	return d, nil
 }
 
 func (c AuthzConfig) ChecksPeers() bool {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net"
 	"net/http"
@@ -216,7 +217,19 @@ func (u *Upstream) fromHeaders(h http.Header) (jkauthz.Subject, error) {
 
 var ErrExpired = errors.New("authz: token expired; present a fresh one")
 
+type IssuerOption func(*issuerOptions)
+
+type issuerOptions struct {
+	stale  time.Duration
+	keyDir string
+}
+
+func WithStale(d time.Duration) IssuerOption { return func(o *issuerOptions) { o.stale = d } }
+
+func WithKeyDir(dir string) IssuerOption { return func(o *issuerOptions) { o.keyDir = dir } }
+
 type Issuers struct {
+	opts   issuerOptions
 	local  map[string]*issuer
 	scopes map[string]string
 	client *http.Client
@@ -236,13 +249,16 @@ type issuer struct {
 	now      func() time.Time
 }
 
-func NewIssuers(cfgs []config.IssuerConfig, client *http.Client, now func() time.Time) (*Issuers, error) {
+func NewIssuers(cfgs []config.IssuerConfig, client *http.Client, now func() time.Time, opts ...IssuerOption) (*Issuers, error) {
 	if now == nil {
 		now = time.Now
 	}
 	is := &Issuers{local: map[string]*issuer{}, scopes: map[string]string{}, client: client, now: now}
+	for _, o := range opts {
+		o(&is.opts)
+	}
 	for _, cfg := range cfgs {
-		iss, err := newIssuer(cfg, client, now)
+		iss, err := newIssuer(cfg, client, now, is.opts)
 		if err != nil {
 			return nil, err
 		}
@@ -288,7 +304,7 @@ func (is *Issuers) SetTroupe(cfgs []config.IssuerConfig) error {
 			errs = append(errs, err)
 			continue
 		}
-		iss, err := newIssuer(cfg, is.client, is.now)
+		iss, err := newIssuer(cfg, is.client, is.now, is.opts)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("troupe %w", err))
 			continue
@@ -319,19 +335,29 @@ func checkTroupeClients(cfg config.IssuerConfig) error {
 
 func (is *Issuers) Empty() bool { return len(is.set.Load().byURL) == 0 }
 
-func newIssuer(cfg config.IssuerConfig, client *http.Client, now func() time.Time) (*issuer, error) {
+func newIssuer(cfg config.IssuerConfig, client *http.Client, now func() time.Time, o issuerOptions) (*issuer, error) {
 	scope, err := IssuerScope(cfg.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("authz.issuers: %w", err)
 	}
-	v, err := bearer.NewVerifier(bearer.Config{
+	vcfg := bearer.Config{
 		Issuer:   cfg.Issuer,
 		JWKSURL:  cfg.JWKS,
 		Audience: cfg.Audience,
 		Types:    cfg.Types,
 		HTTP:     client,
 		Now:      now,
-	})
+	}
+	if o.stale > 0 {
+		vcfg.MaxStale = o.stale
+		vcfg.OnStale = func(err error) {
+			slog.Warn("authz: issuer unreachable; verifying on the last good keys", "issuer", cfg.Issuer, "stale_for", o.stale.String(), "err", err)
+		}
+	}
+	if o.keyDir != "" && o.stale > 0 {
+		vcfg.Store = &fileKeyStore{path: filepath.Join(o.keyDir, scopeFileName(scope)+".json")}
+	}
+	v, err := bearer.NewVerifier(vcfg)
 	if err != nil {
 		return nil, fmt.Errorf("authz.issuers %s: %w", cfg.Issuer, err)
 	}
@@ -340,7 +366,10 @@ func newIssuer(cfg config.IssuerConfig, client *http.Client, now func() time.Tim
 		if cfg.Userinfo == "" {
 			return nil, fmt.Errorf("authz.issuers %s: users need a userinfo endpoint", cfg.Issuer)
 		}
-		ui := &bearer.Userinfo{URL: cfg.Userinfo, HTTP: client, Now: now}
+		ui := &bearer.Userinfo{URL: cfg.Userinfo, StaleFor: o.stale, HTTP: client, Now: now}
+		if o.keyDir != "" && o.stale > 0 {
+			ui.Store = &fileSubjectStore{path: filepath.Join(o.keyDir, scopeFileName(scope)+".subjects.json")}
+		}
 		for _, id := range cfg.Users {
 			byClient[id] = ui
 		}

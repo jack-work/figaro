@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -388,6 +389,10 @@ func apiKeyGrants(recs map[string]troupe.APIKeyRecord) []authz.APIKeyGrant {
 	return out
 }
 
-func newIssuers(cfgs []config.IssuerConfig) (*authz.Issuers, error) {
-	return authz.NewIssuers(cfgs, &http.Client{Timeout: 5 * time.Second}, nil)
+func newIssuers(cfg config.AuthzConfig, stateDir string) (*authz.Issuers, error) {
+	stale, err := cfg.IssuerStaleFor()
+	if err != nil {
+		return nil, err
+	}
+	return authz.NewIssuers(cfg.Issuers, &http.Client{Timeout: 5 * time.Second}, nil, authz.WithStale(stale), authz.WithKeyDir(filepath.Join(stateDir, "issuers")))
 }

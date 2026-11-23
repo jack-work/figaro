@@ -442,7 +442,7 @@ func Run() {
 	a.Policies.SetBoxesRequiringClaim(loaded.BoxesRequiringClaim())
 	a.Policies.SetEnforcement(authz.EnforcementOf(loaded.Config.Authz))
 	a.Policies.SetIssuerScopes(authz.IssuerScopes(loaded.Config.Authz))
-	if a.Issuers, err = newIssuers(loaded.Config.Authz.Issuers); err != nil {
+	if a.Issuers, err = newIssuers(loaded.Config.Authz, boot.StateDir()); err != nil {
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)
 	}
