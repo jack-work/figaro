@@ -41,7 +41,6 @@ type Config struct {
 	Wire    WireConfig    `toml:"wire"`
 	Store   StoreConfig   `toml:"store"`
 	Memory  MemoryConfig  `toml:"memory"`
-	Models  ModelsConfig  `toml:"models"`
 	Door    DoorConfig    `toml:"door"`
 	Quote   QuoteConfig   `toml:"quote"`
 	Authz   AuthzConfig   `toml:"authz"`
@@ -207,12 +206,7 @@ type MemoryConfig struct {
 	FormPatchWindowKB *int `toml:"form_patch_window_kb"`
 }
 
-type ModelsConfig struct {
-	PollMinutes *int `toml:"poll_minutes"`
-}
-
 const (
-	defaultModelsPoll    = 6 * time.Hour
 	defaultDormantAfter  = 15 * time.Minute
 	defaultSweepInterval = 2 * time.Minute
 	defaultKeepalive     = 24 * time.Hour
@@ -248,16 +242,6 @@ func (l *Loaded) DormantAfter() time.Duration {
 		return 0
 	}
 	return time.Duration(*l.cfg().Memory.DormantAfterMinutes) * time.Minute
-}
-
-func (l *Loaded) ModelsPoll() time.Duration {
-	if l.cfg().Models.PollMinutes == nil {
-		return defaultModelsPoll
-	}
-	if *l.cfg().Models.PollMinutes <= 0 {
-		return 0
-	}
-	return time.Duration(*l.cfg().Models.PollMinutes) * time.Minute
 }
 
 func (l *Loaded) ReapedGrace() time.Duration {
@@ -1145,6 +1129,9 @@ func load(configDir string) (*Loaded, error) {
 	if err := cfg.validateAngelus(); err != nil {
 		return nil, fmt.Errorf("%s: %w", configPath, err)
 	}
+	if err := refuseModelsPoll(md); err != nil {
+		return nil, fmt.Errorf("%s: %w", configPath, err)
+	}
 	if err := refuseUnknownWorkerKeys(md); err != nil {
 		return nil, fmt.Errorf("%s: %w", configPath, err)
 	}
@@ -1152,6 +1139,9 @@ func load(configDir string) (*Loaded, error) {
 		return nil, fmt.Errorf("%s: %w", configPath, err)
 	}
 	l := &Loaded{Config: cfg, ConfigDir: configDir, ConfigPath: configPath}
+	if err := l.validateCatalogRefresh(); err != nil {
+		return nil, err
+	}
 	if err := cfg.refuseWhatAPoolDaemonCannotHold(md, l.ListProviders(), l.serviceTokenOf); err != nil {
 		return nil, fmt.Errorf("%s: %w", configPath, err)
 	}

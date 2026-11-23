@@ -171,7 +171,7 @@ func TestFailureIsRecordedAndRetriedOnlyAfterTheWindow(t *testing.T) {
 	clk := newClock()
 	c := New(Config{
 		Build: func(string) (provider.Provider, error) { builds.Add(1); return fp, nil },
-		Now:   clk.Now, TTL: time.Hour, Retry: 10 * time.Minute,
+		Now:   clk.Now, Interval: fixedInterval(time.Hour), Retry: 10 * time.Minute,
 	})
 
 	c.Want("p", "m")
@@ -228,7 +228,7 @@ func TestFreshEntriesAreNotRefetched(t *testing.T) {
 	var calls atomic.Int32
 	fp := &fakeProvider{calls: &calls, list: []provider.ModelInfo{{ID: "m", Entry: models.Entry{Context: models.Context{Default: 100}}}}}
 	clk := newClock()
-	c := New(Config{Build: func(string) (provider.Provider, error) { return fp, nil }, Now: clk.Now, TTL: time.Hour})
+	c := New(Config{Build: func(string) (provider.Provider, error) { return fp, nil }, Now: clk.Now, Interval: fixedInterval(time.Hour)})
 
 	c.Want("p", "m")
 	waitFor(t, func() bool { return limitOf(c, "p", "m") == 100 })
@@ -251,7 +251,7 @@ func TestAnUnchangedRefreshTouchesOnlyTheStamp(t *testing.T) {
 	var calls atomic.Int32
 	fp := &fakeProvider{calls: &calls, list: []provider.ModelInfo{{ID: "a", Entry: models.Entry{Context: models.Context{Default: 1}}}, {ID: "b", Entry: models.Entry{Context: models.Context{Default: 2}}}}}
 	clk := newClock()
-	c := New(Config{Build: func(string) (provider.Provider, error) { return fp, nil }, Now: clk.Now, TTL: time.Hour})
+	c := New(Config{Build: func(string) (provider.Provider, error) { return fp, nil }, Now: clk.Now, Interval: fixedInterval(time.Hour)})
 	c.Want("p", "a")
 	waitFor(t, func() bool { return limitOf(c, "p", "b") == 2 })
 	waitFor(t, func() bool { return !c.inflight("p") })
@@ -412,20 +412,50 @@ func perProvider(fps map[string]*fakeProvider) Builder {
 	}
 }
 
-// The daemon lists every configured provider on its own clock, so a reader
-// never waits on a provider: nobody has to want a model first.
-func TestThePollListsEveryProviderWithoutAWant(t *testing.T) {
+func fixedInterval(d time.Duration) func(string) time.Duration {
+	return func(string) time.Duration { return d }
+}
+
+type ticks chan chan time.Time
+
+func (t ticks) after(time.Duration) <-chan time.Time {
+	ch := make(chan time.Time, 1)
+	t <- ch
+	return ch
+}
+
+// The daemon lists every configured provider once its entry outlives that
+// provider's interval, so a reader never waits on a provider: nobody has to want
+// a model first.
+func TestTheRunListsEachProviderOnItsOwnInterval(t *testing.T) {
+	clk := newClock()
 	a := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "a1", Entry: models.Entry{Context: models.Context{Default: 100}}}}}
 	b := &fakeProvider{calls: new(atomic.Int32), list: []provider.ModelInfo{{ID: "b1", Entry: models.Entry{Context: models.Context{Default: 200}}}}}
+	every := map[string]time.Duration{"a": 2 * time.Minute, "b": time.Hour}
+	tk := make(ticks)
 	c := New(Config{
 		Build:     perProvider(map[string]*fakeProvider{"a": a, "b": b}),
 		Providers: func() []string { return []string{"a", "b"} },
-		Poll:      20 * time.Millisecond,
+		Interval:  func(name string) time.Duration { return every[name] },
+		Now:       clk.Now,
+		After:     tk.after,
 	})
 	runCatalog(t, c)
-	waitFor(t, func() bool { return a.calls.Load() >= 3 && b.calls.Load() >= 3 })
+	tick := <-tk
+	waitFor(t, func() bool { return a.calls.Load() == 1 && b.calls.Load() == 1 })
 	require.Equal(t, 100, limitOf(c, "a", "a1"))
 	require.Equal(t, 200, limitOf(c, "b", "b1"))
+
+	clk.advance(time.Minute)
+	tick <- clk.Now()
+	tick = <-tk
+	require.Equal(t, int32(1), a.calls.Load())
+
+	clk.advance(90 * time.Second)
+	tick <- clk.Now()
+	<-tk
+	waitFor(t, func() bool { return a.calls.Load() == 2 })
+	require.Equal(t, int32(1), b.calls.Load())
 }
 
 // A restart lists only what the snapshot holds stale; a fresh provider waits for
@@ -448,7 +478,7 @@ func TestStartListsOnlyStaleProviders(t *testing.T) {
 	c := New(Config{
 		Build:     perProvider(map[string]*fakeProvider{"fresh": fresh, "stale": stale}),
 		Providers: func() []string { return []string{"fresh", "stale", "never"} },
-		Poll:      6 * time.Hour,
+		Interval:  fixedInterval(6 * time.Hour),
 		Form:      st.reopen(t),
 		Now:       clk.Now,
 	})
@@ -609,4 +639,33 @@ func TestCatalogOffProviderRecordsStateAndUnconfiguredPresetIsPruned(t *testing.
 	require.True(t, hasConfigured)
 	_, hasWanted := models.Lookup(c.Snapshot(), "tdf-claude", "custom-outfit-model")
 	require.True(t, hasWanted)
+}
+
+func TestAFailingProviderIsRetriedOnlyAfterTheRetryWindowNotEveryTick(t *testing.T) {
+	clk := newClock()
+	fp := &fakeProvider{calls: new(atomic.Int32), err: errors.New("down")}
+	tk := make(ticks)
+	c := New(Config{
+		Build:     perProvider(map[string]*fakeProvider{"p": fp}),
+		Providers: func() []string { return []string{"p"} },
+		Interval:  fixedInterval(time.Minute),
+		Retry:     10 * time.Minute,
+		Now:       clk.Now,
+		After:     tk.after,
+	})
+	runCatalog(t, c)
+	tick := <-tk
+	waitFor(t, func() bool { return fp.calls.Load() == 1 })
+
+	for i := 0; i < 3; i++ {
+		clk.advance(2 * time.Minute)
+		tick <- clk.Now()
+		tick = <-tk
+	}
+	require.Equal(t, int32(1), fp.calls.Load())
+
+	clk.advance(5 * time.Minute)
+	tick <- clk.Now()
+	<-tk
+	waitFor(t, func() bool { return fp.calls.Load() == 2 })
 }

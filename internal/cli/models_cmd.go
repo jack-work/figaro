@@ -37,7 +37,7 @@ func runModels(loaded *config.Loaded, refresh, asJSON bool) error {
 	if err != nil {
 		return fmt.Errorf("models: %w", err)
 	}
-	listings := catalogListings(catalog, time.Now())
+	listings := catalogListings(catalog, time.Now(), loaded.CatalogRefresh)
 	if asJSON {
 		if listings == nil {
 			listings = []providerListing{}

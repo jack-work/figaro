@@ -76,7 +76,7 @@ func TestPrintModelsShowsEveryProvidersStateThenTheTable(t *testing.T) {
 	old := stdout
 	stdout = &buf
 	defer func() { stdout = old }()
-	printModels(catalogListings(snap, modelsNow), modelsNow)
+	printModels(catalogListings(snap, modelsNow, func(string) time.Duration { return 24 * time.Hour }), modelsNow)
 	want := strings.Join([]string{
 		"anthropic  failed 3m ago: no credential",
 		"copilot    listed 2h ago",
@@ -105,7 +105,7 @@ func TestPrintModelsSanitisesWhatAProviderSays(t *testing.T) {
 	old := stdout
 	stdout = &buf
 	defer func() { stdout = old }()
-	printModels(catalogListings(snap, modelsNow), modelsNow)
+	printModels(catalogListings(snap, modelsNow, func(string) time.Duration { return 24 * time.Hour }), modelsNow)
 	out := buf.String()
 	if strings.ContainsAny(out, "\x1b\x07\r") {
 		t.Fatalf("control bytes reached the terminal: %q", out)
@@ -138,7 +138,7 @@ func TestPrintModelsShowsCatalogOffWithoutFailedLines(t *testing.T) {
 	old := stdout
 	stdout = &buf
 	defer func() { stdout = old }()
-	printModels(catalogListings(snap, modelsNow), modelsNow)
+	printModels(catalogListings(snap, modelsNow, func(string) time.Duration { return 24 * time.Hour }), modelsNow)
 	out := buf.String()
 	if strings.Contains(out, "failed") {
 		t.Fatalf("catalog-off provider printed failed:\n%s", out)

@@ -162,6 +162,18 @@ aria's history keeps its images.
 3. `routing.default`.
 4. Otherwise the send is refused, and the error names all three.
 
+## How often a list is read
+
+The daemon lists each configured provider again once its `@models` entry is
+older than that provider's `catalog_refresh`: a Go duration in its file
+(`"15m"`, `"6h"`), default `"24h"`, at least `"1m"`. A zero, negative, shorter
+or unparsable value refuses the config at load, naming the file. The daemon
+checks every 30 seconds, nobody has to ask for a model, and a failed listing is
+retried after ten minutes, not on every check. A gateway whose catalog changes
+in place (a route's context window, say) wants a short interval; `figaro
+models --refresh` lists at once. `[models] poll_minutes` is gone and refused at
+load.
+
 ## The file: `providers/<name>.toml`
 
 ```toml
@@ -173,6 +185,7 @@ text_only     = true                        # every model: send images as a text
 max_request_bytes = 8323072                 # the gateway's body cap, less headroom
 headers       = { "X-Team" = "figaro" }     # every request, every transport
 send_figaro_id = true                       # Figaro-Id: <aria id> on every model request
+catalog_refresh = "15m"                     # how old its @models entry may get; default "24h"
 
 [transport_headers.responses]               # one transport only
 "X-Experiment" = "1"

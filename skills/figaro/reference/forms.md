@@ -503,10 +503,10 @@ along with any key that names no provider; the next listing writes it back.
 
 | fills it | when |
 |---|---|
-| the poll | every configured provider (the provider files, else every built-in), every `[models] poll_minutes` (default 360, ±10%; 0 turns it off) |
-| daemon start | each provider whose listing is older than the poll interval, or never landed |
+| the daemon, every 30 s | each configured provider (the provider files, else every built-in) whose entry is older than its `catalog_refresh` |
+| daemon start | each provider whose listing is older than its `catalog_refresh`, or never landed |
 | `figaro provider login` / `logout`, `figaro models --refresh` | that provider, or all of them, at once (`angelus.models.refresh`, an admin verb; `--refresh` waits up to 35 s) |
-| a want for a pair it lacks, or a provider older than a day | the daemon refreshes that provider in the background; a want never waits |
+| a want for a pair it lacks, or a provider older than its `catalog_refresh` | the daemon refreshes that provider in the background; a want never waits |
 | a failed refresh | records `error` and `attempted_at`, keeps the last good entries, retries after ten minutes |
 
 The daemon wants the pair on its own whenever it reads a figaro's metrics, and a
