@@ -10,13 +10,14 @@ import (
 // Store deduplicates parent references when many forks share an ancestor:
 // opening a child through it reuses the already-open parent.
 type Store struct {
-	mu     sync.Mutex
-	logs   map[string]*Log
-	closed bool
+	mu       sync.Mutex
+	logs     map[string]*Log
+	inflight map[string]chan struct{}
+	closed   bool
 }
 
 func NewStore() *Store {
-	return &Store{logs: make(map[string]*Log)}
+	return &Store{logs: make(map[string]*Log), inflight: make(map[string]chan struct{})}
 }
 
 // Open resolves the parent transitively through the same Store; concurrent
@@ -27,19 +28,35 @@ func (s *Store) Open(dir string, opts Options) (*Log, error) {
 		return nil, err
 	}
 
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return nil, errors.New("log store is closed")
-	}
-	if l, ok := s.logs[abs]; ok {
-		if !l.absent || !dirExists(abs) {
+	for {
+		s.mu.Lock()
+		if s.closed {
 			s.mu.Unlock()
-			return l, nil
+			return nil, errors.New("log store is closed")
 		}
-		delete(s.logs, abs)
+		if l, ok := s.logs[abs]; ok {
+			if !l.absent || !dirExists(abs) {
+				s.mu.Unlock()
+				return l, nil
+			}
+			delete(s.logs, abs)
+		}
+		wait, busy := s.inflight[abs]
+		if !busy {
+			done := make(chan struct{})
+			s.inflight[abs] = done
+			s.mu.Unlock()
+			defer func() {
+				s.mu.Lock()
+				delete(s.inflight, abs)
+				s.mu.Unlock()
+				close(done)
+			}()
+			break
+		}
+		s.mu.Unlock()
+		<-wait
 	}
-	s.mu.Unlock()
 
 	// Resolve the parent through the store unless one was injected.
 	if opts.Parent == nil {
@@ -65,12 +82,10 @@ func (s *Store) Open(dir string, opts Options) (*Log, error) {
 	}
 
 	s.mu.Lock()
-	// Re-check under the lock in case a concurrent Open landed first.
-	if existing, ok := s.logs[abs]; ok && (!existing.absent || l.absent) {
+	if s.closed {
 		s.mu.Unlock()
-		// Close our duplicate. The shared instance wins.
 		_ = l.Close()
-		return existing, nil
+		return nil, errors.New("log store is closed")
 	}
 	s.logs[abs] = l
 	s.mu.Unlock()
