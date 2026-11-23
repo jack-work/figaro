@@ -18,6 +18,17 @@ Verbs: `read`, `listen`, `send`, `fork`, `set`, `delete`, `create`, `mint`,
 `kill`, `adopt`, `decide`, `use`, and a few more; `*` is every figaro verb.
 `write` is another spelling of `set`.
 
+`list` shows a figaro's row without opening it. `list:*` (or `list:lineage:<id>`,
+`list:aria:<id>`) puts the figaro in `figaro list`, `@arias`, `@recent` and
+`@topology`, as a bare row: id, handle, state, mantra, created and last-active
+times, retired and reaped marks, its place in the fork tree, and its role
+names. It never shows the transcript, any other form key, the queue, cwd,
+model, token counts or bound pids, and `read`, `figaro.form`, `follow`,
+`queued` and `send` on it answer "not found". `read` on a figaro already lists
+it in full, so `list:*` with `read:lineage:<id>` lists everything and reads
+that lineage only. A list grant takes no `#key` glob, and `read` does not
+imply `list` in the grant algebra (a listing checks both).
+
 Objects you will meet:
 
 | object | reaches |

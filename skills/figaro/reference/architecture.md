@@ -325,7 +325,8 @@ in on a send.
 unclassified method fails `TestEveryMethodHasAVerb`), checked on
 `aria:<id>` when the request names a figaro and on the daemon otherwise.
 `figaro.hello` is exempt; `figaro.list` is served and drops the rows the
-caller cannot read before it pages, and `node.resolve` answers only the refs
+caller may neither read nor list before it pages (a row held by `list` alone
+comes back bare), and `node.resolve` answers only the refs
 the caller may read. A call that reaches a second resource
 checks it too: `study` reads its form, `cast` sets its role, `lineage`
 reads `against`, `kill -r` needs `kill` on every figaro it takes, and
