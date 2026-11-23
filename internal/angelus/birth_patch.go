@@ -12,6 +12,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/outfit"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
@@ -173,6 +174,38 @@ func withQuotaBirthDefault(dress form.Patch) form.Patch {
 		return dress
 	}
 	return form.Merge(dress, form.Build(form.Snapshot{}, map[string]json.RawMessage{form.FanoutQuotaKey: json.RawMessage(`0`)}, nil))
+}
+
+func boundChildFanout(dress form.Patch, inherited form.Snapshot) form.Patch {
+	if form.IsLog(inherited.Apply(dress)) {
+		return form.Merge(dress, form.Build(form.Snapshot{}, map[string]json.RawMessage{
+			form.FanoutMaxChildrenKey: json.RawMessage(`0`),
+			form.FanoutQuotaKey:       json.RawMessage(`0`),
+		}, nil))
+	}
+	return withFanoutBirthDefault(dress)
+}
+
+func (h *handlers) mintedChildFanout(minter string) (form.Patch, error) {
+	snap, err := h.angelus.Backend.FormState(minter)
+	if err != nil {
+		return form.Patch{}, fmt.Errorf("the board of %s cannot be read for its child policy: %w", minter, err)
+	}
+	policy, err := form.ChildPolicyPatch(snap, true)
+	if p := h.angelus.Policies; !p.Enforces(authz.ChildPolicy) && (err != nil || !policy.IsIdentity()) {
+		p.WouldRefuse(authz.ChildPolicy, birthPolicyNote(minter, policy, err))
+		return form.Patch{}, nil
+	}
+	if err != nil {
+		return form.Patch{}, err
+	}
+	set := map[string]json.RawMessage{}
+	for _, key := range fanoutBirthKeys {
+		if e, ok := policy.Entry(key); ok && !e.IsRemoval() {
+			set[key] = e.New
+		}
+	}
+	return form.Build(form.Snapshot{}, set, nil), nil
 }
 
 func removesFanoutBirthKey(p form.Patch) bool {
