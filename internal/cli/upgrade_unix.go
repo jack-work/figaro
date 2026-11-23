@@ -339,7 +339,7 @@ func runUpgrade(o upgradeOptions) {
 	}
 	unit := governingUnit()
 	if unit != nil {
-		if err := unitMayServe(unit, to, os.Getenv); err != nil {
+		if err := unitMayServe(unit, to); err != nil {
 			die("%s", err)
 		}
 	}

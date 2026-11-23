@@ -263,27 +263,19 @@ func TestUpgradeServesOnlyThroughAUnitRunningTheTarget(t *testing.T) {
 	if err := os.Symlink(to, stable); err != nil {
 		t.Fatal(err)
 	}
-	none := func(string) string { return "" }
 	for _, tc := range []struct {
-		name   string
-		unit   daemonUnit
-		getenv func(string) string
-		want   string
+		name string
+		unit daemonUnit
+		want string
 	}{
-		{"ExecStart is the target", daemonUnit{Name: "f.service", Scope: "user", ExecPath: to}, none, ""},
-		{"ExecStart is a link to the target", daemonUnit{Name: "f.service", Scope: "user", ExecPath: stable}, none, ""},
-		{"ExecStart is another build", daemonUnit{Name: "f.service", Scope: "user", ExecPath: old}, none, "runs " + old + ", not " + to},
-		{"a stale unit file is named", daemonUnit{Name: "f.service", Scope: "user", ExecPath: old, NeedReload: true}, none, "daemon-reload"},
-		{"a system unit is the operator's", daemonUnit{Name: "f.service", Scope: "system", ExecPath: to}, none, "sudo systemctl restart f.service"},
-		{"no self spawn starts nothing", daemonUnit{Name: "f.service", Scope: "user", ExecPath: to}, func(k string) string {
-			if k == "FIGARO_NO_SELF_SPAWN" {
-				return "1"
-			}
-			return ""
-		}, "FIGARO_NO_SELF_SPAWN"},
+		{"ExecStart is the target", daemonUnit{Name: "f.service", Scope: "user", ExecPath: to}, ""},
+		{"ExecStart is a link to the target", daemonUnit{Name: "f.service", Scope: "user", ExecPath: stable}, ""},
+		{"ExecStart is another build", daemonUnit{Name: "f.service", Scope: "user", ExecPath: old}, "runs " + old + ", not " + to},
+		{"a stale unit file is named", daemonUnit{Name: "f.service", Scope: "user", ExecPath: old, NeedReload: true}, "daemon-reload"},
+		{"a system unit is the operator's", daemonUnit{Name: "f.service", Scope: "system", ExecPath: to}, "sudo systemctl restart f.service"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := unitMayServe(&tc.unit, to, tc.getenv)
+			err := unitMayServe(&tc.unit, to)
 			switch {
 			case tc.want == "" && err != nil:
 				t.Fatalf("refused: %v", err)
