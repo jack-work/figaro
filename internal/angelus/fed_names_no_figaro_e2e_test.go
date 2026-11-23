@@ -20,7 +20,7 @@ func TestAListByWhoReadsNoFigaroAsksNoPeer(t *testing.T) {
 
 	decider, token := a.asHolding("decider")
 	resp, err := decider.List(ctx)
-	require.ErrorContains(t, err, "holds no grant that reads a figaro", "listed: %+v", resp)
+	require.ErrorContains(t, err, "holds no grant that reads or lists a figaro", "listed: %+v", resp)
 	require.Zero(t, b.admitted(token), "the decider's bearer reached the peer")
 
 	probe, probeToken := a.asHolding("probe")
