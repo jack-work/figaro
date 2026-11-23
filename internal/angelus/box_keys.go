@@ -798,6 +798,11 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 	if patch == nil || patch.IsIdentity() {
 		return nil
 	}
+	if method != rpc.MethodCast {
+		if err := h.refuseRevivalOverMaxChildren(id, *patch); err != nil {
+			return err
+		}
+	}
 	at, err := h.angelus.Backend.FormAt(id)
 	if err != nil {
 		return err

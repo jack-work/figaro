@@ -1,10 +1,13 @@
 package angelus
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -143,4 +146,64 @@ func TestAChildPastItsTTLFreesItsSlotBeforeTheSweepTakesIt(t *testing.T) {
 	}
 	requireSlotFree(t, hs, top, "the child's ttl ran out")
 	requireCacheMatchesTree(t, hs, "a ttl running out")
+}
+
+func TestUnretiringAChildIsRefusedWhileItsParentIsFull(t *testing.T) {
+	hs, b, top, kid := oneSlotParent(t)
+	retireAria(t, b, kid)
+	other, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unretire := form.Build(form.Snapshot{}, nil, []string{store.SystemRetiredKey})
+	if _, err := ownerSet(t, hs, kid, unretire); err == nil {
+		t.Fatal("unretiring past max_children 1 was admitted")
+	}
+	if n := hs.h.angelus.liveChildCount(top); n != 1 {
+		t.Fatalf("a refused unretire left %d children counted, want 1", n)
+	}
+	if err := callMethod(t, hs, rpc.MethodKill, rpc.KillRequest{FigaroID: other.Alternative}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ownerSet(t, hs, kid, unretire); err != nil {
+		t.Fatalf("unretiring into a free slot was refused: %v", err)
+	}
+	if n := hs.h.angelus.liveChildCount(top); n != 1 {
+		t.Fatalf("an unretired child counts %d, want 1", n)
+	}
+	requireCacheMatchesTree(t, hs, "an unretire")
+}
+
+func TestLengtheningARunOutTTLIsRefusedWhileItsParentIsFull(t *testing.T) {
+	hs, b, top, kid := oneSlotParent(t)
+	applyKeys(t, b, kid, map[string]any{store.SystemTTLKey: "1h"})
+	meta, err := b.Meta(kid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta.CreatedAtMS = time.Now().Add(-2 * time.Hour).UnixMilli()
+	if err := b.SetMeta(kid, meta); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := callForkAsFigaro(t, hs, top, rpc.ForkRequest{FigaroID: top}); err != nil {
+		t.Fatalf("the run-out child still held the slot: %v", err)
+	}
+	raw, _ := json.Marshal("48h")
+	longer := form.Build(form.Snapshot{}, map[string]json.RawMessage{store.SystemTTLKey: raw}, nil)
+	if _, err := ownerSet(t, hs, kid, longer); err == nil {
+		t.Fatal("lengthening a run-out ttl past max_children 1 was admitted")
+	}
+	if n := hs.h.angelus.liveChildCount(top); n != 1 {
+		t.Fatalf("a refused ttl write left %d children counted, want 1", n)
+	}
+}
+
+func ownerSet(t *testing.T, hs *Handlers, id string, p form.Patch) (any, error) {
+	t.Helper()
+	raw, _ := json.Marshal(rpc.SetRequest{Patch: p})
+	raw, err := rpc.WithAria(raw, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hs.Map[rpc.MethodSet](inProcess(context.Background()), raw)
 }

@@ -93,6 +93,13 @@ func (m *AriaMeta) CountsAt(nowMS int64) bool {
 	return m.RetiredAtMS == 0 && m.ReapedAtMS == 0 && !(m.TTLMS > 0 && m.CreatedAtMS+m.TTLMS <= nowMS)
 }
 
+func (m AriaMeta) AfterPatch(id string, patch form.Patch, nowMS int64) AriaMeta {
+	if c, ok := lifetimeOf(id, patch); ok {
+		c.applyTo(&m, nowMS)
+	}
+	return m
+}
+
 func (m *AriaMeta) Lifetime() Lifetime {
 	return Lifetime{TTLMS: m.TTLMS, KeepaliveMS: m.KeepaliveMS, RetiredAtMS: m.RetiredAtMS, RetiredReason: m.RetiredReason,
 		LastAccessMS: m.LastAccessMS, ReapedAtMS: m.ReapedAtMS, ReapedRoot: m.ReapedRoot,
