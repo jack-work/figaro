@@ -25,13 +25,9 @@ func sameExecutable(a, b string) bool {
 	return os.SameFile(sa, sb)
 }
 
-func unitMayServe(u *daemonUnit, to string, getenv func(string) string) error {
+func unitMayServe(u *daemonUnit, to string) error {
 	if u.Scope != "user" {
 		return fmt.Errorf("%s is a system unit, so figaro upgrade does not restart it: point its ExecStart at %s, then run sudo systemctl restart %s",
-			u.Name, to, u.Name)
-	}
-	if envTruthy(getenv("FIGARO_NO_SELF_SPAWN")) {
-		return fmt.Errorf("FIGARO_NO_SELF_SPAWN is set, so figaro starts nothing, %s included: point its ExecStart at %s, then run systemctl --user restart %s",
 			u.Name, to, u.Name)
 	}
 	if sameExecutable(u.ExecPath, to) {
