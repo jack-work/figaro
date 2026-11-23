@@ -306,7 +306,7 @@ func (b *XwalBackend) mirrorLifetime(id string, c lifetimeChange) {
 		return
 	}
 	b.ttlNoted(id, &meta)
-	if c.retired != nil || c.reapedRoot != nil {
+	if c.retired != nil || c.reapedRoot != nil || c.ttl != nil {
 		b.livenessChanged(id, &meta)
 	}
 	if c.quotaSpoke || c.aliasSpoke {

@@ -66,16 +66,35 @@ func (h *handlers) refuseRestoreOverMaxChildren(group reapedGroup) error {
 		}
 		returning[h.angelus.drawnParentOf(id)]++
 	}
+	return h.refuseReturningOverMaxChildren("restoring", returning)
+}
+
+func (h *handlers) refuseReturningOverMaxChildren(verb string, returning map[string]int) error {
 	for parent, n := range returning {
 		max, capped, err := h.angelus.fanoutLimit(parent)
 		if err != nil {
-			return fmt.Errorf("the limit of %s cannot be read to admit the restore: %w", parent, err)
+			return fmt.Errorf("the limit of %s cannot be read to admit %s: %w", parent, verb, err)
 		}
 		if held := h.angelus.liveChildCount(parent); capped && held+n > max {
-			return fmt.Errorf("restoring %d would put %s over max_children %d with %d live children: %w", n, parent, max, held, maxChildrenRefusal(parent, held, max))
+			return fmt.Errorf("%s %d would put %s over max_children %d with %d live children: %w", verb, n, parent, max, held, maxChildrenRefusal(parent, held, max))
 		}
 	}
 	return nil
+}
+
+func (h *handlers) refuseRevivalOverMaxChildren(id string, patch form.Patch) error {
+	meta, _ := h.angelus.Backend.Meta(id)
+	if meta == nil {
+		return nil
+	}
+	now := time.Now().UnixMilli()
+	if meta.CountsAt(now) {
+		return nil
+	}
+	if after := meta.AfterPatch(id, patch, now); !after.CountsAt(now) {
+		return nil
+	}
+	return h.refuseReturningOverMaxChildren("reviving", map[string]int{h.angelus.drawnParentOf(id): 1})
 }
 
 func (h *handlers) restoreGroup(ctx context.Context, group reapedGroup, keep bool) (rpc.ReapedRestoreResponse, error) {

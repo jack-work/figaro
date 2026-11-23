@@ -48,7 +48,7 @@ func (a *Angelus) DefaultTopologyGuard() authz.TopologyGuard {
 			if len(p.Moves) == 0 {
 				return nil
 			}
-			return a.Policies.Shadow(authz.Quota, a.fanoutCounts().fitsMoves(p.Moves))
+			return a.Policies.Shadow(authz.Quota, a.settledFanout().fitsMoves(p.Moves))
 		},
 		Committed: a.topologyCommitted,
 	}

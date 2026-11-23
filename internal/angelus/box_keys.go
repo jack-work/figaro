@@ -593,7 +593,7 @@ func (h *handlers) refuseQuotaBeyondBudget(ctx context.Context, line lineage, be
 		return err
 	}
 	dropQuotaHold(ctx, line.of)
-	release, err := h.angelus.fanoutCounts().takeCharge(line.of, n, capped, func(err error) error {
+	release, err := h.angelus.settledFanout().takeCharge(line.of, n, capped, func(err error) error {
 		return h.angelus.Policies.Shadow(authz.Quota, fmt.Errorf("%s: %w", form.FanoutQuotaKey, err))
 	})
 	if err != nil {
@@ -797,6 +797,11 @@ func (h *handlers) refuseCallerPatch(ctx context.Context, method, id string, par
 	}
 	if patch == nil || patch.IsIdentity() {
 		return nil
+	}
+	if method != rpc.MethodCast {
+		if err := h.refuseRevivalOverMaxChildren(id, *patch); err != nil {
+			return err
+		}
 	}
 	at, err := h.angelus.Backend.FormAt(id)
 	if err != nil {

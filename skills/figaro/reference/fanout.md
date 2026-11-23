@@ -5,8 +5,10 @@
 A protected form key, same writers as `system.scopes`: the owner sets any
 value, an ancestor figaro sets a descendant's value up to its own, a figaro
 never sets its own. It is an integer count of a figaro's **live** direct
-children in the drawn topology: neither retired nor reaped. Dormant and idle
-children count; they are inventory and can wake.
+children in the drawn topology: neither retired, reaped, nor past its
+`system.ttl`. A child stops counting the moment its ttl runs out, though the
+sweep may keep it on disk through its keepalive. Dormant and idle children
+count; they are inventory and can wake.
 
 Absent means unlimited, for that figaro alone: it does not propagate as
 "unlimited" to anything forked from it.
@@ -23,6 +25,9 @@ The daemon refuses:
   concurrent forks and reparents cannot overfill; nothing is created. The
   refusal names the grant its parent can run:
   `figaro set --id <it> system.fanout.max_children <n>`.
+- a `set` that brings a child back to counting (removing `system.retired`,
+  or lengthening or clearing a `system.ttl` that has run out) when its parent
+  is full, the owner included, as with `figaro reaped restore`.
 - `demote`, `adopt` (the `figaro.accept` consent step), and any other move
   that redraws the topology, when it would leave some node holding more live
   children than its limit. The topology is left exactly as it was.
