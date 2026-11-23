@@ -213,6 +213,7 @@
         valet-vm = import ./nix/tests/valet.nix { inherit pkgs self; };
         house-mode-vm = import ./nix/tests/house-mode.nix { inherit pkgs self; };
         hm-module = import ./nix/tests/hm-module.nix { inherit pkgs self; };
+        hm-daemon-unit-vm = import ./nix/tests/hm-daemon-unit.nix { inherit pkgs self; };
       });
 
       devShells = forAllSystems ({ pkgs }: let
