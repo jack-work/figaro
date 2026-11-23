@@ -285,3 +285,37 @@ func TestAnEmptyEntryComesOnlyFromAnExactSend(t *testing.T) {
 		t.Fatalf("the empty entry counts as a turn: %+v", row)
 	}
 }
+
+func TestAnAriaLogEntryFromAFigaroNamesThatFigaroAsItsSender(t *testing.T) {
+	r := logRig(t, defaultPolicy, nil)
+	log := mintLog(t, r, asOwner())
+	sender, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(rpc.QuaRequest{Text: "from an aria"})
+	params, err := rpc.WithCaller(json.RawMessage(raw), sender.FigaroID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if params, err = rpc.WithAria(params, log); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.h[rpc.MethodQua](asOwner(), params); err != nil {
+		t.Fatalf("a figaro's append: %v", err)
+	}
+	if err := appendTo(t, r, asOwner(), log, "from a shell"); err != nil {
+		t.Fatal(err)
+	}
+	waitLogParts(t, r, log, 2)
+	msgs := entriesInIR(t, r, log)
+	if len(msgs) != 2 {
+		t.Fatalf("%d entries, want 2: %+v", len(msgs), msgs)
+	}
+	if got := msgs[0].Content[0].Sender; got != sender.FigaroID {
+		t.Fatalf("entry from a figaro has sender %q, want its id %q", got, sender.FigaroID)
+	}
+	if got := msgs[1].Content[0].Sender; got != "" {
+		t.Fatalf("entry from a shell has sender %q, want none", got)
+	}
+}
