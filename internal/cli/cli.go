@@ -800,7 +800,7 @@ Folding an outfit onto a LIVE aria is a different act: see
 			}
 			acli := mustConnectAngelus(ld)
 			defer acli.Close()
-			c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			c, cancel := commandContext()
 			defer cancel()
 			resp, err := acli.OutfitReload(c)
 			if err != nil {

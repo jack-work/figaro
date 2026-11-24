@@ -54,7 +54,7 @@ func runRetire(loaded *config.Loaded, idFlag string, args []string, outfits, set
 	var resp *rpc.SetResponse
 	var canonical string
 	WithSessionFor(loaded, id, func(s *Session) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		now := time.Now()
 		patch := retirePatch(d, undo)

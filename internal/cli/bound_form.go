@@ -43,7 +43,7 @@ func (in *interactiveInput) seedBoundForm(gen uint64) {
 	}
 	goSettled(func() {
 		_, version, _ := bound.state()
-		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+		ctx, cancel := commandContext()
 		defer cancel()
 		resp, err := cli.FormSince(ctx, version)
 		if err != nil || !in.current(gen) {

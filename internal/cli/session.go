@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"context"
 	"github.com/jack-work/figaro/sdk"
-	"time"
 
 	"github.com/jack-work/figaro/internal/config"
 )
@@ -43,7 +41,7 @@ func WithAngelusIfRunning(loaded *config.Loaded, fn func(acli *sdk.Angelus) erro
 // WithSessionFor resolves explicit id, else the pid binding.
 func WithSessionFor(loaded *config.Loaded, explicitID string, fn func(s *Session) error) {
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 
 		var ariaID string

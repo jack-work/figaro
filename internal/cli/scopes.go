@@ -1,11 +1,9 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/sdk"
@@ -17,7 +15,7 @@ func runScopes(loaded *config.Loaded, idFlag string, args []string, jsonOut bool
 		nameArg = args[0]
 	}
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		_, f, err := statusRow(ctx, acli, idFlag, nameArg)
 		if err != nil {

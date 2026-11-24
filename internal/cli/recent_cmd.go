@@ -1,13 +1,11 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/config"
@@ -18,7 +16,7 @@ import (
 
 func runRecent(loaded *config.Loaded, limit int, asJSON bool) {
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		resp, err := acli.Form(ctx, rpc.RecentFormID)
 		if err != nil {

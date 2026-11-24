@@ -27,7 +27,7 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 	}
 
 	WithAngelusIfRunning(loaded, func(acli *sdk.Angelus) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 
 		resp, f, err := statusRow(ctx, acli, idFlag, nameArg)
@@ -149,7 +149,7 @@ func runName(loaded *config.Loaded, idFlag string, args []string, more bool) {
 		nameArg = args[0]
 	}
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		_, f, err := statusRow(ctx, acli, idFlag, nameArg)
 		if err != nil {

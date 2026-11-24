@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/jack-work/figaro/internal/boot"
 	"github.com/jack-work/figaro/sdk"
@@ -64,21 +65,25 @@ func isTestBinary(exe string) bool { return boot.IsTestBinary(exe) }
 func ensureAngelus() {
 	refuseOffTape("the daemon")
 	if d := resolveDoor(); d.configured {
-		cli, err := sdk.DialAngelus(d.ep)
+		cli, st, err := dialAnswered(d.ep)
 		if err != nil {
 			die("troupe %s: %s\n"+
 				"  a troupe is configured, so figaro does not start a daemon", d.label, err)
 		}
-		checkTroupeBuild(cli, d.label)
+		checkTroupeBuild(st, d.label)
 		cli.Close()
 		return
 	}
 	sockPath := boot.AngelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
-	if cli, err := sdk.DialAngelus(ep); err == nil {
-		checkDaemonBuild(cli)
+	cli, st, err := dialAnswered(ep)
+	if err == nil {
+		checkDaemonBuild(st)
 		cli.Close()
 		return
+	}
+	if !errors.Is(err, errNotListening) {
+		die("%s", err)
 	}
 
 	exe, err := os.Executable()
@@ -255,11 +260,8 @@ func attendNew(ctx context.Context, acli *sdk.Angelus, id string) {
 
 // A daemon from another revision renders nothing rather than failing loudly, so
 // the mismatch is named.
-func checkDaemonBuild(cli *sdk.Angelus) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	st, err := cli.Status(ctx)
-	if err != nil || st == nil {
+func checkDaemonBuild(st *rpc.StatusResponse) {
+	if st == nil {
 		return
 	}
 	d := identityOf(st)
@@ -301,11 +303,8 @@ func checkDaemonBuild(cli *sdk.Angelus) {
 	sawDaemon("the running angelus", d, mine)
 }
 
-func checkTroupeBuild(cli *sdk.Angelus, label string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	st, err := cli.Status(ctx)
-	if err != nil || st == nil {
+func checkTroupeBuild(st *rpc.StatusResponse, label string) {
+	if st == nil {
 		return
 	}
 	d := identityOf(st)

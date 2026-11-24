@@ -1,12 +1,10 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -73,7 +71,7 @@ func runToggle(loaded *config.Loaded, ariaID, key string) error {
 func defaultOutfitKey(loaded *config.Loaded, key string) (json.RawMessage, error) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := commandContext()
 	defer cancel()
 	snap, err := acli.OutfitForm(ctx, "")
 	if err != nil {
@@ -203,7 +201,7 @@ func runForm(loaded *config.Loaded, ariaID string) {
 			intrinsic, strings.Join(intrinsicNames(), ", "), intrinsicState)
 	}
 	WithSessionFor(loaded, spec, func(s *Session) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		resp, err := s.Figaro.FormOf(ctx, intrinsic)
 		if err != nil {
@@ -355,7 +353,7 @@ func deepDeleteWalk(obj map[string]any, path []string) bool {
 func fetchFormSnapshot(loaded *config.Loaded, ariaID string) form.Snapshot {
 	var snap form.Snapshot
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		if resp, err := s.Figaro.Form(ctx); err == nil {
 			snap = resp.Snapshot
@@ -370,7 +368,7 @@ func mustFetchFormKey(loaded *config.Loaded, ariaID, key string) (json.RawMessag
 	var result json.RawMessage
 	var version uint64
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		resp, err := s.Figaro.Form(ctx)
 		if err != nil {
@@ -419,7 +417,7 @@ func mustCallSet(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVe
 func callSet(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVersion uint64, assert bool) setResult {
 	var result setResult
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		set := s.Figaro.Set
 		if assert {

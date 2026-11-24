@@ -9,7 +9,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -24,7 +23,7 @@ func runGet(loaded *config.Loaded, ariaID string, paths []string, asJSON bool) e
 	}
 	var snap form.Snapshot
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		resp, err := s.Figaro.Form(ctx)
 		if err != nil {
@@ -145,7 +144,7 @@ const cwdKey = "system.cwd"
 func runPwd(loaded *config.Loaded, ariaID string, asJSON bool) error {
 	var dir string
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		resp, err := s.Figaro.Form(ctx)
 		if err != nil {

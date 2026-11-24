@@ -29,7 +29,7 @@ func runModels(loaded *config.Loaded, refresh, asJSON bool) error {
 				fmt.Fprintln(stderrw, "warning: refresh: some providers are still listing; showing what has landed")
 			}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+		ctx, cancel := commandContext()
 		defer cancel()
 		catalog, err = readCatalog(ctx, acli)
 		return nil

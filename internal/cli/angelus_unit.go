@@ -262,11 +262,11 @@ func awaitGoverningUnit() bool {
 	if err := liveUnitWatch(u, !envTruthy(os.Getenv("FIGARO_NO_SELF_SPAWN"))).await(u); err != nil {
 		die("%s", err)
 	}
-	cli, err := sdk.DialAngelus(transport.UnixEndpoint(boot.AngelusSocketPath()))
+	cli, st, err := dialAnswered(transport.UnixEndpoint(boot.AngelusSocketPath()))
 	if err != nil {
-		die("connect angelus: %s", err)
+		die("%s", err)
 	}
-	checkDaemonBuild(cli)
+	checkDaemonBuild(st)
 	cli.Close()
 	return true
 }

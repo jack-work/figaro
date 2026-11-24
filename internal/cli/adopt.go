@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -30,7 +29,7 @@ func runAdopt(loaded *config.Loaded, args []string, asJSON bool) {
 		dieUsage("adopt: want `adopt <parent>`, `adopt accept <parent> <id>` or `adopt refuse <parent> <id>`")
 	}
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		switch verb {
 		case "accept":

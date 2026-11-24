@@ -228,7 +228,7 @@ func relistProvider(name string) {
 		return
 	}
 	defer acli.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	ctx, cancel := commandContext()
 	defer cancel()
 	_, _ = acli.ModelsRefresh(ctx, false, name)
 }

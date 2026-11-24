@@ -94,7 +94,7 @@ func runUpdate(loaded *config.Loaded, args []string) error {
 	if force {
 		ttl = 0
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := commandContext()
 	defer cancel()
 	info := update.Check(ctx, cache, ttl, figaroModule, current)
 

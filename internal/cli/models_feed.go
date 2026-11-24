@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"sync"
 
@@ -57,7 +56,7 @@ func (f *modelsFeed) dial() {
 	if err != nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	ctx, cancel := commandContext()
 	defer cancel()
 	if _, err := acli.Attach(ctx, models.FormID); err != nil {
 		return
@@ -114,7 +113,7 @@ func (f *modelsFeed) resync() {
 		return
 	}
 	_, version, _ := f.mirror.state()
-	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	ctx, cancel := commandContext()
 	defer cancel()
 	resp, err := conn.FormSince(ctx, version)
 	if err != nil {

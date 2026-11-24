@@ -111,10 +111,10 @@ func attendAfterCast(loaded *config.Loaded, roleID string, minted, stay bool) {
 	if stay || !minted || roleID == "" || bindingDisabled() {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
+	ctx, cancel := commandContext()
+	defer cancel()
 	if err := bindBinding(ctx, acli, shellPID, roleID, 0); err != nil {
 		fmt.Fprintf(stderrw, "cast: minted %s but could not attend it: %s\n", ariaName(roleID), err)
 		return

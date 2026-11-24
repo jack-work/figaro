@@ -28,13 +28,11 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-const commandTimeout = 10 * time.Second
-
 // commandAsync runs fn off the input goroutine; the note is a verb's only
 // feedback channel.
 func (in *interactiveInput) commandAsync(fn func(context.Context) (string, error)) {
 	goSettled(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+		ctx, cancel := commandContext()
 		defer cancel()
 		msg, err := fn(withProgress(ctx, in.note))
 		if err != nil {
@@ -950,7 +948,7 @@ func (in *interactiveInput) seedMetrics(gen uint64) {
 		return
 	}
 	goSettled(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+		ctx, cancel := commandContext()
 		defer cancel()
 		m, err := cli.Metrics(ctx)
 		if err != nil || m == nil {
@@ -1121,7 +1119,7 @@ func (in *interactiveInput) dropPitRow(name, id, next string) {
 		return
 	}
 	goSettled(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+		ctx, cancel := commandContext()
 		defer cancel()
 		cli := in.aria()
 		if cli == nil {

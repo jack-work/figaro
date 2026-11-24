@@ -43,7 +43,7 @@ func runReroute(loaded *config.Loaded, id, spec string) error {
 	var resp *rpc.SetResponse
 	var landed form.Snapshot
 	WithSessionFor(loaded, t.holder, func(s *Session) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		if resp, err = s.Angelus.Reroute(ctx, req); err != nil {
 			return nil
@@ -84,7 +84,7 @@ func rerouteTargetOf(loaded *config.Loaded, id string) (rerouteTarget, error) {
 	var t rerouteTarget
 	var snap form.Snapshot
 	WithSessionFor(loaded, id, func(s *Session) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		resp, err := s.Figaro.Form(ctx)
 		if err != nil {

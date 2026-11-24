@@ -117,7 +117,7 @@ func listColumns(width int, global bool) []figtree.Column {
 func runList(loaded *config.Loaded, o lsOpts) {
 	defer mark.Span("ls", "json", o.jsonOut)()
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 
 		if o.jsonOut {
@@ -903,7 +903,7 @@ func killRequest(id string, recursive, keep, now bool, when string) (rpc.KillReq
 
 func runKillRequest(loaded *config.Loaded, req rpc.KillRequest) {
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		resp, err := acli.Kill(ctx, req)
 		if err != nil {
@@ -1122,7 +1122,7 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 		levels = n
 	}
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		if target == "" {
 			if r, err := resolveBinding(ctx, acli, shellPID); err == nil && r.Found {
@@ -1160,7 +1160,7 @@ func runDemote(loaded *config.Loaded, idFlag string, args []string, under string
 		target = args[0]
 	}
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		if target == "" {
 			if r, err := resolveBinding(ctx, acli, shellPID); err == nil && r.Found {
@@ -1209,7 +1209,7 @@ func runPlace(loaded *config.Loaded, idFlag string, args []string, under string,
 		if err := needCapability(rpc.CapPlace, "place"); err != nil {
 			return err
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		if target == "" {
 			if r, err := resolveBinding(ctx, acli, shellPID); err == nil && r.Found {
@@ -1259,7 +1259,7 @@ func runAttend(loaded *config.Loaded, spec string) {
 		die("attend: binding disabled (--no-bind, FIGARO_NO_BIND, or non-interactive shell); this command has no effect here")
 	}
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		out, err := attendVerb(ctx, verbEnv{loaded: loaded, acli: acli, shellPID: shellPID}, spec)
 		if err != nil {
@@ -1331,7 +1331,7 @@ func runHop(loaded *config.Loaded, verb string, steps int) {
 		die("%s: binding disabled (--no-bind, FIGARO_NO_BIND, or non-interactive shell); this shell has no history here", verb)
 	}
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := commandContext()
 		defer cancel()
 		h, err := acli.Hop(ctx, shellPID, steps)
 		if err != nil {
