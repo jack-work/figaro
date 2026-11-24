@@ -102,7 +102,7 @@ func TestColdDaemonSlowerThanTheCommandDeadlineStillAnswersLs(t *testing.T) {
 
 	start := time.Now()
 	out := stdoutOf(t, func() { runList(loaded, lsOpts{jsonOut: true}) })
-	require.GreaterOrEqual(t, time.Since(start), wake, "the daemon answered before it woke: the test proves nothing")
+	require.Greater(t, time.Since(start), 2*commandTimeout, "the daemon answered inside the command deadline: the test proves nothing")
 	var rows []rpc.FigaroInfoResponse
 	require.NoError(t, json.Unmarshal([]byte(out), &rows), out)
 	var ids []string
