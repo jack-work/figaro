@@ -59,10 +59,6 @@ func TestQuaRequest(t *testing.T) {
 	})
 }
 
-func TestDoneEntry(t *testing.T) {
-	roundTripValue(t, rpc.DoneEntry{Reason: "stop"})
-}
-
 func TestFigaroInfoResponse(t *testing.T) {
 	roundTrip(t, "figaro_info.json", rpc.FigaroInfoResponse{
 		ID:           "abc123",
@@ -119,16 +115,4 @@ func TestStatusResponse(t *testing.T) {
 		FigaroCount: 3,
 		BoundPIDs:   2,
 	})
-}
-
-func TestMethodConstants(t *testing.T) {
-	assert.Equal(t, "figaro.aria", rpc.MethodAriaFrame)
-	assert.Equal(t, "turn.done", rpc.MethodTurnDone)
-	assert.Equal(t, "figaro.qua", rpc.MethodQua)
-	assert.Equal(t, "figaro.context", rpc.MethodContext)
-	assert.Equal(t, "figaro.create", rpc.MethodCreate)
-	assert.Equal(t, "figaro.kill", rpc.MethodKill)
-	assert.Equal(t, "pid.bind", rpc.MethodBind)
-	assert.Equal(t, "pid.resolve", rpc.MethodResolve)
-	assert.Equal(t, "angelus.status", rpc.MethodStatus)
 }

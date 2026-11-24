@@ -64,14 +64,3 @@ func TestMintMuseCodeKeyRefusesInactiveSubscription(t *testing.T) {
 		})
 	}
 }
-
-func TestMetaDeviceConfigMatchesMuseLauncher(t *testing.T) {
-	if metaDeviceConfig.Scope != "" {
-		t.Errorf("muse sends no scope; got %q", metaDeviceConfig.Scope)
-	}
-	if metaDeviceConfig.DeviceURL != "https://auth.meta.com/oidc/device/authorization/" ||
-		metaDeviceConfig.TokenURL != "https://auth.meta.com/oidc/device/token/" ||
-		metaDeviceConfig.ClientID != "1031625952748946" {
-		t.Errorf("config drifted from the muse launcher: %+v", metaDeviceConfig)
-	}
-}

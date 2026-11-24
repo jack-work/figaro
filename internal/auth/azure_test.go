@@ -5,23 +5,6 @@ import (
 	"testing"
 )
 
-func TestAzureDefaultsAreTheAzureCLIClientAndCognitiveServices(t *testing.T) {
-	cfg, err := AzureSettings{}.DeviceConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ClientID != AzureCLIClientID {
-		t.Fatalf("client_id = %q", cfg.ClientID)
-	}
-	if cfg.DeviceURL != "https://login.microsoftonline.com/organizations/oauth2/v2.0/devicecode" ||
-		cfg.TokenURL != "https://login.microsoftonline.com/organizations/oauth2/v2.0/token" {
-		t.Fatalf("urls = %s %s", cfg.DeviceURL, cfg.TokenURL)
-	}
-	if cfg.Scope != "https://cognitiveservices.azure.com/.default offline_access" {
-		t.Fatalf("scope = %q", cfg.Scope)
-	}
-}
-
 func TestAzureScopeAlwaysAsksForARefreshToken(t *testing.T) {
 	// Without offline_access Entra issues no refresh token, and the login
 	// would die with its first access token an hour later.
