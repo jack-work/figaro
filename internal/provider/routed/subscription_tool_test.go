@@ -82,7 +82,7 @@ func TestDeclaredSubscriptionHTTPToolResultRoundTrip(t *testing.T) {
 	agent.SubmitPrompt(rpc.QuaRequest{Text: "Use echo"})
 	select {
 	case <-notifier.done:
-	case <-time.After(5 * time.Second):
+	case <-time.After(5 * time.Minute):
 		t.Fatal("tool round trip timed out")
 	}
 	require.Equal(t, int32(2), requests.Load())

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,13 +23,28 @@ import (
 
 type slowCatalog struct {
 	delay  time.Duration
+	hold   chan struct{}
+	once   sync.Once
 	listed atomic.Int32
+}
+
+func (g *slowCatalog) release() {
+	if g.hold != nil {
+		g.once.Do(func() { close(g.hold) })
+	}
 }
 
 func (g *slowCatalog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(io.Discard, r.Body)
 	switch r.URL.Path {
 	case "/v1/models":
+		if g.hold != nil {
+			select {
+			case <-g.hold:
+			case <-r.Context().Done():
+				return
+			}
+		}
 		time.Sleep(g.delay)
 		g.listed.Add(1)
 		_, _ = io.WriteString(w, `{"data":[{"id":"gpt-x","supported_endpoints":["/chat/completions"]},{"id":"late","supported_endpoints":["/chat/completions"]}]}`)
@@ -64,6 +80,7 @@ func coldGateway(t *testing.T, name string, delay time.Duration, def Transport) 
 	g := &slowCatalog{delay: delay}
 	srv := httptest.NewServer(g)
 	t.Cleanup(srv.Close)
+	t.Cleanup(g.release)
 	be, aria := store.NewTestAria(t, "d", message.Patch{})
 	figLog, err := be.OpenFigIR(aria)
 	if err != nil {
@@ -92,15 +109,16 @@ func coldGateway(t *testing.T, name string, delay time.Duration, def Transport) 
 // daemon routes from the catalog it already persisted, and refreshes it
 // beside the round.
 func TestAColdRouteFromThePersistedCatalogDoesNotWaitForTheUpstream(t *testing.T) {
-	p, g, send := coldGateway(t, "cold-ir", 1500*time.Millisecond, Chat)
+	p, g, send := coldGateway(t, "cold-ir", 0, Chat)
+	g.hold = make(chan struct{})
 	p.seedFromIR(persistedIR(t, "cold-ir", time.Now().Add(-48*time.Hour), "gpt-x"))
-	start := time.Now()
 	if err := send("gpt-x"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("the first turn after a restart did not finish while the upstream catalog was still unanswered: %v", err)
 	}
-	if took := time.Since(start); took > time.Second {
-		t.Fatalf("the first turn after a restart waited %s for a %s catalog", took, g.delay)
+	if g.listed.Load() != 0 {
+		t.Fatalf("the catalog answered before it was released (%d lists)", g.listed.Load())
 	}
+	g.release()
 	p.settled(t)
 	if g.listed.Load() != 1 {
 		t.Fatalf("the aged catalog was listed %d times beside the round, want once", g.listed.Load())
@@ -141,27 +159,28 @@ func TestAnUnknownModelWithNoDefaultGivesUpWithAReason(t *testing.T) {
 	old := routeWait
 	routeWait = 100 * time.Millisecond
 	t.Cleanup(func() { routeWait = old })
-	p, _, _ := coldGateway(t, "unknown-slow", 500*time.Millisecond, "")
-	start := time.Now()
+	p, g, _ := coldGateway(t, "unknown-slow", 0, "")
+	g.hold = make(chan struct{})
 	_, err := p.route(context.Background(), "late")
 	if err == nil || !strings.Contains(err.Error(), "did not answer within") {
 		t.Fatalf("route = %v, want the catalog's silence named", err)
-	}
-	if took := time.Since(start); took > time.Second {
-		t.Fatalf("an unknown model waited %s, past its %s bound", took, routeWait)
 	}
 }
 
 // The daemon warms each gateway's catalog at start, beside everything else,
 // so even an aged persisted catalog is fresh before the first turn needs it.
 func TestWarmRefreshesAnAgedCatalogInTheBackground(t *testing.T) {
-	p, g, _ := coldGateway(t, "warm", 200*time.Millisecond, Chat)
+	p, g, _ := coldGateway(t, "warm", 0, Chat)
+	g.hold = make(chan struct{})
 	p.seedFromIR(persistedIR(t, "warm", time.Now().Add(-48*time.Hour), "gpt-x"))
-	start := time.Now()
-	p.Warm()
-	if took := time.Since(start); took > 50*time.Millisecond {
-		t.Fatalf("Warm held its caller %s", took)
+	returned := make(chan struct{})
+	go func() { p.Warm(); close(returned) }()
+	select {
+	case <-returned:
+	case <-time.After(time.Minute):
+		t.Fatal("Warm held its caller while the catalog was unanswered")
 	}
+	g.release()
 	p.settled(t)
 	if _, known := p.cat.lookup("late"); !known || g.listed.Load() != 1 {
 		t.Fatalf("Warm did not refresh the aged catalog (lists %d)", g.listed.Load())

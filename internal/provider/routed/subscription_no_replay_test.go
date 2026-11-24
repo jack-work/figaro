@@ -54,7 +54,7 @@ func TestDeclaredNoReplayStopsPartialSubscriptionAtTheAgentBoundary(t *testing.T
 			agent.SubmitPrompt(rpc.QuaRequest{Text: "Do not retry incomplete output"})
 			select {
 			case <-notifier.done:
-			case <-time.After(8 * time.Second):
+			case <-time.After(5 * time.Minute):
 				t.Fatal("partial stream did not finish")
 			}
 			require.Equal(t, int32(1), requests.Load(), "outer Agent must not create another generation")

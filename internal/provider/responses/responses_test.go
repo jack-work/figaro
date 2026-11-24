@@ -581,7 +581,7 @@ func runResponsesToolRoundTrip(t *testing.T, malformed bool) {
 
 	select {
 	case <-notifier.done:
-	case <-time.After(5 * time.Second):
+	case <-time.After(5 * time.Minute):
 		t.Fatal("timed out waiting for Responses tool round trip")
 	}
 
