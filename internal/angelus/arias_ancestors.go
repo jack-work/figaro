@@ -7,7 +7,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-func (h *handlers) unlistedAncestors(ctx context.Context, rows []rpc.FigaroInfoResponse) []rpc.FigaroInfoResponse {
+func (h *handlers) unlistedRoleAncestors(ctx context.Context, rows []rpc.FigaroInfoResponse) []rpc.FigaroInfoResponse {
 	if h.angelus.Backend == nil {
 		return nil
 	}
@@ -34,10 +34,11 @@ func (h *handlers) unlistedAncestors(ctx context.Context, rows []rpc.FigaroInfoR
 			return
 		}
 		listed[up] = true
-		row := rpc.FigaroInfoResponse{ID: n.ID, State: "form", Kind: n.Kind, Parent: n.Parent, Present: n.Present}
-		if l, ok := h.formListing(n.ID); ok {
-			row.Name, row.TargetAria = l.Name, l.Target
+		l, ok := h.formListing(n.ID)
+		if !ok || (l.Name == "" && l.Target == "") {
+			return
 		}
+		row := rpc.FigaroInfoResponse{ID: n.ID, State: "form", Kind: n.Kind, Parent: n.Parent, Present: n.Present, Name: l.Name, TargetAria: l.Target}
 		out = append(out, row)
 		climb(drawnUnder(&row))
 	}
