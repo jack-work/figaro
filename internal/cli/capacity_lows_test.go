@@ -24,7 +24,7 @@ func statusPitText(in *interactiveInput) string {
 func TestAReplayClearsThePlanUsageTheLiveSessionLeft(t *testing.T) {
 	tapeOnly.Store(true)
 	t.Cleanup(func() { tapeOnly.Store(false) })
-	in, _ := capacitySession(t)
+	in := capacitySession(t)
 	in.lt.status.setPlanUsage(&models.PlanUsage{Windows: []models.PlanWindow{{Window: "five_hour", UsedPercent: pct(37)}}})
 	in.recordedWindow = 200_000
 	in.recomputeLimit()
@@ -36,7 +36,7 @@ func TestAReplayClearsThePlanUsageTheLiveSessionLeft(t *testing.T) {
 func TestAnOpenStatusPitFollowsTheLimit(t *testing.T) {
 	tapeOnly.Store(true)
 	t.Cleanup(func() { tapeOnly.Store(false) })
-	in, _ := capacitySession(t)
+	in := capacitySession(t)
 	in.mu.Lock()
 	in.lt.tr.openStatusPit()
 	in.mu.Unlock()

@@ -10,7 +10,7 @@ import (
 )
 
 func TestTheStatusPanelShowsTheRouteTheBoundFormHolds(t *testing.T) {
-	in, _ := capacitySession(t)
+	in := capacitySession(t)
 	require.NotContains(t, strings.Join(in.lt.status.panelLines(), "\n"), "route")
 
 	bound, _, _ := in.bound.state()
@@ -29,7 +29,7 @@ func TestTheStatusPanelShowsTheRouteTheBoundFormHolds(t *testing.T) {
 func TestAReplayDropsTheRouteTheLiveSessionLeft(t *testing.T) {
 	tapeOnly.Store(true)
 	t.Cleanup(func() { tapeOnly.Store(false) })
-	in, _ := capacitySession(t)
+	in := capacitySession(t)
 	in.lt.status.setRoute([]string{"rou2", "explabs", "glm-5.3"})
 	in.recordedWindow = 200_000
 	in.recomputeLimit()

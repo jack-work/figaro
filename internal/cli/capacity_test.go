@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -16,33 +15,15 @@ import (
 	"github.com/jack-work/figaro/sdk/aria"
 )
 
-type askLog struct {
-	mu   sync.Mutex
-	asks []string
-}
-
-func (a *askLog) ask(provider, model string) {
-	a.mu.Lock()
-	a.asks = append(a.asks, provider+"/"+model)
-	a.mu.Unlock()
-}
-
-func (a *askLog) list() []string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return append([]string(nil), a.asks...)
-}
-
-func capacitySession(t *testing.T) (*interactiveInput, *askLog) {
+func capacitySession(t *testing.T) *interactiveInput {
 	t.Helper()
 	var out bytes.Buffer
 	in := &interactiveInput{mu: new(renderLock), bound: &formMirror{}}
 	in.lt = newLivelogTurn(&out, 120, 20, &renderSettings{}, "abcd1234", time.Now(),
 		newSessionStatus("abcd1234", time.Now()), nil, dimRule)
-	asks := &askLog{}
-	in.models = &modelsFeed{ask: asks.ask, wanted: map[string]time.Time{}, onChange: in.recomputeLimit}
+	in.models = &modelsFeed{onChange: in.recomputeLimit}
 	in.lt.status.update(aria.Metrics{ContextTokens: 12_400, ContextExact: true})
-	return in, asks
+	return in
 }
 
 func boundFormPatch(base form.Snapshot, kv map[string]string) form.Patch {
@@ -70,79 +51,41 @@ func barText(in *interactiveInput) string {
 	return strings.Join(in.lt.status.viewOf(pitNothing, false, time.Now()).render(120), "\n")
 }
 
-// The bar's percentage is derived on the client from two mirrors: the
-// subject's bound form names provider x model, the catalog names its capacity. A
-// fork's dormant alternative has both, so it reads like its parent.
-func TestBarDerivesCapacityFromBoundFormAndCatalog(t *testing.T) {
-	in, asks := capacitySession(t)
+// The bar shows the capacity the daemon published on the bound form, the
+// same number figaro status prints. The pager's own catalog copy never
+// decides it: #210, where a stale copy said "capacity unknown".
+func TestBarShowsTheDaemonsPublishedCapacity(t *testing.T) {
+	in := capacitySession(t)
+	cat, _, _ := in.models.mirror.state()
+	in.models.mirror.reset(cat.Apply(catalogPatch(t, cat, "anthropic", map[string]int{"claude-opus-5": 500_000})), 0, 1)
 
 	bound, _, _ := in.bound.state()
 	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1,
 		Patch: boundFormPatch(bound, map[string]string{"system.provider": `"anthropic"`, "system.model": `"claude-opus-5"`})})
 	require.Contains(t, barText(in), "12.4k")
-	require.NotContains(t, barText(in), "%", "no catalog yet: tokens only")
-	require.Eventually(t, func() bool { return len(asks.list()) == 1 }, time.Second, 2*time.Millisecond)
-	require.Equal(t, []string{"anthropic/claude-opus-5"}, asks.list(), "a miss asks the daemon for exactly the bound form's pair")
+	require.NotContains(t, barText(in), "%", "nothing published yet: tokens only, whatever the local catalog says")
 
-	cat, _, _ := in.models.mirror.state()
-	delta, err := json.Marshal(rpc.FormDelta{Schema: rpc.FormDeltaSchema, AriaID: models.FormID, Version: 1,
-		Patch: catalogPatch(t, cat, "anthropic", map[string]int{"claude-opus-5": 1_000_000, "claude-sonnet-5": 500_000})})
-	require.NoError(t, err)
-	in.models.handle(rpc.MethodFormDelta, delta)
-	require.Contains(t, barText(in), "12.4k/1.0m 1.2%")
-
-	// A model switch is a bound form delta; the bar follows it with no round trip.
 	bound, _, _ = in.bound.state()
 	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 2,
-		Patch: boundFormPatch(bound, map[string]string{"system.model": `"claude-sonnet-5"`})})
-	require.Contains(t, barText(in), "12.4k/500.0k 2.5%")
+		Patch: boundFormPatch(bound, map[string]string{form.ContextLimitKey: `1000000`})})
+	require.Contains(t, barText(in), "12.4k/1.0m 1.2%")
 
-	// The same model under another provider is not the same entry.
 	bound, _, _ = in.bound.state()
 	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 3,
-		Patch: boundFormPatch(bound, map[string]string{"system.provider": `"copilot"`})})
-	require.NotContains(t, barText(in), "%")
-}
-
-func TestABoundFormPinNeedsNoCatalogAndAsksForNothing(t *testing.T) {
-	in, asks := capacitySession(t)
-	bound, _, _ := in.bound.state()
-	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1, Patch: boundFormPatch(bound, map[string]string{
-		"system.provider": `"anthropic"`, "system.model": `"unknown"`, "system.max_context_tokens": `200000`})})
-	require.Contains(t, barText(in), "12.4k/200.0k 6.2%")
-	time.Sleep(20 * time.Millisecond)
-	require.Empty(t, asks.list())
-}
-
-// A miss is asked about once per window, not once per delta: the bar
-// recomputes on every bound form change and must not flood the daemon.
-func TestAMissIsAskedOncePerWindow(t *testing.T) {
-	in, asks := capacitySession(t)
-	bound, _, _ := in.bound.state()
-	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1, Patch: boundFormPatch(bound, map[string]string{
-		"system.provider": `"anthropic"`, "system.model": `"nope"`})})
-	for v := uint64(2); v < 20; v++ {
-		bound, _, _ = in.bound.state()
-		in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: v,
-			Patch: boundFormPatch(bound, map[string]string{"mantra": `"m` + string(rune('a'+v)) + `"`})})
-	}
-	time.Sleep(20 * time.Millisecond)
-	require.Len(t, asks.list(), 1)
+		Patch: form.Build(bound, nil, []string{form.ContextLimitKey})})
+	require.NotContains(t, barText(in), "%", "a withdrawn capacity clears the percentage")
 }
 
 // A parked subject keeps its bound form: hopping back paints the percentage from
 // what is held, before any read.
 func TestAParkedSubjectKeepsItsBoundForm(t *testing.T) {
-	in, _ := capacitySession(t)
-	cat, _, _ := in.models.mirror.state()
-	in.models.mirror.reset(cat.Apply(catalogPatch(t, cat, "anthropic", map[string]int{"claude-opus-5": 1_000_000})), 0, 1)
-
+	in := capacitySession(t)
 	in.mu.Lock()
 	in.figaroID = "first"
 	in.mu.Unlock()
 	bound, _, _ := in.bound.state()
 	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1, Patch: boundFormPatch(bound, map[string]string{
-		"system.provider": `"anthropic"`, "system.model": `"claude-opus-5"`})})
+		"system.provider": `"anthropic"`, "system.model": `"claude-opus-5"`, form.ContextLimitKey: `1000000`})})
 	held := in.subjectBoundForm()
 
 	in.lt.client.Apply(aria.Page{Parts: partsFor(1, 2, "FIRST")}, aria.Notify)
@@ -188,7 +131,7 @@ func TestCatchUpSkipsWhatADeltaAlreadyApplied(t *testing.T) {
 func TestAReplayWithNoRecordedWindowDrawsNoPercentage(t *testing.T) {
 	tapeOnly.Store(true)
 	t.Cleanup(func() { tapeOnly.Store(false) })
-	in, asks := capacitySession(t)
+	in := capacitySession(t)
 	cat, _, _ := in.models.mirror.state()
 	delta, err := json.Marshal(rpc.FormDelta{Schema: rpc.FormDeltaSchema, AriaID: models.FormID, Version: 1,
 		Patch: catalogPatch(t, cat, "copilot", map[string]int{"claude-haiku-4.5": 136_000})})
@@ -197,12 +140,10 @@ func TestAReplayWithNoRecordedWindowDrawsNoPercentage(t *testing.T) {
 
 	bound, _, _ := in.bound.state()
 	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1,
-		Patch: boundFormPatch(bound, map[string]string{"system.provider": `"copilot"`, "system.model": `"claude-haiku-4.5"`})})
+		Patch: boundFormPatch(bound, map[string]string{"system.provider": `"copilot"`, "system.model": `"claude-haiku-4.5"`, form.ContextLimitKey: `136000`})})
 	in.recomputeLimit()
 	require.Contains(t, barText(in), "12.4k")
-	require.NotContains(t, barText(in), "%", "the live catalog never reaches a replay's bar")
-	require.Never(t, func() bool { return len(asks.list()) > 0 }, 50*time.Millisecond, 5*time.Millisecond,
-		"a replay asks the daemon for nothing")
+	require.NotContains(t, barText(in), "%", "neither the live catalog nor today's published capacity reaches a replay's bar")
 
 	in.recordedWindow = 200_000
 	in.recomputeLimit()

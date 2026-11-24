@@ -142,6 +142,7 @@ type Agent struct {
 	// Casts run on the caller's goroutine, so publishStudies refuses any set not
 	// newer than studiesVersion: the mirror follows durable order, not arrival order.
 	studiesMu      sync.Mutex
+	capacityMu     sync.Mutex
 	studiesVersion uint64
 
 	inbox *Inbox
@@ -296,6 +297,7 @@ func NewAgent(cfg Config) *Agent {
 			slog.Warn("watch form", "aria", a.id, "err", err)
 		}
 	}
+	a.PublishContextLimit()
 
 	a.openIntrinsics()
 	a.resumeStudies()
@@ -1045,6 +1047,7 @@ func (a *Agent) writeForm(w store.FormWrite, kind string) (store.FormVerdict, er
 	a.form.Apply(verdict.Applied)
 	a.refreshMetrics()
 	a.publishMetadata()
+	a.PublishContextLimit()
 	return verdict, nil
 }
 

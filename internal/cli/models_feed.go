@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
-	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/models"
@@ -12,32 +11,18 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
-const modelsWantEvery = time.Minute
-
 type modelsFeed struct {
 	angelus  func() (*sdk.Angelus, error)
-	ask      func(provider, model string)
 	onChange func()
 	mirror   formMirror
 
 	mu      sync.Mutex
 	conn    *sdk.Aria
 	dialing bool
-	wanted  map[string]time.Time
 }
 
 func newModelsFeed(angelus func() (*sdk.Angelus, error), onChange func()) *modelsFeed {
-	f := &modelsFeed{angelus: angelus, onChange: onChange, wanted: map[string]time.Time{}}
-	f.ask = func(provider, model string) {
-		acli, err := angelus()
-		if err != nil {
-			return
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
-		defer cancel()
-		_ = acli.ModelsWant(ctx, provider, model)
-	}
-	return f
+	return &modelsFeed{angelus: angelus, onChange: onChange}
 }
 
 func (f *modelsFeed) snapshot() form.Snapshot {
@@ -137,22 +122,6 @@ func (f *modelsFeed) resync() {
 	}
 	f.mirror.catchUp(resp)
 	f.changed()
-}
-
-func (f *modelsFeed) want(provider, model string) {
-	if f == nil || f.ask == nil {
-		return
-	}
-	key := provider + "\x00" + model
-	now := time.Now()
-	f.mu.Lock()
-	if at, ok := f.wanted[key]; ok && now.Sub(at) < modelsWantEvery {
-		f.mu.Unlock()
-		return
-	}
-	f.wanted[key] = now
-	f.mu.Unlock()
-	go f.ask(provider, model)
 }
 
 func (f *modelsFeed) changed() {

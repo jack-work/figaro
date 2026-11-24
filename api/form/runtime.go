@@ -25,6 +25,7 @@ const (
 	ReapedByKey         = "runtime.reaped_by"
 	OwnerMadeKey        = "runtime.owner_made"
 	RouteKey            = "runtime.route"
+	ContextLimitKey     = "runtime.context.limit"
 )
 
 const RetireRequestKey = "system.retired"

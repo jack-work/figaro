@@ -503,6 +503,7 @@ func Run() {
 		Interval:  loaded.CatalogRefresh,
 		Form:      modelsForm(backend),
 	})
+	a.Models.Form().OnCommit(func(store.Commit) { go a.PublishContextLimits() })
 	a.Go("model catalog", func() { a.Models.Run(ctx) })
 	go warmRoutes(build, catalogProviders(loaded))
 

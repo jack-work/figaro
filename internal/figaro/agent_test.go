@@ -441,9 +441,20 @@ func TestAgentWantsItsModelAndReportsALateFill(t *testing.T) {
 
 	assert.Equal(t, 0, a.Info().ContextLimit)
 	assert.Contains(t, cat.wanted(), "metrics/gpt-5.6-terra")
+	assert.False(t, a.Snapshot().Has(form.ContextLimitKey), "an unknown limit is not published")
 
 	cat.fill("metrics", "gpt-5.6-terra", 128000)
 	assert.Equal(t, 128000, a.Info().ContextLimit)
+
+	a.PublishContextLimit()
+	raw, ok := a.Snapshot().Get(form.ContextLimitKey)
+	require.True(t, ok, "clients read the limit from the bound form")
+	assert.JSONEq(t, `128000`, string(raw))
+	durable, err := testBE.FormState(testID)
+	require.NoError(t, err)
+	raw, ok = durable.Get(form.ContextLimitKey)
+	require.True(t, ok, "the published limit is on the durable form, not only in memory")
+	assert.JSONEq(t, `128000`, string(raw))
 }
 
 func TestAgent_ReadCatchUp(t *testing.T) {
