@@ -208,14 +208,14 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
-	prompt.ack(LogAppend{Turn: a.turnID, LT: entry.LT})
-	span.SetAttributes(attribute.Int64("figaro.turn", int64(a.turnID)))
+	prompt.ack(LogAppend{Turn: a.turnID.Load(), LT: entry.LT})
+	span.SetAttributes(attribute.Int64("figaro.turn", int64(a.turnID.Load())))
 	if !logged {
-		a.markCut(a.turnID, prompt.resume)
+		a.markCut(a.turnID.Load(), prompt.resume)
 	}
 	// From here a delete aimed at this prompt is refused as committed.
 	a.inbox.MarkCommitted([]event{prompt})
-	a.inbox.MarkTurn(promptIDs(prompt), a.turnID)
+	a.inbox.MarkTurn(promptIDs(prompt), a.turnID.Load())
 	if logged {
 		a.endTurn(ReasonLogged)
 		return
@@ -301,7 +301,7 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (arialog.Entry[mes
 			}
 			// Segments come off the message, not the event, so live and re-read agree on who asked.
 			a.turnFirstLT = entry.LT
-			a.ariaSrv.OpenInquiry(a.turnID, turns.Inquiry(prompt.text, msg), a.openingFormDeltas(), a.projInquirySegments(msg)...)
+			a.ariaSrv.OpenInquiry(a.turnID.Load(), turns.Inquiry(prompt.text, msg), a.openingFormDeltas(), a.projInquirySegments(msg)...)
 		}
 	}
 	return entry, nil
@@ -310,8 +310,8 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (arialog.Entry[mes
 func (a *Agent) startAssistantUnit() {
 	// The region boundary is fixed for the turn: the producer recomposes the whole
 	// region every frame, so a reopen replaces rather than appends.
-	if a.turnStartTurn != a.turnID || a.turnStartLT == 0 {
-		a.turnStartTurn = a.turnID
+	if a.turnStartTurn != a.turnID.Load() || a.turnStartLT == 0 {
+		a.turnStartTurn = a.turnID.Load()
 		a.turnStartLT = 0
 		if tail, ok := a.figLog.PeekTail(); ok {
 			a.turnStartLT = tail.FigaroLT
@@ -397,7 +397,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	started := time.Now()
 	roundCtx, roundSpan := figOtel.Start(turnCtx, "figaro.round", figOtel.WithAttributes(
 		attribute.String("figaro.id", a.id),
-		attribute.Int64("figaro.turn", int64(a.turnID)),
+		attribute.Int64("figaro.turn", int64(a.turnID.Load())),
 		attribute.String("provider", prov.Name()),
 		attribute.String("model", a.currentModel()),
 	))
@@ -467,7 +467,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			case evDelta:
 				if !tokenSeen {
 					tokenSeen = true
-					mark.Mark("token.first", "aria", a.id, "turn", a.turnID)
+					mark.Mark("token.first", "aria", a.id, "turn", a.turnID.Load())
 					figOtel.RecordTTFT(turnCtx, time.Since(started),
 						attribute.String("provider", prov.Name()),
 						attribute.String("model", a.currentModel()))
@@ -1407,7 +1407,7 @@ func logComposeFrame(dir, ariaID string, hasInflight bool, nodes []livedoc.Node)
 
 // emitSnapshot opens a streaming suffix where the turn's committed nodes end.
 func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
-	a.ariaSrv.OpenTurn(a.turnID)
+	a.ariaSrv.OpenTurn(a.turnID.Load())
 	if len(nodes) > 0 {
 		a.ariaSrv.Update(nil, nodes, 0)
 	}

@@ -185,7 +185,7 @@ type Agent struct {
 	// It must be an LT, not an entry count: main LTs are trunk-global.
 	turnStartLT   uint64
 	turnStartTurn uint64
-	turnID        uint64
+	turnID        atomic.Uint64
 	gov           *toolout.Governor
 	lastEmit      time.Time
 	argPartials   map[string]string
@@ -723,16 +723,16 @@ func (a *Agent) Context() []message.Message {
 
 // appendMsg stamps the in-flight turn id; every durable message write goes through here.
 func (a *Agent) appendMsg(m message.Message) (arialog.Entry[message.Message], error) {
-	m.TurnID = a.turnID
+	m.TurnID = a.turnID.Load()
 	return a.writer().Append(arialog.Entry[message.Message]{Payload: m})
 }
 
 // openTurn seeds from the log on first use, so a forked child continues its parent's numbering.
 func (a *Agent) openTurn() {
-	if a.turnID == 0 {
-		a.turnID = a.seedTurnID()
+	if a.turnID.Load() == 0 {
+		a.turnID.Store(a.seedTurnID())
 	}
-	a.turnID++
+	a.turnID.Add(1)
 }
 
 // seedTurnID walks the log only when the tail carries no id (pre-prompt records only).
