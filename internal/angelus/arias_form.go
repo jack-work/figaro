@@ -203,7 +203,7 @@ func (h *handlers) rebuildArias(w *ariasWatch) {
 	defer w.build.Unlock()
 	rows, peers := h.ariasRows(w.ctx)
 	w.builtAt = time.Now()
-	print := ariasPrint(rows, peers)
+	print := ariasPrint(slices.Concat(rows, h.unlistedAncestors(w.ctx, rows)), peers)
 	fresh := !w.built || print != w.print
 	w.print, w.built = print, true
 	if !fresh && (!w.recent.asked || w.recent.built) && !w.global {
@@ -229,7 +229,7 @@ func (h *handlers) rebuildArias(w *ariasWatch) {
 		recentRows, moreRecent = newestRows(rows, webWindowRows)
 	}
 	if fresh {
-		next[rpc.AriasFormID] = ariasSnapshot(shownRows, peers, moreRows)
+		next[rpc.AriasFormID] = ariasSnapshot(slices.Concat(shownRows, h.unlistedAncestors(w.ctx, shownRows)), peers, moreRows)
 		next[rpc.TopologyFormID] = topologySnapshot(rows)
 	}
 	if w.recent.asked && (fresh || !w.recent.built) {
@@ -289,6 +289,11 @@ func ariasPrint(rows []rpc.FigaroInfoResponse, peers int) uint64 {
 		putInt(r.LastActive)
 		putInt(r.RetiredAt)
 		putStr(rpc.JoinRoleAddresses(r.Roles))
+		putStr(r.Kind)
+		putStr(r.Name)
+		putStr(r.TargetAria)
+		putInt(rowReapsAt(&r))
+		putInt(int64(len(r.BoundPIDs)))
 	}
 	return f.Sum64()
 }
@@ -354,6 +359,21 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers, more int) form.Snapshot
 		if len(r.Roles) > 0 {
 			put(base+"role", rpc.JoinRoleAddresses(r.Roles))
 		}
+		if r.Kind == string(store.KindForm) {
+			put(base+"kind", r.Kind)
+			if r.Name != "" {
+				put(base+"name", r.Name)
+			}
+			if r.TargetAria != "" {
+				put(base+"target", r.TargetAria)
+			}
+		}
+		if at := rowReapsAt(r); at > 0 {
+			put(base+"reaps_at", at)
+		}
+		if len(r.BoundPIDs) > 0 {
+			put(base+"bound", true)
+		}
 	}
 	return form.Snapshot{}.Apply(form.Build(form.Snapshot{}, keys, nil))
 }
@@ -399,6 +419,13 @@ func (h *handlers) callerFormMethod(ctx context.Context, id, method string, para
 		}
 	}
 	return nil, fmt.Errorf("%s is computed for each caller and read-only: %s does not apply", id, method)
+}
+
+func rowReapsAt(r *rpc.FigaroInfoResponse) int64 {
+	if r.ReapsAt > 0 {
+		return r.ReapsAt
+	}
+	return r.ExpiresAt
 }
 
 func drawnUnder(r *rpc.FigaroInfoResponse) string {

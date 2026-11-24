@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -538,5 +539,76 @@ func TestAnArrangeDoesNotUndoAnOverrideTheCallerCannotKill(t *testing.T) {
 	}
 	if presentedUnder(t, r, x) != y || presentedUnder(t, r, y) == x {
 		t.Errorf("after the restore %s under %q, %s under %q", x, presentedUnder(t, r, x), y, presentedUnder(t, r, y))
+	}
+}
+
+// An aria placed under a role is drawn under that role's row, with the role's
+// name and holder, as figaro ls draws it; before this the web tree had no role
+// row and drew the aria at the top.
+func TestAnAriaPlacedUnderARoleIsDrawnUnderTheRole(t *testing.T) {
+	r := newGrantRig(t)
+	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+		t.Fatal(err)
+	}
+	holder, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	placed, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, _ := json.Marshal(holder.FigaroID)
+	seat := form.Merge(*namePatch("Engineer"), form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": target}, nil))
+	out, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: &seat})
+	if err != nil {
+		t.Fatal(err)
+	}
+	role := out.(rpc.FormCreateResponse).FormID
+	if err := setTopology(t, r, asOwner(), map[string]string{placed.FigaroID: role}); err != nil {
+		t.Fatal(err)
+	}
+
+	snap, err := readArias(t, r, asOwner(), rpc.AriasFormID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := ariasPaths(t, r)
+	rolePath, ok := paths[role]
+	if !ok {
+		t.Fatalf("@arias has no row for the role the aria is placed under")
+	}
+	if got := paths[placed.FigaroID]; !strings.HasPrefix(got, rolePath+".forks.") {
+		t.Errorf("the placed aria is drawn at %s, want under the role at %s", got, rolePath)
+	}
+	for key, want := range map[string]string{"kind": `"form"`, "name": `"Engineer"`, "target": string(target)} {
+		raw, ok := snap.Get(rolePath + "." + key)
+		if !ok || string(raw) != want {
+			t.Errorf("role row %s = %s, want %s", key, raw, want)
+		}
+	}
+}
+
+// A row carries when the sweep reaps it, so a client can hide an expired row
+// by figaro ls's rule without a listing of its own.
+func TestAnAriasRowCarriesWhenItIsReaped(t *testing.T) {
+	r := newGrantRig(t)
+	made, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ttl, _ := json.Marshal("1h")
+	set := rpc.SetRequest{Patch: form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.ttl": ttl}, nil)}
+	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, made.FigaroID, set)); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := readArias(t, r, asOwner(), rpc.AriasFormID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, ok := snap.Get(ariasPaths(t, r)[made.FigaroID] + ".reaps_at")
+	var at int64
+	if !ok || json.Unmarshal(raw, &at) != nil || at <= time.Now().UnixMilli() {
+		t.Errorf("a row with system.ttl 1h carries reaps_at %s, want a time in the future", raw)
 	}
 }
