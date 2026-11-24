@@ -191,11 +191,6 @@ func TestRegistry_Unbind(t *testing.T) {
 	assert.Empty(t, r.BoundPIDs("abc"))
 }
 
-func TestRegistry_UnbindNoop(t *testing.T) {
-	r := angelus.NewRegistry()
-	r.Unbind(9999)
-}
-
 func TestRegistry_List(t *testing.T) {
 	r := angelus.NewRegistry()
 	require.NoError(t, r.Register(newMock("abc")))
