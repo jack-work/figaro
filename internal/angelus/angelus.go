@@ -2,6 +2,7 @@ package angelus
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"os"
@@ -221,6 +222,9 @@ func (a *Angelus) Run(ctx context.Context) error {
 
 	err = a.Serve(ctx, ln, authz.DoorLocal, a.cliAdmit())
 	slog.Info("angelus shutting down")
+	if errors.Is(err, errStopping) {
+		return nil
+	}
 	return err
 }
 
