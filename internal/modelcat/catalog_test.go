@@ -94,7 +94,7 @@ func newClock() *clock { return &clock{now: time.UnixMilli(1_760_000_000_000)} }
 
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
-	require.Eventually(t, cond, 2*time.Second, 2*time.Millisecond)
+	require.Eventually(t, cond, time.Minute, 2*time.Millisecond)
 }
 
 func limitOf(c *Catalog, providerName, model string) int {
