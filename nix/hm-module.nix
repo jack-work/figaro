@@ -248,6 +248,7 @@ in
           Service = {
             Type = "exec";
             ExecStart = "${figaro} --angelus";
+            Delegate = true;
             Restart = "on-failure";
             RestartSec = 5;
             RestartSteps = 6;

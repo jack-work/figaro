@@ -416,6 +416,7 @@ in
         User = cfg.user;
         Group = cfg.user;
         ExecStart = "${lib.getExe cfg.package} --angelus";
+        Delegate = true;
         Restart = "on-failure";
         RestartSec = 5;
         KillMode = "mixed";
@@ -429,7 +430,7 @@ in
         PrivateTmp = true;
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
-        ProtectControlGroups = true;
+        ProtectControlGroups = false;
         RestrictSUIDSGID = true;
         UMask = "0077";
         LoadCredential = lib.mapAttrsToList (id: src: "${id}:${src}") (lib.filterAttrs (_: src: src != "") cfg.credentials);
