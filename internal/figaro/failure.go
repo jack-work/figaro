@@ -63,7 +63,7 @@ func (a *Agent) recordFailure(reason string) {
 		for k, v := range map[string]any{
 			form.FailureReasonKey:   why,
 			form.FailureCategoryKey: failureCategory(a.turnFault),
-			form.FailureTurnKey:     a.turnID,
+			form.FailureTurnKey:     a.turnID.Load(),
 			form.FailureAtKey:       time.Now().UnixMilli(),
 		} {
 			set[k], _ = json.Marshal(v)
@@ -98,7 +98,7 @@ func (a *Agent) tellSenders(reason string) {
 	}
 	senders := a.turnSenders
 	a.turnSenders = nil
-	text := failureNoticeText(a.id, a.turnID, failureCategory(a.turnFault))
+	text := failureNoticeText(a.id, a.turnID.Load(), failureCategory(a.turnFault))
 	told := map[string]bool{}
 	for _, seg := range senders {
 		to := seg.sender

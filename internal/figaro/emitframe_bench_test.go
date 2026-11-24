@@ -14,8 +14,8 @@ func BenchmarkEmitFrame(b *testing.B) {
 		b.Run(fmt.Sprintf("rounds=%d", r), func(b *testing.B) {
 			a := openRegionAgent(r, 200, true)
 			a.ariaSrv = aria.NewServer()
-			a.turnID = 1
-			a.ariaSrv.OpenTurn(a.turnID)
+			a.turnID.Store(1)
+			a.ariaSrv.OpenTurn(a.turnID.Load())
 			// One frame before the timer: the steady state is diffing, not creating.
 			a.emitDelta(a.composeTurn(nil))
 			b.ReportAllocs()
@@ -34,8 +34,8 @@ func BenchmarkServerUpdateOnly(b *testing.B) {
 		b.Run(fmt.Sprintf("rounds=%d", r), func(b *testing.B) {
 			a := openRegionAgent(r, 200, true)
 			a.ariaSrv = aria.NewServer()
-			a.turnID = 1
-			a.ariaSrv.OpenTurn(a.turnID)
+			a.turnID.Store(1)
+			a.ariaSrv.OpenTurn(a.turnID.Load())
 			pre, suf, stable := a.composeTurn(nil)
 			a.emitDelta(pre, suf, stable)
 			b.ReportAllocs()

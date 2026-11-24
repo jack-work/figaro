@@ -157,7 +157,7 @@ func (a *Agent) publishRuntime(state rpc.RuntimeState, reason string) {
 	mark.Mark("runtime", "aria", a.id, "state", string(state))
 	set := map[string]any{
 		"turn.state": string(state),
-		"turn.id":    a.turnID,
+		"turn.id":    a.turnID.Load(),
 		"turn.since": time.Now().UnixMilli(),
 		"inflight":   a.inbox.InflightCount(),
 		"epoch":      a.inbox.Epoch(),

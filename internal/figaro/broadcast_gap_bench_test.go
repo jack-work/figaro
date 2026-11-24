@@ -101,11 +101,11 @@ func BenchmarkPromptBroadcastControl(b *testing.B) {
 	for _, n := range []int{100, 1_000, 5_000} {
 		b.Run(fmt.Sprintf("messages=%d/open-inquiry", n), func(b *testing.B) {
 			a := gapAgent(b, n, true)
-			a.turnID = 7
+			a.turnID.Store(7)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				a.ariaSrv.OpenInquiry(a.turnID, "what is the gap?", nil)
+				a.ariaSrv.OpenInquiry(a.turnID.Load(), "what is the gap?", nil)
 			}
 		})
 		b.Run(fmt.Sprintf("messages=%d/lock-control", n), func(b *testing.B) {
