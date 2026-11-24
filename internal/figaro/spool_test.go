@@ -220,6 +220,7 @@ func TestACutIsResumedOnceAndAResumeCutByACrashIsNot(t *testing.T) {
 	require.Contains(t, resumed.await(t), figaro.ResumeNotice)
 
 	path := filepath.Join(dir, id+".json")
+	a1.FlushSpool()
 	crashed, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Contains(t, string(crashed), `"resumed":true`, "the resume turn must be marked on disk while it runs")
