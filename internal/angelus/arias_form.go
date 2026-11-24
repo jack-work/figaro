@@ -203,7 +203,7 @@ func (h *handlers) rebuildArias(w *ariasWatch) {
 	defer w.build.Unlock()
 	rows, peers := h.ariasRows(w.ctx)
 	w.builtAt = time.Now()
-	print := ariasPrint(slices.Concat(rows, h.unlistedAncestors(w.ctx, rows)), peers)
+	print := ariasPrint(slices.Concat(rows, h.unlistedRoleAncestors(w.ctx, rows)), peers)
 	fresh := !w.built || print != w.print
 	w.print, w.built = print, true
 	if !fresh && (!w.recent.asked || w.recent.built) && !w.global {
@@ -229,7 +229,7 @@ func (h *handlers) rebuildArias(w *ariasWatch) {
 		recentRows, moreRecent = newestRows(rows, webWindowRows)
 	}
 	if fresh {
-		next[rpc.AriasFormID] = ariasSnapshot(slices.Concat(shownRows, h.unlistedAncestors(w.ctx, shownRows)), peers, moreRows)
+		next[rpc.AriasFormID] = ariasSnapshot(slices.Concat(shownRows, h.unlistedRoleAncestors(w.ctx, shownRows)), peers, moreRows)
 		next[rpc.TopologyFormID] = topologySnapshot(rows)
 	}
 	if w.recent.asked && (fresh || !w.recent.built) {

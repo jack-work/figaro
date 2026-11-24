@@ -612,3 +612,32 @@ func TestAnAriasRowCarriesWhenItIsReaped(t *testing.T) {
 		t.Errorf("a row with system.ttl 1h carries reaps_at %s, want a time in the future", raw)
 	}
 }
+
+// A form with neither a name nor a target (an outfit's birth form) gets no row:
+// every aria born of one would otherwise hang under a form row on the web.
+func TestAnAriaUnderAPlainFormStaysAtTheTop(t *testing.T) {
+	r := newGrantRig(t)
+	if err := wire.Install(r.backend.Store(), t.TempDir(), wire.Capabilities{Trunks: true}); err != nil {
+		t.Fatal(err)
+	}
+	placed, err := r.create(asOwner(), "mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blank := form.Build(form.Snapshot{}, map[string]json.RawMessage{"note": json.RawMessage(`"x"`)}, nil)
+	out, err := r.call(asOwner(), rpc.MethodFormCreate, rpc.FormCreateRequest{Patch: &blank})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := out.(rpc.FormCreateResponse).FormID
+	if err := setTopology(t, r, asOwner(), map[string]string{placed.FigaroID: plain}); err != nil {
+		t.Fatal(err)
+	}
+	paths := ariasPaths(t, r)
+	if _, ok := paths[plain]; ok {
+		t.Error("@arias drew a row for a form with no name and no target")
+	}
+	if got := paths[placed.FigaroID]; strings.Contains(got, ".forks.") {
+		t.Errorf("an aria under a plain form is drawn at %s, want the top", got)
+	}
+}
