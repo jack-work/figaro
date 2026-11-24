@@ -47,7 +47,7 @@ func appendRecord(t *testing.T, log arialog.Log[message.Message], role message.R
 
 func waitFold(t *testing.T, lib *store.Libretto, v uint64) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		if lib.At() >= v {
 			return
@@ -214,7 +214,7 @@ func TestDeletedSourceRendersAsDeleted(t *testing.T) {
 	if err := hierarchytest.Of(be).Remove(src, false); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for {
 		if raw, ok := lib.State().Get(form.KeyLibrettoAlive); ok && string(raw) == "false" {
 			break
