@@ -169,7 +169,8 @@ func TestListingKeysShowsWhoMintedEach(t *testing.T) {
 
 func TestAStaticTroupeMintsNoKeysButSaysWhoYouAre(t *testing.T) {
 	r := newKeyRig(t, true)
-	r.a.Peers, _ = peer.NewStatic(0, nil, nil)
+	static, _ := peer.NewStatic(0, nil, nil)
+	r.a = &Angelus{Registry: r.a.Registry, Backend: r.a.Backend, Policies: r.a.Policies, Troupe: r.a.Troupe, Peers: static}
 	r.hs = NewHandlers(ServerConfig{Angelus: r.a, Config: &config.Loaded{}, Ctx: context.Background()})
 	_, _, err := r.mint(as("0"), "service:ci@troupe:estate", 0)
 	require.ErrorContains(t, err, "static")
