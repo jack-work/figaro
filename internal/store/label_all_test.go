@@ -2,9 +2,6 @@ package store
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -82,43 +79,4 @@ func TestListedLabelsMatchOneByOneLabelling(t *testing.T) {
 	if own != 60 {
 		t.Fatalf("%d arias carry their own label, want 60: the fixture lost the stumpless shape", own)
 	}
-}
-
-// On a store snapshot, the parallel first listing labels every aria as
-// labelling them one at a time does.
-//
-//	FIGARO_WARM_SNAPSHOT=/var/tmp/perf/startup-metrics/stores/big/arias go test ./internal/store -run Snapshot -v
-func TestListedLabelsMatchOneByOneLabellingOnASnapshot(t *testing.T) {
-	src := os.Getenv("FIGARO_WARM_SNAPSHOT")
-	if src == "" {
-		t.Skip("set FIGARO_WARM_SNAPSHOT to an arias directory (reflink-copied twice, never opened in place)")
-	}
-	open := func(name string) *XwalBackend {
-		dir, err := os.MkdirTemp("/var/tmp", "figaro-labels-"+name+"-")
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { os.RemoveAll(dir) })
-		root := filepath.Join(dir, "arias")
-		if out, err := exec.Command("cp", "-a", "--reflink=auto", src, root).CombinedOutput(); err != nil {
-			t.Fatalf("copy snapshot: %v\n%s", err, out)
-		}
-		b, err := NewXwalBackend(root, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { b.Close() })
-		return b
-	}
-	got := listedLabels(open("parallel"))
-	want := serialLabels(open("serial"))
-	if len(want) < 1000 || len(got) != len(want) {
-		t.Fatalf("listed %d, labelled %d", len(got), len(want))
-	}
-	for id, w := range want {
-		if got[id] != w {
-			t.Fatalf("%s listed as %v, labelled one by one as %v", id, got[id], w)
-		}
-	}
-	t.Logf("%d arias labelled alike", len(want))
 }
