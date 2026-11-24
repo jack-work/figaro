@@ -442,9 +442,9 @@ func TestTheRunListsEachProviderOnItsOwnInterval(t *testing.T) {
 	})
 	runCatalog(t, c)
 	tick := <-tk
-	waitFor(t, func() bool { return a.calls.Load() == 1 && b.calls.Load() == 1 })
-	require.Equal(t, 100, limitOf(c, "a", "a1"))
-	require.Equal(t, 200, limitOf(c, "b", "b1"))
+	waitFor(t, func() bool { return limitOf(c, "a", "a1") == 100 && limitOf(c, "b", "b1") == 200 })
+	require.Equal(t, int32(1), a.calls.Load())
+	require.Equal(t, int32(1), b.calls.Load())
 
 	clk.advance(time.Minute)
 	tick <- clk.Now()
