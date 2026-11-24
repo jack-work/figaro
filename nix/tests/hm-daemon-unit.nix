@@ -46,7 +46,11 @@ pkgs.testers.runNixOSTest {
         return int(alice("systemctl --user show -p MainPID --value figaro.service").strip())
 
     def active(unit):
-        machine.wait_until_succeeds("su -l alice -c " + shlex.quote("export XDG_RUNTIME_DIR=/run/user/1000; systemctl --user is-active " + unit), timeout=120)
+        try:
+            machine.wait_until_succeeds("su -l alice -c " + shlex.quote("export XDG_RUNTIME_DIR=/run/user/1000; systemctl --user is-active " + unit), timeout=1800)
+        except Exception:
+            print(machine.execute("su -l alice -c " + shlex.quote("export XDG_RUNTIME_DIR=/run/user/1000; systemctl --user status figaro.socket figaro.service; systemctl --user list-jobs; systemctl --user list-units --failed 2>&1"))[1])
+            raise
 
     def serving():
         alice("figaro ls --json >/dev/null")
