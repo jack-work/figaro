@@ -268,11 +268,12 @@ func runLandlockHelper() {
 		fmt.Fprintln(os.Stderr, "private /:", err)
 		os.Exit(2)
 	}
-	if err := unix.Mount("tmpfs", "/run", "tmpfs", 0, "mode=0700"); err != nil {
-		fmt.Fprintln(os.Stderr, "tmpfs /run:", err)
+	root := os.Getenv("VALET_LL_ROOT")
+	if err := unix.Mount("tmpfs", root, "tmpfs", 0, "mode=0700"); err != nil {
+		fmt.Fprintln(os.Stderr, "tmpfs "+root+":", err)
 		os.Exit(2)
 	}
-	roDir, rwDir := "/run/ro", "/run/rw"
+	roDir, rwDir := filepath.Join(root, "ro"), filepath.Join(root, "rw")
 	for _, d := range []string{roDir, rwDir} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			fmt.Fprintln(os.Stderr, "mkdir:", err)
@@ -298,7 +299,7 @@ func runLandlockHelper() {
 	errs := make(chan error, 16)
 	for range 16 {
 		go func() {
-			if err := exec.Command("sh", "-c", "echo bad > /run/ro/from-child").Run(); err == nil {
+			if err := exec.Command("sh", "-c", "echo bad > "+roDir+"/from-child").Run(); err == nil {
 				errs <- errors.New("child thread bypassed Landlock")
 				return
 			}
@@ -320,6 +321,20 @@ func runLandlockHelper() {
 	}
 	fmt.Println("landlock-ok")
 	os.Exit(0)
+}
+
+func landlockRoot(t *testing.T) string {
+	t.Helper()
+	if _, err := os.Stat("/run"); err == nil {
+		return "/run"
+	}
+	dir := t.TempDir()
+	for _, open := range []string{"/tmp", "/var/tmp"} {
+		if dir == open || strings.HasPrefix(dir, open+"/") {
+			t.Skipf("no mount point outside %s: /run is absent and the temp dir %s is on a path the fence leaves writable", open, dir)
+		}
+	}
+	return dir
 }
 
 func TestLandlockEnforcesReadOnlyAndAbstractSocketScope(t *testing.T) {
@@ -346,6 +361,7 @@ func TestLandlockEnforcesReadOnlyAndAbstractSocketScope(t *testing.T) {
 	cmd.Env = append(os.Environ(),
 		"VALET_LANDLOCK_HELPER=1",
 		"VALET_LL_ABS="+absName,
+		"VALET_LL_ROOT="+landlockRoot(t),
 	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags:                 syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
