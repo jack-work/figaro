@@ -596,7 +596,12 @@ func (p *Peercred) toolOf(pid int32) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: the caller's cgroup is unreadable, so it may be a figaro's tool: %v", ErrUnadmitted, err)
 	}
-	figaro, _ := p.tools.Lookup(cg)
+	figaro, ok := p.tools.Lookup(cg)
+	if !ok {
+		if why := p.tools.Suspect(cg, int(pid)); why != "" {
+			return "", fmt.Errorf("%w: the caller may be a figaro's tool shell: %s", ErrUnadmitted, why)
+		}
+	}
 	return figaro, nil
 }
 

@@ -8,8 +8,26 @@ import (
 )
 
 type Registry struct {
-	mu sync.RWMutex
-	m  map[string]string
+	mu   sync.RWMutex
+	m    map[string]string
+	unit string
+	pid  int
+}
+
+func (r *Registry) Guard(unit string, pid int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.unit, r.pid = path.Clean(unit), pid
+}
+
+func (r *Registry) Suspect(cgroup string, pid int) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	cgroup = path.Clean(cgroup)
+	if r.unit != "" && (cgroup == r.unit || strings.HasPrefix(cgroup, r.unit+"/")) && pid != r.pid {
+		return "it runs in the daemon's unit " + r.unit + " (" + cgroup + ") in no figaro's cgroup and is not the daemon"
+	}
+	return ""
 }
 
 func NewRegistry() *Registry { return &Registry{m: map[string]string{}} }

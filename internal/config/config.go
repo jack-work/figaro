@@ -45,6 +45,7 @@ type Config struct {
 	Quote   QuoteConfig   `toml:"quote"`
 	Authz   AuthzConfig   `toml:"authz"`
 	Sandbox SandboxConfig `toml:"sandbox"`
+	Tools   ToolsConfig   `toml:"tools"`
 	Worker  WorkerConfig  `toml:"worker"`
 	Angelus AngelusConfig `toml:"angelus"`
 
