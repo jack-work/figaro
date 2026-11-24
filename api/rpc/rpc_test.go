@@ -116,3 +116,5 @@ func TestStatusResponse(t *testing.T) {
 		BoundPIDs:   2,
 	})
 }
+
+func ptrPatch(p form.Patch) *form.Patch { return &p }
