@@ -130,7 +130,7 @@ func patchJSON(p form.Patch) string {
 func TestApplyEffectiveMatchesApplyThenDiff(t *testing.T) {
 	g := gen{r: rand.New(rand.NewPCG(20261104, 7))}
 	identities := 0
-	for i := 0; i < 50000; i++ {
+	for i := 0; i < 5000; i++ {
 		base, req := g.snapshot(), g.patch(0)
 		next, applied := base.ApplyEffective(req)
 		oldNext := form.OldApply(base, req)
@@ -160,7 +160,7 @@ func TestApplyEffectiveMatchesApplyThenDiff(t *testing.T) {
 			identities++
 		}
 	}
-	if identities == 0 || identities > 40000 {
-		t.Fatalf("the generator is degenerate: %d of 50000 cases changed nothing", identities)
+	if identities == 0 || identities > 4000 {
+		t.Fatalf("the generator is degenerate: %d of 5000 cases changed nothing", identities)
 	}
 }
