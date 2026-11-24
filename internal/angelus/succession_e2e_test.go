@@ -969,6 +969,26 @@ func TestASeatForkKeepsItsHoldersRouteOverTheRolesOutfit(t *testing.T) {
 	require.JSONEq(t, `["bash"]`, string(tools), "canary: the role's outfit still dresses the fork")
 }
 
+// King, 11-24: a successor landed with no cache_control while its role
+// carried 1h. The role's cache_control is part of the route it seats.
+func TestASuccessorTakesTheRolesCacheControl(t *testing.T) {
+	t.Run("succession", func(t *testing.T) {
+		r := successionDaemon(t)
+		old := r.aria(succeeding(nil))
+		r.role(old, map[string]any{"name": "warden", "system.cache_control": "1h", "succession-policy": map[string]any{"outfit": "heir"}})
+		r.cross(old)
+		require.Equal(t, "1h", r.key(r.successorOf(old), "system.cache_control"))
+	})
+	t.Run("seat fork", func(t *testing.T) {
+		r := successionDaemon(t)
+		old := r.aria(nil)
+		role := r.role(old, map[string]any{"name": "warden", "system.cache_control": "1h", "succession-policy": map[string]any{"outfit": "tooled"}})
+		out, err := r.acli.ForkWith(r.ctx, rpc.ForkRequest{FigaroID: old, Seat: role, Abdicates: true})
+		require.NoError(t, err)
+		require.Equal(t, "1h", r.key(out.Alternative, "system.cache_control"))
+	})
+}
+
 func TestARolelessSuccessorKeepsItsPredecessorsRouteAfterAnOutfitEdit(t *testing.T) {
 	r := successionDaemon(t)
 	old := r.aria(succeeding(nil))
