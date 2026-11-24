@@ -36,11 +36,24 @@ func TestCanaryF2ValueLinesStripControls(t *testing.T) {
 }
 
 func TestCanaryF3WrapPlainIsLinear(t *testing.T) {
-	s := strings.Repeat("x", 120000)
-	start := time.Now()
-	wrapPlain(s, 96)
-	if d := time.Since(start); d > 10*time.Millisecond {
-		t.Fatalf("wrapPlain(120KB) took %v", d)
+	best := func(n int) time.Duration {
+		s := strings.Repeat("x", n)
+		fastest := time.Duration(1<<63 - 1)
+		for range 7 {
+			start := time.Now()
+			wrapPlain(s, 96)
+			if d := time.Since(start); d < fastest {
+				fastest = d
+			}
+		}
+		return fastest
+	}
+	small, large := best(30000), best(120000)
+	if small < time.Microsecond {
+		small = time.Microsecond
+	}
+	if large > 10*small {
+		t.Fatalf("wrapPlain grew %.1fx for 4x the input (%v to %v); linear is 4x, quadratic 16x", float64(large)/float64(small), small, large)
 	}
 }
 
