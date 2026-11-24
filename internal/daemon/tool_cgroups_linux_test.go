@@ -196,3 +196,10 @@ func BenchmarkAttributeACaller(b *testing.B) {
 		reg.Lookup(cg)
 	}
 }
+
+func attributeTools(host *local.Host, peer *authz.Peercred) *toolcgroup.Registry {
+	reg := toolcgroup.NewRegistry()
+	peer.AttributeTools(reg)
+	host.Tools = toolcgroup.Own(reg)
+	return reg
+}

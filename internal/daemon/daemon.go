@@ -40,6 +40,7 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/toolcgroup"
 	"github.com/jack-work/figaro/sdk"
 )
 
@@ -430,7 +431,10 @@ func Run() {
 		os.Exit(1)
 	}
 	if loaded.Config.Authz.ChecksPeers() {
-		a.ToolCgroups = attributeTools(a.Sessions, a.Peercred)
+		reg := toolcgroup.NewRegistry()
+		a.Peercred.AttributeTools(reg)
+		a.Sessions.Tools = toolcgroup.Own(reg)
+		a.ToolCgroups = reg
 	}
 	a.Policies = authz.NewPolicies(a.Owner, angelus.StoreFacts(backend))
 	a.Policies.SetPoolDaemon(loaded.PoolDaemon())
