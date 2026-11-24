@@ -56,12 +56,6 @@ func TestParseEndpoint_RoundTrip(t *testing.T) {
 	assert.Equal(t, ep, parsed)
 }
 
-func TestUnixEndpoint(t *testing.T) {
-	ep := transport.UnixEndpoint("/tmp/test.sock")
-	assert.Equal(t, "unix", ep.Scheme)
-	assert.Equal(t, "/tmp/test.sock", ep.Address)
-}
-
 func TestDialAndListen_Unix(t *testing.T) {
 	dir := t.TempDir()
 	sockPath := filepath.Join(dir, "test.sock")

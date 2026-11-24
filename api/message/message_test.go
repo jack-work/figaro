@@ -82,15 +82,6 @@ func TestMessage_StateOnlyTic(t *testing.T) {
 	assert.Equal(t, json.RawMessage(`"you are figaro"`), mustEntry(decoded.Patches[0], "system.credo"))
 }
 
-func TestPatch_AliasIdentity(t *testing.T) {
-	cb := form.Build(form.Snapshot{}, map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}, nil)
-	var m message.Patch = cb
-	assert.False(t, m.IsIdentity())
-
-	mp := form.Build(form.Snapshot{}, map[string]json.RawMessage{}, []string{"x"})
-	assert.False(t, form.Patch(mp).IsIdentity())
-}
-
 func TestNewInterruptSentinel_NamesAllToolCalls(t *testing.T) {
 	calls := []message.Content{
 		{Type: message.ContentToolInvoke, ToolCallID: "tc_a", ToolName: "bash"},

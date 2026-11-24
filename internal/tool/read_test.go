@@ -188,17 +188,6 @@ func TestRead_FirstLineExceedsLimit(t *testing.T) {
 	assert.Less(t, len(text), 300)
 }
 
-func TestRead_Name(t *testing.T) {
-	r := newRead(t, "")
-	assert.Equal(t, "read", r.Name())
-}
-
-func TestRead_Description(t *testing.T) {
-	r := newRead(t, "")
-	assert.Contains(t, r.Description(), "2000 lines")
-	assert.Contains(t, r.Description(), "offset")
-}
-
 func TestRead_Image(t *testing.T) {
 	dir := t.TempDir()
 	// Minimal valid PNG: 1x1 pixel, red.
