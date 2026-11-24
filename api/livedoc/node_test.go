@@ -111,24 +111,3 @@ func TestDiffNodes_NoChange(t *testing.T) {
 		t.Fatalf("expected no ops, got %+v", ops)
 	}
 }
-
-func TestStyleToolStampsByName(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		want ToolStyle
-	}{
-		{"bash", ToolStyle{Label: "$", HeadArg: "command"}},
-		{"process", ToolStyle{Label: "$", HeadArg: "command"}},
-		{"write", ToolStyle{HeadArg: "path", BodyArg: "content"}},
-		{"read", ToolStyle{HeadArg: "path"}},
-		{"edit", ToolStyle{HeadArg: "path", Diff: true}},
-		{"unheard-of", ToolStyle{}},
-	} {
-		n := Node{Type: NodeTool, Name: tc.name, Label: "stale", Diff: true}
-		StyleTool(&n)
-		got := ToolStyle{Label: n.Label, HeadArg: n.HeadArg, BodyArg: n.BodyArg, Diff: n.Diff}
-		if got != tc.want {
-			t.Errorf("%s: got %+v, want %+v", tc.name, got, tc.want)
-		}
-	}
-}

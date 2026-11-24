@@ -48,22 +48,6 @@ func frameFixture(t *testing.T) *transcript {
 func TestTranscriptFramesGolden(t *testing.T) {
 	got := buildGoldenFrames(t)
 
-	// The pre-collapse companion is regenerated in the same pass so the
-	// cell-level proof beside it survives a content change.
-	if *updateGolden {
-		prev := sgrCollapse
-		sgrCollapse = func(s string) string { return s }
-		pre := buildGoldenFrames(t)
-		sgrCollapse = prev
-		name := "transcript_frames.pre-sgr.golden"
-		if term.Enabled() {
-			name = "transcript_frames_color.pre-sgr.golden"
-		}
-		if err := os.WriteFile(filepath.Join("testdata", name), []byte(pre), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
 	writeOrCompareGolden(t, got)
 }
 

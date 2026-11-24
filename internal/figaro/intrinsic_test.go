@@ -5,9 +5,7 @@ package figaro
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
@@ -296,21 +294,6 @@ func stringOf(snap form.Snapshot, key string) (string, bool) {
 	}
 	return s, true
 }
-
-func readSources(t *testing.T, names ...string) string {
-	t.Helper()
-	var b strings.Builder
-	for _, n := range names {
-		data, err := os.ReadFile(n)
-		if err != nil {
-			t.Fatalf("read %s: %v", n, err)
-		}
-		b.Write(data)
-	}
-	return b.String()
-}
-
-func containsOutsideOfDecl(src, needle string) bool { return strings.Contains(src, needle) }
 
 // A coalesced run is lifted as N events and committed as one; every folded id
 // must leave the lifted set.

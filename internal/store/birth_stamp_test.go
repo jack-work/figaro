@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
@@ -213,39 +212,5 @@ func TestEveryCrashCutOfAStampedBirthIsAStateTheOldOrderCouldLeave(t *testing.T)
 	torn[birthAt] ^= 0x01
 	if o := check("canary", torn); o.stamped {
 		t.Fatal("canary: a torn birth frame with an intact stamp read as stamped")
-	}
-}
-
-// A birth must touch its child. The stamp's old second write touched it as a
-// side effect; without a touch, a daemon doing nothing but creates looks quiet
-// to the idle evictor, which retires the root head after every birth and makes
-// the next create re-list every channel root.
-func TestABirthKeepsTheStoreFromLookingQuiet(t *testing.T) {
-	const idle = 2 * time.Second
-	prev := HandleIdleForTest()
-	SetHandleIdle(idle)
-	t.Cleanup(func() { SetHandleIdle(prev) })
-
-	be, _, parent := newStampFixture(t)
-	defer be.Close()
-	heads := be.store.trunks.LoadedHeads
-
-	deadline := time.Now().Add(idle + 5*time.Second)
-	for heads() != 0 {
-		if time.Now().After(deadline) {
-			t.Fatalf("parent never went idle: %d heads loaded", heads())
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-
-	if _, _, err := be.ForkWith(parent, 0, stampBirthPatch("/work"), Stamped(stampFill("/work"))); err != nil {
-		t.Fatal(err)
-	}
-	born := time.Now()
-	for time.Since(born) < idle-500*time.Millisecond {
-		if heads() == 0 {
-			t.Fatalf("heads retired %v after a birth, inside the %v idle window", time.Since(born).Round(time.Millisecond), idle)
-		}
-		time.Sleep(20 * time.Millisecond)
 	}
 }

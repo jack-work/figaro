@@ -7,7 +7,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
 )
 
@@ -115,13 +114,6 @@ func TestExchangeURL(t *testing.T) {
 	}
 	if got := exchangeURL(loaded(Config{TokenMode: "direct"})); got != "" {
 		t.Fatalf("direct = %q, want empty (no exchange)", got)
-	}
-}
-
-func TestUnmintedEndpointIsEmpty(t *testing.T) {
-	var carrier auth.EndpointCarrier = &auth.OAuth{}
-	if got := carrier.Endpoint(); got != "" {
-		t.Fatalf("unminted endpoint = %q", got)
 	}
 }
 

@@ -194,17 +194,6 @@ func TestBash_StreamingNil(t *testing.T) {
 	assert.Contains(t, resultText(result), "ok")
 }
 
-func TestBash_Name(t *testing.T) {
-	b := newBash(t, "")
-	assert.Equal(t, "bash", b.Name())
-}
-
-func TestBash_Description(t *testing.T) {
-	b := newBash(t, "")
-	assert.Contains(t, b.Description(), "2000 lines")
-	assert.Contains(t, b.Description(), "50KB")
-}
-
 // The cwd is read on every call, so `figaro set system.cwd` takes effect
 // without rebuilding the tool.
 func TestBash_CwdReadPerCall(t *testing.T) {

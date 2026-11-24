@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"testing"
 	"time"
@@ -213,20 +212,6 @@ func BenchmarkTranscriptLiveStream(b *testing.B) {
 		tr.tick++
 		tr.render()
 	}
-}
-
-// A report, not an assertion: FIGARO_PAGING_REPORT=1 go test -run JourneyCost -v.
-func TestTranscriptJourneyCost(t *testing.T) {
-	if os.Getenv("FIGARO_PAGING_REPORT") == "" {
-		t.Skip("set FIGARO_PAGING_REPORT=1 for the paging cost report")
-	}
-	h := newPagingHarness(600, 20, 100, 40)
-	start := time.Now()
-	h.journey(300)
-	t.Logf("geometry pageSize=%d pageLimit=%d rows/window=%d",
-		transcriptPageSize, transcriptPageLimit, len(h.tr.lineKey))
-	t.Logf("journey: keys=%d fetches=%d fetchedMsgs=%d refetchedMsgs=%d evictions=%d nodeRenders=%d wall=%s",
-		h.keys, h.fetches, h.fetchedMsgs, h.refetches, h.evictions, h.view.render, time.Since(start).Round(time.Millisecond))
 }
 
 var _ = sort.Search

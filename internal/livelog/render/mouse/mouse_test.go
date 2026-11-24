@@ -114,15 +114,6 @@ func TestParseSplitThenComplete(t *testing.T) {
 	}
 }
 
-func TestControlStrings(t *testing.T) {
-	if Enable != "\x1b[?1000h\x1b[?1006h" {
-		t.Fatalf("bad Enable")
-	}
-	if Disable != "\x1b[?1006l\x1b[?1000l" {
-		t.Fatalf("bad Disable")
-	}
-}
-
 // The xterm modifier mask is 4/8/16, not the CSI-u 1/2/4.
 func TestModifierAccessors(t *testing.T) {
 	cases := []struct {

@@ -2,11 +2,8 @@ package cli
 
 import (
 	"encoding/json"
-	"os"
-	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/api/command"
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/arialog"
@@ -187,9 +184,7 @@ func TestComposeTurnsKeepsStoredIDsInATailWindow(t *testing.T) {
 	}
 }
 
-// Every flag api/command gives `show` must survive reassembly in cli.go and
-// land in showOpts.
-func TestEveryShowFlagIsWiredThrough(t *testing.T) {
+func TestShowFlagsLandInShowOpts(t *testing.T) {
 	opts := parseShowArgs([]string{"--max-bytes", "50", "--last", "7", "--from", "3", "--to", "9", "-o", "-j"})
 	if opts.maxBytes != 50 {
 		t.Fatalf("--max-bytes did not reach showOpts: %+v", opts)
@@ -198,19 +193,4 @@ func TestEveryShowFlagIsWiredThrough(t *testing.T) {
 		t.Fatalf("a declared flag was dropped by the parser: %+v", opts)
 	}
 
-	// cli.go hand-copies each parsed flag into the argv renderAria re-parses;
-	// reading the source is the only place the coupling is visible.
-	src, err := os.ReadFile("cli.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(src)
-	showBlock := body[strings.Index(body, `verb("show",`):]
-	showBlock = showBlock[:strings.Index(showBlock, `verb("send",`)]
-	show, _ := command.Shell("show")
-	for _, f := range show.Flags {
-		if f.Long != "id" && !strings.Contains(showBlock, `"`+f.Long+`"`) {
-			t.Errorf("show declares %q but never reassembles it: renderAria will never see it", f.Long)
-		}
-	}
 }

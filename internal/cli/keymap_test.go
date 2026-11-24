@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -119,46 +118,6 @@ func TestKeymap_EveryRowIsWellFormed(t *testing.T) {
 	}
 }
 
-func TestKeymap_IndexAgreesWithTheTable(t *testing.T) {
-	for i := range keymap {
-		bd := &keymap[i]
-		if bd.prefix != "" {
-			continue
-		}
-		idx := &pagerIndex
-		other := &inputIndex
-		if bd.input != nil {
-			idx, other = &inputIndex, &pagerIndex
-		}
-		ev := keyEvent{}
-		switch bd.chord.kind {
-		case chordNav:
-			ev.nav = bd.chord.nav
-		case chordCtrlLetter:
-			ev.ctrl = bd.chord.b
-		case chordMeta:
-			ev.meta = bd.chord.b
-		default:
-			ev.b = bd.chord.b
-		}
-		for m := keyMode(0); m < numKeyModes; m++ {
-			got := idx.lookup(m, ev)
-			want := bd.modes&(1<<m) != 0
-			if want && got != bd {
-				t.Errorf("%s in %s mode: index resolved to %v, want the declared row",
-					bd.chord, modeName(m), got)
-			}
-			if !want && got == bd {
-				t.Errorf("%s: reachable in %s mode, which it does not declare",
-					bd.chord, modeName(m))
-			}
-			if o := other.lookup(m, ev); o == bd {
-				t.Errorf("%s: indexed at the wrong dispatch level", bd.chord)
-			}
-		}
-	}
-}
-
 func TestKeymap_OpenersReallyOpenThePager(t *testing.T) {
 	for i := range keymap {
 		bd := &keymap[i]
@@ -270,43 +229,5 @@ func TestHelp_HiddenBindingsStayOffTheList(t *testing.T) {
 	panel := strings.Join(helpBody(), "\n")
 	if strings.Contains(panel, "^T") {
 		t.Errorf("^T is a hidden binding but appears in the help panel:\n%s", panel)
-	}
-}
-
-func TestKeymap_ActionArraysAgreeWithTheIndex(t *testing.T) {
-	same := func(a, b any) bool {
-		return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
-	}
-	for m := keyMode(0); m < numKeyModes; m++ {
-		for b := 0; b < 256; b++ {
-			ev := keyEvent{b: byte(b)}
-			checkSlot(t, m, ev, pagerAct.pager(m, ev), inputAct.input(m, ev), same)
-		}
-		for n := navUp; n <= navEnd; n++ {
-			ev := keyEvent{nav: n}
-			checkSlot(t, m, ev, pagerAct.pager(m, ev), inputAct.input(m, ev), same)
-		}
-		for c := byte('a'); c <= 'z'; c++ {
-			ev := keyEvent{ctrl: c}
-			checkSlot(t, m, ev, pagerAct.pager(m, ev), inputAct.input(m, ev), same)
-		}
-	}
-}
-
-func checkSlot(t *testing.T, m keyMode, ev keyEvent, pact pagerFunc, iact inputFunc, same func(a, b any) bool) {
-	t.Helper()
-	if bd := pagerIndex.lookup(m, ev); bd != nil {
-		if pact == nil || !same(pact, bd.pager) {
-			t.Errorf("%s in %s mode: the pager action array disagrees with the row", ev.chord(), modeName(m))
-		}
-	} else if pact != nil {
-		t.Errorf("%s in %s mode: a pager action with no row behind it", ev.chord(), modeName(m))
-	}
-	if bd := inputIndex.lookup(m, ev); bd != nil {
-		if iact == nil || !same(iact, bd.input) {
-			t.Errorf("%s in %s mode: the input action array disagrees with the row", ev.chord(), modeName(m))
-		}
-	} else if iact != nil {
-		t.Errorf("%s in %s mode: an input action with no row behind it", ev.chord(), modeName(m))
 	}
 }

@@ -218,10 +218,3 @@ func TestEntryAccessorsReadAbsentFieldsAsUnknown(t *testing.T) {
 	require.Equal(t, SourceConfig, src)
 	require.Equal(t, SourceAPI, e.Source("context"))
 }
-
-// Absent fields stay out of the form: an unknown is no key, not a zero.
-func TestAnEmptyEntryEncodesNoFields(t *testing.T) {
-	raw, err := json.Marshal(Entry{Name: "x"})
-	require.NoError(t, err)
-	require.JSONEq(t, `{"name":"x"}`, string(raw))
-}

@@ -4,11 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jack-work/figaro/api/form"
 )
@@ -45,67 +42,6 @@ func buildBoard(tb testing.TB, dir string, segment int) string {
 	f.ckptGate.Unlock()
 	f.ckpt.Wait()
 	return id
-}
-
-type coldOpen struct {
-	ms, allocMB, heapMB float64
-	version             uint64
-}
-
-func openBoard(tb testing.TB, dir, id string, segment int) coldOpen {
-	tb.Helper()
-	runtime.GC()
-	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
-	start := time.Now()
-	b, err := NewXwalBackend(dir, segment)
-	if err != nil {
-		tb.Fatal(err)
-	}
-	f, err := b.form(id)
-	if err != nil {
-		tb.Fatal(err)
-	}
-	took := time.Since(start)
-	runtime.ReadMemStats(&after)
-	alloc := after.TotalAlloc - before.TotalAlloc
-	runtime.GC()
-	runtime.ReadMemStats(&after)
-	_, v := f.Snapshot()
-	out := coldOpen{ms: float64(took.Microseconds()) / 1000, allocMB: float64(alloc) / (1 << 20),
-		heapMB: (float64(after.HeapInuse) - float64(before.HeapInuse)) / (1 << 20), version: v}
-	runtime.KeepAlive(f)
-	b.Close()
-	return out
-}
-
-// TestBoardColdOpenNumbers is the #122 measurement, not a check: it prints the
-// cold open of the fixture with checkpoints off and on. WATERMARK_BENCH=1.
-func TestBoardColdOpenNumbers(t *testing.T) {
-	if os.Getenv("WATERMARK_BENCH") == "" {
-		t.Skip("WATERMARK_BENCH=1")
-	}
-	const seg = 8 << 20
-	for _, every := range []int{0, 512, 100} {
-		checkpointEvery(t, every, 5)
-		dir := filepath.Join(t.TempDir(), fmt.Sprint(every))
-		id := buildBoard(t, dir, seg)
-		var best coldOpen
-		for i := 0; i < 5; i++ {
-			o := openBoard(t, dir, id, seg)
-			if i == 0 || o.ms < best.ms {
-				best = o
-			}
-		}
-		marks := checkpointVersions(checkpointDirOf(dir, id))
-		var bytes int64
-		if len(marks) > 0 {
-			fi, _ := os.Stat(filepath.Join(checkpointDirOf(dir, id), checkpointName(marks[len(marks)-1])))
-			bytes = fi.Size()
-		}
-		t.Logf("every_patches=%d: cold open %.1f ms, %.1f MB allocated, %.1f MB heap held, version %d, checkpoints %v (%d bytes)",
-			every, best.ms, best.allocMB, best.heapMB, best.version, marks, bytes)
-	}
 }
 
 func BenchmarkCheckpointWrite(b *testing.B) {

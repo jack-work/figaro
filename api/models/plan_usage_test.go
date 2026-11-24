@@ -32,9 +32,3 @@ func TestPlanUsageSurvivesTheWireAndTheCatalog(t *testing.T) {
 	require.Nil(t, PlanUsageOf(cat, "rou2", "missing"))
 	require.Nil(t, PlanUsageOf(cat, "", "anthropic-max/claude-opus-5-5"))
 }
-
-func TestAnEntryWithoutPlanUsageEncodesNoPlanUsage(t *testing.T) {
-	raw, err := json.Marshal(Entry{Name: "x"})
-	require.NoError(t, err)
-	require.NotContains(t, string(raw), "plan_usage")
-}

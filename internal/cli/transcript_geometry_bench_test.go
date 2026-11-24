@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
 	"testing"
 	"time"
 
@@ -125,24 +124,6 @@ func BenchmarkTranscriptGeometryFollow(b *testing.B) {
 				}
 			})
 		})
-	}
-}
-
-// A report, not an assertion: FIGARO_PAGING_REPORT=1 go test -run GeometryDepth -v.
-func TestTranscriptGeometryDepthReport(t *testing.T) {
-	if os.Getenv("FIGARO_PAGING_REPORT") == "" {
-		t.Skip("set FIGARO_PAGING_REPORT=1 for the geometry depth report")
-	}
-	for _, depth := range []int{60, 120, 240} {
-		for _, rows := range geometryBudgets {
-			withWindowRows(rows, func() {
-				h := newPagingHarness(600, 60, 100, 40)
-				h.journey(depth)
-				t.Logf("depth=%-4d budget=%-5d window=%-5d fetches=%-3d refetched=%-3d renders=%-4d peak=%d KB",
-					depth, rows, h.tr.index.total, h.fetches, h.refetches,
-					h.view.render, h.peakBytes/1024)
-			})
-		}
 	}
 }
 

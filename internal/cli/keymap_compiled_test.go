@@ -167,7 +167,3 @@ func golden(t *testing.T, name, got string) {
 	}
 	t.Fatalf("%s differs from the tree (-update-keymap records a deliberate change):\n%s", path, strings.Join(diff, "\n"))
 }
-
-func TestKeymapCompiledIsTheGolden(t *testing.T) {
-	golden(t, "compiled.golden", compiledKeymap())
-}

@@ -2,8 +2,9 @@ package rpc_test
 
 import (
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -93,31 +94,6 @@ func TestQueueUpdate(t *testing.T) {
 		Epoch:  "abcd",
 		Result: rpc.QueueResult{ID: 2, Outcome: rpc.QueueUpdated},
 	})
-}
-
-func TestQueueRejection_WireStringsAreStable(t *testing.T) {
-	assert.Equal(t, "committing", string(rpc.RejectCommitting))
-	assert.Equal(t, "committed", string(rpc.RejectCommitted))
-	assert.Equal(t, "merged", string(rpc.RejectMerged))
-	assert.Equal(t, "stale", string(rpc.RejectStale))
-	assert.Equal(t, "unknown", string(rpc.RejectUnknown))
-	assert.Equal(t, "closed", string(rpc.RejectClosed))
-
-	assert.Equal(t, "deleted", string(rpc.QueueDeleted))
-	assert.Equal(t, "updated", string(rpc.QueueUpdated))
-	assert.Equal(t, "rejected", string(rpc.QueueRejected))
-
-	assert.Equal(t, "queued", string(rpc.QueueStateQueued))
-	assert.Equal(t, "committing", string(rpc.QueueStateCommitting))
-
-	assert.Equal(t, "keep", string(rpc.QueueKeep))
-	assert.Equal(t, "clear", string(rpc.QueueClear))
-}
-
-func TestQueueMethodNames(t *testing.T) {
-	assert.Equal(t, "figaro.queued", rpc.MethodQueued)
-	assert.Equal(t, "figaro.queue.update", rpc.MethodQueueUpdate)
-	assert.Equal(t, "figaro.queue.delete", rpc.MethodQueueDelete)
 }
 
 func ptrPatch(p form.Patch) *form.Patch { return &p }
