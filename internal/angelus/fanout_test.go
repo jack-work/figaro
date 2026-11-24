@@ -810,8 +810,8 @@ func TestARoleHeldOnlyAsARoutingAliasDoesNotCapItsHolder(t *testing.T) {
 	}
 }
 
-// A holder at its max_children must still be able to succeed: the successor
-// fork retires the holder, so it takes no slot the holder could have spent.
+// A holder at its max_children must still be able to succeed. Abdication is
+// only promised by the fork, so it buys one slot past the cap, never more.
 func TestASuccessorForkIsAdmittedAtThePredecessorsCap(t *testing.T) {
 	hs, b, outfit := fanoutHandlers(t)
 	pred, _ := b.CreateConversation(outfit)
@@ -833,6 +833,9 @@ func TestASuccessorForkIsAdmittedAtThePredecessorsCap(t *testing.T) {
 	out2, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred, Seat: seat, Abdicates: true})
 	if err != nil {
 		t.Fatalf("the successor fork of a holder at its cap: %v", err)
+	}
+	if _, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred, Seat: seat, Abdicates: true}); err == nil {
+		t.Fatal("a second successor fork was admitted: abdication buys one slot past the cap, not a slot per fork")
 	}
 	if err := swapUnder(t, hs, pred, pred, out2.Alternative); err != nil {
 		t.Fatalf("the successor of a holder at its cap could not take its place: %v", err)
