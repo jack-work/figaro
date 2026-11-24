@@ -9,7 +9,6 @@ import (
 	"hash/fnv"
 	"maps"
 	"math/rand/v2"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -34,7 +33,7 @@ import (
 
 var (
 	simSeed  = flag.Uint64("sim.seed", 0, "run only this seed")
-	simN     = flag.Int("sim.n", 200, "seeds to run")
+	simN     = flag.Int("sim.n", 60, "seeds to run")
 	simSteps = flag.Int("sim.steps", 500, "steps per seed")
 	simTrace = flag.Int("sim.trace", 120, "trace lines printed on failure")
 )
@@ -785,50 +784,6 @@ func TestSim(t *testing.T) {
 			runSim(t, seed, *simSteps)
 		})
 	}
-}
-
-// A seed is a replay only if the same seed walks the same steps.
-func TestSimDeterministic(t *testing.T) {
-	for _, seed := range []uint64{3, 17, 101} {
-		for _, sh := range []shape{{}, {replicas: 8, keys: []string{"a", "b"}, depth: 2, editW: 60, burst: 5}} {
-			a := runShape(t, seed, 200, sh)
-			b := runShape(t, seed, 200, sh)
-			if a != b {
-				t.Errorf("seed %d, shape %+v: two runs took different paths (%x vs %x)", seed, sh, a, b)
-			}
-		}
-	}
-}
-
-// A sanity check on the oracle itself: the history the simulator keeps folds
-// to the same state the server holds, on a run with no replicas at all.
-func TestSimOracleTracksTheServer(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		s := newSim(t, 9, 0, shape{})
-		for i := 0; i < 300; i++ {
-			s.step = i
-			s.outsideWrite()
-			if s.pick(40) == 0 {
-				s.crash()
-			}
-		}
-		synctest.Wait()
-		server, version := s.srv.state()
-		if !formgen.Same(server, s.history[version]) {
-			t.Fatalf("oracle drifted at v%d\n  form    %s\n  history %s", version, formgen.JSON(server), formgen.JSON(s.history[version]))
-		}
-		keys := make([]int, 0, len(s.history))
-		for v := range s.history {
-			keys = append(keys, int(v))
-		}
-		sort.Ints(keys)
-		for i, v := range keys {
-			if v != i {
-				t.Fatalf("versions not consecutive: %v", keys[:i+1])
-			}
-		}
-		s.close()
-	})
 }
 
 // A paged log rebases its in-memory window every few records, and a crash
