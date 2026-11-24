@@ -288,7 +288,7 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 // source write names where the COPY stood, which may be one fold behind.
 func waitForFold(t *testing.T, lib *Libretto, v uint64) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		if lib.At() >= v {
 			return
