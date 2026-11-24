@@ -13,7 +13,7 @@ import (
 )
 
 // The listeners that are not the pager (form listen, a plain or verbatim
-// send, the models feed) hold their follow through follow: the door ends it
+// send) hold their follow through follow: the door ends it
 // at the edge's age, it dials the edge and follows the same aria again with
 // no user action, tells the caller so it can catch up, and only a real end
 // or Close ends it.

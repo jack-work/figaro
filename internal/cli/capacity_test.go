@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/sdk/aria"
 )
@@ -21,7 +20,6 @@ func capacitySession(t *testing.T) *interactiveInput {
 	in := &interactiveInput{mu: new(renderLock), bound: &formMirror{}}
 	in.lt = newLivelogTurn(&out, 120, 20, &renderSettings{}, "abcd1234", time.Now(),
 		newSessionStatus("abcd1234", time.Now()), nil, dimRule)
-	in.models = &modelsFeed{onChange: in.recomputeLimit}
 	in.lt.status.update(aria.Metrics{ContextTokens: 12_400, ContextExact: true})
 	return in
 }
@@ -34,17 +32,6 @@ func boundFormPatch(base form.Snapshot, kv map[string]string) form.Patch {
 	return form.Build(base, set, nil)
 }
 
-func catalogPatch(t *testing.T, base form.Snapshot, provider string, entries map[string]int) form.Patch {
-	t.Helper()
-	p := models.Provider{IR: models.IRVersion}
-	for id, w := range entries {
-		p.Place(id, models.Entry{Context: models.Context{Default: w}})
-	}
-	raw, err := json.Marshal(p)
-	require.NoError(t, err)
-	return form.Build(base, map[string]json.RawMessage{provider: raw}, nil)
-}
-
 func barText(in *interactiveInput) string {
 	in.mu.Lock()
 	defer in.mu.Unlock()
@@ -52,18 +39,15 @@ func barText(in *interactiveInput) string {
 }
 
 // The bar shows the capacity the daemon published on the bound form, the
-// same number figaro status prints. The pager's own catalog copy never
-// decides it: #210, where a stale copy said "capacity unknown".
+// same number figaro status prints: #210, where a stale catalog copy said
+// "capacity unknown".
 func TestBarShowsTheDaemonsPublishedCapacity(t *testing.T) {
 	in := capacitySession(t)
-	cat, _, _ := in.models.mirror.state()
-	in.models.mirror.reset(cat.Apply(catalogPatch(t, cat, "anthropic", map[string]int{"claude-opus-5": 500_000})), 0, 1)
-
 	bound, _, _ := in.bound.state()
 	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1,
 		Patch: boundFormPatch(bound, map[string]string{"system.provider": `"anthropic"`, "system.model": `"claude-opus-5"`})})
 	require.Contains(t, barText(in), "12.4k")
-	require.NotContains(t, barText(in), "%", "nothing published yet: tokens only, whatever the local catalog says")
+	require.NotContains(t, barText(in), "%", "nothing published yet: tokens only")
 
 	bound, _, _ = in.bound.state()
 	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 2,
@@ -155,18 +139,12 @@ func TestAReplayWithNoRecordedWindowDrawsNoPercentage(t *testing.T) {
 	tapeOnly.Store(true)
 	t.Cleanup(func() { tapeOnly.Store(false) })
 	in := capacitySession(t)
-	cat, _, _ := in.models.mirror.state()
-	delta, err := json.Marshal(rpc.FormDelta{Schema: rpc.FormDeltaSchema, AriaID: models.FormID, Version: 1,
-		Patch: catalogPatch(t, cat, "copilot", map[string]int{"claude-haiku-4.5": 136_000})})
-	require.NoError(t, err)
-	in.models.handle(rpc.MethodFormDelta, delta)
-
 	bound, _, _ := in.bound.state()
 	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1,
 		Patch: boundFormPatch(bound, map[string]string{"system.provider": `"copilot"`, "system.model": `"claude-haiku-4.5"`, form.ContextLimitKey: `136000`})})
 	in.recomputeLimit()
 	require.Contains(t, barText(in), "12.4k")
-	require.NotContains(t, barText(in), "%", "neither the live catalog nor today's published capacity reaches a replay's bar")
+	require.NotContains(t, barText(in), "%", "today's published capacity never reaches a replay's bar")
 
 	in.recordedWindow = 200_000
 	in.recomputeLimit()

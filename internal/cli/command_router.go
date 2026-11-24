@@ -84,17 +84,16 @@ func hostedByPager(word string) bool {
 }
 
 type formPit struct {
-	name    string
-	form    string
-	bare    bool
-	opening func(in *interactiveInput)
-	ready   func(in *interactiveInput, v *formView)
+	name  string
+	form  string
+	bare  bool
+	ready func(in *interactiveInput, v *formView)
 }
 
 func formPitFor(verb string) (formPit, bool) {
 	switch verb {
 	case "models":
-		return formPit{name: "models", form: models.FormID, opening: func(in *interactiveInput) { in.models.ensure() }}, true
+		return formPit{name: "models", form: models.FormID}, true
 	case "reaped":
 		return formPit{name: "reaped", form: rpc.ReapedFormID, bare: true}, true
 	case "ls", "list", "lsh":
@@ -327,9 +326,6 @@ func overlayFor(word string) (overlayFunc, bool) {
 }
 
 func (in *interactiveInput) openFormPit(p formPit) {
-	if p.opening != nil {
-		p.opening(in)
-	}
 	in.openLiveIf(p.name, p.form, false, p.keep(in))
 }
 
@@ -338,10 +334,6 @@ func (p formPit) keep(in *interactiveInput) func(*formView) bool {
 		return nil
 	}
 	return func(v *formView) bool { p.ready(in, v); return true }
-}
-
-func (in *interactiveInput) modelsChanged() {
-	in.recomputeLimit()
 }
 
 // routerMu serializes in-process router runs: the router's writers are

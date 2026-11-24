@@ -143,9 +143,6 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		}
 	}()
 
-	in.models = newModelsFeed(in.angelus, in.modelsChanged)
-	defer in.models.close()
-
 	in.lt.setCatchUp(in.pagerCatchUp)
 	// The startup path is the switch path: `:listen` calls the same retarget.
 	if err := in.retarget(ctx, opt.figaroID, opt.ep); err != nil {
