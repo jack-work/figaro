@@ -297,7 +297,7 @@ func NewAgent(cfg Config) *Agent {
 			slog.Warn("watch form", "aria", a.id, "err", err)
 		}
 	}
-	a.PublishContextLimit()
+	a.PublishModelFacts()
 
 	a.openIntrinsics()
 	a.resumeStudies()
@@ -1047,7 +1047,7 @@ func (a *Agent) writeForm(w store.FormWrite, kind string) (store.FormVerdict, er
 	a.form.Apply(verdict.Applied)
 	a.refreshMetrics()
 	a.publishMetadata()
-	a.PublishContextLimit()
+	a.PublishModelFacts()
 	return verdict, nil
 }
 

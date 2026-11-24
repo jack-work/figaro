@@ -26,6 +26,7 @@ const (
 	OwnerMadeKey        = "runtime.owner_made"
 	RouteKey            = "runtime.route"
 	ContextLimitKey     = "runtime.context.limit"
+	PlanUsageKey        = "runtime.plan_usage"
 )
 
 const RetireRequestKey = "system.retired"

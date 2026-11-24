@@ -76,6 +76,29 @@ func TestBarShowsTheDaemonsPublishedCapacity(t *testing.T) {
 	require.NotContains(t, barText(in), "%", "a withdrawn capacity clears the percentage")
 }
 
+// #211: a @models commit that moves plan usage reaches the status line as the
+// daemon's write to the bound form; the pager holds no catalog to consult.
+func TestStatusShowsThePlanUsageTheDaemonPublished(t *testing.T) {
+	in := capacitySession(t)
+	panel := func() string { return strings.Join(in.lt.status.panelLines(), "\n") }
+
+	bound, _, _ := in.bound.state()
+	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1, Patch: boundFormPatch(bound, map[string]string{
+		"system.provider": `"rou2"`, "system.model": `"anthropic-max/claude-opus-5-5"`,
+		form.PlanUsageKey: `{"plan":"anthropic-max","windows":[{"window":"five_hour","used_percent":37}]}`})})
+	require.Contains(t, panel(), "5h 37% used")
+
+	bound, _, _ = in.bound.state()
+	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 2, Patch: boundFormPatch(bound, map[string]string{
+		form.PlanUsageKey: `{"plan":"anthropic-max","windows":[{"window":"five_hour","used_percent":52}]}`})})
+	require.Contains(t, panel(), "5h 52% used")
+
+	bound, _, _ = in.bound.state()
+	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 3,
+		Patch: form.Build(bound, nil, []string{form.PlanUsageKey})})
+	require.NotContains(t, panel(), "5h ")
+}
+
 // A parked subject keeps its bound form: hopping back paints the percentage from
 // what is held, before any read.
 func TestAParkedSubjectKeepsItsBoundForm(t *testing.T) {

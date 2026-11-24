@@ -1,9 +1,9 @@
 package angelus
 
-func (a *Angelus) PublishContextLimits() {
+func (a *Angelus) PublishModelFacts() {
 	for _, info := range a.Registry.List() {
-		if p, ok := a.Registry.Get(info.ID).(interface{ PublishContextLimit() }); ok {
-			p.PublishContextLimit()
+		if p, ok := a.Registry.Get(info.ID).(interface{ PublishModelFacts() }); ok {
+			p.PublishModelFacts()
 		}
 	}
 }

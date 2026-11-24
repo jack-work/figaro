@@ -116,6 +116,13 @@ func (c *fakeCatalog) fill(provider, model string, window int) {
 	c.snap = c.snap.Apply(form.Build(c.snap, map[string]json.RawMessage{provider: raw}, nil))
 }
 
+func (c *fakeCatalog) setEntry(provider, model string, e models.Entry) {
+	raw, _ := json.Marshal(models.Provider{IR: models.IRVersion, Node: models.NewNode(map[string]models.Entry{model: e})})
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.snap = c.snap.Apply(form.Build(c.snap, map[string]json.RawMessage{provider: raw}, nil))
+}
+
 func (c *fakeCatalog) wanted() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -446,7 +453,7 @@ func TestAgentWantsItsModelAndReportsALateFill(t *testing.T) {
 	cat.fill("metrics", "gpt-5.6-terra", 128000)
 	assert.Equal(t, 128000, a.Info().ContextLimit)
 
-	a.PublishContextLimit()
+	a.PublishModelFacts()
 	raw, ok := a.Snapshot().Get(form.ContextLimitKey)
 	require.True(t, ok, "clients read the limit from the bound form")
 	assert.JSONEq(t, `128000`, string(raw))
@@ -455,6 +462,58 @@ func TestAgentWantsItsModelAndReportsALateFill(t *testing.T) {
 	raw, ok = durable.Get(form.ContextLimitKey)
 	require.True(t, ok, "the published limit is on the durable form, not only in memory")
 	assert.JSONEq(t, `128000`, string(raw))
+}
+
+// #211: the pager shows the plan usage the daemon published on the bound form;
+// a catalog change moves it, and a catalog that drops it withdraws it.
+func TestAgentPublishesThePlanUsageItsCatalogHolds(t *testing.T) {
+	cb, _ := form.Open("")
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"system.provider": json.RawMessage(`"rou2"`),
+		"system.model":    json.RawMessage(`"anthropic-max/claude-opus-5-5"`),
+	}, nil))
+	cat := &fakeCatalog{}
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
+	a := figaro.NewAgent(figaro.Config{
+		Backend:   testBE,
+		Projector: uiir.New(nil),
+		ID:        testID,
+		Provider:  metricsProvider{},
+		Form:      cb,
+		Models:    cat,
+	})
+	defer a.Kill()
+	assert.False(t, a.Snapshot().Has(form.PlanUsageKey))
+
+	pct := func(f float64) *float64 { return &f }
+	usage := func(used float64) models.Entry {
+		return models.Entry{PlanUsage: &models.PlanUsage{Plan: "anthropic-max",
+			Windows: []models.PlanWindow{{Window: "five_hour", UsedPercent: pct(used)}}}}
+	}
+	published := func() models.PlanUsage {
+		t.Helper()
+		durable, err := testBE.FormState(testID)
+		require.NoError(t, err)
+		raw, ok := durable.Get(form.PlanUsageKey)
+		require.True(t, ok, "the published usage is on the durable form")
+		var u models.PlanUsage
+		require.NoError(t, json.Unmarshal(raw, &u))
+		return u
+	}
+
+	cat.setEntry("rou2", "anthropic-max/claude-opus-5-5", usage(37))
+	a.PublishModelFacts()
+	assert.Equal(t, 37.0, *published().Windows[0].UsedPercent)
+
+	cat.setEntry("rou2", "anthropic-max/claude-opus-5-5", usage(52))
+	a.PublishModelFacts()
+	assert.Equal(t, 52.0, *published().Windows[0].UsedPercent)
+
+	cat.setEntry("rou2", "anthropic-max/claude-opus-5-5", models.Entry{})
+	a.PublishModelFacts()
+	durable, err := testBE.FormState(testID)
+	require.NoError(t, err)
+	assert.False(t, durable.Has(form.PlanUsageKey), "usage the catalog no longer holds is withdrawn")
 }
 
 func TestAgent_ReadCatchUp(t *testing.T) {
