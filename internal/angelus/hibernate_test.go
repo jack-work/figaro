@@ -219,11 +219,12 @@ func TestWakeIsAttributedToItsMethod(t *testing.T) {
 
 // waitIdle holds until the aria is idle or dormant: turn.done reaches the
 // client before the agent finishes closing the turn, and Hibernate refuses an
-// aria that is not idle.
+// aria that is not idle. The bound is a hang detector, not a timing claim:
+// the race tier at load 16-19 took longer than 10 s to close a turn.
 func waitIdle(t testing.TB, a *angelus.Angelus, id string) {
 	t.Helper()
 	require.Eventually(t, func() bool {
 		f := a.Registry.Get(id)
 		return f == nil || f.Info().State == "idle"
-	}, 10*time.Second, 20*time.Millisecond, "aria %s never went idle", id)
+	}, 2*time.Minute, 20*time.Millisecond, "aria %s never went idle", id)
 }

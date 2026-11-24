@@ -216,7 +216,7 @@ func (r *successionRig) retired(id string) bool {
 
 func (r *successionRig) eventually(cond func() bool, msg string) {
 	r.t.Helper()
-	require.Eventually(r.t, cond, 10*time.Second, 5*time.Millisecond, msg)
+	require.Eventually(r.t, cond, 2*time.Minute, 5*time.Millisecond, msg)
 }
 
 func (r *successionRig) failed(old string) string {
