@@ -539,8 +539,10 @@ func TestFanoutLimitOfIsTheTighterOfTheHoldersOwnAndEveryRoleItHolds(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := b.Fork(grandparent); err != nil {
-		t.Fatal(err)
+	for range 2 {
+		if _, _, err := b.Fork(grandparent); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	targetRaw, _ := json.Marshal(holder)
@@ -550,10 +552,10 @@ func TestFanoutLimitOfIsTheTighterOfTheHoldersOwnAndEveryRoleItHolds(t *testing.
 		t.Fatalf("fanoutLimit(holder) = %d, ok=%v, err=%v, want 1 from the role %s (holder's own form carries no key)", max, ok, err, role)
 	}
 
-	// grandparent has two children (holder and its sibling); demoting
-	// grandparent under holder hands holder both the sibling and
-	// grandparent itself in one move: 2 arrivals, past the role's limit of
-	// 1, even though holder's own form carries no cap at all.
+	// grandparent has three children (holder and two siblings); demoting
+	// grandparent under holder hands holder both siblings in one move: 2
+	// arrivals, past the role's limit of 1, even though holder's own form
+	// carries no cap at all. grandparent itself is the swap and not counted.
 	raw, _ := json.Marshal(rpc.DemoteRequest{FigaroID: grandparent, Prefer: holder})
 	_, err = hs.Map[rpc.MethodDemote](inProcess(context.Background()), raw)
 	if err == nil || !strings.Contains(err.Error(), "fanout") {
@@ -805,5 +807,34 @@ func TestARoleHeldOnlyAsARoutingAliasDoesNotCapItsHolder(t *testing.T) {
 	mintForm(t, hs.h, "target-aria", string(targetRaw), form.FanoutMaxChildrenKey, string(one))
 	if max, _, _ := hs.h.angelus.fanoutLimit(holder); max != 1 {
 		t.Fatalf("fanoutLimit(holder) = %d, want 1: a held role that is not an alias still binds", max)
+	}
+}
+
+// A holder at its max_children must still be able to succeed: the successor
+// fork retires the holder, so it takes no slot the holder could have spent.
+func TestASuccessorForkIsAdmittedAtThePredecessorsCap(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	pred, _ := b.CreateConversation(outfit)
+	setMaxChildren(t, b, pred, 1)
+	if _, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred}); err != nil {
+		t.Fatal(err)
+	}
+	target, _ := json.Marshal(pred)
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{"name": json.RawMessage(`"seat"`), "target-aria": target}, nil)
+	raw, _ := json.Marshal(rpc.FormCreateRequest{Patch: &patch})
+	out, err := hs.Map[rpc.MethodFormCreate](inProcess(context.Background()), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seat := out.(rpc.FormCreateResponse).FormID
+	if _, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred, Seat: seat}); err == nil {
+		t.Fatal("a seat fork that keeps its holder was admitted over max_children")
+	}
+	out2, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred, Seat: seat, Abdicates: true})
+	if err != nil {
+		t.Fatalf("the successor fork of a holder at its cap: %v", err)
+	}
+	if err := swapUnder(t, hs, pred, pred, out2.Alternative); err != nil {
+		t.Fatalf("the successor of a holder at its cap could not take its place: %v", err)
 	}
 }

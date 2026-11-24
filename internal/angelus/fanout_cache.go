@@ -300,7 +300,7 @@ type fanoutHold struct {
 func (c *fanoutCache) take(parent string, max int, capped bool, charge int, abdicating bool, judge func(error) error) (fanoutHold, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if capped {
+	if capped && !abdicating {
 		if n := c.kids[parent] + c.held[parent]; n >= max {
 			return fanoutHold{}, maxChildrenRefusal(parent, n, max)
 		}
