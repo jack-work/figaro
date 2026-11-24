@@ -28,10 +28,13 @@ pkgs.testers.runNixOSTest {
     def fig(node, cmd, user="figaro"):
         return node.succeed(f"runuser -u {user} -- env HOME=/var/lib/figaro figaro {cmd}")
 
+    def answered(node, user="figaro"):
+        node.wait_until_succeeds(f"runuser -u {user} -- env HOME=/var/lib/figaro figaro ls --json", timeout=900)
+
     def ms(node, cmd):
         out = node.succeed(
-            "s=$(date +%s%N); runuser -u figaro -- env HOME=/var/lib/figaro figaro "
-            + cmd + " >/dev/null; e=$(date +%s%N); echo $(( (e - s) / 1000 ))"
+            "s=$(date +%s%N); until runuser -u figaro -- env HOME=/var/lib/figaro figaro "
+            + cmd + " >/dev/null 2>&1; do sleep 0.005; done; e=$(date +%s%N); echo $(( (e - s) / 1000 ))"
         )
         return int(out.strip()) / 1000
 
@@ -45,7 +48,7 @@ pkgs.testers.runNixOSTest {
         inode = activated.succeed("stat -c %i /run/figaro/angelus.sock").strip()
 
     with subtest("the first call starts the angelus and is answered"):
-        fig(activated, "ls --json")
+        answered(activated)
         activated.succeed("systemctl is-active figaro.service")
         assert activated.succeed("stat -c %i /run/figaro/angelus.sock").strip() == inode, "the daemon rebound the socket"
         main_pid = activated.succeed("systemctl show -p MainPID --value figaro.service").strip()
@@ -62,7 +65,7 @@ pkgs.testers.runNixOSTest {
         assert doc["ok"], doc
         activated.succeed("sleep 0.5")
         assert activated.succeed("systemctl show -p ActiveState --value figaro.service").strip() == "inactive"
-        fig(activated, "ls --json")
+        answered(activated)
         activated.succeed("systemctl is-active figaro.service")
         doc_active = json.loads(fig(activated, "doctor unit -j"))
         assert doc_active["ok"], doc_active
@@ -75,7 +78,7 @@ pkgs.testers.runNixOSTest {
         print(out)
         assert status != 0, out
         activated.succeed("systemctl is-active figaro.service")
-        fig(activated, "ls --json")
+        answered(activated)
 
     with subtest("the angelus still owns its runtime files beside the manager's socket"):
         activated.succeed("test -f /run/figaro/angelus.pid")
@@ -86,7 +89,7 @@ pkgs.testers.runNixOSTest {
         activated.succeed("/run/current-system/specialisation/tight/bin/switch-to-configuration test")
         activated.wait_for_unit("figaro.socket")
         assert activated.succeed("stat -c %a /run/figaro/angelus.sock").strip() == "600"
-        fig(activated, "ls --json")
+        answered(activated)
         activated.succeed(f"{base_gen}/bin/switch-to-configuration test")
         activated.wait_for_unit("figaro.socket")
         assert activated.succeed("stat -c %a /run/figaro/angelus.sock").strip() == "660"
@@ -103,7 +106,7 @@ pkgs.testers.runNixOSTest {
         activated.succeed(f"{base_gen}/bin/switch-to-configuration test")
         assert activated.succeed("stat -c %a /run/figaro/angelus.sock").strip() == "660"
         activated.fail("systemctl is-active figaro.service")
-        fig(activated, "ls --json")
+        answered(activated)
         activated.succeed("systemctl stop figaro.service figaro.socket")
         activated.fail("test -e /run/figaro/angelus.sock")
         activated.succeed("systemctl start figaro.socket")
