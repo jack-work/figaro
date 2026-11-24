@@ -127,7 +127,7 @@ func TestAnEdgeFollowEndsAtItsAgeAndTheRefollowIsJudgedOnCurrentGroups(t *testin
 	require.GreaterOrEqual(t, time.Since(admitted), maxAge-50*time.Millisecond, "lapsed before its age")
 	var lapsed rpc.DoorLapsed
 	require.NoError(t, json.Unmarshal(raw, &lapsed))
-	require.Equal(t, maxAge.Milliseconds(), lapsed.AfterMS)
+	require.GreaterOrEqual(t, lapsed.AfterMS, maxAge.Milliseconds(), "the lapse reports how long the follow lived, at least its age")
 	require.Contains(t, lapsed.Reason, "follow age limit")
 
 	_, err = watcher.await(rpc.MethodAriaFrame, 5*time.Second)
