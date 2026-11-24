@@ -45,6 +45,9 @@ pkgs.testers.runNixOSTest {
     def main_pid():
         return int(alice("systemctl --user show -p MainPID --value figaro.service").strip())
 
+    def active(unit):
+        machine.wait_until_succeeds("su -l alice -c " + shlex.quote("export XDG_RUNTIME_DIR=/run/user/1000; systemctl --user is-active " + unit), timeout=120)
+
     def serving():
         alice("figaro ls --json >/dev/null")
 
@@ -53,8 +56,8 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("home-manager-alice.service")
 
     with subtest("the user manager starts the unit and holds the door in its socket"):
-        machine.wait_for_unit("figaro.socket", "alice")
-        machine.wait_for_unit("figaro.service", "alice")
+        active("figaro.socket")
+        active("figaro.service")
         machine.succeed("test -S /run/user/1000/figaro/angelus.sock")
         assert alice("echo $FIGARO_NO_SELF_SPAWN").strip() == "1"
 
@@ -83,7 +86,7 @@ pkgs.testers.runNixOSTest {
             "su -l alice -c 'export XDG_RUNTIME_DIR=/run/user/1000; test $(systemctl --user show -p MainPID --value figaro.service) -ne " + str(before) + "'",
             timeout=60,
         )
-        machine.wait_for_unit("figaro.service", "alice")
+        active("figaro.service")
         machine.wait_until_succeeds("su -l alice -c 'export XDG_RUNTIME_DIR=/run/user/1000; figaro ls --json >/dev/null'", timeout=60)
         assert main_pid() != before
 
