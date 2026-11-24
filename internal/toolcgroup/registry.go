@@ -10,6 +10,32 @@ import (
 type Registry struct {
 	mu sync.RWMutex
 	m  map[string]string
+	// guard (set once the tools run under one parent): unit is the daemon's
+	// unit cgroup, pid the daemon's pid. Any caller under unit that is not the
+	// daemon and belongs to no figaro is never the owner (Suspect).
+	unit string
+	pid  int
+}
+
+// Guard records the parented layout: unit is the daemon's unit cgroup (it
+// holds <unit>/daemon and <unit>/tools), pid the daemon's pid.
+func (r *Registry) Guard(unit string, pid int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.unit, r.pid = path.Clean(unit), pid
+}
+
+// Suspect reports why a caller in cgroup with pid, attributed to no figaro, may
+// still be a tool shell: it runs inside the daemon's unit (its tools parent, its
+// own leaf, or anywhere else below it) without being the daemon. "" = not.
+func (r *Registry) Suspect(cgroup string, pid int) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	cgroup = path.Clean(cgroup)
+	if r.unit != "" && (cgroup == r.unit || strings.HasPrefix(cgroup, r.unit+"/")) && pid != r.pid {
+		return "it runs in the daemon's unit " + r.unit + " (" + cgroup + ") in no figaro's cgroup and is not the daemon"
+	}
+	return ""
 }
 
 func NewRegistry() *Registry { return &Registry{m: map[string]string{}} }

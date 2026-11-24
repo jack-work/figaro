@@ -22,7 +22,7 @@ import (
 // (scripts/peer-check-e2e.sh). Elsewhere the test skips, never fakes.
 func delegated(t *testing.T) {
 	t.Helper()
-	if _, err := toolcgroup.Own(toolcgroup.NewRegistry()).Root(); err != nil || os.Getenv("FIGARO_PEER_CHECK_E2E") == "" {
+	if _, err := toolcgroup.Own(toolcgroup.NewRegistry(), toolcgroup.Limits{}).Root(); err != nil || os.Getenv("FIGARO_PEER_CHECK_E2E") == "" {
 		t.Skipf("needs a delegated cgroup and FIGARO_PEER_CHECK_E2E=1: %v", err)
 	}
 }
@@ -165,7 +165,7 @@ func BenchmarkToolCgroupFirstCall(b *testing.B) {
 	if os.Getenv("FIGARO_PEER_CHECK_E2E") == "" {
 		b.Skip("needs FIGARO_PEER_CHECK_E2E=1 inside a delegated scope")
 	}
-	tree := toolcgroup.Own(toolcgroup.NewRegistry())
+	tree := toolcgroup.Own(toolcgroup.NewRegistry(), toolcgroup.Limits{})
 	root, err := tree.Root()
 	if err != nil {
 		b.Fatal(err)
@@ -200,6 +200,6 @@ func BenchmarkAttributeACaller(b *testing.B) {
 func attributeTools(host *local.Host, peer *authz.Peercred) *toolcgroup.Registry {
 	reg := toolcgroup.NewRegistry()
 	peer.AttributeTools(reg)
-	host.Tools = toolcgroup.Own(reg)
+	host.Tools = toolcgroup.Own(reg, toolcgroup.Limits{})
 	return reg
 }
