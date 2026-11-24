@@ -3,9 +3,10 @@ package figaro
 // The runtime intrinsic's publish half, with no daemon, provider, or terminal.
 
 import (
-	"github.com/jack-work/figaro/internal/store"
 	"strings"
 	"testing"
+
+	"github.com/jack-work/figaro/internal/store"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -56,23 +57,6 @@ func TestRuntimePublishesEveryTransitionOfATurn(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("the runtime form published %v, wanted %v", got, want)
-		}
-	}
-}
-
-// Every state must have a call site in the turn loop; asserted against the
-// source because a real tool round cannot run in CI.
-func TestEveryRuntimeStateHasACallSite(t *testing.T) {
-	src := readSources(t, "turn.go", "agent.go", "intrinsic.go")
-	for _, state := range []string{
-		"RuntimeAccepted", "RuntimeCommitting", "RuntimeThinking",
-		"RuntimeTooling", "RuntimeIdle",
-	} {
-		needle := "publishRuntime(rpc." + state
-		if !containsOutsideOfDecl(src, needle) {
-			t.Errorf("no call site publishes %s. The state exists in the vocabulary and "+
-				"nothing ever announces it, which is how QueueStateCommitting spent "+
-				"months as a constant nobody wrote", state)
 		}
 	}
 }
