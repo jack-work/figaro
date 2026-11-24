@@ -221,9 +221,9 @@ func TestADroppedSocketFailsRunningCalls(t *testing.T) {
 			t.Fatalf("result %+v: want exit -1", x.Wait())
 		}
 	}
-	if !strings.Contains(out.String(), "lost the connection") {
-		t.Fatalf("output %q does not say the box went away", out.String())
-	}
+	waitFor(t, "the exec's output to say the box went away", func() bool {
+		return strings.Contains(out.String(), "lost the connection")
+	})
 	if _, err := b.FS().ReadFile("x"); err == nil {
 		t.Fatal("a call on a dead box succeeded")
 	}
