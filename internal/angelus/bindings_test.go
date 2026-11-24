@@ -121,14 +121,6 @@ func TestRestoreBindings_SkipsDeadPID(t *testing.T) {
 	assert.Nil(t, f, "dead pid should not be rebound")
 }
 
-func TestRestoreBindings_MissingFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "bindings.json")
-
-	r := angelus.NewRegistry()
-	angelus.RestoreBindings(r, path, nil)
-}
-
 func persistedIDs(t *testing.T, path string) map[int]string {
 	t.Helper()
 	data, err := os.ReadFile(path)

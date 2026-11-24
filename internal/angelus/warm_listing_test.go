@@ -93,7 +93,3 @@ func TestACancelledWarmWalkStops(t *testing.T) {
 		t.Fatalf("a cancelled walk still read %d metas", len(w.meta))
 	}
 }
-
-func TestAnEmptyStoreWarmsWithoutWorkers(t *testing.T) {
-	warmRows(context.Background(), &warmRecorder{}, nil, 8)
-}

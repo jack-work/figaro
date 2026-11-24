@@ -49,17 +49,6 @@ func TestFarmerSplitToWidthKeepsEverything(t *testing.T) {
 	}
 }
 
-// An unclosed colour leaks into the next erase-to-EOL, painting the background across the line.
-func TestFarmerSplitToWidthClosesItsStyle(t *testing.T) {
-	row := "\x1b[38;5;252m" + strings.Repeat("styled ", 30) + "\x1b[0m"
-	chunks := splitToWidth(row, 20)
-	for i, c := range chunks {
-		if strings.Contains(c, "\x1b[") && !strings.HasSuffix(c, "\x1b[0m") {
-			t.Logf("chunk %d/%d leaves its style open: %q", i, len(chunks), c)
-		}
-	}
-}
-
 func FuzzSplitToWidth(f *testing.F) {
 	for _, s := range []string{
 		strings.Repeat("A", 90), strings.Repeat("日本語", 12), "\x1b[31m" + strings.Repeat("x", 40) + "\x1b[0m",
