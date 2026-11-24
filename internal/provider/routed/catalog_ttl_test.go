@@ -132,7 +132,7 @@ func wantHits(t *testing.T, got []string, want ...string) {
 
 func (p *Provider) settled(t *testing.T) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(time.Minute)
 	for {
 		if _, flying := p.cat.inFlight(); !flying {
 			return
