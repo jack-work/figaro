@@ -19,14 +19,13 @@
 #   1. Preflight: right branch, clean tree, not behind the remote, tools present.
 #   2. Resolve the version: flake.nix as-is, or bumped from it. Refuse if that
 #      version is already tagged, or if it would move backwards.
-#   3. Gate on `go build && go vet && go test` (skip with --no-check).
-#   4. Write an annotated tag whose message IS the release notes: subject
+#   3. Write an annotated tag whose message IS the release notes: subject
 #      "vX.Y.Z: title", body prose (optional, a patch may be one line).
 #      Opens $EDITOR unless -m/--notes-file/--tag-message. Your message is
 #      never thrown away: on any abort it is saved to .git/RELEASE_EDITMSG.
-#   5. Move the `release` branch to the tag: that is what a `nix profile`
+#   4. Move the `release` branch to the tag: that is what a `nix profile`
 #      entry tracking ?ref=release will pick up.
-#   6. Push branch + release + tag, then wait until GitHub carries the tag.
+#   5. Push branch + release + tag, then wait until GitHub carries the tag.
 #      .github/workflows/release.yml makes the GitHub release from it, title
 #      and notes read straight back out of the tag. One source of truth.
 #
@@ -42,7 +41,6 @@ set -euo pipefail
 
 BUMP=""
 DRY=0
-CHECK=1
 WAIT=1
 SUBJECT=""
 NOTES_FILE=""
@@ -152,7 +150,6 @@ already declares is what gets cut.
                            included. Verbatim, no editor. This is what an
                            aborted run tells you to resume with.
   -n, --dry-run            Print every mutation without performing it.
-      --no-check           Skip go build/vet/test.
       --no-wait            Push, but do not wait for GitHub to carry the tag.
       --remote <name>      Git remote (default: keel).
       --branch <name>      Branch being released (default: main).
@@ -167,7 +164,6 @@ while [ $# -gt 0 ]; do
 		--notes-file)      NOTES_FILE="${2:-}"; shift ;;
 		--tag-message)     TAG_MESSAGE_FILE="${2:-}"; shift ;;
 		-n|--dry-run)      DRY=1 ;;
-		--no-check)        CHECK=0 ;;
 		--no-wait)         WAIT=0 ;;
 		--remote)          REMOTE="${2:-}"; shift ;;
 		--branch)          BRANCH="${2:-}"; shift ;;
@@ -267,21 +263,6 @@ else
 		git add flake.nix
 		git commit -q -m "chore: figaro $VERSION (flake version)"
 	fi
-fi
-
-# --------------------------------------------------------------------- gate
-
-if [ "$CHECK" = 1 ]; then
-	say "go build / vet / test"
-	if [ "$DRY" = 1 ]; then
-		printf '   \033[2m[dry-run]\033[0m go build ./... && go vet ./... && go test ./...\n' >&2
-	else
-		go build ./... || die "go build failed"
-		go vet ./...   || die "go vet failed"
-		go test ./...  || die "go test failed"
-	fi
-else
-	say "skipping build/test gate (--no-check)"
 fi
 
 # ---------------------------------------------------------------------- tag

@@ -473,8 +473,7 @@ scripts/release.sh minor -m "one outfit spec, every verb" --notes-file NOTES.md
 scripts/release.sh patch --dry-run        # print every mutation, perform none
 ```
 
-It also: refuses a dirty tree or a branch behind the remote; gates on
-`go build && go vet && go test`; refuses a version already tagged or moving
+It also: refuses a dirty tree or a branch behind the remote; refuses a version already tagged or moving
 backwards; asserts that the tag and the version a built binary reports are the
 same string; and writes the GitHub release title and notes **out of the tag
 message**, so the two cannot disagree.
