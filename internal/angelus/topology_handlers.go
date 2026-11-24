@@ -542,19 +542,19 @@ func (h *handlers) forkRefusals(parent string, charge int, abdicating, ownerMade
 	if ownerMade {
 		return nil, nil
 	}
+	if err := h.admitMaxChildren(parent, successorSlot(abdicating)); err != nil {
+		return err, nil
+	}
 	if abdicating {
 		if err := h.angelus.settledFanout().over(parent); err != nil {
 			return nil, fmt.Errorf("%w; a succession that retires its predecessor fits only a budget that is not already overdrawn", err)
 		}
 		return nil, nil
 	}
-	if err := h.admitMaxChildren(parent); err != nil {
-		return err, nil
-	}
 	return nil, h.angelus.settledFanout().fits(parent, charge)
 }
 
-func (h *handlers) admitMaxChildren(parent string) error {
+func (h *handlers) admitMaxChildren(parent string, headroom int) error {
 	max, ok, err := h.angelus.fanoutLimit(parent)
 	if err != nil {
 		return fmt.Errorf("fork: the limit of %s cannot be read to admit the fork: %w", parent, err)
@@ -562,7 +562,7 @@ func (h *handlers) admitMaxChildren(parent string) error {
 	if !ok {
 		return nil
 	}
-	if n := h.angelus.liveChildCount(parent); n >= max {
+	if n := h.angelus.liveChildCount(parent); n >= max+headroom {
 		return maxChildrenRefusal(parent, n, max)
 	}
 	return nil

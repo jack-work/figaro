@@ -301,7 +301,7 @@ func (c *fanoutCache) take(parent string, max int, capped bool, charge int, abdi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if capped {
-		if n := c.kids[parent] + c.held[parent]; n >= max {
+		if n := c.kids[parent] + c.held[parent]; n >= max+successorSlot(abdicating) {
 			return fanoutHold{}, maxChildrenRefusal(parent, n, max)
 		}
 	}
@@ -379,6 +379,13 @@ func (c *fanoutCache) addPendingLocked(at string, d int) {
 }
 
 func (c *fanoutCache) spent(id string) int { return c.used[id] + c.pending[id] }
+
+func successorSlot(abdicating bool) int {
+	if abdicating {
+		return 1
+	}
+	return 0
+}
 
 func maxChildrenRefusal(parent string, n, max int) error {
 	return fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one, fork elsewhere, or have its parent grant more (figaro set --id %s %s %d)", parent, n, max, shortID(parent), form.FanoutMaxChildrenKey, n+1)

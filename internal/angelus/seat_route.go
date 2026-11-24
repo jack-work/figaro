@@ -20,6 +20,7 @@ var seatRouteKeys = []string{
 	"system.thinking_budget",
 	"system.methods",
 	"system.decide",
+	"system.cache_control",
 }
 
 func seatRoute(snap form.Snapshot) map[string]json.RawMessage {
