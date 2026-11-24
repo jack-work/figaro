@@ -55,60 +55,6 @@ func tableFixture(n int) string {
 	return b.String()
 }
 
-func TestFarmerQuoteInvariants(t *testing.T) {
-	type fail struct {
-		name  string
-		width int
-		what  string
-		row   int
-		text  string
-	}
-	seen := map[string]fail{}
-	for name, md := range farmerCorpus() {
-		for _, typ := range []livedoc.NodeType{livedoc.NodeThinking, livedoc.NodeSteering} {
-			for w := 20; w <= 200; w++ {
-				rows := nodeProseRows(livedoc.Node{Type: typ, Markdown: md}, w)
-				col := -1
-				for i, r := range rows {
-					plain := strings.TrimRight(stripANSI(r), " ")
-					if strings.TrimSpace(plain) == "" {
-						continue
-					}
-					key := func(k string) string { return name + "/" + k }
-					// glamour overruns the width it is given;
-					// a quoted row may exceed the viewport
-					// only where glamour's own row already
-					// did.
-					if got := displayWidth(r); got > w && !glamourOverranAt(md, w) {
-						if _, ok := seen[key("overwide")]; !ok {
-							seen[key("overwide")] = fail{name, w, fmt.Sprintf("row is %d cells > width, and glamour stayed inside its own budget", got), i, plain}
-						}
-					}
-					if !strings.HasPrefix(strings.TrimLeft(plain, " "), "│") {
-						if _, ok := seen[key("norule")]; !ok {
-							seen[key("norule")] = fail{name, w, "row has no rule", i, plain}
-						}
-						continue
-					}
-					at := len(plain) - len(strings.TrimLeft(plain, " "))
-					if col < 0 {
-						col = at
-					} else if at != col {
-						if _, ok := seen[key("ragged")]; !ok {
-							seen[key("ragged")] = fail{name, w, fmt.Sprintf("rule at column %d, block uses %d", at, col), i, plain}
-						}
-					}
-				}
-			}
-		}
-	}
-	if len(seen) > 0 {
-		for k, f := range seen {
-			t.Errorf("%s: w=%d row %d: %s: %q", k, f.width, f.row, f.what, f.text)
-		}
-	}
-}
-
 // A quoted row is the gutter then glamour's own row at the reserved width,
 // byte for byte; anything weaker is satisfiable by re-padded or clipped output.
 func TestFarmerRowsAreGlamourPlusGutter(t *testing.T) {
