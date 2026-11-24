@@ -113,3 +113,52 @@ func TestAPeerOnAPlatformThatNamesNoPidIsNotTakenForAnOutsider(t *testing.T) {
 		t.Fatal("an unknown pid skipped the tool check")
 	}
 }
+
+// #72: under the parented layout any caller inside the daemon's unit that is
+// not the daemon and belongs to no figaro is never the owner; a registered
+// leftover leaf of an earlier daemon stays attributed to its aria.
+func TestACallerInTheDaemonsUnitIsNeverTheOwner(t *testing.T) {
+	for _, c := range []struct {
+		cg   string
+		pid  int32
+		want string // "refused", "owner", or a figaro
+	}{
+		{"/u/tools/zzzz", 4242, "refused"},
+		{"/u/tools", 4242, "refused"},
+		{"/u/daemon", 4242, "refused"},
+		{"/u", 4242, "refused"},
+		{"/u/tools-gh78", 4242, "refused"}, // an unregistered leftover leaf
+		{"/u/elsewhere", 4242, "refused"},
+		{"/u/daemon", 42, "owner"},
+		{"/user.slice/session-1", 4242, "owner"},
+		{"/u/tools/cd34", 4242, "cd34"},
+		{"/u/tools-ef56", 4242, "ef56"}, // a registered leftover leaf: its aria, never the owner
+	} {
+		p := attributing(t, func(int) (string, error) { return c.cg, nil })
+		for cg, f := range map[string]string{"/u/tools/cd34": "cd34", "/u/tools-ef56": "ef56"} {
+			if _, err := p.tools.Register(cg, f); err != nil {
+				t.Fatal(err)
+			}
+		}
+		p.tools.Guard("/u", 42)
+		ctx, err := p.admit(context.Background(), 1000, c.pid)
+		switch c.want {
+		case "refused":
+			if !errors.Is(err, ErrUnadmitted) {
+				t.Errorf("%s pid %d: err %v, want ErrUnadmitted", c.cg, c.pid, err)
+			}
+		case "owner":
+			if err != nil {
+				t.Errorf("%s pid %d: %v", c.cg, c.pid, err)
+			} else if f, ok := ToolOf(ctx); ok {
+				t.Errorf("%s pid %d: marked as the tool of %s", c.cg, c.pid, f)
+			}
+		default:
+			if err != nil {
+				t.Errorf("%s pid %d: %v", c.cg, c.pid, err)
+			} else if f, ok := ToolOf(ctx); !ok || f != c.want {
+				t.Errorf("%s pid %d: ToolOf %q %v, want %s", c.cg, c.pid, f, ok, c.want)
+			}
+		}
+	}
+}
