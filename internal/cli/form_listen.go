@@ -55,7 +55,7 @@ func openFormViewOn(ctx context.Context, cancel context.CancelFunc, ep sdk.Addr,
 	// Subscribe before seeding: a seed older than a delta in hand is caught by
 	// the version check; the other order drops deltas.
 	var again atomic.Pointer[func()]
-	f, err := follow(ctx, ep,
+	f, err := followAcrossRestarts(ctx, ep,
 		func(method string, params json.RawMessage) {
 			if method != rpc.MethodFormDelta {
 				return
