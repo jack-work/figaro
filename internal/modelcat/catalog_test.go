@@ -656,6 +656,10 @@ func TestAFailingProviderIsRetriedOnlyAfterTheRetryWindowNotEveryTick(t *testing
 	runCatalog(t, c)
 	tick := <-tk
 	waitFor(t, func() bool { return fp.calls.Load() == 1 })
+	waitFor(t, func() bool {
+		st, _ := models.ProviderStatus(c.Snapshot(), "p")
+		return st.Error != "" && !c.inflight("p")
+	})
 
 	for i := 0; i < 3; i++ {
 		clk.advance(2 * time.Minute)
