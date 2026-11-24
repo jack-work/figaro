@@ -670,11 +670,15 @@ func TestSuccessionHandoffTimeoutPages(t *testing.T) {
 	r.p.set(func() { r.p.holdFrom[old] = 2; r.p.usage[old] = 100_000 })
 	require.NoError(t, promptOn(r.ctx, r.a, old, "the work that crosses"))
 	r.eventually(func() bool { return r.hs.SuccessionPhase(old) == "handoff" }, "the succession never began")
+	// The phase is recorded before the handoff prompt is queued: wait for the
+	// handoff turn's call to hold, or a release can land before it and the
+	// call holds on the next channel forever.
+	r.eventually(func() bool { r.p.mu.Lock(); defer r.p.mu.Unlock(); return r.p.calls[old] == 2 }, "the handoff turn never started")
 	r.hs.SweepSuccessionsAt(time.Now().Add(9 * time.Minute))
 	require.Equal(t, "handoff", r.hs.SuccessionPhase(old), "timed out before its deadline")
 	r.hs.SweepSuccessionsAt(time.Now().Add(11 * time.Minute))
 	r.requireUnretiredAndPaged(old, king, "the final handoff turn did not end before the timeout", role)
-	r.p.set(func() { close(r.p.release); r.p.release = make(chan struct{}) })
+	r.p.set(func() { close(r.p.release); r.p.release = make(chan struct{}); r.p.holdFrom[old] = 0 })
 	waitIdle(t, r.a, old)
 	require.Len(t, r.arias(), 2, "a handoff turn that ended after its timeout still minted a successor")
 }
