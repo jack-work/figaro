@@ -34,3 +34,13 @@ first N requests with an HTTP error.
 
 Pager facts not read structurally: pit rows, footer text and the delta header
 glyph come from the captured screen, since no `-j` surface exposes them.
+
+Real path (daemon, forms gateway, zanni page):
+
+    python3 scripts/parity/unit.py up --out /var/tmp/parity-unit.json
+    cd <zanni>/web && npm run parity:sync
+    PARITY_REAL=1 PARITY_UNIT=/var/tmp/parity-unit.json PARITY_SHOTS=<out>/web nix run <zanni>#parity -- --project=desktop1280 --project=iphone15
+    python3 scripts/parity/unit.py down /var/tmp/parity-unit.json
+
+`iphone15` is WebKit. Failing steps print the same diff the pager prints.
+`labels` in `scenarios.json` maps an IR tool name to the header label both clients show.
