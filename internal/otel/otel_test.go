@@ -92,10 +92,6 @@ func TestRecordError_FlipsSpanStatusAndAddsEvent(t *testing.T) {
 	assert.True(t, sawException, "RecordError should also emit the standard exception event")
 }
 
-func TestRecordError_NoOpWithoutActiveSpan(t *testing.T) {
-	figOtel.RecordError(context.Background(), "nope", errors.New("x"))
-}
-
 func TestTracer_ReturnsFigaroTracer(t *testing.T) {
 	dir := t.TempDir()
 

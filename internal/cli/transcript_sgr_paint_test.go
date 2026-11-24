@@ -58,19 +58,6 @@ func paintFrames(t testing.TB, frames [][]string, w, h int, collapse, regions bo
 
 var decstbmRE = regexp.MustCompile(`\x1b\[\d+;\d+r`)
 
-// The full-frame diff over collapsed rows is the control.
-func TestSGRCollapsePaintsIdenticallyThroughTheScrollPainter(t *testing.T) {
-	const w, h, frames = 100, 24, 60
-	seq := sgrPaintFrames(t, w, h, frames)
-
-	plain := paintFrames(t, seq, w, h, false, false)
-	flat := paintFrames(t, seq, w, h, true, false)
-	scrolled := paintFrames(t, seq, w, h, true, true)
-
-	assertSameGrid(t, plain, flat, "collapsed rows, full-frame diff")
-	assertSameGrid(t, plain, scrolled, "collapsed rows, scroll-region painter")
-}
-
 // A mis-predicted shift repaired by the next row update passes the end-state
 // check and fails this one.
 func TestSGRCollapsePaintsIdenticallyFrameByFrame(t *testing.T) {

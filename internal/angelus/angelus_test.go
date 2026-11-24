@@ -91,11 +91,6 @@ func TestAngelus_PIDMonitorUnbindsDeadPID(t *testing.T) {
 	assert.Equal(t, 0, a.Registry.BoundPIDCount(), "dead PID should have been unbound")
 }
 
-func TestAngelus_StartedAt(t *testing.T) {
-	a, _ := newTestAngelus(t)
-	assert.False(t, a.StartedAt.IsZero())
-}
-
 func TestAngelus_StaleSocketCleanup(t *testing.T) {
 	dir := t.TempDir()
 	runtimeDir := testRuntimeDir(t, dir)

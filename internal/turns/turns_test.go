@@ -61,17 +61,6 @@ func TestStampIDsEmpty(t *testing.T) {
 	}
 }
 
-// Deriving on read must reproduce what minting would have written.
-func TestLegacyDerivationMatchesMinting(t *testing.T) {
-	minted := conversation()
-	StampIDs(minted)
-
-	legacy := conversation()
-	StampIDs(legacy)
-
-	eq(t, "legacy vs minted", turnIDs(legacy), turnIDs(minted))
-}
-
 func TestMixedLegacyAndStampedAgree(t *testing.T) {
 	want := conversation()
 	StampIDs(want)

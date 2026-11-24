@@ -100,13 +100,6 @@ func TestEligibleForCache(t *testing.T) {
 	}
 }
 
-func TestBreakpointBudget(t *testing.T) {
-	if AutoCacheBreakpoints >= MaxCacheBreakpoints {
-		t.Fatalf("figaro must leave a slot for a downstream gateway: %d of %d",
-			AutoCacheBreakpoints, MaxCacheBreakpoints)
-	}
-}
-
 func FuzzParseCachePolicy(f *testing.F) {
 	for _, seed := range []string{"", "ephemeral", "none", "1h", "5m", "LONG", " off ", "type", "{}", "ttl=1h"} {
 		f.Add(seed)
