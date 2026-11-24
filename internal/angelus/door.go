@@ -38,25 +38,28 @@ func (f *follower) notify(method string, params json.RawMessage) error {
 	return f.srv.Notify(method, params)
 }
 
-func (f *follower) follow(hb *ariaHub, ch channels) { f.join(hb, ch, true) }
+func (f *follower) follow(hb *ariaHub, ch channels) bool { return f.join(hb, ch, true) }
 
-func (f *follower) followUnlessFollowing(hb *ariaHub) { f.join(hb, allChannels, false) }
+func (f *follower) followUnlessFollowing(hb *ariaHub) bool { return f.join(hb, allChannels, false) }
 
-func (f *follower) join(hb *ariaHub, ch channels, replace bool) {
+func (f *follower) join(hb *ariaHub, ch channels, replace bool) (joined bool) {
 	f.mu.Lock()
 	if f.closed {
 		f.mu.Unlock()
-		return
+		return false
 	}
-	if _, ok := f.hubs[hb]; ok && !replace {
+	_, already := f.hubs[hb]
+	if already && !replace {
 		f.mu.Unlock()
-		return
+		return false
 	}
 	f.hubs[hb] = struct{}{}
 	f.mu.Unlock()
 	if !hb.add(f, ch) {
 		f.forget(hb)
+		return false
 	}
+	return !already
 }
 
 func (f *follower) unfollow(id string) bool {

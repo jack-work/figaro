@@ -14,20 +14,7 @@ func (a *Agent) PublishModelFacts() {
 	}
 	a.capacityMu.Lock()
 	defer a.capacityMu.Unlock()
-	snap := a.form.Snapshot()
-	set := map[string]json.RawMessage{}
-	var gone []string
-	if limit := a.contextLimit(); limit > 0 {
-		set[form.ContextLimitKey], _ = json.Marshal(limit)
-	} else {
-		gone = append(gone, form.ContextLimitKey)
-	}
-	if usage := a.planUsage(); usage != nil {
-		set[form.PlanUsageKey], _ = json.Marshal(usage)
-	} else {
-		gone = append(gone, form.PlanUsageKey)
-	}
-	patch := form.Build(snap, set, presentOf(snap, gone))
+	patch := ModelFactsPatch(a.models.Snapshot(), a.form.Snapshot())
 	if patch.IsIdentity() {
 		return
 	}
@@ -38,7 +25,19 @@ func (a *Agent) PublishModelFacts() {
 	a.form.Apply(patch)
 }
 
-func (a *Agent) planUsage() *models.PlanUsage {
-	provider, model := models.Subject(a.Snapshot())
-	return models.PlanUsageOf(a.models.Snapshot(), provider, model)
+func ModelFactsPatch(catalog, bound form.Snapshot) form.Patch {
+	set := map[string]json.RawMessage{}
+	var gone []string
+	if limit := models.ContextLimit(catalog, bound); limit > 0 {
+		set[form.ContextLimitKey], _ = json.Marshal(limit)
+	} else {
+		gone = append(gone, form.ContextLimitKey)
+	}
+	provider, model := models.Subject(bound)
+	if usage := models.PlanUsageOf(catalog, provider, model); usage != nil {
+		set[form.PlanUsageKey], _ = json.Marshal(usage)
+	} else {
+		gone = append(gone, form.PlanUsageKey)
+	}
+	return form.Build(bound, set, presentOf(bound, gone))
 }

@@ -236,14 +236,17 @@ func (h *handlers) ariaMethod(method string) jkrpc.HandlerFunc {
 				if err != nil {
 					return nil, err
 				}
-				follow = func(hb *ariaHub) { f.follow(hb, ch) }
+				follow = func(hb *ariaHub) bool { return f.follow(hb, ch) }
 			}
 			done, err := h.angelus.guard.enter(id)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", method, err)
 			}
-			follow(hb)
+			joined := follow(hb)
 			done()
+			if joined {
+				h.angelus.publishDormantModelFacts(hb)
+			}
 		}
 		if method == rpc.MethodFollow {
 			return rpc.FollowResponse{OK: true, FigaroID: id}, nil
