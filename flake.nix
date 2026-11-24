@@ -38,6 +38,7 @@
 
           subPackages = [ "cmd/figaro" ];
           env.CGO_ENABLED = 0;
+          doCheck = false;
 
           nativeBuildInputs = [ final.installShellFiles ];
 
@@ -128,92 +129,95 @@
         default = figaro;
       });
 
-      # The T0 gate (duck/2026-10-12-terraform-sandbox-federation.md §7.4):
-      # `nix flake check` is the same gate in every worktree and in CI, with
-      # the same toolchain and the same vendor hash. CGO stays off.
       checks = forAllSystems ({ pkgs }: let
         figaro = self.packages.${pkgs.system}.figaro;
-        # The modules the package was built against, mounted as vendor/ so
-        # `go list` works offline inside the sandbox.
-        goEnv = ''
+        goEnv = cgo: ''
           export HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPATH=$TMPDIR/go
-          export GOFLAGS="-mod=vendor" GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0
+          export GOFLAGS="-mod=vendor" GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=${cgo}
         '';
-      in {
-        # go vet + go test -short over the whole module, in the package's own
-        # build (same flags, same vendor dir). -short because the sandbox has
-        # no network and no pty; a test that needs either must skip itself.
-        unit = figaro.overrideAttrs (old: {
-          pname = "figaro-unit";
-          doCheck = true;
-          # buildGoModule copies the modules into vendor/, and
-          # TestSkillPathsCitedFromOutsideResolve walks the whole repo for
-          # .md citations: a symlink is not descended, so the modules stay
-          # out of the walk and `go` still resolves them (go list, go test).
-          postConfigure = ''
-            chmod -R u+w vendor && rm -rf vendor
-            ln -s ${figaro.goModules} vendor
-          '';
-          checkPhase = ''
-            runHook preCheck
-            export HOME=$TMPDIR
-            go vet ./...
-            go test -short -timeout 30m ./...
-            runHook postCheck
-          '';
-        });
-
-        boundary = pkgs.runCommand "figaro-boundary" {
-          nativeBuildInputs = [ figaro.go ];
+        goCheck = { name, cgo ? "0", inputs ? [ ], script }: pkgs.runCommand "figaro-${name}" {
+          nativeBuildInputs = [ figaro.go ] ++ inputs;
         } ''
           cp -r ${self} src
           chmod -R u+w src
           cd src
           ln -s ${figaro.goModules} vendor
-          ${goEnv}
+          ${goEnv cgo}
           set -o pipefail
-          sh scripts/check-boundary.sh | tee $out
-        '';
-        gofmt = pkgs.runCommand "figaro-gofmt" {
-          nativeBuildInputs = [ figaro.go ];
-        } ''
-          unformatted=$(cd ${self} && gofmt -l .)
-          if [ -n "$unformatted" ]; then
-            echo "gofmt -l lists files that are not formatted:" >&2
-            echo "$unformatted" >&2
-            exit 1
-          fi
+          ${script}
           touch $out
         '';
+        base = {
+          unit = goCheck {
+            name = "unit";
+            script = "go test -short -timeout 30m ./...";
+          };
 
-        compat = pkgs.runCommand "figaro-compat" {
-          nativeBuildInputs = [ figaro.go pkgs.bash pkgs.coreutils pkgs.gnugrep pkgs.gnused ];
-        } ''
-          cp -r ${self} src
-          chmod -R u+w src
-          cd src
-          ln -s ${figaro.goModules} vendor
-          ${goEnv}
-          b=github.com/jack-work/figaro/internal/boot
-          for x in "a 0.52.4 aaaaaaaaaaaa1111" "b 0.52.5 bbbbbbbbbbbb2222" "c 0.53.0 cccccccccccc3333"; do
-            set -- $x
-            go build -o $TMPDIR/figaro-$1 -ldflags "-X $b.semver=$2 -X $b.commit=$3" ./cmd/figaro
-          done
-          export TMPDIR
-          pair() { bash scripts/compat-pair.sh "$TMPDIR/figaro-$1" "$TMPDIR/figaro-$2" "$3"; }
-          pair a b accept | tee -a $out
-          pair b a accept | tee -a $out
-          pair a c warn | tee -a $out
-          pair c a warn | tee -a $out
-        '';
-      } // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-        container-vm = import ./nix/tests/container.nix { inherit pkgs self; };
-        module-vm = import ./nix/tests/module.nix { inherit pkgs self; };
-        socket-activation-vm = import ./nix/tests/socket-activation.nix { inherit pkgs self; };
-        valet-vm = import ./nix/tests/valet.nix { inherit pkgs self; };
-        house-mode-vm = import ./nix/tests/house-mode.nix { inherit pkgs self; };
-        hm-module = import ./nix/tests/hm-module.nix { inherit pkgs self; };
-        hm-daemon-unit-vm = import ./nix/tests/hm-daemon-unit.nix { inherit pkgs self; };
+          race = goCheck {
+            name = "race";
+            cgo = "1";
+            inputs = [ pkgs.gcc ];
+            script = "go test -race -short -timeout 60m ./...";
+          };
+
+          vet = goCheck {
+            name = "vet";
+            script = "go vet ./...";
+          };
+
+          fmt = pkgs.runCommand "figaro-fmt" {
+            nativeBuildInputs = [ figaro.go ];
+          } ''
+            unformatted=$(cd ${self} && gofmt -l .)
+            if [ -n "$unformatted" ]; then
+              echo "gofmt -l lists files that are not formatted:" >&2
+              echo "$unformatted" >&2
+              exit 1
+            fi
+            touch $out
+          '';
+
+          boundary = goCheck {
+            name = "boundary";
+            script = "sh scripts/check-boundary.sh | tee $out";
+          };
+
+          compat = pkgs.runCommand "figaro-compat" {
+            nativeBuildInputs = [ figaro.go pkgs.bash pkgs.coreutils pkgs.gnugrep pkgs.gnused ];
+          } ''
+            cp -r ${self} src
+            chmod -R u+w src
+            cd src
+            ln -s ${figaro.goModules} vendor
+            ${goEnv "0"}
+            b=github.com/jack-work/figaro/internal/boot
+            for x in "a 0.52.4 aaaaaaaaaaaa1111" "b 0.52.5 bbbbbbbbbbbb2222" "c 0.53.0 cccccccccccc3333"; do
+              set -- $x
+              go build -o $TMPDIR/figaro-$1 -ldflags "-X $b.semver=$2 -X $b.commit=$3" ./cmd/figaro
+            done
+            export TMPDIR
+            pair() { bash scripts/compat-pair.sh "$TMPDIR/figaro-$1" "$TMPDIR/figaro-$2" "$3"; }
+            pair a b accept | tee -a $out
+            pair b a accept | tee -a $out
+            pair a c warn | tee -a $out
+            pair c a warn | tee -a $out
+          '';
+        };
+        vms = nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          container-vm = import ./nix/tests/container.nix { inherit pkgs self; };
+          module-vm = import ./nix/tests/module.nix { inherit pkgs self; };
+          socket-activation-vm = import ./nix/tests/socket-activation.nix { inherit pkgs self; };
+          valet-vm = import ./nix/tests/valet.nix { inherit pkgs self; };
+          house-mode-vm = import ./nix/tests/house-mode.nix { inherit pkgs self; };
+          hm-module = import ./nix/tests/hm-module.nix { inherit pkgs self; };
+          hm-daemon-unit-vm = import ./nix/tests/hm-daemon-unit.nix { inherit pkgs self; };
+        };
+        tier = name: members: pkgs.linkFarm "figaro-${name}"
+          (nixpkgs.lib.mapAttrsToList (n: path: { name = n; inherit path; }) members);
+        quick = { inherit (base) unit vet fmt boundary; };
+      in base // vms // {
+        quick = tier "quick" quick;
+        release = tier "release" (base // vms);
       });
 
       devShells = forAllSystems ({ pkgs }: let
