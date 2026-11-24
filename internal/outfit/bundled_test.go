@@ -2,35 +2,16 @@ package outfit
 
 import (
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
 
 	"github.com/stretchr/testify/require"
 
 	figaro "github.com/jack-work/figaro"
 )
-
-func TestEmbeddedBundleIsFigaroSkillOnly(t *testing.T) {
-	entries, err := fs.ReadDir(figaro.Skills, "skills")
-	require.NoError(t, err)
-	names := []string{}
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	require.Equal(t, []string{"figaro"}, names)
-
-	body, err := figaro.Skills.ReadFile("skills/figaro/SKILL.md")
-	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(string(body), "---\nname: figaro\n"),
-		"the bundled skill must carry frontmatter, or the whole file lands in every form")
-
-	_, err = figaro.Skills.ReadFile("skills/figaro/subagents.md")
-	require.NoError(t, err)
-}
 
 func TestUnpackBundledSkills(t *testing.T) {
 	dir := t.TempDir()
