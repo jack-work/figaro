@@ -56,7 +56,7 @@ class Unit:
             fh.write("parity-" + os.path.basename(root))
         os.chmod(os.path.join(root, "hush-passphrase"), 0o600)
         with open(os.path.join(root, "config", "config.toml"), "w") as fh:
-            fh.write('default_outfit = "default"\n')
+            fh.write('default_outfit = "default"\n\n[door.web]\npath = "%s"\nauthn = "upstream"\n\n[authz]\nowner = "user:gluck@parity-edge.invalid"\n\n[authz.peercred.uids]\n"%d" = "user:gluck@parity-edge.invalid"\n\n[authz.upstream]\nissuer = "https://parity-edge.invalid"\n' % (os.path.join(root, "run", "door.sock"), os.getuid()))
         with open(os.path.join(root, "config", "outfits", "default.toml"), "w") as fh:
             fh.write('[system]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-5"\ncredo = "You are a test agent."\n')
         self.script = os.path.join(root, "provider.json")
