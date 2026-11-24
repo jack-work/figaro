@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -332,13 +333,30 @@ func TestTroupeSignGrantsTheAskedLifeUpToItsMost(t *testing.T) {
 	require.WithinDuration(t, time.Now().Add(troupe.MinNodeTTL), leaf.NotAfter, time.Minute, "a 1 ms ask is floored at a day")
 }
 
-func captureWarnings(t *testing.T) *bytes.Buffer {
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+func captureWarnings(t *testing.T) *lockedBuffer {
 	t.Helper()
-	var buf bytes.Buffer
+	buf := &lockedBuffer{}
 	old := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	slog.SetDefault(slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	t.Cleanup(func() { slog.SetDefault(old) })
-	return &buf
+	return buf
 }
 
 // Asking past the issuer's most is granted the most, not refused, so a
