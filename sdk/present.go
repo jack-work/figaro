@@ -80,7 +80,7 @@ func present(cli *jkrpc.Client, token string) error {
 
 func rpcRefused(err error) bool {
 	var e *jkrpc.Error
-	return errors.As(err, &e) && e.Code == jsonRPCMethodNotFound
+	return errors.As(err, &e) && (e.Code == jsonRPCMethodNotFound || e.Code == rpc.CodeNothingToPresent)
 }
 
 func sleepOrClosed(cli *jkrpc.Client, d time.Duration) bool {

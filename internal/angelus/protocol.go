@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jack-work/figaro/internal/decide"
 	"github.com/jack-work/figaro/internal/navstack"
@@ -339,6 +340,9 @@ func (h *handlers) endpointPresent(ctx context.Context, params json.RawMessage) 
 		return nil, fmt.Errorf("%s takes a token", rpc.MethodEndpointPresent)
 	}
 	exp, err := authz.PresentOn(ctx, req.Token)
+	if errors.Is(err, authz.ErrNoSession) {
+		return nil, &jkrpc.Error{Code: rpc.CodeNothingToPresent, Message: err.Error()}
+	}
 	if err != nil {
 		return nil, err
 	}

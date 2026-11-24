@@ -9,3 +9,5 @@ type PresentRequest struct {
 type PresentResponse struct {
 	ExpiresMS int64 `json:"expires_ms"`
 }
+
+const CodeNothingToPresent = -32021
