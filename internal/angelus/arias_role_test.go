@@ -39,3 +39,17 @@ func TestARetireChangesTheAriasPrint(t *testing.T) {
 		t.Fatal("a retire leaves the @arias print unchanged, so the form is not rebuilt")
 	}
 }
+
+func TestARoleRowIsAsActiveAsItsHolder(t *testing.T) {
+	snap := ariasSnapshot([]rpc.FigaroInfoResponse{
+		{ID: "a", Handle: "alpha", LastActive: 5000},
+		{ID: "@r1", Kind: "form", State: "form", Name: "Boss", TargetAria: "a", LastActive: 100},
+		{ID: "@r2", Kind: "form", State: "form", Name: "Idle", TargetAria: "gone"},
+	}, 0, 0)
+	if v, ok := snap.Get("arias.@r1.active_at"); !ok || string(v) != "5000" {
+		t.Fatalf("role row active_at = %s, want its holder's 5000", v)
+	}
+	if v, ok := snap.Get("arias.@r2.active_at"); ok {
+		t.Fatalf("a role whose holder is not listed carries active_at %s", v)
+	}
+}

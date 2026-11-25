@@ -330,6 +330,14 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers, more int) form.Snapshot
 		seen[r.ID] = true
 		return place(parent, seen) + ".forks." + label(r)
 	}
+	active := make(map[string]int64, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		active[r.ID] = r.LastActive
+		if holder, ok := byID[r.TargetAria]; ok && r.Kind == string(store.KindForm) {
+			active[r.ID] = max(r.LastActive, holder.LastActive)
+		}
+	}
 	for i := range rows {
 		r := &rows[i]
 		base := place(r, map[string]bool{}) + "."
@@ -347,8 +355,8 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers, more int) form.Snapshot
 		if r.ContextLimit > 0 {
 			put(base+"ctx_limit", r.ContextLimit)
 		}
-		if r.LastActive > 0 {
-			put(base+"active_at", r.LastActive)
+		if at := active[r.ID]; at > 0 {
+			put(base+"active_at", at)
 		}
 		if r.RetiredAt > 0 {
 			put(base+"retired_at", r.RetiredAt)
