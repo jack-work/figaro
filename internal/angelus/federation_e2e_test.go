@@ -634,3 +634,53 @@ func TestADeadOwnerIsNamedOnlyToACallerWhoMayReadItsAria(t *testing.T) {
 
 	require.ErrorContains(t, set("probe", id), "node "+b.id+" is unreachable", "the owner must still hear which node is down")
 }
+
+// A caller following an aria through its entry node presents a fresh token
+// before the old one expires: the entry node's link to the owner carries the
+// old bearer, so it must be renewed too, or the owner ends it and the caller is
+// told its own connection lapsed.
+func TestPresentingAFreshTokenRenewsTheLinkToTheOwnerNode(t *testing.T) {
+	a, b := newFedPair(t)
+	id := b.mint()
+	bearer := &shortThenLongBearer{is: a.issuer}
+	first, _ := bearer.Resolve()
+	ep := a.callerDoor(first)
+	ep.Bearer = bearer
+
+	notices := make(chan string, 8)
+	aria, err := sdk.DialAria(sdk.Addr{Door: ep, ID: id}, func(method string, _ json.RawMessage) {
+		if method == rpc.MethodDoorLapsed {
+			notices <- method
+		}
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { aria.Close() })
+
+	time.Sleep(2800 * time.Millisecond)
+	require.True(t, bearer.renewed.Load(), "the client never presented")
+	select {
+	case <-notices:
+		t.Fatal("the link to the owner lapsed at the old token's expiry though the caller presented a fresh one")
+	default:
+	}
+	require.False(t, aria.Lapsed())
+	_, err = aria.Set(callCtx(t), *rawPatch(map[string]string{"mantra": `"after renewal"`}), 0)
+	require.NoError(t, err)
+}
+
+type shortThenLongBearer struct {
+	is      *peertest.Issuer
+	renewed atomic.Bool
+}
+
+func (b *shortThenLongBearer) Resolve() (string, error) {
+	if b.renewed.Load() {
+		return b.is.Mint("probe", time.Hour), nil
+	}
+	return b.is.Mint("probe", 2*time.Second), nil
+}
+
+func (b *shortThenLongBearer) Invalidate(string) error {
+	b.renewed.Store(true)
+	return nil
+}

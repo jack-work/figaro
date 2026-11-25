@@ -349,6 +349,9 @@ func (h *handlers) endpointPresent(ctx context.Context, params json.RawMessage) 
 	if life := lifeOf(ctx); life != nil {
 		life.settle(ctx)
 	}
+	if f := followerOf(ctx); f != nil {
+		f.present(ctx, req.Token)
+	}
 	return rpc.PresentResponse{ExpiresMS: exp.UnixMilli()}, nil
 }
 

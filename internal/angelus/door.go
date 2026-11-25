@@ -102,6 +102,24 @@ func (f *follower) close() {
 	}
 }
 
+func (f *follower) present(ctx context.Context, token string) {
+	f.mu.Lock()
+	links := make([]*peer.Link, 0, len(f.links))
+	for _, l := range f.links {
+		links = append(links, l)
+	}
+	f.mu.Unlock()
+	params, err := json.Marshal(rpc.PresentRequest{Token: token})
+	if err != nil {
+		return
+	}
+	for _, l := range links {
+		if _, err := l.Call(ctx, rpc.MethodEndpointPresent, params); err != nil {
+			slog.Warn("endpoint.present on a forwarded link failed; it ends at its old expiry", "node", l.Node(), "err", err)
+		}
+	}
+}
+
 func (f *follower) link(ctx context.Context, d *peer.Dialer, node string, p rpc.Passage) (*peer.Link, error) {
 	f.mu.Lock()
 	l, ok := f.links[node]
