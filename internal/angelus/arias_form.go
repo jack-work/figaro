@@ -338,6 +338,15 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers, more int) form.Snapshot
 			active[r.ID] = max(r.LastActive, holder.LastActive)
 		}
 	}
+	recency := make(map[string]int64, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		seen := map[string]bool{}
+		for at := r; at != nil && !seen[at.ID]; at = byID[drawnUnder(at)] {
+			seen[at.ID] = true
+			recency[at.ID] = max(recency[at.ID], active[r.ID])
+		}
+	}
 	for i := range rows {
 		r := &rows[i]
 		base := place(r, map[string]bool{}) + "."
@@ -357,6 +366,9 @@ func ariasSnapshot(rows []rpc.FigaroInfoResponse, peers, more int) form.Snapshot
 		}
 		if at := active[r.ID]; at > 0 {
 			put(base+"active_at", at)
+		}
+		if at := recency[r.ID]; at > 0 {
+			put(base+"recency", at)
 		}
 		if r.RetiredAt > 0 {
 			put(base+"retired_at", r.RetiredAt)

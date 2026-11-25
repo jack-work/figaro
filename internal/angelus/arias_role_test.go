@@ -53,3 +53,28 @@ func TestARoleRowIsAsActiveAsItsHolder(t *testing.T) {
 		t.Fatalf("a role whose holder is not listed carries active_at %s", v)
 	}
 }
+
+func TestATreeFloatsByItsMostRecentMember(t *testing.T) {
+	snap := ariasSnapshot([]rpc.FigaroInfoResponse{
+		{ID: "a", Handle: "alpha", LastActive: 100},
+		{ID: "b", Handle: "bravo", Parent: "a", LastActive: 9000},
+		{ID: "c", Handle: "charlie", LastActive: 500},
+		{ID: "@r", Kind: "form", State: "form", Name: "Boss", TargetAria: "c"},
+		{ID: "d", Handle: "delta", Present: "@r", LastActive: 7000},
+	}, 0, 0)
+	view := formViewOf(rpc.AriasFormID)
+	if view.Sort != "-recency" {
+		t.Fatalf("@arias sorts by %q, want -recency", view.Sort)
+	}
+	for path, want := range map[string]string{
+		"arias.alpha":             "9000",
+		"arias.alpha.forks.bravo": "9000",
+		"arias.charlie":           "500",
+		"arias.@r":                "7000",
+		"arias.@r.forks.delta":    "7000",
+	} {
+		if v, ok := snap.Get(path + ".recency"); !ok || string(v) != want {
+			t.Errorf("%s recency = %s, want %s", path, v, want)
+		}
+	}
+}
