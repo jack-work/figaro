@@ -414,7 +414,7 @@ func (v *formView) Items(width int) []pitRow {
 		if v.seeded == nil {
 			v.seeded = map[string]bool{}
 		}
-		shape = &viewShape{hint: v.view, seeded: v.seeded, keys: map[string]viewRowKey{}, heads: map[string]viewRowKey{}}
+		shape = &viewShape{hint: v.view, seeded: v.seeded, keys: map[string]viewRowKey{}, heads: map[string]viewRowKey{}, root: v.root}
 		if v.subject != nil {
 			shape.subject = v.subject()
 		}

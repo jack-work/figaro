@@ -76,6 +76,8 @@ type viewShape struct {
 	seeded  map[string]bool
 	keys    map[string]viewRowKey
 	heads   map[string]viewRowKey
+	root    *formNode
+	handles map[string]string
 }
 
 func (s *viewShape) row(segs []string) (viewRowKey, bool) {
@@ -180,7 +182,61 @@ func (s *viewShape) peek(n *formNode) (string, int) {
 	if _, ok := s.heads[n.path]; !ok {
 		return "", 0
 	}
-	return rowPeekOf(s.hint, n)
+	label, badge := rowPeekOf(s.hint, n)
+	if label == "" && badge == 0 {
+		if holder, ok := s.roleHolder(n); ok {
+			return "→ " + holder, 0
+		}
+	}
+	return label, badge
+}
+
+func (s *viewShape) title(n *formNode) string {
+	if n.leaf() || s.hint.RowAria == "" || leafText(n, "kind") != "form" {
+		return ""
+	}
+	if _, ok := s.heads[n.path]; !ok {
+		return ""
+	}
+	if name := leafText(n, "name"); name != "" {
+		return "@" + strings.TrimPrefix(name, "@")
+	}
+	return ""
+}
+
+func (s *viewShape) roleHolder(n *formNode) (string, bool) {
+	if s.title(n) == "" {
+		return "", false
+	}
+	target := leafText(n, "target")
+	if target == "" {
+		return "", false
+	}
+	if s.handles == nil {
+		s.handles = map[string]string{}
+		var collect func(*formNode, []string)
+		collect = func(p *formNode, labels []string) {
+			for _, c := range p.kids() {
+				if c.leaf() {
+					continue
+				}
+				segs := append(labels[:len(labels):len(labels)], c.label)
+				if _, ok := s.row(segs); ok {
+					if id := leafText(c, s.hint.RowAria); id != "" {
+						s.handles[id] = figaroRowName(c, id)
+					}
+				}
+				collect(c, segs)
+			}
+		}
+		if s.root != nil {
+			collect(s.root, nil)
+		}
+	}
+	if h, ok := s.handles[target]; ok {
+		return h, true
+	}
+	return ariaName(target), true
 }
 
 func rowPeekOf(view *rpc.FormView, n *formNode) (string, int) {

@@ -120,6 +120,8 @@ type formNode struct {
 	rowOpen  bool
 	rowPeek  string
 	peek     string
+	title    string
+	rowTitle string
 	rowBadge int
 	badge    int
 	badgeEnd int
@@ -127,6 +129,13 @@ type formNode struct {
 	summary  bool
 	aside    *formNode
 	tail     int
+}
+
+func (n *formNode) name() string {
+	if n.title != "" {
+		return n.title
+	}
+	return n.label
 }
 
 func (n *formNode) leaf() bool { return !n.branch && len(n.children) == 0 }
@@ -189,13 +198,13 @@ func (n *formNode) kids() []*formNode {
 }
 
 func (n *formNode) rendered(width int) string {
-	if n.rowWidth != width || n.rowGuide != n.guide || n.rowPad != n.pad || n.rowOpen != n.open || n.rowPeek != n.peek || n.rowBadge != n.badge || n.rowSum != n.summary {
+	if n.rowWidth != width || n.rowGuide != n.guide || n.rowPad != n.pad || n.rowOpen != n.open || n.rowPeek != n.peek || n.rowTitle != n.title || n.rowBadge != n.badge || n.rowSum != n.summary {
 		n.row, n.tail = renderTreeRow(n, width)
 		n.badgeEnd = 0
 		if n.tail > 0 && n.badge > 0 {
 			n.badgeEnd = min(n.tail+n.badge, len(n.row))
 		}
-		n.rowWidth, n.rowGuide, n.rowPad, n.rowOpen, n.rowPeek, n.rowBadge, n.rowSum = width, n.guide, n.pad, n.open, n.peek, n.badge, n.summary
+		n.rowWidth, n.rowGuide, n.rowPad, n.rowOpen, n.rowPeek, n.rowTitle, n.rowBadge, n.rowSum = width, n.guide, n.pad, n.open, n.peek, n.title, n.badge, n.summary
 	}
 	return n.row
 }
@@ -303,13 +312,14 @@ func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, ro
 		w.out = append(w.out, c)
 		segs := append(labels[:len(labels):len(labels)], c.label)
 		under := row
-		c.peek, c.badge, c.aside, c.summary = "", 0, nil, false
+		c.peek, c.title, c.badge, c.aside, c.summary = "", "", 0, nil, false
 		if w.shape != nil {
 			under = w.shape.note(c, segs, row)
 			if !c.open || w.through[c.path] || w.topology != nil {
 				c.peek, c.badge = w.shape.peek(c)
 			}
 			c.aside, c.summary = w.shape.aside(c)
+			c.title = w.shape.title(c)
 		}
 		if c.open {
 			w.walk(c, c.cont, false, segs, under)
@@ -363,7 +373,7 @@ func flattenFormTree(n *formNode, open map[string]bool, out []*formNode) []*form
 }
 
 func renderTreeRow(n *formNode, width int) (string, int) {
-	line := n.lead() + n.label
+	line := n.lead() + n.name()
 	tail := 0
 	switch {
 	case n.leaf():
