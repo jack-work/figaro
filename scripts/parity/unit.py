@@ -39,6 +39,27 @@ def down(args):
     subprocess.run(["rm", "-rf", state["root"], args.unit])
 
 
+def spent(state):
+    root = state["root"]
+    script = json.load(open(os.path.join(root, "provider.json")))
+    path = os.path.join(root, "requests.jsonl")
+    asked = {}
+    if os.path.exists(path):
+        for line in open(path):
+            row = json.loads(line)
+            if row["round"] == 0 and row["rule"]:
+                asked[row["rule"]] = asked.get(row["rule"], 0) + 1
+    return [(r["when"], r["fail"]["times"]) for r in script["rules"] if r.get("fail") and asked.get(r["when"], 0) >= r["fail"]["times"]]
+
+
+def check(args):
+    state = json.load(open(args.unit))
+    used = spent(state)
+    if used:
+        names = ", ".join("%r (fails %d time%s)" % (w, n, "" if n == 1 else "s") for w, n in used)
+        sys.exit("unit %s: the provider's scripted failure for %s is already consumed, so the error scenario would see no failure; run unit.py down and unit.py up for a fresh unit" % (args.unit, names))
+
+
 ap = argparse.ArgumentParser()
 sub = ap.add_subparsers(dest="cmd", required=True)
 u = sub.add_parser("up")
@@ -46,5 +67,7 @@ u.add_argument("--out", required=True)
 u.add_argument("--bin")
 d = sub.add_parser("down")
 d.add_argument("unit")
+c = sub.add_parser("check", help="exit 1 when a scripted provider failure is already consumed")
+c.add_argument("unit")
 a = ap.parse_args()
-{"up": up, "down": down}[a.cmd](a)
+{"up": up, "down": down, "check": check}[a.cmd](a)
