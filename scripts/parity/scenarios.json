@@ -833,5 +833,8 @@
  ],
  "labels": {
   "bash": "$"
+ },
+ "system": {
+  "provider": "anthropic"
  }
 }
