@@ -91,11 +91,24 @@ func TestFlushErrorReadOnlyRecovers(t *testing.T) {
 	time.Sleep(3 * flushInterval)
 
 	restore()
-	st.Kick()
-	time.Sleep(3 * flushInterval)
-	// Poison clears on the next successful flush of the lineage; appends
-	// must work again.
-	appendN(5)
+	// Poison clears on the next successful flush of the lineage, which a
+	// loaded machine may not reach within a fixed sleep; appends must work
+	// again once it does.
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		st.Kick()
+		time.Sleep(flushInterval)
+		q := uint64(appended + 1)
+		_, err := st.AppendMain(trunk, encodePayload(trunk, chanMain, q, q+1, salt))
+		if err == nil {
+			appended++
+			break
+		}
+		if !isPoisoned(err) || time.Now().After(deadline) {
+			t.Fatalf("append %d after restore: %v", appended+1, err)
+		}
+	}
+	appendN(4)
 	st.Kick()
 	time.Sleep(3 * flushInterval)
 	if err := st.Close(); err != nil {
