@@ -1,6 +1,8 @@
 {
  "absent": "∅",
  "alert.warn": "!",
+ "attach": "",
+ "audio.play": "",
  "bullet": "•",
  "busy": "…",
  "comment": "✎",
@@ -68,5 +70,6 @@
  "tool.running": "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏",
  "transcript.call": "→",
  "transcript.result": "↩",
- "transcript.result.error": "⚠"
+ "transcript.result.error": "⚠",
+ "voice": ""
 }
