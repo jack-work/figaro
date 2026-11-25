@@ -329,38 +329,6 @@
         "note": "web labels the node 'Steered by', no arrow glyph"
        }
       ]
-     },
-     "expect_fake": {
-      "turns": [
-       {
-        "turn": 1,
-        "inquiry": "steered work please",
-        "nodes": [
-         {
-          "type": "thinking",
-          "role": "output"
-         },
-         {
-          "type": "prose",
-          "role": "output"
-         },
-         {
-          "type": "tool",
-          "role": "output",
-          "name": "bash",
-          "status": "ok"
-         },
-         {
-          "type": "steering",
-          "role": "input"
-         },
-         {
-          "type": "prose",
-          "role": "output"
-         }
-        ]
-       }
-      ]
      }
     }
    ]
