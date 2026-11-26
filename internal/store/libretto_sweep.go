@@ -8,7 +8,11 @@ func (b *XwalBackend) SweepLibrettos() int {
 	if b.closed.Load() {
 		return 0
 	}
-	studied, _ := b.studiersBySource()
+	studied, _, unreadable := b.studiersBySource()
+	if unreadable > 0 {
+		slog.Warn("libretto: sweep skipped, bound forms could not be read", "unreadable", unreadable)
+		return 0
+	}
 
 	b.mu.Lock()
 	generation := b.librettoSweeps

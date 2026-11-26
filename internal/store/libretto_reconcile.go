@@ -80,7 +80,7 @@ func (b *XwalBackend) librettosNeedRefs() bool {
 func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 	var audit LibrettoAudit
 
-	want, boundForms := b.studiersBySource()
+	want, boundForms, _ := b.studiersBySource()
 	audit.BoundForms = boundForms
 
 	// What the librettos believe.
@@ -174,15 +174,16 @@ func isReservedStump(id string) bool {
 	return isLibretto
 }
 
-func (b *XwalBackend) studiersBySource() (map[string][]string, int) {
+func (b *XwalBackend) studiersBySource() (map[string][]string, int, int) {
 	want := map[string][]string{}
-	read := 0
+	read, unreadable := 0, 0
 	for _, n := range b.store.Nodes() {
-		if isReservedStump(n.ID) {
+		if n.ID == rootID || isReservedStump(n.ID) {
 			continue
 		}
 		snap, err := b.FormState(n.ID)
 		if err != nil {
+			unreadable++
 			continue
 		}
 		read++
@@ -191,5 +192,5 @@ func (b *XwalBackend) studiersBySource() (map[string][]string, int) {
 			want[src] = append(want[src], n.ID)
 		}
 	}
-	return want, read
+	return want, read, unreadable
 }

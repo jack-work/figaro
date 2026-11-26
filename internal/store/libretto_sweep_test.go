@@ -1,6 +1,9 @@
 package store
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -176,5 +179,68 @@ func TestAStumpStudiedByABoundFormSurvivesWhateverItsRefsSay(t *testing.T) {
 	be.SweepLibrettos()
 	if !librettoStumpExists(be, sourceID) {
 		t.Fatal("a libretto a bound form studies was collected on a stale count")
+	}
+}
+
+func TestASweepWithAnUnreadableBoundFormCollectsNothing(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a mode-0 file")
+	}
+	root := t.TempDir()
+	be, err := NewXwalBackend(root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outfit, err := be.CreateOutfit("blind", setPatch(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, err := be.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blind := studiedWatcher(t, be, sourceID)
+	if err := be.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var unreadable []string
+	_ = filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() || !strings.HasSuffix(p, ".jsonl") || strings.Contains(p, "libretto") {
+			return nil
+		}
+		if strings.HasPrefix(p, filepath.Join(root, "form")) {
+			if raw, _ := os.ReadFile(p); strings.Contains(string(raw), sourceID) {
+				unreadable = append(unreadable, p)
+			}
+		}
+		return nil
+	})
+	if len(unreadable) == 0 {
+		_ = filepath.Walk(root, func(p string, fi os.FileInfo, err error) error { t.Log(p); return nil })
+		t.Fatal("found no form segment of the watcher to make unreadable")
+	}
+	for _, p := range unreadable {
+		if err := os.Chmod(p, 0); err != nil {
+			t.Fatal(err)
+		}
+		p := p
+		t.Cleanup(func() { _ = os.Chmod(p, 0o644) })
+	}
+
+	be, err = NewXwalBackend(root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { be.Close() })
+	if _, err := be.FormState(blind); err == nil {
+		t.Fatal("the watcher's form read despite its segment being unreadable")
+	}
+	for range 3 {
+		if n := be.SweepLibrettos(); n != 0 {
+			t.Fatalf("a sweep collected %d librettos while a bound form could not be read", n)
+		}
+	}
+	if !librettoStumpExists(be, sourceID) {
+		t.Fatal("a libretto studied by an unreadable bound form was collected")
 	}
 }
