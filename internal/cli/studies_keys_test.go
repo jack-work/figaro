@@ -2,6 +2,7 @@ package cli
 
 import (
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,5 +96,18 @@ func TestInAPitWhoseViewBindsRThatActionWinsOverTheStudiesPrefix(t *testing.T) {
 	tr.key('1')
 	if len(*asked) != 0 {
 		t.Fatalf("the digit after a restore opened a study: %v", *asked)
+	}
+}
+
+func TestTheHelpPanelNamesTheStudiesKeys(t *testing.T) {
+	tr := &transcript{w: 200, h: 100}
+	var panel string
+	for _, l := range tr.helpLines() {
+		panel += stripANSI(l) + "\n"
+	}
+	for _, want := range []string{"r1 .. r9 · r0", "the forms this figaro studies"} {
+		if !strings.Contains(panel, want) {
+			t.Fatalf("help panel lacks %q", want)
+		}
 	}
 }

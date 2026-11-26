@@ -195,6 +195,8 @@ const (
 	helpAttend
 	helpAriaJump
 	helpRecentPit
+	helpStudiesPit
+	helpStudyTab
 )
 
 // Every visible binding is documented by exactly one row, and every row documents
@@ -264,6 +266,8 @@ var helpRows = []helpRow{
 	{helpQueuedPanel, "Q", "queued prompts panel; with nothing queued it says so on the bar and opens nothing"},
 	{helpNotifications, "space n", "notifications: what figaro said, and what went wrong"},
 	{helpFormPit, "S", "the form (state) in the pit"},
+	{helpStudiesPit, "R", "the forms this figaro studies, as tabs in a pit: the tab shown last, else the first (again closes it)"},
+	{helpStudyTab, "r1 .. r9 · r0", "open the studies pit on that tab; a pit whose view binds r (the reaped pit's restore) keeps it"},
 	{helpDecisionPit, "D", "the last decision (a ?? draft or :decide) in the pit; with none yet it says so on the bar"},
 	{helpFocus, "T", "read the conversation without closing the pit (again to go back)"},
 	{helpPinned, "p", "expand the pinned question: j/k page it, F fullscreen, T reads on below it, Esc folds it"},
