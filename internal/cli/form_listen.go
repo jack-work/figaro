@@ -258,6 +258,7 @@ type formView struct {
 	overlayDialled chan struct{}
 	closing        bool
 	merge          *overlayMerge
+	sorts          map[string]sortSpec
 }
 
 type formSource interface {
@@ -420,7 +421,7 @@ func (v *formView) Items(width int) []pitRow {
 			shape.subject = v.subject()
 		}
 	}
-	w := guideWalk{open: v.open, out: v.rows[:0], shape: shape, through: v.through, unfolded: v.unfolded, mounting: v.opener != nil, topology: v.topology}
+	w := guideWalk{open: v.open, out: v.rows[:0], shape: shape, through: v.through, unfolded: v.unfolded, mounting: v.opener != nil, topology: v.topology, sorts: v.sorts}
 	w.walk(v.root, "", true, nil, nil)
 	v.rows = w.out
 	v.rowKeys = nil
@@ -735,10 +736,18 @@ func (v *formView) CollapseAll(id string) string {
 }
 
 func (v *formView) Title() string {
-	if v.strip == nil {
-		return ""
+	title := ""
+	if v.strip != nil {
+		title = v.strip()
 	}
-	return v.strip()
+	status := v.sortStatus()
+	switch {
+	case title == "":
+		return status
+	case status == "":
+		return title
+	}
+	return title + "  " + status
 }
 
 func (v *formView) Close() {

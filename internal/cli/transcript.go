@@ -114,10 +114,12 @@ type transcript struct {
 	lineKey     []sliceKey // slice owning each line, for resize anchoring
 	offset      int        // top line of the viewport
 	// wantTop is a standing request for the beginning, armed by Home/gg.
-	wantTop bool
-	kept    bool
-	follow  bool
-	pending string
+	wantTop  bool
+	kept     bool
+	follow   bool
+	pending  string
+	count    int
+	keyCount int
 
 	comments  *commentIndex
 	entryOpen map[nodeRef]bool

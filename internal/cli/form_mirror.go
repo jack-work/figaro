@@ -256,6 +256,7 @@ type guideWalk struct {
 	unfolded map[string]bool
 	mounting bool
 	topology *pagerTopology
+	sorts    map[string]sortSpec
 }
 
 func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, row *viewRowKey) {
@@ -277,6 +278,9 @@ func (w *guideWalk) walk(n *formNode, cont string, top bool, labels []string, ro
 		if w.through[n.path] && w.shape.hint.Through != "" && w.topology == nil {
 			kids = onlyChild(kids, w.shape.hint.Through)
 		}
+	}
+	if spec, ok := w.sorts[n.path]; ok {
+		kids = sortedKids(kids, spec)
 	}
 	pointer := w.pointer(n)
 	if pointer {

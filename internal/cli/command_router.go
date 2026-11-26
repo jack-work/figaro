@@ -288,6 +288,17 @@ func init() {
 		},
 		"succeed": func(in *interactiveInput, _ string, args []string, _ uint64) { in.commandSucceed(args) },
 		"decide":  func(in *interactiveInput, _ string, args []string, _ uint64) { in.commandDecide(args) },
+		"sort": func(in *interactiveInput, _ string, args []string, _ uint64) {
+			in.mu.Lock()
+			defer in.mu.Unlock()
+			req, err := parseSortArgs(args)
+			if err != nil {
+				in.lt.tr.note(err.Error())
+				return
+			}
+			in.lt.tr.runSort(req)
+			in.lt.tr.render()
+		},
 		"notifications": func(in *interactiveInput, _ string, args []string, _ uint64) {
 			in.mu.Lock()
 			defer in.mu.Unlock()

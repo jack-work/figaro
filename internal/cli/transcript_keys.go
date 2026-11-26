@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
@@ -78,6 +79,7 @@ func (t *transcript) dispatch(ev keyEvent) {
 	}
 	t.held = false
 	if t.pending != "" {
+		t.count = 0
 		bd := t.prefixed(ev)
 		t.pending = ""
 		if bd != nil && bd.pager != nil {
@@ -137,6 +139,10 @@ func (t *transcript) dispatch(ev keyEvent) {
 		}
 		return
 	case modeList:
+		if t.takeCountDigit(ev) {
+			t.render()
+			return
+		}
 		if t.viewTakesKey(ev) {
 			t.render()
 			return
@@ -369,4 +375,44 @@ func (t *transcript) viewTakesKey(ev keyEvent) bool {
 	}
 	kv, ok := live.(cmdkit.KeyView)
 	return ok && kv.Key(ev.b)
+}
+
+func (t *transcript) takeCountDigit(ev keyEvent) bool {
+	t.keyCount, t.count = t.count, 0
+	if _, ok := t.pit.live.(sortView); !ok || ev.nav != navNone {
+		return false
+	}
+	if ev.b < '0' || ev.b > '9' || ev.b == '0' && t.keyCount == 0 {
+		if t.keyCount > 0 {
+			t.note("")
+		}
+		return false
+	}
+	t.count = min(t.keyCount*10+int(ev.b-'0'), 999)
+	t.keyCount = 0
+	t.note(strconv.Itoa(t.count))
+	return true
+}
+
+func pagerSortBy(t *transcript)    { t.sortAtCursor(false) }
+func pagerSortReset(t *transcript) { t.sortAtCursor(true) }
+
+func (t *transcript) sortAtCursor(reset bool) {
+	t.runSort(sortRequest{count: t.keyCount, reset: reset})
+}
+
+func (t *transcript) runSort(req sortRequest) {
+	sv, ok := t.pit.live.(sortView)
+	if !ok {
+		t.closePanels()
+		return
+	}
+	row, has := t.pit.selected()
+	if !has {
+		return
+	}
+	msg := sv.Sort(row.id, req)
+	t.pit.refreshLive(t.w)
+	t.pit.focus(row.id)
+	t.note(msg)
 }

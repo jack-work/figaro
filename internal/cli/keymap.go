@@ -167,6 +167,7 @@ const (
 	helpPitEnter
 	helpPitTree
 	helpPitFold
+	helpPitSort
 	helpVisualSelect
 	helpVisualAttend
 	helpOpenEditor
@@ -251,6 +252,7 @@ var helpRows = []helpRow{
 	{helpPitEnter, "(in a list) Enter", "the row's own action: open a form value or a notification, attend an aria"},
 	{helpPitTree, "(in a form) l/→ · h/←", "open the branch under the cursor; close it, or go up to its parent (a list that is no tree keeps l list, h help)"},
 	{helpPitFold, "(in a list) z R / z M", "open every branch of the form; close them all"},
+	{helpPitSort, "(in a list) [N]o · [N]O", "sort the entries of the form object above the cursor by the key under it, again for descending, N levels up; O restores the order"},
 	{helpVisualSelect, "(in v) Enter", "select the node under the cursor (then e expands it)"},
 	{helpVisualAttend, "(in v) a", "attend the highlighted id, or the word under the cursor; a path opens in your editor"},
 	{helpOpenEditor, "o", "open the selected messages, or the highlight, in your editor; quitting it comes back here"},

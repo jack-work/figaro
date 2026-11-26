@@ -945,6 +945,16 @@ var table = []Command{
 		Pager:     Hosted,
 	},
 	{
+		Name:      "sort",
+		Group:     "Session",
+		Help:      "Sort the entries of the form object above the cursor by the key under it (o in a pit)",
+		Usage:     "sort [<n>] [-r] [<key>] | sort reset [<n>]",
+		Args:      []Arg{{Name: "args", Kind: Word, Optional: true, Repeats: true}},
+		Flags:     []Flag{{Long: "reverse", Short: "r", Help: "Sort descending"}},
+		PagerOnly: true,
+		Pager:     Hosted,
+	},
+	{
 		Name:      "history",
 		Group:     "Session",
 		Help:      "The figaros this shell attended, newest first",

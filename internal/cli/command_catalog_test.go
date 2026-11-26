@@ -58,7 +58,7 @@ var pagerModes = map[string]command.Mode{
 	"forward": command.Hosted, "aria-forward": command.Hosted,
 	"kill": command.Hosted, "succeed": command.Hosted, "decide": command.Hosted,
 	"notifications": command.Hosted, "no": command.Hosted, "history": command.Hosted,
-	"login": command.Hosted, "comment": command.Hosted,
+	"login": command.Hosted, "comment": command.Hosted, "sort": command.Hosted,
 	"replay": command.Refused, "import": command.Refused,
 	"list": command.View, "ls": command.View, "lsh": command.View, "recent": command.View,
 	"reaped": command.View, "troupe": command.View, "models": command.View,
