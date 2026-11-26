@@ -318,20 +318,20 @@ func TestUserLeaderChord(t *testing.T) {
 // A reader can declare a prefix of their own and arm it from any layer.
 func TestUserDefinedPrefix(t *testing.T) {
 	f := keyconf.File{Layer: map[string]keyconf.Layer{
-		"z": {Modes: []string{"transcript"}, Prefix: true, Bind: map[string]string{"h": "help"}},
+		"mine": {Modes: []string{"transcript"}, Prefix: true, Bind: map[string]string{"h": "help"}},
 	}}
-	f.Set("transcript", "z", "prefix:z")
+	f.Set("transcript", "Z", "prefix:mine")
 	if diags := withUserKeys(t, f); len(diags) > 0 {
 		t.Fatal(diags)
 	}
 	tr := oracleTranscript()
-	tr.key('z')
-	if tr.pending != "z" {
-		t.Fatalf("z left %q pending", tr.pending)
+	tr.key('Z')
+	if tr.pending != "mine" {
+		t.Fatalf("Z left %q pending", tr.pending)
 	}
 	tr.key('h')
 	if !tr.showing("help") {
-		t.Fatal("z h did not open help")
+		t.Fatal("Z h did not open help")
 	}
 }
 
