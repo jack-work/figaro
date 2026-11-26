@@ -197,6 +197,24 @@ func TestASuccessionNeverLengthensTheLifetimeOfASourceWithLessLeftThanTheRetireT
 	}
 }
 
+func TestAnAncestorSucceedsItsDescendantAndAStrangerDoesNot(t *testing.T) {
+	f := newSeatFixture(t)
+	role := roleFor(t, f.hs, f.pred)
+	if _, err := callForkAsFigaro(t, f.hs, f.other, succeedReq(f.pred, role)); err == nil {
+		t.Fatal("a stranger succeeded another figaro")
+	}
+	out, err := callForkAsFigaro(t, f.hs, f.top, succeedReq(f.pred, role))
+	if err != nil {
+		t.Fatalf("an ancestor was refused the succession of its child: %v", err)
+	}
+	if !out.Retired || out.Seated == nil {
+		t.Fatalf("response %+v: the ancestor's succession did not seat and retire", out)
+	}
+	if snap, _ := f.b.FormState(f.pred); !store.RetiredIn(snap) {
+		t.Fatal("the source is not retired")
+	}
+}
+
 func TestAnOldCLIRequestWithoutARetireTTLTakesTheOrdinaryPath(t *testing.T) {
 	f := newSeatFixture(t)
 	role := roleFor(t, f.hs, f.pred)

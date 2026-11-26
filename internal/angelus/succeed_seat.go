@@ -11,7 +11,6 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/hierarchy"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -74,11 +73,6 @@ func (h *handlers) beginHandover(ctx context.Context, req rpc.ForkRequest) (*han
 
 func (h *handlers) precheckHandover(ctx context.Context, req rpc.ForkRequest) (json.RawMessage, error) {
 	source := req.FigaroID
-	if caller := authz.FigaroOf(ctx); caller != "" && caller != source {
-		return nil, fmt.Errorf("fork: only %s itself or the owner succeeds it, not figaro %s", source, caller)
-	} else if caller == "" && !h.callerOwns(ctx) {
-		return nil, fmt.Errorf("fork: only %s itself or the owner succeeds it", source)
-	}
 	snap, err := h.angelus.Backend.FormState(source)
 	if err != nil {
 		return nil, fmt.Errorf("fork: the board of %s cannot be read to check it can be retired: %w", source, err)
