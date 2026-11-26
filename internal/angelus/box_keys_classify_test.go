@@ -25,6 +25,7 @@ var boxInertOpenKeys = map[string]string{
 	"anthropic":            "a provider registry name, not a board key",
 	"decision":             "a key of a decision response, not a board key",
 	"entries":              "a key of the daemon's ledger form, which no aria writes",
+	"queue":                "read by the queue sweep only on a form the owner or lineage marked system.history short; a box cannot mark one",
 	"models":               "a key of the daemon's model catalog form, which no aria writes",
 	"upstreams":            "a key of the daemon's model catalog form, which no aria writes",
 	"figaro_id":            "an rpc param, not a board key",
