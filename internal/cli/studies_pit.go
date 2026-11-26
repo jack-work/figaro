@@ -184,7 +184,7 @@ func (v *formView) isStopped() bool {
 
 func (in *interactiveInput) openStudies(tab int) {
 	if in.replaying {
-		in.note("studies: not available in a replay")
+		in.pitFailed("studies: not available in a replay")
 		return
 	}
 	in.mu.Lock()
@@ -196,7 +196,7 @@ func (in *interactiveInput) openStudies(tab int) {
 	in.mu.Unlock()
 	idx, refusal := in.studies.choose(owner, snap, tab)
 	if refusal != "" {
-		in.note(refusal)
+		in.pitFailed(refusal)
 		return
 	}
 	finished := func() {}
@@ -222,4 +222,25 @@ func (s *studiesPit) loadedAt(idx int) bool {
 	id := s.forms[idx]
 	s.mu.Unlock()
 	return s.loaded(id)
+}
+
+func pagerStudies(t *transcript) {
+	if t.showing(pitID(studiesPitName)) {
+		t.closePanels()
+		return
+	}
+	t.openStudyTab(-1)
+}
+
+func studyTabKey(tab int) pagerFunc {
+	return func(t *transcript) { t.openStudyTab(tab) }
+}
+
+func (t *transcript) openStudyTab(tab int) {
+	if t.openStudies == nil {
+		t.note("this session cannot open studies")
+		return
+	}
+	t.awaitPit()
+	t.openStudies(tab)
 }

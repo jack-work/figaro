@@ -149,7 +149,7 @@ your changes applied.
 | pit | pit,list | `a` attend · `Enter 0x0a` activate · `l` branch-open · `h` branch-close · `Right` right · `Left` left · `Esc` cancel · `x` delete · `X` delete-now · `n` find-next · `N` find-prev |
 | list | list | `e ^E` scroll-down · `^Y` scroll-up · `>` send-to · `A` show-state · `F` fullscreen · `z` prefix:z · `0x0e` down · `0x10` up |
 | transcript | transcript | `f` prefix:fork · `c` prefix:comment · `a` attend · `^` attend-parent · `^O` aria-back · `Tab` aria-forward · `Enter 0x0a` activate · `e` toggle-bodies · `Esc` cancel · `x` delete · `0x0e` select-next · `0x10` select-prev · `n` find-next · `N` find-prev |
-| pager | transcript,pit,list | `M-n` question-next · `M-p` question-prev · `s` sticky · `D` decisions · `Space` prefix:leader · `l` list · `L` list-home · `M-l` recent · `H` hang-up · `S` form · `T` focus · `p` pinned · `h` help · `!` status · `Q` queue |
+| pager | transcript,pit,list | `M-n` question-next · `M-p` question-prev · `s` sticky · `D` decisions · `Space` prefix:leader · `l` list · `L` list-home · `M-l` recent · `H` hang-up · `S` form · `R` studies · `r` prefix:r · `T` focus · `p` pinned · `h` help · `!` status · `Q` queue |
 | reading | transcript,pit,visual,list | `q` leave · `m` more · `/` search · `?` search-back |
 | conversation | transcript,visual | `v` mark-char · `V` mark-line · `X` hang-up-drop · `:` command · `>` compose · `o` open-editor |
 | clipboard | incipit,transcript,pit,visual,composer,list | `y` yank · `M-y` yank-id |
@@ -159,6 +159,7 @@ your changes applied.
 | fork (prefix) | transcript | `j Down` fork-next · `k Up` fork-prev · `Esc` clear-note |
 | comment (prefix) | transcript | `j Down` comment-next · `k Up` comment-prev · `Esc` clear-note |
 | z (prefix) | list | `R` branch-open-all · `M` branch-close-all |
+| r (prefix) | transcript,pit,list | `1` study-1 · `2` study-2 · `3` study-3 · `4` study-4 · `5` study-5 · `6` study-6 · `7` study-7 · `8` study-8 · `9` study-9 · `0` study-0 |
 | leader (prefix) | transcript,pit,list | `n` notifications |
 <!-- end: layers -->
 
@@ -239,6 +240,17 @@ your changes applied.
 | `list-home` | transcript,pit,list |
 | `recent` | transcript,pit,list |
 | `form` | transcript,pit,list |
+| `studies` | transcript,pit,list |
+| `study-1` | transcript,pit,list |
+| `study-2` | transcript,pit,list |
+| `study-3` | transcript,pit,list |
+| `study-4` | transcript,pit,list |
+| `study-5` | transcript,pit,list |
+| `study-6` | transcript,pit,list |
+| `study-7` | transcript,pit,list |
+| `study-8` | transcript,pit,list |
+| `study-9` | transcript,pit,list |
+| `study-0` | transcript,pit,list |
 | `focus` | transcript,pit,list |
 | `pinned` | transcript,pit,list |
 | `delete` | transcript,pit,list |
