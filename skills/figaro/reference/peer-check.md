@@ -60,3 +60,30 @@ that works against it needs a box.
 A daemon that runs in a system-level unit (not under `user@UID.service`)
 needs `Delegate=yes` on that unit, or it may not create the tool cgroups
 and every tool refuses to start, naming the fix.
+
+## One parent for every tool shell: `[tools.cgroup]`
+
+By default each figaro's tools get `<unit>/tools-<aria>` beside the daemon,
+with no limits. Set any key of `[tools.cgroup]` and the daemon, at start,
+moves itself to `<unit>/daemon` (uncapped) and makes every tool cgroup
+`<unit>/tools/<aria>` under one parent that carries the limits:
+
+```toml
+[tools.cgroup]
+parent_cpu_max = "700000 100000"   # all tool shells together: 7 CPUs
+parent_memory_high = "24G"         # needs Delegate= to include memory
+tool_cpu_max = "150000 100000"     # each figaro's tools: 1.5 CPUs
+tool_cpu_weight = 100
+daemon_cpu_weight = 1000
+```
+
+A value the kernel would refuse stops the daemon at start. A limit the kernel
+refuses at run time is logged and the tools still run, attributed.
+
+Every process the unit holds at start moves to `<unit>/daemon` with the
+daemon. Tool cgroups an earlier daemon left (`<unit>/tools-<aria>`, still
+holding shells after a restart) are adopted: their processes move to
+`<unit>/tools/<aria>`; a leaf that stays populated keeps its aria and the
+per-tool cap until its shells exit. In this layout any caller inside the
+unit that belongs to no figaro and is not the daemon is refused: never taken
+for the owner.

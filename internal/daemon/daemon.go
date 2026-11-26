@@ -444,9 +444,20 @@ func Run() {
 		os.Exit(1)
 	}
 	if loaded.Config.Authz.ChecksPeers() {
+		tc := loaded.Config.Tools.Cgroup
+		lim := toolcgroup.Limits{ParentCPUMax: tc.ParentCPUMax, ParentMemoryHigh: tc.ParentMemoryHigh,
+			ToolCPUMax: tc.ToolCPUMax, ToolCPUWeight: tc.ToolCPUWeight, DaemonCPUWeight: tc.DaemonCPUWeight}
+		if err := lim.Check(); err != nil {
+			fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+			os.Exit(1)
+		}
 		reg := toolcgroup.NewRegistry()
 		a.Peercred.AttributeTools(reg)
-		a.Sessions.Tools = toolcgroup.Own(reg)
+		tools := toolcgroup.Own(reg, lim)
+		if lim.Parented() {
+			_, _ = tools.Root()
+		}
+		a.Sessions.Tools = tools
 		a.ToolCgroups = reg
 	}
 	a.Policies = authz.NewPolicies(a.Owner, angelus.StoreFacts(backend))
