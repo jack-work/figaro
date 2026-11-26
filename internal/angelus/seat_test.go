@@ -281,3 +281,23 @@ func TestASeatLandsUnderAParentAlreadyOverItsCap(t *testing.T) {
 		t.Fatalf("the successor is drawn under %q, want %s", got, f.top)
 	}
 }
+
+func TestASeatInPlaceOfARetiredPredecessorLandsUnderAParentOverItsCap(t *testing.T) {
+	f := newSeatFixture(t)
+	for range 3 {
+		if _, _, err := f.b.Fork(f.top); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setMaxChildren(t, f.b, f.top, 2)
+	setMaxChildren(t, f.b, f.successor, 2)
+	retireAria(t, f.b, f.pred)
+
+	seat := f.seat(t)
+	if seat.FailedAt != "" {
+		t.Fatalf("a seat that replaces a retired child of an overfull parent failed at %s: %s", seat.FailedAt, seat.Error)
+	}
+	if got := f.drawn(f.successor); got != f.top {
+		t.Fatalf("the successor is drawn under %q, want %s", got, f.top)
+	}
+}
