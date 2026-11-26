@@ -14,6 +14,21 @@ import (
 )
 
 func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
+	runSetArgsAt(loaded, ariaID, keyArg, raw, 0)
+}
+
+func parseIfVersion(raw string) (uint64, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || n == 0 {
+		return 0, fmt.Errorf("set: --if-version takes a form version, a positive integer: %q", raw)
+	}
+	return n, nil
+}
+
+func runSetArgsAt(loaded *config.Loaded, ariaID, keyArg, raw string, want uint64) {
 
 	value := json.RawMessage(raw)
 	if !json.Valid(value) {
@@ -27,11 +42,14 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 	}
 
 	var topValue json.RawMessage
-	var ifVersion uint64
+	ifVersion := want
 	if len(path) == 0 {
 		topValue = value
 	} else {
 		current, version := mustFetchFormKey(loaded, ariaID, top)
+		if want != 0 && version != want {
+			die("set: the form moved on: at version %d, not %d", version, want)
+		}
 		merged, err := deepSetJSON(current, path, value)
 		if err != nil {
 			die("set: %s", err)
@@ -194,6 +212,10 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 }
 
 func runForm(loaded *config.Loaded, ariaID string) {
+	runFormShow(loaded, ariaID, false)
+}
+
+func runFormShow(loaded *config.Loaded, ariaID string, versionOnly bool) {
 	// `<host>/<intrinsic>`: "" is the identity segment, the host's own form.
 	spec, intrinsic := splitIntrinsic(ariaID)
 	if !knownIntrinsic(intrinsic) {
@@ -206,6 +228,10 @@ func runForm(loaded *config.Loaded, ariaID string) {
 		resp, err := s.Figaro.FormOf(ctx, intrinsic)
 		if err != nil {
 			die("form: %s", err)
+		}
+		if versionOnly {
+			_, err := fmt.Fprintln(stdout, resp.Version)
+			return err
 		}
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")

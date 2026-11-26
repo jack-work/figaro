@@ -532,6 +532,7 @@ var table = []Command{
 			{Long: "outfit", Short: "O", Value: Outfit, Subwords: []string{"new", "fork", "apply"}, Help: "new/fork/apply: outfit NAMES"},
 			{Long: "managed", Value: Word, Subwords: []string{"apply"}, Help: "apply: comma-separated paths managed by the outfit"},
 			{Long: "check", Subwords: []string{"apply"}, Help: "apply: report changes without writing"},
+			{Long: "version", Subwords: []string{"show"}, Help: "show: print only the form's version, the number set --if-version takes"},
 			{Long: "manifest", Value: Word, Subwords: []string{"apply"}, Help: "apply: TOML file of declared roles; replaces --id, --outfit and --managed"},
 			{Long: "set", Short: "S", Value: Patch, Subwords: []string{"new", "fork"}, Repeats: true, Help: "new/fork: birth keys, k=v or a JSON literal; repeats"},
 			{Long: "delete", Short: "D", Value: Key, Subwords: []string{"new", "fork"}, Repeats: true, Help: "new/fork: key paths the birth patch removes; repeats"},
@@ -546,7 +547,7 @@ var table = []Command{
 		Name:  "set",
 		Group: "State",
 		Help:  "Patch a form key (no LLM round-trip)",
-		Usage: "set [--id <id>] <key> <value>",
+		Usage: "set [--id <id>] [--if-version <n>] <key> <value>",
 		Args: []Arg{
 			{Name: "key", Kind: Key},
 			{Name: "value", Kind: Value},
@@ -554,6 +555,7 @@ var table = []Command{
 		Complete: SetArgs,
 		Flags: []Flag{
 			{Long: "id", Value: Aria, Help: "Target aria id (overrides pid binding)"},
+			{Long: "if-version", Value: Word, Help: "Refuse unless the form still stands at this version (state show --version prints it): a conditional write, e.g. a claim"},
 		},
 	},
 	{

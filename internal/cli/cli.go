@@ -1329,7 +1329,7 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 				if id == "" && len(args) > 1 {
 					id = args[1]
 				}
-				runForm(ld, id)
+				runFormShow(ld, id, ctx.BoolFlag("version"))
 				return nil
 			}
 			id := ctx.Flag("id")
@@ -1344,7 +1344,11 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 	r.Register(verb("set", &cmdkit.Command{
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runSetArgs(ld, ctx.Flag("id"), ctx.Args[0], ctx.Args[1])
+			ifVersion, err := parseIfVersion(ctx.Flag("if-version"))
+			if err != nil {
+				return err
+			}
+			runSetArgsAt(ld, ctx.Flag("id"), ctx.Args[0], ctx.Args[1], ifVersion)
 			return nil
 		},
 	}))
