@@ -138,6 +138,7 @@ Moving between figaros:
 | `^O` / `^I` | back / forward through the figaros this shell attended (`:back`, `:forward`) |
 | `m` | more: each name beside its other spelling, every node's address in its spare columns |
 | `S` | the form in the pit |
+| `R` / `r1` .. `r9`, `r0` | the forms this figaro studies, one tab each (ten at most), in a pit: `R` opens the tab shown last, `r<n>` that tab, from the transcript or from another pit. A pit whose view binds `r` itself (the reaped pit's restore) keeps it |
 | `D` | the last decision in the pit, again to close (see [decisions.md](decisions.md)) |
 
 ## Comments
