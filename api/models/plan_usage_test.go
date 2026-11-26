@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/jack-work/figaro/api/form"
 )
 
 func TestPlanUsageSurvivesTheWireAndTheCatalog(t *testing.T) {
@@ -21,14 +23,14 @@ func TestPlanUsageSurvivesTheWireAndTheCatalog(t *testing.T) {
 	require.Equal(t, want, back.PlanUsage)
 	require.NotContains(t, string(raw), `"used_percent":0`, "an absent percentage is not zero")
 
-	cat := catalogOf(t, map[string]Provider{"rou2": {IR: IRVersion, Node: NewNode(map[string]Entry{
-		"anthropic-max/claude-opus-5-5":     {PlanUsage: want},
-		"anthropic-max/claude-opus-5-5.1":   {},
-		"anthropic-max/claude-opus-5-5-new": {PlanUsage: &PlanUsage{Plan: "anthropic-max"}},
-	})}})
-	require.Equal(t, want, PlanUsageOf(cat, "rou2", "anthropic-max/claude-opus-5-5"))
-	require.Nil(t, PlanUsageOf(cat, "rou2", "anthropic-max/claude-opus-5-5.1"))
-	require.Nil(t, PlanUsageOf(cat, "rou2", "anthropic-max/claude-opus-5-5-new"), "no windows is nothing to show")
-	require.Nil(t, PlanUsageOf(cat, "rou2", "missing"))
-	require.Nil(t, PlanUsageOf(cat, "", "anthropic-max/claude-opus-5-5"))
+	var tree PlanNode
+	tree.Place("anthropic-max/claude-opus-5-5", *want)
+	tree.Place("anthropic-max/claude-opus-5-5-new", PlanUsage{Plan: "anthropic-max"})
+	rawTree, err := json.Marshal(tree)
+	require.NoError(t, err)
+	plans := form.Snapshot{}.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{"rou2": rawTree}, nil))
+	require.Equal(t, want, PlanUsageIn(plans, "rou2", "anthropic-max/claude-opus-5-5"))
+	require.Nil(t, PlanUsageIn(plans, "rou2", "anthropic-max/claude-opus-5-5-new"), "no windows is nothing to show")
+	require.Nil(t, PlanUsageIn(plans, "rou2", "missing"))
+	require.Nil(t, PlanUsageIn(plans, "", "anthropic-max/claude-opus-5-5"))
 }

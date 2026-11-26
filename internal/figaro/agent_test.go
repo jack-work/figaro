@@ -464,9 +464,9 @@ func TestAgentWantsItsModelAndReportsALateFill(t *testing.T) {
 	assert.JSONEq(t, `128000`, string(raw))
 }
 
-// #211: the pager shows the plan usage the daemon published on the bound form;
-// a catalog change moves it, and a catalog that drops it withdraws it.
-func TestAgentPublishesThePlanUsageItsCatalogHolds(t *testing.T) {
+// Plan usage is the catalog's, per provider: the agent never copies it onto
+// its bound form, whatever the catalog holds for its route.
+func TestAgentWritesNoPlanUsageToItsBoundForm(t *testing.T) {
 	cb, _ := form.Open("")
 	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"rou2"`),
@@ -483,37 +483,16 @@ func TestAgentPublishesThePlanUsageItsCatalogHolds(t *testing.T) {
 		Models:    cat,
 	})
 	defer a.Kill()
-	assert.False(t, a.Snapshot().Has(form.PlanUsageKey))
 
-	pct := func(f float64) *float64 { return &f }
-	usage := func(used float64) models.Entry {
-		return models.Entry{PlanUsage: &models.PlanUsage{Plan: "anthropic-max",
-			Windows: []models.PlanWindow{{Window: "five_hour", UsedPercent: pct(used)}}}}
-	}
-	published := func() models.PlanUsage {
-		t.Helper()
-		durable, err := testBE.FormState(testID)
-		require.NoError(t, err)
-		raw, ok := durable.Get(form.PlanUsageKey)
-		require.True(t, ok, "the published usage is on the durable form")
-		var u models.PlanUsage
-		require.NoError(t, json.Unmarshal(raw, &u))
-		return u
-	}
-
-	cat.setEntry("rou2", "anthropic-max/claude-opus-5-5", usage(37))
+	used := 37.0
+	cat.setEntry("rou2", "anthropic-max/claude-opus-5-5", models.Entry{PlanUsage: &models.PlanUsage{Plan: "anthropic-max",
+		Windows: []models.PlanWindow{{Window: "five_hour", UsedPercent: &used}}}})
 	a.PublishModelFacts()
-	assert.Equal(t, 37.0, *published().Windows[0].UsedPercent)
 
-	cat.setEntry("rou2", "anthropic-max/claude-opus-5-5", usage(52))
-	a.PublishModelFacts()
-	assert.Equal(t, 52.0, *published().Windows[0].UsedPercent)
-
-	cat.setEntry("rou2", "anthropic-max/claude-opus-5-5", models.Entry{})
-	a.PublishModelFacts()
+	assert.False(t, a.Snapshot().Has("runtime.plan_usage"))
 	durable, err := testBE.FormState(testID)
 	require.NoError(t, err)
-	assert.False(t, durable.Has(form.PlanUsageKey), "usage the catalog no longer holds is withdrawn")
+	assert.False(t, durable.Has("runtime.plan_usage"))
 }
 
 func TestAgent_ReadCatchUp(t *testing.T) {

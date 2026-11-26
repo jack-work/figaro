@@ -132,6 +132,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		ownTurn:      make(chan struct{}), noTurn: make(chan struct{}),
 		startInline: opt.prompt != "" && !set.listen,
 		intrinsics:  newIntrinsicMirrors(),
+		catalog:     &formMirror{},
 	}
 	if in.replaying {
 		in.tape = opt.ep
@@ -149,6 +150,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		die("%s", err)
 	}
 
+	in.followCatalog()
 	defer startPagerClock(&mu, lt, func() *interactiveInput { return in })()
 
 	onResize := func(w, h int) {

@@ -130,7 +130,11 @@ func (in *interactiveInput) recomputeLimit() {
 	}
 	snap, _, _ := bound.state()
 	moved := in.lt.status.setLimit(publishedContextLimit(snap))
-	if in.lt.status.setPlanUsage(publishedPlanUsage(snap)) {
+	var catalog form.Snapshot
+	if in.catalog != nil {
+		catalog, _, _ = in.catalog.state()
+	}
+	if in.lt.status.setPlanUsage(publishedPlanUsage(catalog, snap)) {
 		moved = true
 	}
 	if in.lt.status.setRoute(models.RouteOf(snap)) {
@@ -153,18 +157,6 @@ func publishedContextLimit(snap form.Snapshot) int {
 		return 0
 	}
 	return n
-}
-
-func publishedPlanUsage(snap form.Snapshot) *models.PlanUsage {
-	raw, ok := form.RuntimeGet(snap, form.PlanUsageKey)
-	if !ok {
-		return nil
-	}
-	var u models.PlanUsage
-	if json.Unmarshal(raw, &u) != nil || len(u.Windows) == 0 {
-		return nil
-	}
-	return &u
 }
 
 func (in *interactiveInput) writeBoundForm(ctx context.Context, key string, value any) error {

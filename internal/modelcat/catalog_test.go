@@ -274,6 +274,46 @@ func TestAnUnchangedRefreshTouchesOnlyTheStamp(t *testing.T) {
 	require.Equal(t, []string{"p.attempted_at", "p.refreshed_at"}, keys)
 }
 
+// plan_usage carries a fetched_at the provider restamps on every listing. A
+// listing whose usage differs only in that stamp changes nothing a reader
+// shows, so it must not reach the form.
+func TestARefreshThatMovesOnlyFetchedAtCommitsNothingOnPlanUsage(t *testing.T) {
+	var calls atomic.Int32
+	used := 40.0
+	listing := func(at time.Time) []provider.ModelInfo {
+		return []provider.ModelInfo{{ID: "a", Entry: models.Entry{PlanUsage: &models.PlanUsage{Plan: "max",
+			Windows: []models.PlanWindow{{Window: "five_hour", UsedPercent: &used, FetchedAt: at}}}}}}
+	}
+	clk := newClock()
+	fp := &fakeProvider{calls: &calls, list: listing(clk.Now())}
+	c := New(Config{Build: func(string) (provider.Provider, error) { return fp, nil }, Now: clk.Now, Interval: fixedInterval(time.Hour)})
+	c.Want("p", "a")
+	waitFor(t, func() bool { return calls.Load() == 1 && !c.inflight("p") })
+	require.NotNil(t, models.PlanUsageIn(c.PlanUsage(), "p", "a"), "the usage landed on @plan-usage")
+	_, onModels := c.Snapshot().Get(models.EntryKey("p", "a") + ".plan_usage")
+	require.False(t, onModels, "@models carries no plan usage")
+
+	var mu sync.Mutex
+	var keys []string
+	c.PlanUsageForm().OnCommit(func(cm store.Commit) {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, e := range cm.Patch.Entries() {
+			keys = append(keys, e.Key)
+		}
+	})
+	clk.advance(2 * time.Hour)
+	fp.mu.Lock()
+	fp.list = listing(clk.Now())
+	fp.mu.Unlock()
+	c.Want("p", "a")
+	waitFor(t, func() bool { return calls.Load() == 2 && !c.inflight("p") })
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Empty(t, keys, "@plan-usage moved for a fetched_at alone")
+}
+
 type modelsStore struct {
 	root string
 	be   *store.XwalBackend

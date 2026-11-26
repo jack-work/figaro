@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/models"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/sdk/aria"
 )
@@ -60,26 +61,43 @@ func TestBarShowsTheDaemonsPublishedCapacity(t *testing.T) {
 	require.NotContains(t, barText(in), "%", "a withdrawn capacity clears the percentage")
 }
 
-// #211: a @models commit that moves plan usage reaches the status line as the
-// daemon's write to the bound form; the pager holds no catalog to consult.
-func TestStatusShowsThePlanUsageTheDaemonPublished(t *testing.T) {
+func catalogJSON(used int) string {
+	pct := float64(used)
+	var n models.PlanNode
+	n.Place("anthropic-max/claude-opus-5-5", models.PlanUsage{Plan: "anthropic-max",
+		Windows: []models.PlanWindow{{Window: "five_hour", UsedPercent: &pct}}})
+	raw, _ := json.Marshal(n)
+	return string(raw)
+}
+
+// The plan usage on the status line is read from @plan-usage by the figaro's own
+// route, not copied onto its bound form: the figaro can be dormant and the line
+// still moves with the form.
+func TestStatusShowsTheRoutesPlanUsageFromThePlanUsageForm(t *testing.T) {
 	in := capacitySession(t)
+	in.catalog = &formMirror{}
 	panel := func() string { return strings.Join(in.lt.status.panelLines(), "\n") }
 
 	bound, _, _ := in.bound.state()
 	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 1, Patch: boundFormPatch(bound, map[string]string{
-		"system.provider": `"rou2"`, "system.model": `"anthropic-max/claude-opus-5-5"`,
-		form.PlanUsageKey: `{"plan":"anthropic-max","windows":[{"window":"five_hour","used_percent":37}]}`})})
+		"system.provider": `"rou2"`, "system.model": `"anthropic-max/claude-opus-5-5"`})})
+	require.NotContains(t, panel(), "5h ")
+
+	move := func(version uint64, kv map[string]string) {
+		snap, _, _ := in.catalog.state()
+		in.applyCatalogDelta(rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: version, Patch: boundFormPatch(snap, kv)}, func() {})
+	}
+	catalogProvider := func(used int) map[string]string {
+		return map[string]string{"rou2": catalogJSON(used)}
+	}
+	move(1, catalogProvider(37))
 	require.Contains(t, panel(), "5h 37% used")
 
-	bound, _, _ = in.bound.state()
-	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 2, Patch: boundFormPatch(bound, map[string]string{
-		form.PlanUsageKey: `{"plan":"anthropic-max","windows":[{"window":"five_hour","used_percent":52}]}`})})
+	move(2, catalogProvider(52))
 	require.Contains(t, panel(), "5h 52% used")
 
-	bound, _, _ = in.bound.state()
-	in.applyBoundFormDelta(0, rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 3,
-		Patch: form.Build(bound, nil, []string{form.PlanUsageKey})})
+	snap, _, _ := in.catalog.state()
+	in.applyCatalogDelta(rpc.FormDelta{Schema: rpc.FormDeltaSchema, Version: 3, Patch: form.Build(snap, nil, []string{"rou2"})}, func() {})
 	require.NotContains(t, panel(), "5h ")
 }
 

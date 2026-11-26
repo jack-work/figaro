@@ -53,7 +53,7 @@ type XwalBackend struct {
 	metas map[string]*metaCache
 
 	modelsMu sync.Mutex
-	models   *Form
+	reserved map[string]*Form
 	// librettos: one fold goroutine per libretto, not per observer.
 	librettos map[string]*Libretto
 	opening   map[string]*librettoOpening
@@ -411,6 +411,9 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	if source, ok := SourceOfLibretto(ariaID); ok {
 		return nil, fmt.Errorf(
 			"form %s: a libretto must be read through Libretto(%q), not as a node", ariaID, source)
+	}
+	if isReservedForm(ariaID) {
+		return b.reservedForm(ariaID)
 	}
 	if b.closed.Load() {
 		return nil, ErrClosed
@@ -865,6 +868,9 @@ func (b *XwalBackend) OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo
 // A node's outfit is resolved here: the store knows ids and topology, the
 // backend knows how to read a node.
 func (b *XwalBackend) Node(id string) (NodeView, bool) {
+	if isReservedForm(id) {
+		return NodeView{ID: id, Kind: string(kindForm), Stump: id}, true
+	}
 	n, ok := b.store.Node(id)
 	if ok {
 		b.label(&n)
@@ -1497,10 +1503,10 @@ func (b *XwalBackend) fence() []*Form {
 	b.metas = map[string]*metaCache{}
 	b.mu.Unlock()
 	b.modelsMu.Lock()
-	if b.models != nil {
-		forms = append(forms, b.models)
-		b.models = nil
+	for _, f := range b.reserved {
+		forms = append(forms, f)
 	}
+	b.reserved = nil
 	b.modelsMu.Unlock()
 	return forms
 }

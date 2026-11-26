@@ -49,22 +49,14 @@ func (p *planListing) Models(context.Context) ([]provider.ModelInfo, error) {
 	}}}, nil
 }
 
-func usedOn(t *testing.T, snap form.Snapshot) float64 {
-	t.Helper()
-	raw, ok := snap.Get(form.PlanUsageKey)
-	if !ok {
-		return -1
-	}
-	var u models.PlanUsage
-	require.NoError(t, json.Unmarshal(raw, &u))
-	return *u.Windows[0].UsedPercent
+func holdsPlanUsage(snap form.Snapshot) bool {
+	return snap.Has("runtime.plan_usage")
 }
 
-// #211: after a daemon restart every figaro is dormant, and a pager follows
-// one without waking it. The catalog moving must still reach its bound form,
-// and a follower arriving after the catalog moved must see the new number in
-// its first read.
-func TestADormantFollowedFigaroGetsTheModelFactsTheCatalogMovesTo(t *testing.T) {
+// Plan usage lives on @models and nowhere on a figaro: a refresh that moves it
+// writes no bound form, wakes no dormant figaro, and sends its followers
+// nothing, while the per-figaro context limit is still published.
+func TestAPlanUsageRefreshWritesNoBoundForm(t *testing.T) {
 	listing := &planListing{}
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0o700))
@@ -93,7 +85,7 @@ func TestADormantFollowedFigaroGetsTheModelFactsTheCatalogMovesTo(t *testing.T) 
 
 	listing.set(model, 64)
 	require.NoError(t, a.Models.Refresh(ctx, "mock"))
-	require.Never(t, func() bool { s, _ := a.Backend.FormState(id); return usedOn(t, s) >= 0 },
+	require.Never(t, func() bool { s, _ := a.Backend.FormState(id); return holdsPlanUsage(s) },
 		100*time.Millisecond, 10*time.Millisecond, "an unwatched dormant figaro is left alone")
 
 	deltas := make(chan rpc.FormDelta, 16)
@@ -109,23 +101,23 @@ func TestADormantFollowedFigaroGetsTheModelFactsTheCatalogMovesTo(t *testing.T) 
 	require.NoError(t, client.Call(callCtx, rpc.MethodFollow, struct{}{}, &followed))
 	var first rpc.FormResponse
 	require.NoError(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &first))
-	require.Equal(t, 64.0, usedOn(t, first.Snapshot), "the first read carries what the catalog moved to while nobody watched")
+	require.False(t, holdsPlanUsage(first.Snapshot))
 	raw, ok := first.Snapshot.Get(form.ContextLimitKey)
 	require.True(t, ok)
 	require.JSONEq(t, `200000`, string(raw))
 
 	listing.set(model, 70)
 	require.NoError(t, a.Models.Refresh(ctx, "mock"))
-	require.Eventually(t, func() bool {
+	require.Never(t, func() bool {
 		select {
 		case d := <-deltas:
-			return usedOn(t, first.Snapshot.Apply(d.Patch)) == 70
+			return holdsPlanUsage(first.Snapshot.Apply(d.Patch))
 		default:
 			return false
 		}
-	}, 5*time.Second, 10*time.Millisecond, "the follower hears the catalog move")
+	}, 300*time.Millisecond, 10*time.Millisecond, "a plan-usage refresh reaches no follower of the figaro")
 	durable, err := a.Backend.FormState(id)
 	require.NoError(t, err)
-	require.Equal(t, 70.0, usedOn(t, durable))
+	require.False(t, holdsPlanUsage(durable))
 	require.Nil(t, a.Registry.Get(id), "publishing did not wake it")
 }

@@ -186,21 +186,6 @@ func Lookup(catalog form.Snapshot, provider, model string) (Entry, bool) {
 	return e, true
 }
 
-func PlanUsageOf(catalog form.Snapshot, provider, model string) *PlanUsage {
-	if provider == "" || model == "" || !Current(catalog, provider) {
-		return nil
-	}
-	raw, ok := catalog.Get(EntryKey(provider, model) + ".plan_usage")
-	if !ok {
-		return nil
-	}
-	var u PlanUsage
-	if json.Unmarshal(raw, &u) != nil || len(u.Windows) == 0 {
-		return nil
-	}
-	return &u
-}
-
 func ProviderStatus(catalog form.Snapshot, provider string) (Status, bool) {
 	if provider == "" {
 		return Status{}, false
