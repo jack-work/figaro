@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,6 +118,25 @@ func TestAPromptFailureLeavesTheSeatedSuccessorAndTheRetiredPredecessor(t *testi
 	require.Contains(t, cast, "reaped in 10m")
 	for _, step := range steps {
 		require.NotContains(t, step, "undo")
+	}
+}
+
+func TestRecoveryWarnsThatOnlyTheOwnerCastsAfterTheReap(t *testing.T) {
+	for name, tc := range map[string]struct {
+		ttl  time.Duration
+		ride time.Duration
+		kill bool
+	}{
+		"ten minutes": {10 * time.Minute, 10 * time.Minute, false},
+		"ttl zero":    {0, time.Minute, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := succeedReport{Role: "@r", Predecessor: "old", Successor: "new", Prompted: true, Forked: true,
+				retiredByFork: true, retireTTL: tc.ride, FailedAt: "cast"}
+			steps := strings.Join(r.recovery(succeedPlan{ttl: tc.ttl, abdication: abdicateRetire}), "\n")
+			require.Contains(t, steps, "after the reap only the owner can cast")
+			require.Equal(t, tc.kill, strings.Contains(steps, "with --ttl 0 the window is 1m"), steps)
+		})
 	}
 }
 

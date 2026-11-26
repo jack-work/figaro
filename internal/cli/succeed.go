@@ -494,6 +494,13 @@ func withAria(id string, fn func(*sdk.Aria) error) error {
 	return fn(a)
 }
 
+func killWindowNote(plan succeedPlan) string {
+	if plan.ttl != 0 {
+		return ""
+	}
+	return fmt.Sprintf("; with --ttl 0 the window is %s", shortDuration(succeedKillRetireTTL))
+}
+
 func (r succeedReport) recovery(plan succeedPlan) []string {
 	var out []string
 	if r.Successor == "" {
@@ -511,7 +518,7 @@ func (r succeedReport) recovery(plan succeedPlan) []string {
 	if !r.Cast {
 		step := fmt.Sprintf("figaro cast %s %s", r.Successor, r.Role)
 		if r.retiredByFork {
-			step += fmt.Sprintf(" (%s is retired and reaped in %s; until then %s still names it)", ariaName(r.Predecessor), shortDuration(r.retireTTL), ariaName(r.Role))
+			step += fmt.Sprintf(" (%s is retired and reaped in %s; until then %s still names it, and after the reap only the owner can cast%s)", ariaName(r.Predecessor), shortDuration(r.retireTTL), ariaName(r.Role), killWindowNote(plan))
 		}
 		out = append(out, step)
 	}
