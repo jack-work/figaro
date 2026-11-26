@@ -7,8 +7,11 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/arialog"
 	"github.com/jack-work/figaro/internal/hierarchy"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 type processDied struct{}
@@ -179,5 +182,54 @@ func TestAForkOfAStampedForkIsNotStamped(t *testing.T) {
 	}
 	if meta, _ := f.b.Meta(kin); meta != nil && meta.SuccessionOf != "" {
 		t.Fatal("a fork of a stamped fork is stamped in its sidecar")
+	}
+}
+
+func TestARestartKeepsAWorkingSuccessorWhoseSourceWasUnretired(t *testing.T) {
+	f := newSeatFixture(t)
+	role := roleFor(t, f.hs, f.pred)
+	a := f.hs.h.angelus
+	a.Backend = faultyBackend{Backend: f.b, fail: func(id, patch string) error {
+		if strings.Contains(patch, "succession_of") {
+			return errors.New("injected: the stamp stays")
+		}
+		return nil
+	}}
+	out, err := callForkAsFigaro(t, f.hs, f.pred, succeedReq(f.pred, role))
+	if err != nil {
+		t.Fatal(err)
+	}
+	successor := out.Alternative
+	a.Backend = f.b
+
+	lg, err := f.b.OpenFigIR(successor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lg.Append(arialog.Entry[message.Message]{Payload: message.Message{
+		Role: message.RoleInput, Content: []message.Content{message.TextContent("a day of the successor's own work")},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ownerSet(t, f.hs, f.pred, form.Build(form.Snapshot{}, nil, []string{store.SystemRetiredKey})); err != nil {
+		t.Fatal(err)
+	}
+	if !a.isLiveAria(f.pred) || !a.isLiveAria(successor) {
+		t.Fatal("the unretire did not leave both live")
+	}
+
+	restartDaemon(f)
+
+	if !a.isLiveAria(successor) {
+		t.Fatal("the restart deleted a successor that had worked")
+	}
+	if !a.isLiveAria(f.pred) {
+		t.Fatal("the restart retired the unretired source")
+	}
+	if n := len(stampedForks(f)); n != 0 {
+		t.Fatalf("the restart left %d stamps on a kept successor", n)
+	}
+	if got := f.drawn(f.pred); got != successor {
+		t.Fatalf("the source is drawn under %q, want the successor %s", got, successor)
 	}
 }

@@ -212,6 +212,12 @@ func (h *handlers) recoverSuccession(ctx context.Context, source, fork string) b
 		h.clearSuccessionStamp(fork)
 		return true
 	}
+	if h.forkHasWorked(fork) {
+		slog.Error("a stamped successor of a live source has records of its own, so it is kept: both stay live and the stamp is cleared",
+			"source", source, "fork", fork)
+		h.clearSuccessionStamp(fork)
+		return true
+	}
 	if parent, drawn := a.topology().Drawn(source); drawn && parent == fork {
 		if err := h.unseat(ctx, source, fork); err != nil {
 			slog.Error("a succession that died halfway could not give the seat back", "source", source, "fork", fork, "err", err)
@@ -223,4 +229,21 @@ func (h *handlers) recoverSuccession(ctx context.Context, source, fork string) b
 	}
 	slog.Warn("a succession died halfway: the fork was discarded and the source keeps its place", "source", source, "fork", fork)
 	return true
+}
+
+func (h *handlers) forkHasWorked(fork string) bool {
+	node, known := h.angelus.Backend.Node(fork)
+	if !known {
+		return true
+	}
+	lg, err := h.angelus.Backend.OpenFigIR(fork)
+	if err != nil {
+		return true
+	}
+	for _, e := range lg.Read() {
+		if e.LT > node.BranchedLT {
+			return true
+		}
+	}
+	return false
 }
