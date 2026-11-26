@@ -178,6 +178,25 @@ func TestASuccessionThatDoesNotRetireItsSourceIsChargedTheCap(t *testing.T) {
 	}
 }
 
+func TestASuccessionNeverLengthensTheLifetimeOfASourceWithLessLeftThanTheRetireTTL(t *testing.T) {
+	f := newSeatFixture(t)
+	applyKeys(t, f.b, f.pred, map[string]any{store.SystemTTLKey: "5m"})
+	role := roleFor(t, f.hs, f.pred)
+	out, err := callForkAsFigaro(t, f.hs, f.pred, succeedReq(f.pred, role))
+	if err != nil {
+		t.Fatalf("a source with 5m to live was refused a 10m retire: %v", err)
+	}
+	if !out.Retired {
+		t.Fatalf("response %+v: the source was not retired", out)
+	}
+	snap, _ := f.b.FormState(f.pred)
+	raw, _ := snap.Get(store.SystemTTLKey)
+	got, err := store.ParseTTL(lifetimeText(raw))
+	if err != nil || got <= 0 || got > 5*time.Minute {
+		t.Fatalf("the source's system.ttl is %s, want no more than the 5m it had", raw)
+	}
+}
+
 func TestAnOldCLIRequestWithoutARetireTTLTakesTheOrdinaryPath(t *testing.T) {
 	f := newSeatFixture(t)
 	role := roleFor(t, f.hs, f.pred)

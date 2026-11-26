@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/hierarchy"
@@ -104,7 +105,12 @@ func (h *handlers) retireRequest(ctx context.Context, id string, ttl time.Durati
 	if meta, _ := h.angelus.Backend.Meta(id); meta != nil {
 		createdAt = meta.CreatedAtMS
 	}
-	patch := store.RetirePatch(store.RetiredManual, createdAt, ttl, time.Now())
+	snap, err := h.angelus.Backend.FormState(id)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	patch := store.RetirePatch(store.RetiredManual, createdAt, clampToLifetime(snap, createdAt, ttl, now), now)
 	params, err := json.Marshal(rpc.SetRequest{Patch: patch})
 	if err != nil {
 		return nil, err
@@ -113,6 +119,25 @@ func (h *handlers) retireRequest(ctx context.Context, id string, ttl time.Durati
 		return nil, err
 	}
 	return rpc.WithAria(params, id)
+}
+
+func clampToLifetime(snap form.Snapshot, createdAtMS int64, ttl time.Duration, now time.Time) time.Duration {
+	raw, ok := snap.Get(store.SystemTTLKey)
+	if !ok {
+		return ttl
+	}
+	total, err := store.ParseTTL(lifetimeText(raw))
+	if err != nil || total <= 0 {
+		return ttl
+	}
+	var age time.Duration
+	if createdAtMS > 0 && now.UnixMilli() > createdAtMS {
+		age = now.Sub(time.UnixMilli(createdAtMS))
+	}
+	if remaining := total - age; remaining < ttl {
+		return remaining
+	}
+	return ttl
 }
 
 func (h *handlers) completeHandover(ctx context.Context, source, successor string, s *handover) (*rpc.SeatResponse, error) {
