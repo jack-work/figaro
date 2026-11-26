@@ -724,7 +724,7 @@ func (h *handlers) completeSuccession(ctx context.Context, rec successionRecord)
 		h.failSuccession(ctx, rec, "retire the predecessor: "+err.Error())
 		return
 	}
-	if seat := h.seatInPlaceOf(ctx, rec.Successor, rec.Old); seat.FailedAt != "" || seat.Demote.Unsupported || !seat.Demote.Preferred {
+	if seat := h.seatInPlaceOf(ctx, rec.Successor, rec.Old, false); seat.FailedAt != "" || seat.Demote.Unsupported || !seat.Demote.Preferred {
 		slog.Warn("succession: the successor was not seated in its predecessor's place", "aria", rec.Old, "successor", rec.Successor, "failed_at", seat.FailedAt, "err", seat.Error, "under", seat.Demote.Under)
 	}
 	if err := h.succ.remove(rec.Old); err != nil {

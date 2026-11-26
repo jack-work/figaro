@@ -26,6 +26,11 @@ func (b *XwalBackend) HierarchyEngine() hierarchy.Engine {
 	return &hierarchyEngine{b: b, epoch: hex.EncodeToString(raw[:])}
 }
 
+func (e *hierarchyEngine) Draws() bool {
+	_, ok := e.s().tree.(edgeWriter)
+	return ok
+}
+
 func (e *hierarchyEngine) s() *XwalStore { return e.b.store }
 
 func (e *hierarchyEngine) Version() hierarchy.Version {

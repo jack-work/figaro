@@ -386,6 +386,7 @@ func (hs *Handlers) RequireAria(ariaID string) error {
 
 type handlers struct {
 	seated             sync.Map
+	handovers          sourceLocks
 	angelus            *Angelus
 	config             *config.Loaded
 	factory            ProviderFactory

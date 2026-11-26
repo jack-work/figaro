@@ -40,27 +40,29 @@ type succeedPlan struct {
 }
 
 type succeedReport struct {
-	Role         string   `json:"role"`
-	Predecessor  string   `json:"predecessor"`
-	Mantra       string   `json:"predecessor_mantra,omitempty"`
-	Successor    string   `json:"successor,omitempty"`
-	Forked       bool     `json:"forked,omitempty"`
-	Turn         uint64   `json:"turn,omitempty"`
-	DemotedUnder string   `json:"demoted_under,omitempty"`
-	Prompted     bool     `json:"prompted"`
-	Steered      bool     `json:"steered,omitempty"`
-	Cast         bool     `json:"cast"`
-	OtherRoles   []string `json:"other_roles,omitempty"`
-	Recast       []string `json:"recast,omitempty"`
-	LeftAlone    []string `json:"left_alone,omitempty"`
-	Dropped      bool     `json:"dropped"`
-	Abdication   string   `json:"abdication,omitempty"`
-	TTL          string   `json:"ttl,omitempty"`
-	Killed       bool     `json:"killed,omitempty"`
-	Abdicated    bool     `json:"abdicated"`
-	FailedAt     string   `json:"failed_at,omitempty"`
-	Error        string   `json:"error,omitempty"`
-	Warnings     []string `json:"warnings,omitempty"`
+	retiredByFork bool
+	retireTTL     time.Duration
+	Role          string   `json:"role"`
+	Predecessor   string   `json:"predecessor"`
+	Mantra        string   `json:"predecessor_mantra,omitempty"`
+	Successor     string   `json:"successor,omitempty"`
+	Forked        bool     `json:"forked,omitempty"`
+	Turn          uint64   `json:"turn,omitempty"`
+	DemotedUnder  string   `json:"demoted_under,omitempty"`
+	Prompted      bool     `json:"prompted"`
+	Steered       bool     `json:"steered,omitempty"`
+	Cast          bool     `json:"cast"`
+	OtherRoles    []string `json:"other_roles,omitempty"`
+	Recast        []string `json:"recast,omitempty"`
+	LeftAlone     []string `json:"left_alone,omitempty"`
+	Dropped       bool     `json:"dropped"`
+	Abdication    string   `json:"abdication,omitempty"`
+	TTL           string   `json:"ttl,omitempty"`
+	Killed        bool     `json:"killed,omitempty"`
+	Abdicated     bool     `json:"abdicated"`
+	FailedAt      string   `json:"failed_at,omitempty"`
+	Error         string   `json:"error,omitempty"`
+	Warnings      []string `json:"warnings,omitempty"`
 }
 
 func (r *succeedReport) warn(format string, args ...any) {
@@ -70,6 +72,39 @@ func (r *succeedReport) warn(format string, args ...any) {
 func (r *succeedReport) fail(step string, err error) error {
 	r.FailedAt, r.Error = step, err.Error()
 	return fmt.Errorf("succeed: %s: %w", step, err)
+}
+
+const succeedKillRetireTTL = time.Minute
+
+func forkRetireTTL(plan succeedPlan) (time.Duration, bool) {
+	if plan.abdication != abdicateRetire {
+		return 0, false
+	}
+	if plan.ttl == 0 {
+		return succeedKillRetireTTL, true
+	}
+	if plan.ttl > rpc.MaxAbdicationTTL {
+		return 0, false
+	}
+	return plan.ttl, true
+}
+
+func refuseUnboundedRetire(plan succeedPlan) error {
+	if plan.abdication != abdicateRetire || plan.ttl <= rpc.MaxAbdicationTTL || daemonLacks(rpc.CapForkSucceed) {
+		return nil
+	}
+	return fmt.Errorf("--ttl %s: a retiring succession reaps its predecessor within %s, the bound the daemon admits it past the child limits for; use a shorter --ttl, or --abdication linger for a longer one", shortDuration(plan.ttl), rpc.MaxAbdicationTTL)
+}
+
+func (r *succeedReport) discardFork(ctx context.Context, acli *sdk.Angelus, cause error) error {
+	if !r.Forked {
+		return cause
+	}
+	if _, err := acli.Kill(ctx, rpc.KillRequest{FigaroID: r.Successor}); err != nil {
+		return fmt.Errorf("%w; the fork %s it left could not be killed: %v", cause, ariaName(r.Successor), err)
+	}
+	r.Forked, r.Successor = false, ""
+	return cause
 }
 
 func parseSucceedPlan(role, successor, turn, ttl, abdication, title, prompt string) (succeedPlan, error) {
@@ -261,6 +296,9 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 	if err := needCapability(rpc.CapSeat, "succeed"); err != nil {
 		return r, r.fail("assert", err)
 	}
+	if err := refuseUnboundedRetire(plan); err != nil {
+		return r, r.fail("assert", err)
+	}
 	parties, err := succeedAssert(ctx, acli, plan)
 	if err != nil {
 		return r, r.fail("assert", err)
@@ -271,6 +309,7 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 		r.warn("%d shell(s) attend %s and hold it from the reap until they move", n, ariaName(old.ID))
 	}
 
+	var seated *rpc.SeatResponse
 	if parties.successor != nil {
 		r.Successor = parties.successor.ID
 		if plan.title != "" {
@@ -292,31 +331,44 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 		if atCut && plan.turn > 0 {
 			r.warn("the daemon does not report %s: the successor studies only what %s studied at turn %d; restart the daemon to carry its live studies", rpc.CapForkStudies, ariaName(old.ID), plan.turn)
 		}
-		req := rpc.ForkRequest{FigaroID: old.ID, AtTurn: plan.turn, Outfits: outfits, Patch: patch, Studies: studies, Seat: role, Abdicates: plan.abdication == abdicateRetire}
+		req := rpc.ForkRequest{FigaroID: old.ID, AtTurn: plan.turn, Outfits: outfits, Patch: patch, Studies: studies, Seat: role}
+		if ttl, ok := forkRetireTTL(plan); ok && !daemonLacks(rpc.CapForkSucceed) {
+			req.Abdicates, req.RetireTTL = true, ttl
+		}
 		if daemonLacks(rpc.CapForkSeat) {
-			req.Seat, req.Abdicates = "", false
+			req.Seat, req.Abdicates, req.RetireTTL = "", false, 0
 			r.warn("the daemon does not report %s: the successor keeps the route %s was recorded with, not %s's; restart the daemon to dress it from the role", rpc.CapForkSeat, ariaName(old.ID), ariaName(role))
 		}
 		if err := refuseUnknownFields(req); err != nil {
 			return r, r.fail("fork", err)
 		}
 		out, err := acli.ForkWith(ctx, req)
+		if err != nil && req.Abdicates && strings.Contains(err.Error(), rpc.AbdicationNeedsTrunks) {
+			r.warn("the daemon keeps no trunks, so %s was not retired in the fork: the succession meets the ordinary limits", ariaName(old.ID))
+			req.Abdicates, req.RetireTTL = false, 0
+			out, err = acli.ForkWith(ctx, req)
+		}
 		if err != nil {
 			return r, r.fail("fork", err)
 		}
 		r.Successor, r.Forked, r.Turn = out.Alternative, true, plan.turn
+		r.retiredByFork, r.retireTTL = out.Retired, req.RetireTTL
+		seated = out.Seated
 		if out.OwnerNote != "" {
 			r.warn("%s", out.OwnerNote)
 		}
 	}
 
-	progress(fmt.Sprintf("seating %s in %s's place", ariaName(r.Successor), ariaName(old.ID)))
-	seat, err := acli.Seat(ctx, old.ID, r.Successor)
-	if err != nil {
-		return r, r.fail("place", err)
-	}
-	if err := seatRefusal(seat, r.Successor, old.ID); err != nil {
-		return r, r.fail(seat.FailedAt, err)
+	seat := seated
+	if seat == nil {
+		progress(fmt.Sprintf("seating %s in %s's place", ariaName(r.Successor), ariaName(old.ID)))
+		var err error
+		if seat, err = acli.Seat(ctx, old.ID, r.Successor); err != nil {
+			return r, r.fail("place", err)
+		}
+		if err := seatRefusal(seat, r.Successor, old.ID); err != nil {
+			return r, r.fail(seat.FailedAt, r.discardFork(ctx, acli, err))
+		}
 	}
 	dem := seat.Demote
 	switch {
@@ -394,8 +446,12 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 		return r, nil
 	}
 	r.TTL = shortDuration(plan.ttl)
+	abdication := abdicationPatch(plan, old.Mantra, old.CreatedAt, time.Now())
+	if r.retiredByFork {
+		abdication = *mantraPatch(succeededMantra(old.Mantra))
+	}
 	if err := withAria(old.ID, func(a *sdk.Aria) error {
-		_, err := a.Set(ctx, abdicationPatch(plan, old.Mantra, old.CreatedAt, time.Now()), 0)
+		_, err := a.Set(ctx, abdication, 0)
 		return err
 	}); err != nil {
 		return r, r.fail("abdicate", err)
@@ -453,7 +509,11 @@ func (r succeedReport) recovery(plan succeedPlan) []string {
 		out = append(out, fmt.Sprintf("figaro send -f --id %s -- <the succession prompt>", r.Successor))
 	}
 	if !r.Cast {
-		out = append(out, fmt.Sprintf("figaro cast %s %s", r.Successor, r.Role))
+		step := fmt.Sprintf("figaro cast %s %s", r.Successor, r.Role)
+		if r.retiredByFork {
+			step += fmt.Sprintf(" (%s is retired and reaped in %s; until then %s still names it)", ariaName(r.Predecessor), shortDuration(r.retireTTL), ariaName(r.Role))
+		}
+		out = append(out, step)
 	}
 	for _, other := range r.OtherRoles {
 		if !slices.Contains(r.Recast, other) && !slices.Contains(r.LeftAlone, other) {
@@ -466,6 +526,8 @@ func (r succeedReport) recovery(plan succeedPlan) []string {
 	if !r.Abdicated {
 		if plan.ttl == 0 {
 			out = append(out, "figaro kill "+r.Predecessor)
+		} else if r.retiredByFork {
+			out = append(out, fmt.Sprintf("figaro set %s mantra %q", r.Predecessor, succeededMantra(r.Mantra)))
 		} else if plan.abdication == abdicateRetire {
 			out = append(out, fmt.Sprintf("figaro retire %s --ttl %s -S mantra=%q", r.Predecessor, shortDuration(plan.ttl), succeededMantra(r.Mantra)))
 		} else {

@@ -330,6 +330,11 @@ func (g TopologyGuard) fanout(p hierarchy.Plan) error {
 	liveDepartures := map[string]int{}
 	touched := map[string]bool{}
 	swapTo, swapMax, swapOK := g.swapOf(p)
+	inherits := p.Op == hierarchy.Seat && p.Retires
+	target := swapTo
+	if target == "" && inherits {
+		target = p.To
+	}
 	for _, m := range p.Moves {
 		if m.Rehome || m.Tree != hierarchy.Drawn || m.From == m.To {
 			continue
@@ -338,7 +343,7 @@ func (g TopologyGuard) fanout(p hierarchy.Plan) error {
 		if !live && !(p.Op == hierarchy.Seat && m.Node == p.Node) {
 			continue
 		}
-		if live && m.To != "" && !(m.Node == p.Node && m.To == swapTo) {
+		if live && m.To != "" && !(m.Node == p.Node && m.To == target) && !(inherits && m.From == p.Node && m.To == target) {
 			arrivals[m.To]++
 			touched[m.To] = true
 		}

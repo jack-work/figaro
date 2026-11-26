@@ -828,12 +828,15 @@ func TestASuccessorForkIsAdmittedAtThePredecessorsCap(t *testing.T) {
 	if _, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred, Seat: seat}); err == nil {
 		t.Fatal("a seat fork that keeps its holder was admitted over max_children")
 	}
-	out2, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred, Seat: seat, Abdicates: true})
+	out2, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred, Seat: seat, Abdicates: true, RetireTTL: 10 * time.Minute})
 	if err != nil {
 		t.Fatalf("the successor fork of a holder at its cap: %v", err)
 	}
-	if err := swapUnder(t, hs, pred, pred, out2.Alternative); err != nil {
-		t.Fatalf("the successor of a holder at its cap could not take its place: %v", err)
+	if out2.Seated == nil || out2.Seated.FailedAt != "" || !out2.Retired {
+		t.Fatalf("the successor of a holder at its cap was not seated and its source retired: %+v", out2)
+	}
+	if snap, _ := b.FormState(pred); !store.RetiredIn(snap) {
+		t.Fatal("the source of a succession was left live")
 	}
 }
 
@@ -857,7 +860,7 @@ func TestARetiringSuccessorForkIsAdmittedWhateverThePredecessorsCount(t *testing
 	if _, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred, Seat: seat}); err == nil {
 		t.Fatal("a seat fork that keeps its holder was admitted over max_children")
 	}
-	if _, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred, Seat: seat, Abdicates: true}); err != nil {
+	if _, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred, Seat: seat, Abdicates: true, RetireTTL: 10 * time.Minute}); err != nil {
 		t.Fatalf("a retiring successor fork of a holder over its cap: %v", err)
 	}
 }

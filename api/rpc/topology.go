@@ -1,6 +1,8 @@
 package rpc
 
 import (
+	"time"
+
 	"github.com/jack-work/figaro/api/message"
 )
 
@@ -54,12 +56,17 @@ type ForkRequest struct {
 	// no turn boundary exists.
 	AtLT uint64 `json:"at_lt,omitempty"`
 	// Patch dresses the alternative in the same call that mints it.
-	Patch     *FormPatch  `json:"patch,omitempty"`
-	Outfits   []string    `json:"outfits,omitempty"`
-	Studies   ForkStudies `json:"studies,omitempty"`
-	Seat      string      `json:"seat,omitempty"`
-	Abdicates bool        `json:"abdicates,omitempty"`
+	Patch     *FormPatch    `json:"patch,omitempty"`
+	Outfits   []string      `json:"outfits,omitempty"`
+	Studies   ForkStudies   `json:"studies,omitempty"`
+	Seat      string        `json:"seat,omitempty"`
+	Abdicates bool          `json:"abdicates,omitempty"`
+	RetireTTL time.Duration `json:"retire_ttl,omitempty"`
 }
+
+const MaxAbdicationTTL = time.Hour
+
+const AbdicationNeedsTrunks = "abdication needs trunks"
 
 type ForkStudies string
 
@@ -72,6 +79,7 @@ const (
 const (
 	CapForkStudies Capability = "fork.studies"
 	CapForkSeat    Capability = "fork.seat"
+	CapForkSucceed Capability = "fork.succeed"
 	CapSeat        Capability = "seat"
 	CapPlace       Capability = "place"
 )
@@ -80,10 +88,12 @@ const (
 // node. OwnerNote announces that an interior <id>:<LT> resolved to an owning
 // ancestor.
 type ForkResponse struct {
-	Parent       string `json:"parent"`
-	Continuation string `json:"continuation"`
-	Alternative  string `json:"alternative"`
-	OwnerNote    string `json:"owner_note,omitempty"`
+	Parent       string        `json:"parent"`
+	Continuation string        `json:"continuation"`
+	Alternative  string        `json:"alternative"`
+	OwnerNote    string        `json:"owner_note,omitempty"`
+	Seated       *SeatResponse `json:"seated,omitempty"`
+	Retired      bool          `json:"retired,omitempty"`
 }
 
 type NormalizeRequest struct {

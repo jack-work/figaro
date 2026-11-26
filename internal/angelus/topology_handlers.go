@@ -379,7 +379,14 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	_, boxed := callerBox(ctx)
 	ownerMade := !claimed && !boxed && h.callerOwns(ctx)
-	abdicating := req.Seat != "" && req.Abdicates
+	abdicating := req.Abdicates
+	var succ *handover
+	if abdicating {
+		if succ, err = h.beginHandover(ctx, req); err != nil {
+			return nil, err
+		}
+		defer succ.unlock()
+	}
 	if err := h.precheckFork(req.FigaroID, forkCharge(forkDress(asked, req.FigaroID, lane, policy, ownerMade)), abdicating, ownerMade); err != nil {
 		return nil, err
 	}
@@ -522,9 +529,15 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := runFork(); err != nil {
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}
+	var seated *rpc.SeatResponse
+	if abdicating {
+		if seated, err = h.completeHandover(ctx, req.FigaroID, alt, succ); err != nil {
+			return nil, err
+		}
+	}
 	h.reader().ForkedFrom(alt, req.FigaroID)
 	slog.Info("forked figaro", "parent", req.FigaroID, "turn", req.AtTurn, "lt", atMainLT, "continuation", cont, "alternative", alt)
-	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note}, nil
+	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note, Seated: seated, Retired: seated != nil}, nil
 }
 
 func (h *handlers) precheckFork(parent string, charge int, abdicating, ownerMade bool) error {
@@ -975,7 +988,7 @@ func (h *handlers) seat(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		return nil, err
 	}
-	r := h.seatInPlaceOf(ctx, req.Successor, req.FigaroID)
+	r := h.seatInPlaceOf(ctx, req.Successor, req.FigaroID, false)
 	if r.FailedAt != "" || ttl == nil {
 		return r, nil
 	}
@@ -1013,12 +1026,12 @@ func (h *handlers) seatLifetime(ctx context.Context, pred string) (json.RawMessa
 	return json.RawMessage(`"0"`), nil
 }
 
-func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rpc.SeatResponse {
+func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string, retires bool) rpc.SeatResponse {
 	var r rpc.SeatResponse
 	by, err := h.angelus.topologyPrincipal(ctx)
 	var p hierarchy.Plan
 	if err == nil {
-		p, err = h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Seat, Node: pred, To: successor})
+		p, err = h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Seat, Node: pred, To: successor, Retires: retires})
 	}
 	if errors.Is(err, hierarchy.ErrUnsupported) {
 		r.Demote = rpc.DemoteResponse{FigaroID: pred, Unsupported: true}

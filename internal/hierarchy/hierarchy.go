@@ -124,6 +124,7 @@ type Plan struct {
 	Lift      bool
 	IfVersion Version
 	Consent   *Consent
+	Retires   bool
 
 	Moves  []Move
 	Delete []string
@@ -287,6 +288,14 @@ func (h *Hierarchy) Check(ctx context.Context, by Principal, p Plan) (Plan, erro
 		err = fmt.Errorf("%w %s", ErrParked, v.Park)
 	}
 	return plan, err
+}
+
+func (h *Hierarchy) Draws() bool {
+	if h == nil || h.eng == nil {
+		return false
+	}
+	d, ok := h.eng.(interface{ Draws() bool })
+	return !ok || d.Draws()
 }
 
 func (h *Hierarchy) Apply(ctx context.Context, by Principal, p Plan) (Plan, error) {
@@ -602,7 +611,7 @@ func (o *overlay) moves(tree map[string]Tree) []Move {
 
 func (h *Hierarchy) derive(p Plan) (Plan, error) {
 	out := Plan{Op: p.Op, Node: p.Node, Levels: p.Levels, To: p.To, Parents: p.Parents, Restore: p.Restore,
-		Revive: p.Revive, Storage: p.Storage, Recursive: p.Recursive, Lift: p.Lift, IfVersion: p.IfVersion, Consent: p.Consent}
+		Revive: p.Revive, Storage: p.Storage, Recursive: p.Recursive, Lift: p.Lift, IfVersion: p.IfVersion, Consent: p.Consent, Retires: p.Retires}
 	var err error
 	if p.Lift {
 		out.Delete, out.Moves, err = h.deriveLift(p.Op, p.Node, p.Recursive)
