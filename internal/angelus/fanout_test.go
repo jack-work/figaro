@@ -810,8 +810,6 @@ func TestARoleHeldOnlyAsARoutingAliasDoesNotCapItsHolder(t *testing.T) {
 	}
 }
 
-// A holder at its max_children must still be able to succeed. Abdication is
-// only promised by the fork, so it buys one slot past the cap, never more.
 func TestASuccessorForkIsAdmittedAtThePredecessorsCap(t *testing.T) {
 	hs, b, outfit := fanoutHandlers(t)
 	pred, _ := b.CreateConversation(outfit)
@@ -834,10 +832,32 @@ func TestASuccessorForkIsAdmittedAtThePredecessorsCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the successor fork of a holder at its cap: %v", err)
 	}
-	if _, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred, Seat: seat, Abdicates: true}); err == nil {
-		t.Fatal("a second successor fork was admitted: abdication buys one slot past the cap, not a slot per fork")
-	}
 	if err := swapUnder(t, hs, pred, pred, out2.Alternative); err != nil {
 		t.Fatalf("the successor of a holder at its cap could not take its place: %v", err)
+	}
+}
+
+func TestARetiringSuccessorForkIsAdmittedWhateverThePredecessorsCount(t *testing.T) {
+	hs, b, outfit := fanoutHandlers(t)
+	pred, _ := b.CreateConversation(outfit)
+	for range 3 {
+		if _, _, err := b.Fork(pred); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setMaxChildren(t, b, pred, 1)
+	target, _ := json.Marshal(pred)
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{"name": json.RawMessage(`"seat"`), "target-aria": target}, nil)
+	raw, _ := json.Marshal(rpc.FormCreateRequest{Patch: &patch})
+	out, err := hs.Map[rpc.MethodFormCreate](inProcess(context.Background()), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seat := out.(rpc.FormCreateResponse).FormID
+	if _, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred, Seat: seat}); err == nil {
+		t.Fatal("a seat fork that keeps its holder was admitted over max_children")
+	}
+	if _, err := callForkAsFigaro(t, hs, pred, rpc.ForkRequest{FigaroID: pred, Seat: seat, Abdicates: true}); err != nil {
+		t.Fatalf("a retiring successor fork of a holder over its cap: %v", err)
 	}
 }
