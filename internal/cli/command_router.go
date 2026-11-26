@@ -634,6 +634,9 @@ func (in *interactiveInput) openLiveIf(name, spec string, full bool, keep func(*
 			return
 		}
 		view.subject = in.subjectState()
+		if view.opener == nil && view.view == nil {
+			view.opener = in.mountForm
+		}
 		if keep != nil && !keep(view) {
 			finished()
 			in.pitFailed("")

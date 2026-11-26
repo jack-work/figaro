@@ -134,6 +134,10 @@ func pagerPitActivate(t *transcript) {
 	}
 	if iv, ok := t.pit.live.(itemView); ok {
 		if row, has := t.pit.selected(); has && row.id != "" {
+			if row.to != "" && t.attendAria != nil {
+				t.attendAria(row.to)
+				return
+			}
 			iv.Activate(row.id)
 		}
 		return

@@ -153,6 +153,7 @@ func (d *pit) showLive(id pitID, v cmdkit.LiveView) {
 	}
 	d.id, d.title, d.live, d.tall = id, "", v, 0
 	d.shown++
+	d.refreshTitle()
 	switch view := v.(type) {
 	case itemView:
 		d.body = newPicker(view.Items(80))
@@ -169,7 +170,16 @@ func (d *pit) showLive(id pitID, v cmdkit.LiveView) {
 
 type revisioned interface{ Revision() uint64 }
 
+type titled interface{ Title() string }
+
+func (d *pit) refreshTitle() {
+	if tv, ok := d.live.(titled); ok {
+		d.title = tv.Title()
+	}
+}
+
 func (d *pit) refreshLive(w int) {
+	d.refreshTitle()
 	iv, ok := d.live.(itemView)
 	if !ok || d.list() == nil {
 		return

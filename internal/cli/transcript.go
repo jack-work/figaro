@@ -79,6 +79,8 @@ type transcript struct {
 	// openForm must not take the render lock: every hook here is called from
 	// dispatch, which holds it.
 	openForm func()
+	// openStudies takes a tab index, or -1 for the one shown last; same lock rule as openForm.
+	openStudies func(tab int)
 	// dropRow: next names the row the cursor falls onto, where a kill should
 	// leave the pager.
 	dropRow func(pit, id, next string)
@@ -86,6 +88,7 @@ type transcript struct {
 	// rule as openForm.
 	attendAria   func(id string)
 	sendTo       func(to, handle, text string)
+	openState    func(id string)
 	ariaHop      func(dir int)
 	attendParent func()
 	confirm      *confirmAsk

@@ -1044,10 +1044,12 @@ func (in *interactiveInput) wireHooks() {
 	in.lt.tr.dropRow = in.dropPitRow
 	in.lt.tr.attendAria = in.attendFromPager
 	in.lt.tr.sendTo = in.sendToRow
+	in.lt.tr.openState = func(id string) { in.runCommand("state " + id) }
 	in.lt.tr.ariaHop = in.hopAria
 	in.lt.tr.attendParent = in.attendParentFromPager
 	// Hooks called from dispatch already hold the render lock: hand off.
 	in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }
+	in.lt.tr.openStudies = func(tab int) { go in.openStudies(tab) }
 	in.lt.tr.openPath = in.openPath
 }
 

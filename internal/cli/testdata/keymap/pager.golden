@@ -12,6 +12,7 @@ comment 0x63 prefix:comment off:same fol=true srch=false q="" mq="" h=false s=fa
 comment 0x66 prefix:fork off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=fork sel=false exp=0 jmp=false jq="" vis=none pit=none
 comment 0x67 prefix:g off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=g sel=false exp=0 jmp=false jq="" vis=none pit=none
 comment 0x68 help off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
+comment 0x72 prefix:r off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=r sel=false exp=0 jmp=false jq="" vis=none pit=none
 comment 0x75 half-up off:-5 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
 comment 0x76 mark-char off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
 comment PgUp half-up off:-5 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
@@ -37,6 +38,7 @@ fork 0x63 prefix:comment off:same fol=true srch=false q="" mq="" h=false s=false
 fork 0x66 prefix:fork off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=fork sel=false exp=0 jmp=false jq="" vis=none pit=none
 fork 0x67 prefix:g off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=g sel=false exp=0 jmp=false jq="" vis=none pit=none
 fork 0x68 help off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
+fork 0x72 prefix:r off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=r sel=false exp=0 jmp=false jq="" vis=none pit=none
 fork 0x75 half-up off:-5 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
 fork 0x76 mark-char off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
 fork PgUp half-up off:-5 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
@@ -54,11 +56,13 @@ help 0x2f search off:bottom fol=true srch=true q="" mq="" h=true s=false Q=false
 help 0x3a - off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=true jq="" vis=none pit=none
 help 0x3e send-to off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=true jq="" vis=none pit=help@-1/0
 help 0x3f search-back off:bottom fol=true srch=true q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
+help 0x41 show-state off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help 0x44 decisions off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help 0x46 fullscreen off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0+full
-help 0x47 bottom off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/67
+help 0x47 bottom off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/70
 help 0x4c list-home off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help 0x4e find-prev off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
+help 0x52 studies off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help 0x53 form off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help 0x54 focus off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0+T
 help 0x56 - off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
@@ -74,6 +78,7 @@ help 0x6b up off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pr
 help 0x6c branch-open off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help 0x6e find-next off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help 0x70 pinned off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
+help 0x72 prefix:r off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=r sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help 0x75 half-up off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help 0x76 - off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
 help 0x78 delete off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
@@ -83,7 +88,7 @@ help Down down off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false 
 help PgUp half-up off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help PgDn half-down off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help Home top off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
-help End bottom off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/67
+help End bottom off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/70
 help+focus inert off:same fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0+T
 help+focus 0x0e - off:sel fol=false srch=false q="" mq="" h=true s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=help@-1/0+T
 help+focus 0x10 - off:sel fol=false srch=false q="" mq="" h=true s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=help@-1/0+T
@@ -101,6 +106,7 @@ help+focus 0x66 - off:same fol=true srch=false q="" mq="" h=true s=false Q=false
 help+focus 0x67 - off:same fol=true srch=false q="" mq="" h=true s=false Q=false pre=g sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0+T
 help+focus 0x68 help off:same fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 help+focus 0x6b - off:-1 fol=false srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0+T
+help+focus 0x72 prefix:r off:same fol=true srch=false q="" mq="" h=true s=false Q=false pre=r sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0+T
 help+focus 0x75 - off:-5 fol=false srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0+T
 help+focus 0x76 - off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
 help+focus Up - off:-1 fol=false srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0+T
@@ -229,6 +235,7 @@ leader 0x67 prefix:g off:same fol=true srch=false q="" mq="" h=false s=false Q=f
 leader 0x68 help off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 leader 0x6b up off:-1 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
 leader 0x6e notifications off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@-1/0+f0
+leader 0x72 prefix:r off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=r sel=false exp=0 jmp=false jq="" vis=none pit=none
 leader 0x75 half-up off:-5 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
 leader 0x76 mark-char off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
 leader Up up off:-1 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
@@ -249,6 +256,7 @@ note 0x66 prefix:fork off:same fol=true srch=false q="" mq="" h=false s=false Q=
 note 0x67 prefix:g off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=g sel=false exp=0 jmp=false jq="" vis=none pit=none
 note 0x68 help off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 note 0x6b up off:-1 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
+note 0x72 prefix:r off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=r sel=false exp=0 jmp=false jq="" vis=none pit=none
 note 0x75 half-up off:-5 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
 note 0x76 mark-char off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
 note Up up off:-1 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
@@ -267,11 +275,13 @@ notifications 0x2f search off:bottom fol=true srch=true q="" mq="" h=false s=fal
 notifications 0x3a - off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=true jq="" vis=none pit=none
 notifications 0x3e send-to off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=true jq="" vis=none pit=notifications@-1/0+f0
 notifications 0x3f search-back off:bottom fol=true srch=true q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@-1/0+f0
+notifications 0x41 show-state off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@0/0+f0
 notifications 0x44 decisions off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@0/0+f0
 notifications 0x46 fullscreen off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@-1/0+full+f0
 notifications 0x47 bottom off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@-1/0+f0
 notifications 0x4c list-home off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@0/0+f0
 notifications 0x4e find-prev off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@0/0+f0
+notifications 0x52 studies off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@0/0+f0
 notifications 0x53 form off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@-1/0+f0
 notifications 0x54 focus off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@-1/0+T+f0
 notifications 0x56 - off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
@@ -288,6 +298,7 @@ notifications 0x6b up off:bottom fol=true srch=false q="" mq="" h=false s=false 
 notifications 0x6c branch-open off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@0/0+f0
 notifications 0x6e find-next off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@0/0+f0
 notifications 0x70 pinned off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@0/0+f0
+notifications 0x72 prefix:r off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=r sel=false exp=0 jmp=false jq="" vis=none pit=notifications@-1/0+f0
 notifications 0x75 half-up off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@-1/0+f0
 notifications 0x76 - off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
 notifications 0x78 delete off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=notifications@-1/0+f0
@@ -310,11 +321,13 @@ panel+sel 0x2f search off:same fol=false srch=true q="" mq="" h=false s=true Q=f
 panel+sel 0x3a - off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=true exp=0 jmp=true jq="" vis=none pit=none
 panel+sel 0x3e send-to off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=true jq="" vis=none pit=status@-1/0
 panel+sel 0x3f search-back off:same fol=false srch=true q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0
+panel+sel 0x41 show-state off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0
 panel+sel 0x44 decisions off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0
 panel+sel 0x46 fullscreen off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0+full
 panel+sel 0x47 bottom off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/4
 panel+sel 0x4c list-home off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0
 panel+sel 0x4e find-prev off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0
+panel+sel 0x52 studies off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0
 panel+sel 0x53 form off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0
 panel+sel 0x54 focus off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0+T
 panel+sel 0x56 - off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+1:0 pit=none
@@ -331,6 +344,7 @@ panel+sel 0x6b up off:same fol=false srch=false q="" mq="" h=false s=true Q=fals
 panel+sel 0x6c branch-open off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0
 panel+sel 0x6e find-next off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0
 panel+sel 0x70 pinned off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0
+panel+sel 0x72 prefix:r off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=r sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0
 panel+sel 0x75 half-up off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0
 panel+sel 0x76 - off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+1:0 pit=none
 panel+sel 0x78 delete off:same fol=false srch=false q="" mq="" h=false s=true Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=status@-1/0
@@ -354,11 +368,13 @@ queued 0x2f search off:bottom fol=true srch=true q="" mq="" h=false s=false Q=tr
 queued 0x3a - off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=true jq="" vis=none pit=none
 queued 0x3e send-to off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=true jq="" vis=none pit=queue@0/0
 queued 0x3f search-back off:bottom fol=true srch=true q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
+queued 0x41 show-state off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
 queued 0x44 decisions off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
 queued 0x46 fullscreen off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0+full
 queued 0x47 bottom off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
 queued 0x4c list-home off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
 queued 0x4e find-prev off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
+queued 0x52 studies off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
 queued 0x53 form off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
 queued 0x54 focus off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0+T
 queued 0x56 - off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
@@ -375,6 +391,7 @@ queued 0x6b up off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true 
 queued 0x6c branch-open off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
 queued 0x6e find-next off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
 queued 0x70 pinned off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
+queued 0x72 prefix:r off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=r sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
 queued 0x75 half-up off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
 queued 0x76 - off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
 queued 0x78 delete off:bottom fol=true srch=false q="" mq="" h=false s=false Q=true pre=- sel=false exp=0 jmp=false jq="" vis=none pit=queue@0/0
@@ -599,11 +616,13 @@ status 0x2f search off:bottom fol=true srch=true q="" mq="" h=false s=true Q=fal
 status 0x3a - off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=true jq="" vis=none pit=none
 status 0x3e send-to off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=true jq="" vis=none pit=status@-1/0
 status 0x3f search-back off:bottom fol=true srch=true q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0
+status 0x41 show-state off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0
 status 0x44 decisions off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0
 status 0x46 fullscreen off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0+full
 status 0x47 bottom off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/4
 status 0x4c list-home off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0
 status 0x4e find-prev off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0
+status 0x52 studies off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0
 status 0x53 form off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0
 status 0x54 focus off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0+T
 status 0x56 - off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
@@ -620,6 +639,7 @@ status 0x6b up off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false 
 status 0x6c branch-open off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0
 status 0x6e find-next off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0
 status 0x70 pinned off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0
+status 0x72 prefix:r off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=r sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0
 status 0x75 half-up off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0
 status 0x76 - off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
 status 0x78 delete off:bottom fol=true srch=false q="" mq="" h=false s=true Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=status@-1/0
@@ -645,6 +665,7 @@ transcript 0x66 prefix:fork off:same fol=true srch=false q="" mq="" h=false s=fa
 transcript 0x67 prefix:g off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=g sel=false exp=0 jmp=false jq="" vis=none pit=none
 transcript 0x68 help off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 transcript 0x6b up off:-1 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
+transcript 0x72 prefix:r off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=r sel=false exp=0 jmp=false jq="" vis=none pit=none
 transcript 0x75 half-up off:-5 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
 transcript 0x76 mark-char off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
 transcript Up up off:-1 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
@@ -665,6 +686,7 @@ transcript+pendG 0x66 prefix:fork off:same fol=true srch=false q="" mq="" h=fals
 transcript+pendG 0x67 top off:top fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
 transcript+pendG 0x68 help off:bottom fol=true srch=false q="" mq="" h=true s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=help@-1/0
 transcript+pendG 0x6b up off:-1 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
+transcript+pendG 0x72 prefix:r off:same fol=true srch=false q="" mq="" h=false s=false Q=false pre=r sel=false exp=0 jmp=false jq="" vis=none pit=none
 transcript+pendG 0x75 half-up off:-5 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
 transcript+pendG 0x76 mark-char off:vis fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+4:0 pit=none
 transcript+pendG Up up off:-1 fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=none pit=none
@@ -690,6 +712,7 @@ transcript+sel 0x67 prefix:g off:same fol=false srch=false q="" mq="" h=false s=
 transcript+sel 0x68 help off:same fol=false srch=false q="" mq="" h=true s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=help@-1/0
 transcript+sel 0x6a down off:bottom fol=true srch=false q="" mq="" h=false s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=none
 transcript+sel 0x6b up off:sel fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=none
+transcript+sel 0x72 prefix:r off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=r sel=true exp=0 jmp=false jq="" vis=none pit=none
 transcript+sel 0x75 half-up off:sel fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=none
 transcript+sel 0x76 mark-char off:same fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=false exp=0 jmp=false jq="" vis=cur+1:0 pit=none
 transcript+sel Up up off:sel fol=false srch=false q="" mq="" h=false s=false Q=false pre=- sel=true exp=0 jmp=false jq="" vis=none pit=none
