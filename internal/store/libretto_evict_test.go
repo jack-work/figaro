@@ -53,10 +53,8 @@ func TestLibrettoSurvivesEvictionOfItsSource(t *testing.T) {
 	t.Fatalf("the libretto stopped following when its source was evicted: copy says %q", got)
 }
 
-// The cost of not tearing down, asserted: a libretto is never closed on
-// refs==0, so a form studied once stays resident for the life of the daemon,
-// bounded by the number of forms studied. If that changes, the change is a
-// teardown that runs where no verb is in flight.
+// A verb never closes a libretto on refs==0: a dropped study leaves it resident
+// until SweepLibrettos collects it.
 func TestADroppedStudyKeepsItsSourceResident(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
 	outfit, err := be.CreateOutfit("evict2", setPatch(map[string]string{"system.model": "m"}))

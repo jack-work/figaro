@@ -289,6 +289,7 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 			if a.successionSweep != nil {
 				sweep(ctx, "successions", a.successionSweep)
 			}
+			sweep(ctx, "libretto_gc", a.collectIdleLibrettos)
 			sweep(ctx, "evict_idle", a.evictIdleArias)
 			sweep(ctx, "trim_resident", a.trimResident)
 			sweep(ctx, "release_memory", a.releaseIdleMemory)
@@ -316,6 +317,20 @@ func (a *Angelus) migrateLibrettoRefs() {
 			"corrected", audit.Corrected, "minted", audit.Minted,
 			"orphaned", audit.Orphaned, "missing", audit.Missing)
 	})
+}
+
+func (a *Angelus) collectIdleLibrettos() {
+	sw, ok := a.Backend.(librettoSweeper)
+	if !ok {
+		return
+	}
+	if n := sw.SweepLibrettos(); n > 0 {
+		slog.Info("collected unstudied librettos", "collected", n)
+	}
+}
+
+type librettoSweeper interface {
+	SweepLibrettos() int
 }
 
 type librettoReconciler interface {

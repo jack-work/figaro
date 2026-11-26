@@ -219,28 +219,33 @@ func (b *XwalBackend) libretto(sourceFormID string) (*Libretto, error) {
 // therefore one writer on that stump's channel.
 func (b *XwalBackend) librettoInstance(sourceFormID string) (*Libretto, error) {
 	key := strings.TrimPrefix(sourceFormID, "@")
-	b.mu.Lock()
-	if l := b.librettos[key]; l != nil {
+	for {
+		b.mu.Lock()
+		delete(b.idleLibrettos, key)
+		if l := b.librettos[key]; l != nil {
+			b.mu.Unlock()
+			return l, nil
+		}
+		if o := b.opening[key]; o != nil {
+			b.mu.Unlock()
+			<-o.done
+			if o.lib == nil && o.err == nil {
+				continue
+			}
+			return o.lib, o.err
+		}
+		o := &librettoOpening{done: make(chan struct{})}
+		if b.opening == nil {
+			b.opening = map[string]*librettoOpening{}
+		}
+		b.opening[key] = o
 		b.mu.Unlock()
-		return l, nil
-	}
-	if o := b.opening[key]; o != nil {
-		b.mu.Unlock()
-		<-o.done
+		o.err = errLibrettoOpenPanicked
+		defer b.settleOpening(key, o)
+
+		o.lib, o.err = openLibretto(b.store, sourceFormID)
 		return o.lib, o.err
 	}
-	o := &librettoOpening{done: make(chan struct{})}
-	if b.opening == nil {
-		b.opening = map[string]*librettoOpening{}
-	}
-	b.opening[key] = o
-	b.mu.Unlock()
-	o.err = errLibrettoOpenPanicked
-	defer b.settleOpening(key, o)
-
-	// Outside the lock: this replays a form and reads files.
-	o.lib, o.err = openLibretto(b.store, sourceFormID)
-	return o.lib, o.err
 }
 
 var errLibrettoOpenPanicked = errors.New("libretto: opening it panicked")
@@ -290,9 +295,8 @@ func (b *XwalBackend) attach(lib *Libretto, sourceFormID string) error {
 	return lib.Follow(src)
 }
 
-// A libretto is not torn down when its count reaches zero. closeLibrettos is
-// the only teardown path and runs when the backend closes, the one moment no
-// verb is in flight.
+// A verb never tears a libretto down when its count reaches zero: SweepLibrettos
+// collects it a full sweep later, and closeLibrettos runs when the backend closes.
 func (b *XwalBackend) closeLibrettos() {
 	b.mu.Lock()
 	all := b.librettos
