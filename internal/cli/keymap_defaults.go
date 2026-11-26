@@ -60,6 +60,8 @@ var keyActions = []keyAction{
 		atPager(inComposer, composerLeft)),
 	named("branch-open", atPager(inList, pagerBranchOpen)),
 	named("branch-close", atPager(inList, pagerBranchClose)),
+	named("branch-open-all", atPager(inList, pagerBranchOpenAll)),
+	named("branch-close-all", atPager(inList, pagerBranchCloseAll)),
 	named("right",
 		atPager(inList, pagerPitOpen),
 		atPager(inVisual, pagerVisualRight),
@@ -347,6 +349,7 @@ var defaultLayers = []keyLayer{
 		bind("^Y", "scroll-up", helpListScroll),
 		bind(">", "send-to", helpSendTo),
 		bind("F", "fullscreen", helpNone),
+		bind("z", "prefix:z", helpPitFold),
 		bind("0x0e", "down", helpNone),
 		bind("0x10", "up", helpNone),
 	}},
@@ -445,6 +448,10 @@ var defaultLayers = []keyLayer{
 		bind("j Down", "comment-next", helpNone),
 		bind("k Up", "comment-prev", helpNone),
 		bind("Esc", "clear-note", helpNone),
+	}},
+	{name: "z", prefix: true, modes: inList, binds: []keyBind{
+		bind("R", "branch-open-all", helpNone),
+		bind("M", "branch-close-all", helpNone),
 	}},
 	{name: "leader", prefix: true, modes: inTranscript | inPit, binds: []keyBind{
 		bind("n", "notifications", helpNone),

@@ -170,6 +170,26 @@ func pagerPitOpen(t *transcript) {
 	tv.Expand(row.id)
 }
 
+func pagerBranchOpenAll(t *transcript) {
+	tv, ok := t.pit.live.(treeView)
+	row, has := t.pit.selected()
+	if !ok || !has {
+		return
+	}
+	tv.ExpandAll(row.id)
+}
+
+func pagerBranchCloseAll(t *transcript) {
+	tv, ok := t.pit.live.(treeView)
+	row, has := t.pit.selected()
+	if !ok || !has {
+		return
+	}
+	to := tv.CollapseAll(row.id)
+	t.pit.refreshLive(t.w)
+	t.pit.focus(to)
+}
+
 func pagerPitClose(t *transcript) {
 	tv, ok := t.pit.live.(treeView)
 	row, has := t.pit.selected()

@@ -143,6 +143,8 @@ type itemView interface {
 type treeView interface {
 	Expand(id string)
 	Collapse(id string) string
+	ExpandAll(id string)
+	CollapseAll(id string) string
 }
 
 func (d *pit) showLive(id pitID, v cmdkit.LiveView) {

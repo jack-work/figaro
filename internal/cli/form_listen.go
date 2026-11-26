@@ -661,6 +661,56 @@ func (v *formView) Collapse(id string) string {
 	return id
 }
 
+func (v *formView) ExpandAll(id string) {
+	if m, inner := v.split(id); m != nil {
+		m.view.ExpandAll(inner)
+		return
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.root == nil {
+		return
+	}
+	if v.open == nil {
+		v.open = map[string]bool{}
+	}
+	var walk func(n *formNode)
+	walk = func(n *formNode) {
+		for _, c := range n.kids() {
+			if c.leaf() {
+				continue
+			}
+			if _, head := v.rowKeys[c.path]; head && v.opener != nil {
+				continue
+			}
+			v.open[c.path] = true
+			delete(v.through, c.path)
+			walk(c)
+		}
+	}
+	walk(v.root)
+	v.openRev++
+}
+
+func (v *formView) CollapseAll(id string) string {
+	if m, inner := v.split(id); m != nil {
+		pointer := id[:strings.Index(id, mountSep)]
+		m.view.CollapseAll(inner)
+		return pointer
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	clear(v.open)
+	clear(v.through)
+	clear(v.unfolded)
+	v.openRev++
+	path := valuePath(id)
+	if i := strings.IndexByte(path, '.'); i >= 0 {
+		path = path[:i]
+	}
+	return path
+}
+
 func (v *formView) Close() {
 	v.closeMounts()
 	if v.closeConn != nil {
