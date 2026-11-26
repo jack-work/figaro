@@ -24,6 +24,7 @@ const (
 	ReapedUntilKey      = "runtime.reaped_until"
 	ReapedByKey         = "runtime.reaped_by"
 	OwnerMadeKey        = "runtime.owner_made"
+	SuccessionOfKey     = "runtime.succession_of"
 	RouteKey            = "runtime.route"
 	ContextLimitKey     = "runtime.context.limit"
 )

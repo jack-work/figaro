@@ -372,6 +372,8 @@ func (hs *Handlers) Restore(ctx context.Context, ariaID, wokeBy string) (figaro.
 	return hs.h.restoreByID(ctx, ariaID, wokeBy)
 }
 
+func (hs *Handlers) RecoverSuccessions() { hs.h.RecoverSuccessions() }
+
 func (hs *Handlers) RemoveAria(id string, recursive bool) error {
 	return hs.h.RemoveAria(id, recursive)
 }

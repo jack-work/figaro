@@ -146,6 +146,7 @@ func (h *handlers) completeHandover(ctx context.Context, req rpc.ForkRequest, su
 	}
 	_, err := h.ariaMethod(rpc.MethodSet)(ctx, s.retire)
 	if err == nil {
+		h.clearSuccessionStamp(successor)
 		return &seat, nil
 	}
 	if uerr := h.unseat(ctx, source, successor); uerr != nil {
@@ -175,4 +176,51 @@ func (h *handlers) unseat(ctx context.Context, source, successor string) error {
 		slog.Error("a refused succession could not give the seat back", "source", source, "successor", successor, "err", err)
 	}
 	return err
+}
+
+func (h *handlers) clearSuccessionStamp(fork string) {
+	snap, err := h.angelus.Backend.FormState(fork)
+	if err == nil {
+		_, err = h.angelus.Backend.ApplyFormPrivileged(fork, form.Build(snap, nil, []string{form.SuccessionOfKey}))
+	}
+	if err != nil {
+		slog.Error("a finished succession could not clear its stamp", "fork", fork, "err", err)
+	}
+}
+
+func (h *handlers) RecoverSuccessions() {
+	a := h.angelus
+	ctx := h.ownerContext()
+	for pending := -1; ; {
+		var left int
+		for _, v := range a.Backend.EveryNode() {
+			if meta, _ := a.Backend.Meta(v.ID); meta != nil && meta.SuccessionOf != "" && !h.recoverSuccession(ctx, meta.SuccessionOf, v.ID) {
+				left++
+			}
+		}
+		if left == 0 || left == pending {
+			return
+		}
+		pending = left
+	}
+}
+
+func (h *handlers) recoverSuccession(ctx context.Context, source, fork string) bool {
+	defer h.handovers.lock(source)()
+	a := h.angelus
+	if _, known := a.Backend.Node(source); !known || !a.isLiveAria(source) {
+		h.clearSuccessionStamp(fork)
+		return true
+	}
+	if parent, drawn := a.topology().Drawn(source); drawn && parent == fork {
+		if err := h.unseat(ctx, source, fork); err != nil {
+			slog.Error("a succession that died halfway could not give the seat back", "source", source, "fork", fork, "err", err)
+			return false
+		}
+	}
+	if err := h.discardBirth(fork); err != nil {
+		return false
+	}
+	slog.Warn("a succession died halfway: the fork was discarded and the source keeps its place", "source", source, "fork", fork)
+	return true
 }

@@ -381,13 +381,15 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	ownerMade := !claimed && !boxed && h.callerOwns(ctx)
 	abdicating := req.Abdicates && req.RetireTTL > 0
 	var succ *handover
+	succeeds := ""
 	if abdicating {
+		succeeds = req.FigaroID
 		if succ, err = h.beginHandover(ctx, req); err != nil {
 			return nil, err
 		}
 		defer succ.unlock()
 	}
-	if err := h.precheckFork(req.FigaroID, forkCharge(forkDress(asked, req.FigaroID, lane, policy, ownerMade)), abdicating, ownerMade); err != nil {
+	if err := h.precheckFork(req.FigaroID, forkCharge(forkDress(asked, req.FigaroID, lane, policy, ownerMade, succeeds)), abdicating, ownerMade); err != nil {
 		return nil, err
 	}
 	var cont, alt string
@@ -463,7 +465,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		if interior {
 			at = atMainLT
 		}
-		birth := forkDress(dress, req.FigaroID, lane, policy, ownerMade)
+		birth := forkDress(dress, req.FigaroID, lane, policy, ownerMade, succeeds)
 		release := func() {}
 		if !ownerMade {
 			var err error

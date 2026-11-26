@@ -119,6 +119,7 @@ type lifetimeChange struct {
 	aliasSpoke   bool
 	quota        *int
 	ownerMade    *bool
+	successionOf *string
 	kind         *string
 }
 
@@ -180,6 +181,10 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 		made := form.Truthy(raw)
 		c.ownerMade = &made
 	}
+	if raw, spoke := valueOf(form.SuccessionOfKey); spoke {
+		of := strings.TrimSpace(raw)
+		c.successionOf = &of
+	}
 	if _, spoke := valueOf(form.LifecycleStatusKey); spoke {
 		c.aliasSpoke = true
 	}
@@ -197,7 +202,7 @@ func lifetimeFrom(id string, valueOf func(key string) (string, bool)) (lifetimeC
 		kind := strings.TrimSpace(raw)
 		c.kind = &kind
 	}
-	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapIfEmpty != nil || c.reapedRoot != nil || c.reapedUntil != nil || c.reapedBy != nil || c.quotaSpoke || c.aliasSpoke || c.ownerMade != nil || c.kind != nil
+	return c, c.ttl != nil || c.keepalive != nil || c.retired != nil || c.reapIfEmpty != nil || c.reapedRoot != nil || c.reapedUntil != nil || c.reapedBy != nil || c.quotaSpoke || c.aliasSpoke || c.ownerMade != nil || c.successionOf != nil || c.kind != nil
 }
 
 func retiredValue(raw string) bool { return form.Truthy(raw) }
@@ -250,6 +255,9 @@ func (c lifetimeChange) applyTo(m *AriaMeta, now int64) {
 	if c.ownerMade != nil {
 		m.OwnerMade = *c.ownerMade
 	}
+	if c.successionOf != nil {
+		m.SuccessionOf = *c.successionOf
+	}
 	if c.kind != nil {
 		m.Kind = *c.kind
 	}
@@ -260,7 +268,7 @@ func sameLifetime(a, b *AriaMeta) bool {
 	return a.TTLMS == b.TTLMS && a.RetiredAtMS == b.RetiredAtMS && a.RetiredReason == b.RetiredReason && a.ReapIfEmpty == b.ReapIfEmpty &&
 		a.ReapedAtMS == b.ReapedAtMS && a.ReapedRoot == b.ReapedRoot && a.ReapedUntilMS == b.ReapedUntilMS && a.ReapedBy == b.ReapedBy &&
 		(ka == nil) == (kb == nil) && (ka == nil || *ka == *kb) &&
-		(a.FanoutQuota == nil) == (b.FanoutQuota == nil) && (a.FanoutQuota == nil || *a.FanoutQuota == *b.FanoutQuota) && a.OwnerMade == b.OwnerMade && a.Kind == b.Kind
+		(a.FanoutQuota == nil) == (b.FanoutQuota == nil) && (a.FanoutQuota == nil || *a.FanoutQuota == *b.FanoutQuota) && a.OwnerMade == b.OwnerMade && a.SuccessionOf == b.SuccessionOf && a.Kind == b.Kind
 }
 
 func (b *XwalBackend) ttlCommitted(id string, patch message.Patch) {
