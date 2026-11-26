@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/api/handle"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
+	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/peer"
 	"github.com/jack-work/jkrpc"
 )
@@ -100,11 +101,11 @@ func (h *handlers) placeParams(ctx context.Context, method string, params json.R
 			return params, node, ref, nil
 		}
 	}
-	params, err := h.canonicalParams(ctx, params)
+	params, err := h.canonicalParams(ctx, method, params)
 	return params, "", ref, err
 }
 
-func (h *handlers) canonicalParams(ctx context.Context, params json.RawMessage) (json.RawMessage, error) {
+func (h *handlers) canonicalParams(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	if !mayCarrySecondaryID(params) {
 		return params, nil
 	}
@@ -123,7 +124,11 @@ func (h *handlers) canonicalParams(ctx context.Context, params json.RawMessage) 
 			return nil, err
 		}
 		if _, named := roleNameOf(ref); named && id == ref && !h.knownID(id) {
-			return nil, fmt.Errorf("no role or form named %s", ref)
+			studied, ok := h.studiedByCaller(method, rpc.AriaOf(params), ref)
+			if !ok {
+				return nil, fmt.Errorf("no role or form named %s", ref)
+			}
+			id = studied
 		}
 		if id != ref {
 			fields[k], _ = json.Marshal(id)
@@ -424,4 +429,27 @@ func (h *handlers) readableID(ctx context.Context, id string) bool {
 		return false
 	}
 	return h.angelus.Policies.AllowFigaro(sub, authz.FigaroOf(ctx), rpc.VerbRead, authz.Aria(id)).Allowed
+}
+
+func (h *handlers) studiedByCaller(method, ariaID, ref string) (string, bool) {
+	if method != rpc.MethodDrop || ariaID == "" || h.angelus.Backend == nil {
+		return "", false
+	}
+	snap, err := h.angelus.Backend.FormState(ariaID)
+	if err != nil {
+		return "", false
+	}
+	var match string
+	for _, s := range figaro.StudiesFromSnapshot(snap) {
+		if s == ref {
+			return s, true
+		}
+		if strings.HasPrefix(s, ref) {
+			if match != "" {
+				return "", false
+			}
+			match = s
+		}
+	}
+	return match, match != ""
 }
