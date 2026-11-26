@@ -102,9 +102,16 @@ func (f *follower) close() {
 	}
 }
 
+type renewableLink interface {
+	Node() string
+	Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error)
+}
+
+var linkRenewTimeout = 5 * time.Second
+
 func (f *follower) present(ctx context.Context, token string) {
 	f.mu.Lock()
-	links := make([]*peer.Link, 0, len(f.links))
+	links := make([]renewableLink, 0, len(f.links))
 	for _, l := range f.links {
 		links = append(links, l)
 	}
@@ -113,11 +120,23 @@ func (f *follower) present(ctx context.Context, token string) {
 	if err != nil {
 		return
 	}
+	renewLinks(ctx, links, params)
+}
+
+func renewLinks(ctx context.Context, links []renewableLink, params json.RawMessage) {
+	var wg sync.WaitGroup
 	for _, l := range links {
-		if _, err := l.Call(ctx, rpc.MethodEndpointPresent, params); err != nil {
-			slog.Warn("endpoint.present on a forwarded link failed; it ends at its old expiry", "node", l.Node(), "err", err)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			callCtx, cancel := context.WithTimeout(ctx, linkRenewTimeout)
+			defer cancel()
+			if _, err := l.Call(callCtx, rpc.MethodEndpointPresent, params); err != nil {
+				slog.Warn("endpoint.present on a forwarded link failed; it ends at its old expiry", "node", l.Node(), "err", err)
+			}
+		}()
 	}
+	wg.Wait()
 }
 
 func (f *follower) link(ctx context.Context, d *peer.Dialer, node string, p rpc.Passage) (*peer.Link, error) {
