@@ -57,7 +57,7 @@ func (h *handlers) beginHandover(ctx context.Context, req rpc.ForkRequest) (*han
 	if req.Seat == "" {
 		return nil, errors.New("fork: a succession is the seat's: name the role the successor takes")
 	}
-	if req.RetireTTL <= 0 || req.RetireTTL > rpc.MaxAbdicationTTL {
+	if req.RetireTTL > rpc.MaxAbdicationTTL {
 		return nil, fmt.Errorf("fork: a succession retires its source for a ttl of up to %s, got %s", rpc.MaxAbdicationTTL, req.RetireTTL)
 	}
 	unlock := h.handovers.lock(req.FigaroID)

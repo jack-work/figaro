@@ -379,7 +379,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	_, boxed := callerBox(ctx)
 	ownerMade := !claimed && !boxed && h.callerOwns(ctx)
-	abdicating := req.Abdicates
+	abdicating := req.Abdicates && req.RetireTTL > 0
 	var succ *handover
 	if abdicating {
 		if succ, err = h.beginHandover(ctx, req); err != nil {

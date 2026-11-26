@@ -178,6 +178,29 @@ func TestASuccessionThatDoesNotRetireItsSourceIsChargedTheCap(t *testing.T) {
 	}
 }
 
+func TestAnOldCLIRequestWithoutARetireTTLTakesTheOrdinaryPath(t *testing.T) {
+	f := newSeatFixture(t)
+	role := roleFor(t, f.hs, f.pred)
+	old := rpc.ForkRequest{FigaroID: f.pred, Seat: role, Abdicates: true}
+
+	out, err := callForkAsFigaro(t, f.hs, f.pred, old)
+	if err != nil {
+		t.Fatalf("an old CLI's seat fork was refused: %v", err)
+	}
+	if out.Retired || out.Seated != nil {
+		t.Fatalf("response %+v: the ordinary path neither seats nor retires", out)
+	}
+	if !f.hs.h.angelus.isLiveAria(f.pred) {
+		t.Fatal("the ordinary path retired the source")
+	}
+
+	setMaxChildren(t, f.b, f.pred, 1)
+	_, err = callForkAsFigaro(t, f.hs, f.pred, old)
+	if err == nil || !strings.Contains(err.Error(), "max_children") {
+		t.Fatalf("an old CLI's request past the cap must meet the ordinary limit, got %v", err)
+	}
+}
+
 func TestARefusedPrecheckLeavesNothing(t *testing.T) {
 	retired := func(t *testing.T, f seatFixture) { retireAria(t, f.b, f.pred) }
 	cases := map[string]struct {
@@ -187,7 +210,6 @@ func TestARefusedPrecheckLeavesNothing(t *testing.T) {
 	}{
 		"a retired source":              {prep: retired, caller: "pred"},
 		"a stranger":                    {caller: "other"},
-		"no ttl":                        {caller: "pred", mut: func(r *rpc.ForkRequest) { r.RetireTTL = 0 }},
 		"a ttl over the hour":           {caller: "pred", mut: func(r *rpc.ForkRequest) { r.RetireTTL = 2 * time.Hour }},
 		"no seat":                       {caller: "pred", mut: func(r *rpc.ForkRequest) { r.Seat = "" }},
 		"the owner of a retired source": {prep: retired},
