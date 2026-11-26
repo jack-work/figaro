@@ -252,6 +252,19 @@ func modelsForm(backend store.Backend) *store.Form {
 	return f
 }
 
+func planUsageForm(backend store.Backend) *store.Form {
+	b, ok := backend.(interface{ PlanUsageForm() (*store.Form, error) })
+	if !ok {
+		return nil
+	}
+	f, err := b.PlanUsageForm()
+	if err != nil {
+		slog.Error("models: the plan usage form will not open; keeping it in memory", "err", err)
+		return nil
+	}
+	return f
+}
+
 func buildDecider(loaded *config.Loaded) (*decide.Engine, error) {
 	return decide.New(func(provider string) (decide.Target, error) {
 		up, err := relay.Resolve(loaded, provider)
@@ -506,6 +519,7 @@ func Run() {
 		Known:     func(name string) bool { reg := providerPkg.Lookup(name); return reg != nil && reg.IsConfigured(loaded) },
 		Interval:  loaded.CatalogRefresh,
 		Form:      modelsForm(backend),
+		Plans:     planUsageForm(backend),
 	})
 	a.Models.Form().OnCommit(func(store.Commit) { go a.PublishModelFacts() })
 	a.Go("model catalog", func() { a.Models.Run(ctx) })

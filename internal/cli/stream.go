@@ -122,6 +122,7 @@ type interactiveInput struct {
 	debutTimer     func() bool
 	intrinsics     *intrinsicMirrors
 	bound          *formMirror // the subject's form; guarded by in.mu, parked with the subject
+	catalog        *formMirror // @plan-usage, one follow per pager; guarded by in.mu
 	draftQua       func(ctx context.Context, text string) (*rpc.QuaResponse, error)
 	login          *loginSession
 	interrupting   bool         // a second Ctrl-C leaves at once: a daemon that will not answer must not trap the user

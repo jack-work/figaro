@@ -25,6 +25,7 @@ type Config struct {
 	Known        func(providerName string) bool
 	Interval     func(providerName string) time.Duration
 	Form         *store.Form
+	Plans        *store.Form
 	Retry        time.Duration
 	FetchTimeout time.Duration
 	Now          func() time.Time
@@ -39,8 +40,9 @@ const (
 )
 
 type Catalog struct {
-	cfg  Config
-	form *store.Form
+	cfg   Config
+	form  *store.Form
+	plans *store.Form
 
 	mu     sync.Mutex
 	provs  map[string]*provState
@@ -78,9 +80,14 @@ func New(cfg Config) *Catalog {
 	if f == nil {
 		f = store.NewMemForm()
 	}
+	plans := cfg.Plans
+	if plans == nil {
+		plans = store.NewMemForm()
+	}
 	c := &Catalog{
 		cfg:   cfg,
 		form:  f,
+		plans: plans,
 		provs: map[string]*provState{},
 		ctx:   context.Background(),
 	}
@@ -112,6 +119,16 @@ func (c *Catalog) prune() {
 }
 
 func (c *Catalog) Form() *store.Form { return c.form }
+
+func (c *Catalog) PlanUsageForm() *store.Form { return c.plans }
+
+func (c *Catalog) PlanUsage() form.Snapshot {
+	if c == nil {
+		return form.Snapshot{}
+	}
+	snap, _ := c.plans.Snapshot()
+	return snap
+}
 
 func (c *Catalog) Snapshot() form.Snapshot {
 	if c == nil {
@@ -407,11 +424,17 @@ func (c *Catalog) record(providerName string, seeder provider.ModelSeeder, liste
 		return
 	}
 	next := map[string]models.Entry{}
+	usage := map[string]models.PlanUsage{}
 	for _, info := range listed {
 		if info.ID == "" {
 			continue
 		}
-		next[info.ID] = withoutEchoedName(info.ID, info.Entry)
+		e := withoutEchoedName(info.ID, info.Entry)
+		if e.PlanUsage != nil {
+			usage[info.ID] = *e.PlanUsage
+			e.PlanUsage = nil
+		}
+		next[info.ID] = e
 	}
 	for id, prev := range cur.Flat() {
 		if _, listed := next[id]; listed {
@@ -431,6 +454,39 @@ func (c *Catalog) record(providerName string, seeder provider.ModelSeeder, liste
 	cur.RefreshedAt = now.UnixMilli()
 	cur.Error = ""
 	c.publish(providerName, cur)
+	c.publishPlanUsage(providerName, usage)
+}
+
+func (c *Catalog) publishPlanUsage(providerName string, usage map[string]models.PlanUsage) {
+	snap, _ := c.plans.Snapshot()
+	var held models.PlanNode
+	if raw, ok := snap.Get(providerName); ok {
+		_ = json.Unmarshal(raw, &held)
+	}
+	var next models.PlanNode
+	for id, u := range usage {
+		if before, ok := held.Find(id); ok && before.SameShown(u) {
+			u = before
+		}
+		next.Place(id, u)
+	}
+	var patch form.Patch
+	if next.Empty() {
+		patch = form.Build(snap, nil, []string{providerName})
+	} else {
+		raw, err := json.Marshal(next)
+		if err != nil {
+			slog.Error("models: encode plan usage", "provider", providerName, "err", err)
+			return
+		}
+		patch = form.Build(snap, map[string]json.RawMessage{providerName: raw}, nil)
+	}
+	if patch.IsIdentity() {
+		return
+	}
+	if _, _, err := c.plans.ApplyEffect(patch, 0); err != nil {
+		slog.Error("models: publish plan usage refused", "provider", providerName, "err", err)
+	}
 }
 
 func withoutEchoedName(id string, e models.Entry) models.Entry {

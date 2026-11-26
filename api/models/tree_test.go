@@ -67,19 +67,14 @@ func TestTheSameModelSitsUnderEveryParentThatReachesIt(t *testing.T) {
 }
 
 func TestLookupAndPlanUsageReachADeepLeaf(t *testing.T) {
-	used := 41.0
 	cat := catalogOf(t, map[string]Provider{
 		"rou2": {IR: IRVersion, Node: NewNode(map[string]Entry{
 			"copilot/anthropic/claude-opus-5": {
-				Context:   Context{Default: 128_000},
-				PlanUsage: &PlanUsage{Windows: []PlanWindow{{Window: "five_hour", UsedPercent: &used}}},
+				Context: Context{Default: 128_000},
 			},
 		})},
 	})
 	e, ok := Lookup(cat, "rou2", "copilot/anthropic/claude-opus-5")
 	require.True(t, ok)
 	require.Equal(t, 128_000, e.Context.Default)
-	u := PlanUsageOf(cat, "rou2", "copilot/anthropic/claude-opus-5")
-	require.NotNil(t, u)
-	require.Equal(t, 41.0, *u.Windows[0].UsedPercent)
 }

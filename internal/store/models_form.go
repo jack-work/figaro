@@ -9,7 +9,10 @@ import (
 	"github.com/jack-work/figaro/figwal/xwal"
 )
 
-const modelsStump = "@models"
+const (
+	modelsStump    = "@models"
+	planUsageStump = "@plan-usage"
+)
 
 type segmentBase struct {
 	snap    form.Snapshot
@@ -109,16 +112,22 @@ func (l *compactingStumpLog) dropSealed(x *xwal.XWAL, last uint64) error {
 	return x.TruncateFront(chanForm, active)
 }
 
-func (b *XwalBackend) ModelsForm() (*Form, error) {
+func (b *XwalBackend) ModelsForm() (*Form, error) { return b.reservedForm(modelsStump) }
+
+func (b *XwalBackend) PlanUsageForm() (*Form, error) { return b.reservedForm(planUsageStump) }
+
+func isReservedForm(id string) bool { return id == modelsStump || id == planUsageStump }
+
+func (b *XwalBackend) reservedForm(stump string) (*Form, error) {
 	b.modelsMu.Lock()
 	defer b.modelsMu.Unlock()
 	if b.closed.Load() {
 		return nil, ErrClosed
 	}
-	if b.models != nil {
-		return b.models, nil
+	if f := b.reserved[stump]; f != nil {
+		return f, nil
 	}
-	l, err := openCompactingStumpLog(b.store, modelsStump)
+	l, err := openCompactingStumpLog(b.store, stump)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +135,9 @@ func (b *XwalBackend) ModelsForm() (*Form, error) {
 	if err != nil {
 		return nil, err
 	}
-	b.models = f
+	if b.reserved == nil {
+		b.reserved = map[string]*Form{}
+	}
+	b.reserved[stump] = f
 	return f, nil
 }

@@ -33,11 +33,5 @@ func ModelFactsPatch(catalog, bound form.Snapshot) form.Patch {
 	} else {
 		gone = append(gone, form.ContextLimitKey)
 	}
-	provider, model := models.Subject(bound)
-	if usage := models.PlanUsageOf(catalog, provider, model); usage != nil {
-		set[form.PlanUsageKey], _ = json.Marshal(usage)
-	} else {
-		gone = append(gone, form.PlanUsageKey)
-	}
 	return form.Build(bound, set, presentOf(bound, gone))
 }
