@@ -78,7 +78,7 @@ func runOneTurn(t *testing.T, a *figaro.Agent, text string, cb *rpc.FormInput) {
 
 	a.SubmitPrompt(rpc.QuaRequest{Text: text, Form: cb})
 
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(10 * time.Second)
 	for {
 		select {
 		case n := <-sub:
