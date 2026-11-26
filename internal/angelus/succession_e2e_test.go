@@ -987,7 +987,7 @@ func TestASuccessorTakesTheRolesCacheControl(t *testing.T) {
 		r := successionDaemon(t)
 		old := r.aria(nil)
 		role := r.role(old, map[string]any{"name": "warden", "system.cache_control": "1h", "succession-policy": map[string]any{"outfit": "tooled"}})
-		out, err := r.acli.ForkWith(r.ctx, rpc.ForkRequest{FigaroID: old, Seat: role, Abdicates: true})
+		out, err := r.acli.ForkWith(r.ctx, rpc.ForkRequest{FigaroID: old, Seat: role, Abdicates: true, RetireTTL: 10 * time.Minute})
 		require.NoError(t, err)
 		require.Equal(t, "1h", r.key(out.Alternative, "system.cache_control"))
 	})

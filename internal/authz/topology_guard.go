@@ -327,25 +327,35 @@ func (g TopologyGuard) fanout(p hierarchy.Plan) error {
 	}
 	arrivals := map[string]int{}
 	departures := map[string]int{}
+	liveDepartures := map[string]int{}
 	touched := map[string]bool{}
 	swapTo, swapMax, swapOK := g.swapOf(p)
+	inherits := p.Op == hierarchy.Seat && p.Retires
+	target := swapTo
+	if target == "" && inherits {
+		target = p.To
+	}
 	for _, m := range p.Moves {
 		if m.Rehome || m.Tree != hierarchy.Drawn || m.From == m.To {
 			continue
 		}
-		if g.Live != nil && !g.Live(m.Node) {
+		live := g.Live == nil || g.Live(m.Node)
+		if !live && !(p.Op == hierarchy.Seat && m.Node == p.Node) {
 			continue
 		}
-		if m.To != "" && !(m.Node == p.Node && m.To == swapTo) {
+		if live && m.To != "" && !(m.Node == p.Node && m.To == target) && !(inherits && m.From == p.Node && m.To == target) {
 			arrivals[m.To]++
 			touched[m.To] = true
 		}
 		if m.From != "" {
 			departures[m.From]++
+			if live {
+				liveDepartures[m.From]++
+			}
 		}
 	}
 	for to := range touched {
-		if arrivals[to] == 0 {
+		if arrivals[to] <= departures[to] {
 			continue
 		}
 		max, ok, err := g.FanoutLimit(to)
@@ -358,7 +368,7 @@ func (g TopologyGuard) fanout(p hierarchy.Plan) error {
 		if !ok {
 			continue
 		}
-		final := g.LiveChildren(to) - departures[to] + arrivals[to]
+		final := g.LiveChildren(to) - liveDepartures[to] + arrivals[to]
 		if final > max {
 			return fmt.Errorf("fanout: %s would hold %d live children of max_children %d; the reparent is refused and nothing moved", to, final, max)
 		}

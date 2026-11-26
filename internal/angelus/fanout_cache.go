@@ -300,20 +300,17 @@ type fanoutHold struct {
 func (c *fanoutCache) take(parent string, max int, capped bool, charge int, abdicating bool, judge func(error) error) (fanoutHold, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if capped {
-		if n := c.kids[parent] + c.held[parent]; n >= max+successorSlot(abdicating) {
-			return fanoutHold{}, maxChildrenRefusal(parent, n, max)
-		}
-	}
 	if abdicating {
 		charge = 0
-		if err := c.overLocked(parent); err != nil {
-			if err = judge(fmt.Errorf("%w; a succession that retires its predecessor fits only a budget that is not already overdrawn", err)); err != nil {
-				return fanoutHold{}, err
+	} else {
+		if capped {
+			if n := c.kids[parent] + c.held[parent]; n >= max {
+				return fanoutHold{}, maxChildrenRefusal(parent, n, max)
 			}
 		}
-	} else if err := judge(c.fitsLocked(parent, charge)); err != nil {
-		return fanoutHold{}, err
+		if err := judge(c.fitsLocked(parent, charge)); err != nil {
+			return fanoutHold{}, err
+		}
 	}
 	h := fanoutHold{parent: parent, slot: capped}
 	if capped {
@@ -379,13 +376,6 @@ func (c *fanoutCache) addPendingLocked(at string, d int) {
 }
 
 func (c *fanoutCache) spent(id string) int { return c.used[id] + c.pending[id] }
-
-func successorSlot(abdicating bool) int {
-	if abdicating {
-		return 1
-	}
-	return 0
-}
 
 func maxChildrenRefusal(parent string, n, max int) error {
 	return fmt.Errorf("fanout: %s holds %d live children of max_children %d; retire one, fork elsewhere, or have its parent grant more (figaro set --id %s %s %d)", parent, n, max, shortID(parent), form.FanoutMaxChildrenKey, n+1)

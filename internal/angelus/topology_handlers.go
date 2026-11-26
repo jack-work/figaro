@@ -379,8 +379,17 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	_, boxed := callerBox(ctx)
 	ownerMade := !claimed && !boxed && h.callerOwns(ctx)
-	abdicating := req.Seat != "" && req.Abdicates
-	if err := h.precheckFork(req.FigaroID, forkCharge(forkDress(asked, req.FigaroID, lane, policy, ownerMade)), abdicating, ownerMade); err != nil {
+	abdicating := req.Abdicates && req.RetireTTL > 0
+	var succ *handover
+	succeeds := ""
+	if abdicating {
+		succeeds = req.FigaroID
+		if succ, err = h.beginHandover(ctx, req); err != nil {
+			return nil, err
+		}
+		defer succ.unlock()
+	}
+	if err := h.precheckFork(req.FigaroID, forkCharge(forkDress(asked, req.FigaroID, lane, policy, ownerMade, succeeds)), abdicating, ownerMade); err != nil {
 		return nil, err
 	}
 	var cont, alt string
@@ -456,7 +465,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		if interior {
 			at = atMainLT
 		}
-		birth := forkDress(dress, req.FigaroID, lane, policy, ownerMade)
+		birth := forkDress(dress, req.FigaroID, lane, policy, ownerMade, succeeds)
 		release := func() {}
 		if !ownerMade {
 			var err error
@@ -522,9 +531,15 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := runFork(); err != nil {
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}
+	var seated *rpc.SeatResponse
+	if abdicating {
+		if seated, err = h.completeHandover(ctx, req, alt, succ); err != nil {
+			return nil, err
+		}
+	}
 	h.reader().ForkedFrom(alt, req.FigaroID)
 	slog.Info("forked figaro", "parent", req.FigaroID, "turn", req.AtTurn, "lt", atMainLT, "continuation", cont, "alternative", alt)
-	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note}, nil
+	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note, Seated: seated, Retired: seated != nil}, nil
 }
 
 func (h *handlers) precheckFork(parent string, charge int, abdicating, ownerMade bool) error {
@@ -542,19 +557,16 @@ func (h *handlers) forkRefusals(parent string, charge int, abdicating, ownerMade
 	if ownerMade {
 		return nil, nil
 	}
-	if err := h.admitMaxChildren(parent, successorSlot(abdicating)); err != nil {
-		return err, nil
-	}
 	if abdicating {
-		if err := h.angelus.settledFanout().over(parent); err != nil {
-			return nil, fmt.Errorf("%w; a succession that retires its predecessor fits only a budget that is not already overdrawn", err)
-		}
 		return nil, nil
+	}
+	if err := h.admitMaxChildren(parent); err != nil {
+		return err, nil
 	}
 	return nil, h.angelus.settledFanout().fits(parent, charge)
 }
 
-func (h *handlers) admitMaxChildren(parent string, headroom int) error {
+func (h *handlers) admitMaxChildren(parent string) error {
 	max, ok, err := h.angelus.fanoutLimit(parent)
 	if err != nil {
 		return fmt.Errorf("fork: the limit of %s cannot be read to admit the fork: %w", parent, err)
@@ -562,7 +574,7 @@ func (h *handlers) admitMaxChildren(parent string, headroom int) error {
 	if !ok {
 		return nil
 	}
-	if n := h.angelus.liveChildCount(parent); n >= max+headroom {
+	if n := h.angelus.liveChildCount(parent); n >= max {
 		return maxChildrenRefusal(parent, n, max)
 	}
 	return nil
@@ -978,7 +990,7 @@ func (h *handlers) seat(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		return nil, err
 	}
-	r := h.seatInPlaceOf(ctx, req.Successor, req.FigaroID)
+	r := h.seatInPlaceOf(ctx, req.Successor, req.FigaroID, false)
 	if r.FailedAt != "" || ttl == nil {
 		return r, nil
 	}
@@ -1016,12 +1028,12 @@ func (h *handlers) seatLifetime(ctx context.Context, pred string) (json.RawMessa
 	return json.RawMessage(`"0"`), nil
 }
 
-func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string) rpc.SeatResponse {
+func (h *handlers) seatInPlaceOf(ctx context.Context, successor, pred string, retires bool) rpc.SeatResponse {
 	var r rpc.SeatResponse
 	by, err := h.angelus.topologyPrincipal(ctx)
 	var p hierarchy.Plan
 	if err == nil {
-		p, err = h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Seat, Node: pred, To: successor})
+		p, err = h.angelus.topology().Apply(ctx, by, hierarchy.Plan{Op: hierarchy.Seat, Node: pred, To: successor, Retires: retires})
 	}
 	if errors.Is(err, hierarchy.ErrUnsupported) {
 		r.Demote = rpc.DemoteResponse{FigaroID: pred, Unsupported: true}

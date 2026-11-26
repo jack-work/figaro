@@ -553,6 +553,7 @@ func Run() {
 	a.Handlers = handlers.Map
 	a.RemoveAria = handlers.RemoveAria
 	a.RemoveAriaIf = handlers.RemoveAriaIf
+	handlers.RecoverSuccessions()
 	if loaded.PoolDaemon() {
 		handlers.RecoverWorkerPools(ctx)
 		go handlers.KeepReleasingWorkers(ctx)

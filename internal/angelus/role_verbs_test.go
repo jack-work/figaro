@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
@@ -81,7 +82,7 @@ func TestASucceedNeedsTheSucceedVerbOnTheSeat(t *testing.T) {
 	role := r.role(t, r.x)
 	r.scope(t, r.x, "read:*", "send:*", "fork:*", "set:*", "delete:*", "create:*", "kill:*", "adopt:*", "use:*", "cast:*")
 	fork := func() error {
-		_, err := r.h[rpc.MethodFork](localOwner(), claimed(t, r.x, mustJSON(t, rpc.ForkRequest{FigaroID: r.x, Seat: role, Abdicates: true})))
+		_, err := r.h[rpc.MethodFork](localOwner(), claimed(t, r.x, mustJSON(t, rpc.ForkRequest{FigaroID: r.x, Seat: role, Abdicates: true, RetireTTL: 10 * time.Minute})))
 		return err
 	}
 	if err := fork(); err == nil || !strings.Contains(err.Error(), "succeed") {
@@ -95,8 +96,8 @@ func TestASucceedNeedsTheSucceedVerbOnTheSeat(t *testing.T) {
 		t.Fatalf("a figaro without succeed seated a successor: %v", err)
 	}
 	r.scope(t, r.x, "read:*", "send:*", "fork:*", "set:*", "delete:*", "create:*", "kill:*", "adopt:*", "use:*", "cast:*", "succeed:"+role)
-	if err := fork(); err != nil {
-		t.Fatalf("succeed:%s did not reach its seat: %v", role, err)
+	if err := fork(); err == nil || !strings.Contains(err.Error(), rpc.AbdicationNeedsTrunks) {
+		t.Fatalf("succeed:%s did not reach its seat, got %v", role, err)
 	}
 }
 
