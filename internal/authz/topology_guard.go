@@ -345,7 +345,7 @@ func (g TopologyGuard) fanout(p hierarchy.Plan) error {
 		}
 	}
 	for to := range touched {
-		if arrivals[to] == 0 {
+		if arrivals[to] <= departures[to] {
 			continue
 		}
 		max, ok, err := g.FanoutLimit(to)
