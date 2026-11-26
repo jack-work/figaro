@@ -96,6 +96,9 @@ type interactiveInput struct {
 	readAt time.Time
 	lt     *livelogTurn
 	fcli   transcriptReadClient
+
+	studies studiesPit
+
 	// subject is the connection fcli names, held concretely so a switch can
 	// close it and `:send` can Qua on it.
 	subject        *sdk.Aria

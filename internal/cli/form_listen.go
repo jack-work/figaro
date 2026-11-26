@@ -246,6 +246,7 @@ type formView struct {
 	armed     string
 	search    *formSearch
 	clear     func() bool
+	strip     func() string
 
 	topology   *pagerTopology
 	projection *topologyProjection
@@ -731,6 +732,13 @@ func (v *formView) CollapseAll(id string) string {
 		path = path[:i]
 	}
 	return path
+}
+
+func (v *formView) Title() string {
+	if v.strip == nil {
+		return ""
+	}
+	return v.strip()
 }
 
 func (v *formView) Close() {

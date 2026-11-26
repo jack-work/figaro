@@ -1049,6 +1049,7 @@ func (in *interactiveInput) wireHooks() {
 	in.lt.tr.attendParent = in.attendParentFromPager
 	// Hooks called from dispatch already hold the render lock: hand off.
 	in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }
+	in.lt.tr.openStudies = func(tab int) { go in.openStudies(tab) }
 	in.lt.tr.openPath = in.openPath
 }
 
