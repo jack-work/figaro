@@ -197,6 +197,7 @@ var keyActions = []keyAction{
 	named("scroll-up", atPager(inList, listScrollUp)),
 	named("send", atPager(inComposer, composerSubmit)),
 	named("send-to", atPager(inList, listSendTo)),
+	named("show-state", atPager(inList, listShowState)),
 
 	named("accept-snap", atPager(inBox, boxAcceptSnap)),
 	named("cmd-home", atPager(inBox, cmdHome)),
@@ -348,6 +349,7 @@ var defaultLayers = []keyLayer{
 		bind("e ^E", "scroll-down", helpListScroll),
 		bind("^Y", "scroll-up", helpListScroll),
 		bind(">", "send-to", helpSendTo),
+		bind("A", "show-state", helpListState),
 		bind("F", "fullscreen", helpNone),
 		bind("z", "prefix:z", helpPitFold),
 		bind("0x0e", "down", helpNone),

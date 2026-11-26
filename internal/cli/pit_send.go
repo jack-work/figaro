@@ -41,6 +41,23 @@ func listSendTo(t *transcript) {
 	})
 }
 
+func listShowState(t *transcript) {
+	row, ok := t.pit.selected()
+	to := ""
+	if ok {
+		to, _ = t.rowAddress(row)
+	}
+	if to == "" {
+		t.note("that row is not a figaro")
+		return
+	}
+	if t.openState == nil {
+		t.note("this session cannot open a state")
+		return
+	}
+	t.openState(to)
+}
+
 func (t *transcript) rowAddress(row pitRow) (to, handle string) {
 	if row.to != "" {
 		handle = row.yank

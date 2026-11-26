@@ -97,3 +97,44 @@ func TestEnterOnAStudiedRoleAttendsIt(t *testing.T) {
 		t.Fatalf("attended %q", *attended)
 	}
 }
+
+func TestCapitalAOpensTheStateOfARowWithoutAttendingIt(t *testing.T) {
+	tr := newTranscript(io.Discard, 100, 30, ldrender.NodeText{}, aria.NewClient(), "aria1234", time.Unix(0, 0))
+	tr.enter()
+	v := recencyRig()
+	v.open["arias"] = true
+	v.openRev++
+	var opened, attended []string
+	tr.openState = func(id string) { opened = append(opened, id) }
+	tr.attendAria = func(id string) { attended = append(attended, id) }
+	tr.showLivePit("ls", v, false)
+	tr.pit.lines(100, 20)
+	tr.pit.focus("arias.holder")
+	tr.key('A')
+	if len(opened) != 1 || opened[0] != "d" || len(attended) != 0 {
+		t.Fatalf("opened %q attended %q", opened, attended)
+	}
+	tr.key('a')
+	if len(attended) == 0 && len(opened) != 1 {
+		t.Fatalf("a moved the state: opened %q", opened)
+	}
+}
+
+func TestCapitalAIsBoundOnceInThePitLayers(t *testing.T) {
+	n := 0
+	for _, l := range defaultLayers {
+		if l.modes&(inList|inPit) == 0 {
+			continue
+		}
+		for _, b := range l.binds {
+			for _, k := range strings.Fields(b.keys) {
+				if k == "A" {
+					n++
+				}
+			}
+		}
+	}
+	if n != 1 {
+		t.Fatalf("A is bound %d times across the list and pit layers", n)
+	}
+}

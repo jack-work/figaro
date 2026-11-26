@@ -86,6 +86,7 @@ type transcript struct {
 	// rule as openForm.
 	attendAria   func(id string)
 	sendTo       func(to, handle, text string)
+	openState    func(id string)
 	ariaHop      func(dir int)
 	attendParent func()
 	confirm      *confirmAsk

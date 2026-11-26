@@ -181,6 +181,7 @@ const (
 	helpFormPit
 	helpListScroll
 	helpSendTo
+	helpListState
 	helpFocus
 	helpPinned
 	helpVisual
@@ -230,6 +231,7 @@ var helpRows = []helpRow{
 	{helpPitDrop, "(in a list) x / X", "drop or kill the selected row, asking first / at once"},
 	{helpListScroll, "(in a list) ^E / ^Y", "scroll down / up a line; the selection stays"},
 	{helpSendTo, "(in a list) >", "send a line to the selected figaro or role without attending it"},
+	{helpListState, "(in a list) A", "open the selected figaro's state without attending it"},
 	{helpYank, "y · M-y", "copy the selection, else the aria's name · its full id"},
 	{helpMore, "m", "more: names, addresses, state, model, last interaction"},
 	{helpSticky, "s", "pin the question of the turn you are inside"},
