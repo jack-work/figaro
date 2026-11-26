@@ -474,6 +474,14 @@ func (v *formView) Items(width int) []pitRow {
 			continue
 		}
 		indent := n.cont + "   "
+		if entries, ok := listEntries(n.value); ok {
+			for i, entry := range entries {
+				id := fmt.Sprintf("%s\x00%d", n.path, i)
+				row := pitRow{text: indent + entry, yank: entry, id: id}
+				out = append(out, row)
+			}
+			continue
+		}
 		for i, line := range v.wrappedValue(n, width-displayWidth(indent)-2) {
 			out = append(out, pitRow{
 				text:     indent + line,
@@ -742,4 +750,24 @@ func (v *formView) isOpen(id string) bool {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.open[valuePath(id)]
+}
+
+func listEntries(raw json.RawMessage) ([]string, bool) {
+	var items []json.RawMessage
+	if json.Unmarshal(raw, &items) != nil || len(items) == 0 {
+		return nil, false
+	}
+	out := make([]string, len(items))
+	for i, it := range items {
+		var s string
+		switch t := bytes.TrimSpace(it); {
+		case len(t) == 0 || t[0] == '{' || t[0] == '[':
+			return nil, false
+		case json.Unmarshal(t, &s) == nil:
+			out[i] = pitText(s)
+		default:
+			out[i] = string(t)
+		}
+	}
+	return out, true
 }
