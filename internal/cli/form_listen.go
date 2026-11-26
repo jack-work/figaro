@@ -478,7 +478,15 @@ func (v *formView) Items(width int) []pitRow {
 			for i, entry := range entries {
 				id := fmt.Sprintf("%s\x00%d", n.path, i)
 				row := pitRow{text: indent + entry, yank: entry, id: id}
+				studied := studiedFormPath(n.path)
+				if studied {
+					row.to = entry
+				}
 				out = append(out, row)
+				if studied && v.opener != nil && v.open[id] {
+					out = append(out, v.mountRowsLocked(id, entry, indent, width)...)
+					pointers[id] = true
+				}
 			}
 			continue
 		}
@@ -606,6 +614,9 @@ func (v *formView) Expand(id string) {
 		m.view.Expand(inner)
 		return
 	}
+	if v.expandStudied(id) {
+		return
+	}
 	path := valuePath(id)
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -639,6 +650,9 @@ func (v *formView) Collapse(id string) string {
 			return pointer
 		}
 		return pointer + mountSep + to
+	}
+	if v.collapseStudied(id) {
+		return id
 	}
 	path := valuePath(id)
 	v.mu.Lock()
@@ -770,4 +784,41 @@ func listEntries(raw json.RawMessage) ([]string, bool) {
 		}
 	}
 	return out, true
+}
+
+func studiedFormPath(path string) bool {
+	return path == form.StudiesKey || path == "system.studies"
+}
+
+func (v *formView) studiedEntry(id string) bool {
+	i := strings.IndexByte(id, 0)
+	if i < 0 || v.opener == nil {
+		return false
+	}
+	return studiedFormPath(id[:i]) && !strings.Contains(id, mountSep)
+}
+
+func (v *formView) expandStudied(id string) bool {
+	if !v.studiedEntry(id) {
+		return false
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.open[id] = true
+	v.openRev++
+	return true
+}
+
+func (v *formView) collapseStudied(id string) bool {
+	if !v.studiedEntry(id) {
+		return false
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.open[id] {
+		return false
+	}
+	delete(v.open, id)
+	v.openRev++
+	return true
 }
