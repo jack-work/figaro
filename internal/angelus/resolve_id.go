@@ -124,7 +124,7 @@ func (h *handlers) canonicalParams(ctx context.Context, method string, params js
 			return nil, err
 		}
 		if _, named := roleNameOf(ref); named && id == ref && !h.knownID(id) {
-			studied, ok := h.studiedByCaller(method, rpc.AriaOf(params), ref)
+			studied, ok := h.studiedByCaller(ctx, method, rpc.AriaOf(params), ref)
 			if !ok {
 				return nil, fmt.Errorf("no role or form named %s", ref)
 			}
@@ -431,8 +431,11 @@ func (h *handlers) readableID(ctx context.Context, id string) bool {
 	return h.angelus.Policies.AllowFigaro(sub, authz.FigaroOf(ctx), rpc.VerbRead, authz.Aria(id)).Allowed
 }
 
-func (h *handlers) studiedByCaller(method, ariaID, ref string) (string, bool) {
+func (h *handlers) studiedByCaller(ctx context.Context, method, ariaID, ref string) (string, bool) {
 	if method != rpc.MethodDrop || ariaID == "" || h.angelus.Backend == nil {
+		return "", false
+	}
+	if authz.FigaroOf(ctx) != ariaID && !h.callerIsOwner(ctx) {
 		return "", false
 	}
 	snap, err := h.angelus.Backend.FormState(ariaID)
