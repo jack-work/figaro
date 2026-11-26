@@ -69,6 +69,9 @@ func (b *XwalBackend) retentionFloor(key string) (uint64, bool) {
 		return 0, false
 	}
 	mode := RetentionModeOf(snap)
+	if mode == "" && HistoryOf(snap) == HistoryShort {
+		mode = RetentionMarks
+	}
 	if mode == "" {
 		mode = *retentionDefault.Load()
 	}

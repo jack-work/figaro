@@ -42,6 +42,7 @@ Set by the owner, or by an ancestor figaro through its box door, and a figaro gi
 - `system.child_policy` and everything under it
 - `system.fanout.quota` and everything under it
 - `system.fanout.mint` and everything under it
+- `system.history` and everything under it
 
 ## runtime
 
