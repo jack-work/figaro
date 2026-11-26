@@ -339,6 +339,17 @@ node_sweep = "dry-run"   # default: log each path it would remove and a count; "
 A plan it cannot read or parse, or a marker it cannot stat, keeps
 everything: the sweep is skipped, or that directory is kept, with a warning.
 
+## Disk: short history on queue forms
+
+A form carrying `system.history = "short"` (written by the owner or an ancestor, refused on a conversation-bound form) checkpoints every 64 records, keeps two marks, and counts as `system.retention.mode = "marks"` unless that key says otherwise, so the hourly retention pass (`[store] gc = "on"`) drops the records below the older mark. Its own `system.checkpoint.*` keys still win. A studier keeps what it saw in its libretto.
+
+The same pass deletes `queue.<id>` entries in state `done` or `cancelled` whose `state_at` is older than the grace, on those forms only. It runs whatever `gc` says.
+
+```toml
+[store]
+queue_grace_days = 7   # default 7; 0 keeps finished entries
+```
+
 ## Seeing it
 
 `figaro doctor mem [-j]` reports live figaros, resident handles, resident IR rows

@@ -30,6 +30,9 @@ const (
 
 	PinTail = "tail"
 
+	KeyHistory   = "system.history"
+	HistoryShort = "short"
+
 	KeyRetention        = "system.retention"
 	KeyRetentionMode    = "system.retention.mode"
 	KeyRetentionWriters = "system.retention.writers"
@@ -38,11 +41,23 @@ const (
 	RetentionNone  = "none"
 )
 
-var ErrRetentionOnConversation = errors.New("system.retention: a conversation-bound form keeps every record (its old turns are retranslated from them)")
+var ErrRetentionOnConversation = errors.New("system.retention, system.history: a conversation-bound form keeps every record (its old turns are retranslated from them)")
+
+func HistoryOf(s form.Snapshot) string {
+	raw, ok := s.Get(KeyHistory)
+	if !ok {
+		return ""
+	}
+	var h string
+	if json.Unmarshal(raw, &h) != nil {
+		return ""
+	}
+	return h
+}
 
 func touchesRetention(p form.Patch) bool {
 	for _, e := range p.Entries() {
-		if e.Key == KeyRetention || strings.HasPrefix(e.Key, KeyRetention+".") {
+		if e.Key == KeyHistory || e.Key == KeyRetention || strings.HasPrefix(e.Key, KeyRetention+".") {
 			return true
 		}
 	}
@@ -109,6 +124,10 @@ func checkpointPolicyOf(s form.Snapshot) checkpointPolicy {
 	n := settingOr(s, KeyCheckpointEveryPatches, checkpointEveryPatches.Load())
 	secs := settingOr(s, KeyCheckpointEverySeconds, checkpointEverySeconds.Load())
 	marks := settingOr(s, KeyCheckpointMaxMarks, checkpointMaxMarks.Load())
+	if HistoryOf(s) == HistoryShort {
+		n = settingOr(s, KeyCheckpointEveryPatches, minCheckpointEveryPatches)
+		marks = settingOr(s, KeyCheckpointMaxMarks, minCheckpointMarks)
+	}
 	p := checkpointPolicy{maxMarks: int(max(marks, minCheckpointMarks))}
 	if n > 0 {
 		p.everyPatches = uint64(max(n, minCheckpointEveryPatches))

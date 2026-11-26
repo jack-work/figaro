@@ -16,6 +16,10 @@ type formRetainer interface {
 	RetainForms(ctx context.Context, dryRun bool, pace time.Duration) ([]store.FormRetention, error)
 }
 
+type queueSweeper interface {
+	SweepQueueEntries(now time.Time, grace time.Duration) (int, error)
+}
+
 const (
 	retentionFirst = 5 * time.Minute
 	retentionEvery = time.Hour
@@ -35,6 +39,7 @@ func (a *Angelus) retention(ctx context.Context) {
 		case <-timer.C:
 		}
 		a.retainForms(ctx, false)
+		a.sweepQueueEntries()
 		timer.Reset(retentionEvery)
 	}
 }
@@ -79,4 +84,19 @@ func (a *Angelus) retainForms(ctx context.Context, planOnly bool) retentionPass 
 	}
 	slog.Info(msg, "forms", len(pass.Forms), "segments", segments, "bytes", bytes, "took", took)
 	return pass
+}
+
+func (a *Angelus) sweepQueueEntries() int {
+	q, ok := a.Backend.(queueSweeper)
+	if !ok {
+		return 0
+	}
+	n, err := q.SweepQueueEntries(time.Now(), a.Settings.QueueEntryGrace())
+	if err != nil {
+		slog.Warn("queue entry sweep", "err", err)
+	}
+	if n > 0 {
+		slog.Info("finished queue entries deleted", "entries", n)
+	}
+	return n
 }

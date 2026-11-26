@@ -148,6 +148,8 @@ type StoreConfig struct {
 
 	NodeSweep string `toml:"node_sweep"`
 
+	QueueGraceDays *int `toml:"queue_grace_days"`
+
 	CheckpointEveryPatches *int `toml:"checkpoint_every_patches"`
 	CheckpointEverySeconds *int `toml:"checkpoint_every_seconds"`
 	CheckpointMaxMarks     *int `toml:"checkpoint_max_marks"`
@@ -704,6 +706,16 @@ func (l *Loaded) Retention() (Retention, error) {
 	default:
 		return RetentionOff, fmt.Errorf("config: [store] gc must be \"off\", \"dry-run\" or \"on\", got %q", r)
 	}
+}
+
+const defaultQueueGraceDays = 7
+
+func (l *Loaded) QueueEntryGrace() time.Duration {
+	days := defaultQueueGraceDays
+	if p := l.cfg().Store.QueueGraceDays; p != nil {
+		days = max(*p, 0)
+	}
+	return time.Duration(days) * 24 * time.Hour
 }
 
 func (l *Loaded) NodeSweep() (Retention, error) {
