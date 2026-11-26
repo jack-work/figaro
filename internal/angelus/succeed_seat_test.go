@@ -287,6 +287,19 @@ func (failedWrite) WriteDrawn(map[string]string, []string) error {
 	return errors.New("injected: the seat")
 }
 
+type failsAfter struct {
+	hierarchy.Engine
+	ok *int
+}
+
+func (e failsAfter) WriteDrawn(set map[string]string, drop []string) error {
+	if *e.ok <= 0 {
+		return errors.New("injected: the unseat")
+	}
+	*e.ok--
+	return e.Engine.WriteDrawn(set, drop)
+}
+
 type noDraws struct{ hierarchy.Engine }
 
 func (noDraws) Draws() bool { return false }
@@ -447,5 +460,70 @@ func TestASuccessionForkNeverOutlivesALiveSource(t *testing.T) {
 	}
 	if n := liveForksOf(); n != 1 || a.isLiveAria(f.pred) {
 		t.Fatalf("after a succession %d successor(s) live and the source live=%v", n, a.isLiveAria(f.pred))
+	}
+}
+
+func TestAFailedRetireWithAFailedUnseatSaysTheForkIsStillSeated(t *testing.T) {
+	f := newSeatFixture(t)
+	role := roleFor(t, f.hs, f.pred)
+	a := f.hs.h.angelus
+	ok := 1
+	a.Topology = hierarchy.New(failsAfter{Engine: f.b.HierarchyEngine(), ok: &ok}, a.DefaultTopologyGuard())
+	a.Backend = faultyBackend{Backend: f.b, fail: func(id, patch string) error {
+		if id == f.pred && strings.Contains(patch, `"retired"`) {
+			return errors.New("injected: the retire")
+		}
+		return nil
+	}}
+	_, err := callForkAsFigaro(t, f.hs, f.pred, succeedReq(f.pred, role))
+	if err == nil {
+		t.Fatal("the injected failures did not surface")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "so the seat was given back") || strings.Contains(msg, "fork was discarded") {
+		t.Fatalf("the error claims a cleanup that did not happen: %s", msg)
+	}
+	var succ string
+	for _, n := range f.b.Nodes() {
+		if p, _ := f.b.HierarchyEngine().Drawn(f.pred); p == n.ID {
+			succ = n.ID
+		}
+	}
+	if succ == "" || succ == f.top {
+		t.Fatalf("the fork is not seated over the source: pred drawn under %q", f.drawn(f.pred))
+	}
+	for _, want := range []string{"still seated", succ, "live", "figaro succeed " + role + " --successor " + succ} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("the error lacks %q: %s", want, msg)
+		}
+	}
+	if !a.isLiveAria(f.pred) || !a.isLiveAria(succ) {
+		t.Fatal("the error says both are live and they are not")
+	}
+}
+
+func TestAFailedRetireWithAGoodUnseatSaysTheSeatWasGivenBack(t *testing.T) {
+	f := newSeatFixture(t)
+	role := roleFor(t, f.hs, f.pred)
+	a := f.hs.h.angelus
+	a.Backend = faultyBackend{Backend: f.b, fail: func(id, patch string) error {
+		if id == f.pred && strings.Contains(patch, `"retired"`) {
+			return errors.New("injected: the retire")
+		}
+		return nil
+	}}
+	_, err := callForkAsFigaro(t, f.hs, f.pred, succeedReq(f.pred, role))
+	if err == nil || !strings.Contains(err.Error(), "the seat was given back and the fork was discarded") {
+		t.Fatalf("the clean refusal does not say what was undone: %v", err)
+	}
+}
+
+func TestADiscardThatFailsIsNamedWithTheKillLine(t *testing.T) {
+	got := discardLeftover("fork1", errors.New("has live branches"))
+	if !strings.Contains(got, "could not be discarded") || !strings.Contains(got, "figaro kill fork1") {
+		t.Fatalf("got %q", got)
+	}
+	if got := discardLeftover("fork1", nil); got != " and the fork was discarded" {
+		t.Fatalf("got %q", got)
 	}
 }

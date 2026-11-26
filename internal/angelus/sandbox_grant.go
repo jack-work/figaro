@@ -106,13 +106,15 @@ func (h *handlers) bornInTheDefaultBox(id string, snap form.Snapshot) (form.Snap
 	return snap.Apply(pin), nil
 }
 
-func (h *handlers) discardBirth(id string) {
+func (h *handlers) discardBirth(id string) error {
 	if id == "" {
-		return
+		return nil
 	}
-	if err := h.RemoveAria(id, false); err != nil {
+	err := h.RemoveAria(id, false)
+	if err != nil {
 		slog.Error("a refused birth left its aria behind", "aria", id, "err", err)
 	}
+	return err
 }
 
 func patchTouches(p form.Patch, key string) bool {

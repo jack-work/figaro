@@ -531,7 +531,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	var seated *rpc.SeatResponse
 	if abdicating {
-		if seated, err = h.completeHandover(ctx, req.FigaroID, alt, succ); err != nil {
+		if seated, err = h.completeHandover(ctx, req, alt, succ); err != nil {
 			return nil, err
 		}
 	}

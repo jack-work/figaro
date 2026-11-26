@@ -134,24 +134,35 @@ func clampToLifetime(snap form.Snapshot, createdAtMS int64, ttl time.Duration, n
 	return ttl
 }
 
-func (h *handlers) completeHandover(ctx context.Context, source, successor string, s *handover) (*rpc.SeatResponse, error) {
+func (h *handlers) completeHandover(ctx context.Context, req rpc.ForkRequest, successor string, s *handover) (*rpc.SeatResponse, error) {
+	source := req.FigaroID
 	seat := h.seatInPlaceOf(ctx, successor, source, true)
 	if seat.FailedAt != "" || seat.Demote.Unsupported {
-		h.discardBirth(successor)
+		left := discardLeftover(successor, h.discardBirth(successor))
 		if seat.FailedAt == "" {
-			return nil, fmt.Errorf("fork: %s: the fork was discarded and nothing moved", rpc.AbdicationNeedsTrunks)
+			return nil, fmt.Errorf("fork: %s: nothing moved%s", rpc.AbdicationNeedsTrunks, left)
 		}
-		return nil, fmt.Errorf("fork: %s; the fork was discarded and nothing moved", seat.Error)
+		return nil, fmt.Errorf("fork: %s; nothing moved%s", seat.Error, left)
 	}
-	if _, err := h.ariaMethod(rpc.MethodSet)(ctx, s.retire); err != nil {
-		h.unseat(ctx, source, successor)
-		h.discardBirth(successor)
-		return nil, fmt.Errorf("fork: %s could not be retired, so the seat was given back and the fork discarded: %w", source, err)
+	_, err := h.ariaMethod(rpc.MethodSet)(ctx, s.retire)
+	if err == nil {
+		return &seat, nil
 	}
-	return &seat, nil
+	if uerr := h.unseat(ctx, source, successor); uerr != nil {
+		return nil, fmt.Errorf("fork: %s could not be retired (%v) and the seat could not be given back (%v): %s is still seated over %s, which is live; to finish the handover run: figaro succeed %s --successor %s -- <the succession prompt>",
+			source, err, uerr, successor, source, req.Seat, successor)
+	}
+	return nil, fmt.Errorf("fork: %s could not be retired, so the seat was given back%s: %w", source, discardLeftover(successor, h.discardBirth(successor)), err)
 }
 
-func (h *handlers) unseat(ctx context.Context, source, successor string) {
+func discardLeftover(successor string, err error) string {
+	if err == nil {
+		return " and the fork was discarded"
+	}
+	return fmt.Sprintf(", but the fork %s could not be discarded (%v): run figaro kill %s", successor, err, successor)
+}
+
+func (h *handlers) unseat(ctx context.Context, source, successor string) error {
 	h.seated.Delete(successor)
 	by, err := h.angelus.topologyPrincipal(ctx)
 	if err == nil {
@@ -163,4 +174,5 @@ func (h *handlers) unseat(ctx context.Context, source, successor string) {
 	if err != nil {
 		slog.Error("a refused succession could not give the seat back", "source", source, "successor", successor, "err", err)
 	}
+	return err
 }
