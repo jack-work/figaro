@@ -96,6 +96,48 @@ func refuseUnboundedRetire(plan succeedPlan) error {
 	return fmt.Errorf("--ttl %s: a retiring succession reaps its predecessor within %s, the bound the daemon admits it past the child limits for; use a shorter --ttl, or --abdication linger for a longer one", shortDuration(plan.ttl), rpc.MaxAbdicationTTL)
 }
 
+func seatedSuccessorOf(ctx context.Context, acli *sdk.Angelus, source string) string {
+	listing, err := acli.ListGlobal(ctx)
+	if err != nil {
+		return ""
+	}
+	var src *rpc.FigaroInfoResponse
+	for i := range listing.Figaros {
+		if listing.Figaros[i].ID == source {
+			src = &listing.Figaros[i]
+		}
+	}
+	if src == nil || src.RetiredAt == 0 || src.Present == "" {
+		return ""
+	}
+	for _, f := range listing.Figaros {
+		if f.ID != src.Present {
+			continue
+		}
+		if f.RetiredAt != 0 || f.ReapedAt != 0 {
+			return ""
+		}
+		snap, err := acli.Form(ctx, f.ID)
+		if err != nil {
+			return ""
+		}
+		var from string
+		if raw, ok := form.RuntimeGet(snap.Snapshot, form.ForkedFromKey); ok && json.Unmarshal(raw, &from) == nil && from == source {
+			return f.ID
+		}
+	}
+	return ""
+}
+
+func (r *succeedReport) adoptSeatedSuccessor(acli *sdk.Angelus, source string, retireTTL time.Duration, turn uint64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if found := seatedSuccessorOf(ctx, acli, source); found != "" {
+		r.Successor, r.Forked, r.Turn = found, true, turn
+		r.retiredByFork, r.retireTTL = true, retireTTL
+	}
+}
+
 func (r *succeedReport) discardFork(ctx context.Context, acli *sdk.Angelus, cause error) error {
 	if !r.Forked {
 		return cause
@@ -349,6 +391,9 @@ func succeedVerb(ctx context.Context, acli *sdk.Angelus, plan succeedPlan, hooks
 			out, err = acli.ForkWith(ctx, req)
 		}
 		if err != nil {
+			if req.Abdicates {
+				r.adoptSeatedSuccessor(acli, old.ID, req.RetireTTL, plan.turn)
+			}
 			return r, r.fail("fork", err)
 		}
 		r.Successor, r.Forked, r.Turn = out.Alternative, true, plan.turn

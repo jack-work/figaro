@@ -121,6 +121,30 @@ func TestAPromptFailureLeavesTheSeatedSuccessorAndTheRetiredPredecessor(t *testi
 	}
 }
 
+func TestAForkCallThatFailedAfterTheDaemonFinishedFindsTheSeatedSuccessor(t *testing.T) {
+	s := seatedPredecessor(t, func(b *store.XwalBackend, _ string, turn uint64) { withTrunks(t, b, turn) })
+
+	lost := succeedReport{Role: s.role, Predecessor: s.pred, FailedAt: "fork"}
+	lost.adoptSeatedSuccessor(s.acli, s.pred, 10*time.Minute, 2)
+	require.Empty(t, lost.Successor, "a successor was invented for a predecessor that was never succeeded")
+	require.Empty(t, lost.recovery(succeedPlan{ttl: 10 * time.Minute, abdication: abdicateRetire}))
+
+	plan, err := succeedArgs(t, s.role, "--", "you hold the seat")
+	require.NoError(t, err)
+	done, err := succeedVerb(s.ctx, s.acli, plan, succeedHooks{})
+	require.Error(t, err)
+	require.True(t, done.Forked)
+
+	lost = succeedReport{Role: s.role, Predecessor: s.pred, FailedAt: "fork"}
+	lost.adoptSeatedSuccessor(s.acli, s.pred, 10*time.Minute, 2)
+	require.Equal(t, done.Successor, lost.Successor)
+	require.True(t, lost.Forked)
+	require.True(t, lost.retiredByFork)
+	steps := strings.Join(lost.recovery(plan), "\n")
+	require.Contains(t, steps, "figaro send -f --id "+done.Successor)
+	require.Contains(t, steps, "figaro cast "+done.Successor+" "+s.role)
+}
+
 func TestRecoveryWarnsThatOnlyTheOwnerCastsAfterTheReap(t *testing.T) {
 	for name, tc := range map[string]struct {
 		ttl  time.Duration
