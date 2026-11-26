@@ -55,8 +55,10 @@ type XwalBackend struct {
 	modelsMu sync.Mutex
 	reserved map[string]*Form
 	// librettos: one fold goroutine per libretto, not per observer.
-	librettos map[string]*Libretto
-	opening   map[string]*librettoOpening
+	librettos      map[string]*Libretto
+	opening        map[string]*librettoOpening
+	idleLibrettos  map[string]uint64
+	librettoSweeps uint64
 	// lastTS is aria id -> newest record timestamp, memoized.
 	lastTS map[string]int64
 
