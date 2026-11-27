@@ -19,6 +19,11 @@ type FormRetention struct {
 }
 
 func (b *XwalBackend) RetainForms(ctx context.Context, dryRun bool, pace time.Duration) ([]FormRetention, error) {
+	out, _, err := b.RetainFormsCounted(ctx, dryRun, pace)
+	return out, err
+}
+
+func (b *XwalBackend) RetainFormsCounted(ctx context.Context, dryRun bool, pace time.Duration) ([]FormRetention, int, error) {
 	t := b.store.trunks
 	nodes := t.Nodes()
 	keys := make([]string, 0, len(nodes))
@@ -30,10 +35,12 @@ func (b *XwalBackend) RetainForms(ctx context.Context, dryRun bool, pace time.Du
 	sort.Strings(keys)
 	var out []FormRetention
 	var errs error
+	scanned := 0
 	for _, key := range keys {
 		if err := ctx.Err(); err != nil {
-			return out, err
+			return out, scanned, err
 		}
+		scanned++
 		id := nodes[key].Trunk
 		if ok, err := t.MayRetain(key, chanForm); err != nil {
 			errs = errors.Join(errs, fmt.Errorf("form %s: %w", id, err))
@@ -55,12 +62,12 @@ func (b *XwalBackend) RetainForms(ctx context.Context, dryRun bool, pace time.Du
 		if pace > 0 && !dryRun {
 			select {
 			case <-ctx.Done():
-				return out, ctx.Err()
+				return out, scanned, ctx.Err()
 			case <-time.After(pace):
 			}
 		}
 	}
-	return out, errs
+	return out, scanned, errs
 }
 
 func (b *XwalBackend) retentionFloor(key string) (uint64, bool) {

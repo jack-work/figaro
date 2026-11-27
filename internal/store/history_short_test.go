@@ -102,3 +102,20 @@ func TestAConversationBoundFormRefusesShortHistory(t *testing.T) {
 		t.Fatalf("system.history on a conversation-bound form: %v", err)
 	}
 }
+
+func TestRetainFormsCountedCountsEveryFormItVisitedNotOnlyTheOnesItTrimmed(t *testing.T) {
+	b, err := NewXwalBackend(t.TempDir(), 64<<10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	newBoardForm(t, b)
+	newBoardForm(t, b)
+	out, scanned, err := b.RetainFormsCounted(context.Background(), false, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scanned != 2 || len(out) != 0 {
+		t.Fatalf("scanned %d, trimmed %d, want 2 and 0", scanned, len(out))
+	}
+}

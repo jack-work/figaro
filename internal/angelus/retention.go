@@ -13,7 +13,7 @@ import (
 )
 
 type formRetainer interface {
-	RetainForms(ctx context.Context, dryRun bool, pace time.Duration) ([]store.FormRetention, error)
+	RetainFormsCounted(ctx context.Context, dryRun bool, pace time.Duration) ([]store.FormRetention, int, error)
 }
 
 type queueSweeper interface {
@@ -38,17 +38,32 @@ func (a *Angelus) retention(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
-		a.retainForms(ctx, false)
-		a.sweepQueueEntries()
+		a.runRetentionPass(ctx)
 		timer.Reset(retentionEvery)
 	}
 }
 
+func (a *Angelus) runRetentionPass(ctx context.Context) {
+	start := time.Now()
+	pass := a.retainForms(ctx, false)
+	entries := a.sweepQueueEntries()
+	logRetentionPass(pass, entries, time.Since(start))
+}
+
 type retentionPass struct {
-	Mode   config.Retention
-	DryRun bool
-	Forms  []store.FormRetention
-	Err    error
+	Mode    config.Retention
+	DryRun  bool
+	Forms   []store.FormRetention
+	Scanned int
+	Err     error
+}
+
+func logRetentionPass(pass retentionPass, entries int, took time.Duration) {
+	segments := 0
+	for _, f := range pass.Forms {
+		segments += f.Dropped
+	}
+	slog.Info("retention pass", "mode", string(pass.Mode), "dry_run", pass.DryRun, "forms_scanned", pass.Scanned, "segments_dropped", segments, "queue_entries_deleted", entries, "took", took)
 }
 
 func (a *Angelus) retainForms(ctx context.Context, planOnly bool) retentionPass {
@@ -62,7 +77,7 @@ func (a *Angelus) retainForms(ctx context.Context, planOnly bool) retentionPass 
 		return pass
 	}
 	start := time.Now()
-	pass.Forms, pass.Err = r.RetainForms(ctx, pass.DryRun, retentionPace)
+	pass.Forms, pass.Scanned, pass.Err = r.RetainFormsCounted(ctx, pass.DryRun, retentionPace)
 	took := time.Since(start)
 	figOtel.RecordSweep(ctx, took, attribute.String("phase", "retain_forms"))
 	var segments int
