@@ -65,7 +65,7 @@ func TestAFormReadCarriesTheCallersAccess(t *testing.T) {
 			t.Errorf("box %s = %+v %v, want %s", path, d, denied, kind)
 		}
 	}
-	for _, path := range []string{"system.thinking_effort", "mantra", "notes.today"} {
+	for _, path := range []string{"system.thinking_effort", "mantra", "memo.today"} {
 		if d, denied := boxed.Access.Refusal(path); denied {
 			t.Errorf("box %s is denied (%+v) but the guard lets a box write it", path, d)
 		}

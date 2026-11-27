@@ -52,6 +52,7 @@ Written by the daemon alone. An unprivileged patch that names one, to set or to 
 - `token_budget`
 - `truncation`
 - `runtime` and everything under it
+- `notes` and everything under it
 - `system.forked_from`
 - `system.studies`
 - `system.tombstone`

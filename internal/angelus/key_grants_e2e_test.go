@@ -170,7 +170,7 @@ func TestADefaultChildWritesOnlyItsOwnSelfClassKeys(t *testing.T) {
 	r.ownerSets(t, kid, map[string]any{"system.ttl": "30m"})
 	for keys, ok := range map[string]bool{
 		`{"mantra":"lane"}`:                      true,
-		`{"notes.today":"x"}`:                    true,
+		`{"memo.today":"x"}`:                     true,
 		`{"system.thinking_effort":"low"}`:       true,
 		`{"system.scopes":["*:*"]}`:              false,
 		`{"system.child_policy":{"mantra":"x"}}`: false,

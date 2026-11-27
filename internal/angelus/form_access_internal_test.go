@@ -10,7 +10,7 @@ import (
 )
 
 func accessPaths() []string {
-	paths := []string{"system", "system.added_tomorrow", "mantra", "notes.today", "x[0]", "turn.state"}
+	paths := []string{"system", "system.added_tomorrow", "mantra", "memo.today", "x[0]", "turn.state"}
 	add := func(k string) { paths = append(paths, k, k+".child", k+"[0]") }
 	for _, k := range form.WellKnownKeys() {
 		add(strings.ReplaceAll(k.Key, "<id>", "a1"))
