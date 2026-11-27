@@ -300,7 +300,7 @@ func (h *handlers) ancestorsOf(line lineage) []string {
 func (c callerKeys) deny() []rpc.KeyDeny {
 	var out []rpc.KeyDeny
 	for _, k := range form.SystemManagedKeys() {
-		out = append(out, rpc.KeyDeny{Key: k, Exact: k != form.RuntimeRoot, Kind: rpc.DenySystemManaged,
+		out = append(out, rpc.KeyDeny{Key: k, Exact: k != form.RuntimeRoot && k != form.NotesRoot, Kind: rpc.DenySystemManaged,
 			Reason: "written by the harness, not by hand"})
 	}
 	if !c.owns {

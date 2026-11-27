@@ -28,6 +28,7 @@ var agentMethods = []string{
 	rpc.MethodCast,
 	rpc.MethodContext,
 	rpc.MethodInterrupt,
+	rpc.MethodNote,
 	rpc.MethodSet,
 	rpc.MethodForm,
 	rpc.MethodQueued,
@@ -119,6 +120,13 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 				req.Queue, rpc.QueueKeep, rpc.QueueClear)
 		}
 		return a.Hangup(req.Queue), nil
+
+	case rpc.MethodNote:
+		var req rpc.NoteRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+		return a.Note(rpc.SenderFrom(params, a.dukeTitle), req)
 
 	case rpc.MethodSet:
 		var req rpc.SetRequest

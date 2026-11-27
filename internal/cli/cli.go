@@ -602,6 +602,27 @@ alone. With no id, the pid-bound aria is used.`,
 		},
 	}))
 
+	r.Register(verb("note", &cmdkit.Command{
+		Long: `Leave a note for an aria. It lands in the aria's form and shows as a
+reminder, stamped with your name and the time, with the next thing the
+aria reads; no turn starts and a dormant aria stays dormant.
+
+  figaro note --id <aria> -- thumbs up on your last message
+
+Use it for what deserves to be seen but not answered: a reaction, a status
+change. To ask for a reply, send.
+
+The aria keeps the newest 8 notes of at most 1 KB each. The same text from
+the same sender replaces its earlier note instead of stacking. A turn that
+has shown a note clears it afterwards, and nobody but the daemon writes
+the notes.* keys. It needs the send grant on the aria. An older daemon
+answers unknown method; the daemon capability is "note".`,
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			return runNote(ld, ctx.Flag("id"), strings.Join(ctx.Args, " "), ctx.BoolFlag("json"))
+		},
+	}))
+
 	r.Register(verb("queue", &cmdkit.Command{
 		Long: `The queue is what the aria has accepted but not yet answered.
 

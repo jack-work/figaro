@@ -161,6 +161,7 @@ type Agent struct {
 	halted      atomic.Bool
 	turnReason  string
 	turnSenders []promptSegment
+	notesShown  map[string]string
 	turnFault   error
 
 	spool      *Spool
@@ -1203,6 +1204,7 @@ func (a *Agent) endTurnDiscarding(reason string) {
 func (a *Agent) finishTurn(reason string) {
 	a.turnReason = reason
 	a.recordFailure(reason)
+	a.clearShownNotes()
 	handoff := a.turnAskedForHandoff()
 	a.tellSenders(reason)
 	// asm holds the whole streamed reply; an idle aria must not keep it.

@@ -55,7 +55,7 @@ func TestEveryRowResolvesToItsOwnWriter(t *testing.T) {
 
 func TestRuntimeKeysAreExactAndNothingElseIs(t *testing.T) {
 	for _, s := range form.Registry() {
-		if s.Path == form.RuntimeRoot {
+		if s.Path == form.RuntimeRoot || s.Path == form.NotesRoot {
 			continue
 		}
 		if s.Exact != (s.Writer == form.WriterRuntime) {

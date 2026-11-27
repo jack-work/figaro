@@ -8,16 +8,23 @@ import (
 )
 
 func SenderReminder(sender string) string {
+	name := SenderName(sender)
+	if name == "" {
+		return ""
+	}
+	return Reminder("sender", name)
+}
+
+func SenderName(sender string) string {
 	bare, body, ok := figaroSender(sender)
 	if !ok {
 		return ""
 	}
 	short := bare[:len(bare)-len(body)] + body[:min(rpc.ShortIDLen, len(body))]
-	name := "figaro " + short
 	if words := handle.Words(bare, handle.MinWords); words != "" {
-		name = "figaro " + words + " (" + short + ")"
+		return "figaro " + words + " (" + short + ")"
 	}
-	return Reminder("sender", name)
+	return "figaro " + short
 }
 
 func Prose(text string) string { return NeutraliseReservedTags(text) }

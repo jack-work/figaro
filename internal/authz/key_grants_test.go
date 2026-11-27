@@ -67,7 +67,7 @@ func TestKeyGrantMatrix(t *testing.T) {
 		{`["write:aria:sib"]`, rpc.VerbSet, "sib", "anything.at.all", true},
 		{`["write:aria:sib"]`, rpc.VerbSet, "niece", "mantra", false},
 		{`["write:aria:self#@self"]`, rpc.VerbSet, "kid", "mantra", true},
-		{`["write:aria:self#@self"]`, rpc.VerbSet, "kid", "notes.x", true},
+		{`["write:aria:self#@self"]`, rpc.VerbSet, "kid", "memo.x", true},
 		{`["write:aria:self#@self"]`, rpc.VerbSet, "kid", "system.scopes", false},
 		{`["write:aria:self#@self"]`, rpc.VerbSet, "kid", "system.model", false},
 		{`["write:aria:self#@self"]`, rpc.VerbSet, "kid", "runtime.forked_from", false},

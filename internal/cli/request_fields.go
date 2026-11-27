@@ -31,6 +31,7 @@ var requestFieldCapabilities = map[string]rpc.Capability{
 	"ForkRequest.RetireTTL":           rpc.CapForkSucceed,
 	"ReadRequest.Until":               rpc.CapReadUntil,
 	"QuaRequest.Exact":                rpc.CapLogExact,
+	"NoteRequest.Text":                rpc.CapNote,
 }
 
 type quaer interface {

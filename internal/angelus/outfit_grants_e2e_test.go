@@ -76,7 +76,7 @@ func grantedOutfitsRigIn(t *testing.T, boxExtra string) lineageRig {
 	t.Helper()
 	r := newLineageRig(t, boxExtra)
 	for _, name := range []string{"hk", "model-a", "secret"} {
-		if err := os.WriteFile(filepath.Join(r.a.Settings.ConfigDir, "outfits", name+".toml"), []byte("[notes]\nwore = \""+name+"\"\n"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(r.a.Settings.ConfigDir, "outfits", name+".toml"), []byte("[memo]\nwore = \""+name+"\"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -147,7 +147,7 @@ func TestAForkIsBornWithItsParentsOwnOutfitGrants(t *testing.T) {
 
 func TestNewBindAndFormCreateAreJudgedAsAForkIs(t *testing.T) {
 	r := newLicenseRig(t, defaultPolicy)
-	if err := os.WriteFile(filepath.Join(r.a.Settings.ConfigDir, "outfits", "hk.toml"), []byte("[notes]\nwore = \"hk\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(r.a.Settings.ConfigDir, "outfits", "hk.toml"), []byte("[memo]\nwore = \"hk\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.h[rpc.MethodSet](asOwner(), withAria(t, r.x, rpc.SetRequest{Patch: *heldPatch(t, map[string]any{form.FanoutMintKey: true})})); err != nil {
@@ -196,14 +196,14 @@ func TestSetSendAndCastNamingAnOutfitAreJudgedToo(t *testing.T) {
 	refusedFor(t, cast(), r.child, "hk", `["hk"]`)
 	_, err := r.h[rpc.MethodQua](localOwner(), claimed(t, r.child, withAria(t, r.child, rpc.QuaRequest{Text: "hi", Form: &rpc.FormInput{Outfits: []string{"hk"}}})))
 	refusedFor(t, err, r.child, "hk", `["hk"]`)
-	if v, _ := keyOn(t, r.grantRig, r.child, "notes.wore"); v != nil {
+	if v, _ := keyOn(t, r.grantRig, r.child, "memo.wore"); v != nil {
 		t.Fatalf("the refused outfit landed: %s", v)
 	}
 	r.ownerSets(t, r.child, map[string]any{form.OutfitGrantsKey: []string{"hk"}})
 	if err := set(); err != nil {
 		t.Fatalf("set in a granted outfit: %v", err)
 	}
-	if v, _ := keyOn(t, r.grantRig, r.child, "notes.wore"); string(v) != `"hk"` {
+	if v, _ := keyOn(t, r.grantRig, r.child, "memo.wore"); string(v) != `"hk"` {
 		t.Fatalf("the granted outfit did not land: %s", v)
 	}
 	if err := cast(); err != nil {

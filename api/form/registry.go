@@ -114,6 +114,8 @@ var registry = withLegacyRuntimeRows([]Spec{
 	{Path: ContextLimitKey, Short: `The prompt capacity in tokens the daemon resolved for this figaro from its route, overrides and the model catalog; the number figaro status prints. Clients render it and never recompute it. Absent while unknown`, Writer: WriterRuntime, Exact: true, Shape: ShapeInt(1, 1<<40)},
 	{Path: RetiredKey, Short: `Set when a figaro retires, with the reason ("manual", "context"); written by the daemon from system.retired or its own retirement`, Writer: WriterRuntime, Exact: true, Shape: ShapeTruthy()},
 	{Path: RuntimeRoot, Writer: WriterRuntime, Shape: ShapeObject()},
+	{Path: NotesRoot, Writer: WriterRuntime, Shape: ShapeObject()},
+	{Path: NotesRoot + ".<id>", Short: "A note delivered by figaro note: one line, stamped with the time and the sender, the newest few kept. It renders as a reminder without starting a turn, and the daemon clears the ones a turn has shown", Writer: WriterRuntime, Exact: true, Shape: ShapeString()},
 	{Path: "system.methods", Writer: WriterOwner, Shape: ShapeObject()},
 	{Path: "system.fanout", Writer: WriterSelf, Operator: true, Shape: ShapeObject()},
 	{Path: "system.environment", Writer: WriterOwner, Shape: ShapeObject()},

@@ -9,6 +9,8 @@ import (
 
 const RuntimeRoot = "runtime"
 
+const NotesRoot = "notes"
+
 const (
 	ForkedFromKey       = "runtime.forked_from"
 	StudiesKey          = "runtime.studies"
