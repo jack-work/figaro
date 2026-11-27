@@ -176,6 +176,14 @@ func (c *Aria) Hangup(ctx context.Context, disposition rpc.QueueDisposition) (*r
 	return &resp, nil
 }
 
+func (c *Aria) Note(ctx context.Context, text string) (*rpc.NoteResponse, error) {
+	var resp rpc.NoteResponse
+	if err := c.call(ctx, rpc.MethodNote, rpc.NoteRequest{Text: text}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Set applies a form patch directly, with no LLM round-trip.
 func (c *Aria) Set(ctx context.Context, patch rpc.FormPatch, ifVersion uint64) (*rpc.SetResponse, error) {
 	return c.SetDressed(ctx, nil, patch, ifVersion)

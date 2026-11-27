@@ -50,6 +50,7 @@ var methodVerbs = map[string]Verb{
 
 	MethodQua:         VerbSend,
 	MethodInterrupt:   VerbSend,
+	MethodNote:        VerbSend,
 	MethodQueueUpdate: VerbSend,
 	MethodQueueDelete: VerbSend,
 

@@ -112,6 +112,15 @@ against whatever holds that number now.
 | `figaro queue rm --all` | Drop all of them. |
 | `figaro queue edit <id> -- <text>` | Rewrite one. |
 
+`figaro note [--id <figaro>] [-j] -- <text>` is a message that starts no turn:
+the daemon writes it to the target's `notes.<id>` key (class runtime, so no
+caller can set or unset it), stamped with the sender and the time. It shows
+as a reminder with the target's next turn, or with the next tool result if one
+is running, and a dormant figaro stays dormant. At most 1 KB a note; the
+newest 8 are kept; the same text from the same sender replaces its earlier
+note; a turn that has shown a note clears it. It needs `send` on the target.
+Use it for reactions and status, `send` for anything that wants an answer.
+
 To ADD to the queue, `send`, a queued message is just a prompt that arrived
 while the figaro was busy, so there is no separate create verb. The sub-verb owns
 the positional slot, so another figaro is `--id`, never a bare id.
@@ -180,6 +189,7 @@ The wire behind all of this: the interrupt's queue disposition, the
 | `figaro hup [<id>] [-d]` | Hang up: stop the turn; `-d` also discards the queue (see The queue). |
 | `figaro cut [<id>]` | Shorthand for `hup -d`; `-j` returns the messages. |
 | `figaro queue [rm\|edit]` | Read, edit and delete what has not been answered yet. |
+| `figaro note [--id <id>] -- <text>` | Leave a note the figaro sees on its next turn; starts none. |
 
 `ls` columns: ARIA (mantra, with `▸` running, `●` this shell, `○` idle), ID
 (the figaro's word handle), OUTFIT, VER, FORK, AGE, MSGS, CTX, CWD. Running

@@ -145,6 +145,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		return
 	}
 	a.hydrate()
+	a.rememberShownNotes()
 	a.mu.Lock()
 	a.lastActive = time.Now()
 	a.mu.Unlock()

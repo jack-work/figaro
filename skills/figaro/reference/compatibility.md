@@ -60,6 +60,10 @@ capabilities.
   figaro under another parent through the hierarchy guard. A CLI refuses
   `place` against a daemon that does not report `place`, which would answer
   with an unknown method.
+- **`figaro note` needs the `note` capability.** `figaro.note` is its own
+  method, so an older daemon answers unknown method and never runs a turn on
+  a note; a CLI refuses by capability name first. A caller that wants a
+  best-effort delivery falls back to `send` when the daemon lacks `note`.
 - **`figaro succeed` needs the `seat` capability** (0.74.5). Succeed seats
   its successor through `figaro.seat`, which a daemon before 0.74.5 lacks.
   A CLI checks for `seat` before it forks or casts anything, so against an

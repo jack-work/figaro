@@ -52,6 +52,19 @@ var table = []Command{
 		Pager:        Hosted,
 	},
 	{
+		Name:  "note",
+		Group: "Prompt",
+		Help:  "Leave a note an aria sees on its next turn, starting none",
+		Usage: "note [--id <id>] [-j] -- <text>",
+		Args: []Arg{
+			{Name: "text", Kind: Text, Repeats: true},
+		},
+		Flags: []Flag{
+			{Long: "id", Value: Aria, Help: "Address a specific aria (default: the attended one)"},
+			{Long: "json", Short: "j", Help: "Print one JSON object and exit"},
+		},
+	},
+	{
 		Name:  "read",
 		Group: "Prompt",
 		Help:  "Print an aria log's entries exactly as they were sent",

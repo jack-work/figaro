@@ -19,6 +19,7 @@ const (
 	MethodQua       = "figaro.qua"
 	MethodInterrupt = "figaro.interrupt"
 	MethodSet       = "figaro.set"
+	MethodNote      = "figaro.note"
 	// A queued message is a submitted prompt: MethodQua is the create path.
 	MethodQueued      = "figaro.queued"
 	MethodQueueUpdate = "figaro.queue.update"
